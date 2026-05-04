@@ -1,3 +1,6 @@
+// The code in this file is adapted from the alacritty_terminal crate under the
+// Apache license; see: crates/warp_terminal/src/model/LICENSE-ALACRITTY.
+
 #[path = "ansi_handler.rs"]
 mod ansi_handler;
 #[path = "filtering.rs"]
@@ -1229,7 +1232,7 @@ impl GridHandler {
         let mut possible_paths = Vec::new();
 
         for prefix_chunk in prefix_chunks.into_iter().rev() {
-            // Preppend a new fragment to left.
+            // Prepend a new fragment to left.
             left = format!("{}{}", prefix_chunk.content, left);
             left_width += prefix_chunk.total_cell_width;
 

@@ -355,6 +355,7 @@ impl AIConversation {
             parent_agent_id,
             agent_name,
             parent_conversation_id,
+            is_remote_child,
             run_id,
             autoexecute_override,
             last_event_sequence,
@@ -380,6 +381,7 @@ impl AIConversation {
             let parent_conversation_id = data
                 .parent_conversation_id
                 .and_then(|id| AIConversationId::try_from(id).ok());
+            let is_remote_child = data.is_remote_child;
             let run_id = data.run_id;
             let autoexecute_override = if FeatureFlag::RememberFastForwardState.is_enabled() {
                 data.autoexecute_override
@@ -399,6 +401,7 @@ impl AIConversation {
                 parent_agent_id,
                 agent_name,
                 parent_conversation_id,
+                is_remote_child,
                 run_id,
                 autoexecute_override,
                 last_event_sequence,
@@ -413,6 +416,7 @@ impl AIConversation {
                 None,
                 None,
                 None,
+                false,
                 None,
                 AIConversationAutoexecuteMode::default(),
                 None,
@@ -457,7 +461,7 @@ impl AIConversation {
             parent_agent_id,
             agent_name,
             parent_conversation_id,
-            is_remote_child: false,
+            is_remote_child,
             last_event_sequence,
         })
     }
@@ -809,7 +813,15 @@ impl AIConversation {
 
     /// Returns true if this conversation was spawned by a parent orchestrator agent.
     pub fn is_child_agent_conversation(&self) -> bool {
-        self.parent_conversation_id.is_some()
+        self.parent_conversation_id.is_some() || self.parent_agent_id.is_some()
+    }
+
+    /// True iff this conversation knows about a parent agent — either via a
+    /// local parent placeholder (`parent_conversation_id`, set in the GUI
+    /// parent) or via the parent's server-side run identifier
+    /// (`parent_agent_id`, stamped in driver-hosted processes).
+    pub fn has_parent_agent(&self) -> bool {
+        self.parent_conversation_id.is_some() || self.parent_agent_id.is_some()
     }
 
     /// Returns true if this is a placeholder for a child agent executing on a
@@ -2830,6 +2842,7 @@ impl AIConversation {
                 parent_agent_id: self.parent_agent_id.clone(),
                 agent_name: self.agent_name.clone(),
                 parent_conversation_id: self.parent_conversation_id.map(|id| id.to_string()),
+                is_remote_child: self.is_remote_child,
                 run_id: self.task_id.map(|id| id.to_string()),
                 autoexecute_override: Some(self.autoexecute_override.into()),
                 last_event_sequence: self.last_event_sequence,
@@ -3516,6 +3529,7 @@ pub enum AIAgentHarness {
     Oz,
     ClaudeCode,
     Gemini,
+    Codex,
     Unknown,
 }
 

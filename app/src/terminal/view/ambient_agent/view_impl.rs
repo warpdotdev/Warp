@@ -6,6 +6,7 @@ use warp_cli::agent::Harness;
 use warp_terminal::model::BlockId;
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
+use crate::ai::agent::display_user_query_with_mode;
 use crate::ai::AIRequestUsageModel;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
@@ -33,6 +34,7 @@ use super::loading_screen::{
 use super::{
     is_cloud_agent_pre_first_exchange, AmbientAgentEntryBlock, AmbientAgentViewModelEvent,
 };
+use crate::terminal::view::Event as TerminalViewEvent;
 const CHILD_AGENT_GITHUB_AUTH_REQUIRED_BLOCKED_ACTION: &str =
     "GitHub authentication required before starting the child agent.";
 
@@ -119,11 +121,13 @@ impl TerminalView {
             AmbientAgentViewModelEvent::EnteredSetupState => {
                 // Re-render to show the setup view.
                 self.update_pane_configuration(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::EnteredComposingState => {
                 // Update pane configuration to show cloud indicator.
                 self.update_pane_configuration(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
             }
             AmbientAgentViewModelEvent::DispatchedAgent => {
                 // Pane chrome (e.g. cloud indicator, task id) must update on viewer surfaces
@@ -146,10 +150,16 @@ impl TerminalView {
                         // Non-oz runs: render the submitted prompt via the queued-prompt UI.
                         // The block is removed later by `HarnessCommandStarted` / failure /
                         // cancel / auth handlers.
+                        //
+                        // `request.prompt` is stored stripped of any `/plan` / `/orchestrate`
+                        // prefix; rebuild the display form from `request.mode` so the user sees
+                        // exactly what they typed.
                         let prompt = ambient_agent_view_model
                             .as_ref(ctx)
                             .request()
-                            .map(|request| request.prompt.clone())
+                            .map(|request| {
+                                display_user_query_with_mode(request.mode, &request.prompt)
+                            })
                             .unwrap_or_default();
                         if !prompt.is_empty() {
                             self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
@@ -183,12 +193,23 @@ impl TerminalView {
                     });
                 }
                 // Re-render to show loading state.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::SessionReady { .. } => {
+            AmbientAgentViewModelEvent::FollowupDispatched => {
+                self.update_active_ambient_agent_conversation_status(
+                    ConversationStatus::InProgress,
+                    None,
+                    ctx,
+                );
+                ctx.notify();
+            }
+            AmbientAgentViewModelEvent::SessionReady { .. }
+            | AmbientAgentViewModelEvent::FollowupSessionReady { .. } => {
                 // Auto-open details panel for local cloud mode once the session is ready.
                 self.maybe_auto_open_cloud_mode_details_panel(ctx);
                 // Re-render to hide the loading screen now that the session is ready.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::EnvironmentSelected => {}
@@ -204,6 +225,7 @@ impl TerminalView {
                 });
                 // Update pane header to reflect any changes (e.g., task_id being set)
                 self.update_pane_configuration(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::Failed { error_message } => {
@@ -217,6 +239,7 @@ impl TerminalView {
                     self.fetch_and_update_cloud_mode_details_panel(ctx);
                 }
                 // Re-render to show the error state in the footer.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::ShowCloudAgentCapacityModal => {
@@ -253,6 +276,7 @@ impl TerminalView {
                     );
                 }
                 // Re-render to show the GitHub auth required state in the footer.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::Cancelled => {
@@ -266,12 +290,15 @@ impl TerminalView {
                     self.fetch_and_update_cloud_mode_details_panel(ctx);
                 }
                 // Re-render to show the cancelled state in the footer.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::HarnessSelected => {
                 self.maybe_enter_agent_view_for_shared_third_party_viewer(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
+            AmbientAgentViewModelEvent::HostSelected => {}
             AmbientAgentViewModelEvent::HarnessCommandStarted => {
                 // Stop classifying new blocks as environment setup commands, mirroring the
                 // Oz path in the `AppendedExchange` handler. Flipping this flag to `false`
@@ -296,6 +323,7 @@ impl TerminalView {
                 // the claude TUI) starts at our terminal's actual dimensions instead of
                 // whatever the sandbox PTY was sized to during setup.
                 self.force_report_viewer_terminal_size(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => (),
@@ -492,6 +520,7 @@ impl TerminalView {
             Harness::Claude => matches!(cli_agent, CLIAgent::Claude),
             Harness::OpenCode => matches!(cli_agent, CLIAgent::OpenCode),
             Harness::Gemini => matches!(cli_agent, CLIAgent::Gemini),
+            Harness::Codex => matches!(cli_agent, CLIAgent::Codex),
             Harness::Unknown => false,
         }
     }

@@ -87,6 +87,7 @@ fn summary_pane_kind_icons_distinguish_agent_terminals_from_plain_terminals() {
                 EntityId::from_usize(20),
                 SummaryPaneKind::CLIAgent {
                     agent: CLIAgent::Claude,
+                    is_ambient: false,
                 },
             ),
             (
@@ -98,6 +99,41 @@ fn summary_pane_kind_icons_distinguish_agent_terminals_from_plain_terminals() {
             primary: SummaryPaneKind::Terminal,
             secondary: SummaryPaneKind::CLIAgent {
                 agent: CLIAgent::Claude,
+                is_ambient: false,
+            },
+        })
+    );
+}
+
+#[test]
+fn summary_pane_kind_icons_distinguish_ambient_claude_from_local_claude() {
+    // A local Claude session and a cloud-mode Claude session should count as distinct kinds
+    // so they render with different icons (claude.svg vs claude_cloud.svg).
+    assert_eq!(
+        select_summary_pane_kind_icons([
+            (
+                EntityId::from_usize(10),
+                SummaryPaneKind::CLIAgent {
+                    agent: CLIAgent::Claude,
+                    is_ambient: false,
+                },
+            ),
+            (
+                EntityId::from_usize(20),
+                SummaryPaneKind::CLIAgent {
+                    agent: CLIAgent::Claude,
+                    is_ambient: true,
+                },
+            ),
+        ]),
+        Some(SummaryPaneKindIcons::Pair {
+            primary: SummaryPaneKind::CLIAgent {
+                agent: CLIAgent::Claude,
+                is_ambient: false,
+            },
+            secondary: SummaryPaneKind::CLIAgent {
+                agent: CLIAgent::Claude,
+                is_ambient: true,
             },
         })
     );

@@ -715,6 +715,11 @@ pub enum FeatureFlag {
     /// real time.
     OrchestrationV2,
 
+    /// Renders a horizontal pill bar in the agent view pane header showing the
+    /// orchestrator agent and all of its child agents, with click-to-switch
+    /// behavior between siblings.
+    OrchestrationPillBar,
+
     /// Shows a pending user query indicator during summarization when a follow-up
     /// prompt is queued via `/fork-and-compact` or `/compact-and`.
     PendingUserQueryIndicator,
@@ -837,6 +842,8 @@ pub enum FeatureFlag {
     /// `base_model_context_window_limit` is not sent on outbound requests, so
     /// the server falls back to its default.
     ConfigurableContextWindow,
+    /// Enables continuing cloud mode conversations in the cloud after an execution ends.
+    HandoffCloudCloud,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -913,6 +920,10 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
     FeatureFlag::ConfigurableContextWindow,
+    #[cfg(not(windows))]
+    FeatureFlag::SshRemoteServer,
+    FeatureFlag::CloudModeInputV2,
+    FeatureFlag::DragTabsToWindows,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
@@ -920,12 +931,8 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
 pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Orchestration,
     FeatureFlag::BlocklistMarkdownTableRendering,
-    FeatureFlag::BlocklistMarkdownImages,
     FeatureFlag::MarkdownTables,
     FeatureFlag::OzIdentityFederation,
-    // Remote server binary is not yet supported on Windows.
-    #[cfg(not(windows))]
-    FeatureFlag::SshRemoteServer,
     FeatureFlag::GitOperationsInCodeReview,
 ];
 
@@ -939,6 +946,9 @@ pub const RELEASE_FLAGS: &[FeatureFlag] = &[
     // Marked text is currently only supported on MacOS.
     #[cfg(target_os = "macos")]
     FeatureFlag::ImeMarkedText,
+    // Remote server binary is not yet supported on Windows.
+    #[cfg(not(windows))]
+    FeatureFlag::SshRemoteServer,
 ];
 
 /// Flags that we want to allow to switch at runtime (assuming RuntimeFeatureFlags is set)
@@ -1113,7 +1123,7 @@ mod overrides {
 
 /// An atomic tri-state value.
 ///
-/// This is initally unset, and can be set to a true or false value.
+/// This is initially unset, and can be set to a true or false value.
 ///
 /// Writes and reads use [`Ordering::Relaxed`], so should not be used for
 /// synchronization.

@@ -246,16 +246,7 @@ pub enum WorkspaceAction {
         tab_index: usize,
         tab_position: RectF,
     },
-    HandoffPendingTransfer {
-        target_window_id: WindowId,
-        insertion_index: usize,
-    },
-    ReverseHandoff {
-        target_window_id: WindowId,
-        target_insertion_index: usize,
-    },
     DropTab,
-    FinalizeDropTab,
     /// Toggles the left panel. In Code Mode V1 this toggles Warp Drive.
     /// In Code Mode V2 this toggles the left panel which contains both the project explorer and
     /// Warp Drive. This happens as explicit action from the user.
@@ -702,7 +693,7 @@ impl WorkspaceAction {
     }
 
     /// Matches what actions require the app state to be saved, and which don't. We match all
-    /// actions directly, rather than using _, so we're forced to make a concious decision for each
+    /// actions directly, rather than using _, so we're forced to make a conscious decision for each
     /// of them, rather than following some default.
     pub fn should_save_app_state_on_action(&self) -> bool {
         use WorkspaceAction::*;
@@ -827,10 +818,7 @@ impl WorkspaceAction {
             | CreateTeamAIPrompt
             | OpenInExplorer { .. }
             | DragTab { .. }
-            | HandoffPendingTransfer { .. }
-            | ReverseHandoff { .. }
             | StartTabDrag
-            | FinalizeDropTab
             | ToggleLeftPanel
             | ToggleWarpDrive
             | OpenWarpDrive

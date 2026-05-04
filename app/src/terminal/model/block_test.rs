@@ -423,7 +423,7 @@ pub fn test_block_height_non_bootstrapped_block() {
 
     block.start();
 
-    // The block should be non-empty even though it wasn't boostrapped.
+    // The block should be non-empty even though it wasn't bootstrapped.
     assert_lines_approx_eq!(block.height(&AgentViewState::Inactive), 5.);
 }
 

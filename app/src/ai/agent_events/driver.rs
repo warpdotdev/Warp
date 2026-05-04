@@ -188,13 +188,13 @@ where
     let mut has_connected_once = false;
 
     loop {
+        // `open_stream` is lazy for the SSE-backed source: the TCP
+        // connect happens when the stream is first polled, not when
+        // this returns Ok. Wait for the `AgentEventSourceItem::Open`
+        // event below before declaring connectivity, so a server
+        // outage doesn't reset `failures` between every retry.
         let mut stream = match source.open_stream(&config.run_ids, since_sequence).await {
-            Ok(stream) => {
-                failures = 0;
-                has_connected_once = true;
-                notify_driver_state(consumer, AgentEventDriverState::Connected).await;
-                stream
-            }
+            Ok(stream) => stream,
             Err(err) => {
                 failures += 1;
                 let backoff = agent_event_backoff(failures, config.reconnect_backoff_steps);
@@ -249,6 +249,8 @@ where
                 }
                 NextDriverItem::StreamItem(Some(Ok(AgentEventSourceItem::Open))) => {
                     failures = 0;
+                    has_connected_once = true;
+                    notify_driver_state(consumer, AgentEventDriverState::Connected).await;
                     log::info!("Agent event stream opened for {:?}", config.run_ids);
                 }
                 NextDriverItem::StreamItem(Some(Ok(AgentEventSourceItem::Event(event)))) => {
