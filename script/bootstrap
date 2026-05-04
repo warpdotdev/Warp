@@ -1,4 +1,35 @@
 #!/usr/bin/env bash
+#
+# Bootstraps a development environment for Warp on the current platform.
+#
+# What this script does (high level):
+#
+#   * Installs the platform's system-level build/runtime dependencies via
+#     the host package manager (`brew` on macOS, `apt` on Debian/Ubuntu,
+#     `winget` on Windows).
+#   * Installs the Rust toolchain pinned by `rust-toolchain.toml` and the
+#     Cargo helper binaries the build/test pipeline expects.
+#   * Verifies that Node.js and yarn are available, since
+#     `crates/command-signatures-v2` runs a TypeScript build at
+#     `cargo build` time. (No auto-install — see the "Node.js setup"
+#     section in WARP.md.)
+#   * On macOS, downloads the Metal toolchain via `xcodebuild`.
+#
+# What this script may do that requires `sudo` / Administrator rights
+# you may not have expected:
+#
+#   * Switch the active Xcode developer directory on macOS.
+#   * Install system packages via `apt-get install` on Linux.
+#   * Install brew casks (e.g. Docker) on macOS.
+#   * Authenticate with `gcloud` so SSH integration tests can run.
+#
+# Each platform-specific script under `script/<platform>/bootstrap`
+# carries the actual installation logic. Read it before running if you
+# prefer to install dependencies through your own package manager
+# (Volta, asdf, mise, OrbStack instead of Docker, etc.) — the goal of
+# this top-level script is just to dispatch by platform.
+#
+# Tracked at #9421.
 
 OS_TYPE="$(uname -s)"
 
