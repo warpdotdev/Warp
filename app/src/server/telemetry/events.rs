@@ -2771,13 +2771,15 @@ pub enum TelemetryEvent {
     CloudAgentCapacityModalUpgradeClicked,
     /// Emitted when a RequestComputerUse action is approved (manually or auto-executed).
     ComputerUseApproved {
-        conversation_id: AIConversationId,
+        client_conversation_id: AIConversationId,
+        server_conversation_id: Option<String>,
         is_autoexecuted: bool,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
     },
     /// Emitted when a RequestComputerUse action is cancelled/rejected.
     ComputerUseCancelled {
-        conversation_id: AIConversationId,
+        client_conversation_id: AIConversationId,
+        server_conversation_id: Option<String>,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
     },
     /// Emitted when a warp://linear deeplink is opened.
@@ -4539,19 +4541,23 @@ impl TelemetryEvent {
             TelemetryEvent::CloudAgentCapacityModalDismissed => None,
             TelemetryEvent::CloudAgentCapacityModalUpgradeClicked => None,
             TelemetryEvent::ComputerUseApproved {
-                conversation_id,
+                client_conversation_id,
+                server_conversation_id,
                 is_autoexecuted,
                 ambient_agent_task_id,
             } => Some(json!({
-                "conversation_id": conversation_id,
+                "client_conversation_id": client_conversation_id,
+                "server_conversation_id": server_conversation_id,
                 "is_autoexecuted": is_autoexecuted,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
             TelemetryEvent::ComputerUseCancelled {
-                conversation_id,
+                client_conversation_id,
+                server_conversation_id,
                 ambient_agent_task_id,
             } => Some(json!({
-                "conversation_id": conversation_id,
+                "client_conversation_id": client_conversation_id,
+                "server_conversation_id": server_conversation_id,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
             TelemetryEvent::FreeTierLimitHitInterstitialDisplayed => None,
