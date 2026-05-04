@@ -45,7 +45,9 @@ impl History {
                 let history_handle_clone = history_handle.clone();
                 history_handle.update(app, move |_, ctx| {
                     ctx.subscribe_to_model(&history_handle_clone, move |_, event, _| {
-                        let HistoryEvent::Initialized(event_id) = event;
+                        let HistoryEvent::Initialized(event_id) = event else {
+                            return;
+                        };
                         if session_id == *event_id {
                             let _ = tx.try_send(());
                         }
@@ -1020,6 +1022,177 @@ fn is_appendable_vs_is_queryable() {
         history_handle.read(&app, |history, _| {
             assert!(history.is_appendable(&session_id));
             assert!(history.is_queryable(&session_id));
+        });
+    });
+}
+
+// -----------------------------------------------------------------------------
+// GH-3422: live OS-shell-history sync (read-side, vscode -> warp).
+// -----------------------------------------------------------------------------
+
+/// Asserts that calling [`History::apply_external_history_lines`] with a
+/// superset of the existing histfile commands appends the new tail entries to
+/// `history_file_commands` and that subsequent `commands()` queries see them.
+#[test]
+fn external_history_lines_append_new_tail_only() {
+    VirtualFS::test("external_history_lines_append_new_tail", |dirs, mut sandbox| {
+        App::test((), |mut app| async move {
+            // Initial histfile content.
+            sandbox.with_files(vec![Stub::FileWithContentToBeTrimmed(
+                ".bash_history",
+                r#"
+                    a
+                    b
+                    c
+                "#,
+            )]);
+
+            let mut history_handle = app.add_model(|_| History::default());
+            let file = Some(dirs.tests().join(".bash_history").display().to_string());
+            let session = Arc::new(Session::new(
+                SessionInfo::new_for_test()
+                    .with_histfile(file)
+                    .with_shell_type(ShellType::Bash),
+                Arc::new(TestCommandExecutor::default()),
+            ));
+
+            // Initialize with just the original three entries.
+            let session_clone = session.clone();
+            initialize_history_for_testing(
+                &mut history_handle,
+                session.clone(),
+                async move { session_clone.read_history(false).await },
+                vec![],
+                &mut app,
+            )
+            .await;
+
+            let host = ShellHost::from_session(session.as_ref());
+
+            // Sanity check: we start with exactly a, b, c.
+            history_handle.read(&app, |history, _| {
+                let cmds = history.commands(session.id()).unwrap_or_default();
+                let texts: Vec<&str> = cmds.iter().map(|e| e.command.as_str()).collect();
+                assert_eq!(texts, vec!["a", "b", "c"]);
+            });
+
+            // Simulate another terminal appending `d` and `e`. We pass the
+            // *full re-read* (not just the delta) because that's what the real
+            // watcher path produces — it always re-reads the whole histfile.
+            history_handle.update(&mut app, |history, ctx| {
+                history.apply_external_history_lines(
+                    host.clone(),
+                    vec![
+                        "a".to_owned(),
+                        "b".to_owned(),
+                        "c".to_owned(),
+                        "d".to_owned(),
+                        "e".to_owned(),
+                    ],
+                    None,
+                    ctx,
+                );
+            });
+
+            history_handle.read(&app, |history, _| {
+                let cmds = history.commands(session.id()).unwrap_or_default();
+                let texts: Vec<&str> = cmds.iter().map(|e| e.command.as_str()).collect();
+                assert_eq!(
+                    texts,
+                    vec!["a", "b", "c", "d", "e"],
+                    "expected `d` and `e` to be appended after the existing tail"
+                );
+            });
+
+            // Calling again with the same content should be a no-op (no
+            // duplicates, no spurious new entries).
+            history_handle.update(&mut app, |history, ctx| {
+                history.apply_external_history_lines(
+                    host.clone(),
+                    vec![
+                        "a".to_owned(),
+                        "b".to_owned(),
+                        "c".to_owned(),
+                        "d".to_owned(),
+                        "e".to_owned(),
+                    ],
+                    None,
+                    ctx,
+                );
+            });
+
+            history_handle.read(&app, |history, _| {
+                let cmds = history.commands(session.id()).unwrap_or_default();
+                let texts: Vec<&str> = cmds.iter().map(|e| e.command.as_str()).collect();
+                assert_eq!(
+                    texts,
+                    vec!["a", "b", "c", "d", "e"],
+                    "second invocation with no new lines must not duplicate entries"
+                );
+            });
+        });
+    });
+}
+
+/// Asserts that the new [`HistoryEvent::ExternalHistoryUpdated`] event fires
+/// (with the right `host` and `num_appended` count) when external lines are
+/// merged in. Listeners (autocomplete, suggestion bar) rely on this signal.
+#[test]
+fn external_history_lines_emit_external_history_updated_event() {
+    VirtualFS::test("external_history_event", |dirs, mut sandbox| {
+        App::test((), |mut app| async move {
+            sandbox.with_files(vec![Stub::FileWithContentToBeTrimmed(
+                ".bash_history",
+                r#"
+                    a
+                "#,
+            )]);
+
+            let mut history_handle = app.add_model(|_| History::default());
+            let file = Some(dirs.tests().join(".bash_history").display().to_string());
+            let session = Arc::new(Session::new(
+                SessionInfo::new_for_test()
+                    .with_histfile(file)
+                    .with_shell_type(ShellType::Bash),
+                Arc::new(TestCommandExecutor::default()),
+            ));
+
+            let session_clone = session.clone();
+            initialize_history_for_testing(
+                &mut history_handle,
+                session.clone(),
+                async move { session_clone.read_history(false).await },
+                vec![],
+                &mut app,
+            )
+            .await;
+
+            let host = ShellHost::from_session(session.as_ref());
+
+            // Subscribe to capture the ExternalHistoryUpdated event.
+            let (tx, rx) = async_channel::unbounded::<(ShellHost, usize)>();
+            let history_handle_clone = history_handle.clone();
+            history_handle.update(&mut app, move |_, ctx| {
+                ctx.subscribe_to_model(&history_handle_clone, move |_, event, _| {
+                    if let HistoryEvent::ExternalHistoryUpdated { host, num_appended } = event {
+                        let _ = tx.try_send((host.clone(), *num_appended));
+                    }
+                });
+            });
+
+            // Append two new lines.
+            history_handle.update(&mut app, |history, ctx| {
+                history.apply_external_history_lines(
+                    host.clone(),
+                    vec!["a".to_owned(), "b".to_owned(), "c".to_owned()],
+                    None,
+                    ctx,
+                );
+            });
+
+            let (event_host, num_appended) = rx.recv().await.expect("event was emitted");
+            assert_eq!(event_host, host);
+            assert_eq!(num_appended, 2, "two new entries (`b`, `c`) were appended");
         });
     });
 }
