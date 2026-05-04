@@ -6705,16 +6705,6 @@ impl TerminalView {
         self.ambient_agent_task_id_for_details_panel_from_model(&model, app)
     }
 
-    /// Whether this terminal pane has an active local AI conversation that the
-    /// conversation details panel could populate from. Used to broaden the
-    /// panel beyond cloud Oz runs to all conversations.
-    fn has_active_local_ai_conversation(&self, app: &AppContext) -> bool {
-        AISettings::as_ref(app).is_any_ai_enabled(app)
-            && BlocklistAIHistoryModel::as_ref(app)
-                .active_conversation(self.view_id)
-                .is_some()
-    }
-
     /// Whether the conversation details side panel should be available in the
     /// pane header / pane layout for this terminal view.
     fn can_show_conversation_details_ui_from_model(
@@ -6724,7 +6714,9 @@ impl TerminalView {
     ) -> bool {
         self.ambient_agent_task_id_for_details_panel_from_model(model, app)
             .is_some()
-            || self.has_active_local_ai_conversation(app)
+            || BlocklistAIHistoryModel::as_ref(app)
+                .active_conversation(self.view_id)
+                .is_some_and(|conversation| !conversation.is_empty())
     }
 
     /// Convenience wrapper around
