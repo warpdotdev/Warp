@@ -645,6 +645,7 @@ pub enum FeaturesPageAction {
     ToggleShowTerminalInputMessageLine,
     ToggleAgentInAppNotifications,
     MakeWarpDefaultTerminal,
+    UnsetWarpDefaultTerminal,
 }
 
 lazy_static! {
@@ -1136,6 +1137,10 @@ impl FeaturesPageAction {
             }
             Self::MakeWarpDefaultTerminal => TelemetryEvent::FeaturesPageAction {
                 action: "MakeWarpDefaultTerminal".to_string(),
+                value: to_string(DefaultTerminal::as_ref(ctx).is_warp_default()),
+            },
+            Self::UnsetWarpDefaultTerminal => TelemetryEvent::FeaturesPageAction {
+                action: "UnsetWarpDefaultTerminal".to_string(),
                 value: to_string(DefaultTerminal::as_ref(ctx).is_warp_default()),
             },
             Self::ToggleAutoOpenCodeReviewPane => TelemetryEvent::FeaturesPageAction {
@@ -1908,6 +1913,11 @@ impl TypedActionView for FeaturesPageView {
             MakeWarpDefaultTerminal => {
                 DefaultTerminal::handle(ctx).update(ctx, |default_terminal, ctx| {
                     default_terminal.make_warp_default(ctx);
+                });
+            }
+            UnsetWarpDefaultTerminal => {
+                DefaultTerminal::handle(ctx).update(ctx, |default_terminal, ctx| {
+                    default_terminal.unset_warp_default(ctx);
                 });
             }
         }
@@ -4793,13 +4803,16 @@ impl SettingsWidget for DefaultTerminalWidget {
         let default_terminal = DefaultTerminal::as_ref(app);
         if default_terminal.is_warp_default() {
             ui_builder
-                .wrappable_text("Warp is the default terminal", true)
-                .with_style(UiComponentStyles {
-                    font_color: Some(appearance.theme().disabled_ui_text_color().into()),
-                    margin: Some(Coords::default().bottom(16.)),
-                    ..Default::default()
-                })
+                .link(
+                    "Restore macOS Terminal as the default terminal".to_string(),
+                    None,
+                    Some(Box::new(|ctx| {
+                        ctx.dispatch_typed_action(FeaturesPageAction::UnsetWarpDefaultTerminal);
+                    })),
+                    self.link_state.clone(),
+                )
                 .build()
+                .with_margin_bottom(16.)
                 .finish()
         } else {
             ui_builder
