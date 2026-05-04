@@ -28,7 +28,8 @@ use crate::{
         block_filter::BlockFilterQuery,
         block_list_element::GridType,
         event::{
-            BlockCompletedEvent, BlockLatencyData, BlockMetadataReceivedEvent, BlockType, Event,
+            BlockCompletedEvent, BlockLatencyData, BlockMetadataReceivedEvent, BlockType,
+            BlockWorkingDirectoryUpdatedEvent, Event,
             UserBlockCompleted,
         },
         event_listener::ChannelEventListener,
@@ -3216,8 +3217,15 @@ impl ansi::Handler for Block {
             return;
         }
         self.pwd = Some(path);
-        self.event_proxy
-            .send_terminal_event(Event::BlockMetadataReceived(BlockMetadataReceivedEvent {
+        // Use a dedicated event variant rather than `BlockMetadataReceived`
+        // because the latter is implicitly contracted to fire once per block
+        // (at precmd) and a number of subscribers rely on that — see e.g.
+        // the requested-command finish detector in
+        // `ai/blocklist/action_model/execute/shell_command.rs`. Subscribers
+        // that genuinely care about CWD changes opt in by also listening to
+        // `BlockWorkingDirectoryUpdated`.
+        self.event_proxy.send_terminal_event(Event::BlockWorkingDirectoryUpdated(
+            BlockWorkingDirectoryUpdatedEvent {
                 block_metadata: self.metadata(),
                 block_index: self.block_index,
                 // Preserve the block's in-band status so listeners can keep
@@ -3229,7 +3237,8 @@ impl ansi::Handler for Block {
                     self.bootstrap_stage,
                     BootstrapStage::PostBootstrapPrecmd
                 ),
-            }));
+            },
+        ));
     }
 
     fn precmd(&mut self, data: PrecmdValue) {

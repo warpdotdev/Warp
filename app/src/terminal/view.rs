@@ -10119,6 +10119,181 @@ impl TerminalView {
         });
     }
 
+    fn apply_block_metadata_update(
+        &mut self,
+        block_metadata: &BlockMetadata,
+        is_after_in_band_command: bool,
+        is_done_bootstrapping: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        // In-band commands don't change the CWD, git state, or session
+        // metadata. Skip the expensive processing (git repo detection,
+        // directory indexing, re-renders) to avoid an infinite loop where
+        // a re-render triggers completions which fire another in-band
+        // command. See also the complementary guard in
+        // Input::set_active_block_metadata.
+        if is_after_in_band_command {
+            self.active_block_metadata = Some(block_metadata.clone());
+            self.input.update(ctx, |view, ctx| {
+                view.set_active_block_metadata(
+                    block_metadata.clone(),
+                    true, // is_after_in_band_command
+                    ctx,
+                );
+            });
+            return;
+        }
+
+        if let Some(prev_block_metadata) = self.active_block_metadata.take() {
+            // Only send event to save app state when the block is post bootstrap
+            // and working directory has changed.
+            if prev_block_metadata.current_working_directory()
+                != block_metadata.current_working_directory()
+                && is_done_bootstrapping
+            {
+                ctx.emit(Event::AppStateChanged);
+            }
+
+            // Update the shell launch data for the active session.
+            if prev_block_metadata.session_id() != block_metadata.session_id()
+                && is_done_bootstrapping
+            {
+                let shell_launch_data = self.shell_launch_data_if_local(ctx);
+                self.on_active_shell_launch_data_updated(shell_launch_data, ctx);
+            }
+
+            // Check if the block is done bootstrapping and the directory is set.
+            #[cfg(feature = "local_fs")]
+            if let Some(active_directory) = block_metadata.current_working_directory() {
+                // Check if we need to index the directory
+                if is_done_bootstrapping {
+                    #[cfg(feature = "local_fs")]
+                    {
+                        // Convert the shell-native CWD (e.g. "/c/Users/..." for
+                        // Git Bash/MSYS2) to a Windows-native path before passing
+                        // it to repo detection, which requires an OS-native path.
+                        let native_directory = block_metadata
+                            .session_id()
+                            .and_then(|session_id| self.sessions.as_ref(ctx).get(session_id))
+                            .and_then(|session| {
+                                session.launch_data().and_then(|data| {
+                                    data.maybe_convert_absolute_path(active_directory)
+                                })
+                            })
+                            .map(|path| path.to_string_lossy().into_owned());
+                        let directory_for_detection =
+                            native_directory.as_deref().unwrap_or(active_directory);
+
+                        let fut = DetectedRepositories::handle(ctx).update(
+                            ctx,
+                            |updater, ctx| {
+                                updater.detect_possible_git_repo(
+                                    directory_for_detection,
+                                    RepoDetectionSource::TerminalNavigation,
+                                    ctx,
+                                )
+                            },
+                        );
+
+                        ctx.spawn(fut, move |me, repo_path_opt, ctx| {
+                            let old_repo_path = me.current_repo_path.clone();
+                            // Update the current repo path
+                            me.current_repo_path = repo_path_opt.clone();
+
+                            // Notify the pane group that the detected repo
+                            // changed so the code review panel can
+                            // (re-)initialize with the correct context.
+                            if old_repo_path != me.current_repo_path {
+                                ctx.emit(Event::Pane(PaneEvent::RepoChanged));
+                            }
+
+                            let callbacks = me.block_completed_callbacks.drain(..).collect_vec();
+                            for callback in callbacks {
+                                callback(me, ctx);
+                            }
+
+                            let Some(active_directory) = me.active_session_path_if_local(ctx) else {
+                                me.clear_git_repo_status(ctx);
+                                return;
+                            };
+
+                            if let Some(repo_path) = &repo_path_opt {
+                                let Ok(active_directory) = repo_metadata::CanonicalizedPath::try_from(active_directory) else {
+                                    return;
+                                };
+
+                                // Make sure the repo path is still an ancestor of the active directory.
+                                let is_ancestor = active_directory.as_path_buf().ancestors().any(|ancestor| ancestor == repo_path.as_path());
+                                if !is_ancestor {
+                                    return;
+                                }
+
+                                PersistedWorkspace::handle(ctx).update(ctx, |manager, _| {
+                                    manager.navigated_to_path(active_directory.as_path_buf());
+                                });
+
+                                // Subscribe to GitRepoStatusModel if the repo changed
+                                // and git status updates are needed.
+                                if old_repo_path.as_ref() != Some(repo_path) {
+                                    // Drop old handle (unsubscribes automatically).
+                                    me.git_repo_status = None;
+                                    me.update_git_status_subscription(ctx);
+                                }
+
+                                // Notify chips of the new repo path.
+                                me.input.update(ctx, |input, ctx| {
+                                    input.update_repo_path(Some(repo_path.clone()), ctx);
+                                });
+
+                                if FeatureFlag::AIContextMenuEnabled.is_enabled() {
+                                    me.input.update(ctx, |input, ctx| {
+                                        input.check_and_update_ai_context_menu_disabled_state(
+                                            ctx,
+                                        );
+                                    });
+                                }
+
+                                me.start_lsp_server_in_active_pwd(ctx);
+
+                                me.update_repo_banner_state(
+                                    repo_path.clone(),
+                                    ctx,
+                                );
+                            } else {
+                                me.clear_git_repo_status(ctx);
+                                ctx.notify();
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        self.active_block_metadata = Some(block_metadata.clone());
+
+        if let Some(session) = block_metadata
+            .session_id()
+            .and_then(|id| self.sessions.as_ref(ctx).get(id))
+        {
+            let shell_host = ShellHost::from_session(session.as_ref());
+            self.model
+                .lock()
+                .block_list_mut()
+                .set_active_shell_host(shell_host);
+        }
+
+        self.input.update(ctx, |view, ctx| {
+            view.set_active_block_metadata(
+                block_metadata.clone(),
+                is_after_in_band_command,
+                ctx,
+            );
+            // Now that we've received the metadata for the active block, redraw the
+            // prompt area so it's up to date.
+            ctx.notify();
+        });
+    }
+
     fn handle_terminal_event(&mut self, event: &ModelEvent, ctx: &mut ViewContext<Self>) {
         match event {
             ModelEvent::TerminalClear => {
@@ -10877,180 +11052,20 @@ impl TerminalView {
                 self.handle_control_master_error(ctx);
             }
             ModelEvent::BlockMetadataReceived(block_metadata_received_event) => {
-                let block_metadata = &block_metadata_received_event.block_metadata;
-
-                // In-band commands don't change the CWD, git state, or session
-                // metadata. Skip the expensive processing (git repo detection,
-                // directory indexing, re-renders) to avoid an infinite loop where
-                // a re-render triggers completions which fire another in-band
-                // command. See also the complementary guard in
-                // Input::set_active_block_metadata.
-                if block_metadata_received_event.is_after_in_band_command {
-                    self.active_block_metadata = Some(block_metadata.clone());
-                    self.input.update(ctx, |view, ctx| {
-                        view.set_active_block_metadata(
-                            block_metadata.clone(),
-                            true, // is_after_in_band_command
-                            ctx,
-                        );
-                    });
-                    return;
-                }
-
-                if let Some(prev_block_metadata) = self.active_block_metadata.take() {
-                    // Only send event to save app state when the block is post bootstrap
-                    // and working directory has changed.
-                    if prev_block_metadata.current_working_directory()
-                        != block_metadata.current_working_directory()
-                        && block_metadata_received_event.is_done_bootstrapping
-                    {
-                        ctx.emit(Event::AppStateChanged);
-                    }
-
-                    // Update the shell launch data for the active session.
-                    if prev_block_metadata.session_id() != block_metadata.session_id()
-                        && block_metadata_received_event.is_done_bootstrapping
-                    {
-                        let shell_launch_data = self.shell_launch_data_if_local(ctx);
-                        self.on_active_shell_launch_data_updated(shell_launch_data, ctx);
-                    }
-
-                    // Check if the block is done bootstrapping and the directory is set.
-                    #[cfg(feature = "local_fs")]
-                    if let Some(active_directory) = block_metadata_received_event
-                        .block_metadata
-                        .current_working_directory()
-                    {
-                        // Check if we need to index the directory
-                        if block_metadata_received_event.is_done_bootstrapping {
-                            #[cfg(feature = "local_fs")]
-                            {
-                                // Convert the shell-native CWD (e.g. "/c/Users/..." for
-                                // Git Bash/MSYS2) to a Windows-native path before passing
-                                // it to repo detection, which requires an OS-native path.
-                                let native_directory = block_metadata_received_event
-                                    .block_metadata
-                                    .session_id()
-                                    .and_then(|session_id| {
-                                        self.sessions.as_ref(ctx).get(session_id)
-                                    })
-                                    .and_then(|session| {
-                                        session.launch_data().and_then(|data| {
-                                            data.maybe_convert_absolute_path(active_directory)
-                                        })
-                                    })
-                                    .map(|path| path.to_string_lossy().into_owned());
-                                let directory_for_detection =
-                                    native_directory.as_deref().unwrap_or(active_directory);
-
-                                let fut = DetectedRepositories::handle(ctx).update(
-                                    ctx,
-                                    |updater, ctx| {
-                                        updater.detect_possible_git_repo(
-                                            directory_for_detection,
-                                            RepoDetectionSource::TerminalNavigation,
-                                            ctx,
-                                        )
-                                    },
-                                );
-
-                                ctx.spawn(fut, move |me, repo_path_opt, ctx| {
-                                    let old_repo_path = me.current_repo_path.clone();
-                                    // Update the current repo path
-                                    me.current_repo_path = repo_path_opt.clone();
-
-                                    // Notify the pane group that the detected repo
-                                    // changed so the code review panel can
-                                    // (re-)initialize with the correct context.
-                                    if old_repo_path != me.current_repo_path {
-                                        ctx.emit(Event::Pane(PaneEvent::RepoChanged));
-                                    }
-
-                                    let callbacks = me.block_completed_callbacks.drain(..).collect_vec();
-                                    for callback in callbacks {
-                                        callback(me, ctx);
-                                    }
-
-                                    let Some(active_directory) = me.active_session_path_if_local(ctx) else {
-                                        me.clear_git_repo_status(ctx);
-                                        return;
-                                    };
-
-                                    if let Some(repo_path) = &repo_path_opt {
-                                        let Ok(active_directory) = repo_metadata::CanonicalizedPath::try_from(active_directory) else {
-                                            return;
-                                        };
-
-                                        // Make sure the repo path is still an ancestor of the active directory.
-                                        let is_ancestor = active_directory.as_path_buf().ancestors().any(|ancestor| ancestor == repo_path.as_path());
-                                        if !is_ancestor {
-                                            return;
-                                        }
-
-                                        PersistedWorkspace::handle(ctx).update(ctx, |manager, _| {
-                                            manager.navigated_to_path(active_directory.as_path_buf());
-                                        });
-
-                                        // Subscribe to GitRepoStatusModel if the repo changed
-                                        // and git status updates are needed.
-                                        if old_repo_path.as_ref() != Some(repo_path) {
-                                            // Drop old handle (unsubscribes automatically).
-                                            me.git_repo_status = None;
-                                            me.update_git_status_subscription(ctx);
-                                        }
-
-                                        // Notify chips of the new repo path.
-                                        me.input.update(ctx, |input, ctx| {
-                                            input.update_repo_path(Some(repo_path.clone()), ctx);
-                                        });
-
-                                        if FeatureFlag::AIContextMenuEnabled.is_enabled() {
-                                            me.input.update(ctx, |input, ctx| {
-                                                input.check_and_update_ai_context_menu_disabled_state(
-                                                    ctx,
-                                                );
-                                            });
-                                        }
-
-                                        me.start_lsp_server_in_active_pwd(ctx);
-
-                                        me.update_repo_banner_state(
-                                            repo_path.clone(),
-                                            ctx,
-                                        );
-                                    } else {
-                                        me.clear_git_repo_status(ctx);
-                                        ctx.notify();
-                                    }
-                                });
-                            }
-                        }
-                    }
-                }
-
-                self.active_block_metadata = Some(block_metadata.clone());
-
-                if let Some(session) = block_metadata
-                    .session_id()
-                    .and_then(|id| self.sessions.as_ref(ctx).get(id))
-                {
-                    let shell_host = ShellHost::from_session(session.as_ref());
-                    self.model
-                        .lock()
-                        .block_list_mut()
-                        .set_active_shell_host(shell_host);
-                }
-
-                self.input.update(ctx, |view, ctx| {
-                    view.set_active_block_metadata(
-                        block_metadata.clone(),
-                        block_metadata_received_event.is_after_in_band_command,
-                        ctx,
-                    );
-                    // Now that we've received the metadata for the active block, redraw the
-                    // prompt area so it's up to date.
-                    ctx.notify();
-                });
+                self.apply_block_metadata_update(
+                    &block_metadata_received_event.block_metadata,
+                    block_metadata_received_event.is_after_in_band_command,
+                    block_metadata_received_event.is_done_bootstrapping,
+                    ctx,
+                );
+            }
+            ModelEvent::BlockWorkingDirectoryUpdated(block_working_directory_updated_event) => {
+                self.apply_block_metadata_update(
+                    &block_working_directory_updated_event.block_metadata,
+                    block_working_directory_updated_event.is_after_in_band_command,
+                    block_working_directory_updated_event.is_done_bootstrapping,
+                    ctx,
+                );
             }
             ModelEvent::TerminalModeSwapped(mode) => {
                 #[cfg(feature = "local_tty")]
