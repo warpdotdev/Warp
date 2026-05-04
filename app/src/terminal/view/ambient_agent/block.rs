@@ -1,10 +1,8 @@
 mod entry;
-mod query;
 mod setup_command;
 mod setup_command_text;
 
 pub use entry::*;
-pub use query::*;
 pub use setup_command::*;
 pub use setup_command_text::*;
 

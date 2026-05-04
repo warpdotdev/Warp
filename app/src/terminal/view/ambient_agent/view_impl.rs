@@ -17,7 +17,6 @@ use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryM
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
 use crate::server::server_api::ai::SpawnAgentRequest;
-use crate::terminal::view::ambient_agent::{CloudModeFollowupUserQuery, CloudModeInitialUserQuery};
 use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
 use crate::terminal::view::TerminalView;
 use crate::terminal::CLIAgent;
@@ -103,10 +102,11 @@ impl TerminalView {
             return;
         };
 
-        // Tear down the non-oz cloud-mode queued-prompt block on terminal / transition
+        // Tear down the cloud-mode queued-prompt block on terminal / transition
         // events that replace it. `Failed`, `NeedsGithubAuth`, and `Cancelled` hand off
         // to the existing error / auth / cancelled UI; `HarnessCommandStarted` hands
-        // off to the live harness CLI block. Idempotent and cheap when no block exists.
+        // off to the live third-party harness CLI block. Idempotent and cheap when no
+        // block exists.
         if matches!(
             event,
             AmbientAgentViewModelEvent::Failed { .. }
@@ -143,48 +143,17 @@ impl TerminalView {
                     return;
                 }
                 if FeatureFlag::CloudModeSetupV2.is_enabled() {
-                    if ambient_agent_view_model
+                    // Render the submitted cloud prompt via the queued-prompt UI while the
+                    // real shared-session transcript catches up. `request.prompt` is stored
+                    // stripped of any `/plan` / `/orchestrate` prefix; rebuild the display
+                    // form from `request.mode` so the user sees exactly what they typed.
+                    let prompt = ambient_agent_view_model
                         .as_ref(ctx)
-                        .is_third_party_harness()
-                    {
-                        // Non-oz runs: render the submitted prompt via the queued-prompt UI.
-                        // The block is removed later by `HarnessCommandStarted` / failure /
-                        // cancel / auth handlers.
-                        //
-                        // `request.prompt` is stored stripped of any `/plan` / `/orchestrate`
-                        // prefix; rebuild the display form from `request.mode` so the user sees
-                        // exactly what they typed.
-                        let prompt = ambient_agent_view_model
-                            .as_ref(ctx)
-                            .request()
-                            .map(|request| {
-                                display_user_query_with_mode(request.mode, &request.prompt)
-                            })
-                            .unwrap_or_default();
-                        if !prompt.is_empty() {
-                            self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
-                        }
-                    } else {
-                        let initial_user_query = ctx.add_view(|ctx| {
-                            CloudModeInitialUserQuery::new(ambient_agent_view_model.clone(), ctx)
-                        });
-                        self.insert_rich_content(
-                            None,
-                            initial_user_query,
-                            None,
-                            RichContentInsertionPosition::Append {
-                                insert_below_long_running_block: true,
-                            },
-                            ctx,
-                        );
-                        ambient_agent_view_model.update(ctx, |model, _| {
-                            model.set_has_inserted_cloud_mode_user_query_block(true);
-                            if let Some(prompt) =
-                                model.request().map(|request| request.prompt.clone())
-                            {
-                                model.record_optimistic_user_query(prompt);
-                            }
-                        });
+                        .request()
+                        .map(|request| display_user_query_with_mode(request.mode, &request.prompt))
+                        .unwrap_or_default();
+                    if !prompt.is_empty() {
+                        self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
                     }
                 } else {
                     // Reset tip cooldown so the first tip shows for 60 seconds
@@ -212,26 +181,7 @@ impl TerminalView {
                     .pending_followup_prompt()
                     .map(str::to_owned);
                 if let Some(prompt) = pending_prompt {
-                    let prompt_for_query = prompt.clone();
-                    let followup_user_query = ctx.add_view(|ctx| {
-                        CloudModeFollowupUserQuery::new(
-                            prompt_for_query,
-                            ambient_agent_view_model.clone(),
-                            ctx,
-                        )
-                    });
-                    self.insert_rich_content(
-                        None,
-                        followup_user_query,
-                        None,
-                        RichContentInsertionPosition::Append {
-                            insert_below_long_running_block: true,
-                        },
-                        ctx,
-                    );
-                    ambient_agent_view_model.update(ctx, |model, _| {
-                        model.record_optimistic_user_query(prompt);
-                    });
+                    self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
                 }
                 ctx.notify();
             }

@@ -117,7 +117,7 @@ use crate::ai::blocklist::block::{AIBlockAction, FinishReason};
 use crate::ai::blocklist::codebase_index_speedbump_banner::{
     CodebaseIndexSpeedbumpBannerAction, CodebaseIndexSpeedbumpBannerState, VisibilityState,
 };
-use crate::ai::blocklist::model::AIBlockOutputStatus;
+use crate::ai::blocklist::model::{AIBlockModel, AIBlockModelHelper, AIBlockOutputStatus};
 #[cfg(feature = "local_fs")]
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::code_review::comments::{
@@ -2373,6 +2373,12 @@ type TerminalViewCallback = Box<dyn FnOnce(&mut TerminalView, &mut ViewContext<T
 type ConversationFinishedCallback =
     Box<dyn FnOnce(&mut TerminalView, FinishReason, &mut ViewContext<TerminalView>)>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::terminal::view) enum PendingUserQueryKind {
+    QueuedPrompt,
+    CloudMode,
+}
+
 #[derive(Debug, Clone)]
 pub struct TerminalDropTargetData {
     pub terminal_view: WeakViewHandle<TerminalView>,
@@ -2798,6 +2804,7 @@ pub struct TerminalView {
     /// Tracks the view ID of an inserted pending user query block, if any.
     /// Used to remove the block when summarization completes or is cancelled.
     pending_user_query_view_id: Option<EntityId>,
+    pending_user_query_kind: Option<PendingUserQueryKind>,
 
     /// Callback for the queued prompt that fires when the current conversation finishes.
     /// Stored separately from `conversation_completed_callbacks` so that queuing a prompt
@@ -4197,6 +4204,7 @@ impl TerminalView {
             pending_cloud_mode_start_abort_handle: None,
             ephemeral_message_model,
             pending_user_query_view_id: None,
+            pending_user_query_kind: None,
             queued_prompt_callback: None,
             pty_recorder: ctx
                 .add_model(|ctx| PtyRecorder::new(inactive_pty_reads_rx, window_id, ctx)),
@@ -5079,6 +5087,28 @@ impl TerminalView {
         }
     }
 
+    fn remove_pending_cloud_mode_query_if_exchange_has_renderable_user_query(
+        &mut self,
+        ai_block_model: &AIBlockModelImpl<AIBlock>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.pending_user_query_kind != Some(PendingUserQueryKind::CloudMode) {
+            return;
+        }
+
+        let initial_conversation_query = ai_block_model
+            .conversation(ctx)
+            .and_then(|conversation| conversation.initial_user_query());
+        let has_renderable_user_query = ai_block_model.inputs_to_render(ctx).iter().any(|input| {
+            input
+                .display_user_query(initial_conversation_query.as_ref())
+                .is_some()
+        });
+        if has_renderable_user_query {
+            self.remove_pending_user_query_block(ctx);
+        }
+    }
+
     fn handle_ai_history_model_event(
         &mut self,
         history_model: ModelHandle<BlocklistAIHistoryModel>,
@@ -5164,6 +5194,10 @@ impl TerminalView {
                         return;
                     }
                 };
+                self.remove_pending_cloud_mode_query_if_exchange_has_renderable_user_query(
+                    &ai_block_model,
+                    ctx,
+                );
                 let ai_block = ctx.add_typed_action_view(|ctx| {
                     AIBlock::new(
                         Rc::new(ai_block_model),
@@ -5304,7 +5338,31 @@ impl TerminalView {
 
                 ai_render_context.exchange_ids = Some(HashSet::new());
             }
-            BlocklistAIHistoryEvent::UpdatedStreamingExchange { .. } => {
+            BlocklistAIHistoryEvent::UpdatedStreamingExchange {
+                exchange_id,
+                conversation_id,
+                ..
+            } => {
+                let ai_block_model = match AIBlockModelImpl::<AIBlock>::new(
+                    *exchange_id,
+                    *conversation_id,
+                    false,
+                    false,
+                    ctx,
+                ) {
+                    Ok(ai_block_model) => ai_block_model,
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to create model for AI block on UpdatedStreamingExchange. {err}"
+                        );
+                        self.update_context_blocks_and_exchanges(ctx);
+                        return;
+                    }
+                };
+                self.remove_pending_cloud_mode_query_if_exchange_has_renderable_user_query(
+                    &ai_block_model,
+                    ctx,
+                );
                 self.update_context_blocks_and_exchanges(ctx);
             }
             BlocklistAIHistoryEvent::SetActiveConversation { .. } => {
