@@ -19,6 +19,7 @@ use crate::ai::blocklist::inline_action::orchestration_controls::{
 };
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 use crate::ai::document::ai_document_model::AIDocumentModel;
+use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::BlocklistAIHistoryModel;
@@ -152,6 +153,20 @@ impl OrchestrationConfigBlockView {
                 {
                     if *cid == me.conversation_id {
                         me.refresh_from_model(ctx);
+                    }
+                }
+            },
+        );
+
+        // Repopulate the model picker when available LLMs change.
+        // LLMPreferences loads asynchronously from the server; the
+        // picker may have been created before models arrived.
+        ctx.subscribe_to_model(
+            &LLMPreferences::handle(ctx),
+            |me, _, event, ctx| {
+                if let LLMPreferencesEvent::UpdatedAvailableLLMs = event {
+                    if let Some(handle) = &me.pickers.model_picker {
+                        oc::populate_model_picker(handle, &me.edit_state.model_id, ctx);
                     }
                 }
             },

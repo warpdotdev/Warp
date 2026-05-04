@@ -196,7 +196,7 @@ pub struct AIDocumentModel {
     /// Set when the user edits the config or toggles approval on the
     /// plan card; cleared by the controller after piggybacking onto
     /// the outbound `UserInputs`.
-    dirty_orchestration_event: Option<DirtyOrchestrationEvent>,
+    dirty_orchestration_events: HashMap<AIConversationId, DirtyOrchestrationEvent>,
 }
 
 impl AIDocumentModel {
@@ -231,7 +231,7 @@ impl AIDocumentModel {
             save_tx,
             pending_document_queue: Vec::new(),
             streaming_create_documents: HashMap::new(),
-            dirty_orchestration_event: None,
+            dirty_orchestration_events: HashMap::new(),
         }
     }
 
@@ -246,7 +246,7 @@ impl AIDocumentModel {
             save_tx,
             pending_document_queue: Vec::new(),
             streaming_create_documents: HashMap::new(),
-            dirty_orchestration_event: None,
+            dirty_orchestration_events: HashMap::new(),
         }
     }
 
@@ -1247,12 +1247,21 @@ impl AIDocumentModel {
 
     // ── Orchestration config accessors ────────────────────────────
 
-    pub fn dirty_orchestration_event(&self) -> Option<&DirtyOrchestrationEvent> {
-        self.dirty_orchestration_event.as_ref()
+    pub fn take_dirty_orchestration_event(
+        &mut self,
+        conversation_id: &AIConversationId,
+    ) -> Option<DirtyOrchestrationEvent> {
+        self.dirty_orchestration_events.remove(conversation_id)
     }
 
-    pub fn clear_dirty_orchestration_event(&mut self) {
-        self.dirty_orchestration_event = None;
+    /// Re-insert a dirty event that was taken but not successfully sent.
+    pub fn set_dirty_orchestration_event(
+        &mut self,
+        conversation_id: AIConversationId,
+        event: DirtyOrchestrationEvent,
+    ) {
+        self.dirty_orchestration_events
+            .insert(conversation_id, event);
     }
 
     /// Updates the conversation-level orchestration config and status.
@@ -1266,11 +1275,14 @@ impl AIDocumentModel {
         plan_id: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.dirty_orchestration_event = Some(DirtyOrchestrationEvent {
-            plan_id: plan_id.clone().unwrap_or_default(),
-            config: config.clone(),
-            status,
-        });
+        self.dirty_orchestration_events.insert(
+            conversation_id,
+            DirtyOrchestrationEvent {
+                plan_id: plan_id.clone().unwrap_or_default(),
+                config: config.clone(),
+                status,
+            },
+        );
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, hctx| {
             if let Some(conversation) = history.conversation_mut(&conversation_id) {
                 conversation.set_orchestration_config(Some(config), status, plan_id);
