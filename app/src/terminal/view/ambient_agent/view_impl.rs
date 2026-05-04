@@ -105,8 +105,8 @@ impl TerminalView {
 
         // Tear down the non-oz cloud-mode queued-prompt block on terminal / transition
         // events that replace it. `Failed`, `NeedsGithubAuth`, and `Cancelled` hand off
-        // to the existing error / auth / cancelled UI; `HarnessCommandStarted` hands
-        // off to the live harness CLI block. Idempotent and cheap when no block exists.
+        // to the existing error / auth / cancelled UI; `HarnessCommandStarted` hands off
+        // to the live harness CLI block. Idempotent and cheap when no block exists.
         if matches!(
             event,
             AmbientAgentViewModelEvent::Failed { .. }
@@ -143,19 +143,20 @@ impl TerminalView {
                     return;
                 }
                 if FeatureFlag::CloudModeSetupV2.is_enabled() {
-                    if ambient_agent_view_model
-                        .as_ref(ctx)
-                        .is_third_party_harness()
-                    {
-                        // Non-oz runs: render the submitted prompt via the queued-prompt UI.
-                        // The block is removed later by `HarnessCommandStarted` / failure /
-                        // cancel / auth handlers.
+                    let view_model = ambient_agent_view_model.as_ref(ctx);
+                    let use_queued_prompt = view_model.is_third_party_harness()
+                        || view_model.is_local_to_cloud_handoff();
+                    if use_queued_prompt {
+                        // Non-oz runs and local-to-cloud handoff (REMOTE-1486) runs:
+                        // render the submitted prompt via the queued-prompt UI on top of
+                        // the conversation-history scaffold. The block is removed later
+                        // by `HarnessCommandStarted` (non-oz) / first `AppendedExchange`
+                        // (oz handoff) / failure / cancel / auth handlers.
                         //
                         // `request.prompt` is stored stripped of any `/plan` / `/orchestrate`
                         // prefix; rebuild the display form from `request.mode` so the user sees
                         // exactly what they typed.
-                        let prompt = ambient_agent_view_model
-                            .as_ref(ctx)
+                        let prompt = view_model
                             .request()
                             .map(|request| {
                                 display_user_query_with_mode(request.mode, &request.prompt)
@@ -364,6 +365,18 @@ impl TerminalView {
                 // whatever the sandbox PTY was sized to during setup.
                 self.force_report_viewer_terminal_size(ctx);
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
+                ctx.notify();
+            }
+            AmbientAgentViewModelEvent::PendingHandoffChanged => {
+                // REMOTE-1486: re-render so the handoff banner picks up the new
+                // touched-workspace data, submission state, or pending-handoff
+                // teardown.
+                ctx.notify();
+            }
+            AmbientAgentViewModelEvent::HandoffSubmissionFailed { .. } => {
+                // Restoration of the editor buffer + the user-visible toast are
+                // handled by `Input`'s subscription to the same event; nothing
+                // for the terminal view to do here beyond the implicit re-render.
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => (),

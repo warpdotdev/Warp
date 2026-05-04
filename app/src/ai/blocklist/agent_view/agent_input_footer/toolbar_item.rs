@@ -68,6 +68,9 @@ pub enum AgentToolbarItemKind {
 
     // Agent view only – shows fast-forward (auto-approve) toggle in the footer
     FastForwardToggle,
+
+    // Agent view only – "Hand off to cloud" chip.
+    HandoffToCloud,
 }
 
 impl AgentToolbarItemKind {
@@ -79,7 +82,8 @@ impl AgentToolbarItemKind {
             Self::ModelSelector
             | Self::NLDToggle
             | Self::ContextWindowUsage
-            | Self::FastForwardToggle => ToolbarAvailability::AgentViewOnly,
+            | Self::FastForwardToggle
+            | Self::HandoffToCloud => ToolbarAvailability::AgentViewOnly,
             Self::FileExplorer | Self::RichInput | Self::Settings => {
                 ToolbarAvailability::CLIAgentOnly
             }
@@ -98,6 +102,8 @@ impl AgentToolbarItemKind {
             Self::Settings | Self::ShareSession | Self::FileExplorer => !status.is_viewer(),
             Self::FileAttach => !status.is_viewer() || is_cloud_mode,
             Self::FastForwardToggle => !status.is_viewer() || status.is_executor(),
+            // Handoff is host-initiated; viewers cannot hand off another user's conversation.
+            Self::HandoffToCloud => !status.is_viewer(),
             Self::ContextChip(_)
             | Self::ModelSelector
             | Self::NLDToggle
@@ -120,6 +126,7 @@ impl AgentToolbarItemKind {
             Self::ShareSession => "/remote-control",
             Self::Settings => "Settings",
             Self::FastForwardToggle => "Fast Forward",
+            Self::HandoffToCloud => "Hand off to cloud",
         }
     }
 
@@ -136,6 +143,9 @@ impl AgentToolbarItemKind {
             Self::ShareSession => Some(Icon::Phone01),
             Self::Settings => Some(Icon::Settings),
             Self::FastForwardToggle => Some(Icon::FastForward),
+            // The bundled `upload-cloud-01.svg` (cloud-with-upward-arrow) is the
+            // closest fit among the existing icons for V0; design may swap it later.
+            Self::HandoffToCloud => Some(Icon::UploadCloud),
         }
     }
 
@@ -177,6 +187,9 @@ impl AgentToolbarItemKind {
         {
             items.push(Self::ShareSession);
         }
+        if FeatureFlag::OzHandoff.is_enabled() && FeatureFlag::HandoffLocalCloud.is_enabled() {
+            items.push(Self::HandoffToCloud);
+        }
         items.push(Self::VoiceInput);
         items.push(Self::FileAttach);
         items
@@ -202,6 +215,9 @@ impl AgentToolbarItemKind {
             && FeatureFlag::HOARemoteControl.is_enabled()
         {
             items.push(Self::ShareSession);
+        }
+        if FeatureFlag::OzHandoff.is_enabled() && FeatureFlag::HandoffLocalCloud.is_enabled() {
+            items.push(Self::HandoffToCloud);
         }
         items
     }

@@ -113,8 +113,13 @@ use crate::util::openable_file_type::FileTarget;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{resolve_file_target_with_editor_choice, EditorLayout};
 
+use crate::ai::blocklist::agent_view::agent_input_footer::sort_environments_by_recency;
+use crate::ai::blocklist::handoff::touched_repos::{
+    derive_touched_workspace, extract_paths_from_conversation, pick_handoff_overlap_env,
+};
 use crate::ai::blocklist::history_model::CloudConversationData;
 use crate::ai::blocklist::FORK_PREFIX;
+use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::{plugin_manager_for, PluginModalKind};
 use crate::terminal::cli_agent_sessions::{CLIAgentSessionsModel, CLIAgentSessionsModelEvent};
@@ -313,6 +318,7 @@ use crate::terminal::session_settings::{
 };
 use crate::terminal::settings::{SpacingMode, TerminalSettings};
 use crate::terminal::shell::ShellType;
+use crate::terminal::view::ambient_agent::{HandoffSubmissionState, PendingHandoff};
 #[cfg(feature = "local_tty")]
 use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
 use crate::terminal::{self, SizeInfo, TerminalView};
@@ -12861,6 +12867,135 @@ impl Workspace {
         });
     }
 
+    /// Open a local-to-cloud handoff pane next to the active local pane. Triggered
+    /// by the `/move-to-cloud` slash command and the "Hand off to cloud" footer
+    /// chip.
+    ///
+    /// Resolves the active conversation up front. If there's an eligible source
+    /// conversation (active, non-empty, has a `server_conversation_token`), splits a
+    /// fresh cloud-mode pane to the right and seeds it with handoff context so the
+    /// submit path routes through the orchestrator. Otherwise, still splits a fresh
+    /// cloud-mode pane (no handoff context) so the chip is always-clickable per the
+    /// existing posture — there's nothing meaningful to hand off in that state, but
+    /// the user clearly wanted a cloud-mode pane.
+    fn start_local_to_cloud_handoff(
+        &mut self,
+        initial_prompt: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::OzHandoff.is_enabled() || !FeatureFlag::HandoffLocalCloud.is_enabled() {
+            return;
+        }
+
+        // Resolve the source conversation (if any). The current active session view's
+        // active conversation drives the fork pointer and the touched-repo derivation.
+        let source = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx)
+            .and_then(|view| {
+                let terminal_view_id = view.id();
+                let history = BlocklistAIHistoryModel::handle(ctx);
+                history
+                    .as_ref(ctx)
+                    .active_conversation(terminal_view_id)
+                    .filter(|c| !c.is_empty())
+                    .and_then(|conversation| {
+                        conversation
+                            .server_conversation_token()
+                            .cloned()
+                            .map(|token| (conversation.clone(), token))
+                    })
+            });
+
+        // Split a fresh cloud-mode pane to the right of the active pane. Mirrors
+        // `Workspace::open_network_log_pane`'s pattern but uses `add_ambient_agent_pane`
+        // so the new pane is wired up as a cloud-mode terminal (with the right pre-
+        // session shared-session viewer manager).
+        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
+            pane_group.add_ambient_agent_pane(ctx);
+        });
+        let Some(new_pane_view) = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx)
+        else {
+            log::warn!(
+                "start_local_to_cloud_handoff: no active session view after add_ambient_agent_pane"
+            );
+            return;
+        };
+
+        let Some(model_handle) = new_pane_view
+            .as_ref(ctx)
+            .ambient_agent_view_model()
+            .cloned()
+        else {
+            log::warn!("start_local_to_cloud_handoff: new ambient agent pane has no view model");
+            return;
+        };
+
+        // `add_ambient_agent_pane` already entered cloud agent view via
+        // `enter_ambient_agent_setup` (which transitions the model into `Composing` /
+        // `Setup`). Pre-fill the prompt input from the slash command argument, if any.
+        if let Some(prompt) = initial_prompt.as_deref().filter(|p| !p.is_empty()) {
+            new_pane_view.update(ctx, |terminal_view, view_ctx| {
+                terminal_view.input().update(view_ctx, |input, input_ctx| {
+                    input.replace_buffer_content(prompt, input_ctx);
+                });
+            });
+        }
+
+        // Fall through to a fresh cloud-mode pane (no handoff context) when there's
+        // nothing meaningful to hand off. The pane was already opened above.
+        let Some((conversation, source_token)) = source else {
+            return;
+        };
+
+        // Seed the handoff context onto the new pane's `AmbientAgentViewModel` so
+        // `is_local_to_cloud_handoff()` is true from this point on (the V2 input
+        // is suppressed and the submit path routes through the orchestrator).
+        let pending = PendingHandoff {
+            source_conversation_id: source_token,
+            touched_workspace: None,
+            submission_state: HandoffSubmissionState::Idle,
+        };
+        model_handle.update(ctx, |model, model_ctx| {
+            model.set_pending_handoff(Some(pending), model_ctx);
+        });
+
+        // Kick off touched-repo derivation off the main thread. The conversation
+        // walk lives inside the spawned future too so we don't pay it on chip click
+        // (long conversations have hundreds of action results to traverse). When
+        // derivation completes, apply the repo-aware overlap pick on top of
+        // whatever `ensure_default_selection` already picked, but only if the pane
+        // is still in handoff mode — the pane could have been closed in the
+        // interim. On a real overlap match we override unconditionally so the
+        // user's last-selected (potentially empty) env doesn't shadow a matching
+        // env; on no-overlap we leave the existing selection alone, since the env
+        // selector's recency-based default is the best fallback.
+        let async_model_handle = model_handle.clone();
+        ctx.spawn(
+            async move {
+                let paths = extract_paths_from_conversation(&conversation);
+                derive_touched_workspace(paths).await
+            },
+            move |_workspace, derived_workspace, ctx| {
+                async_model_handle.update(ctx, |model, model_ctx| {
+                    if !model.is_local_to_cloud_handoff() {
+                        return;
+                    }
+                    let mut envs = CloudAmbientAgentEnvironment::get_all(model_ctx);
+                    sort_environments_by_recency(&mut envs);
+                    if let Some(overlap_env) = pick_handoff_overlap_env(&derived_workspace, envs) {
+                        model.set_environment_id(Some(overlap_env), model_ctx);
+                    }
+                    model.set_pending_handoff_workspace(derived_workspace, model_ctx);
+                });
+            },
+        );
+    }
+
     pub(crate) fn handle_file_tree_event(
         &mut self,
         pane_group: ViewHandle<PaneGroup>,
@@ -19988,6 +20123,9 @@ impl TypedActionView for Workspace {
             OpenSettingsFile => {
                 let path = crate::settings::user_preferences_toml_file_path();
                 self.add_tab_for_code_file(path, None, ctx);
+            }
+            OpenLocalToCloudHandoffPane { initial_prompt } => {
+                self.start_local_to_cloud_handoff(initial_prompt.clone(), ctx);
             }
             OpenNetworkLogPane => {
                 self.open_network_log_pane(ctx);

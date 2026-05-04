@@ -102,6 +102,8 @@ impl View for CloudModeFollowupUserQuery {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        // Followup queries don't carry a `UserQueryMode`, so there's no `/plan` or
+        // `/orchestrate` prefix to highlight.
         render_user_query(&self.prompt, None, &self.view_model, app)
     }
 }

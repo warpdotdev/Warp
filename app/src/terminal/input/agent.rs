@@ -67,9 +67,14 @@ impl Input {
     pub fn is_cloud_mode_input_v2_composing(&self, app: &AppContext) -> bool {
         FeatureFlag::CloudModeInputV2.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
-            && self
-                .ambient_agent_view_model()
-                .is_some_and(|model| model.as_ref(app).is_configuring_ambient_agent())
+            && self.ambient_agent_view_model().is_some_and(|model| {
+                let view_model = model.as_ref(app);
+                view_model.is_configuring_ambient_agent()
+                    // The handoff pane intentionally stays on the existing input UI even
+                    // when V2 is on — V2 is for fresh cloud-mode runs only, and handoff has
+                    // its own pre-spawn flow (submit interception).
+                    && !view_model.is_local_to_cloud_handoff()
+            })
     }
 
     /// Renders the input when there is an active `AgentView`.
