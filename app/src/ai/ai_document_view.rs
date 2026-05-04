@@ -271,6 +271,19 @@ impl AIDocumentView {
                     let our_conv = AIDocumentModel::as_ref(ctx)
                         .get_conversation_id_for_document_id(&document_id);
                     if our_conv.as_ref() == Some(cid) {
+                        // Lazily create the config block view if it
+                        // wasn't available at construction time (the
+                        // plan sidebar can open before the server
+                        // sends the orchestration config).
+                        if me.orchestration_config_block.is_none() {
+                            let conv_id = *cid;
+                            me.orchestration_config_block =
+                                Some(ctx.add_typed_action_view(move |ctx| {
+                                    OrchestrationConfigBlockView::new_with_conversation_id(
+                                        conv_id, ctx,
+                                    )
+                                }));
+                        }
                         ctx.notify();
                     }
                 }

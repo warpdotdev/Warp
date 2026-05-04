@@ -2318,6 +2318,15 @@ impl AIBlock {
             }
         }
 
+        // Now that streaming is complete and all RunAgents requests are
+        // fully populated, re-evaluate auto-launch for any card that
+        // was created during streaming with an empty agent_run_configs.
+        for (_action_id, view) in &self.run_agents_card_views {
+            view.update(ctx, |card, ctx| {
+                card.try_auto_launch_on_stream_complete(ctx);
+            });
+        }
+
         // Collect UI state handles for code snippets, tables, and image
         // tooltips in a single pass. Each handle type is collected in the
         // order its section type appears, matching the indices used during
@@ -6448,6 +6457,19 @@ impl AIBlock {
             return;
         }
 
+        // Read the active orchestration config for auto-launch /
+        // denied decisions from the conversation (not the singleton).
+        let active_config = {
+            let history = crate::BlocklistAIHistoryModel::as_ref(ctx);
+            let conv = history.conversation(&self.client_ids.conversation_id);
+            let result = conv.and_then(|conv| {
+                conv.orchestration_config()
+                    .cloned()
+                    .map(|config| (config, conv.orchestration_status()))
+            });
+            result
+        };
+
         let action_id_clone = action_id.clone();
         let request_clone = request.clone();
         let action_model = self.action_model.clone();
@@ -6457,6 +6479,7 @@ impl AIBlock {
             RunAgentsCardView::new(
                 action_id_clone,
                 &request_clone,
+                active_config,
                 action_model,
                 run_agents_executor,
                 block_model,

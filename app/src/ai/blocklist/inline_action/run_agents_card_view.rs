@@ -187,6 +187,10 @@ pub struct RunAgentsCardView {
     /// Set when the action has a `RunAgentsResult::Denied` result in
     /// history (e.g. orchestration was disabled at dispatch time).
     is_denied: bool,
+    /// Retained from construction so `update_request()` can re-evaluate
+    /// the auto-launch condition when `agent_run_configs` arrives via
+    /// streaming after the initial empty chunk.
+    active_config: Option<(OrchestrationConfig, OrchestrationConfigStatus)>,
 
     action_model: ModelHandle<BlocklistAIActionModel>,
     block_model: Rc<dyn AIBlockModel<View = AIBlock>>,
@@ -225,6 +229,15 @@ impl RunAgentsCardView {
         // the request — skip the confirmation card entirely.
         // The active_config is now conversation-scoped so cross-conversation
         // leakage is no longer possible.
+        // Also treat the action as denied when the config is explicitly
+        // disapproved — the card will auto-deny via the subscription
+        // once the action becomes blocked.
+        let is_denied = is_denied
+            || matches!(
+                &active_config,
+                Some((_, status)) if status.is_disapproved()
+            );
+
         let auto_launched = !is_denied
             && !request.agent_run_configs.is_empty()
             && matches!(
@@ -287,15 +300,42 @@ impl RunAgentsCardView {
             | RunAgentsExecutorEvent::SpawningFinished { .. } => {}
         });
 
-        // Re-render when this action finishes (e.g. cancelled via
-        // Ctrl+C at the terminal level) so render() picks up the
-        // Finished status from the action model.
-        let action_id_for_finished = action_id.clone();
-        ctx.subscribe_to_model(&action_model, move |_, _, event, ctx| {
-            if let BlocklistAIActionEvent::FinishedAction { action_id, .. } = event {
-                if action_id == &action_id_for_finished {
+        // Re-render when this action finishes or becomes blocked.
+        // When `auto_launched` is true and the action becomes blocked,
+        // dispatch `execute_run_agents` — the deferred auto-launch
+        // only sets the flag and shows the spawning UI; the actual
+        // execution must wait until the action model has queued the
+        // action.
+        let action_id_for_action_events = action_id.clone();
+        ctx.subscribe_to_model(&action_model, move |me, _, event, ctx| {
+            match event {
+                BlocklistAIActionEvent::FinishedAction { action_id, .. }
+                    if action_id == &action_id_for_action_events =>
+                {
                     ctx.notify();
                 }
+                BlocklistAIActionEvent::ActionBlockedOnUserConfirmation(action_id)
+                    if action_id == &action_id_for_action_events && me.is_denied =>
+                {
+                    let action_id = me.action_id.clone();
+                    me.action_model.update(ctx, |action_model, action_ctx| {
+                        action_model.deny_run_agents(
+                            &action_id,
+                            String::new(),
+                            action_ctx,
+                        );
+                    });
+                }
+                BlocklistAIActionEvent::ActionBlockedOnUserConfirmation(action_id)
+                    if action_id == &action_id_for_action_events && me.auto_launched =>
+                {
+                    let request = me.state.to_request();
+                    let action_id = me.action_id.clone();
+                    me.action_model.update(ctx, |action_model, action_ctx| {
+                        action_model.execute_run_agents(&action_id, request, action_ctx);
+                    });
+                }
+                _ => {}
             }
         });
 
@@ -326,17 +366,14 @@ impl RunAgentsCardView {
             spawning: None,
             auto_launched,
             is_denied,
+            active_config,
             action_model,
             block_model,
         };
 
-        if auto_launched {
-            let action_id = card.action_id.clone();
-            let request = card.state.to_request();
-            card.action_model.update(ctx, |action_model, action_ctx| {
-                action_model.execute_run_agents(&action_id, request, action_ctx);
-            });
-        }
+        // When auto_launched is true, execution is deferred to the
+        // ActionBlockedOnUserConfirmation subscription above — the action
+        // hasn't been queued in pending_actions yet at construction time.
 
         card
     }
@@ -360,6 +397,32 @@ impl RunAgentsCardView {
             self.state = new_state;
             self.original_request = request.clone();
             ctx.notify();
+        }
+    }
+
+    /// Re-evaluate auto-launch after the output stream has finished and
+    /// the request is fully populated.  Called from
+    /// `AIBlock::handle_complete_output` so we don't act on partial
+    /// streaming chunks that arrive with an empty `agent_run_configs`.
+    pub fn try_auto_launch_on_stream_complete(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.auto_launched
+            || self.is_denied
+            || self.spawning.is_some()
+            || self.state.is_editor_open
+            || self.state.agent_run_configs.is_empty()
+        {
+            return;
+        }
+        if let Some((config, status)) = &self.active_config {
+            let request = self.state.to_request();
+            if status.is_approved() && matches_active_config(&request, config) {
+                self.auto_launched = true;
+                // Don't call execute_run_agents here — the action
+                // hasn't been queued as Blocked yet. The subscription
+                // on ActionBlockedOnUserConfirmation will dispatch it
+                // once the action model is ready.
+                ctx.notify();
+            }
         }
     }
 
@@ -901,6 +964,7 @@ fn render_editor(
             &handles.pickers,
             appearance,
             None,
+            false,
         ))
         .with_margin_top(12.)
         .finish(),

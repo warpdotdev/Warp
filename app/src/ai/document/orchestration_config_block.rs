@@ -7,18 +7,61 @@ use ai::agent::orchestration_config::OrchestrationConfigStatus;
 use pathfinder_color::ColorU;
 use warpui::elements::{
     ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable,
-    MainAxisAlignment, MouseStateHandle, ParentElement, Radius, Text,
+    MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
 use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
+use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
 };
 use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
+use crate::BlocklistAIHistoryModel;
+use warp_core::ui::theme::WarpTheme;
+
+/// Renders a pill-shaped toggle switch (36×18) matching the Figma mock.
+fn render_pill_toggle(is_on: bool, theme: &WarpTheme) -> Box<dyn Element> {
+    let thumb_size = 14.;
+    let thumb = ConstrainedBox::new(
+        Container::new(Empty::new().finish())
+            .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
+            .with_background_color(ColorU::white())
+            .finish(),
+    )
+    .with_width(thumb_size)
+    .with_height(thumb_size)
+    .finish();
+
+    let track_bg = if is_on {
+        theme.accent().into_solid()
+    } else {
+        warp_core::ui::theme::color::internal_colors::fg_overlay_4(theme).into_solid()
+    };
+    let alignment = if is_on {
+        MainAxisAlignment::End
+    } else {
+        MainAxisAlignment::Start
+    };
+    let switch_inner = Flex::row()
+        .with_main_axis_alignment(alignment)
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(Container::new(thumb).with_uniform_padding(2.).finish())
+        .finish();
+    ConstrainedBox::new(
+        Container::new(switch_inner)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(9.)))
+            .with_background_color(track_bg)
+            .finish(),
+    )
+    .with_width(36.)
+    .with_height(18.)
+    .finish()
+}
 
 const CONFIG_BLOCK_HEADER: &str = "Use orchestration";
 const CONFIG_BLOCK_DESCRIPTION: &str =
@@ -33,6 +76,7 @@ const BASE_MODEL_HELPER: &str = "The primary model all agents will use.";
 #[derive(Clone, Debug)]
 pub enum OrchestrationConfigBlockAction {
     ToggleApproval,
+    ToggleDetails,
     ExecutionModeToggled { is_remote: bool },
     ModelChanged { model_id: String },
     HarnessChanged { harness_type: String },
@@ -61,43 +105,63 @@ impl OrchestrationControlAction for OrchestrationConfigBlockAction {
 // ── View ────────────────────────────────────────────────────────────
 
 pub struct OrchestrationConfigBlockView {
+    conversation_id: AIConversationId,
     edit_state: OrchestrationEditState,
     pickers: OrchestrationPickerHandles<OrchestrationConfigBlockAction>,
     is_approved: bool,
+    details_expanded: bool,
     pickers_initialized: bool,
     toggle_mouse_state: MouseStateHandle,
+    details_mouse_state: MouseStateHandle,
 }
 
 impl OrchestrationConfigBlockView {
-    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        let doc_model = AIDocumentModel::as_ref(ctx);
-        let (edit_state, is_approved) = match doc_model.active_orchestration_config() {
-            Some(config) => (
-                OrchestrationEditState::from_orchestration_config(config),
-                doc_model.orchestration_status().is_approved(),
-            ),
-            None => (
-                OrchestrationEditState::from_run_agents_fields(
-                    "auto",
-                    "oz",
-                    &RunAgentsExecutionMode::Local,
-                ),
-                false,
-            ),
-        };
+    pub fn new_with_conversation_id(
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) -> Self {
+        let history = BlocklistAIHistoryModel::as_ref(ctx);
+        let (edit_state, is_approved) = history
+            .conversation(&conversation_id)
+            .and_then(|conv| {
+                conv.orchestration_config().map(|config| {
+                    (
+                        OrchestrationEditState::from_orchestration_config(config),
+                        conv.orchestration_status().is_approved(),
+                    )
+                })
+            })
+            .unwrap_or_else(|| {
+                (
+                    OrchestrationEditState::from_run_agents_fields(
+                        "auto",
+                        "oz",
+                        &RunAgentsExecutionMode::Local,
+                    ),
+                    false,
+                )
+            });
 
-        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), |me, _, event, ctx| {
-            if let AIDocumentModelEvent::OrchestrationConfigUpdated = event {
-                me.refresh_from_model(ctx);
+        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), move |me, _, event, ctx| {
+            if let AIDocumentModelEvent::OrchestrationConfigUpdated {
+                conversation_id: cid,
+            } = event
+            {
+                if *cid == me.conversation_id {
+                    me.refresh_from_model(ctx);
+                }
             }
         });
 
         let mut view = Self {
+            conversation_id,
             edit_state,
             pickers: OrchestrationPickerHandles::default(),
             is_approved,
+            details_expanded: false,
             pickers_initialized: false,
             toggle_mouse_state: MouseStateHandle::default(),
+            details_mouse_state: MouseStateHandle::default(),
         };
         if view.is_approved {
             view.ensure_pickers(ctx);
@@ -106,14 +170,16 @@ impl OrchestrationConfigBlockView {
     }
 
     fn refresh_from_model(&mut self, ctx: &mut ViewContext<Self>) {
-        let doc_model = AIDocumentModel::as_ref(ctx);
-        if let Some(config) = doc_model.active_orchestration_config() {
-            self.edit_state = OrchestrationEditState::from_orchestration_config(config);
-            self.is_approved = doc_model.orchestration_status().is_approved();
-            if self.pickers_initialized {
-                oc::sync_picker_selections(&self.edit_state, &self.pickers, ctx);
+        let history = BlocklistAIHistoryModel::as_ref(ctx);
+        if let Some(conv) = history.conversation(&self.conversation_id) {
+            if let Some(config) = conv.orchestration_config() {
+                self.edit_state = OrchestrationEditState::from_orchestration_config(config);
+                self.is_approved = conv.orchestration_status().is_approved();
+                if self.pickers_initialized {
+                    oc::sync_picker_selections(&self.edit_state, &self.pickers, ctx);
+                }
+                ctx.notify();
             }
-            ctx.notify();
         }
     }
 
@@ -125,11 +191,24 @@ impl OrchestrationConfigBlockView {
         let appearance = Appearance::as_ref(ctx);
         let (styles, colors) = oc::picker_styles(appearance);
 
+        // When the agent didn't specify a model, fall back to the
+        // conversation's current base model so the picker isn't blank.
+        let display_model_id = if self.edit_state.model_id.trim().is_empty() {
+            BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&self.conversation_id)
+                .and_then(|conv| conv.latest_exchange())
+                .map(|ex| ex.model_id.to_string())
+                .unwrap_or_default()
+        } else {
+            self.edit_state.model_id.clone()
+        };
         let model_handle = oc::new_standard_picker_dropdown(&colors, ctx);
-        oc::populate_model_picker(&model_handle, &self.edit_state.model_id, ctx);
+        model_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
+        oc::populate_model_picker(&model_handle, &display_model_id, ctx);
         self.pickers.model_picker = Some(model_handle);
 
         let harness_handle = oc::new_standard_picker_dropdown(&colors, ctx);
+        harness_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
         oc::populate_harness_picker(&harness_handle, &self.edit_state.harness_type, ctx);
         self.pickers.harness_picker = Some(harness_handle);
 
@@ -138,6 +217,7 @@ impl OrchestrationConfigBlockView {
             RunAgentsExecutionMode::Local => "",
         };
         let env_handle = oc::create_environment_picker(initial_env, &styles, ctx);
+        env_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
         self.pickers.environment_picker = Some(env_handle);
 
         let initial_host = match &self.edit_state.execution_mode {
@@ -145,6 +225,7 @@ impl OrchestrationConfigBlockView {
             RunAgentsExecutionMode::Local => oc::ORCHESTRATION_WARP_WORKER_HOST,
         };
         let host_handle = oc::new_standard_picker_dropdown(&colors, ctx);
+        host_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
         oc::populate_host_picker(&host_handle, initial_host, ctx);
         self.pickers.host_picker = Some(host_handle);
 
@@ -159,8 +240,14 @@ impl OrchestrationConfigBlockView {
         } else {
             OrchestrationConfigStatus::Disapproved
         };
+        let conversation_id = self.conversation_id;
+        // Preserve the existing plan_id from the conversation so we don't
+        // clobber it when the user only edits config fields.
+        let plan_id = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .and_then(|conv| conv.orchestration_plan_id().map(str::to_string));
         AIDocumentModel::handle(ctx).update(ctx, |model, ctx| {
-            model.set_orchestration_config(config, status, None, ctx);
+            model.set_orchestration_config(conversation_id, config, status, plan_id, ctx);
         });
     }
 }
@@ -180,7 +267,7 @@ impl View for OrchestrationConfigBlockView {
 
         let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
-        // Header: "Use orchestration" + toggle switch
+        // Header row: "Use orchestration" + pill toggle switch
         let header_label = Text::new(
             CONFIG_BLOCK_HEADER.to_string(),
             appearance.ui_font_family(),
@@ -190,57 +277,21 @@ impl View for OrchestrationConfigBlockView {
         .with_style(Properties::default().weight(Weight::Bold))
         .finish();
 
-        // Pill-shaped toggle switch (36×18 per Figma)
         let is_on = self.is_approved;
-        let thumb_size = 16.;
-        let thumb = ConstrainedBox::new(
-            Container::new(Empty::new().finish())
-                .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
-                .with_background_color(ColorU::white())
-                .finish(),
-        )
-        .with_width(thumb_size)
-        .with_height(thumb_size)
-        .finish();
-
-        let track_bg = if is_on {
-            theme.accent().into_solid()
-        } else {
-            ColorU::new(170, 170, 170, 255)
-        };
-        let alignment = if is_on {
-            MainAxisAlignment::End
-        } else {
-            MainAxisAlignment::Start
-        };
-        let switch_inner = Flex::row()
-            .with_main_axis_alignment(alignment)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(Container::new(thumb).with_uniform_padding(1.).finish())
-            .finish();
-        let switch_el = ConstrainedBox::new(
-            Container::new(switch_inner)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(49.)))
-                .with_background_color(track_bg)
-                .finish(),
-        )
-        .with_width(36.)
-        .with_height(18.)
-        .finish();
+        let switch_el = render_pill_toggle(is_on, theme);
 
         let header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(warpui::elements::Expanded::new(1.0, header_label).finish())
             .with_child(
-                Hoverable::new(
-                    self.toggle_mouse_state.clone(),
-                    move |_| switch_el,
-                )
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(OrchestrationConfigBlockAction::ToggleApproval);
-                })
-                .with_cursor(Cursor::PointingHand)
-                .finish(),
+                Hoverable::new(self.toggle_mouse_state.clone(), move |_| switch_el)
+                    .on_click(|ctx, _, _| {
+                        ctx.dispatch_typed_action(
+                            OrchestrationConfigBlockAction::ToggleApproval,
+                        );
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .finish(),
             )
             .finish();
         column.add_child(header_row);
@@ -255,9 +306,9 @@ impl View for OrchestrationConfigBlockView {
         .finish();
         column.add_child(Container::new(description).with_margin_top(8.).finish());
 
-        // Controls (only when approved)
+        // "View details" row + expandable controls (only when approved)
         if self.is_approved {
-            // Horizontal divider between description and controls
+            // Divider
             let divider = Container::new(
                 ConstrainedBox::new(Empty::new().finish())
                     .with_height(1.)
@@ -267,52 +318,103 @@ impl View for OrchestrationConfigBlockView {
             .finish();
             column.add_child(Container::new(divider).with_margin_top(8.).finish());
 
-            // Mode toggle
-            let active_seg_bg =
-                warp_core::ui::theme::color::internal_colors::accent_overlay_2(theme);
+            // "View details" link row
+            let chevron_icon = if self.details_expanded {
+                warp_core::ui::Icon::ChevronDown
+            } else {
+                warp_core::ui::Icon::ChevronRight
+            };
+            let disabled_text_color = blended_colors::text_disabled(theme, theme.background());
+            let details_text = Text::new(
+                "View details".to_string(),
+                appearance.ui_font_family(),
+                appearance.monospace_font_size() + 1.,
+            )
+            .with_color(disabled_text_color)
+            .finish();
+            let chevron = ConstrainedBox::new(
+                chevron_icon.to_warpui_icon(warp_core::ui::theme::Fill::Solid(disabled_text_color)).finish(),
+            )
+            .with_width(14.)
+            .with_height(14.)
+            .finish();
+            let details_link = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(2.)
+                .with_child(details_text)
+                .with_child(chevron)
+                .finish();
+            let details_row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(
+                    warpui::elements::Expanded::new(1.0, Empty::new().finish()).finish(),
+                )
+                .with_child(
+                    Hoverable::new(self.details_mouse_state.clone(), move |_| details_link)
+                        .on_click(|ctx, _, _| {
+                            ctx.dispatch_typed_action(
+                                OrchestrationConfigBlockAction::ToggleDetails,
+                            );
+                        })
+                        .with_cursor(Cursor::PointingHand)
+                        .finish(),
+                )
+                .finish();
             column.add_child(
-                Container::new(oc::render_mode_toggle(
-                    self.edit_state.execution_mode.is_remote(),
-                    &self.pickers,
-                    appearance,
-                    Some(active_seg_bg),
-                ))
-                .with_margin_top(12.)
-                .finish(),
+                Container::new(details_row).with_margin_top(8.).finish(),
             );
 
-            // Picker row
-            column.add_child(oc::render_picker_row(
-                &self.edit_state,
-                &self.pickers,
-                appearance,
-            ));
+            // Expanded controls
+            if self.details_expanded {
+                // Cloud / Local mode toggle (full width)
+                let active_seg_bg =
+                    warp_core::ui::theme::color::internal_colors::accent_overlay_2(theme);
+                column.add_child(
+                    Container::new(oc::render_mode_toggle(
+                        self.edit_state.execution_mode.is_remote(),
+                        &self.pickers,
+                        appearance,
+                        Some(active_seg_bg),
+                        true,
+                    ))
+                    .with_margin_top(12.)
+                    .finish(),
+                );
 
-            // Helper text
-            let helper = Text::new(
-                BASE_MODEL_HELPER.to_string(),
-                appearance.ui_font_family(),
-                appearance.monospace_font_size() - 1.,
-            )
-            .with_color(blended_colors::text_disabled(theme, theme.background()))
-            .finish();
-            column.add_child(Container::new(helper).with_margin_top(4.).finish());
+                // Pickers stacked vertically
+                column.add_child(oc::render_picker_row_with_layout(
+                    &self.edit_state,
+                    &self.pickers,
+                    appearance,
+                    true,
+                ));
 
-            // Validation
-            if let Some(reason) = self.edit_state.accept_disabled_reason() {
-                column.add_child(oc::render_validation_error(
-                    reason,
-                    theme.ui_error_color(),
-                    appearance,
-                ));
-            } else if let Some(message) =
-                oc::empty_env_recommendation_message(&self.edit_state.execution_mode, app)
-            {
-                column.add_child(oc::render_validation_error(
-                    message,
-                    theme.ui_warning_color(),
-                    appearance,
-                ));
+                // Helper text
+                let helper = Text::new(
+                    BASE_MODEL_HELPER.to_string(),
+                    appearance.ui_font_family(),
+                    appearance.monospace_font_size() - 1.,
+                )
+                .with_color(blended_colors::text_disabled(theme, theme.background()))
+                .finish();
+                column.add_child(Container::new(helper).with_margin_top(4.).finish());
+
+                // Validation
+                if let Some(reason) = self.edit_state.accept_disabled_reason() {
+                    column.add_child(oc::render_validation_error(
+                        reason,
+                        theme.ui_error_color(),
+                        appearance,
+                    ));
+                } else if let Some(message) =
+                    oc::empty_env_recommendation_message(&self.edit_state.execution_mode, app)
+                {
+                    column.add_child(oc::render_validation_error(
+                        message,
+                        theme.ui_warning_color(),
+                        appearance,
+                    ));
+                }
             }
         }
 
@@ -337,6 +439,13 @@ impl TypedActionView for OrchestrationConfigBlockView {
                     self.ensure_pickers(ctx);
                 }
                 self.apply_field_change(ctx);
+                ctx.notify();
+            }
+            OrchestrationConfigBlockAction::ToggleDetails => {
+                self.details_expanded = !self.details_expanded;
+                if self.details_expanded && !self.pickers_initialized {
+                    self.ensure_pickers(ctx);
+                }
                 ctx.notify();
             }
             OrchestrationConfigBlockAction::ExecutionModeToggled { is_remote } => {
