@@ -22268,15 +22268,27 @@ impl View for Workspace {
                 && self.vertical_tabs_panel_open;
 
             if is_vertical {
-                // Anchor the menu below the vertical-tabs + button.
+                // Anchor the menu below the vertical-tabs + button. The anchor
+                // side mirrors which side the tabs panel itself is on, so the
+                // menu always expands inward and stays inside the window.
+                let tabs_side =
+                    Self::tabs_panel_side(&TabSettings::as_ref(app).header_toolbar_chip_selection);
+                let (anchor, child_anchor) = match tabs_side {
+                    PanelPosition::Left => {
+                        (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft)
+                    }
+                    PanelPosition::Right => {
+                        (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight)
+                    }
+                };
                 stack.add_positioned_overlay_child(
                     ChildView::new(&self.new_session_dropdown_menu).finish(),
                     OffsetPositioning::offset_from_save_position_element(
                         vertical_tabs::VERTICAL_TABS_ADD_TAB_POSITION_ID,
                         vec2f(0., 4.),
                         PositionedElementOffsetBounds::WindowBySize,
-                        PositionedElementAnchor::BottomLeft,
-                        ChildAnchor::TopLeft,
+                        anchor,
+                        child_anchor,
                     ),
                 );
             } else {
