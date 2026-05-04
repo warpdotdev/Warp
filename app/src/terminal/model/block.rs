@@ -1102,6 +1102,10 @@ impl Block {
         self.output_grid.set_trim_trailing_blank_rows(trim);
     }
 
+    pub(in crate::terminal) fn enable_full_grid_clear_behavior(&mut self) {
+        self.output_grid.enable_full_grid_clear_behavior();
+    }
+
     pub fn set_restored_block_was_local(&mut self, was_local: bool) {
         debug_assert!(
             self.bootstrap_stage == BootstrapStage::RestoreBlocks,
