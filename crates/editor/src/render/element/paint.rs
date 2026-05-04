@@ -76,6 +76,10 @@ pub struct RenderContext<'a, 'b> {
     /// Underlying paint context for rendering.
     pub paint: &'a mut PaintContext<'b>,
     saved_positions: &'a SavedPositions,
+    /// Extra content-space X amount subtracted in [`Self::content_to_screen`] (and thus in
+    /// paragraph text, selection, and decorations). Used for nested horizontal scroll inside a
+    /// block (e.g. markdown code fences) so all painting shares one transform.
+    pub nested_horizontal_scroll: f32,
     pub viewport_size: Vector2F,
     /// Current VimMode of the rich text element, if there is one.
     pub vim_mode: Option<VimMode>,
@@ -112,6 +116,7 @@ impl<'a, 'b> RenderContext<'a, 'b> {
             text_decorations,
             paint,
             saved_positions: model.saved_positions(),
+            nested_horizontal_scroll: 0.0,
             viewport_size,
             vim_mode,
             vim_visual_tails,
@@ -132,7 +137,8 @@ impl<'a, 'b> RenderContext<'a, 'b> {
     /// Note that the returned location may be out of viewport. The caller is responsible for
     /// bounds checking.
     pub fn content_to_screen(&self, position: Vector2F) -> Vector2F {
-        let viewport_relative = position - self.content_offset;
+        let viewport_relative =
+            position - self.content_offset - vec2f(self.nested_horizontal_scroll, 0.0);
         self.bounds.origin() + viewport_relative
     }
 
@@ -162,6 +168,22 @@ impl<'a, 'b> RenderContext<'a, 'b> {
 
         paragraph.draw_selection(state, self);
         self.draw_text_decorations(paragraph, state.decorations().text(), state);
+    }
+
+    /// Like [`draw_paragraph`] but applies horizontal scroll `x_scroll` for nested overflow (e.g.
+    /// a clipped markdown code block). Temporarily increases [`Self::nested_horizontal_scroll`]
+    /// so text, selection, cursors, and decorations stay aligned.
+    pub fn draw_paragraph_scrolled(
+        &mut self,
+        paragraph: &Positioned<Paragraph>,
+        style: &ParagraphStyles,
+        state: &RenderState,
+        x_scroll: f32,
+    ) {
+        let prev = self.nested_horizontal_scroll;
+        self.nested_horizontal_scroll = prev + x_scroll;
+        self.draw_paragraph(paragraph, style, state);
+        self.nested_horizontal_scroll = prev;
     }
 
     /// Helper to draw text decorations over a paragraph. The decorations must be sorted by **end**
