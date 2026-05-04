@@ -880,6 +880,28 @@ fn summary_overflow_count(total_count: usize, visible_limit: usize) -> usize {
     total_count.saturating_sub(visible_limit)
 }
 
+fn summary_pane_kinds_share_icon(a: &SummaryPaneKind, b: &SummaryPaneKind) -> bool {
+    match (a, b) {
+        (
+            SummaryPaneKind::OzAgent { is_ambient: a, .. },
+            SummaryPaneKind::OzAgent { is_ambient: b, .. },
+        ) => a == b,
+        (
+            SummaryPaneKind::CLIAgent {
+                agent: agent_a,
+                is_ambient: ambient_a,
+                ..
+            },
+            SummaryPaneKind::CLIAgent {
+                agent: agent_b,
+                is_ambient: ambient_b,
+                ..
+            },
+        ) => agent_a == agent_b && ambient_a == ambient_b,
+        _ => a == b,
+    }
+}
+
 fn format_summary_primary_labels(labels: &[String], visible_limit: usize) -> Option<String> {
     const SEPARATOR: &str = " • ";
     if labels.is_empty() {
@@ -925,7 +947,10 @@ fn select_summary_pane_kind_icons(
 
     let mut unique_kinds = Vec::new();
     for (_, pane_kind) in pane_kinds {
-        if !unique_kinds.contains(&pane_kind) {
+        if !unique_kinds
+            .iter()
+            .any(|kind| summary_pane_kinds_share_icon(kind, &pane_kind))
+        {
             unique_kinds.push(pane_kind);
         }
         if unique_kinds.len() == 2 {

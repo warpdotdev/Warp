@@ -195,6 +195,43 @@ fn summary_agent_variant_preserves_oz_agent_status() {
 }
 
 #[test]
+fn summary_pane_kind_icons_deduplicate_agents_by_stable_kind_not_status() {
+    let icons = select_summary_pane_kind_icons([
+        (
+            EntityId::from_usize(10),
+            SummaryPaneKind::CLIAgent {
+                agent: CLIAgent::Claude,
+                status: Some(ConversationStatus::InProgress),
+                is_ambient: false,
+            },
+        ),
+        (
+            EntityId::from_usize(20),
+            SummaryPaneKind::CLIAgent {
+                agent: CLIAgent::Claude,
+                status: Some(ConversationStatus::Blocked {
+                    blocked_action: "Approve command".to_string(),
+                }),
+                is_ambient: false,
+            },
+        ),
+    ]);
+
+    match icons {
+        Some(SummaryPaneKindIcons::Single(SummaryPaneKind::CLIAgent {
+            agent,
+            status,
+            is_ambient,
+        })) => {
+            assert_eq!(agent, CLIAgent::Claude);
+            assert_eq!(status, Some(ConversationStatus::InProgress));
+            assert!(!is_ambient);
+        }
+        _ => panic!("same agent kind with different statuses should render one summary icon"),
+    }
+}
+
+#[test]
 fn preferred_agent_tab_titles_default_to_title_like_text() {
     let agent_text = TerminalAgentText {
         conversation_display_title: Some("Generated Oz title".to_string()),
