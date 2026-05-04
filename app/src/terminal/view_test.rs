@@ -3714,7 +3714,14 @@ fn submit_rich_input_and_collect_pty_writes(
 }
 
 fn open_cli_agent_rich_input_for_agent(app: &mut App, agent: CLIAgent) -> ViewHandle<TerminalView> {
-    let terminal = add_window_with_terminal(app, None);
+    open_cli_agent_rich_input_for_agent_with_window_id(app, agent).1
+}
+
+fn open_cli_agent_rich_input_for_agent_with_window_id(
+    app: &mut App,
+    agent: CLIAgent,
+) -> (WindowId, ViewHandle<TerminalView>) {
+    let (window_id, terminal) = add_window_with_id_and_terminal(app, None);
     terminal.update(app, |view, ctx| {
         CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
             sessions.set_session(
@@ -3738,7 +3745,50 @@ fn open_cli_agent_rich_input_for_agent(app: &mut App, agent: CLIAgent) -> ViewHa
         view.open_cli_agent_rich_input(CLIAgentInputEntrypoint::FooterButton, ctx);
         assert!(view.has_active_cli_agent_input_session(ctx));
     });
-    terminal
+    (window_id, terminal)
+}
+
+/// Verifies that Ctrl-G closes CLI agent rich input when dispatched from the
+/// focused editor context. This is a regression test for #9286 where the
+/// keybinding only matched the terminal context, not the embedded editor.
+#[test]
+fn ctrl_g_closes_cli_agent_rich_input_when_editor_is_focused() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        // Register keybindings so keystroke dispatch can match the Ctrl-G binding.
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let (window_id, terminal) =
+            open_cli_agent_rich_input_for_agent_with_window_id(&mut app, CLIAgent::OpenCode);
+
+        // Dispatch Ctrl-G through the focused editor's responder chain.
+        let (input_id, editor_id) = terminal.read(&app, |view, ctx| {
+            let input = view.input.clone();
+            let editor = input.as_ref(ctx).editor().clone();
+            (input.id(), editor.id())
+        });
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &[terminal.id(), input_id, editor_id],
+                &warpui::keymap::Keystroke::parse("ctrl-g").expect("valid keystroke"),
+                false,
+            )
+            .expect("dispatch should succeed");
+
+        assert!(handled, "ctrl-g should be handled from the focused editor");
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after Ctrl-G"
+            );
+        });
+    })
 }
 
 #[test]
