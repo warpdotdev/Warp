@@ -496,7 +496,10 @@ impl SearchItem for ModelSearchItem {
             let byok_available = UserWorkspaces::as_ref(app).is_byo_api_key_enabled()
                 && matches!(
                     self.provider,
-                    LLMProvider::OpenAI | LLMProvider::Anthropic | LLMProvider::Google
+                    LLMProvider::OpenAI
+                        | LLMProvider::Anthropic
+                        | LLMProvider::Google
+                        | LLMProvider::OpenRouter
                 );
 
             let mut text_fragments = vec![
