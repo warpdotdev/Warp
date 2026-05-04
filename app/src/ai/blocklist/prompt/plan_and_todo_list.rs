@@ -95,8 +95,7 @@ impl PlanAndTodoListView {
                 AIDocumentModelEvent::DocumentSaveStatusUpdated { .. }
                 | AIDocumentModelEvent::DocumentUpdated { .. }
                 | AIDocumentModelEvent::StreamingDocumentsCleared(..)
-                | AIDocumentModelEvent::DocumentVisibilityChanged(_)
-                | AIDocumentModelEvent::OrchestrationConfigUpdated { .. } => {}
+                | AIDocumentModelEvent::DocumentVisibilityChanged(_) => {}
             },
         );
 

@@ -17,7 +17,8 @@ use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
 };
-use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
+use crate::ai::blocklist::BlocklistAIHistoryEvent;
+use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::BlocklistAIHistoryModel;
@@ -142,16 +143,19 @@ impl OrchestrationConfigBlockView {
                 )
             });
 
-        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), move |me, _, event, ctx| {
-            if let AIDocumentModelEvent::OrchestrationConfigUpdated {
-                conversation_id: cid,
-            } = event
-            {
-                if *cid == me.conversation_id {
-                    me.refresh_from_model(ctx);
+        ctx.subscribe_to_model(
+            &BlocklistAIHistoryModel::handle(ctx),
+            move |me, _, event, ctx| {
+                if let BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                    conversation_id: cid,
+                } = event
+                {
+                    if *cid == me.conversation_id {
+                        me.refresh_from_model(ctx);
+                    }
                 }
-            }
-        });
+            },
+        );
 
         let mut view = Self {
             conversation_id,
