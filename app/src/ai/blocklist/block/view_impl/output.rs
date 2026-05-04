@@ -1727,9 +1727,7 @@ fn render_read_skill(
                 "Open skill",
                 props
                     .state_handles
-                    .open_skill_button_handles
-                    .get(id)
-                    .expect("Button state must exist for each ReadSkill action.")
+                    .open_skill_button_handle
                     .clone(),
                 appearance,
                 skill.provider,
@@ -1836,9 +1834,7 @@ fn render_read_files(
             &format!("/{}", skill.name),
             props
                 .state_handles
-                .read_from_skill_button_handles
-                .get(id)
-                .expect("Button state must exist for each ReadFiles-style action.")
+                .read_from_skill_button_handle
                 .clone(),
             appearance,
             skill.provider,

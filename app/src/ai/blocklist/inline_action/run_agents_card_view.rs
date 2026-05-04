@@ -5,6 +5,7 @@
 //! the view; only `RejectRequested` flows back to the parent.
 use ai::agent::action::{RunAgentsAgentRunConfig, RunAgentsExecutionMode, RunAgentsRequest};
 use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
+use ai::agent::orchestration_config::{matches_active_config, OrchestrationConfig, OrchestrationConfigStatus};
 use ai::skills::SkillReference;
 use std::rc::Rc;
 use warpui::elements::{
@@ -251,6 +252,7 @@ impl RunAgentsCardView {
     pub fn new(
         action_id: AIAgentActionId,
         request: &RunAgentsRequest,
+        active_config: Option<(OrchestrationConfig, OrchestrationConfigStatus)>,
         action_model: ModelHandle<BlocklistAIActionModel>,
         run_agents_executor: ModelHandle<RunAgentsExecutor>,
         block_model: Rc<dyn AIBlockModel<View = AIBlock>>,
