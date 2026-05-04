@@ -1,4 +1,4 @@
-# 03 — Custom command shortcuts
+# 04 — Custom command shortcuts
 
 **Phase:** not-started
 **Spec PR:** —

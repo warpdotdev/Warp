@@ -35,7 +35,7 @@ The user's expected loop is **review and approve, nothing else**. Anything that 
 - **Never skip the spec PR.** Implementation cannot start until PRODUCT.md and TECH.md are merged to master.
 - **Specs must include a smoke-test checklist.** The user uses it to validate the impl PR.
 - **CI must pass before reporting "ready for review".** Iterate on red presubmit until green; never hand the user a red PR.
-- **Sub-phased features (02, 04)** complete every sub-PR before reaching `merged`.
+- **Sub-phased features (02, 05, 06)** complete every sub-PR before reaching `merged`.
 - **Git is authoritative.** If STATUS.md disagrees with `gh pr view`, trust git and fix STATUS.md.
 - **Don't touch upstream cherry-picks.** That's a separate workflow run on its own cadence.
 - **Upstream assessment is read-only.** Never run `gh issue create`, `gh pr create`, or any commenting / pushing command against `warpdotdev/warp`. Drafts are written to `roadmap/<feature>/UPSTREAM.md` for the user to submit by hand.
@@ -101,7 +101,7 @@ Once a feature reaches `merged`, twarp can optionally pitch the underlying mecha
    - **Open issue with `ready-to-implement`** → `target-issue`. Output the URL; this is the cleanest path to a PR.
    - **Open issue without that label** → `request-label`. Output the URL and a short draft comment asking `@oss-maintainers` to consider the readiness label.
    - **Nothing close** → `new-issue`. Draft the issue body to `roadmap/<feature>/UPSTREAM.md` for the user to review and submit by hand. Title pattern: `[Feature] <generic primitive>`. Body: problem, proposed behavior, sketch of API/config, link to twarp's merged impl as a reference implementation.
-5. **Strip AI-adjacent framing** from any draft or suggested comment. Feature 03 (custom command shortcuts) in particular: the upstream pitch is the **generic shortcut-to-action primitive**, not the "auto-type `claude`" examples. Replace AI-tooling examples with neutral ones (e.g. "auto-type `git status`", "open a tab and run a frequently-used command sequence"). If the AI-adjacency is intrinsic to the feature (it isn't, for any of 01/03/04), bail and recommend `skip`.
+5. **Strip AI-adjacent framing** from any draft or suggested comment. Feature 04 (custom command shortcuts) in particular: the upstream pitch is the **generic shortcut-to-action primitive**, not the "auto-type `claude`" examples. Replace AI-tooling examples with neutral ones (e.g. "auto-type `git status`", "open a tab and run a frequently-used command sequence"). If the AI-adjacency is intrinsic to the feature (it isn't, for any of 01/03/04/05), bail and recommend `skip`.
 6. Output the report block below and stop. Do not loop, do not retry, do not act on the recommendation.
 
 **Failure modes:** if any `gh` call fails (auth, rate limit, network), output the report with `Nearest: unknown` and `Recommend: retry`. Do not retry in a loop; the user reruns when ready.
