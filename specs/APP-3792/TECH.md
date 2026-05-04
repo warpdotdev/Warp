@@ -2,7 +2,7 @@
 
 Linear: [APP-3792](https://linear.app/warpdotdev/issue/APP-3792)
 
-Behavior is specified in `specs/APP-3792/PRODUCT.md`. This document updates the branch spec against current `origin/master` and the latest design notes: the daemon owns embedding/sync/cache work using its authenticated token, while the client owns UI state and direct retrieval calls using the daemon-supplied root hash.
+Behavior is specified in `specs/APP-3792/PRODUCT.md`. This document updates the branch spec against current `origin/master` and the latest design notes: the daemon owns embedding/sync/cache work using its authenticated token, the machine-local serialized Merkle/snapshot cache can be shared when it contains no user-specific data, and the client owns UI state and direct retrieval calls using the daemon-supplied root hash.
 
 ## 1. Context
 ### Current local indexing architecture on master
@@ -34,7 +34,7 @@ Daemon responsibilities:
 - Read remote file bytes for chunking and fragment hydration.
 - Run full and incremental sync with the backend through a daemon-side `StoreClient` authenticated by the APP-3801 token.
 - Fetch and respect server-backed codebase-indexing config such as embedding config, batch sizes, and sync cadence.
-- Persist snapshots and lightweight metadata on the remote host in an identity-scoped cache.
+- Persist the serialized Merkle/snapshot cache on the remote host in a machine-local repo cache, while keeping user decisions/status metadata identity-scoped.
 - Watch the remote filesystem and push status/root-hash updates to the client.
 
 Client responsibilities:
@@ -102,30 +102,36 @@ Required behavior:
 For v1 sync, daemon-side retrieval methods may still be implemented because the trait requires them, but the normal remote retrieval path should use the client's `ServerApi` for `get_relevant_fragments` and `rerank_fragments`.
 
 ### 3.3 Add daemon-side index cache and startup bootstrap
-The daemon keeps a notion of cached codebase indexes. Use an identity-scoped directory under the remote-server cache root, for example:
+The daemon keeps two persistence layers under the remote-server cache root:
 
-- `~/.warp/remote-server/{identity_key}/codebase-indexes/metadata.json`
-- `~/.warp/remote-server/{identity_key}/codebase-indexes/snapshots/{repo_key}/...`
+- Shared machine-local index cache, keyed by repo identity/path and content, containing serialized Merkle trees, fragment metadata, snapshots, and other data that is derived only from files readable by the OS user running the daemon. This cache intentionally contains no Warp-user-specific choices, credentials, or authorization state and can be reused by multiple Warp identities that connect to the same OS account and repo.
+- Identity-scoped metadata, keyed by `{identity_key}` and repo, containing user decisions and status such as enabled/disabled/declined, last error, last status update, backend association state, and the current last-ready root hash exposed to that Warp user.
 
-The daemon cache is identity-scoped in v1. Sharing daemon-owned index metadata across Warp users on the same host would expose repo paths, enablement/decline/drop choices, status, snapshot metadata, and last-ready root hashes across users. Backend storage may still deduplicate content-addressed Merkle nodes, fragments, or embeddings internally, but retrieval authorization must bind usable roots to the authenticated Warp user and repo. Shared remote index state across Warp users is a follow-up only with an explicit authz/access-proof design.
+Example layout:
+- `~/.warp/remote-server/codebase-indexes/shared/snapshots/{repo_key}/...`
+- `~/.warp/remote-server/codebase-indexes/shared/metadata/{repo_key}.json`
+- `~/.warp/remote-server/{identity_key}/codebase-indexes/user_metadata.json`
 
-Metadata should record at least repo path, status, last ready root hash, embedding config, last indexed time, last error, and enough timestamps to rebuild the local `WorkspaceMetadata` inputs that currently populate the local build queue.
+Sharing the serialized Merkle/snapshot cache is acceptable because it is just a representation of the local codebase for the remote OS account. Sharing user metadata is not acceptable: enablement/decline/drop choices, status, and backend root authorization remain scoped per Warp identity. Backend storage may also deduplicate content-addressed Merkle nodes, fragments, or embeddings internally, but retrieval authorization must bind usable roots to the authenticated Warp user and repo.
+
+Shared cache metadata should record at least repo path, repo identity key, snapshot/schema version, root hash, embedding config, last indexed time, and enough timestamps to rebuild the local `WorkspaceMetadata` inputs that currently populate the local build queue. Identity-scoped metadata should record at least repo path, enabled/disabled/declined state, current status, last user-visible error, last status update, and the last ready root hash associated with that Warp identity.
 
 Startup/reconnect behavior:
-1. Load metadata and snapshots before accepting indexing requests.
-2. For known ready repos, emit `Ready` status with root hash to connected clients.
-3. For known repos without a valid snapshot, emit `Not enabled` or `Failed` depending on whether the user had previously enabled indexing.
-4. When a client reconnects, respond to status requests from this cache even before the watcher has emitted new events.
+1. Load shared cache metadata/snapshots and identity-scoped user metadata before accepting indexing requests.
+2. For repos enabled by the connected identity with a valid shared ready snapshot, emit `Ready` status with that identity's authorized root hash to connected clients.
+3. For repos with a valid shared snapshot but no enablement record for the connected identity, return `Not enabled` so the user still controls whether that repo is searchable for them.
+4. For known enabled repos without a valid shared snapshot, emit `Failed` or queue rebuild depending on whether recovery can start immediately.
+5. When a client reconnects, respond to status requests from this cache even before the watcher has emitted new events.
 
 Snapshot parsing should follow local behavior: if a snapshot is incompatible or corrupt, delete it and rebuild from scratch rather than leaving the repo permanently failed.
 
 Cache invalidation behavior:
-1. Snapshot schema/version mismatch, corrupt snapshot data, or missing snapshot files invalidate the local snapshot and trigger a rebuild the next time the repo is indexed.
+1. Snapshot schema/version mismatch, corrupt snapshot data, or missing snapshot files invalidate the shared local snapshot and trigger a rebuild the next time any identity indexes the repo.
 2. If the repo path no longer exists or is no longer a git repo, return a failed or not-enabled status with a user-readable reason rather than reusing stale root hashes indefinitely.
-3. Filesystem watcher changes mark the repo stale when a last-ready root hash exists, keep search available against that root, and run incremental sync toward a new ready root.
-4. Backend config or embedding-config changes mark affected repos stale and re-run the necessary embedding/sync work with the new config.
-5. Auth identity changes clear the client-side `RemoteCodebaseIndexModel` cache and reconnect through the identity-scoped daemon path, which has separate daemon metadata and snapshots.
-6. If the backend rejects, cannot find, or no longer authorizes a previously ready root hash, mark the repo failed with an actionable reason and require `IndexCodebase` to rebuild or resync.
+3. Filesystem watcher changes mark the repo stale for all identities that have enabled it when a last-ready root hash exists, keep search available against each identity's last authorized root, and run incremental sync toward a new ready root.
+4. Backend config or embedding-config changes mark affected shared snapshots stale and re-run the necessary embedding/sync work with the new config.
+5. Auth identity changes clear the client-side `RemoteCodebaseIndexModel` cache and reconnect through the identity-scoped daemon path, but they do not delete the shared machine-local index cache.
+6. If the backend rejects, cannot find, or no longer authorizes a previously ready root hash for a specific identity, mark that identity's repo status failed with an actionable reason and require `IndexCodebase` to rebuild, resync, or re-associate the shared cache for that identity.
 
 ### 3.4 Add remote-server protocol messages
 Extend `crates/remote_server/proto/remote_server.proto` with request/response and push messages for remote indexing. Names can be adjusted during implementation, but the protocol needs these concepts:
@@ -140,7 +146,7 @@ Extend `crates/remote_server/proto/remote_server.proto` with request/response an
 
 `HydrateCodebaseFragments` is used after client-side backend retrieval. The backend returns content hashes for candidate fragments, but only the daemon has the remote snapshot metadata and filesystem access needed to map those hashes back to remote file ranges and bytes. The daemon must verify every requested content hash belongs to the enabled repo's current or last-ready snapshot before reading bytes or returning locations.
 
-All new remote-indexing RPCs are scoped to the identity-partitioned remote-server daemon socket. Handlers for status, drop, and hydrate must only read or mutate state in that daemon's identity-scoped cache. Any request message that can lead to auth-required outbound Warp service calls must carry the current client auth token or an equivalent request-scoped bearer credential in the proto payload. In this v1 protocol, that applies at minimum to `IndexCodebase`, because it can trigger config fetches, embedding generation, and index sync. If future versions let `HydrateCodebaseFragments` or daemon-side retrieval call Warp services, those messages must also carry the token before those outbound calls are added. Handlers must reject missing or invalid request-scoped tokens instead of falling back to the daemon's stored `auth_token`; the stored token is only a cache/initialization aid and must not make the proxy socket an ambient-authority boundary.
+All new remote-indexing RPCs are scoped to the identity-partitioned remote-server daemon socket. Handlers for status, drop, and hydrate must only read or mutate identity-scoped user metadata for the connected identity, even when they reuse the shared machine-local index cache. Any request message that can lead to auth-required outbound Warp service calls must carry the current client auth token or an equivalent request-scoped bearer credential in the proto payload. In this v1 protocol, that applies at minimum to `IndexCodebase`, because it can trigger config fetches, embedding generation, and index sync. If future versions let `HydrateCodebaseFragments` or daemon-side retrieval call Warp services, those messages must also carry the token before those outbound calls are added. Handlers must reject missing or invalid request-scoped tokens instead of falling back to the daemon's stored `auth_token`; the stored token is only a cache/initialization aid and must not make the proxy socket an ambient-authority boundary.
 
 `IndexStatus` should include:
 - `state`: not enabled, queued, indexing, ready, stale, failed, disabled, unavailable.
@@ -154,8 +160,9 @@ The client should receive root hashes only through status responses/pushes. It s
 
 ### 3.5 Add daemon indexing manager wiring
 In `app/src/remote_server/mod.rs`, register the indexing manager as a daemon singleton with:
-- file-backed persisted metadata,
-- daemon-side snapshot base directory,
+- file-backed shared cache metadata,
+- identity-scoped user metadata,
+- daemon-side shared snapshot base directory,
 - daemon-side `StoreClient`,
 - `BulkFilesystemWatcher`,
 - remote-compatible repo metadata / detected-repo dependencies already used by the daemon.
@@ -163,7 +170,7 @@ In `app/src/remote_server/mod.rs`, register the indexing manager as a daemon sin
 In `app/src/remote_server/server_model.rs`, add handler arms for the new RPCs:
 - `IndexCodebase`: check cache first; if miss, failed, stale, or invalid, enqueue/build index and immediately push queued/indexing status. Retrying a failed repo is the same message after the client chooses retry.
 - `GetCodebaseIndexStatus`: return the current cached status.
-- `DropCodebaseIndex`: remove identity-scoped daemon metadata/snapshot, stop watcher registration for that repo, push disabled/not-enabled status, and call the backend to revoke or delete the user/repo/root association for synced remote index data. Content-addressed backend blobs may remain subject to backend retention or deduplication policy, but dropped roots must become inaccessible for retrieval by that user/repo.
+- `DropCodebaseIndex`: remove or update the connected identity's user metadata for that repo, stop watcher registration if no enabled identities still need it, push disabled/not-enabled status, and call the backend to revoke or delete that user/repo/root association for synced remote index data. The shared machine-local Merkle/snapshot cache may remain for other identities or future reuse, and content-addressed backend blobs may remain subject to backend retention or deduplication policy, but dropped roots must become inaccessible for retrieval by that user/repo.
 - `HydrateCodebaseFragments`: verify each content hash belongs to the enabled repo's current or last-ready snapshot, map hashes to fragment metadata, read the corresponding remote file bytes, and return fragment content plus locations.
 
 Subscribe once to indexing manager events and fan out `CodebaseIndexStatusUpdated` to connected clients. On disconnect/reconnect, clients should be able to resync via `GetCodebaseIndexStatus`; push messages are opportunistic, not the only source of truth.
@@ -254,7 +261,7 @@ The daemon should not independently check the feature flag. If it receives a val
 - Add client `RemoteCodebaseIndexModel` tests for queued → indexing → ready, ready → stale → ready, failed → retry → ready, disabled, and unavailable transitions. This covers PRODUCT §10-14 and §17-19.
 - Add `SearchCodebaseExecutor` tests for remote ready, indexing, failed, unavailable, not indexed, and local fallback paths. Verify the remote ready path calls client `get_relevant_fragments`, daemon hydrate, client rerank, then remote `ReadFileContext` in order. This covers PRODUCT §15-20 and §29.
 - Add settings/speedbump UI tests or snapshots for local entries, remote entries, remote tag/host labeling, retry, drop, and independent local/remote automatic indexing settings. This covers PRODUCT §4-14 and §34.
-- Add per-user isolation tests around identity-scoped cache paths and daemon auth token usage. This covers PRODUCT §26-28.
+- Add per-user isolation tests proving shared machine-local snapshots do not share enablement/status/backend authorization, and that daemon auth token usage remains identity-scoped. This covers PRODUCT §26-28.
 - Add manual verification on an open-egress remote host: enable indexing for a new repo, observe progress in settings, run `SearchCodebase`, edit a file, observe stale/ready transition, and verify subsequent retrieval uses the updated repo.
 - Add manual verification on a blocked-egress remote host: enable indexing, verify failed status and retry behavior, and verify other remote tools remain usable.
 
@@ -262,7 +269,7 @@ The daemon should not independently check the feature flag. If it receives a val
 - **Daemon egress blocked.** Mitigation: product shows failed/unreachable with retry. Keep client-proxied `StoreClient` as a follow-up only if real deployments require it.
 - **Binary size increase.** Reusing indexing code brings tree-sitter/chunking/GraphQL dependencies into the daemon. Mitigation: measure daemon binary size before landing, keep daemon entrypoints narrow, and extract a smaller indexing crate later only if needed.
 - **Config drift between local and remote indexing.** Mitigation: daemon fetches server-backed config via `codebase_context_config`; client owns user/feature gate decisions before sending `IndexCodebase`.
-- **Status push loss during disconnect.** Mitigation: status is cached on the daemon and clients resync with `GetCodebaseIndexStatus` on reconnect.
+- **Status push loss during disconnect.** Mitigation: identity-scoped status is cached on the daemon and clients resync with `GetCodebaseIndexStatus` on reconnect.
 - **Snapshot corruption/version skew.** Mitigation: match local snapshot behavior by deleting bad snapshots and rebuilding.
 - **Credential exposure.** Mitigation: use APP-3801 token provider, never persist tokens, redact protocol logs, and ensure agent context never includes auth material.
 - **Proxy-socket auth bypass.** Mitigation: require request-scoped auth tokens on remote client/server proto messages before handlers make auth-required outbound Warp service requests; reject missing or invalid tokens instead of relying on daemon-stored credentials as ambient authority.
@@ -270,7 +277,7 @@ The daemon should not independently check the feature flag. If it receives a val
 
 ## 7. Follow-ups
 - Client-proxied `StoreClient` fallback for hosts that cannot reach `app.warp.dev`.
-- Shared remote index optimization across Warp users, only if a future authz/access-proof design supports it.
+- Garbage collection for shared machine-local snapshots when no identity metadata references them.
 - Daemon-direct telemetry for indexing metrics instead of client-forwarded status-only events.
 - Cross-repo remote context across multiple repos on one host.
 - Retrieval caching for repeated queries within one remote session.

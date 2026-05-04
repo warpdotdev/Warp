@@ -15,19 +15,19 @@ Today, codebase indexing is local-only: the filesystem walk, tree build, chunkin
 - Make `SearchCodebase` available in remote sessions once the remote repository has a ready index.
 - Show users whether remote codebase indexing is enabled, in progress, ready, stale, failed, disabled, or unavailable.
 - Reuse the local codebase-indexing product model where possible so local and remote repositories feel like one feature.
-- Scope indexing state per Warp user, remote host, and repository.
+- Scope user decisions, status, and backend retrieval authorization per Warp user, remote host, and repository while allowing the machine-local serialized index cache to be reused when it contains no user-specific data.
 
 ## Non-goals
-- Sharing remote indexes across different Warp users on the same host.
+- Sharing user-specific enablement, status, decline/drop decisions, or backend retrieval authorization across different Warp users on the same host.
 - Making remote indexing work without any daemon-to-Warp-backend egress. If that network path is blocked, the product should fail visibly and recoverably.
 - Changing local codebase-indexing behavior.
 - Exposing implementation identifiers such as root hashes in the UI.
 
 ## Behavior
 ### Enablement and discovery
-1. When a user is in a connected remote session and navigates to a git repository on the remote host, Warp determines whether codebase indexing is already known for that `(Warp user, host, repo)` tuple.
+1. When a user is in a connected remote session and navigates to a git repository on the remote host, Warp determines whether codebase indexing has been enabled for that `(Warp user, host, repo)` tuple and whether a reusable machine-local serialized index cache exists for the repo.
 
-2. If a ready cached index already exists for that tuple, Warp treats the repo as index-enabled immediately. The user does not see a first-run speedbump and the agent can use `SearchCodebase` as soon as the client has received the ready status.
+2. If the user has already enabled indexing for that tuple and a ready cached index exists, Warp treats the repo as index-enabled immediately. The user does not see a first-run speedbump and the agent can use `SearchCodebase` as soon as the client has received the ready status.
 
 3. If no cached index exists and remote automatic indexing is enabled, Warp starts indexing the repo without interrupting the user, matching local automatic indexing behavior.
 
@@ -60,7 +60,7 @@ Today, codebase indexing is local-only: the filesystem walk, tree build, chunkin
 
 13. Failed states include retry. Retrying starts the remote indexing flow again for the same repo and updates the status as new progress arrives.
 
-14. Dropping a remote repo from settings removes Warp's cached index state for that repo and stops future syncing until the user re-enables indexing.
+14. Dropping a remote repo from settings removes that user's cached indexing state for the repo and stops future syncing for that user until they re-enable indexing. The machine-local serialized index cache may remain available for other users or future reuse.
 
 ### Agent retrieval
 15. In a remote session, `SearchCodebase` is advertised to the agent only when remote codebase indexing is enabled for the active repo and Warp has a ready searchable index.
@@ -76,9 +76,9 @@ Today, codebase indexing is local-only: the filesystem walk, tree build, chunkin
 20. Remote `SearchCodebase` should feel comparable to local search. The remote architecture should avoid adding an SSH round trip to the main retrieval query when the client already has enough status to query the backend directly.
 
 ### Persistence, startup, and incremental changes
-21. Once a remote repo has been indexed, its status and index cache persist across SSH disconnects, tab closes, daemon grace-period survival, and daemon restarts when the daemon's on-disk cache remains available.
+21. Once a remote repo has been indexed, per-user status metadata and the machine-local serialized index cache persist across SSH disconnects, tab closes, daemon grace-period survival, and daemon restarts when the daemon's on-disk cache remains available.
 
-22. On startup or reconnect, Warp bootstraps known remote repo statuses from the remote side. Known ready indexes should become usable without rebuilding from scratch.
+22. On startup or reconnect, Warp bootstraps known remote repo statuses from the remote side. Repos that the user already enabled and that have a valid machine-local cached index should become usable without rebuilding from scratch.
 
 23. If the remote filesystem changed while disconnected, Warp detects that after reconnect and syncs incrementally. The status becomes stale or indexing while the sync runs, then ready when the new index is available.
 
@@ -87,7 +87,7 @@ Today, codebase indexing is local-only: the filesystem walk, tree build, chunkin
 25. Remote indexing respects server-backed codebase-indexing configuration such as sync cadence, batch sizes, and embedding configuration. Users do not need to configure those values locally on the remote host.
 
 ### Per-user and security invariants
-26. Remote indexing is scoped to the authenticated Warp user that owns the daemon. Two Warp users connecting to the same OS account and repo path do not share indexing state unless a future product explicitly designs shared indexes.
+26. Remote indexing enablement, status, decline/drop decisions, and backend retrieval authorization are scoped to the authenticated Warp user that owns the daemon. Two Warp users connecting to the same OS account and repo path may reuse the same machine-local serialized Merkle/snapshot cache when OS permissions allow, but one user's choices or backend access do not enable search for another user.
 
 27. Indexing respects the filesystem permissions of the OS user running the remote daemon. If the daemon cannot read a file, that file is not indexed.
 
