@@ -8,7 +8,9 @@ use std::time::Duration;
 use crate::auth::RemoteServerAuthContext;
 #[cfg(not(target_family = "wasm"))]
 use crate::client::ClientEvent;
-use crate::client::{InitializeParams, RemoteServerClient};
+#[cfg(not(target_family = "wasm"))]
+use crate::client::InitializeParams;
+use crate::client::RemoteServerClient;
 use crate::setup::PreinstallCheckResult;
 #[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
