@@ -19,6 +19,7 @@ cd "${REPO_ROOT}"
 OS_TYPE="$(uname -s)"
 
 FEATURES="gui"
+INSTALL_COMMON_SKILLS=0
 
 ./script/install_channel_config || echo "Skipping internal channel config installation (no repo access)."
 
@@ -63,6 +64,10 @@ while (( "$#" )); do
         exit 1
       fi
       ;;
+    --install-common-skills)
+      INSTALL_COMMON_SKILLS=1
+      shift
+      ;;
     --release)
       CARGO_PARAMS+=("$1")
       MAC_ARGS+=("$1")
@@ -86,6 +91,11 @@ while (( "$#" )); do
       ;;
   esac
 done
+
+if [[ "$INSTALL_COMMON_SKILLS" -eq 1 ]]; then
+  echo "Checking common agent skills version..."
+  ./script/install_common_skills --if-needed --non-interactive --quiet || echo "Skipping common-skills update."
+fi
 
 # These cargo features were removed and replaced by environment variables read
 # by warp-channel-config. Intercept them here so that existing --features

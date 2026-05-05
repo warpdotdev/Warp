@@ -1,6 +1,63 @@
 #!/usr/bin/env powershell
+param(
+    [switch]$Help,
+    [switch]$InstallCommonSkills
+)
 
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($env:WARP_COMMON_SKILLS_REPO_URL)) {
+    $commonSkillsRepoUrl = 'https://github.com/warpdotdev/common-skills/'
+} else {
+    $commonSkillsRepoUrl = $env:WARP_COMMON_SKILLS_REPO_URL
+}
+
+function Show-Usage {
+    Write-Output 'Usage: .\script\windows\bootstrap.ps1 [-Help] [-InstallCommonSkills]'
+    Write-Output ''
+    Write-Output 'Prepare this checkout for Warp development on Windows.'
+    Write-Output ''
+    Write-Output 'Options:'
+    Write-Output '  -Help                 Show this help message.'
+    Write-Output '  -InstallCommonSkills  Install or update common agent skills from warpdotdev/common-skills.'
+    Write-Output ''
+    Write-Output 'Environment:'
+    Write-Output '  WARP_SKIP_COMMON_SKILLS_INSTALL=1'
+    Write-Output '      Skip installing common agent skills.'
+    Write-Output '  WARP_COMMON_SKILLS_DEST_DIR=C:\path\to\base-dir'
+    Write-Output '      Install common skills into C:\path\to\base-dir\.agents\skills without prompting.'
+    Write-Output '  WARP_COMMON_SKILLS_REPO_URL=C:\path\to\common-skills-or-git-url'
+    Write-Output '      Use a specific common-skills checkout or repository URL.'
+    Write-Output '  WARP_COMMON_SKILLS_REF=<git-ref>'
+    Write-Output '      Use a specific common-skills git ref.'
+}
+
+function Show-BootstrapPreview {
+    Write-Output 'Warp bootstrap is starting for Windows.'
+    Write-Output 'It will:'
+    Write-Output '  - Check for Git for Windows.'
+    Write-Output '  - Install Rust if cargo is unavailable.'
+    Write-Output '  - Install Visual Studio Build Tools, jq, CMake, InnoSetup, and gcloud as needed.'
+    Write-Output '  - Install Cargo test dependencies.'
+
+    if (-not $InstallCommonSkills) {
+        Write-Output '  - Skip common agent skills unless -InstallCommonSkills is provided.'
+    } elseif ($env:WARP_SKIP_COMMON_SKILLS_INSTALL -eq '1') {
+        Write-Output '  - Skip common agent skills because WARP_SKIP_COMMON_SKILLS_INSTALL=1.'
+    } else {
+        Write-Output "  - Install or update common agent skills from $commonSkillsRepoUrl if needed."
+    }
+
+    Write-Output 'Run .\script\windows\bootstrap.ps1 -Help to see options and environment overrides.'
+    Write-Output ''
+}
+
+if ($Help) {
+    Show-Usage
+    exit 0
+}
+
+Show-BootstrapPreview
 
 # Git for Windows can be installed system-wide (Program Files) or per-user (LOCALAPPDATA\Programs\Git).
 $gitBinCandidates = @(
@@ -12,6 +69,11 @@ if (-not $gitBinDir) {
     Write-Error 'Git for Windows is required. Please install it at:'
     Write-Error 'https://gitforwindows.org/'
     exit 1
+}
+$env:PATH = "$gitBinDir;$env:PATH"
+
+function Install-CommonSkills {
+    & "$gitBinDir\bash.exe" "$PWD\script\install_common_skills" --if-needed
 }
 
 if (-not (Get-Command -Name cargo -Type Application -ErrorAction SilentlyContinue)) {
@@ -68,4 +130,8 @@ if ($identityToken.Trim().Length -eq 0) {
     Write-Output 'gcloud CLI authentication missing.  Press enter to continue...'
     Read-Host
     gcloud auth login
+}
+
+if ($InstallCommonSkills) {
+    Install-CommonSkills
 }

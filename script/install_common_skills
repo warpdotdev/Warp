@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+LOCK_FILE="${REPO_ROOT}/.agents/common-skills.lock"
+STAMP_FILENAME=".common-skills-install.json"
+
+IF_NEEDED=0
+NON_INTERACTIVE=0
+FORCE=0
+QUIET=0
+DEST_DIR="${WARP_COMMON_SKILLS_DEST_DIR:-}"
+
+usage() {
+  cat <<EOF
+Usage: ./script/install_common_skills [options]
+
+Install or update common agent skills using .agents/common-skills.lock.
+
+Options:
+  --if-needed          Skip installation when the destination stamp matches the lock file.
+  --non-interactive    Do not prompt for an install destination.
+  --force              Install even if the destination stamp is already up to date.
+  --dest-dir DIR       Base directory whose .agents/skills directory should receive skills.
+  --quiet              Suppress "already up to date" and "not installed" informational output.
+  -h, --help           Show this help message.
+
+Environment:
+  WARP_SKIP_COMMON_SKILLS_INSTALL=1
+      Skip installing common agent skills.
+  WARP_COMMON_SKILLS_DEST_DIR=/path/to/base-dir
+      Install common skills into /path/to/base-dir/.agents/skills without prompting.
+  WARP_COMMON_SKILLS_REPO_URL=/path/to/common-skills-or-git-url
+      Override the repository URL from .agents/common-skills.lock.
+  WARP_COMMON_SKILLS_REF=<git-ref>
+      Override the git ref from .agents/common-skills.lock.
+EOF
+}
+
+log() {
+  if [[ "${QUIET}" -ne 1 ]]; then
+    echo "$@"
+  fi
+}
+
+lock_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" "${LOCK_FILE}" | tail -n 1
+}
+
+stamp_path_for_dest() {
+  local dest_dir="$1"
+  echo "${dest_dir}/.agents/skills/${STAMP_FILENAME}"
+}
+
+stamp_value() {
+  local stamp_file="$1"
+  local key="$2"
+
+  if [[ ! -f "${stamp_file}" ]]; then
+    return
+  fi
+
+  sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "${stamp_file}" | tail -n 1
+}
+
+repo_root() {
+  git -C "${REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || echo "${REPO_ROOT}"
+}
+
+choose_dest_dir() {
+  local home_dir="${HOME}"
+  local repo_dir="$(repo_root)"
+  local response=""
+
+  if [[ -n "${DEST_DIR}" ]]; then
+    echo "${DEST_DIR}"
+    return
+  fi
+
+  if [[ "${NON_INTERACTIVE}" -eq 1 ]]; then
+    if [[ -f "$(stamp_path_for_dest "${home_dir}")" ]]; then
+      echo "${home_dir}"
+      return
+    fi
+
+    if [[ -f "$(stamp_path_for_dest "${repo_dir}")" ]]; then
+      echo "${repo_dir}"
+      return
+    fi
+
+    echo ""
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    echo ""
+    return
+  fi
+
+  echo "Install common agent skills from warpdotdev/common-skills:" >&2
+  echo "  1) ${home_dir}/.agents/skills (recommended for Warp team members)" >&2
+  echo "  2) ${repo_dir}/.agents/skills (recommended for OpenWarp contributors)" >&2
+
+  while true; do
+    read -r -p "Choose an install location [1/2]: " response
+    case "${response}" in
+      1)
+        echo "${home_dir}"
+        return
+        ;;
+      2)
+        echo "${repo_dir}"
+        return
+        ;;
+      *)
+        echo "Please choose 1 or 2." >&2
+        ;;
+    esac
+  done
+}
+
+prepare_common_skills_source() {
+  local repo_url="$1"
+  local ref="$2"
+  local source_dir="$3"
+
+  if [[ -d "${repo_url}" ]]; then
+    echo "${repo_url}"
+    return
+  fi
+
+  git clone "${repo_url}" "${source_dir}"
+  git -C "${source_dir}" checkout --quiet "${ref}"
+  echo "${source_dir}"
+}
+
+actual_source_ref() {
+  local source_dir="$1"
+  git -C "${source_dir}" rev-parse HEAD
+}
+
+remove_existing_common_skill_dirs() {
+  local source_dir="$1"
+  local dest_dir="$2"
+  local source_skills_dir="${source_dir}/.agents/skills"
+  local dest_skills_dir="${dest_dir}/.agents/skills"
+  local skill_dir=""
+
+  if [[ ! -d "${source_skills_dir}" ]]; then
+    echo "error: common-skills source does not contain ${source_skills_dir}" >&2
+    return 1
+  fi
+
+  while IFS= read -r skill_dir; do
+    rm -rf "${dest_skills_dir}/$(basename "${skill_dir}")"
+  done < <(find "${source_skills_dir}" -mindepth 1 -maxdepth 1 -type d | sort)
+}
+
+write_stamp() {
+  local dest_dir="$1"
+  local repo_url="$2"
+  local ref="$3"
+  local stamp_file="$(stamp_path_for_dest "${dest_dir}")"
+  local installed_at=""
+
+  installed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  mkdir -p "$(dirname "${stamp_file}")"
+  cat > "${stamp_file}" <<EOF
+{
+  "repo": "${repo_url}",
+  "ref": "${ref}",
+  "destination": "${dest_dir}",
+  "installed_at": "${installed_at}"
+}
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --if-needed)
+      IF_NEEDED=1
+      shift
+      ;;
+    --non-interactive)
+      NON_INTERACTIVE=1
+      shift
+      ;;
+    --force)
+      FORCE=1
+      shift
+      ;;
+    --dest-dir)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "error: --dest-dir requires a base directory" >&2
+        exit 1
+      fi
+      DEST_DIR="$2"
+      shift 2
+      ;;
+    --quiet)
+      QUIET=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "${WARP_SKIP_COMMON_SKILLS_INSTALL:-}" = "1" ]]; then
+  log "Skipping common-skills install because WARP_SKIP_COMMON_SKILLS_INSTALL=1."
+  exit 0
+fi
+
+if [[ ! -f "${LOCK_FILE}" ]]; then
+  echo "error: missing common-skills lock file: ${LOCK_FILE}" >&2
+  exit 1
+fi
+
+LOCK_REPO="$(lock_value repo)"
+LOCK_REF="$(lock_value ref)"
+COMMON_SKILLS_REPO_URL="${WARP_COMMON_SKILLS_REPO_URL:-${LOCK_REPO}}"
+COMMON_SKILLS_REF="${WARP_COMMON_SKILLS_REF:-${LOCK_REF}}"
+
+if [[ -z "${COMMON_SKILLS_REPO_URL}" || -z "${COMMON_SKILLS_REF}" ]]; then
+  echo "error: ${LOCK_FILE} must define repo= and ref=" >&2
+  exit 1
+fi
+
+DEST_DIR="$(choose_dest_dir)"
+
+if [[ -z "${DEST_DIR}" ]]; then
+  log "Common skills are not installed yet; run ./script/bootstrap once or set WARP_COMMON_SKILLS_DEST_DIR."
+  exit 0
+fi
+
+if [[ -d "${COMMON_SKILLS_REPO_URL}" && -z "${WARP_COMMON_SKILLS_REF:-}" ]]; then
+  COMMON_SKILLS_REF="$(git -C "${COMMON_SKILLS_REPO_URL}" rev-parse HEAD)"
+fi
+
+STAMP_FILE="$(stamp_path_for_dest "${DEST_DIR}")"
+STAMP_REPO="$(stamp_value "${STAMP_FILE}" repo)"
+STAMP_REF="$(stamp_value "${STAMP_FILE}" ref)"
+
+if [[ "${FORCE}" -ne 1 && "${IF_NEEDED}" -eq 1 && "${STAMP_REPO}" = "${COMMON_SKILLS_REPO_URL}" && "${STAMP_REF}" = "${COMMON_SKILLS_REF}" ]]; then
+  log "Common skills are already up to date."
+  exit 0
+fi
+
+SOURCE_CLONE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/common-skills-source.XXXXXX")"
+SKILLS_CLONE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/common-skills.XXXXXX")"
+
+cleanup() {
+  rm -rf "${SOURCE_CLONE_DIR}" "${SKILLS_CLONE_DIR}"
+}
+trap cleanup EXIT
+
+SOURCE_DIR="$(prepare_common_skills_source "${COMMON_SKILLS_REPO_URL}" "${COMMON_SKILLS_REF}" "${SOURCE_CLONE_DIR}")"
+ACTUAL_REF="$(actual_source_ref "${SOURCE_DIR}")"
+
+echo "Installing common agent skills from ${COMMON_SKILLS_REPO_URL} at ${ACTUAL_REF}."
+remove_existing_common_skill_dirs "${SOURCE_DIR}" "${DEST_DIR}"
+WARP_COMMON_SKILLS_REPO_URL="${SOURCE_DIR}" \
+  bash "${SOURCE_DIR}/scripts/install.sh" --clone-dir "${SKILLS_CLONE_DIR}" --dest-dir "${DEST_DIR}"
+write_stamp "${DEST_DIR}" "${COMMON_SKILLS_REPO_URL}" "${ACTUAL_REF}"
