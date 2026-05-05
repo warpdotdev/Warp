@@ -14,6 +14,7 @@ use crate::terminal::warpify::settings::{SshExtensionInstallMode, WarpifySetting
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use crate::remote_server::ssh_transport::SshTransport;
 use crate::server::server_api::ServerApiProvider;
+use crate::settings::{PrivacySettings, PrivacySettingsChangedEvent};
 use crate::terminal::model::session::{IsLegacySSHSession, SessionInfo};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::{send_telemetry_from_ctx, TelemetryEvent};
@@ -94,15 +95,29 @@ impl<T: EventLoopSender> RemoteServerController<T> {
     ) -> Self {
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
         let crash_reporting_enabled = Arc::new(parking_lot::RwLock::new(
-            crate::settings::PrivacySettings::handle(ctx)
+            PrivacySettings::handle(ctx)
                 .as_ref(ctx)
                 .is_crash_reporting_enabled,
         ));
         let auth_context = Arc::new(server_api_auth_context(
             auth_state,
             ServerApiProvider::as_ref(ctx).get_auth_client(),
-            crash_reporting_enabled,
+            crash_reporting_enabled.clone(),
         ));
+
+        // Keep the shared crash-reporting flag in sync with the user's
+        // privacy settings so that future daemon handshakes send the
+        // current value rather than a stale snapshot.
+        let privacy_settings = PrivacySettings::handle(ctx);
+        ctx.subscribe_to_model(&privacy_settings, move |_, event, _| {
+            if let &PrivacySettingsChangedEvent::UpdateIsCrashReportingEnabled {
+                new_value, ..
+            } = event
+            {
+                *crash_reporting_enabled.write() = new_value;
+            }
+        });
+
         ctx.subscribe_to_model(&model_event_dispatcher, |me, event, ctx| {
             if let ModelEvent::SshInitShell {
                 pending_session_info,

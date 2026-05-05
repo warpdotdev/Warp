@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::super::proto::{Authenticate, Initialize};
 use super::super::protocol::RequestId;
-use super::{PendingFileOps, ServerModel};
+use super::{DaemonAuthContext, PendingFileOps, ServerModel};
 
 fn test_model() -> ServerModel {
     ServerModel {
@@ -13,7 +13,7 @@ fn test_model() -> ServerModel {
         host_id: "test-host-id".to_string(),
         executors: HashMap::new(),
         pending_file_ops: PendingFileOps::new(),
-        auth_token: None,
+        auth: DaemonAuthContext::new(),
     }
 }
 

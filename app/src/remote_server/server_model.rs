@@ -131,6 +131,37 @@ impl PendingFileOps {
     }
 }
 
+/// Client-supplied auth credentials and user identity for the daemon.
+///
+/// Populated by `Initialize` and `Authenticate` messages. The auth token
+/// is used for server API calls; the user identity is forwarded to Sentry
+/// so crash reports from the daemon are attributed to the connecting user.
+///
+/// All fields are intentionally retained across proxy connection teardown
+/// and cleared only by daemon process exit.
+struct DaemonAuthContext {
+    /// Bearer credential set by Initialize / Authenticate.
+    auth_token: Option<String>,
+    /// User ID from the most recent `Initialize` handshake (Firebase UID).
+    #[cfg(feature = "crash_reporting")]
+    sentry_user_id: String,
+    /// User email from the most recent `Initialize` handshake.
+    #[cfg(feature = "crash_reporting")]
+    sentry_user_email: String,
+}
+
+impl DaemonAuthContext {
+    fn new() -> Self {
+        Self {
+            auth_token: None,
+            #[cfg(feature = "crash_reporting")]
+            sentry_user_id: String::new(),
+            #[cfg(feature = "crash_reporting")]
+            sentry_user_email: String::new(),
+        }
+    }
+}
+
 /// The top-level server-side orchestrator model.
 ///
 /// Receives `ClientMessage`s from connected proxy sessions and routes
@@ -165,13 +196,8 @@ pub struct ServerModel {
     executors: HashMap<SessionId, Arc<LocalCommandExecutor>>,
     /// Tracks in-flight file write/delete operations and handles cleanup.
     pending_file_ops: PendingFileOps,
-    /// Daemon-wide bearer credential for the identity-scoped daemon.
-    ///
-    /// The token is written by Initialize when the client supplies a
-    /// non-empty credential, or by Authenticate during token rotation. It is
-    /// intentionally retained across proxy connection teardown and cleared
-    /// only by daemon process exit.
-    auth_token: Option<String>,
+    /// Daemon-wide auth credentials and user identity.
+    auth: DaemonAuthContext,
 }
 
 impl Entity for ServerModel {
@@ -196,7 +222,7 @@ impl ServerModel {
             host_id,
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
-            auth_token: None,
+            auth: DaemonAuthContext::new(),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -531,18 +557,15 @@ impl ServerModel {
         // Update crash reporting based on client-supplied preferences.
         #[cfg(feature = "crash_reporting")]
         {
+            if !msg.user_id.is_empty() {
+                self.auth.sentry_user_id = msg.user_id.clone();
+            }
+            if !msg.user_email.is_empty() {
+                self.auth.sentry_user_email = msg.user_email.clone();
+            }
+
             if msg.crash_reporting_enabled {
-                if !msg.user_id.is_empty() {
-                    crate::crash_reporting::set_user_id(
-                        crate::auth::UserUid::new(&msg.user_id),
-                        if msg.user_email.is_empty() {
-                            None
-                        } else {
-                            Some(msg.user_email)
-                        },
-                        ctx,
-                    );
-                }
+                self.apply_sentry_user_id(ctx);
             } else {
                 crate::crash_reporting::uninit_sentry();
             }
@@ -563,7 +586,25 @@ impl ServerModel {
     /// Extracted so unit tests can call it without a `ModelContext`.
     fn apply_initialize_auth(&mut self, msg: &Initialize) {
         if !msg.auth_token.is_empty() {
-            self.auth_token = Some(msg.auth_token.clone());
+            self.auth.auth_token = Some(msg.auth_token.clone());
+        }
+    }
+
+    /// Sets the Sentry user identity from the stored `DaemonAuthContext`.
+    /// Called both during `Initialize` and when re-enabling crash reporting
+    /// via `UpdatePreferences`.
+    #[cfg(feature = "crash_reporting")]
+    fn apply_sentry_user_id(&self, ctx: &mut warpui::AppContext) {
+        if !self.auth.sentry_user_id.is_empty() {
+            crate::crash_reporting::set_user_id(
+                crate::auth::UserUid::new(&self.auth.sentry_user_id),
+                if self.auth.sentry_user_email.is_empty() {
+                    None
+                } else {
+                    Some(self.auth.sentry_user_email.clone())
+                },
+                ctx,
+            );
         }
     }
 
@@ -581,10 +622,9 @@ impl ServerModel {
         #[cfg(feature = "crash_reporting")]
         {
             if msg.crash_reporting_enabled {
-                // Re-enable if not already initialized. Use stored auth info.
-                // If we don't have user info, init_sentry with no user is fine.
                 if !crate::crash_reporting::is_initialized() {
                     crate::crash_reporting::init(ctx);
+                    self.apply_sentry_user_id(ctx);
                 }
             } else {
                 crate::crash_reporting::uninit_sentry();
@@ -599,11 +639,11 @@ impl ServerModel {
             log::warn!("Received Authenticate notification with empty auth token; ignoring");
             return;
         }
-        self.auth_token = Some(msg.auth_token);
+        self.auth.auth_token = Some(msg.auth_token);
     }
 
     pub fn auth_token(&self) -> Option<&str> {
-        self.auth_token.as_deref()
+        self.auth.auth_token.as_deref()
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.
