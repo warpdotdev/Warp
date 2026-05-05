@@ -648,6 +648,7 @@ impl TerminalView {
     /// `restore_conversation_after_view_creation` and seeds `PendingHandoff`; submission uses
     /// the cached `forked_conversation_id` from `PendingHandoff`, not the new pane's local
     /// agent-view conversation id.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn start_local_to_cloud_handoff_pane(
         &mut self,
         ctx: &mut ViewContext<Self>,
