@@ -376,7 +376,7 @@ use crate::view_components::callout_bubble::{
 use crate::view_components::{
     AgentToast, AgentToastStack, DismissibleToast, DismissibleToastStack, ToastLink,
 };
-use crate::window_settings::{WindowSettings, WindowSettingsChangedEvent, ZoomLevel};
+use crate::window_settings::{WindowSettings, WindowSettingsChangedEvent};
 use crate::workflows::{
     manager::WorkflowOpenSource, AIWorkflowOrigin, CloudWorkflow, WorkflowSelectionSource,
     WorkflowSource, WorkflowType, WorkflowViewMode,
@@ -16113,18 +16113,22 @@ impl Workspace {
     }
 
     fn reset_zoom(&mut self, ctx: &mut ViewContext<Self>) {
-        WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
-            report_if_error!(window_settings
-                .zoom_level
-                .set_value(ZoomLevel::default_value(), ctx));
-        });
+        // Cmd+0: clear the per-window zoom override so this window follows
+        // the app-wide default again.
+        let window_id = ctx.window_id();
+        ctx.reset_window_zoom_factor(window_id);
     }
 
     fn adjust_zoom(&mut self, increase: bool, ctx: &mut ViewContext<Self>) {
-        let current_zoom = *WindowSettings::as_ref(ctx).zoom_level.value();
+        // Cmd++ / Cmd+-: step the focused window's zoom up or down within
+        // the discrete percentages defined by `ZoomLevel::VALUES`. Writes a
+        // per-window override; other windows are unaffected.
+        let window_id = ctx.window_id();
+        let current_factor = ctx.window_zoom_factor(window_id);
+        let current_percent = (current_factor.as_f32() * 100.0).round() as u16;
         let Some(current_index) = crate::window_settings::ZoomLevel::VALUES
             .iter()
-            .position(|zoom| *zoom == current_zoom)
+            .position(|zoom| *zoom == current_percent)
         else {
             return;
         };
@@ -16135,11 +16139,9 @@ impl Workspace {
             current_index.saturating_sub(1)
         };
 
-        WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
-            report_if_error!(window_settings
-                .zoom_level
-                .set_value(crate::window_settings::ZoomLevel::VALUES[next_index], ctx));
-        });
+        let next_factor =
+            crate::window_settings::ZoomLevel::VALUES[next_index] as f32 / 100.0;
+        ctx.set_window_zoom_factor(window_id, next_factor);
     }
 
     fn adjust_terminal_font_size(&mut self, font_size_delta: f32, ctx: &mut ViewContext<Self>) {

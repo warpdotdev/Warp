@@ -1178,8 +1178,9 @@ impl AppContext {
         self.event_munger = Box::new(handler)
     }
 
-    /// Sets the zoom factor for the application. Changing the zoom factor adjusts
-    /// the magnification of every element rendered within the application.
+    /// Sets the app-wide default zoom factor. Per-window overrides set via
+    /// [`AppContext::set_window_zoom_factor`] are not affected; windows that
+    /// have no override will follow this new default.
     ///
     /// All views in every window are invalidated when this is invoked.
     ///
@@ -1189,6 +1190,38 @@ impl AppContext {
         let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 4.0));
         self.zoom_factor = zoom_factor;
         self.invalidate_all_views();
+    }
+
+    /// Returns the effective zoom factor for `window_id`: the per-window
+    /// override if set, otherwise the app-wide default. Falls back to the
+    /// default if `window_id` is not found.
+    pub fn window_zoom_factor(&self, window_id: WindowId) -> ZoomFactor {
+        self.windows
+            .get(&window_id)
+            .and_then(|w| w.zoom_factor_override)
+            .unwrap_or(self.zoom_factor)
+    }
+
+    /// Sets a per-window zoom factor override. Only invalidates the views of
+    /// `window_id`; other windows are unaffected.
+    ///
+    /// ## Validation
+    /// The zoom factor is clamped to the range [0.5, 4.0].
+    pub fn set_window_zoom_factor(&mut self, window_id: WindowId, zoom_factor: f32) {
+        let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 4.0));
+        if let Some(window) = self.windows.get_mut(&window_id) {
+            window.zoom_factor_override = Some(zoom_factor);
+            self.invalidate_all_views_for_window(window_id);
+        }
+    }
+
+    /// Clears the per-window zoom factor override. The window will follow the
+    /// app-wide default returned by [`AppContext::zoom_factor`].
+    pub fn reset_window_zoom_factor(&mut self, window_id: WindowId) {
+        if let Some(window) = self.windows.get_mut(&window_id) {
+            window.zoom_factor_override = None;
+            self.invalidate_all_views_for_window(window_id);
+        }
     }
 
     /// Sets the callback invoked before opening a URL.
