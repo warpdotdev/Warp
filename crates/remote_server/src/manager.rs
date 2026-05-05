@@ -482,16 +482,16 @@ impl RemoteServerManager {
             ctx.background_executor()
                 .spawn(async move {
                     // Run platform detection, binary check, and old-binary
-                    // check concurrently. The old-binary check lets the
-                    // controller distinguish fresh install (no prior
-                    // versioned binary) from update (prior versioned
-                    // binary present), so it can skip the install prompt
-                    // in the update case.
-                    let (platform_result, check_result, old_binary_result) = futures::join!(
-                        transport.detect_platform(),
-                        transport.check_binary(),
-                        transport.check_has_old_binary(),
-                    );
+                    // check sequentially so that each step reuses the
+                    // same SSH ControlMaster connection instead of
+                    // opening parallel channels. The old-binary check
+                    // lets the controller distinguish fresh install (no
+                    // prior versioned binary) from update (prior
+                    // versioned binary present), so it can skip the
+                    // install prompt in the update case.
+                    let platform_result = transport.detect_platform().await;
+                    let check_result = transport.check_binary().await;
+                    let old_binary_result = transport.check_has_old_binary().await;
                     let platform = match platform_result {
                         Ok(p) => Some(p),
                         Err(e) => {
