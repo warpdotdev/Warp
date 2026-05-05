@@ -343,6 +343,7 @@ pub struct QuakeModeSettings {
     #[schemars(
         description = "macOS only. Whether Warp should hide its Dock icon while the dedicated hotkey window is the active global hotkey mode and a keybinding is configured. Has no effect on Linux or Windows."
     )]
+    #[serde(default)]
     pub hide_dock_icon: bool,
 }
 
