@@ -682,19 +682,17 @@ fn test_custom_lines() {
 
 /// Regression test for WARP-CLIENT-DEV-NYY: panic "Invalid edit range 4042..3982".
 ///
-/// Reproduces the crash from MAA conversation d71bf84b (request b621adb3) with
-/// just the two offending V4A hunks: a large deletion (hunk 3: delete
-/// `DefaultWeightAgentInputButtonTheme`) whose matched range subsumes a nearby
-/// single-line edit (hunk 4: `ActiveMicButtonTheme.background` delegate).
-///
-/// Without deduplication, `fuzzy_match_v4a_diffs` produces overlapping deltas
-/// (e.g. 46..71 and 64..65), which causes `Buffer::edit` to panic when
-/// `CodeEditorModel::apply_diffs` feeds them to `insert_at_offsets`.
+/// Reproduces the crash from MAA conversation d71bf84b (request b621adb3).
+/// Two V4A hunks target the same region: a large deletion whose matched range
+/// subsumes a nearby single-line edit. Without `deduplicate_overlapping_deltas`,
+/// both deltas survive and `Buffer::edit` panics on the overlapping ranges.
 #[test]
 fn test_v4a_maa_crash_d71bf84b_no_overlapping_deltas() {
-    // Minimal file content covering the region matched by the two hunks.
-    // Lines 1–46: closing `}` of `impl AgentInputButtonTheme` +
-    // `DefaultWeightAgentInputButtonTheme` + start of `ActiveMicButtonTheme`.
+    // File content where hunk A (deletion) and hunk B (delegate tweak) both
+    // match, and hunk A's matched range fully contains hunk B's.
+    // The `ActiveMicButtonTheme.background` line that hunk B targets sits
+    // inside `DefaultWeightAgentInputButtonTheme`'s impl, so hunk A's
+    // deletion (which covers the whole impl) subsumes hunk B.
     let file_content = "\
         }\n\
     }\n\
@@ -723,21 +721,10 @@ impl ActionButtonTheme for DefaultWeightAgentInputButtonTheme {\n\
     fn should_opt_out_of_contrast_adjustment(&self) -> bool {\n\
         true\n\
     }\n\
-}\n\
-\n\
-/// Theme for the mic button.\n\
-/// Uses a blue icon when active (hovered, listening, or transcribing).\n\
-pub(crate) struct ActiveMicButtonTheme;\n\
-\n\
-impl ActionButtonTheme for ActiveMicButtonTheme {\n\
-    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {\n\
-        AgentInputButtonTheme.background(hovered, appearance)\n\
-    }\n\
 }";
 
-    // Only the two hunks that produce overlapping deltas.
     let hunks = vec![
-        // Hunk 3 from MAA data: delete DefaultWeightAgentInputButtonTheme
+        // Hunk A: delete the entire DefaultWeightAgentInputButtonTheme block.
         V4AHunk {
             change_context: vec![],
             pre_context: "        }\n    }\n}".to_string(),
@@ -745,10 +732,12 @@ impl ActionButtonTheme for ActiveMicButtonTheme {\n\
             new: String::new(),
             post_context: String::new(),
         },
-        // Hunk 4 from MAA data: ActiveMicButtonTheme.background delegate
+        // Hunk B: tweak a delegate call inside the same region hunk A deletes.
+        // Its preContext + old match a line inside hunk A's range, so it
+        // produces a delta whose range overlaps with hunk A's.
         V4AHunk {
             change_context: vec![],
-            pre_context: "\n/// Theme for the mic button.\n/// Uses a blue icon when active (hovered, listening, or transcribing).\npub(crate) struct ActiveMicButtonTheme;\n\nimpl ActionButtonTheme for ActiveMicButtonTheme {\n    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {".to_string(),
+            pre_context: "impl ActionButtonTheme for DefaultWeightAgentInputButtonTheme {\n    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {".to_string(),
             old: "        AgentInputButtonTheme.background(hovered, appearance)".to_string(),
             new: "        AgentInputButtonTheme::default().background(hovered, appearance)".to_string(),
             post_context: "    }".to_string(),
@@ -758,22 +747,14 @@ impl ActionButtonTheme for ActiveMicButtonTheme {\n\
     let diff = fuzzy_match_v4a_diffs("mod.rs", &hunks, None, file_content);
     let deltas = deltas(&diff);
 
-    // Both hunks should match.
+    // Hunk B's matched range is inside hunk A's, so deduplication must drop it.
+    // Only hunk A's delta (the deletion) should survive.
     assert_eq!(
         deltas.len(),
-        2,
-        "Expected 2 matched deltas, got {}",
-        deltas.len()
+        1,
+        "Expected 1 delta (subsumed hunk should be dropped), got {}: {:?}",
+        deltas.len(),
+        deltas.iter().map(|d| &d.replacement_line_range).collect::<Vec<_>>(),
     );
-
-    // Core invariant: deltas must not overlap after sorting by start line.
-    assert!(
-        deltas[0].replacement_line_range.end <= deltas[1].replacement_line_range.start,
-        "Overlapping deltas detected — this causes the \"Invalid edit range\" panic \
-         (WARP-CLIENT-DEV-NYY).\n\
-         Delta A: lines {:?}\n\
-         Delta B: lines {:?}",
-        deltas[0].replacement_line_range,
-        deltas[1].replacement_line_range,
-    );
+    assert!(deltas[0].insertion.is_empty(), "The surviving delta should be the deletion");
 }
