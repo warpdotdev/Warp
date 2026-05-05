@@ -1087,6 +1087,7 @@ pub fn init(app: &mut AppContext) {
     .with_enabled(|| FeatureFlag::Projects.is_enabled())
     .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))]);
 
+    #[cfg(not(target_arch = "wasm32"))]
     app.register_editable_bindings([EditableBinding::new(
         "terminal:toggle_conversation_details_panel",
         "Toggle Conversation Details Panel",

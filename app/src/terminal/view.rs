@@ -26467,10 +26467,9 @@ impl View for TerminalView {
             context.set.insert("InsideRepository");
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
         if self.can_show_conversation_details_ui_from_model(&model_lock, app) {
-            context
-                .set
-                .insert(init::CAN_SHOW_CONVERSATION_DETAILS_KEY);
+            context.set.insert(init::CAN_SHOW_CONVERSATION_DETAILS_KEY);
         }
 
         let active_conversation = if FeatureFlag::AgentView.is_enabled() {
