@@ -186,7 +186,7 @@ settings::macros::implement_setting!(
     show_message_timestamps: bool,
     AISettings,
     SupportedPlatforms::DESKTOP,
-    SyncToCloud::Always,
+    SyncToCloud::Globally(RespectUserSyncSetting::Yes),
     private: false,
     toml_path: "agents.show_message_timestamps",
     description: "Show submitted-at and completion timestamps next to each Agent Mode exchange.",
@@ -194,9 +194,15 @@ settings::macros::implement_setting!(
 );
 ```
 
-`SyncToCloud::Always` because this is a UX preference that should
-follow the user across devices (unlike voice hotkey which is
-device-specific).
+> **Correction (re-review #10128):** the previous draft cited
+> `SyncToCloud::Always`, which doesn't exist. The actual variants
+> in `app/src/settings/cloud_preferences.rs` are `Never`,
+> `Globally(RespectUserSyncSetting)`, and `PerPlatform(...)`. The
+> right value here is `Globally(RespectUserSyncSetting::Yes)` —
+> the same value used by every UI preference in
+> `app/src/settings/code.rs:19/29/40/48` (the four flagship UI
+> settings). It syncs across devices when the user has cloud sync
+> on and is local-only when they have it off.
 
 The agent view reads this setting on render; when false, none of
 the three widgets are added to the bubble layout (so there is no

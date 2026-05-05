@@ -40,6 +40,9 @@ across long-running and restored conversations.
 - **Editing or backdating timestamps.** Read-only display.
 - **Time-zone selection.** Use `Local` (matches existing
   `Local.timestamp_opt(...)` derivation in conversation.rs:549).
+  *Time-zone* selection is out of scope. **12h-vs-24h preference**
+  is in scope (see B2) and is read from the OS — that is not a
+  user-facing setting in V1, just an OS preference read at startup.
 - **Showing timestamps in the conversation export / yaml.** Out of
   scope — the export already preserves the underlying timestamps,
   this spec is about the in-app view.
@@ -97,11 +100,21 @@ support tickets, regression diffs).
 
 ### B5 — Hidden by default behind a setting; default ON
 
+> **Correction (re-review #10128):** the previous draft cited a
+> non-existent `SyncToCloud::Always`. The actual variants in
+> `app/src/settings/cloud_preferences.rs` are `Never`,
+> `Globally(RespectUserSyncSetting)`, and `PerPlatform(...)`. The
+> right value here is
+> `SyncToCloud::Globally(RespectUserSyncSetting::Yes)` — sync
+> across the user's devices, but respect their global cloud-sync
+> opt-out.
+
 A new setting `agents.show_message_timestamps` (boolean, default
-`true`, `SyncToCloud::Always`) gates the entire feature. When
-`false`, the view layer is identical to today (no timestamp glyphs,
-no tooltip hooks, no extra layout). Existing keyboard shortcuts and
-focus handlers are unchanged in either state.
+`true`,
+`SyncToCloud::Globally(RespectUserSyncSetting::Yes)`) gates the
+entire feature. When `false`, the view layer is identical to today
+(no timestamp glyphs, no tooltip hooks, no extra layout). Existing
+keyboard shortcuts and focus handlers are unchanged in either state.
 
 The default is `true` because the feature is opt-out (the issue is
 about a missing affordance) but power users who want a denser view
@@ -114,14 +127,38 @@ the same timestamps as it did before the restoration. The
 restoration path already preserves message timestamps; the view
 layer must re-derive submitted-at and completed-at on restore.
 
-### B7 — Missing-timestamp fallback
+### B7 — Missing-timestamp fallback (defensive guard only)
 
-If, for any reason, the underlying timestamp is missing
-(`message.timestamp` is `None` AND no
-`AIAgentContext::CurrentTime` is present), display "—" (em dash)
-in the slot, NOT a fabricated time, NOT the conversation-load time.
-A `log::warn!` with the exchange id fires once per affected
-exchange so the team can spot data gaps in production.
+> **Correction (re-review #10128):** the previous draft promised
+> the dash for restored conversations whose timestamps were lost.
+> The model already synthesizes `Local::now()` at
+> [conversation.rs:1777/1895/1962](app/src/ai/agent/conversation.rs)
+> in those exact paths via
+> `finish_time_from_exchange_messages(...).unwrap_or_else(Local::now)`,
+> so a finished restored exchange never has a `None` finish_time.
+> Promising the dash there contradicted the model. Resolved below.
+
+In normal operation **the dash never renders**:
+- In-progress exchanges show `ProgressDurationLabel` ("running for
+  Xs"), not a dash.
+- Finished exchanges always have `finish_time: Some(...)` after the
+  recompute paths, so they show the timestamp.
+- Restored conversations with lost stored timestamps get a
+  synthesized `Local::now()` from the recompute paths, which means
+  on the FIRST render after restore they appear as "just now" and
+  promote out of that bucket on the 30s tick.
+
+The dash is reserved for two **defensive guards** that only fire
+on a model invariant violation:
+1. `output_status` reports finished but `finish_time` is somehow
+   `None` (state-machine bug, should not happen with the current
+   schema).
+2. A future schema change makes `start_time` optional and a
+   `None` slips through.
+
+In either case, render "—" and emit `log::warn!(exchange_id =
+?id, ...)` once per affected exchange so the team can spot the
+violation in production. These cost nothing in the happy path.
 
 ### B8 — In-progress exchange handling
 
@@ -159,8 +196,12 @@ A6. Restoring a conversation from yaml (with messages timestamped
     yesterday) shows the timestamps as "Mon 3:47 PM" (per B2 step
     4) — not "just now," not the load time.
 
-A7. An exchange whose underlying timestamp is missing shows "—"
-    and emits a single `log::warn!` per exchange.
+A7. **Defensive guard:** an exchange that violates the model
+    invariant (`output_status` reports finished but `finish_time`
+    is `None`) shows "—" in the duration slot and emits a single
+    `log::warn!` per exchange. In normal operation this never
+    fires — the model's recompute paths synthesize `Local::now()`
+    so finished exchanges always have `Some(finish_time)`.
 
 A8. The display format auto-promotes from "just now" → "Xm ago" →
     "HH:MM" without requiring a click or re-open of the
@@ -211,9 +252,12 @@ A8. The display format auto-promotes from "just now" → "Xm ago" →
    - The event respects the existing global telemetry opt-out — if
      the user has disabled product analytics, no event fires regardless
      of the setting toggle.
-   - The setting itself follows `SyncToCloud::Always`, so the boolean
-     value is synced as part of normal settings sync (already
-     covered by Warp's settings privacy controls; no new data class).
+   - The setting itself follows
+     `SyncToCloud::Globally(RespectUserSyncSetting::Yes)`, so the
+     boolean value is synced as part of normal settings sync IF the
+     user has cloud sync enabled — and is held local-only otherwise.
+     This is the same privacy semantic as other UX preferences in
+     `app/src/settings/code.rs`; no new data class.
    - No client-side ticker / counter values are ever transmitted.
    - The feature does not introduce any new server-side telemetry
      channels.
