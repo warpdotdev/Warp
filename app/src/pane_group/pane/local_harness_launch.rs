@@ -96,9 +96,8 @@ pub(super) async fn prepare_local_harness_child_launch(
     let command = match harness {
         Harness::Oz => unreachable!("normalize_local_child_harness filters out Oz"),
         Harness::Unknown => unreachable!("normalize_local_child_harness filters out Unknown"),
-        Harness::Claude | Harness::Codex => {
+        Harness::Claude => {
             let working_dir = startup_directory
-                .clone()
                 .or_else(|| std::env::current_dir().ok())
                 .ok_or_else(|| {
                     format!(
@@ -109,7 +108,7 @@ pub(super) async fn prepare_local_harness_child_launch(
             let HarnessKind::ThirdParty(third_party_harness) =
                 harness_kind(harness).map_err(|error: AgentDriverError| error.to_string())?
             else {
-                unreachable!("Codex and Claude both resolve to third-party harnesses")
+                unreachable!("Claude resolves to a third-party harness")
             };
             third_party_harness
                 .validate()
@@ -122,27 +121,34 @@ pub(super) async fn prepare_local_harness_child_launch(
             third_party_harness
                 .prepare_environment_config(&working_dir, None, &managed_secrets)
                 .map_err(|error: AgentDriverError| error.to_string())?;
-
-            if harness == Harness::Claude {
-                if let Some(manager) = plugin_manager_for(third_party_harness.cli_agent()) {
-                    if let Err(error) = manager.install().await {
-                        log::warn!("Claude plugin installation failed for child harness: {error}");
-                    }
-                    if let Err(error) = manager.install_platform_plugin().await {
-                        log::warn!(
-                            "Claude platform plugin installation failed for child harness: {error}"
-                        );
-                    }
+            if let Some(manager) = plugin_manager_for(third_party_harness.cli_agent()) {
+                if let Err(error) = manager.install().await {
+                    log::warn!("Claude plugin installation failed for child harness: {error}");
+                }
+                if let Err(error) = manager.install_platform_plugin().await {
+                    log::warn!(
+                        "Claude platform plugin installation failed for child harness: {error}"
+                    );
                 }
             }
 
-            match harness {
-                Harness::Claude => build_local_claude_child_command(&prompt),
-                Harness::Codex => build_local_codex_child_command(&prompt),
-                Harness::Oz | Harness::OpenCode | Harness::Gemini | Harness::Unknown => {
-                    unreachable!("only Claude and Codex reach this branch")
-                }
-            }
+            build_local_claude_child_command(&prompt)
+        }
+        Harness::Codex => {
+            let HarnessKind::ThirdParty(third_party_harness) =
+                harness_kind(harness).map_err(|error: AgentDriverError| error.to_string())?
+            else {
+                unreachable!("Codex resolves to a third-party harness")
+            };
+            third_party_harness
+                .validate()
+                .map_err(|error: AgentDriverError| error.to_string())?;
+
+            // Local Codex child panes must rely on the user's existing local
+            // auth/session state. Do not run the shared Codex environment prep
+            // here: it can seed OPENAI_API_KEY into ~/.codex/auth.json and
+            // rewrite ~/.codex/config.toml for the whole machine.
+            build_local_codex_child_command(&prompt)
         }
         Harness::OpenCode => {
             validate_cli_installed("opencode", Some("https://opencode.ai/docs"))
