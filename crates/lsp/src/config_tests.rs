@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use lsp_types::Uri;
 
-use crate::config::{lsp_uri_to_path, path_to_lsp_uri};
+use crate::config::{lsp_uri_to_path, path_to_lsp_uri, LanguageId};
+use crate::supported_servers::LSPServerType;
 
 // Unix-specific tests use Unix paths
 #[cfg(not(windows))]
@@ -215,4 +216,66 @@ fn test_path_to_lsp_uri_rejects_relative_path() {
     let result = path_to_lsp_uri(&path);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("must be absolute"));
+}
+
+// PHP LanguageId tests
+#[test]
+fn test_language_id_php_from_php_extension() {
+    let path = PathBuf::from("/project/index.php");
+    assert_eq!(LanguageId::from_path(&path), Some(LanguageId::PHP));
+}
+
+#[test]
+fn test_language_id_php_from_phtml_extension() {
+    let path = PathBuf::from("/project/template.phtml");
+    assert_eq!(LanguageId::from_path(&path), Some(LanguageId::PHP));
+}
+
+#[test]
+fn test_language_id_php_from_php5_extension() {
+    let path = PathBuf::from("/project/legacy.php5");
+    assert_eq!(LanguageId::from_path(&path), Some(LanguageId::PHP));
+}
+
+#[test]
+fn test_language_id_php_from_phps_extension() {
+    let path = PathBuf::from("/project/example.phps");
+    assert_eq!(LanguageId::from_path(&path), Some(LanguageId::PHP));
+}
+
+#[test]
+fn test_language_id_php_not_from_non_php_extension() {
+    let path = PathBuf::from("/project/file.py");
+    assert_ne!(LanguageId::from_path(&path), Some(LanguageId::PHP));
+}
+
+#[test]
+fn test_language_id_php_lsp_identifier() {
+    assert_eq!(LanguageId::PHP.lsp_language_identifier(), "php");
+}
+
+#[test]
+fn test_language_id_php_server_type() {
+    assert_eq!(
+        LanguageId::PHP.server_type(),
+        LSPServerType::PHPIntelephense
+    );
+}
+
+#[test]
+fn test_php_intelephense_binary_name() {
+    assert_eq!(LSPServerType::PHPIntelephense.binary_name(), "intelephense");
+}
+
+#[test]
+fn test_php_intelephense_languages() {
+    assert_eq!(
+        LSPServerType::PHPIntelephense.languages(),
+        vec![LanguageId::PHP]
+    );
+}
+
+#[test]
+fn test_php_intelephense_language_name() {
+    assert_eq!(LSPServerType::PHPIntelephense.language_name(), "PHP");
 }

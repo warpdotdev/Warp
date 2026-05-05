@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::servers::clangd::ClangdCandidate;
 use crate::servers::go::GoPlsCandidate;
+use crate::servers::php::PhpIntelephenseCandidate;
 use crate::servers::pyright::PyrightCandidate;
 use crate::servers::rust::RustAnalyzerCandidate;
 use crate::servers::typescript_language_server::TypeScriptLanguageServerCandidate;
@@ -42,6 +43,7 @@ pub enum LSPServerType {
     Pyright,
     TypeScriptLanguageServer,
     Clangd,
+    PHPIntelephense,
 }
 
 /// Provides server-specific configuration for each LSP server type.
@@ -109,6 +111,9 @@ impl LSPServerType {
                     binary_path: path,
                     prepend_args: vec![],
                 }),
+            LSPServerType::PHPIntelephense => {
+                PhpIntelephenseCandidate::find_installed_binary_config(path_env_var).await
+            }
         }
     }
 
@@ -132,6 +137,7 @@ impl LSPServerType {
             LSPServerType::Pyright => "pyright-langserver",
             LSPServerType::TypeScriptLanguageServer => "typescript-language-server",
             LSPServerType::Clangd => "clangd",
+            LSPServerType::PHPIntelephense => "intelephense",
         }
     }
 
@@ -140,7 +146,9 @@ impl LSPServerType {
     fn args(&self) -> Vec<&'static str> {
         match self {
             LSPServerType::RustAnalyzer | LSPServerType::GoPls | LSPServerType::Clangd => vec![],
-            LSPServerType::Pyright | LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
+            LSPServerType::Pyright
+            | LSPServerType::TypeScriptLanguageServer
+            | LSPServerType::PHPIntelephense => vec!["--stdio"],
         }
     }
 
@@ -154,6 +162,7 @@ impl LSPServerType {
             LSPServerType::Pyright => vec!["--stdio"],
             LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
             LSPServerType::Clangd => vec![],
+            LSPServerType::PHPIntelephense => vec!["--stdio"],
         }
     }
 
@@ -172,6 +181,7 @@ impl LSPServerType {
                 ]
             }
             LSPServerType::Clangd => vec![LanguageId::C, LanguageId::Cpp],
+            LSPServerType::PHPIntelephense => vec![LanguageId::PHP],
         }
     }
 
@@ -180,6 +190,7 @@ impl LSPServerType {
     pub fn language_name(&self) -> String {
         match self {
             LSPServerType::TypeScriptLanguageServer => "TypeScript/JavaScript".to_string(),
+            LSPServerType::PHPIntelephense => "PHP".to_string(),
             _ => self
                 .languages()
                 .iter()
@@ -205,6 +216,7 @@ impl LSPServerType {
                 Box::new(TypeScriptLanguageServerCandidate::new(client))
             }
             LSPServerType::Clangd => Box::new(ClangdCandidate::new(client)),
+            LSPServerType::PHPIntelephense => Box::new(PhpIntelephenseCandidate::new(client)),
         }
     }
 
