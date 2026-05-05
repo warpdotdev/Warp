@@ -1,5 +1,29 @@
 use super::*;
-use crate::util::color::OPAQUE;
+use crate::{user_config, util::color::OPAQUE};
+use settings_value::SettingsValue as _;
+
+fn custom_theme_json(path: &str) -> serde_json::Value {
+    serde_json::json!({
+        "name": "My Theme",
+        "path": path,
+    })
+}
+
+fn custom_theme_from_serde_path(path: &str) -> CustomTheme {
+    serde_json::from_value(custom_theme_json(path)).unwrap()
+}
+
+fn custom_theme_from_file_value_path(path: &str) -> CustomTheme {
+    CustomTheme::from_file_value(&custom_theme_json(path)).unwrap()
+}
+
+fn assert_custom_theme_is_syncable(custom_theme: CustomTheme) {
+    assert!(ThemeKind::Custom(custom_theme).is_custom_theme_reference_syncable());
+}
+
+fn assert_custom_theme_is_not_syncable(custom_theme: CustomTheme) {
+    assert!(!ThemeKind::Custom(custom_theme).is_custom_theme_reference_syncable());
+}
 
 #[test]
 fn custom_theme_path_under_theme_root_serializes_relative() {
@@ -42,28 +66,13 @@ fn custom_theme_relative_parent_dir_path_is_not_portable() {
 }
 
 #[test]
-fn custom_theme_absolute_parent_dir_path_under_theme_root_is_preserved() {
-    let root = PathBuf::from("/Users/example/.warp/themes");
-    let stored = root.join("../outside.yml");
-
-    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
-}
-
-#[test]
-fn custom_theme_absolute_parent_dir_path_under_theme_root_is_not_portable() {
-    let root = PathBuf::from("/Users/example/.warp/themes");
-
-    assert!(!custom_theme_path_is_portable(
-        &root.join("../outside.yml"),
-        &root
-    ));
-}
-
-#[test]
-fn custom_theme_parent_dir_path_under_theme_root_does_not_serialize_relative() {
+fn custom_theme_absolute_parent_dir_path_under_theme_root_is_preserved_nonportable_and_not_serialized_relative(
+) {
     let root = PathBuf::from("/Users/example/.warp/themes");
     let path = root.join("../outside.yml");
 
+    assert_eq!(custom_theme_path_from_storage(&path, &root), path);
+    assert!(!custom_theme_path_is_portable(&path, &root));
     assert_eq!(custom_theme_path_for_storage(&path, &root), path);
 }
 
@@ -150,10 +159,95 @@ fn custom_theme_windows_unc_path_string_is_preserved() {
 }
 
 #[test]
-fn custom_theme_settings_value_writes_portable_path_for_theme_root_file() {
-    use settings_value::SettingsValue as _;
+#[cfg(not(windows))]
+fn custom_theme_relative_backslash_path_is_preserved() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = PathBuf::from(r"catppuccin\mocha.yml");
 
-    let root_path = crate::user_config::themes_dir().join("my_theme.yml");
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+#[cfg(not(windows))]
+fn custom_theme_relative_backslash_path_is_not_portable() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = PathBuf::from(r"catppuccin\mocha.yml");
+
+    assert!(!custom_theme_path_is_portable(&stored, &root));
+}
+
+#[test]
+#[cfg(not(windows))]
+fn custom_theme_relative_backslash_path_does_not_serialize_as_portable_relative() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = PathBuf::from(r"catppuccin\mocha.yml");
+
+    assert_eq!(custom_theme_path_for_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_serde_reads_portable_raw_path_under_theme_root() {
+    let custom = custom_theme_from_serde_path("catppuccin/mocha.yml");
+
+    assert_eq!(
+        custom.path(),
+        user_config::themes_dir()
+            .join("catppuccin")
+            .join("mocha.yml")
+    );
+    assert_custom_theme_is_syncable(custom);
+}
+
+#[test]
+fn custom_theme_serde_preserves_unportable_raw_paths() {
+    for raw_path in [
+        "",
+        ".",
+        "./mocha.yml",
+        r"catppuccin\mocha.yml",
+        "C:/Users/example/AppData/Roaming/warp/Warp/data/themes/mocha.yml",
+        "C:themes/mocha.yml",
+    ] {
+        let custom = custom_theme_from_serde_path(raw_path);
+
+        assert_eq!(custom.path(), PathBuf::from(raw_path));
+        assert_custom_theme_is_not_syncable(custom);
+    }
+}
+
+#[test]
+fn custom_theme_settings_value_reads_portable_raw_path_under_theme_root() {
+    let custom = custom_theme_from_file_value_path("catppuccin/mocha.yml");
+
+    assert_eq!(
+        custom.path(),
+        user_config::themes_dir()
+            .join("catppuccin")
+            .join("mocha.yml")
+    );
+    assert_custom_theme_is_syncable(custom);
+}
+
+#[test]
+fn custom_theme_settings_value_preserves_unportable_raw_paths() {
+    for raw_path in [
+        "",
+        ".",
+        "./mocha.yml",
+        r"catppuccin\mocha.yml",
+        "C:/Users/example/AppData/Roaming/warp/Warp/data/themes/mocha.yml",
+        "C:themes/mocha.yml",
+    ] {
+        let custom = custom_theme_from_file_value_path(raw_path);
+
+        assert_eq!(custom.path(), PathBuf::from(raw_path));
+        assert_custom_theme_is_not_syncable(custom);
+    }
+}
+
+#[test]
+fn custom_theme_settings_value_writes_portable_path_for_theme_root_file() {
+    let root_path = user_config::themes_dir().join("my_theme.yml");
     let custom = CustomTheme::new("My Theme".to_string(), root_path);
 
     let value = custom.to_file_value();
@@ -164,7 +258,7 @@ fn custom_theme_settings_value_writes_portable_path_for_theme_root_file() {
 
 #[test]
 fn custom_theme_serde_writes_portable_path_for_theme_root_file() {
-    let root_path = crate::user_config::themes_dir().join("my_theme.yml");
+    let root_path = user_config::themes_dir().join("my_theme.yml");
     let custom = CustomTheme::new("My Theme".to_string(), root_path);
 
     let value = serde_json::to_value(custom).unwrap();
@@ -175,9 +269,7 @@ fn custom_theme_serde_writes_portable_path_for_theme_root_file() {
 
 #[test]
 fn custom_base16_theme_kind_uses_custom_theme_settings_value_path_rules() {
-    use settings_value::SettingsValue as _;
-
-    let root_path = crate::user_config::themes_dir().join("base16/ocean.yml");
+    let root_path = user_config::themes_dir().join("base16/ocean.yml");
     let kind = ThemeKind::CustomBase16(CustomTheme::new("Base16 Ocean".to_string(), root_path));
 
     assert_eq!(
@@ -189,6 +281,109 @@ fn custom_base16_theme_kind_uses_custom_theme_settings_value_path_rules() {
             }
         })
     );
+}
+
+#[cfg(windows)]
+mod windows_custom_theme_path_tests {
+    use super::*;
+
+    fn windows_theme_root() -> PathBuf {
+        PathBuf::from(r"C:\Users\example\AppData\Roaming\warp\Warp\data\themes")
+    }
+
+    #[test]
+    fn custom_theme_windows_theme_root_path_serializes_with_slashes() {
+        let root = windows_theme_root();
+        let path = root.join("catppuccin").join("mocha.yml");
+
+        assert_eq!(
+            custom_theme_path_for_storage(&path, &root),
+            PathBuf::from("catppuccin/mocha.yml")
+        );
+        assert_eq!(
+            portable_custom_theme_storage_string(&path, &root).as_deref(),
+            Some("catppuccin/mocha.yml")
+        );
+    }
+
+    #[test]
+    fn custom_theme_windows_slash_stored_path_resolves_under_theme_root() {
+        let root = windows_theme_root();
+        let stored = PathBuf::from("catppuccin/mocha.yml");
+
+        assert_eq!(
+            custom_theme_path_from_storage(&stored, &root),
+            root.join("catppuccin").join("mocha.yml")
+        );
+        assert_eq!(
+            portable_custom_theme_path_from_stored_raw("catppuccin/mocha.yml", &root),
+            root.join("catppuccin").join("mocha.yml")
+        );
+    }
+
+    #[test]
+    fn custom_theme_windows_theme_root_path_is_portable() {
+        let root = windows_theme_root();
+        let path = root.join("catppuccin").join("mocha.yml");
+
+        assert!(custom_theme_path_is_portable(&path, &root));
+    }
+
+    #[test]
+    fn custom_theme_windows_raw_unportable_stored_paths_are_preserved() {
+        let root = windows_theme_root();
+
+        for raw_path in [
+            r"catppuccin\mocha.yml",
+            "C:/Users/example/AppData/Roaming/warp/Warp/data/themes/mocha.yml",
+            "C:themes/mocha.yml",
+        ] {
+            assert_eq!(
+                portable_custom_theme_path_from_stored_raw(raw_path, &root),
+                PathBuf::from(raw_path)
+            );
+        }
+    }
+
+    #[test]
+    fn custom_theme_windows_raw_unportable_paths_are_not_portable() {
+        let root = windows_theme_root();
+
+        for raw_path in [
+            r"catppuccin\mocha.yml",
+            "C:/Users/example/AppData/Roaming/warp/Warp/data/themes/mocha.yml",
+            "C:themes/mocha.yml",
+        ] {
+            assert!(!custom_theme_path_is_portable(
+                &PathBuf::from(raw_path),
+                &root
+            ));
+        }
+    }
+
+    #[test]
+    fn custom_theme_windows_settings_value_serializes_theme_root_file_with_slashes() {
+        let root_path = user_config::themes_dir()
+            .join("catppuccin")
+            .join("mocha.yml");
+        let custom = CustomTheme::new("Mocha".to_string(), root_path);
+
+        let value = custom.to_file_value();
+
+        assert_eq!(value["path"], "catppuccin/mocha.yml");
+    }
+
+    #[test]
+    fn custom_theme_windows_serde_serializes_theme_root_file_with_slashes() {
+        let root_path = user_config::themes_dir()
+            .join("catppuccin")
+            .join("mocha.yml");
+        let custom = CustomTheme::new("Mocha".to_string(), root_path);
+
+        let value = serde_json::to_value(custom).unwrap();
+
+        assert_eq!(value["path"], "catppuccin/mocha.yml");
+    }
 }
 
 #[test]

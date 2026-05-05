@@ -178,7 +178,7 @@ impl settings_value::SettingsValue for CustomTheme {
     fn to_file_value(&self) -> serde_json::Value {
         serde_json::json!({
             "name": &self.name,
-            "path": custom_theme_path_for_storage(&self.path, &crate::user_config::themes_dir()),
+            "path": custom_theme_path_storage_value(&self.path, &crate::user_config::themes_dir()),
         })
     }
 
@@ -186,13 +186,16 @@ impl settings_value::SettingsValue for CustomTheme {
         #[derive(Deserialize)]
         struct FileValue {
             name: String,
-            path: PathBuf,
+            path: String,
         }
 
         let value = serde_json::from_value::<FileValue>(value.clone()).ok()?;
         Some(Self {
             name: value.name,
-            path: custom_theme_path_from_storage(&value.path, &crate::user_config::themes_dir()),
+            path: portable_custom_theme_path_from_stored_raw(
+                &value.path,
+                &crate::user_config::themes_dir(),
+            ),
         })
     }
 }
@@ -201,67 +204,148 @@ fn serialize_custom_theme_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S
 where
     S: Serializer,
 {
-    custom_theme_path_for_storage(path, &crate::user_config::themes_dir()).serialize(serializer)
+    if let Some(path) =
+        portable_custom_theme_storage_string(path, &crate::user_config::themes_dir())
+    {
+        path.serialize(serializer)
+    } else {
+        path.serialize(serializer)
+    }
 }
 
 fn deserialize_custom_theme_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let path = PathBuf::deserialize(deserializer)?;
-    Ok(custom_theme_path_from_storage(
+    let path = String::deserialize(deserializer)?;
+    Ok(portable_custom_theme_path_from_stored_raw(
         &path,
         &crate::user_config::themes_dir(),
     ))
 }
 
+fn custom_theme_path_storage_value(path: &Path, theme_root: &Path) -> serde_json::Value {
+    if let Some(path) = portable_custom_theme_storage_string(path, theme_root) {
+        serde_json::Value::String(path)
+    } else {
+        serde_json::json!(path)
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn custom_theme_path_for_storage(path: &Path, theme_root: &Path) -> PathBuf {
-    if !path_is_absolute_or_foreign_absolute(path) {
-        return path.to_path_buf();
+    if path_is_absolute_or_foreign_absolute(path) {
+        return portable_custom_theme_storage_string(path, theme_root)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| path.to_path_buf());
     }
 
-    path.strip_prefix(theme_root)
-        .ok()
-        .filter(|relative| theme_root_relative_path_is_safe(relative))
-        .map(Path::to_path_buf)
+    path.to_str()
+        .filter(|path| portable_stored_raw_components(path).is_some())
+        .map(PathBuf::from)
         .unwrap_or_else(|| path.to_path_buf())
 }
 
+#[cfg(test)]
 pub(crate) fn custom_theme_path_from_storage(path: &Path, theme_root: &Path) -> PathBuf {
     if path_is_absolute_or_foreign_absolute(path) {
-        return if let Ok(relative) = path.strip_prefix(theme_root) {
-            if theme_root_relative_path_is_safe(relative) {
-                theme_root.join(relative)
-            } else {
-                path.to_path_buf()
-            }
-        } else {
-            path.to_path_buf()
-        };
+        return portable_custom_theme_storage_string(path, theme_root)
+            .map(|path| portable_custom_theme_path_from_stored_raw(&path, theme_root))
+            .unwrap_or_else(|| path.to_path_buf());
     }
 
-    if theme_root_relative_path_is_safe(path) {
-        theme_root.join(path)
-    } else {
-        path.to_path_buf()
-    }
+    path.to_str()
+        .map(|path| portable_custom_theme_path_from_stored_raw(path, theme_root))
+        .unwrap_or_else(|| path.to_path_buf())
 }
 
 pub(crate) fn custom_theme_path_is_portable(path: &Path, theme_root: &Path) -> bool {
     if path_is_absolute_or_foreign_absolute(path) {
-        return path
-            .strip_prefix(theme_root)
-            .is_ok_and(theme_root_relative_path_is_safe);
+        return portable_custom_theme_storage_string(path, theme_root).is_some();
     }
 
-    theme_root_relative_path_is_safe(path)
+    path.to_str()
+        .is_some_and(|path| portable_stored_raw_components(path).is_some())
 }
 
-fn theme_root_relative_path_is_safe(path: &Path) -> bool {
-    !path.as_os_str().is_empty()
-        && path
-            .components()
-            .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+pub(crate) fn portable_custom_theme_path_from_stored_raw(raw: &str, theme_root: &Path) -> PathBuf {
+    portable_stored_raw_components(raw)
+        .map(|components| {
+            components
+                .iter()
+                .fold(theme_root.to_path_buf(), |path, component| {
+                    path.join(component)
+                })
+        })
+        .unwrap_or_else(|| PathBuf::from(raw))
+}
+
+pub(crate) fn portable_custom_theme_storage_string(
+    path: &Path,
+    theme_root: &Path,
+) -> Option<String> {
+    if path_starts_with_windows_drive_prefix_using_forward_slash(path) {
+        return None;
+    }
+
+    let relative = path.strip_prefix(theme_root).ok()?;
+    let mut components = Vec::new();
+
+    for component in relative.components() {
+        let Component::Normal(value) = component else {
+            return None;
+        };
+        let value = value.to_str()?;
+        if value.contains('\\') {
+            return None;
+        }
+        components.push(value);
+    }
+
+    if components.is_empty() {
+        return None;
+    }
+
+    let path = components.join("/");
+    if portable_stored_raw_components(&path).is_some() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn portable_stored_raw_components(raw: &str) -> Option<Vec<&str>> {
+    if raw.is_empty()
+        || raw.contains('\\')
+        || raw.starts_with('/')
+        || raw_starts_with_windows_drive_prefix(raw)
+    {
+        return None;
+    }
+
+    let components = raw.split('/').collect::<Vec<_>>();
+    if components
+        .iter()
+        .all(|component| !component.is_empty() && *component != "." && *component != "..")
+    {
+        Some(components)
+    } else {
+        None
+    }
+}
+
+fn raw_starts_with_windows_drive_prefix(raw: &str) -> bool {
+    let bytes = raw.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+fn path_starts_with_windows_drive_prefix_using_forward_slash(path: &Path) -> bool {
+    let Some(path) = path.as_os_str().to_str() else {
+        return false;
+    };
+
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/'
 }
 
 fn path_is_absolute_or_foreign_absolute(path: &Path) -> bool {
