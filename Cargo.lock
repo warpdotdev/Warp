@@ -3698,7 +3698,7 @@ dependencies = [
 [[package]]
 name = "dagre_rust"
 version = "0.0.5"
-source = "git+https://github.com/warpdotdev/mermaid-to-svg.git?rev=f7233f69965c59760fad98d684c786569814d821#f7233f69965c59760fad98d684c786569814d821"
+source = "git+https://github.com/warpdotdev/mermaid-to-svg.git?rev=4761588218f747c07d72fd324efcd2032d873aaf#4761588218f747c07d72fd324efcd2032d873aaf"
 dependencies = [
  "graphlib_rust",
  "ordered_hashmap",
@@ -7852,7 +7852,7 @@ dependencies = [
 [[package]]
 name = "mermaid_to_svg"
 version = "0.1.0"
-source = "git+https://github.com/warpdotdev/mermaid-to-svg.git?rev=f7233f69965c59760fad98d684c786569814d821#f7233f69965c59760fad98d684c786569814d821"
+source = "git+https://github.com/warpdotdev/mermaid-to-svg.git?rev=4761588218f747c07d72fd324efcd2032d873aaf#4761588218f747c07d72fd324efcd2032d873aaf"
 dependencies = [
  "dagre_rust",
  "graphlib_rust",
