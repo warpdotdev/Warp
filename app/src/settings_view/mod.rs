@@ -15,7 +15,7 @@ use crate::{
         pane::view, BackingView, Direction, PaneConfiguration, PaneEvent, SplitPaneState,
     },
     server::server_api::ServerApiProvider,
-    settings::{AISettings, BlockVisibilitySettings, SettingsFileError},
+    settings::{AISettings, BlockVisibilitySettings, LocaleSettings, SettingsFileError},
     settings_view::mcp_servers_page::MCPServersSettingsPageEvent,
     terminal::{model::blockgrid::BlockGrid, SizeInfo},
     ui_components::icons,
@@ -56,6 +56,7 @@ use warp_core::{
     settings::ToggleableSetting as _, ui::theme::color::internal_colors,
 };
 use warp_editor::editor::NavigationKey;
+use warp_i18n::tr;
 use warpify_page::{WarpifyPageAction, WarpifyPageView};
 use warpui::Element;
 use warpui::{
@@ -230,20 +231,44 @@ use std::fmt::{self, Display};
 impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SettingsSection::BillingAndUsage => write!(f, "Billing and usage"),
-            SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
-            SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
-            SettingsSection::MCPServers => write!(f, "MCP Servers"),
-            SettingsSection::WarpDrive => write!(f, "Warp Drive"),
-            SettingsSection::WarpAgent => write!(f, "Warp Agent"),
-            SettingsSection::AgentProfiles => write!(f, "Profiles"),
-            SettingsSection::AgentMCPServers => write!(f, "MCP servers"),
-            SettingsSection::Knowledge => write!(f, "Knowledge"),
-            SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
-            SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
-            SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
-            SettingsSection::CloudEnvironments => write!(f, "Environments"),
-            SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
+            SettingsSection::Appearance => write!(f, "{}", tr!("settings-section-appearance")),
+            SettingsSection::Features => write!(f, "{}", tr!("settings-section-features")),
+            SettingsSection::About => write!(f, "{}", tr!("settings-section-about")),
+            SettingsSection::Account => write!(f, "{}", tr!("settings-section-account")),
+            SettingsSection::Privacy => write!(f, "{}", tr!("settings-section-privacy")),
+            SettingsSection::Teams => write!(f, "{}", tr!("settings-section-teams")),
+            SettingsSection::Warpify => write!(f, "{}", tr!("settings-section-warpify")),
+            SettingsSection::Referrals => write!(f, "{}", tr!("settings-section-referrals")),
+            SettingsSection::Code => write!(f, "{}", tr!("settings-section-code")),
+            SettingsSection::AI => write!(f, "{}", tr!("settings-section-ai")),
+            SettingsSection::BillingAndUsage => {
+                write!(f, "{}", tr!("settings-section-billing-and-usage"))
+            }
+            SettingsSection::Keybindings => write!(f, "{}", tr!("settings-section-keybindings")),
+            SettingsSection::SharedBlocks => write!(f, "{}", tr!("settings-section-shared-blocks")),
+            SettingsSection::MCPServers => write!(f, "{}", tr!("settings-section-mcp-servers")),
+            SettingsSection::WarpDrive => write!(f, "{}", tr!("settings-section-warp-drive")),
+            SettingsSection::WarpAgent => write!(f, "{}", tr!("settings-section-warp-agent")),
+            SettingsSection::AgentProfiles => write!(f, "{}", tr!("settings-section-profiles")),
+            SettingsSection::AgentMCPServers => {
+                write!(f, "{}", tr!("settings-section-mcp-servers-lower"))
+            }
+            SettingsSection::Knowledge => write!(f, "{}", tr!("settings-section-knowledge")),
+            SettingsSection::ThirdPartyCLIAgents => {
+                write!(f, "{}", tr!("settings-section-third-party-cli-agents"))
+            }
+            SettingsSection::CodeIndexing => {
+                write!(f, "{}", tr!("settings-section-indexing-and-projects"))
+            }
+            SettingsSection::EditorAndCodeReview => {
+                write!(f, "{}", tr!("settings-section-editor-and-code-review"))
+            }
+            SettingsSection::CloudEnvironments => {
+                write!(f, "{}", tr!("settings-section-environments"))
+            }
+            SettingsSection::OzCloudAPIKeys => {
+                write!(f, "{}", tr!("settings-section-oz-cloud-api-keys"))
+            }
             _ => write!(f, "{self:?}"),
         }
     }

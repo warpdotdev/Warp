@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::theme::Fill;
+use warp_i18n::{tr, tr_f};
 use warpui::{
     elements::{
         Align, ChildAnchor, ChildView, Container, OffsetPositioning, ParentAnchor,
@@ -61,14 +62,14 @@ pub(crate) struct RemoveTabConfigConfirmationDialog {
 impl RemoveTabConfigConfirmationDialog {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let cancel_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Cancel", NakedTheme).on_click(|ctx| {
+            ActionButton::new(tr!("generic-cancel"), NakedTheme).on_click(|ctx| {
                 ctx.dispatch_typed_action(RemoveTabConfigConfirmationAction::Cancel);
             })
         });
 
         let enter_keystroke = Keystroke::parse("enter").expect("Valid keystroke");
         let confirm_button = ctx.add_typed_action_view(|ctx| {
-            ActionButton::new("Remove", DangerPrimaryTheme)
+            ActionButton::new(tr!("dialog-button-remove"), DangerPrimaryTheme)
                 .with_keybinding(KeystrokeSource::Fixed(enter_keystroke), ctx)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(RemoveTabConfigConfirmationAction::Confirm);
@@ -109,13 +110,15 @@ impl View for RemoveTabConfigConfirmationDialog {
             .with_margin_right(12.)
             .finish();
 
-        let title = format!("Remove '{}'?", self.config_name);
+        let title = tr_f!(
+            "dialog-remove-tab-config-title",
+            ("name", self.config_name.as_str().into())
+        )
+        .to_string();
 
         let dialog = Dialog::new(
             title,
-            Some(
-                "This tab config will be permanently deleted. This action cannot be undone.".into(),
-            ),
+            Some(tr!("dialog-remove-tab-config-body").to_string()),
             UiComponentStyles {
                 width: Some(DIALOG_WIDTH),
                 ..dialog_styles(appearance)

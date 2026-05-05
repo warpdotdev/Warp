@@ -73,6 +73,7 @@ warp_completer = { path = "crates/warp_completer" }
 warp_core = { path = "crates/warp_core" }
 warp_editor = { path = "crates/editor" }
 warp_features = { path = "crates/warp_features" }
+warp_i18n = { path = "crates/warp_i18n" }
 remote_server = { path = "crates/remote_server" }
 warp_files = { path = "crates/warp_files" }
 warp_graphql = { path = "crates/graphql" }
