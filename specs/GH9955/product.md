@@ -42,16 +42,34 @@ mechanisms.
 
 The contributor experience has two distinct paths:
 
-### G1 — User-local grammars: no Warp release required
+### G1 — User-local grammars: no Warp release required (V1.5 / V2)
 
-A contributor with admin access to their own machine can add a new
-language **without modifying compiled Rust code and without
-releasing Warp** by dropping a directory of files into a user-local
-config directory (`$XDG_CONFIG_HOME/warp/grammars/<lang>/` or
-`~/.warp/grammars/<lang>/`). The grammar loads at next Warp startup.
+> **Correction (re-review #10129):** the previous draft promised the
+> G1 capability in V1, but G1 depends on `tree_sitter::WasmStore`,
+> which requires a tree-sitter version with WASM support. Warp's
+> bundled grammars currently come through the internal `arborium`
+> crate (version 2, used at `Cargo.toml`) — confirming whether
+> arborium re-exports a WASM-capable tree-sitter, or whether
+> `crates/languages` would need a parallel direct `tree-sitter`
+> dependency, requires maintainer input. G1 is therefore deferred
+> behind that resolution. See also the open question at the bottom
+> of tech.md.
 
-User-local grammars are WASM-only (see B5) so the load path is fully
-sandboxed and adding one does not require recompiling Warp.
+The eventual G1 contract: a contributor with admin access to their
+own machine adds a new language **without modifying compiled Rust
+code and without releasing Warp** by dropping a directory of files
+into a user-local config directory
+(`$XDG_CONFIG_HOME/warp/grammars/<lang>/` or
+`~/.warp/grammars/<lang>/`). The grammar loads at next Warp startup,
+parsed via WASM for full sandboxing.
+
+V1 of THIS spec does NOT ship G1. It ships only G2 below — the
+bundled-grammar discovery layer. User-local WASM is wired through
+the loader as `LoadResult::Failed { reason:
+UserLocalWasmNotYetSupported }` so the API shape stabilizes
+without enabling the path. Once the WASM-tree-sitter version
+question resolves, a follow-up PR flips the gate and the
+contributor experience matches G1 above.
 
 ### G2 — Bundled (source-tree) grammars: no hand-written match arms,
 ### but does ship with Warp
@@ -205,6 +223,23 @@ warrants a Cargo dependency.
   (default 100ms). Grammars whose parse exceeds the timeout return
   partial results; the editor falls back to no-syntax-tree rendering
   for that buffer until the next edit.
+- **CPU bound — query execution timeout.** The parse timeout above
+  bounds *parsing*, not query matching against the produced tree.
+  `Query::matches` / `Query::captures` runs in a separate code path
+  with its own potential pathologies (regex predicates, deeply
+  nested captures). User-supplied `.scm` queries get a wall-clock
+  budget of `WARP_GRAMMAR_QUERY_TIMEOUT_MS` (default 50ms per
+  buffer per query type) enforced via a `tree_sitter::QueryCursor`
+  wrapper that polls an `AtomicBool` from a watchdog thread; on
+  timeout, the cursor is cancelled, partial results are discarded,
+  and the buffer falls through to plain rendering with a one-time
+  warn log per (grammar, query-kind) pair. The same bound applies
+  to indent and identifiers queries.
+- **Memory bound — query output size.** Per-buffer query results
+  are capped at `WARP_GRAMMAR_MAX_QUERY_CAPTURES` (default 100k
+  captures). A query that emits more captures is truncated and
+  emits a one-time warn log. This bounds memory for pathological
+  highlight queries that match every token.
 - **Memory bound — input-size cap.** Grammars are not invoked on
   buffers larger than `WARP_GRAMMAR_MAX_INPUT_BYTES` (default 8MiB,
   matching the existing editor large-file threshold). Larger

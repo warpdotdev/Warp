@@ -196,14 +196,33 @@ For each grammar directory:
      `tree_sitter::TREE_SITTER_LANGUAGE_VERSION`: return
      `LoadResult::Failed { reason: WasmAbiMismatch }`.
 4. **`highlights.scm` (optional file):**
-   - **File missing:** record `LoadWarning::HighlightsScmMissing`,
-     continue with no highlight query. The grammar will load
-     without coloring (B6's "minimum viable contribution" path).
+
+   > **Correction (re-review #10129):** the previous draft said
+   > missing-`highlights.scm` "loads without coloring," but
+   > [`crates/languages/src/lib.rs`](crates/languages/src/lib.rs)
+   > defines `pub struct Language { ..., pub highlight_query: Query,
+   > ... }` — `highlight_query` is **not** `Option<Query>`, so a
+   > `Language` cannot be constructed without one. The corrected
+   > design uses an empty query as the missing-file substitute
+   > rather than changing the `Language` API.
+
+   - **File missing:** synthesize an empty highlight query via
+     `Query::new(grammar, "")`. Tree-sitter accepts empty source
+     (zero patterns). The language loads with the same `Language`
+     struct shape; matches at runtime return zero captures so no
+     coloring is applied. Record `LoadWarning::HighlightsScmMissing`
+     so the diagnostic surface in Settings still flags the missing
+     file. **The `Language` API stays unchanged**; preserving B8.
    - **File present but `Query::new` fails:** the contributor
      intended to provide a query and got it wrong; return
      `LoadResult::Failed { reason: HighlightQueryInvalid }`. This
      is treated as a hard failure because shipping a grammar with
      a broken query is worse than no query at all.
+
+   The same empty-query synthesis applies to the optional indent
+   and identifiers queries: their `Language` fields ARE
+   `Option<Query>` already, so missing-file = `None`, and
+   invalid-file = `LoadResult::Failed` per (5) below.
 5. **`indents.scm` and `identifiers.scm` (optional files):** same
    missing-vs-invalid split. Missing → `LoadWarning`. Invalid →
    `LoadResult::Failed`.
