@@ -107,6 +107,8 @@ pub enum AuthToken {
     Firebase(String),
     /// API key for direct server authentication.
     ApiKey(String),
+    /// Request-scoped or externally managed bearer token.
+    Bearer(String),
     /// No authentication token available (e.g. session cookie auth or test credentials).
     #[cfg_attr(
         not(any(test, feature = "integration_tests", feature = "skip_login")),
@@ -122,6 +124,7 @@ impl AuthToken {
         match self {
             AuthToken::Firebase(token) => Some(token),
             AuthToken::ApiKey(key) => Some(key),
+            AuthToken::Bearer(token) => Some(token),
             AuthToken::NoAuth => None,
         }
     }
@@ -131,6 +134,7 @@ impl AuthToken {
         match self {
             AuthToken::Firebase(token) => Some(token.clone()),
             AuthToken::ApiKey(key) => Some(key.clone()),
+            AuthToken::Bearer(token) => Some(token.clone()),
             AuthToken::NoAuth => None,
         }
     }

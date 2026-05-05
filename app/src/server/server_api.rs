@@ -20,10 +20,14 @@ use crate::ai::predict::predict_am_queries::{PredictAMQueriesRequest, PredictAMQ
 use crate::ai::voice::transcribe::{TranscribeRequest, TranscribeResponse};
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
+use crate::auth::credentials::AuthToken;
+use crate::auth::UserUid;
 use crate::server::graphql::default_request_options;
 use crate::server::server_api::presigned_upload::HttpStatusError;
 use ai::AIClient;
-use auth::{AuthClient, AMBIENT_WORKLOAD_TOKEN_HEADER, CLOUD_AGENT_ID_HEADER};
+use auth::{
+    AuthClient, AuthStateTokenSource, AMBIENT_WORKLOAD_TOKEN_HEADER, CLOUD_AGENT_ID_HEADER,
+};
 use base64::prelude::BASE64_URL_SAFE;
 use base64::Engine;
 use block::BlockClient;
@@ -386,6 +390,90 @@ impl fmt::Debug for ServerApiEvent {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenRefreshPolicy {
+    Allowed,
+    Disabled,
+}
+
+impl TokenRefreshPolicy {
+    pub fn allowed_to_refresh_token(self) -> bool {
+        match self {
+            TokenRefreshPolicy::Allowed => true,
+            TokenRefreshPolicy::Disabled => false,
+        }
+    }
+}
+
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
+pub enum ServerApiAuthError {
+    #[error("missing authentication credentials")]
+    MissingCredentials,
+    #[error("authentication token is expired and token refresh is disabled")]
+    ExpiredRefreshDisabled,
+    #[error("server rejected authentication credentials")]
+    CredentialsRejected,
+}
+
+/// Source of request authentication for [`ServerApi`].
+///
+/// Normal client usage is backed by [`AuthState`] with refresh enabled. Daemon/headless callers
+/// can inject a bearer-token source with refresh disabled so requests never attempt client
+/// `AuthState` refresh or emit client reauth events.
+pub trait ServerApiTokenSource: 'static + Send + Sync {
+    fn access_token(&self, refresh_policy: TokenRefreshPolicy) -> BoxFuture<'_, Result<AuthToken>>;
+
+    fn access_token_ignoring_validity(&self) -> Option<String> {
+        None
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Default)]
+pub struct BearerTokenSource {
+    token: RwLock<Option<String>>,
+}
+
+#[allow(dead_code)]
+impl BearerTokenSource {
+    pub fn new(token: Option<String>) -> Self {
+        Self {
+            token: RwLock::new(token.filter(|token| !token.is_empty())),
+        }
+    }
+
+    pub fn set_token(&self, token: impl Into<String>) {
+        let token = token.into();
+        if token.is_empty() {
+            self.clear_token();
+        } else {
+            *self.token.write() = Some(token);
+        }
+    }
+
+    pub fn clear_token(&self) {
+        *self.token.write() = None;
+    }
+}
+
+impl ServerApiTokenSource for BearerTokenSource {
+    fn access_token(
+        &self,
+        _refresh_policy: TokenRefreshPolicy,
+    ) -> BoxFuture<'_, Result<AuthToken>> {
+        Box::pin(async move {
+            let Some(token) = self.token.read().clone() else {
+                return Err(ServerApiAuthError::MissingCredentials.into());
+            };
+            Ok(AuthToken::Bearer(token))
+        })
+    }
+
+    fn access_token_ignoring_validity(&self) -> Option<String> {
+        self.token.read().clone()
+    }
+}
+
 /// An API wrapper struct with methods to requests to warp-server.
 ///
 /// Prefer NOT adding new methods directly on this struct; instead, add to one of the existing
@@ -393,7 +481,9 @@ impl fmt::Debug for ServerApiEvent {
 /// with disparate types of calls, and allows you to mock methods in tests.
 pub struct ServerApi {
     client: Arc<http_client::Client>,
-    auth_state: Arc<AuthState>,
+    auth_state: Option<Arc<AuthState>>,
+    token_source: Arc<dyn ServerApiTokenSource>,
+    token_refresh_policy: TokenRefreshPolicy,
     event_sender: async_channel::Sender<ServerApiEvent>,
     // TODO(jeff): Make `TelemetryApi` another type of client, and move it off `ServerApi`.
     telemetry_api: TelemetryApi,
@@ -417,6 +507,46 @@ impl ServerApi {
         event_sender: async_channel::Sender<ServerApiEvent>,
         agent_source: Option<ai::AgentSource>,
     ) -> Self {
+        let client = Arc::new(http_client::Client::new());
+        let token_source = Arc::new(AuthStateTokenSource::new(
+            auth_state.clone(),
+            client.clone(),
+            event_sender.clone(),
+        ));
+        Self::new_with_parts(
+            client,
+            Some(auth_state),
+            token_source,
+            TokenRefreshPolicy::Allowed,
+            event_sender,
+            agent_source,
+        )
+    }
+
+    pub fn new_with_token_source(
+        token_source: Arc<dyn ServerApiTokenSource>,
+        token_refresh_policy: TokenRefreshPolicy,
+        agent_source: Option<ai::AgentSource>,
+    ) -> Self {
+        let (event_sender, _) = async_channel::bounded(10);
+        Self::new_with_parts(
+            Arc::new(http_client::Client::new()),
+            None,
+            token_source,
+            token_refresh_policy,
+            event_sender,
+            agent_source,
+        )
+    }
+
+    fn new_with_parts(
+        client: Arc<http_client::Client>,
+        auth_state: Option<Arc<AuthState>>,
+        token_source: Arc<dyn ServerApiTokenSource>,
+        token_refresh_policy: TokenRefreshPolicy,
+        event_sender: async_channel::Sender<ServerApiEvent>,
+        agent_source: Option<ai::AgentSource>,
+    ) -> Self {
         // We generate a random user ID for evals so we can run evals in parallel.
         #[cfg(feature = "agent_mode_evals")]
         let eval_user_id = {
@@ -427,8 +557,10 @@ impl ServerApi {
         let oauth_client = Self::create_oauth_client();
 
         Self {
-            client: Arc::new(http_client::Client::new()),
+            client,
             auth_state,
+            token_source,
+            token_refresh_policy,
             event_sender,
             telemetry_api: TelemetryApi::new(),
             last_server_time: Arc::new(Mutex::new(None)),
@@ -444,22 +576,61 @@ impl ServerApi {
     #[cfg(test)]
     fn new_for_test() -> Self {
         let (tx, _) = async_channel::unbounded();
+        let auth_state = Arc::new(AuthState::new_for_test());
+        let client = Arc::new(http_client::Client::new_for_test());
+        let token_source = Arc::new(AuthStateTokenSource::new(
+            auth_state.clone(),
+            client.clone(),
+            tx.clone(),
+        ));
 
-        let oauth_client = Self::create_oauth_client();
+        Self::new_with_parts(
+            client,
+            Some(auth_state),
+            token_source,
+            TokenRefreshPolicy::Allowed,
+            tx,
+            None,
+        )
+    }
 
-        Self {
-            client: Arc::new(http_client::Client::new_for_test()),
-            auth_state: Arc::new(AuthState::new_for_test()),
-            event_sender: tx,
-            telemetry_api: TelemetryApi::new(),
-            last_server_time: Arc::new(Mutex::new(None)),
-            oauth_client,
-            ambient_workload_token: Arc::new(Mutex::new(None)),
-            ambient_agent_task_id: Arc::new(RwLock::new(None)),
-            agent_source: None,
-            #[cfg(feature = "agent_mode_evals")]
-            eval_user_id: None,
-        }
+    #[cfg(test)]
+    fn new_for_test_with_token_source(
+        token_source: Arc<dyn ServerApiTokenSource>,
+        token_refresh_policy: TokenRefreshPolicy,
+        event_sender: async_channel::Sender<ServerApiEvent>,
+    ) -> Self {
+        Self::new_with_parts(
+            Arc::new(http_client::Client::new_for_test()),
+            None,
+            token_source,
+            token_refresh_policy,
+            event_sender,
+            None,
+        )
+    }
+
+    async fn access_token(&self) -> Result<AuthToken> {
+        self.token_source
+            .access_token(self.token_refresh_policy)
+            .await
+    }
+
+    pub fn allowed_to_refresh_token(&self) -> bool {
+        self.token_refresh_policy.allowed_to_refresh_token()
+    }
+
+    pub(super) fn anonymous_id(&self) -> String {
+        self.auth_state
+            .as_ref()
+            .map(|auth_state| auth_state.anonymous_id())
+            .unwrap_or_default()
+    }
+
+    fn user_id(&self) -> Option<UserUid> {
+        self.auth_state
+            .as_ref()
+            .and_then(|auth_state| auth_state.user_id())
     }
 
     /// Sets the ambient agent task ID to be sent with all subsequent requests.
@@ -538,7 +709,7 @@ impl ServerApi {
         Box::pin(async move {
             let operation_name = operation.operation_name().map(Cow::into_owned);
             let auth_token = self
-                .get_or_refresh_access_token()
+                .access_token()
                 .await
                 .context("Failed to get access token for GraphQL request")?;
 
@@ -564,7 +735,12 @@ impl ServerApi {
                     let _ = event_sender.try_send(ServerApiEvent::StagingAccessBlocked);
                     anyhow::bail!(GraphQLError::StagingAccessBlocked)
                 }
-                Err(err) => anyhow::bail!(err),
+                Err(err) => {
+                    if !self.allowed_to_refresh_token() && Self::is_graphql_auth_rejection(&err) {
+                        anyhow::bail!(ServerApiAuthError::CredentialsRejected);
+                    }
+                    anyhow::bail!(err)
+                }
             };
 
             if let Some(errors) = response.errors.as_ref() {
@@ -577,9 +753,10 @@ impl ServerApi {
                 // to get a required user for some gql field. If we see that, since we have already
                 // successfully refreshed the user's access token earlier in this function, we know
                 // that this error is the result of the user's account being disabled/deleted.
-                if errors
-                    .iter()
-                    .any(|error| error.message.contains("User not in context: Not found"))
+                if self.allowed_to_refresh_token()
+                    && errors
+                        .iter()
+                        .any(|error| error.message.contains("User not in context: Not found"))
                 {
                     log::error!("GraphQL request failed due to unauthenticated user");
                     let _ = event_sender.try_send(ServerApiEvent::UserAccountDisabled);
@@ -613,6 +790,17 @@ impl ServerApi {
                 }
             })
         })
+    }
+
+    fn is_graphql_auth_rejection(err: &GraphQLError) -> bool {
+        match err {
+            GraphQLError::HttpError { status, .. } => {
+                *status == StatusCode::UNAUTHORIZED || *status == StatusCode::FORBIDDEN
+            }
+            GraphQLError::RequestError(_)
+            | GraphQLError::StagingAccessBlocked
+            | GraphQLError::ResponseError(_) => false,
+        }
     }
 
     /// Sends a GET request to a public API endpoint.
@@ -904,7 +1092,7 @@ impl ServerApi {
                     // content-type is sufficient (elides the content-length requirement), but
                     // since this request has no body, it makes more sense to set content-length.
                     .header(CONTENT_LENGTH, 0)
-                    .header(EXPERIMENT_ID_HEADER, self.auth_state.anonymous_id());
+                    .header(EXPERIMENT_ID_HEADER, self.anonymous_id());
 
                 let response = request.send().await;
                 if let Err(err) = response {
@@ -925,8 +1113,8 @@ impl ServerApi {
         event: impl TelemetryEvent,
         settings_snapshot: PrivacySettingsSnapshot,
     ) -> Result<()> {
-        let user_id = self.auth_state.user_id();
-        let anonymous_id = self.auth_state.anonymous_id();
+        let user_id = self.user_id();
+        let anonymous_id = self.anonymous_id();
         self.telemetry_api
             .send_telemetry_event(user_id, anonymous_id, event, settings_snapshot)
             .await
@@ -1304,7 +1492,7 @@ impl ServerApi {
             .client
             .get(url.as_str())
             .timeout(FETCH_CHANNEL_VERSIONS_TIMEOUT)
-            .header(EXPERIMENT_ID_HEADER, self.auth_state.anonymous_id());
+            .header(EXPERIMENT_ID_HEADER, self.anonymous_id());
 
         // Authorization for /client_version is optional. Attach authorization header if an access
         // token is present. First, try to get a valid token. If our cached one is expired, try to
@@ -1314,7 +1502,7 @@ impl ServerApi {
             .await
             .ok()
             .and_then(|token| token.bearer_token())
-            .or_else(|| self.auth_state.get_access_token_ignoring_validity());
+            .or_else(|| self.token_source.access_token_ignoring_validity());
         if let Some(token_str) = auth_token {
             request_builder = request_builder.bearer_auth(token_str);
         }
@@ -1466,3 +1654,230 @@ impl Entity for ServerApiProvider {
 }
 
 impl SingletonEntity for ServerApiProvider {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use cynic::GraphQlResponse;
+    use futures::executor::block_on;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct RecordingTokenSource {
+        token: Option<AuthToken>,
+        error: Option<ServerApiAuthError>,
+        calls: AtomicUsize,
+        policies: Mutex<Vec<TokenRefreshPolicy>>,
+    }
+
+    impl RecordingTokenSource {
+        fn with_token(token: AuthToken) -> Self {
+            Self {
+                token: Some(token),
+                error: None,
+                calls: AtomicUsize::new(0),
+                policies: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
+
+        fn policies(&self) -> Vec<TokenRefreshPolicy> {
+            self.policies.lock().clone()
+        }
+    }
+
+    impl ServerApiTokenSource for RecordingTokenSource {
+        fn access_token(
+            &self,
+            refresh_policy: TokenRefreshPolicy,
+        ) -> BoxFuture<'_, Result<AuthToken>> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                self.policies.lock().push(refresh_policy);
+                match (&self.token, &self.error) {
+                    (Some(token), None) => Ok(token.clone()),
+                    (None, Some(error)) => Err(error.clone().into()),
+                    (None, None) => Err(ServerApiAuthError::MissingCredentials.into()),
+                    (Some(_), Some(error)) => Err(error.clone().into()),
+                }
+            })
+        }
+    }
+
+    struct FakeGraphqlOperation {
+        expected_auth_token: Option<String>,
+        send_count: Arc<AtomicUsize>,
+        rejected_status: Option<StatusCode>,
+    }
+
+    impl FakeGraphqlOperation {
+        fn successful(expected_auth_token: Option<&str>, send_count: Arc<AtomicUsize>) -> Self {
+            Self {
+                expected_auth_token: expected_auth_token.map(ToOwned::to_owned),
+                send_count,
+                rejected_status: None,
+            }
+        }
+
+        fn rejected(
+            expected_auth_token: Option<&str>,
+            send_count: Arc<AtomicUsize>,
+            status: StatusCode,
+        ) -> Self {
+            Self {
+                expected_auth_token: expected_auth_token.map(ToOwned::to_owned),
+                send_count,
+                rejected_status: Some(status),
+            }
+        }
+    }
+
+    impl warp_graphql::client::Operation<()> for FakeGraphqlOperation {
+        fn operation_name(&self) -> Option<Cow<'_, str>> {
+            Some(Cow::Borrowed("FakeGraphqlOperation"))
+        }
+
+        fn send_request(
+            self,
+            _client: Arc<http_client::Client>,
+            options: warp_graphql::client::RequestOptions,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = std::result::Result<GraphQlResponse<()>, GraphQLError>>
+                    + Send
+                    + 'static,
+            >,
+        >
+        where
+            Self: Sized,
+        {
+            Box::pin(async move {
+                assert_eq!(options.auth_token, self.expected_auth_token);
+                self.send_count.fetch_add(1, Ordering::SeqCst);
+                if let Some(status) = self.rejected_status {
+                    return Err(GraphQLError::HttpError {
+                        status,
+                        body: "redacted auth rejection".to_string(),
+                    });
+                }
+                Ok(GraphQlResponse {
+                    data: Some(()),
+                    errors: None,
+                })
+            })
+        }
+    }
+
+    fn has_auth_error(error: &anyhow::Error, expected: ServerApiAuthError) -> bool {
+        error
+            .chain()
+            .any(|cause| cause.downcast_ref::<ServerApiAuthError>() == Some(&expected))
+    }
+
+    #[test]
+    fn send_graphql_request_refresh_enabled_uses_token_source() {
+        let (event_sender, _) = async_channel::unbounded();
+        let token_source = Arc::new(RecordingTokenSource::with_token(AuthToken::Bearer(
+            "client-token".to_string(),
+        )));
+        let server_api = ServerApi::new_for_test_with_token_source(
+            token_source.clone(),
+            TokenRefreshPolicy::Allowed,
+            event_sender,
+        );
+        let send_count = Arc::new(AtomicUsize::new(0));
+
+        block_on(server_api.send_graphql_request(
+            FakeGraphqlOperation::successful(Some("client-token"), send_count.clone()),
+            None,
+        ))
+        .unwrap();
+
+        assert_eq!(token_source.calls(), 1);
+        assert_eq!(token_source.policies(), vec![TokenRefreshPolicy::Allowed]);
+        assert_eq!(send_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn send_graphql_request_refresh_disabled_uses_provided_bearer_token() {
+        let (event_sender, _) = async_channel::unbounded();
+        let token_source = Arc::new(BearerTokenSource::new(None));
+        token_source.set_token("daemon-token");
+        let server_api = ServerApi::new_for_test_with_token_source(
+            token_source.clone(),
+            TokenRefreshPolicy::Disabled,
+            event_sender,
+        );
+        let send_count = Arc::new(AtomicUsize::new(0));
+
+        block_on(server_api.send_graphql_request(
+            FakeGraphqlOperation::successful(Some("daemon-token"), send_count.clone()),
+            None,
+        ))
+        .unwrap();
+
+        assert!(!server_api.allowed_to_refresh_token());
+        assert_eq!(send_count.load(Ordering::SeqCst), 1);
+        token_source.clear_token();
+        assert!(token_source.access_token_ignoring_validity().is_none());
+    }
+
+    #[test]
+    fn send_graphql_request_refresh_disabled_missing_token_returns_auth_error() {
+        let (event_sender, event_receiver) = async_channel::unbounded();
+        let token_source = Arc::new(BearerTokenSource::new(None));
+        let server_api = ServerApi::new_for_test_with_token_source(
+            token_source,
+            TokenRefreshPolicy::Disabled,
+            event_sender,
+        );
+        let send_count = Arc::new(AtomicUsize::new(0));
+
+        let error = block_on(server_api.send_graphql_request(
+            FakeGraphqlOperation::successful(Some("unused-token"), send_count.clone()),
+            None,
+        ))
+        .unwrap_err();
+
+        assert!(has_auth_error(
+            &error,
+            ServerApiAuthError::MissingCredentials
+        ));
+        assert_eq!(send_count.load(Ordering::SeqCst), 0);
+        assert!(event_receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn send_graphql_request_refresh_disabled_auth_rejection_is_credentials_rejected() {
+        let (event_sender, event_receiver) = async_channel::unbounded();
+        let token_source = Arc::new(BearerTokenSource::new(Some("daemon-token".to_string())));
+        let server_api = ServerApi::new_for_test_with_token_source(
+            token_source,
+            TokenRefreshPolicy::Disabled,
+            event_sender,
+        );
+        let send_count = Arc::new(AtomicUsize::new(0));
+
+        let error = block_on(server_api.send_graphql_request(
+            FakeGraphqlOperation::rejected(
+                Some("daemon-token"),
+                send_count.clone(),
+                StatusCode::UNAUTHORIZED,
+            ),
+            None,
+        ))
+        .unwrap_err();
+
+        assert!(has_auth_error(
+            &error,
+            ServerApiAuthError::CredentialsRejected
+        ));
+        assert_eq!(send_count.load(Ordering::SeqCst), 1);
+        assert!(event_receiver.try_recv().is_err());
+    }
+}
