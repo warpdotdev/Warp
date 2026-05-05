@@ -640,20 +640,30 @@ impl TypedActionView for OrchestrationPillBar {
             }
             OrchestrationPillBarAction::FocusOpenedConversation(id) => {
                 self.close_menu(ctx);
-                let nav_data = AgentConversationsModel::as_ref(ctx)
-                    .get_conversation(id)
-                    .and_then(|entry| match entry {
-                        ConversationOrTask::Conversation(metadata) => {
-                            Some(metadata.nav_data.clone())
-                        }
-                        ConversationOrTask::Task(_) => None,
-                    });
-                let Some(nav_data) = nav_data else {
-                    // No nav data means we don't actually know where it's
-                    // open; fall back to the in-place switch so the user
-                    // still gets *some* visible action from the click.
+                // "Focus pane" is purely a focus operation: the
+                // conversation already lives in some other visible
+                // terminal view (verified by
+                // `is_conversation_open_in_other_visible_view` before we
+                // surface this menu item) and we just want to move the
+                // user's cursor there. We deliberately do *not* go
+                // through `RestoreOrNavigateToConversation`: that path
+                // calls `set_active_conversation_id` with whichever
+                // `terminal_view_id` it receives, which would either
+                // re-transfer ownership to a stale id pulled from
+                // `AgentConversationsModel::nav_data` or, worse, blank
+                // out the real owner pane while the conversation pops
+                // back into the orchestrator.
+                //
+                // Resolve the canonical owner directly from
+                // `BlocklistAIHistoryModel` (the single source of truth)
+                // and dispatch `FocusTerminalViewInWorkspace`, which
+                // walks every workspace and shifts focus to the matching
+                // terminal view without touching ownership.
+                let owner_view_id =
+                    BlocklistAIHistoryModel::as_ref(ctx).terminal_view_id_for_conversation(id);
+                let Some(owner_view_id) = owner_view_id else {
                     log::warn!(
-                        "FocusOpenedConversation: no nav_data for {id:?}; falling back to switch-in-place"
+                        "FocusOpenedConversation: no canonical owner for {id:?}; falling back to switch-in-place"
                     );
                     ctx.dispatch_typed_action(
                         &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
@@ -664,15 +674,8 @@ impl TypedActionView for OrchestrationPillBar {
                     );
                     return;
                 };
-                ctx.dispatch_typed_action(&WorkspaceAction::RestoreOrNavigateToConversation {
-                    pane_view_locator: nav_data.pane_view_locator,
-                    window_id: nav_data.window_id,
-                    conversation_id: *id,
-                    terminal_view_id: nav_data.terminal_view_id,
-                    // ActivePane mirrors the breadcrumb fallback; the
-                    // workspace handler only consults restore_layout
-                    // when the navigation tuple is incomplete or stale.
-                    restore_layout: Some(RestoreConversationLayout::ActivePane),
+                ctx.dispatch_typed_action(&WorkspaceAction::FocusTerminalViewInWorkspace {
+                    terminal_view_id: owner_view_id,
                 });
             }
         }
@@ -1422,29 +1425,20 @@ fn render_pill(
         // by a *different* visible terminal view than this orchestrator
         // pane (because it was split off into a separate pane or tab),
         // the pill should focus that existing pane rather than re-render
-        // the conversation in place. The check uses the canonical owner
-        // from `BlocklistAIHistoryModel` (filtered to visible panes only;
-        // see `is_conversation_open_in_other_visible_view` for why we
-        // can't use `ActiveAgentViewsModel` here) and routes through
-        // `RestoreOrNavigateToConversation` (mirrors the breadcrumb
-        // parent-click path), which handles same-tab/different-tab/
-        // different-window navigation uniformly.
+        // the conversation in place. We use
+        // `BlocklistAIHistoryModel`'s canonical owner directly and
+        // dispatch `FocusTerminalViewInWorkspace`, which is a pure
+        // focus shift — it does not call `set_active_conversation_id`,
+        // so the conversation stays where it is rather than being
+        // re-transferred into this pane.
         let is_open_elsewhere =
             is_conversation_open_in_other_visible_view(conversation_id, self_terminal_view_id, app);
         if is_open_elsewhere {
-            let nav_data = AgentConversationsModel::as_ref(app)
-                .get_conversation(&conversation_id)
-                .and_then(|entry| match entry {
-                    ConversationOrTask::Conversation(metadata) => Some(metadata.nav_data.clone()),
-                    ConversationOrTask::Task(_) => None,
-                });
-            if let Some(nav_data) = nav_data {
-                ctx.dispatch_typed_action(WorkspaceAction::RestoreOrNavigateToConversation {
-                    pane_view_locator: nav_data.pane_view_locator,
-                    window_id: nav_data.window_id,
-                    conversation_id,
-                    terminal_view_id: nav_data.terminal_view_id,
-                    restore_layout: Some(RestoreConversationLayout::ActivePane),
+            if let Some(owner_view_id) = BlocklistAIHistoryModel::as_ref(app)
+                .terminal_view_id_for_conversation(&conversation_id)
+            {
+                ctx.dispatch_typed_action(WorkspaceAction::FocusTerminalViewInWorkspace {
+                    terminal_view_id: owner_view_id,
                 });
                 return;
             }
