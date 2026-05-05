@@ -9,7 +9,7 @@ Add a module near `agent_conversations_model.rs`, for example `app/src/ai/agent_
 - `AgentConversationIdentity`
 - `AgentConversationDisplayData`
 - `AgentConversationProvenance`
-- `AgentConversationBacking`
+- `AgentConversationBackingData`
 - `AgentConversationCapabilities`
 Add an internal builder that consumes current model state and `AppContext`. The builder should:
 1. build a map from server token to local conversation id from history metadata and loaded conversations;
