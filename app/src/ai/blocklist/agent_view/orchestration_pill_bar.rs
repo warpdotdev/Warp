@@ -1425,23 +1425,19 @@ fn render_pill(
         // by a *different* visible terminal view than this orchestrator
         // pane (because it was split off into a separate pane or tab),
         // the pill should focus that existing pane rather than re-render
-        // the conversation in place. We use
-        // `BlocklistAIHistoryModel`'s canonical owner directly and
-        // dispatch `FocusTerminalViewInWorkspace`, which is a pure
-        // focus shift — it does not call `set_active_conversation_id`,
-        // so the conversation stays where it is rather than being
-        // re-transferred into this pane.
+        // the conversation in place. Route through the pill bar's own
+        // `FocusOpenedConversation` action so this path and the 3-dot
+        // menu's "Focus pane" item share a single implementation — the
+        // pill bar's `handle_action` then dispatches
+        // `WorkspaceAction::FocusTerminalViewInWorkspace` from a
+        // `ViewContext<Self>`, which reliably reaches the workspace.
         let is_open_elsewhere =
             is_conversation_open_in_other_visible_view(conversation_id, self_terminal_view_id, app);
         if is_open_elsewhere {
-            if let Some(owner_view_id) = BlocklistAIHistoryModel::as_ref(app)
-                .terminal_view_id_for_conversation(&conversation_id)
-            {
-                ctx.dispatch_typed_action(WorkspaceAction::FocusTerminalViewInWorkspace {
-                    terminal_view_id: owner_view_id,
-                });
-                return;
-            }
+            ctx.dispatch_typed_action(OrchestrationPillBarAction::FocusOpenedConversation(
+                conversation_id,
+            ));
+            return;
         }
         // Pinned pills focus the existing pane/tab that already hosts this
         // child agent (via `RevealChildAgent`, which the pane group treats
