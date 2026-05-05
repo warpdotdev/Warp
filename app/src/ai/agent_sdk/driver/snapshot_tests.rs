@@ -151,7 +151,7 @@ impl HarnessSupportClient for TestClient {
 /// (uncommitted edit) when `dirty` is true so `git diff --binary HEAD` has something to emit.
 fn init_git_repo(dir: &Path, dirty: bool) {
     let run = |args: &[&str]| {
-        let output = BlockingCommand::new("git")
+        let output = BlockingCommand::new(warp_util::wsl::git_binary())
             .current_dir(dir)
             .args(args)
             .output()
@@ -174,7 +174,7 @@ fn init_git_repo(dir: &Path, dirty: bool) {
 }
 
 fn git_stdout(dir: &Path, args: &[&str]) -> String {
-    let output = BlockingCommand::new("git")
+    let output = BlockingCommand::new(warp_util::wsl::git_binary())
         .current_dir(dir)
         .args(args)
         .output()

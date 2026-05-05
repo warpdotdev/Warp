@@ -329,7 +329,7 @@ impl PassiveSuggestionsModel {
 
             self.unit_test_generation_future_handle = Some(ctx.spawn(
                 async move {
-                    let output = Command::new("git")
+                    let output = Command::new(warp_util::wsl::git_binary())
                         .args(["show", "HEAD"])
                         .current_dir(current_dir)
                         .stdout(Stdio::piped())

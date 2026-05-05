@@ -505,7 +505,7 @@ impl FileSearchModel {
 
         log::debug!("[GIT OPERATION] model.rs get_git_changed_files git status --porcelain");
         // Run `git status --porcelain` to get changed files
-        let output = Command::new("git")
+        let output = Command::new(warp_util::wsl::git_binary())
             .args(["status", "--porcelain"])
             .current_dir(repo_path)
             .output()?;

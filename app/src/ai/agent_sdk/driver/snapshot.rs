@@ -1204,7 +1204,7 @@ where
         .into_iter()
         .map(|arg| arg.as_ref().to_os_string())
         .collect::<Vec<_>>();
-    let mut command = Command::new("git");
+    let mut command = Command::new(warp_util::wsl::git_binary());
     command
         .args(&args)
         .current_dir(repo_dir)

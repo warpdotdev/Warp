@@ -177,7 +177,7 @@ pub async fn clone_repo_for_skill(
         target_dir.display()
     );
 
-    let output = AsyncCommand::new("git")
+    let output = AsyncCommand::new(warp_util::wsl::git_binary())
         .arg("clone")
         .arg(&repo_url)
         .arg(&target_dir)
@@ -529,7 +529,7 @@ fn get_git_remote_org(repo_path: &Path) -> Option<String> {
     log::debug!(
         "[GIT OPERATION] resolve_skill_spec.rs get_git_remote_org git remote get-url origin"
     );
-    let output = Command::new("git")
+    let output = Command::new(warp_util::wsl::git_binary())
         .args(["remote", "get-url", "origin"])
         .current_dir(repo_path)
         .output()
