@@ -1206,9 +1206,13 @@ impl AppContext {
     /// `window_id`; other windows are unaffected.
     ///
     /// ## Validation
-    /// The zoom factor is clamped to the range [0.5, 4.0].
+    /// The zoom factor is clamped to the range [0.5, 3.5], aligning with the
+    /// discrete percentages exposed by `WindowSettings::ZoomLevel::VALUES`
+    /// (50%–350%). Values outside this range are not reachable through the
+    /// keyboard shortcut, and would leave `adjust_zoom`'s position lookup
+    /// unable to step until `reset_window_zoom_factor` clears the override.
     pub fn set_window_zoom_factor(&mut self, window_id: WindowId, zoom_factor: f32) {
-        let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 4.0));
+        let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 3.5));
         if let Some(window) = self.windows.get_mut(&window_id) {
             window.zoom_factor_override = Some(zoom_factor);
             self.invalidate_all_views_for_window(window_id);
