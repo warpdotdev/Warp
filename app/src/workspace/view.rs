@@ -60,6 +60,7 @@ use crate::ai::blocklist::suggested_rule_modal::{
     SuggestedRuleAndId, SuggestedRuleModal, SuggestedRuleModalEvent,
 };
 use crate::ai::blocklist::FORK_PREFIX;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::conversation_utils;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel};

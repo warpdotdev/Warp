@@ -20,10 +20,10 @@ pub use host_selector::{
 };
 pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loading_screen};
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-pub use model::{HandoffSubmissionState, SnapshotUploadStatus};
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 pub(crate) use model::PendingHandoff;
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+pub use model::{HandoffSubmissionState, SnapshotUploadStatus};
 pub use model_selector::{ModelSelector, ModelSelectorAction, ModelSelectorEvent};
 pub use progress::{render_progress, ProgressProps, ProgressStep, ProgressStepState};
 pub use progress_ui_state::AmbientAgentProgressUIState;

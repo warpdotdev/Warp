@@ -10,7 +10,7 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::{conversation::AIConversationId, extract_user_query_mode};
-use crate::ai::ambient_agents::spawn::{AmbientAgentEvent, spawn_task, submit_run_followup};
+use crate::ai::ambient_agents::spawn::{spawn_task, submit_run_followup, AmbientAgentEvent};
 use crate::ai::ambient_agents::task::HarnessConfig;
 use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
