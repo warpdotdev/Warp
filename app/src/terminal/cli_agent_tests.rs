@@ -684,6 +684,86 @@ fn test_detect_node_value_taking_flags_do_not_false_positive() {
     });
 }
 
+/// `CLIAgent::CursorCli`'s prefix is the bare string `"agent"`, which is
+/// generic enough to false-positive on unrelated scripts/binaries (per
+/// oz-for-oss review on #10022). Basename / runtime-script recovery must
+/// be gated for generic prefixes; only exact-word match should detect Cursor.
+#[test]
+fn test_detect_generic_prefix_no_basename_false_positive() {
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            // Exact-word match still works for the legitimate Cursor invocation.
+            assert_eq!(
+                CLIAgent::detect("agent", None, None, ctx),
+                Some(CLIAgent::CursorCli),
+            );
+            // Path-prefixed script named `agent` must NOT detect Cursor (false-positive
+            // surface — unrelated tooling sometimes calls its CLI `agent`).
+            assert_eq!(
+                CLIAgent::detect("/tmp/agent", None, None, ctx),
+                None,
+            );
+            // Node/Python shebang scripts named `agent` must NOT detect Cursor either.
+            assert_eq!(
+                CLIAgent::detect("node /tmp/agent.js", None, None, ctx),
+                None,
+            );
+            assert_eq!(
+                CLIAgent::detect("python /tmp/agent.py", None, None, ctx),
+                None,
+            );
+            // Distinctive prefixes (codex, claude, etc.) still recover via basename;
+            // only the generic `agent` prefix is gated.
+            assert_eq!(
+                CLIAgent::detect("/tmp/codex", None, None, ctx),
+                Some(CLIAgent::Codex),
+            );
+        });
+    });
+}
+
+/// Leading env-var assignments (`FOO=1 node ...`) should be skipped during
+/// shebang-script detection to align with `extract_first_command`'s shell
+/// parsing. Per oz-for-oss review on #10022.
+#[test]
+fn test_detect_node_shebang_with_env_var_prefix() {
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            // The most direct repro: env-var prefix + node + path-prefixed script.
+            // Without the env-skip, `FOO=1` would be read as the runtime token.
+            assert_eq!(
+                CLIAgent::detect(
+                    "FOO=1 node /usr/local/bin/codex",
+                    Some(EscapeChar::Bash),
+                    None,
+                    ctx,
+                ),
+                Some(CLIAgent::Codex),
+            );
+            // Multiple env-var assignments stack.
+            assert_eq!(
+                CLIAgent::detect(
+                    "FOO=1 BAR=baz node /usr/local/bin/codex",
+                    Some(EscapeChar::Bash),
+                    None,
+                    ctx,
+                ),
+                Some(CLIAgent::Codex),
+            );
+            // Env-var with a path value.
+            assert_eq!(
+                CLIAgent::detect(
+                    "PATH=/tmp:/usr/bin node /usr/local/bin/codex",
+                    Some(EscapeChar::Bash),
+                    None,
+                    ctx,
+                ),
+                Some(CLIAgent::Codex),
+            );
+        });
+    });
+}
+
 #[test]
 fn test_detect_aifx_agent_run_claude_wrong_team() {
     App::test((), |mut app| async move {

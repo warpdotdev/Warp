@@ -370,13 +370,22 @@ impl CLIAgent {
         // and the `vibe-acp` ACP-mode binary as Mistral Vibe (also recovered
         // through the path / runtime basename helpers when invoked via path
         // prefix or Node.js shebang).
+        //
+        // Basename / runtime-script fallbacks are gated on
+        // `prefix_eligible_for_basename_recovery(prefix)` so that generic
+        // command_prefix values (e.g. `CLIAgent::CursorCli` whose prefix is
+        // the bare string "agent") don't false-positive on unrelated
+        // scripts/binaries that happen to share the name. See #9870 review.
         enum_iterator::all::<CLIAgent>()
             .filter(|agent| !matches!(agent, CLIAgent::Unknown))
             .find(|agent| {
                 let prefix = agent.command_prefix();
+                let basename_eligible = prefix_eligible_for_basename_recovery(prefix);
                 resolved_first_word == prefix
-                    || candidate_basename.as_deref() == Some(prefix)
-                    || runtime_invoked_basename.as_deref() == Some(prefix)
+                    || (basename_eligible
+                        && candidate_basename.as_deref() == Some(prefix))
+                    || (basename_eligible
+                        && runtime_invoked_basename.as_deref() == Some(prefix))
                     || (matches!(agent, CLIAgent::Claude)
                         && Self::is_aifx_agent_run_claude(&resolved_command, ctx))
                     || (matches!(agent, CLIAgent::Vibe)
@@ -402,6 +411,21 @@ impl CLIAgent {
             .flat_map(|workspace| workspace.teams.iter())
             .any(|team| team.uid.uid() == UBER_TEAM_UID)
     }
+}
+
+/// Agent `command_prefix()` values that are too generic to safely match via
+/// path basename or runtime-script basename recovery. `CLIAgent::CursorCli`'s
+/// prefix is the bare string "agent", which would false-positive on unrelated
+/// scripts/binaries named `agent` (e.g. `/tmp/agent`, `node /tmp/agent.js`).
+/// These prefixes still match exactly via `resolved_first_word`, but the
+/// fallback paths are gated. See #9870 review.
+const GENERIC_AGENT_PREFIXES: &[&str] = &["agent"];
+
+/// Returns true when an agent's `command_prefix()` is distinctive enough
+/// to safely accept a basename / runtime-script match in addition to the
+/// exact-word match.
+fn prefix_eligible_for_basename_recovery(prefix: &str) -> bool {
+    !GENERIC_AGENT_PREFIXES.iter().any(|p| *p == prefix)
 }
 
 /// Script-runtime executable names whose `argv[1]` is the script being run.
@@ -454,13 +478,27 @@ fn path_basename_token(first_word: &str) -> Option<String> {
 /// Value-taking runtime flags (e.g. `node -e <code>`, `python -c <code>`) are
 /// detected and their value is consumed alongside the flag, so an invocation
 /// like `node -e codex` does NOT false-positive as the Codex agent.
+///
+/// Leading shell env-var assignments (`FOO=1 node ...`) are skipped to stay
+/// aligned with `extract_first_command`'s shell-aware parsing — without this,
+/// an invocation like `FOO=1 node /usr/local/bin/codex` would be mis-parsed
+/// here (treating `FOO=1` as the runtime token) even though
+/// `resolved_first_word` correctly resolved to `node`. See #9870 review.
 fn shebang_script_basename(command: &str, first_word: &str) -> Option<String> {
     if !SCRIPT_RUNTIMES.iter().any(|r| *r == first_word) {
         return None;
     }
     // Use whitespace splitting (not shell parsing) — this is best-effort
     // recovery, not security-critical input handling.
-    let mut tokens = command.split_whitespace();
+    let mut tokens = command.split_whitespace().peekable();
+
+    // Skip leading `KEY=VALUE` env-var assignments so we align with
+    // `extract_first_command`. Stop at the first non-assignment token, which
+    // is the runtime executable (matches `first_word`).
+    while tokens.peek().is_some_and(|t| is_env_var_assignment(t)) {
+        tokens.next();
+    }
+
     let _runtime = tokens.next()?;
 
     let script = loop {
@@ -483,6 +521,27 @@ fn shebang_script_basename(command: &str, first_word: &str) -> Option<String> {
         .file_name()
         .and_then(|s| s.to_str())
         .map(strip_script_extension)
+}
+
+/// Returns true when `token` looks like a shell env-var assignment such as
+/// `FOO=bar` or `PATH=/tmp:/usr/bin`. Conservative: requires the prefix to
+/// match the POSIX env-var naming pattern (`[A-Za-z_][A-Za-z0-9_]*=`).
+fn is_env_var_assignment(token: &str) -> bool {
+    let Some(eq_pos) = token.find('=') else {
+        return false;
+    };
+    if eq_pos == 0 {
+        return false;
+    }
+    let name = &token[..eq_pos];
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Strips a single trailing extension from `STRIPPED_SCRIPT_EXTENSIONS`, if any.
