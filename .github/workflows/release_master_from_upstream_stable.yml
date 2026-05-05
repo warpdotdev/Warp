@@ -166,3 +166,90 @@ jobs:
       runner_windows: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_windows || 'windows-latest' }}
       bundle_features: nld_onnx_model
     secrets: inherit
+
+  update_release_notes:
+    name: Update OSS release notes
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'release_current_master') }}
+    needs: create_release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Generate and update release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          AUTHOR_PATTERN: cesar|cesaryuan|cesaryuan@qq\.com
+        run: |
+          set -euo pipefail
+
+          TARGET_REF="refs/heads/master"
+          TARGET_COMMIT="$(git rev-parse "${TARGET_REF}^{commit}")"
+
+          RELEASE_TAG="$(
+            git tag --points-at "$TARGET_COMMIT" --sort=-version:refname \
+              | grep '\.oss_[0-9][0-9]$' \
+              | head -n1 || true
+          )"
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "::error::Could not determine the OSS release tag for master commit $TARGET_COMMIT."
+            exit 1
+          fi
+
+          mapfile -t MERGED_TAGS < <(git for-each-ref refs/tags --merged "$TARGET_REF" --sort=-creatordate --format='%(refname:short)')
+
+          BASE_REF=""
+          for candidate in "${MERGED_TAGS[@]}"; do
+            [[ -z "$candidate" || "$candidate" == "$RELEASE_TAG" ]] && continue
+
+            candidate_commit="$(git rev-parse "${candidate}^{commit}")"
+            if [[ "$candidate_commit" == "$TARGET_COMMIT" ]]; then
+              continue
+            fi
+
+            BASE_REF="$candidate"
+            break
+          done
+
+          NOTES_PATH="$RUNNER_TEMP/${RELEASE_TAG}.md"
+          {
+            echo "# Release Notes"
+            if [[ -n "$BASE_REF" ]]; then
+              short_sha="${TARGET_COMMIT:0:8}"
+              echo "Commit range: [${BASE_REF}...${short_sha}](https://github.com/${REPO}/compare/${BASE_REF}...${TARGET_COMMIT})"
+            else
+              short_sha="${TARGET_COMMIT:0:8}"
+              echo "Commit: [${short_sha}](https://github.com/${REPO}/commit/${TARGET_COMMIT})"
+            fi
+            echo
+          } > "$NOTES_PATH"
+
+          LOG_RANGE="$TARGET_REF"
+          if [[ -n "$BASE_REF" ]]; then
+            LOG_RANGE="${BASE_REF}..${TARGET_REF}"
+          fi
+
+          mapfile -t SUBJECTS < <(
+            git log --no-merges --format='%an%x09%ae%x09%s' "$LOG_RANGE" \
+              | awk -F '\t' -v author_pattern="$AUTHOR_PATTERN" '
+                  $3 !~ /^Merge\b/ && ($1 ~ author_pattern || $2 ~ author_pattern) { print $3 }
+                '
+          )
+
+          if [[ "${#SUBJECTS[@]}" -eq 0 ]]; then
+            echo "No matching commit messages found." >> "$NOTES_PATH"
+          else
+            for subject in "${SUBJECTS[@]}"; do
+              echo "- $subject" >> "$NOTES_PATH"
+            done
+          fi
+
+          gh release edit "$RELEASE_TAG" \
+            --repo "$REPO" \
+            --title "OSS Release $RELEASE_TAG" \
+            --notes-file "$NOTES_PATH"
