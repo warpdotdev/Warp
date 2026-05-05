@@ -657,21 +657,23 @@ struct ClaudeSettings {
 fn resolve_anthropic_api_key_suffix(
     secrets: &HashMap<String, ManagedSecretValue>,
 ) -> Option<String> {
-    // First, check for an AnthropicApiKey variant anywhere in the secrets map,
-    // since the secret name doesn't necessarily match the env var.
+    // 1. Worker-injected process env wins.
+    if let Ok(key) = std::env::var(ANTHROPIC_API_KEY_ENV) {
+        if !key.is_empty() {
+            return suffix_of(&key).map(str::to_owned);
+        }
+    }
+    // 2. Typed AnthropicApiKey secret. The secret name does not have to match the env var.
     for secret in secrets.values() {
         if let ManagedSecretValue::AnthropicApiKey { api_key } = secret {
             return suffix_of(api_key).map(str::to_owned);
         }
     }
-    // Then check for a RawValue stored under the env var name.
+    // 3. Generic RawValue secret stored under the env var name.
     if let Some(ManagedSecretValue::RawValue { value }) = secrets.get(ANTHROPIC_API_KEY_ENV) {
         return suffix_of(value).map(str::to_owned);
     }
-    // Fall back to the environment variable, which a user may have set separately in the env.
-    std::env::var(ANTHROPIC_API_KEY_ENV)
-        .ok()
-        .and_then(|k| suffix_of(&k).map(str::to_owned))
+    None
 }
 
 fn suffix_of(key: &str) -> Option<&str> {
