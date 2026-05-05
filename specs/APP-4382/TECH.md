@@ -14,7 +14,7 @@ pub struct AgentConversationEntry {
     pub identity: AgentConversationIdentity,
     pub display: AgentConversationDisplayData,
     pub provenance: AgentConversationProvenance,
-    pub backing: AgentConversationBacking,
+    pub backing: AgentConversationBackingData,
     pub capabilities: AgentConversationCapabilities,
 }
 ```
@@ -45,7 +45,7 @@ pub enum AgentConversationProvenance {
     CloudSyncedConversation,
 }
 
-pub struct AgentConversationBacking {
+pub struct AgentConversationBackingData {
     pub has_loaded_conversation: bool,
     pub has_local_persisted_data: bool,
     pub has_cloud_data: bool,

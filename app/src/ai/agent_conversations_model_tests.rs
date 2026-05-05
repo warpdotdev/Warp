@@ -26,8 +26,8 @@ use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions};
 use crate::server::ids::ServerId;
 use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
 
+use super::entry::{AgentConversationEntryId, AgentConversationProvenance};
 use super::{
-    AgentConversationEntryId, AgentConversationProvenance,
     AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters,
     AgentRunDisplayStatus, ArtifactFilter, ConversationMetadata, ConversationOrTask,
     ConversationUpdateKind, EnvironmentFilter, HarnessFilter, OwnerFilter, StatusFilter,
