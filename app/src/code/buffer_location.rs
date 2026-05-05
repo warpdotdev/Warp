@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use warp_core::HostId;
-use warp_util::standardized_path::StandardizedPath;
+use warp_util::remote_path::RemotePath;
 
 /// Uniquely identifies where a buffer's content lives.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -9,10 +8,7 @@ pub enum BufferLocation {
     /// File on the local filesystem.
     Local(PathBuf),
     /// File on a remote host, identified by host + path.
-    Remote {
-        host_id: HostId,
-        path: StandardizedPath,
-    },
+    Remote(RemotePath),
 }
 
 /// Tracks sync state between client and server for a single remote buffer.
@@ -29,6 +25,11 @@ pub enum BufferLocation {
 #[derive(Clone, Debug)]
 pub struct SyncClock {
     /// Last version acknowledged from the server (file-watcher side).
+    ///
+    /// This is a raw `u64` rather than `ContentVersion` because it represents
+    /// a version counter from the remote server protocol, not a local
+    /// buffer mutation. `ContentVersion` is auto-incremented locally and
+    /// cannot be constructed from an arbitrary wire value.
     pub server_version: u64,
     /// Last version acknowledged from the client (user-edit side).
     pub client_version: u64,

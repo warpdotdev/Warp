@@ -10,13 +10,14 @@ use lsp::types::TextDocumentContentChangeEvent;
 use lsp::{LspManagerModel, LspServerLogLevel, LspServerModel};
 use vec1::vec1;
 use warp_core::features::FeatureFlag;
-use warp_core::HostId;
 use warp_editor::content::buffer::Buffer;
 use warp_editor::content::diff::{text_diff, TextDiff};
 use warp_editor::content::edit::PreciseDelta;
 use warp_editor::content::version::BufferVersion;
 use warp_util::content_version::ContentVersion;
 use warp_util::file::{FileId, FileLoadError, FileSaveError};
+use warp_util::host_id::HostId;
+use warp_util::remote_path::RemotePath;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
@@ -61,8 +62,7 @@ enum BufferSource {
     },
     /// Backed by a remote filesystem over the remote server protocol.
     Remote {
-        host_id: HostId,
-        path: StandardizedPath,
+        remote_path: RemotePath,
         sync_clock: SyncClock,
     },
 }
@@ -79,6 +79,10 @@ struct InternalBufferState {
 
 impl InternalBufferState {
     /// Returns the base content version for local buffers, `None` for remote.
+    ///
+    /// Remote buffers return `None` because they don't use the file-watcher
+    /// auto-reload path (which is `local_fs`-only). Version tracking for
+    /// remote buffers is handled by `SyncClock` instead.
     fn base_content_version(&self) -> Option<ContentVersion> {
         match &self.source {
             BufferSource::Local { base_content_version, .. } => *base_content_version,
@@ -94,6 +98,11 @@ impl InternalBufferState {
     }
 
     /// Returns the initial content version for local buffers, `None` for remote.
+    ///
+    /// Remote buffers return `None` because the initial-version guard is only
+    /// needed to avoid a spurious LSP `didChange` on first load. Remote
+    /// buffers don't interact with the local LSP (it runs on the server side),
+    /// so no guard is necessary.
     fn initial_content_version(&self) -> Option<ContentVersion> {
         match &self.source {
             BufferSource::Local { initial_content_version, .. } => *initial_content_version,
@@ -1271,10 +1280,8 @@ impl GlobalBufferModel {
         path: StandardizedPath,
         ctx: &mut ModelContext<Self>,
     ) -> BufferState {
-        let location = BufferLocation::Remote {
-            host_id: host_id.clone(),
-            path: path.clone(),
-        };
+        let remote_path = RemotePath::new(host_id.clone(), path.clone());
+        let location = BufferLocation::Remote(remote_path.clone());
 
         // Return existing buffer if already open.
         if let Some(id) = self.location_to_id.get(&location).cloned() {
@@ -1303,8 +1310,7 @@ impl GlobalBufferModel {
                 latest_buffer_version: None,
                 pending_diff_parse: None,
                 source: BufferSource::Remote {
-                    host_id: host_id.clone(),
-                    path: path.clone(),
+                    remote_path,
                     sync_clock: SyncClock::new(0),
                 },
             },
@@ -1367,13 +1373,8 @@ impl GlobalBufferModel {
     ) {
         // Find the buffer by scanning for a Remote source with matching host+path.
         let file_id = self.buffers.iter().find_map(|(id, state)| {
-            if let BufferSource::Remote {
-                host_id: h,
-                path: p,
-                ..
-            } = &state.source
-            {
-                if h == host_id && p.as_str() == path {
+            if let BufferSource::Remote { remote_path, .. } = &state.source {
+                if remote_path.host_id == *host_id && remote_path.path.as_str() == path {
                     return Some(*id);
                 }
             }

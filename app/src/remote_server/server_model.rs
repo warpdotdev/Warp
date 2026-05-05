@@ -200,6 +200,12 @@ pub struct ServerModel {
     /// Daemon-wide auth credentials and user identity.
     auth: DaemonAuthContext,
     /// Server-side state for buffers opened via `OpenBuffer`.
+    ///
+    /// TODO: Replace this with a `GlobalBufferModel` instance operating on
+    /// local files. That would give us in-memory buffers (no re-reading from
+    /// disk on each edit), file-watcher integration for pushing updates, and
+    /// incremental edit application instead of the current
+    /// read-apply-write-back approach.
     open_buffers: HashMap<String, ServerBufferState>,
 }
 
