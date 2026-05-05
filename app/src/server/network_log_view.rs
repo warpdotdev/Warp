@@ -13,7 +13,7 @@ use warp_editor::render::element::VerticalExpansionBehavior;
 use warp_util::path::LineAndColumnArg;
 use warpui::{
     clipboard::ClipboardContent,
-    elements::{ChildView, Flex, Length, MouseStateHandle},
+    elements::{ChildView, Flex, MouseStateHandle},
     text_layout::ClipConfig,
     ui_components::components::UiComponent,
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
@@ -123,6 +123,7 @@ impl NetworkLogView {
         self.editor.update(ctx, |view, ctx| {
             Self::apply_snapshot_to_editor(view, &snapshot.display_text, ctx);
         });
+        ctx.notify();
     }
 
     /// Resets the editor buffer with the given snapshot text and queues a
@@ -282,8 +283,10 @@ impl BackingView for NetworkLogView {
             left_of_overflow: Some(if self.snapshot_is_empty() {
                 self.render_refresh_button(app)
             } else {
-                Flex::new(vec![self.render_copy_button(app), self.render_refresh_button(app)])
-                    .gap(Length::new(4.0))
+                Flex::row()
+                    .with_spacing(4.0)
+                    .with_child(self.render_copy_button(app))
+                    .with_child(self.render_refresh_button(app))
                     .finish()
             }),
             // Keep the close button always visible so hovering the header
