@@ -186,9 +186,24 @@ A3. Selecting "Custom key…" opens a press-to-capture modal; pressing
     F19 binds F19; pressing the app-quit shortcut shows an inline
     error and does not save.
 
-A4. Holding the bound key activates voice input; releasing
-    deactivates it. Pixel-equivalent to today's behavior for the
-    existing modifier keys.
+A4 is split per platform per B1's split semantics:
+
+- **A4-win-lin (hold-to-talk).** On Windows and Linux, holding the
+  bound key activates voice input; releasing deactivates it.
+  Pixel-equivalent to today's behavior for the existing modifier
+  keys.
+- **A4-mac (press-to-toggle).** On macOS, when the bound key is
+  Caps Lock, tapping starts voice input recording and tapping
+  again stops it. For all other macOS-bound keys (F-keys, modifier
+  keys, custom non-CapsLock), behavior is hold-to-talk identical
+  to Windows/Linux. Caps Lock is the only key that uses press-to-
+  toggle, because macOS reports it as a toggle event rather than a
+  sustained press.
+
+> **Correction (re-review #10127):** the previous A4 still said
+> "holding the bound key … releasing deactivates" for every key,
+> which contradicted B1's macOS Caps Lock tap-to-toggle. Resolved
+> by splitting A4 above.
 
 A5. A user upgrading from the current build with
     `agents.voice.voice_input_toggle_key = "alt_left"` in their
@@ -198,8 +213,14 @@ A5. A user upgrading from the current build with
 A6. With an unbindable key bound from a corrupted settings file
     (e.g. someone hand-edited TOML to set `voice_input_toggle_key =
     "enter"`), the dropdown shows "None" and a one-time toast
-    explains the setting was reset for safety. The TOML is left
-    unchanged so the user can fix it themselves.
+    explains the setting was reset for safety. The TOML is
+    rewritten with the corrected value so the user is not stuck in
+    a permanent toast loop on subsequent launches.
+
+> **Correction (re-review #10127):** the previous A6 said the TOML
+> was left unchanged. tech.md's reset path rewrites the TOML so
+> the user-facing toast fires once, not every launch. Updated A6
+> here to match.
 
 ## Risks and decisions for tech.md
 

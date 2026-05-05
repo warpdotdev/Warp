@@ -219,10 +219,21 @@ New module `app/src/settings_view/voice_hotkey_capture_modal.rs`.
     `Keystroke` from the key-binding registry (e.g. `Cmd+Q` on
     macOS, `Alt+F4` on Windows). The captured input is rejected
     only if its full `Keystroke` (key + modifiers) matches.
-  - **Currently-bound voice-input shortcut:** allow re-confirming
-    the same key (so the user can re-open and confirm without
-    error), but reject if the user picks a different value than
-    the existing one for any reason. Same `Keystroke` comparison.
+  - **Currently-bound voice-input shortcut:** the modal does NOT
+    add the existing voice-input value to the reject list. The
+    capture flow exists precisely to *change* the binding; rejecting
+    the existing value would only matter for the "same key already"
+    no-op confirm case, which we instead handle by accepting the
+    capture and short-circuiting the dispatch when the captured
+    `KeyCode` equals the current one. There is no infinite loop
+    risk because the dispatch handler at `block_list_element.rs:3072`
+    only fires voice activation, never re-binds the hotkey.
+
+> **Correction (re-review #10127):** the previous draft said the
+> reject-list "rejects if the user picks a different value than the
+> existing one for any reason" — which would have prevented users
+> from changing an existing custom hotkey. That was the literal
+> opposite of the intended behavior. Resolved as above.
   - **Static structural rejects:** these are bare-key rejects (no
     modifier needed) because they would brick the input flow:
     `[Enter, Escape, Tab, Backspace, Space]`. The modifier
@@ -310,47 +321,73 @@ keycode_string(key_code).to_string(), .. Default::default() }`.
 > deserialized value never sees the bad value. Below is the corrected
 > design that intercepts the raw parse failure.
 
-There are two distinct A6 paths:
+> **Correction (re-review #10127):** the previous draft proposed
+> mutating a `Mutex<Option<String>>` on `AISettings` *from inside*
+> the `Deserialize` impl of `VoiceInputToggleKey`. A field
+> deserializer doesn't have a reference to the containing settings
+> struct — that design isn't feasible Serde. The corrected design
+> below uses a wrapper-enum field type, which IS standard Serde,
+> and post-processes after deserialization completes.
+>
+> Also corrected: product.md A6 said the TOML was left unchanged
+> while tech.md said it was rewritten. Resolved to **rewrite** so
+> the toast fires once, not on every launch.
 
-### Path 1: raw parse failure (e.g. `"enter"`, `"foo"`, malformed TOML)
+The TOML field uses a wrapper enum that captures both successful
+and failed parses without erroring out:
 
-The hand-written `Deserialize` impl on `VoiceInputToggleKey` (see
-"Settings serialization" above) is the single entry point. It is
-modified to:
+```rust
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum VoiceInputTomlValue {
+    /// The TOML value parsed cleanly into one of the predefined
+    /// variants OR the `{ custom = "..." }` form.
+    Valid(VoiceInputToggleKey),
+    /// Anything else — string, table, integer — is captured raw
+    /// for diagnostic surfacing.
+    Invalid(toml::Value),
+}
 
-1. Attempt the normal parse against the curated unit-variant set
-   plus the `{ custom = "..." }` form.
-2. **On parse failure, return a special `Default` value tagged with
-   the original raw string** instead of erroring out. The tag is
-   stored in a side-channel: a `parking_lot::Mutex<Option<String>>`
-   on `AISettings` named `voice_input_toggle_key_raw_parse_failure`.
-3. Do NOT propagate the parse error — that would prevent the rest
-   of `AISettings` from loading.
+// AISettings::voice_input_toggle_key is internally
+// VoiceInputTomlValue, with a public accessor that returns
+// VoiceInputToggleKey (mapping Invalid -> None on read).
+```
 
-After `AISettings::initialize()` completes, a one-shot consumer in
-the AI page's mount hook drains the side-channel:
-- If `Some(raw)`: fire the toast *"Voice input hotkey reset — could
-  not parse `<raw>`"*, log
-  `log::warn!(raw = ?raw, "voice_input_toggle_key parse failed,
-  reset to None")`. Drain to `None` so the toast never re-fires.
-- If `None`: no-op.
+This works with stock Serde (`#[serde(untagged)]` falls through to
+`Invalid` when none of the `Valid` shapes match) and does not
+require any side-channel mutation from inside a deserializer.
 
-### Path 2: parsed-but-unbindable value (e.g. captured from an old
-build that allowed it)
+After `AISettings::initialize()` completes, a single post-init pass
+walks the deserialized struct:
 
-After deserialization succeeds, an additional `validate()` method on
-`VoiceInputToggleKey` checks the resulting `KeyCode` against the
-runtime reject list (modifier-only-but-not-curated, etc.). If the
-check fails:
-- Reset the in-memory value to `None`.
-- Re-write the TOML on disk with the corrected value.
-- Fire the same toast and warn-log as Path 1.
-- The toast text is the same; the side-channel is reused for the
-  raw value (set to the `Debug` representation).
+```rust
+fn post_init_voice_input_toggle_key(settings: &mut AISettings, ctx: &mut AppContext) {
+    let Some(invalid) = settings.voice_input_toggle_key.take_if_invalid() else {
+        // Either Valid (no action) or already drained on a previous launch.
+        return;
+    };
 
-This split — parse failure as one path, post-parse validation as
-another — guarantees A6's toast fires regardless of how the bad
-value got into the file.
+    // Path 1 (raw parse failure) — `invalid` is the rejected toml::Value.
+    let raw_repr = invalid.to_string();
+    log::warn!(raw = ?raw_repr,
+        "voice_input_toggle_key did not deserialize, resetting to None");
+    settings.voice_input_toggle_key.set_value(VoiceInputToggleKey::None, ctx);
+    settings.persist_to_disk(ctx);  // rewrite TOML so the toast fires once
+    fire_toast(ctx, format!(
+        "Voice input hotkey reset — could not parse `{raw_repr}`"
+    ));
+}
+```
+
+Path 2 (parsed-but-unbindable: e.g. a `Valid` value that fails the
+runtime reject-list check) is folded into the same routine: after
+unwrapping `Valid`, run `validate()`; if it fails, log + rewrite +
+toast with the same code path as Path 1, but with the rejected
+`KeyCode`'s display name as the raw representation.
+
+This guarantees A6's toast fires **once** for any combination of
+TOML-parse-failure and post-parse-validation-failure, then the
+disk file is consistent and subsequent launches are quiet.
 
 ## Test plan
 
