@@ -819,8 +819,16 @@ impl RemoteServerManager {
 
         // Phase 2: Initialize handshake.
         let auth_token = auth_context.get_auth_token().await;
+        let user_id = auth_context.get_user_id();
+        let user_email = auth_context.get_user_email();
+        let crash_reporting_enabled = auth_context.get_crash_reporting_enabled();
         let resp = client
-            .initialize(auth_token.as_deref())
+            .initialize(
+                auth_token.as_deref(),
+                &user_id,
+                &user_email,
+                crash_reporting_enabled,
+            )
             .await
             .map_err(|e| ConnectAndHandshakeError::Initialize(anyhow::anyhow!("{e:#}")))?;
 
@@ -956,6 +964,14 @@ impl RemoteServerManager {
             Some(RemoteSessionState::Connected { client, .. }) => Some(client),
             _ => None,
         }
+    }
+
+    /// Returns an iterator over all currently connected clients.
+    pub fn all_connected_clients(&self) -> impl Iterator<Item = &Arc<RemoteServerClient>> {
+        self.sessions.values().filter_map(|state| match state {
+            RemoteSessionState::Connected { client, .. } => Some(client),
+            _ => None,
+        })
     }
 
     /// Rotates the daemon-wide auth credential on each connected remote host.

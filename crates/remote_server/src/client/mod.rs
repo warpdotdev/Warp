@@ -186,12 +186,18 @@ impl RemoteServerClient {
     pub async fn initialize(
         &self,
         auth_token: Option<&str>,
+        user_id: &str,
+        user_email: &str,
+        crash_reporting_enabled: bool,
     ) -> Result<InitializeResponse, ClientError> {
         let request_id = RequestId::new();
         let msg = ClientMessage {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::Initialize(Initialize {
                 auth_token: auth_token.unwrap_or_default().to_owned(),
+                user_id: user_id.to_owned(),
+                user_email: user_email.to_owned(),
+                crash_reporting_enabled,
             })),
         };
 
@@ -217,6 +223,20 @@ impl RemoteServerClient {
             message: Some(client_message::Message::Authenticate(Authenticate {
                 auth_token: auth_token.to_owned(),
             })),
+        };
+        self.send_notification(msg);
+    }
+
+    /// Sends an `UpdatePreferences` notification when the user's privacy
+    /// settings change (e.g. toggling crash reporting).
+    pub fn update_preferences(&self, crash_reporting_enabled: bool) {
+        let msg = ClientMessage {
+            request_id: String::new(),
+            message: Some(client_message::Message::UpdatePreferences(
+                crate::proto::UpdatePreferences {
+                    crash_reporting_enabled,
+                },
+            )),
         };
         self.send_notification(msg);
     }

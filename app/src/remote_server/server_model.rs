@@ -387,10 +387,14 @@ impl ServerModel {
 
         let outcome = match msg.message {
             Some(client_message::Message::Initialize(msg)) => {
-                self.handle_initialize(msg, &request_id)
+                self.handle_initialize(msg, &request_id, ctx)
             }
             Some(client_message::Message::Authenticate(msg)) => {
                 self.handle_authenticate(msg);
+                return;
+            }
+            Some(client_message::Message::UpdatePreferences(msg)) => {
+                self.handle_update_preferences(msg, ctx);
                 return;
             }
             Some(client_message::Message::SessionBootstrapped(msg)) => {
@@ -513,16 +517,39 @@ impl ServerModel {
 
     /// Handles `Initialize` by returning the server version and host id.
     ///
-    /// `server_version` is the release tag the daemon was built from
-    /// (`GIT_RELEASE_TAG`) or the empty string for `cargo run` / locally
-    /// deployed builds. The client treats an empty version as "unknown" and
-    /// skips strict version enforcement, which keeps the
-    /// `script/deploy_remote_server` developer workflow functional.
-    fn handle_initialize(&mut self, msg: Initialize, request_id: &RequestId) -> HandlerOutcome {
+    /// Also configures Sentry crash reporting based on the user's identity
+    /// and preferences supplied by the connecting client.
+    fn handle_initialize(
+        &mut self,
+        msg: Initialize,
+        request_id: &RequestId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
         log::info!("Handling Initialize (request_id={request_id})");
-        if !msg.auth_token.is_empty() {
-            self.auth_token = Some(msg.auth_token);
+        self.apply_initialize_auth(&msg);
+
+        // Update crash reporting based on client-supplied preferences.
+        #[cfg(feature = "crash_reporting")]
+        {
+            if msg.crash_reporting_enabled {
+                if !msg.user_id.is_empty() {
+                    crate::crash_reporting::set_user_id(
+                        crate::auth::UserUid::new(&msg.user_id),
+                        if msg.user_email.is_empty() {
+                            None
+                        } else {
+                            Some(msg.user_email)
+                        },
+                        ctx,
+                    );
+                }
+            } else {
+                crate::crash_reporting::uninit_sentry();
+            }
         }
+        #[cfg(not(feature = "crash_reporting"))]
+        let _ = ctx;
+
         let server_version = ChannelState::app_version().unwrap_or("").to_string();
         HandlerOutcome::Sync(server_message::Message::InitializeResponse(
             InitializeResponse {
@@ -530,6 +557,39 @@ impl ServerModel {
                 host_id: self.host_id.clone(),
             },
         ))
+    }
+
+    /// Applies the auth token from an `Initialize` message.
+    /// Extracted so unit tests can call it without a `ModelContext`.
+    fn apply_initialize_auth(&mut self, msg: &Initialize) {
+        if !msg.auth_token.is_empty() {
+            self.auth_token = Some(msg.auth_token.clone());
+        }
+    }
+
+    /// Handles `UpdatePreferences` by dynamically enabling or disabling
+    /// Sentry crash reporting. This is a notification — no response is sent.
+    fn handle_update_preferences(
+        &mut self,
+        msg: super::proto::UpdatePreferences,
+        #[allow(unused_variables)] ctx: &mut ModelContext<Self>,
+    ) {
+        log::info!(
+            "Handling UpdatePreferences: crash_reporting_enabled={}",
+            msg.crash_reporting_enabled
+        );
+        #[cfg(feature = "crash_reporting")]
+        {
+            if msg.crash_reporting_enabled {
+                // Re-enable if not already initialized. Use stored auth info.
+                // If we don't have user info, init_sentry with no user is fine.
+                if !crate::crash_reporting::is_initialized() {
+                    crate::crash_reporting::init(ctx);
+                }
+            } else {
+                crate::crash_reporting::uninit_sentry();
+            }
+        }
     }
 
     /// Handles `Authenticate` by replacing the daemon-wide credential.

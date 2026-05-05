@@ -410,6 +410,14 @@ fn sentry_client_options() -> sentry::ClientOptions {
     }
 }
 
+/// Returns whether the Rust Sentry client is currently initialized.
+pub(crate) fn is_initialized() -> bool {
+    matches!(
+        &*RUST_SENTRY_CLIENT_GUARD.lock(),
+        RustSentryClientGuard::Initialized { .. }
+    )
+}
+
 /// Uninitializes sentry, effectively ending reporting on crashes and errors.
 pub fn uninit_sentry() {
     // Take the client guard out of the mutex, replacing it with
