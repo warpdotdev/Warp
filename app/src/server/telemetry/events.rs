@@ -1371,7 +1371,9 @@ pub enum TelemetryEvent {
     /// We attempted to bootstrap an SSH session via the SSH wrapper.  The
     /// argument is the name of the remote shell.
     SSHBootstrapAttempt(String),
-    SSHControlMasterError,
+    SSHControlMasterError {
+        has_remote_server: bool,
+    },
     KeybindingChanged {
         action: String,
         keystroke: Keystroke,
@@ -4128,7 +4130,6 @@ impl TelemetryEvent {
             | TelemetryEvent::SettingsImportResetButtonClicked
             | TelemetryEvent::ITermMultipleHotkeys
             | TelemetryEvent::DriveSharingOnboardingBlockShown
-            | TelemetryEvent::SSHControlMasterError
             | TelemetryEvent::SettingsImportInitiated
             | TelemetryEvent::GrepToolSucceeded
             | TelemetryEvent::FileGlobToolSucceeded
@@ -4141,6 +4142,11 @@ impl TelemetryEvent {
             | TelemetryEvent::GlobalSearchOpened
             | TelemetryEvent::GlobalSearchQueryStarted
             | TelemetryEvent::GetStartedSkipToTerminal => None,
+            TelemetryEvent::SSHControlMasterError {
+                has_remote_server,
+            } => Some(json!({
+                "has_remote_server": has_remote_server,
+            })),
             TelemetryEvent::RemoteServerBinaryCheck {
                 found,
                 error,
@@ -4659,7 +4665,7 @@ impl TelemetryEvent {
             | TelemetryEvent::LoggedOutStartup
             | TelemetryEvent::DownloadSource(_)
             | TelemetryEvent::SSHBootstrapAttempt(_)
-            | TelemetryEvent::SSHControlMasterError
+            | TelemetryEvent::SSHControlMasterError { .. }
             | TelemetryEvent::KeybindingChanged { .. }
             | TelemetryEvent::KeybindingResetToDefault { .. }
             | TelemetryEvent::KeybindingRemoved { .. }

@@ -8101,7 +8101,21 @@ impl TerminalView {
 
             ctx.notify();
 
-            send_telemetry_from_ctx!(TelemetryEvent::SSHControlMasterError, ctx);
+            let has_remote_server = active_session_id.is_some_and(|session_id| {
+                self.sessions.as_ref(ctx).get(session_id).is_some_and(|session| {
+                    matches!(
+                        session.session_type(),
+                        SessionType::WarpifiedRemote {
+                            host_id: Some(_),
+                            ..
+                        }
+                    )
+                })
+            });
+            send_telemetry_from_ctx!(
+                TelemetryEvent::SSHControlMasterError { has_remote_server },
+                ctx
+            );
         }
     }
 
