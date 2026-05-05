@@ -71,6 +71,14 @@ pub enum ClientEvent {
     /// A server message could not be decoded and had no parseable request_id.
     MessageDecodingError,
 }
+/// Parameters for the `Initialize` handshake, sent to the daemon at
+/// connection time.
+pub struct InitializeParams {
+    pub user_id: String,
+    pub user_email: String,
+    pub crash_reporting_enabled: bool,
+}
+
 /// Client for communicating with a `remote_server` process over the remote server protocol.
 ///
 /// Exposes async request/response APIs over generic I/O streams (child-process pipes,
@@ -186,18 +194,16 @@ impl RemoteServerClient {
     pub async fn initialize(
         &self,
         auth_token: Option<&str>,
-        user_id: &str,
-        user_email: &str,
-        crash_reporting_enabled: bool,
+        params: InitializeParams,
     ) -> Result<InitializeResponse, ClientError> {
         let request_id = RequestId::new();
         let msg = ClientMessage {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::Initialize(Initialize {
                 auth_token: auth_token.unwrap_or_default().to_owned(),
-                user_id: user_id.to_owned(),
-                user_email: user_email.to_owned(),
-                crash_reporting_enabled,
+                user_id: params.user_id,
+                user_email: params.user_email,
+                crash_reporting_enabled: params.crash_reporting_enabled,
             })),
         };
 

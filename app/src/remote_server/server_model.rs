@@ -545,6 +545,7 @@ impl ServerModel {
     ///
     /// Also configures Sentry crash reporting based on the user's identity
     /// and preferences supplied by the connecting client.
+    #[cfg_attr(not(feature = "crash_reporting"), allow(unused_variables))]
     fn handle_initialize(
         &mut self,
         msg: Initialize,
@@ -570,8 +571,6 @@ impl ServerModel {
                 crate::crash_reporting::uninit_sentry();
             }
         }
-        #[cfg(not(feature = "crash_reporting"))]
-        let _ = ctx;
 
         let server_version = ChannelState::app_version().unwrap_or("").to_string();
         HandlerOutcome::Sync(server_message::Message::InitializeResponse(

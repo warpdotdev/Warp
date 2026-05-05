@@ -18,6 +18,12 @@ pub fn server_api_auth_context(
     let user_id_auth_state = auth_state.clone();
     let user_email_auth_state = auth_state;
 
+    let user_id = user_id_auth_state
+        .user_id()
+        .map(|uid| uid.as_string())
+        .unwrap_or_default();
+    let user_email = user_email_auth_state.user_email().unwrap_or_default();
+
     RemoteServerAuthContext::new(
         move || -> BoxFuture<'static, Option<String>> {
             if !use_authenticated_user_identity(&token_auth_state) {
@@ -33,13 +39,8 @@ pub fn server_api_auth_context(
             })
         },
         move || remote_server_identity_key(&identity_auth_state),
-        move || {
-            user_id_auth_state
-                .user_id()
-                .map(|uid| uid.as_string())
-                .unwrap_or_default()
-        },
-        move || user_email_auth_state.user_email().unwrap_or_default(),
+        user_id,
+        user_email,
         crash_reporting_enabled,
     )
 }

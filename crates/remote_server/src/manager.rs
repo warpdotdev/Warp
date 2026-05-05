@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::auth::RemoteServerAuthContext;
 #[cfg(not(target_family = "wasm"))]
 use crate::client::ClientEvent;
-use crate::client::RemoteServerClient;
+use crate::client::{InitializeParams, RemoteServerClient};
 use crate::setup::PreinstallCheckResult;
 #[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
@@ -819,15 +819,14 @@ impl RemoteServerManager {
 
         // Phase 2: Initialize handshake.
         let auth_token = auth_context.get_auth_token().await;
-        let user_id = auth_context.get_user_id();
-        let user_email = auth_context.get_user_email();
-        let crash_reporting_enabled = auth_context.get_crash_reporting_enabled();
         let resp = client
             .initialize(
                 auth_token.as_deref(),
-                &user_id,
-                &user_email,
-                crash_reporting_enabled,
+                InitializeParams {
+                    user_id: auth_context.user_id().to_owned(),
+                    user_email: auth_context.user_email().to_owned(),
+                    crash_reporting_enabled: auth_context.crash_reporting_enabled(),
+                },
             )
             .await
             .map_err(|e| ConnectAndHandshakeError::Initialize(anyhow::anyhow!("{e:#}")))?;
