@@ -7,7 +7,7 @@ use crate::editor::EditorView;
 use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::menu::{MenuAction, MenuItem, MenuItemFields};
-use crate::pane_group::PaneGroup;
+use crate::pane_group::{PaneGroup, PaneId};
 use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
 use settings::Setting as _;
 use std::sync::Arc;
@@ -25,7 +25,9 @@ use crate::util::truncation::truncate_from_end;
 
 use crate::window_settings::WindowSettings;
 use crate::workspace::sync_inputs::SyncedInputState;
-use crate::workspace::tab_settings::{TabCloseButtonPosition, TabSettings};
+use crate::workspace::tab_settings::{
+    TabCloseButtonPosition, TabSettings, VerticalTabsDisplayGranularity,
+};
 use crate::workspace::{
     PaneViewLocator, TabBarDropTargetData, TabBarLocation, TabContextMenuAnchor, WorkspaceAction,
 };
@@ -287,18 +289,56 @@ impl TabData {
         menu_items
     }
 
+    fn copyable_pane_title(
+        pane_group: &PaneGroup,
+        pane_id: PaneId,
+        ctx: &AppContext,
+    ) -> Option<String> {
+        pane_group.pane_by_id(pane_id).and_then(|pane| {
+            let configuration = pane.pane_configuration();
+            let configuration = configuration.as_ref(ctx);
+            let title = configuration
+                .custom_vertical_tabs_title()
+                .unwrap_or_else(|| configuration.title());
+            Self::copyable_metadata_value(Some(title.to_string()))
+        })
+    }
+
     fn copy_metadata_menu_items(
         &self,
         pane_name_target: Option<PaneNameMenuTarget>,
         ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
         let pane_group = self.pane_group.as_ref(ctx);
-        let terminal_view = pane_name_target
-            .filter(|target| self.pane_group.id() == target.locator.pane_group_id)
-            .and_then(|target| pane_group.terminal_view_from_pane_id(target.locator.pane_id, ctx))
-            .or_else(|| pane_group.focused_session_view(ctx));
         let mut menu_items = vec![];
         let tab_title = Self::copyable_metadata_value(Some(pane_group.display_title(ctx)));
+        if !uses_vertical_tabs(ctx) {
+            Self::push_copy_metadata_menu_item(&mut menu_items, "Copy tab title", tab_title);
+            return menu_items;
+        }
+
+        let vertical_tabs_display_granularity = *TabSettings::as_ref(ctx)
+            .vertical_tabs_display_granularity
+            .value();
+        let (title_label, title, terminal_view) = if matches!(
+            vertical_tabs_display_granularity,
+            VerticalTabsDisplayGranularity::Panes
+        ) {
+            let pane_id = pane_group.focused_pane_id(ctx);
+            (
+                "Copy pane title",
+                Self::copyable_pane_title(pane_group, pane_id, ctx),
+                pane_group.terminal_view_from_pane_id(pane_id, ctx),
+            )
+        } else {
+            let terminal_view = pane_name_target
+                .filter(|target| self.pane_group.id() == target.locator.pane_group_id)
+                .and_then(|target| {
+                    pane_group.terminal_view_from_pane_id(target.locator.pane_id, ctx)
+                })
+                .or_else(|| pane_group.focused_session_view(ctx));
+            ("Copy tab title", tab_title, terminal_view)
+        };
 
         if let Some(terminal_view) = terminal_view {
             let terminal_view = terminal_view.as_ref(ctx);
@@ -307,10 +347,10 @@ impl TabData {
                 "Copy branch",
                 Self::copyable_metadata_value(terminal_view.current_git_branch(ctx)),
             );
-            Self::push_copy_metadata_menu_item(&mut menu_items, "Copy tab title", tab_title);
+            Self::push_copy_metadata_menu_item(&mut menu_items, title_label, title);
             Self::push_copy_metadata_menu_item(
                 &mut menu_items,
-                "Copy Working Directory",
+                "Copy working directory",
                 Self::copyable_metadata_value(
                     terminal_view
                         .pwd()
@@ -319,11 +359,11 @@ impl TabData {
             );
             Self::push_copy_metadata_menu_item(
                 &mut menu_items,
-                "Copy PR link",
+                "Copy pull request link",
                 Self::copyable_metadata_value(terminal_view.current_pull_request_url(ctx)),
             );
         } else {
-            Self::push_copy_metadata_menu_item(&mut menu_items, "Copy tab title", tab_title);
+            Self::push_copy_metadata_menu_item(&mut menu_items, title_label, title);
         }
 
         menu_items
@@ -346,6 +386,7 @@ impl TabData {
     fn copyable_metadata_value(value: Option<String>) -> Option<String> {
         value.filter(|value| !value.trim().is_empty())
     }
+
     fn modify_tab_menu_items(
         &self,
         index: usize,

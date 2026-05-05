@@ -1,6 +1,6 @@
 //! Integration tests for workspace-level behavior.
 
-use std::{fs, time::Duration};
+use std::{fs, path::Path, time::Duration};
 
 use pathfinder_geometry::{
     rect::RectF,
@@ -34,7 +34,7 @@ use warp::{
     },
     settings::PaneSettings,
     terminal::shell::ShellType,
-    workspace::tab_settings::TabSettings,
+    workspace::tab_settings::{TabSettings, VerticalTabsDisplayGranularity},
     workspace::{WorkspaceAction, NEW_TAB_BUTTON_POSITION_ID},
 };
 use warpui::{
@@ -54,6 +54,9 @@ const TARGET_WINDOW_KEY: &str = "target window";
 const DETACHED_WINDOW_KEY: &str = "detached window";
 const METADATA_TAB_TITLE: &str = "Integration Metadata Tab";
 const METADATA_BRANCH: &str = "main";
+const METADATA_PANE_TITLE: &str = "Integration Metadata Pane";
+const METADATA_PANE_BRANCH: &str = "pane-branch";
+const METADATA_PANE_DIRECTORY: &str = "active-pane";
 
 fn tab_position_id(tab_index: usize) -> String {
     format!("tab_position_{tab_index}")
@@ -68,11 +71,8 @@ fn vertical_tab_pane_row_position_id(app: &mut warpui::App, window_id: WindowId)
             .clone()
     });
     let pane_group_id = pane_group.id();
-    pane_group.read(app, |pane_group, _ctx| {
-        let pane_id = pane_group
-            .terminal_pane_ids()
-            .next()
-            .expect("terminal pane should exist");
+    pane_group.read(app, |pane_group, ctx| {
+        let pane_id = pane_group.focused_pane_id(ctx);
         format!("vertical_tabs:pane_row:{pane_group_id:?}:{pane_id}")
     })
 }
@@ -91,17 +91,48 @@ fn set_active_tab_name(name: &'static str) -> TestStep {
     })
 }
 
-fn enable_vertical_tabs() -> TestStep {
-    FeatureFlag::VerticalTabs.set_enabled(true);
-    new_step_with_default_assertions("Enable vertical tabs").add_assertion(|app, _window_id| {
-        TabSettings::handle(app).update(app, |settings, ctx| {
-            settings
-                .use_vertical_tabs
-                .set_value(true, ctx)
-                .expect("vertical tabs setting should update");
-            async_assert!(*settings.use_vertical_tabs)
-        })
+fn set_active_pane_name(name: &'static str) -> TestStep {
+    TestStep::new("Set active pane name").with_action(move |app, window_id, _| {
+        let workspace = workspace_view(app, window_id);
+        let pane_group = workspace.read(app, |workspace, _ctx| {
+            workspace
+                .get_pane_group_view(0)
+                .expect("pane group should exist")
+                .clone()
+        });
+        pane_group.update(app, |pane_group, ctx| {
+            let pane_id = pane_group.focused_pane_id(ctx);
+            let pane = pane_group
+                .pane_by_id(pane_id)
+                .expect("focused pane should exist");
+            pane.pane_configuration().update(ctx, |configuration, ctx| {
+                configuration.set_custom_vertical_tabs_title(name, ctx);
+            });
+        });
     })
+}
+
+fn enable_vertical_tabs(display_granularity: VerticalTabsDisplayGranularity) -> TestStep {
+    FeatureFlag::VerticalTabs.set_enabled(true);
+    new_step_with_default_assertions("Enable vertical tabs").add_assertion(
+        move |app, _window_id| {
+            TabSettings::handle(app).update(app, |settings, ctx| {
+                settings
+                    .use_vertical_tabs
+                    .set_value(true, ctx)
+                    .expect("vertical tabs setting should update");
+                settings
+                    .vertical_tabs_display_granularity
+                    .set_value(display_granularity, ctx)
+                    .expect("vertical tabs display granularity should update");
+                async_assert!(
+                    *settings.use_vertical_tabs
+                        && *settings.vertical_tabs_display_granularity.value()
+                            == display_granularity
+                )
+            })
+        },
+    )
 }
 
 fn open_horizontal_tab_context_menu(step_name: &'static str) -> TestStep {
@@ -137,11 +168,59 @@ fn add_tab_context_metadata_setup_steps(builder: Builder) -> Builder {
         .with_step(
             new_step_with_default_assertions("Git branch metadata should be populated")
                 .set_timeout(Duration::from_secs(15))
-                .add_assertion(assert_current_git_branch(METADATA_BRANCH)),
+                .add_assertion(assert_current_git_branch(0, METADATA_BRANCH)),
         )
 }
 
-fn add_tab_context_metadata_copy_steps(
+fn add_active_pane_context_metadata_setup_steps(builder: Builder) -> Builder {
+    builder
+        .with_step(
+            new_step_with_default_assertions("Create active split pane")
+                .with_keystrokes(&[cmd_or_ctrl_shift("d")]),
+        )
+        .with_step(wait_until_bootstrapped_pane(0, 1))
+        .with_step(set_active_pane_name(METADATA_PANE_TITLE))
+        .with_step(execute_command(
+            0,
+            1,
+            format!(
+                "mkdir {METADATA_PANE_DIRECTORY}; cd {METADATA_PANE_DIRECTORY}; git init -b {METADATA_PANE_BRANCH}; git config user.email \"test@test.com\"; git config user.name \"Git TestUser\"; touch file"
+            ),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(
+            new_step_with_default_assertions("Active pane git branch metadata should be populated")
+                .set_timeout(Duration::from_secs(15))
+                .add_assertion(assert_current_git_branch(1, METADATA_PANE_BRANCH)),
+        )
+}
+
+fn add_horizontal_tab_context_metadata_copy_steps(
+    builder: Builder,
+    open_tab_context_menu: fn(&'static str) -> TestStep,
+) -> Builder {
+    builder
+        .with_step(
+            open_tab_context_menu("Open tab context menu for title copy").add_assertion(
+                assert_saved_positions_absent(&[
+                    "Copy branch",
+                    "Copy pane title",
+                    "Copy working directory",
+                    "Copy pull request link",
+                ]),
+            ),
+        )
+        .with_step(
+            new_step_with_default_assertions("Copy tab title from tab context menu")
+                .with_click_on_saved_position("Copy tab title")
+                .add_assertion(assert_clipboard_contains_string(
+                    METADATA_TAB_TITLE.to_string(),
+                )),
+        )
+}
+
+fn add_vertical_tab_context_metadata_copy_steps(
     builder: Builder,
     open_tab_context_menu: fn(&'static str) -> TestStep,
 ) -> Builder {
@@ -171,20 +250,71 @@ fn add_tab_context_metadata_copy_steps(
         ))
         .with_step(
             new_step_with_default_assertions("Copy working directory from tab context menu")
-                .with_click_on_saved_position("Copy Working Directory")
+                .with_click_on_saved_position("Copy working directory")
                 .add_assertion(assert_clipboard_contains_home()),
         )
 }
 
-fn assert_current_git_branch(expected_branch: &'static str) -> AssertionCallback {
+fn add_vertical_pane_context_metadata_copy_steps(
+    builder: Builder,
+    open_tab_context_menu: fn(&'static str) -> TestStep,
+) -> Builder {
+    builder
+        .with_step(open_tab_context_menu(
+            "Open pane context menu for branch copy",
+        ))
+        .with_step(
+            new_step_with_default_assertions("Copy branch from pane context menu")
+                .with_click_on_saved_position("Copy branch")
+                .add_assertion(assert_clipboard_contains_string(
+                    METADATA_PANE_BRANCH.to_string(),
+                )),
+        )
+        .with_step(open_tab_context_menu(
+            "Open pane context menu for title copy",
+        ))
+        .with_step(
+            new_step_with_default_assertions("Copy pane title from pane context menu")
+                .with_click_on_saved_position("Copy pane title")
+                .add_assertion(assert_clipboard_contains_string(
+                    METADATA_PANE_TITLE.to_string(),
+                )),
+        )
+        .with_step(open_tab_context_menu(
+            "Open pane context menu for working directory copy",
+        ))
+        .with_step(
+            new_step_with_default_assertions("Copy working directory from pane context menu")
+                .with_click_on_saved_position("Copy working directory")
+                .add_assertion(assert_clipboard_contains_home_child(
+                    METADATA_PANE_DIRECTORY,
+                )),
+        )
+}
+
+fn assert_current_git_branch(
+    pane_index: usize,
+    expected_branch: &'static str,
+) -> AssertionCallback {
     Box::new(move |app, window_id| {
-        let terminal_view = terminal_view(app, window_id, 0, 0);
+        let terminal_view = terminal_view(app, window_id, 0, pane_index);
         terminal_view.read(app, |terminal_view, ctx| {
             async_assert_eq!(
                 terminal_view.current_git_branch(ctx),
                 Some(expected_branch.to_string())
             )
         })
+    })
+}
+
+fn assert_saved_positions_absent(labels: &'static [&'static str]) -> AssertionCallback {
+    Box::new(move |app, window_id| {
+        let presenter = app.presenter(window_id).expect("presenter should exist");
+        let presenter = presenter.borrow();
+        let position_cache = presenter.position_cache();
+        async_assert!(labels
+            .iter()
+            .all(|label| position_cache.get_position(label).is_none()))
     })
 }
 
@@ -198,6 +328,20 @@ fn assert_clipboard_contains_home() -> AssertionCallback {
         let home = std::env::var("HOME").expect("HOME should be set for integration tests");
 
         async_assert_eq!(content, home)
+    })
+}
+
+fn assert_clipboard_contains_home_child(child: &'static str) -> AssertionCallback {
+    Box::new(move |app, _window_id| {
+        let clipboard = app.update(|ctx| ctx.clipboard().read());
+        let content = match clipboard.paths {
+            Some(paths) => paths.join(" "),
+            None => clipboard.plain_text,
+        };
+        let home = std::env::var("HOME").expect("HOME should be set for integration tests");
+        let path = Path::new(&home).join(child).to_string_lossy().to_string();
+
+        async_assert_eq!(content, path)
     })
 }
 
@@ -362,13 +506,21 @@ pub fn test_active_session_follows_focus() -> Builder {
 
 pub fn test_tab_context_menu_copies_metadata() -> Builder {
     let builder = add_tab_context_metadata_setup_steps(new_builder());
-    add_tab_context_metadata_copy_steps(builder, open_horizontal_tab_context_menu)
+    add_horizontal_tab_context_metadata_copy_steps(builder, open_horizontal_tab_context_menu)
 }
 
 pub fn test_vertical_tab_context_menu_copies_metadata() -> Builder {
-    let builder =
-        add_tab_context_metadata_setup_steps(new_builder()).with_step(enable_vertical_tabs());
-    add_tab_context_metadata_copy_steps(builder, open_vertical_tab_context_menu)
+    let builder = add_tab_context_metadata_setup_steps(new_builder())
+        .with_step(enable_vertical_tabs(VerticalTabsDisplayGranularity::Tabs));
+    add_vertical_tab_context_metadata_copy_steps(builder, open_vertical_tab_context_menu)
+}
+
+pub fn test_vertical_pane_context_menu_copies_metadata() -> Builder {
+    let builder = add_active_pane_context_metadata_setup_steps(
+        add_tab_context_metadata_setup_steps(new_builder())
+            .with_step(enable_vertical_tabs(VerticalTabsDisplayGranularity::Panes)),
+    );
+    add_vertical_pane_context_metadata_copy_steps(builder, open_vertical_tab_context_menu)
 }
 
 pub fn test_focus_panes_on_hover() -> Builder {
