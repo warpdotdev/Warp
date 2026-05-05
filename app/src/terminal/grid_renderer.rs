@@ -1134,6 +1134,11 @@ fn render_grid_with_ligatures<'a>(
             None => {
                 // If there are no non-empty cells in the entire row, we can skip it entirely
                 if marked_text.peek().is_none() {
+                    if let Some(sampler) = bg_color_sampler.as_deref_mut() {
+                        for _ in 0..grid.columns() {
+                            sampler.sample(ColorU::transparent_black());
+                        }
+                    }
                     continue;
                 }
                 grid.columns() - 1

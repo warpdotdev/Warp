@@ -651,6 +651,31 @@ fn test_alt_screen_toggle() {
 }
 
 #[test]
+fn test_enter_alt_screen_clears_with_default_background() {
+    let mut terminal = TerminalModel::mock(None, None);
+
+    terminal.terminal_attribute(ansi::Attr::Background(ansi::Color::Named(
+        ansi::NamedColor::Green,
+    )));
+    terminal.set_mode(ansi::Mode::SwapScreen {
+        save_cursor_and_clear_screen: true,
+    });
+
+    let grid = terminal.alt_screen().grid_handler();
+    for row in 0..grid.visible_rows() {
+        let row = grid.row(row).expect("visible row should exist");
+        for cell in &row[..] {
+            assert_eq!(cell.c, '\0');
+            assert_eq!(
+                cell.bg,
+                ansi::Color::Named(ansi::NamedColor::Background),
+                "alternate screen should not inherit transient primary-screen SGR background"
+            );
+        }
+    }
+}
+
+#[test]
 fn test_reset_state() {
     let mut terminal: TerminalModel = TerminalModel::mock(None, None);
 
