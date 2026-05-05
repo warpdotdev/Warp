@@ -171,6 +171,7 @@ fn insert_pending_ai_block(
             &view.cli_subagent_controller,
             &view.model_events_handle,
             view.agent_view_controller.clone(),
+            view.ambient_agent_view_model.clone(),
             view.view_handle.clone(),
             view.id(),
             ctx,

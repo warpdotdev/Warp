@@ -182,7 +182,7 @@ use crate::quit_warning::UnsavedStateSummary;
 use crate::search::command_palette::view::NavigationMode;
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::server::network_log_pane_manager::NetworkLogPaneManager;
-use crate::server::server_api::ai::{AIClient, PrepareHandoffForkRequest};
+use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::auth::AuthClient;
 use crate::settings::{
     AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, CtrlTabBehavior,
@@ -12881,11 +12881,11 @@ impl Workspace {
     /// chip.
     ///
     /// When the active conversation is non-empty and has a server token, mints a
-    /// server-side fork via `POST /agent/handoff/prepare-fork`, then splits a fresh
-    /// cloud-mode pane next to the local pane and pre-populates it with the forked
-    /// conversation.
+    /// server-side fork via `POST /agent/conversations/{conversation_id}/fork`, then
+    /// splits a fresh cloud-mode pane next to the local pane and pre-populates it
+    /// with the forked conversation.
     ///
-    /// All failure modes — ineligibility, prepare-fork RPC failure, and local fork
+    /// All failure modes — ineligibility, fork RPC failure, and local fork
     /// materialization failure — surface an error toast and **do not open** any
     /// pane. The local conversation is unaffected.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
@@ -12931,11 +12931,9 @@ impl Workspace {
         };
 
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let request = PrepareHandoffForkRequest {
-            source_conversation_id: source_token.as_str().to_string(),
-        };
+        let source_conversation_id = source_token.as_str().to_string();
         ctx.spawn(
-            async move { ai_client.prepare_handoff_fork(request).await },
+            async move { ai_client.fork_conversation(source_conversation_id).await },
             move |me, result, ctx| match result {
                 Ok(response) => {
                     me.complete_local_to_cloud_handoff_open(
@@ -12946,7 +12944,7 @@ impl Workspace {
                     );
                 }
                 Err(err) => {
-                    log::warn!("prepare_handoff_fork failed: {err:#}");
+                    log::warn!("fork_conversation failed: {err:#}");
                     let window_id = ctx.window_id();
                     WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                         let toast = DismissibleToast::error(
@@ -12959,7 +12957,7 @@ impl Workspace {
         );
     }
 
-    /// Finishes the local-to-cloud handoff open after the prepare-fork RPC returns.
+    /// Finishes the local-to-cloud handoff open after the fork RPC returns.
     /// Materializes a local fork bound to the server's forked conversation id,
     /// splits a fresh cloud-mode pane, restores the forked conversation into it,
     /// seeds `PendingHandoff`, and kicks off async derivation + snapshot upload.
@@ -13106,7 +13104,8 @@ impl Workspace {
                         }
                         Err(err) => {
                             log::warn!("Handoff snapshot upload failed: {err:#}");
-                            model.record_handoff_snapshot_upload_failed(format!("{err}"), model_ctx);
+                            model
+                                .record_handoff_snapshot_upload_failed(format!("{err}"), model_ctx);
                         }
                     }
                 });

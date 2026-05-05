@@ -395,7 +395,6 @@ impl TerminalView {
                     group_id,
                     ambient_agent_view_model.clone(),
                     self.agent_view_controller.clone(),
-                    self.model.clone(),
                     ctx,
                 )
             });

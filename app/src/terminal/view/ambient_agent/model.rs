@@ -118,9 +118,8 @@ impl SnapshotUploadStatus {
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 #[derive(Debug, Clone)]
 pub(crate) struct PendingHandoff {
-    /// Forked conversation id minted by `POST /agent/handoff/prepare-fork` at
-    /// chip-click time. Sent under `conversation_id` (resume semantics) on the
-    /// subsequent `POST /agent/runs` request so the new task picks up the fork.
+    /// Forked conversation id minted by `POST /agent/conversations/{conversation_id}/fork`.
+    /// Sent under `conversation_id` on the subsequent `POST /agent/runs` request.
     pub(crate) forked_conversation_id: String,
     /// `None` until `derive_touched_workspace` completes.
     pub(crate) touched_workspace: Option<TouchedWorkspace>,

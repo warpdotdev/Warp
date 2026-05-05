@@ -229,7 +229,7 @@ pub struct SpawnAgentRequest {
     pub referenced_attachments: Vec<String>,
     /// Server-side conversation id to resume against (sets `task.AgentConversationID`).
     /// For local-to-cloud handoff this is the forked conversation id returned by
-    /// `POST /agent/handoff/prepare-fork` at chip-click time.
+    /// `POST /agent/conversations/{conversation_id}/fork` at chip-click time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<String>,
     /// References a batch of files previously uploaded to handoff/{token}/
@@ -279,19 +279,10 @@ pub struct UploadLocalHandoffSnapshotResponse {
     pub uploads: Vec<UploadTarget>,
 }
 
-/// Request body for `POST /agent/handoff/prepare-fork`. Used by the local-to-cloud
-/// handoff flow to materialize a server-side fork of the source conversation at
-/// chip-click time so the client can pre-populate the new pane.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct PrepareHandoffForkRequest {
-    pub source_conversation_id: String,
-}
-
-/// Response body for `POST /agent/handoff/prepare-fork`. The returned id is sent on
-/// the subsequent `POST /agent/runs` request under `conversation_id` (resume
-/// semantics) so the new task picks up the fork directly.
+/// Response body for `POST /agent/conversations/{conversation_id}/fork`. The returned id is sent
+/// on the subsequent `POST /agent/runs` request under `conversation_id` (resume semantics).
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct PrepareHandoffForkResponse {
+pub struct ForkConversationResponse {
     pub forked_conversation_id: String,
 }
 
@@ -753,6 +744,12 @@ pub(crate) fn build_list_agent_runs_url(limit: i32, filter: &TaskListFilter) -> 
 pub(crate) fn build_run_followup_url(run_id: &AmbientAgentTaskId) -> String {
     format!("agent/runs/{run_id}/followups")
 }
+pub(crate) fn build_fork_conversation_url(conversation_id: &str) -> String {
+    format!(
+        "agent/conversations/{}/fork",
+        urlencoding::encode(conversation_id)
+    )
+}
 
 struct ListRunsResponse {
     runs: Vec<AmbientAgentTask>,
@@ -905,13 +902,11 @@ pub trait AIClient: 'static + Send + Sync {
         request: UploadLocalHandoffSnapshotRequest,
     ) -> anyhow::Result<UploadLocalHandoffSnapshotResponse, anyhow::Error>;
 
-    /// Materialize a server-side fork of the source conversation for a local-to-cloud handoff.
-    /// Called at chip-click time so the client can pre-populate the new pane
-    /// with the forked conversation before any task exists.
-    async fn prepare_handoff_fork(
+    /// Materialize a server-side fork of a conversation.
+    async fn fork_conversation(
         &self,
-        request: PrepareHandoffForkRequest,
-    ) -> anyhow::Result<PrepareHandoffForkResponse, anyhow::Error>;
+        conversation_id: String,
+    ) -> anyhow::Result<ForkConversationResponse, anyhow::Error>;
 
     async fn list_ambient_agent_tasks(
         &self,
@@ -1609,12 +1604,12 @@ impl AIClient for ServerApi {
         Ok(response)
     }
 
-    async fn prepare_handoff_fork(
+    async fn fork_conversation(
         &self,
-        request: PrepareHandoffForkRequest,
-    ) -> anyhow::Result<PrepareHandoffForkResponse, anyhow::Error> {
-        let response: PrepareHandoffForkResponse = self
-            .post_public_api("agent/handoff/prepare-fork", &request)
+        conversation_id: String,
+    ) -> anyhow::Result<ForkConversationResponse, anyhow::Error> {
+        let response: ForkConversationResponse = self
+            .post_public_api(&build_fork_conversation_url(&conversation_id), &())
             .await?;
         Ok(response)
     }

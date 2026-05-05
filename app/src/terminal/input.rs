@@ -2164,7 +2164,9 @@ impl Input {
                     }
                 });
                 // Surface async snapshot upload failures as a toast.
-                if let AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { error_message } = event {
+                if let AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { error_message } =
+                    event
+                {
                     let window_id = ctx.window_id();
                     let toast_message = format!("Failed to prepare cloud handoff: {error_message}");
                     ToastStack::handle(ctx).update(ctx, |ts, ctx| {

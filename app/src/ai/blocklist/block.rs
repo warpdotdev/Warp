@@ -934,6 +934,7 @@ pub struct AIBlock {
     ///
     /// Only used when `FeatureFlag::AgentView` is enabled.
     agent_view_controller: ModelHandle<AgentViewController>,
+    ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
 
     /// View for AWS Bedrock credentials error, created lazily when the error occurs.
     aws_bedrock_credentials_error_view: Option<ViewHandle<AwsBedrockCredentialsErrorView>>,
@@ -983,6 +984,7 @@ impl AIBlock {
         cli_subagent_controller: &ModelHandle<CLISubagentController>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
         agent_view_controller: ModelHandle<AgentViewController>,
+        ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
         terminal_view_handle: WeakViewHandle<TerminalView>,
         terminal_view_id: EntityId,
         ctx: &mut ViewContext<Self>,
@@ -1376,6 +1378,7 @@ impl AIBlock {
             last_right_clicked_command: None,
             is_usage_footer_expanded: false,
             agent_view_controller,
+            ambient_agent_view_model,
             aws_bedrock_credentials_error_view: None,
             imported_comments: Default::default(),
             has_imported_comments: false,

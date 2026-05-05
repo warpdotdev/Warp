@@ -1399,7 +1399,7 @@ fn test_fork_then_bind_handoff_token_resolves_to_forked_conversation() {
             forked.id()
         });
 
-        // Bind the cloud T_C returned by `prepare-fork` to the forked conversation.
+        // Bind the cloud T_C returned by the fork RPC to the forked conversation.
         history_model.update(&mut app, |model, _| {
             model.set_server_conversation_token_for_conversation(forked_id, "cloud-T".to_string());
         });

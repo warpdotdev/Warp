@@ -724,7 +724,7 @@ fn cloud_mode_dispatched_agent_inserts_queued_user_query() {
                             parent_run_id: None,
                             runtime_skills: vec![],
                             referenced_attachments: vec![],
-                            fork_from_conversation_id: None,
+                            conversation_id: None,
                             initial_snapshot_token: None,
                         },
                         ctx,
