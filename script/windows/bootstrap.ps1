@@ -42,7 +42,7 @@ if (-not $haveMsvcBuildTools) {
 
 # Node.js and yarn are required at `cargo build` time by the
 # `command-signatures-v2` crate. We deliberately do not auto-install Node or
-# auto-run `corepack enable` — system-installed Node may need admin rights for
+# auto-run `corepack enable`: system-installed Node may need admin rights for
 # corepack, and version-manager users (e.g. Volta) often manage yarn
 # themselves. See the "Node.js setup" section of WARP.md for guidance.
 $nodeMissing = -not (Get-Command -Name node -Type Application -ErrorAction SilentlyContinue)
