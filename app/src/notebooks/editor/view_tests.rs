@@ -134,6 +134,25 @@ async fn reset_editor_with_markdown(
         .await;
 }
 
+fn link_offset(
+    editor: &RichTextEditorView,
+    link_url: &str,
+    ctx: &warpui::AppContext,
+) -> CharOffset {
+    let max_offset = editor.markdown(ctx).chars().count() + 10;
+    (0..=max_offset)
+        .map(CharOffset::from)
+        .find(|offset| {
+            editor
+                .model
+                .as_ref(ctx)
+                .link_url_at(*offset, ctx)
+                .as_deref()
+                == Some(link_url)
+        })
+        .expect("Expected link URL to exist in editor")
+}
+
 fn rendered_mermaid_block_range(
     editor: &RichTextEditorView,
     ctx: &warpui::AppContext,
@@ -517,6 +536,62 @@ fn test_link_editing() {
             assert_eq!(
                 editor.model.as_ref(ctx).debug_buffer(ctx),
                 "<text>Some <a_https://warp.dev>text<a><a_https://example.com>new link<a>"
+            );
+        });
+    });
+}
+
+#[test]
+fn test_editable_markdown_anchor_click_opens_link_tooltip() {
+    App::test((), |mut app| async move {
+        let (_, editor_view, _) = initialize_editor(&mut app);
+        reset_editor_with_markdown(&mut app, &editor_view, "- [Goal](#goal)\n\n## Goal").await;
+
+        let offset = editor_view.read(&app, |editor, ctx| link_offset(editor, "#goal", ctx));
+        editor_view.update(&mut app, |editor, ctx| {
+            editor.handle_action(
+                &EditorViewAction::MaybeOpenFileOrUrl {
+                    offset,
+                    link_in_text: None,
+                    cmd: false,
+                },
+                ctx,
+            );
+        });
+
+        editor_view.read(&app, |editor, _ctx| {
+            let open_link = editor
+                .open_link
+                .as_ref()
+                .expect("Editable anchor click should show the link tooltip");
+            assert_eq!(open_link.url, "#goal");
+            assert!(open_link.editable);
+        });
+    });
+}
+
+#[test]
+fn test_cmd_click_markdown_anchor_navigates_without_link_tooltip() {
+    App::test((), |mut app| async move {
+        let (_, editor_view, _) = initialize_editor(&mut app);
+        reset_editor_with_markdown(&mut app, &editor_view, "- [Goal](#goal)\n\n## Goal").await;
+
+        let offset = editor_view.read(&app, |editor, ctx| link_offset(editor, "#goal", ctx));
+        editor_view.update(&mut app, |editor, ctx| {
+            editor.handle_action(
+                &EditorViewAction::MaybeOpenFileOrUrl {
+                    offset,
+                    link_in_text: None,
+                    cmd: true,
+                },
+                ctx,
+            );
+        });
+
+        editor_view.read(&app, |editor, _ctx| {
+            assert!(
+                editor.open_link.is_none(),
+                "Cmd-click anchor navigation should not show the link tooltip"
             );
         });
     });

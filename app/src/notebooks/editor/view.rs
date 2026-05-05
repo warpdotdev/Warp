@@ -1880,7 +1880,9 @@ impl RichTextEditorView {
         };
 
         if let Some(url) = url {
-            if url.starts_with('#') {
+            if url.starts_with('#')
+                && (cmd || matches!(self.interaction_state(ctx), InteractionState::Selectable))
+            {
                 self.open_link = None;
                 self.model.update(ctx, |model, ctx| {
                     model.scroll_to_markdown_anchor(&url, ctx);
