@@ -495,12 +495,24 @@ impl ServerModel {
         conn_id: Option<ConnectionId>,
         request_id: Option<&RequestId>,
     ) {
+        let snapshot = self.codebase_index_statuses_snapshot();
+        let status_count = snapshot.statuses.len();
+        let target = conn_id
+            .map(|conn_id| conn_id.to_string())
+            .unwrap_or_else(|| "broadcast".to_string());
+        let message_kind = if request_id.is_some() {
+            "response"
+        } else {
+            "push"
+        };
+        log::info!(
+            "Sending codebase index statuses snapshot: target={target} \
+             message_kind={message_kind} status_count={status_count}"
+        );
         self.send_server_message(
             conn_id,
             request_id,
-            server_message::Message::CodebaseIndexStatusesSnapshot(
-                self.codebase_index_statuses_snapshot(),
-            ),
+            server_message::Message::CodebaseIndexStatusesSnapshot(snapshot),
         );
     }
 
@@ -931,6 +943,12 @@ impl ServerModel {
                     if let Some(status) =
                         me.ensure_not_enabled_codebase_index_status(indexed_path.clone())
                     {
+                        log::info!(
+                            "[Remote codebase indexing] Sending codebase index status update for navigated repo: \
+                             conn_id={conn_id_for_response} repo_path={} state={:?}",
+                            status.repo_path,
+                            status.state,
+                        );
                         me.send_server_message(
                             Some(conn_id_for_response),
                             None,

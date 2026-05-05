@@ -49,8 +49,6 @@ message ServerMessage {
 }
 
 // ── Initialize handshake
-
-
 // Sent by the client immediately after connecting to negotiate the protocol.
 message Initialize {
   // Optional bearer token used by the daemon for Warp-server requests.

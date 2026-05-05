@@ -12,7 +12,6 @@ use crate::client::ClientEvent;
 use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
-use crate::proto::ServerCapability;
 use crate::setup::PreinstallCheckResult;
 use crate::setup::RemoteOs;
 use crate::setup::RemotePlatform;
@@ -52,7 +51,6 @@ struct ReconnectParams {
 #[cfg(not(target_family = "wasm"))]
 struct InitializeHandshake {
     host_id: HostId,
-    remote_codebase_indexing_supported: bool,
 }
 
 /// Error from [`RemoteServerManager::run_connect_and_handshake`] that
@@ -163,6 +161,20 @@ fn version_is_compatible(client: Option<&str>, server: &str) -> bool {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
+fn client_event_kind(event: &ClientEvent) -> &'static str {
+    match event {
+        ClientEvent::Disconnected => "disconnected",
+        ClientEvent::RepoMetadataSnapshotReceived { .. } => "repo_metadata_snapshot",
+        ClientEvent::RepoMetadataUpdated { .. } => "repo_metadata_updated",
+        ClientEvent::CodebaseIndexStatusesSnapshotReceived { .. } => {
+            "codebase_index_statuses_snapshot"
+        }
+        ClientEvent::CodebaseIndexStatusUpdated { .. } => "codebase_index_status_updated",
+        ClientEvent::MessageDecodingError => "message_decoding_error",
+    }
+}
+
 /// Per-session connection state. Encodes which data is available at each
 /// lifecycle stage so the compiler prevents invalid combinations.
 ///
@@ -207,8 +219,6 @@ pub enum RemoteSessionState {
         /// identity, preventing a stale session for a previous identity from
         /// receiving a different user's bearer token.
         identity_key: String,
-        /// Whether this remote daemon advertised the remote codebase-indexing protocol.
-        remote_codebase_indexing_supported: bool,
         /// The transport's owning `Child`. See `Initializing::_child`.
         #[cfg(not(target_family = "wasm"))]
         _child: async_process::Child,
@@ -297,8 +307,6 @@ pub enum RemoteServerManagerEvent {
     /// The last session for this host was disconnected or deregistered.
     /// Downstream features should tear down per-host models.
     HostDisconnected { host_id: HostId },
-    /// Capability support reported by this host's initialized daemon.
-    RemoteCodebaseIndexingCapability { host_id: HostId, supported: bool },
 
     // --- Repo metadata events (forwarded from ClientEvent push channel) ---
     /// Response to a `navigate_to_directory` request.
@@ -407,7 +415,6 @@ impl RemoteServerManagerEvent {
             }
             RemoteServerManagerEvent::HostConnected { .. }
             | RemoteServerManagerEvent::HostDisconnected { .. }
-            | RemoteServerManagerEvent::RemoteCodebaseIndexingCapability { .. }
             | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
             | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
             | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
@@ -452,6 +459,17 @@ pub struct RemoteServerManager {
     /// remote server daemon on every (re)connect. Persists until
     /// `deregister_session`.
     session_bootstrap_info: HashMap<SessionId, SessionBootstrapInfo>,
+    /// Initial remote codebase-indexing status snapshots received before a
+    /// session reaches `Connected`.
+    ///
+    /// The daemon sends `InitializeResponse` and then immediately pushes a
+    /// `CodebaseIndexStatusesSnapshot` on the same stream. The reader task can
+    /// deliver that push event before the main-thread task that calls
+    /// `mark_session_connected` runs. Until that transition completes we do not
+    /// have the session's `host_id`/`identity_key` in `RemoteSessionState`, so
+    /// we buffer the snapshot here and flush it once the session is connected.
+    pending_initial_codebase_index_statuses_snapshots:
+        HashMap<SessionId, Vec<RemoteCodebaseIndexStatus>>,
     /// App auth context used for connection-time `Initialize` and future
     /// reconnect handshakes.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
@@ -475,6 +493,7 @@ impl RemoteServerManager {
             spawner: ctx.spawner(),
             last_navigated_path: HashMap::new(),
             session_bootstrap_info: HashMap::new(),
+            pending_initial_codebase_index_statuses_snapshots: HashMap::new(),
             auth_context: None,
             session_platforms: HashMap::new(),
         }
@@ -898,15 +917,15 @@ impl RemoteServerManager {
             )));
         }
 
-        let remote_codebase_indexing_supported = resp.capabilities.iter().any(|capability| {
-            ServerCapability::try_from(*capability)
-                .ok()
-                .is_some_and(|capability| capability == ServerCapability::RemoteCodebaseIndexing)
-        });
+        log::info!(
+            "[Remote codebase indexing] Remote server initialize handshake complete: session={session_id:?} \
+             host={} server_version={:?}",
+            resp.host_id,
+            resp.server_version,
+        );
 
         Ok(InitializeHandshake {
             host_id: HostId::new(resp.host_id),
-            remote_codebase_indexing_supported,
         })
     }
 
@@ -950,6 +969,8 @@ impl RemoteServerManager {
     pub fn deregister_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
         self.last_navigated_path.remove(&session_id);
         self.session_bootstrap_info.remove(&session_id);
+        self.pending_initial_codebase_index_statuses_snapshots
+            .remove(&session_id);
         self.session_platforms.remove(&session_id);
 
         // Remove the session entry. Dropping the `RemoteSessionState`
@@ -1101,24 +1122,18 @@ impl RemoteServerManager {
     fn connected_session_for_host(
         &self,
         host_id: &HostId,
-    ) -> Option<(SessionId, Arc<RemoteServerClient>, String, bool)> {
+    ) -> Option<(SessionId, Arc<RemoteServerClient>, String)> {
         let sessions = self.host_to_sessions.get(host_id)?;
         sessions.iter().find_map(|session_id| {
             let RemoteSessionState::Connected {
                 client,
                 identity_key,
-                remote_codebase_indexing_supported,
                 ..
             } = self.sessions.get(session_id)?
             else {
                 return None;
             };
-            Some((
-                *session_id,
-                client.clone(),
-                identity_key.clone(),
-                *remote_codebase_indexing_supported,
-            ))
+            Some((*session_id, client.clone(), identity_key.clone()))
         })
     }
 
@@ -1128,7 +1143,7 @@ impl RemoteServerManager {
         host_id: HostId,
         ctx: &mut ModelContext<Self>,
     ) {
-        let Some((session_id, client, remote_identity_key, supported)) =
+        let Some((session_id, client, remote_identity_key)) =
             self.connected_session_for_host(&host_id)
         else {
             log::warn!(
@@ -1136,14 +1151,6 @@ impl RemoteServerManager {
             );
             return;
         };
-
-        if !supported {
-            ctx.emit(RemoteServerManagerEvent::RemoteCodebaseIndexingCapability {
-                host_id,
-                supported: false,
-            });
-            return;
-        }
 
         let spawner = self.spawner.clone();
         ctx.background_executor()
@@ -1339,7 +1346,7 @@ impl RemoteServerManager {
     /// yet available).
     #[cfg(not(target_family = "wasm"))]
     fn forward_client_event(
-        &self,
+        &mut self,
         session_id: SessionId,
         event: ClientEvent,
         ctx: &mut ModelContext<Self>,
@@ -1350,7 +1357,32 @@ impl RemoteServerManager {
             ..
         }) = self.sessions.get(&session_id)
         else {
-            log::debug!("Dropping push event for session {session_id:?}: not connected yet");
+            match event {
+                ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses } => {
+                    let status_count = statuses.len();
+                    // The daemon intentionally pushes the initial codebase
+                    // status snapshot immediately after `InitializeResponse`.
+                    // The client reader resolves the initialize request and
+                    // forwards push messages on independent async paths, so the
+                    // snapshot can arrive while the manager still records this
+                    // session as `Initializing`. Buffer it instead of dropping
+                    // it; `mark_session_connected` will have the negotiated
+                    // host/identity and can emit the normal manager event.
+                    self.pending_initial_codebase_index_statuses_snapshots
+                        .insert(session_id, statuses);
+                    log::info!(
+                        "[Remote codebase indexing] Buffering remote server codebase index statuses snapshot before \
+                         session connected: session={session_id:?} status_count={status_count}"
+                    );
+                }
+                other => {
+                    let event_kind = client_event_kind(&other);
+                    log::info!(
+                        "[Remote codebase indexing] Dropping remote server push event before session connected: \
+                         session={session_id:?} event={event_kind}"
+                    );
+                }
+            }
             return;
         };
         let host_id = host_id.clone();
@@ -1364,6 +1396,11 @@ impl RemoteServerManager {
                 ctx.emit(RemoteServerManagerEvent::RepoMetadataUpdated { host_id, update });
             }
             ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses } => {
+                log::info!(
+                    "[Remote codebase indexing] Remote server received codebase index statuses snapshot: \
+                     session={session_id:?} host={host_id} status_count={}",
+                    statuses.len()
+                );
                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
                     remote_identity_key,
                     host_id,
@@ -1371,6 +1408,12 @@ impl RemoteServerManager {
                 });
             }
             ClientEvent::CodebaseIndexStatusUpdated { status } => {
+                log::info!(
+                    "[Remote codebase indexing] Remote server received codebase index status update: \
+                     session={session_id:?} host={host_id} repo_path={} state={:?}",
+                    status.repo_path,
+                    status.state,
+                );
                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
                     remote_identity_key,
                     host_id,
@@ -1397,10 +1440,7 @@ impl RemoteServerManager {
         transport: Arc<dyn RemoteTransport>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let InitializeHandshake {
-            host_id,
-            remote_codebase_indexing_supported,
-        } = handshake;
+        let InitializeHandshake { host_id } = handshake;
         log::info!("Remote server connected: session={session_id:?} host={host_id}");
 
         // Only transition if the session is still in Initializing state.
@@ -1414,13 +1454,13 @@ impl RemoteServerManager {
         };
 
         let is_first_session = !self.host_to_sessions.contains_key(&host_id);
+        let remote_identity_key = identity_key.clone();
         self.sessions.insert(
             session_id,
             RemoteSessionState::Connected {
                 client: client.clone(),
                 host_id: host_id.clone(),
                 identity_key,
-                remote_codebase_indexing_supported,
                 _child,
                 control_path,
                 transport,
@@ -1435,10 +1475,25 @@ impl RemoteServerManager {
                 host_id: host_id.clone(),
             });
         }
-        ctx.emit(RemoteServerManagerEvent::RemoteCodebaseIndexingCapability {
-            host_id: host_id.clone(),
-            supported: remote_codebase_indexing_supported,
-        });
+        if let Some(statuses) = self
+            .pending_initial_codebase_index_statuses_snapshots
+            .remove(&session_id)
+        {
+            log::info!(
+                "[Remote codebase indexing] Flushing buffered remote server codebase index statuses snapshot: \
+                 session={session_id:?} host={host_id} status_count={}",
+                statuses.len()
+            );
+            // See the buffering comment in `forward_client_event`: this is the
+            // initial snapshot that raced ahead of the main-thread
+            // `Connected` transition. Emit it now that the handshake's host id
+            // and identity key are installed on the session.
+            ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
+                remote_identity_key,
+                host_id: host_id.clone(),
+                statuses,
+            });
+        }
         ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
             session_id,
             state: RemoteServerSetupState::Ready,
@@ -1508,6 +1563,8 @@ impl RemoteServerManager {
         session_id: SessionId,
         ctx: &mut ModelContext<Self>,
     ) {
+        self.pending_initial_codebase_index_statuses_snapshots
+            .remove(&session_id);
         let Some(prev) = self.sessions.remove(&session_id) else {
             return;
         };

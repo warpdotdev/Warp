@@ -4,7 +4,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
+use crate::codebase_index_proto::{
+    proto_to_codebase_index_status_updated, proto_to_codebase_index_statuses_snapshot,
+    RemoteCodebaseIndexStatus,
+};
 use dashmap::DashMap;
 use futures::channel::oneshot;
 use futures::io::{AsyncRead, AsyncWrite};
@@ -242,9 +245,9 @@ impl RemoteServerClient {
         let response = self.send_request(request_id, msg).await?;
 
         match response.message {
-            Some(server_message::Message::CodebaseIndexStatusesSnapshot(snapshot)) => Ok(
-                crate::codebase_index_proto::proto_to_codebase_index_statuses_snapshot(&snapshot),
-            ),
+            Some(server_message::Message::CodebaseIndexStatusesSnapshot(snapshot)) => {
+                Ok(proto_to_codebase_index_statuses_snapshot(&snapshot))
+            }
             other => {
                 safe_error!(
                     safe: ("Remote server unexpected response for ListCodebaseIndexStatuses"),
@@ -455,15 +458,11 @@ impl RemoteServerClient {
             }
             server_message::Message::CodebaseIndexStatusesSnapshot(snapshot) => {
                 Some(ClientEvent::CodebaseIndexStatusesSnapshotReceived {
-                    statuses:
-                        crate::codebase_index_proto::proto_to_codebase_index_statuses_snapshot(
-                            &snapshot,
-                        ),
+                    statuses: proto_to_codebase_index_statuses_snapshot(&snapshot),
                 })
             }
             server_message::Message::CodebaseIndexStatusUpdated(update) => {
-                let status =
-                    crate::codebase_index_proto::proto_to_codebase_index_status_updated(&update)?;
+                let status = proto_to_codebase_index_status_updated(&update)?;
                 Some(ClientEvent::CodebaseIndexStatusUpdated { status })
             }
             other => {
