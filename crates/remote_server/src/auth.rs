@@ -3,8 +3,6 @@ use warpui::r#async::BoxFuture;
 type GetAuthTokenFn = dyn Fn() -> BoxFuture<'static, Option<String>> + Send + Sync;
 type RemoteServerIdentityKeyFn = dyn Fn() -> String + Send + Sync;
 type GetStringFn = dyn Fn() -> String + Send + Sync;
-type GetBoolFn = dyn Fn() -> bool + Send + Sync;
-
 /// App-supplied authentication and preference context for transport-agnostic
 /// remote-server code.
 ///
@@ -25,7 +23,7 @@ pub struct RemoteServerAuthContext {
     remote_server_identity_key: Arc<RemoteServerIdentityKeyFn>,
     get_user_id: Arc<GetStringFn>,
     get_user_email: Arc<GetStringFn>,
-    get_crash_reporting_enabled: Arc<GetBoolFn>,
+    crash_reporting_enabled: bool,
 }
 
 impl RemoteServerAuthContext {
@@ -34,14 +32,14 @@ impl RemoteServerAuthContext {
         remote_server_identity_key: impl Fn() -> String + Send + Sync + 'static,
         get_user_id: impl Fn() -> String + Send + Sync + 'static,
         get_user_email: impl Fn() -> String + Send + Sync + 'static,
-        get_crash_reporting_enabled: impl Fn() -> bool + Send + Sync + 'static,
+        crash_reporting_enabled: bool,
     ) -> Self {
         Self {
             get_auth_token: Arc::new(get_auth_token),
             remote_server_identity_key: Arc::new(remote_server_identity_key),
             get_user_id: Arc::new(get_user_id),
             get_user_email: Arc::new(get_user_email),
-            get_crash_reporting_enabled: Arc::new(get_crash_reporting_enabled),
+            crash_reporting_enabled,
         }
     }
 
@@ -62,6 +60,6 @@ impl RemoteServerAuthContext {
     }
 
     pub fn get_crash_reporting_enabled(&self) -> bool {
-        (self.get_crash_reporting_enabled)()
+        self.crash_reporting_enabled
     }
 }

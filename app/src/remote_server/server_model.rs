@@ -144,10 +144,10 @@ struct DaemonAuthContext {
     auth_token: Option<String>,
     /// User ID from the most recent `Initialize` handshake (Firebase UID).
     #[cfg(feature = "crash_reporting")]
-    sentry_user_id: String,
+    user_id: Option<String>,
     /// User email from the most recent `Initialize` handshake.
     #[cfg(feature = "crash_reporting")]
-    sentry_user_email: String,
+    user_email: Option<String>,
 }
 
 impl DaemonAuthContext {
@@ -155,9 +155,9 @@ impl DaemonAuthContext {
         Self {
             auth_token: None,
             #[cfg(feature = "crash_reporting")]
-            sentry_user_id: String::new(),
+            user_id: None,
             #[cfg(feature = "crash_reporting")]
-            sentry_user_email: String::new(),
+            user_email: None,
         }
     }
 }
@@ -558,10 +558,10 @@ impl ServerModel {
         #[cfg(feature = "crash_reporting")]
         {
             if !msg.user_id.is_empty() {
-                self.auth.sentry_user_id = msg.user_id.clone();
+                self.auth.user_id = Some(msg.user_id.clone());
             }
             if !msg.user_email.is_empty() {
-                self.auth.sentry_user_email = msg.user_email.clone();
+                self.auth.user_email = Some(msg.user_email.clone());
             }
 
             if msg.crash_reporting_enabled {
@@ -595,14 +595,10 @@ impl ServerModel {
     /// via `UpdatePreferences`.
     #[cfg(feature = "crash_reporting")]
     fn apply_sentry_user_id(&self, ctx: &mut warpui::AppContext) {
-        if !self.auth.sentry_user_id.is_empty() {
+        if let Some(user_id) = &self.auth.user_id {
             crate::crash_reporting::set_user_id(
-                crate::auth::UserUid::new(&self.auth.sentry_user_id),
-                if self.auth.sentry_user_email.is_empty() {
-                    None
-                } else {
-                    Some(self.auth.sentry_user_email.clone())
-                },
+                crate::auth::UserUid::new(user_id),
+                self.auth.user_email.clone(),
                 ctx,
             );
         }
