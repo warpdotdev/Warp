@@ -35,6 +35,7 @@ use crate::ai::blocklist::block::status_bar::BlocklistAIStatusBar;
 use crate::ai::blocklist::{ai_indicator_height, BlocklistAIActionModel, SlashCommandRequest};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::predict::prompt_suggestions::{
     has_pending_code_or_unit_test_prompt_suggestion,
     is_accept_prompt_suggestion_bound_to_ctrl_enter,
@@ -12110,6 +12111,24 @@ impl Input {
                         .is_configuring_ambient_agent()
                 })
             {
+                if FeatureFlag::AgentHarness.is_enabled() {
+                    let availability = HarnessAvailabilityModel::as_ref(ctx);
+                    if !availability.has_any_enabled_harness() {
+                        let window_id = ctx.window_id();
+                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                            ts.add_ephemeral_toast(
+                                DismissibleToast::error(
+                                    "No agent harnesses are available. Contact your team admin."
+                                        .to_string(),
+                                ),
+                                window_id,
+                                ctx,
+                            );
+                        });
+                        return;
+                    }
+                }
+
                 let prompt = command.trim().to_owned();
                 if prompt.is_empty() {
                     return;

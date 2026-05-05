@@ -220,6 +220,17 @@ enum AgentHarness {
   OZ
 }
 
+"""A harness available to the requesting user."""
+type HarnessInfo {
+  displayName: String!
+  enabled: Boolean!
+  harness: AgentHarness!
+}
+
+type AvailableHarnesses {
+  harnesses: [HarnessInfo!]!
+}
+
 """Controls how many agent identities (service accounts) a team can have."""
 type AgentIdentitiesPolicy {
   isUnlimited: Boolean!
@@ -3800,6 +3811,7 @@ type User {
   githubInstallations: UserGithubInstallationsOutput!
   isOnWorkDomain: Boolean!
   isOnboarded: Boolean!
+  availableHarnesses: AvailableHarnesses!
   llms: FeatureModelChoice!
   managedSecrets: ManagedSecretConfig
   onboardingSurveyStatus: OnboardingSurveyStatus

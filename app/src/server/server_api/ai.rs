@@ -18,7 +18,6 @@ use warp_multi_agent_api::ConversationData;
 use super::auth::AuthClient;
 use super::harness_support::UploadTarget;
 use super::ServerApi;
-use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{
     AIAgentConversationFormat, AIAgentHarness, AIAgentSerializedBlockFormat,
     ServerAIConversationMetadata,
@@ -32,6 +31,7 @@ use crate::ai::generate_code_review_content::api::{
 use crate::ai::request_usage_model::RequestLimitInfo;
 #[cfg(not(feature = "agent_mode_evals"))]
 use crate::ai::BonusGrant;
+use crate::ai::{agent::api::ServerConversationToken, harness_availability::HarnessAvailability};
 use crate::persistence::model::ConversationUsageMetadata;
 use crate::terminal::model::block::SerializedBlock;
 #[cfg(not(feature = "agent_mode_evals"))]
@@ -129,6 +129,7 @@ use warp_graphql::{
             FreeAvailableModels, FreeAvailableModelsInput, FreeAvailableModelsResult,
             FreeAvailableModelsVariables,
         },
+        get_available_harnesses::{GetAvailableHarnesses, GetAvailableHarnessesVariables},
         get_feature_model_choices::{GetFeatureModelChoices, GetFeatureModelChoicesVariables},
         get_relevant_fragments::{
             GetRelevantFragmentsQuery, GetRelevantFragmentsResult, GetRelevantFragmentsVariables,
@@ -831,6 +832,8 @@ pub trait AIClient: 'static + Send + Sync {
 
     async fn get_feature_model_choices(&self) -> Result<ModelsByFeature, anyhow::Error>;
 
+    async fn get_available_harnesses(&self) -> Result<Vec<HarnessAvailability>, anyhow::Error>;
+
     /// Fetches the free-tier available models without requiring authentication.
     /// Used during pre-login onboarding so logged-out users see an accurate model list
     /// instead of the hard-coded `ModelsByFeature::default()` fallback.
@@ -1345,6 +1348,33 @@ impl AIClient for ServerApi {
                 workspaces.remove(0).feature_model_choice.try_into()
             }
             _ => Err(anyhow!("Failed to get available feature model choices")),
+        }
+    }
+
+    async fn get_available_harnesses(&self) -> Result<Vec<HarnessAvailability>, anyhow::Error> {
+        let variables = GetAvailableHarnessesVariables {
+            request_context: get_request_context(),
+        };
+        let operation = GetAvailableHarnesses::build(variables);
+        let response = self.send_graphql_request(operation, None).await?;
+
+        match response.user {
+            warp_graphql::queries::get_available_harnesses::UserResult::UserOutput(output) => {
+                Ok(output
+                    .user
+                    .available_harnesses
+                    .harnesses
+                    .into_iter()
+                    .map(|h| HarnessAvailability {
+                        harness: convert_harness(h.harness).into(),
+                        display_name: h.display_name,
+                        enabled: h.enabled,
+                    })
+                    .collect())
+            }
+            warp_graphql::queries::get_available_harnesses::UserResult::Unknown => {
+                Err(anyhow!("Failed to get available harnesses"))
+            }
         }
     }
 

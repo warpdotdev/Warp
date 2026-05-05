@@ -26,6 +26,7 @@ use crate::ai::blocklist::handoff::touched_repos::TouchedWorkspace;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::server::cloud_objects::update_manager::UpdateManager;
@@ -188,6 +189,10 @@ impl AmbientAgentViewModel {
     pub fn new(terminal_view_id: EntityId, ctx: &mut ModelContext<Self>) -> Self {
         ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
             me.handle_cloud_model_event(event, ctx);
+        });
+
+        ctx.subscribe_to_model(&HarnessAvailabilityModel::handle(ctx), |me, _event, ctx| {
+            me.validate_selected_harness(ctx);
         });
 
         // Validate the default environment once Warp Drive sync completes.
@@ -477,6 +482,16 @@ impl AmbientAgentViewModel {
         }
         self.environment_id = environment_id;
         ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
+    }
+
+    /// Resets to the first enabled harness if the current selection is no longer enabled.
+    fn validate_selected_harness(&mut self, ctx: &mut ModelContext<Self>) {
+        let model = HarnessAvailabilityModel::as_ref(ctx);
+        if !model.is_harness_enabled(self.harness) {
+            if let Some(first_enabled) = model.available_harnesses().iter().find(|h| h.enabled) {
+                self.set_harness(first_enabled.harness, ctx);
+            }
+        }
     }
 
     /// Whether or not this terminal session is for an ambient agent.

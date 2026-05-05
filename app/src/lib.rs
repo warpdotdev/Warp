@@ -196,6 +196,7 @@ use workflows::manager::WorkflowManager;
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::facts::manager::AIFactManager;
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::llms::LLMPreferences;
 use crate::ai::mcp::MCPGalleryManager;
 use crate::ai::mcp::TemplatableMCPServerManager;
@@ -1794,6 +1795,7 @@ fn initialize_app(
     ctx.add_singleton_model(LocalWorkflows::new);
 
     ctx.add_singleton_model(LLMPreferences::new);
+    ctx.add_singleton_model(HarnessAvailabilityModel::new);
 
     ctx.add_singleton_model(|ctx| {
         ai::agent_tips::AITipModel::<ai::AgentTip>::new_for_agent_tips(ctx)

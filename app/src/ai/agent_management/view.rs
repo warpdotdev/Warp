@@ -36,6 +36,7 @@ use crate::ai::conversation_details_panel::{
     ConversationDetailsData, ConversationDetailsPanel, ConversationDetailsPanelEvent,
 };
 use crate::ai::conversation_status_ui::render_status_element;
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::harness_display;
 use crate::app_state::PersistedAgentManagementFilters;
 use crate::appearance::Appearance;
@@ -220,6 +221,13 @@ impl AgentManagementView {
         ctx.subscribe_to_model(
             &AgentConversationsModel::handle(ctx),
             Self::handle_agent_management_model_event,
+        );
+
+        ctx.subscribe_to_model(
+            &HarnessAvailabilityModel::handle(ctx),
+            |me, _, _event, ctx| {
+                me.update_harness_dropdown(ctx);
+            },
         );
 
         let list_state = Self::construct_fresh_list_state(ctx.handle());
@@ -672,15 +680,25 @@ impl AgentManagementView {
         let mut dropdown = Dropdown::new(ctx);
         Self::setup_filter_menu(&mut dropdown, "Harness", ctx);
 
-        // "All" has no leading icon, matching the Status dropdown's "All" row.
+        let items = Self::build_harness_dropdown_items(ctx);
+        dropdown.set_rich_items(items, ctx);
+        dropdown.set_selected_by_index(0, ctx);
+        dropdown
+    }
+
+    fn build_harness_dropdown_items(
+        app: &AppContext,
+    ) -> Vec<MenuItem<DropdownAction<AgentManagementViewAction>>> {
         let mut items = vec![MenuItem::Item(
             MenuItemFields::new("All").with_on_select_action(DropdownAction::SelectActionAndClose(
                 AgentManagementViewAction::SetHarnessFilter(HarnessFilter::All),
             )),
         )];
 
-        for harness in [Harness::Oz, Harness::Claude, Harness::Gemini] {
-            let mut fields = MenuItemFields::new(harness_display::display_name(harness))
+        let availability = HarnessAvailabilityModel::as_ref(app);
+        for entry in availability.available_harnesses() {
+            let harness = entry.harness;
+            let mut fields = MenuItemFields::new(entry.display_name.clone())
                 .with_icon(harness_display::icon_for(harness))
                 .with_on_select_action(DropdownAction::SelectActionAndClose(
                     AgentManagementViewAction::SetHarnessFilter(HarnessFilter::Specific(harness)),
@@ -691,9 +709,7 @@ impl AgentManagementView {
             items.push(MenuItem::Item(fields));
         }
 
-        dropdown.set_rich_items(items, ctx);
-        dropdown.set_selected_by_index(0, ctx);
-        dropdown
+        items
     }
 
     fn create_environment_dropdown(
@@ -753,6 +769,13 @@ impl AgentManagementView {
         dropdown.set_main_axis_size(MainAxisSize::Min, ctx);
         dropdown.set_menu_header_text_override(move |text| format!("{}: {}", label_prefix, text));
         dropdown.set_button_variant(ButtonVariant::Secondary);
+    }
+
+    fn update_harness_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
+        let items = Self::build_harness_dropdown_items(ctx);
+        self.harness_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_rich_items(items, ctx);
+        });
     }
 
     /// Since the valid set of environments depends on what tasks we have loaded in,
@@ -1836,11 +1859,12 @@ impl AgentManagementView {
             metadata_parts.push(format!("Source: {}", source.display_name()));
         }
 
-        if FeatureFlag::AgentHarness.is_enabled() {
+        let availability = HarnessAvailabilityModel::as_ref(app);
+        if availability.should_show_harness_selector() {
             if let Some(harness) = card_data.harness(app) {
                 metadata_parts.push(format!(
                     "Harness: {}",
-                    harness_display::display_name(harness)
+                    availability.display_name_for(harness)
                 ));
             }
         }
@@ -1972,7 +1996,7 @@ impl AgentManagementView {
                 .with_child(ChildView::new(&self.created_on_dropdown).finish())
                 .with_child(ChildView::new(&self.artifact_dropdown).finish());
 
-            if FeatureFlag::AgentHarness.is_enabled() {
+            if HarnessAvailabilityModel::as_ref(app).should_show_harness_selector() {
                 filters_wrap.add_child(ChildView::new(&self.harness_dropdown).finish());
             }
 

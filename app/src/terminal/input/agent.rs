@@ -7,13 +7,16 @@ use super::{
     Input, InputAction, InputDropTargetData,
 };
 use crate::{
-    ai::blocklist::{
-        agent_view::{
-            agent_view_bg_fill,
-            shortcuts::{render_agent_shortcuts_view, AgentShortcutsViewContext},
-            AgentViewState,
+    ai::{
+        blocklist::{
+            agent_view::{
+                agent_view_bg_fill,
+                shortcuts::{render_agent_shortcuts_view, AgentShortcutsViewContext},
+                AgentViewState,
+            },
+            InputType,
         },
-        InputType,
+        harness_availability::HarnessAvailabilityModel,
     },
     appearance::Appearance,
     context_chips::spacing::{self},
@@ -123,7 +126,7 @@ impl Input {
         }
 
         let show_harness_row = FeatureFlag::CloudMode.is_enabled()
-            && FeatureFlag::AgentHarness.is_enabled()
+            && HarnessAvailabilityModel::as_ref(app).should_show_harness_selector()
             && self
                 .ambient_agent_view_model()
                 .is_some_and(|ambient_agent_model| {
