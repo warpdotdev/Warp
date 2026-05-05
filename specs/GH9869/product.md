@@ -56,18 +56,40 @@ escape hatch for everything else.
 
 ## Behavior contract (V1)
 
-### B1 — Caps Lock as a first-class option
+### B1 — Caps Lock as a first-class option (platform-specific semantics)
+
+> **Correction (review #10127):** earlier drafts described Caps Lock
+> as hold-to-talk on every platform while tech.md required macOS
+> press-to-toggle. Resolved to a single source of truth below.
 
 Caps Lock appears in the dropdown on all platforms (macOS, Windows,
-Linux). When selected, holding Caps Lock activates voice input and
-releasing it deactivates it, identical to the current modifier-key
-behavior. The OS-level Caps Lock toggle (the LED, the
-uppercase-letters effect) is NOT consumed: holding Caps Lock for
-voice input still toggles the OS Caps Lock state. (Suppressing the OS
-behavior would require platform-specific event interception which is
-out of V1 scope; users who want the suppression can remap Caps Lock
-to F19 at the OS level and bind that, which is the current best
-practice in Discord/Krisp.)
+Linux). The activation semantics are **platform-specific** and
+documented to the user in the dropdown's tooltip:
+
+- **macOS — press-to-toggle:** macOS reports Caps Lock as a single
+  key event when the lock state changes, not as a sustained press.
+  Holding-to-talk is impossible without OS-level event interception
+  (out of V1 scope). One tap starts voice input recording; the next
+  tap stops it. The dropdown tooltip on macOS reads
+  *"Tap to start, tap again to stop."* This matches Discord and
+  Krisp.
+- **Windows — hold-to-talk:** standard behavior. Holding Caps Lock
+  activates voice input; releasing it deactivates. The OS-level Caps
+  Lock toggle (the LED, the uppercase-letters effect) still fires —
+  V1 does not suppress it. The dropdown tooltip on Windows reads
+  *"Hold to talk."*
+- **Linux — hold-to-talk:** same as Windows. Tooltip reads
+  *"Hold to talk."*
+
+Acceptance criteria A4 is split accordingly:
+- A4-mac: tap, then tap again, on macOS — voice activates then
+  deactivates.
+- A4-win-lin: hold and release on Windows or Linux — voice activates
+  while held, deactivates on release.
+
+Users on macOS who want hold-to-talk semantics can remap Caps Lock
+to F19 at the OS level and bind F19; this is the current best
+practice in Discord/Krisp.
 
 ### B2 — F1 through F12 as first-class options
 
@@ -137,6 +159,20 @@ settings-change telemetry event with the new value (enum variant name
 for known variants, `"custom:<KeyCode>"` for press-to-capture
 variants). This lets the team see whether the new options actually
 solve the user demand or whether further additions are needed.
+
+**Privacy guardrails (security review #10127):**
+- The event fires **only after Confirm/save** in the press-to-capture
+  modal, never during capture.
+- Raw key events captured during the modal session are not logged or
+  emitted — they exist only in the modal's local state.
+- Rejected captures (B5 reject-list hits) are NOT emitted. The user
+  pressing keys that fail validation is the user's private interaction
+  with the modal.
+- Cancelled captures (Escape, Cancel button) are NOT emitted.
+- The emitted payload is `{ setting:
+  "agents.voice.voice_input_toggle_key", new_value: <enum-name-or-custom-keycode> }`.
+  No timestamps, no sequence of attempted keys, no modal session id.
+- The event respects Warp's existing global telemetry opt-out.
 
 ## Acceptance criteria
 

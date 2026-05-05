@@ -44,7 +44,7 @@ pub enum VoiceInputToggleKey {
     CapsLock,                          // NEW
     F1, F2, F3, F4, F5, F6,            // NEW
     F7, F8, F9, F10, F11, F12,         // NEW
-    Custom(KeyCode),                   // NEW
+    Custom(KeyCode),                   // NEW — non-iter variant
 }
 ```
 
@@ -54,30 +54,100 @@ Why (a) over (b) (separate `Option<KeyCode>` override field):
 - Avoids a "two settings disagree" failure mode where a user changes
   the dropdown but the override is stale.
 
-Cost of (a):
-- `SettingsValue` derive macro must support enum variants with
-  payloads. If it does not (verify before implementing), we have two
-  options: extend the macro, or use a manual `serde::Deserialize` /
-  `serde::Serialize` impl with a tagged form
-  (`{ kind = "custom", key = "f19" }`).
+### Replacing the EnumIter / `all_possible_values()` flow
 
-### TOML format
+> **Correction (review #10127):** the existing
+> `VoiceInputToggleKey::all_possible_values()`
+> ([app/src/settings/ai.rs:153](app/src/settings/ai.rs)) calls
+> `Self::iter().collect()` from `strum::EnumIter`. Adding a payload
+> variant like `Custom(KeyCode)` makes the enum non-iterable: there is
+> no finite list of `KeyCode` payloads.
 
-For known variants: existing snake_case (no change).
+Replace `all_possible_values()` with a curated `predefined_options()`
+that returns the unit variants for the dropdown:
+
+```rust
+impl VoiceInputToggleKey {
+    pub fn predefined_options() -> Vec<VoiceInputToggleKey> {
+        let mut out = vec![
+            VoiceInputToggleKey::None,
+            VoiceInputToggleKey::AltLeft, VoiceInputToggleKey::AltRight,
+            VoiceInputToggleKey::ControlLeft, VoiceInputToggleKey::ControlRight,
+            VoiceInputToggleKey::SuperLeft, VoiceInputToggleKey::SuperRight,
+            VoiceInputToggleKey::ShiftLeft, VoiceInputToggleKey::ShiftRight,
+            VoiceInputToggleKey::CapsLock,
+            VoiceInputToggleKey::F1,  VoiceInputToggleKey::F2,
+            VoiceInputToggleKey::F3,  VoiceInputToggleKey::F4,
+            VoiceInputToggleKey::F5,  VoiceInputToggleKey::F6,
+            VoiceInputToggleKey::F7,  VoiceInputToggleKey::F8,
+            VoiceInputToggleKey::F9,  VoiceInputToggleKey::F10,
+            VoiceInputToggleKey::F11, VoiceInputToggleKey::F12,
+        ];
+        if matches!(OperatingSystem::get(), OperatingSystem::Mac) {
+            // Fn was macOS-only in the original list; preserve that.
+            out.insert(1, VoiceInputToggleKey::Fn);
+        }
+        out
+    }
+}
+```
+
+`Custom(KeyCode)` is **not** part of `predefined_options()` — it is
+constructed by the press-to-capture modal at runtime. The dropdown
+shows a synthetic "Custom key…" entry that opens the modal; once a
+key is captured, the resulting `Custom(KeyCode)` is set as the
+current value but does not appear in the predefined list.
+
+Drop the `EnumIter` derive (it would now be wrong for the payload
+variant). Existing call sites of `iter()` are limited to
+`all_possible_values()` itself, so this is a one-line removal.
+
+### Settings serialization
+
+The existing `implement_setting_for_enum!` macro
+([app/src/settings/ai.rs:140](app/src/settings/ai.rs)) does **not**
+support payload variants. Two options:
+
+1. **Extend the macro** to allow a `Custom(T)` arm with a custom
+   tag/serialize hook.
+2. **Hand-write `Serialize`/`Deserialize` for `VoiceInputToggleKey`**
+   and use the simpler `implement_setting!` (non-enum) macro for
+   persistence.
+
+Recommendation: **option 2.** The macro extension would be a one-off
+for this single enum and the manual impl is ~30 lines of
+straightforward code, fully testable.
+
+### Canonical TOML format
+
+> **Correction (review #10127):** earlier drafts mentioned both
+> `{ custom = "F19" }` and `{ kind = "custom", key = "f19" }`. The
+> canonical form is below; the tests assert it bit-for-bit.
+
+For unit variants — existing snake_case format, no change:
 ```toml
 voice_input_toggle_key = "alt_left"
 voice_input_toggle_key = "caps_lock"
 voice_input_toggle_key = "f1"
+voice_input_toggle_key = "f12"
 ```
-For `Custom`:
+
+For `Custom(KeyCode)` — TOML inline-table with one key, `custom`,
+and the `KeyCode` value as its lowercased Serde-default
+representation:
 ```toml
-voice_input_toggle_key = { custom = "F19" }
-# or
-voice_input_toggle_key = { custom = "Backslash" }
+voice_input_toggle_key = { custom = "f19" }
+voice_input_toggle_key = { custom = "backslash" }
+voice_input_toggle_key = { custom = "intl_yen" }   # snake_case for multi-word
 ```
-The `Custom` payload is the `KeyCode` `Debug` representation
-(matches Serde's default for the existing `KeyCode` `Serialize`
-derive).
+
+The `KeyCode` payload uses `serde_with`-style snake_case lowercasing
+to match the existing settings TOML convention. Round-trip:
+- Serialize: `KeyCode::F19` → `"f19"`, `KeyCode::IntlYen` → `"intl_yen"`.
+- Deserialize: case-insensitive match against the snake_case form.
+The hand-written `Serialize`/`Deserialize` impl is the single
+source of truth for this mapping; T2 in the test plan asserts the
+exact strings.
 
 ### Migration
 
@@ -134,11 +204,45 @@ New module `app/src/settings_view/voice_hotkey_capture_modal.rs`.
 - On Confirm, dispatches
   `AISettingsPageAction::SetVoiceInputToggleKey(VoiceInputToggleKey::Custom(key_code))`.
 - On Cancel or Escape, closes without dispatch.
-- The modal's reject-list (B5) is constructed at open time from:
-  - The currently-bound app-quit shortcut (read from key bindings).
-  - The currently-bound voice-input shortcut (the value being
-    replaced — but allow re-confirming the same key).
-  - A static list: `[Enter, Escape, Tab, Backspace, Space]`.
+- The modal's reject-list (B5) operates on **full keystrokes** (key
+  + modifiers), not bare `KeyCode`s.
+
+> **Correction (review #10127):** earlier drafts described the
+> reject-list as a `KeyCode` set. App-quit (`Cmd+Q` on macOS,
+> `Alt+F4` on Windows) is a chord — comparing only `KeyCode::KeyQ`
+> would either ban a bare `Q` (wrong) or fail to reject Cmd+Q. The
+> reject-list must compare full `Keystroke`s.
+
+  Reject-list construction (at modal open time):
+
+  - **Currently-bound app-quit shortcut:** read the full
+    `Keystroke` from the key-binding registry (e.g. `Cmd+Q` on
+    macOS, `Alt+F4` on Windows). The captured input is rejected
+    only if its full `Keystroke` (key + modifiers) matches.
+  - **Currently-bound voice-input shortcut:** allow re-confirming
+    the same key (so the user can re-open and confirm without
+    error), but reject if the user picks a different value than
+    the existing one for any reason. Same `Keystroke` comparison.
+  - **Static structural rejects:** these are bare-key rejects (no
+    modifier needed) because they would brick the input flow:
+    `[Enter, Escape, Tab, Backspace, Space]`. The modifier
+    state is ignored for these specifically. (Pressing
+    `Cmd+Enter` is also rejected — Cmd+Enter is just as broken as
+    bare Enter for our use case.)
+  - **Bare modifier rule:** a press whose `KeyCode` is a modifier
+    AND no other key is pressed can still be captured via the
+    >800ms held-modifier rule (B3). The captured value is the
+    bare modifier (`KeyCode::ShiftLeft`), not the
+    chord, since voice activation tracks press/release of a
+    single physical key.
+
+  Because the captured value persisted into the setting is a
+  single `KeyCode` (or one of the predefined enum variants), not a
+  full `Keystroke`, the reject-list comparison happens **at
+  capture time only**, before the value is saved. Once saved, the
+  dispatch-side (`block_list_element.rs:3072` /
+  `alt_screen_element.rs:620`) only sees the bare `KeyCode` and
+  matches a single key event.
 
 ### Caps Lock toggle vs. hold semantics
 
@@ -198,16 +302,55 @@ keycode_string(key_code).to_string(), .. Default::default() }`.
 
 ## Settings reset on corrupted TOML (A6)
 
-When `VoiceInputToggleKey` deserialization fails (user hand-edited
-TOML with `voice_input_toggle_key = "enter"`), the `SettingsValue`
-deserializer falls back to `Default` today. We need to additionally
-fire a one-time toast.
+> **Correction (review #10127):** earlier drafts said the validation
+> hook fires when "deserialization successfully produces an
+> unbindable `KeyCode`." But TOML like `voice_input_toggle_key =
+> "enter"` does NOT deserialize successfully into the curated unit-
+> variant set — it fails parsing. A `validate()` hook running on the
+> deserialized value never sees the bad value. Below is the corrected
+> design that intercepts the raw parse failure.
 
-Implementation: add a `validate()` method on `VoiceInputToggleKey`
-called during `AISettings::initialize()`. If the loaded value
-deserializes successfully but the resulting `KeyCode` is in B5's
-reject list, reset to `None`, fire the toast via the existing
-toast/notification channel, and log a warn.
+There are two distinct A6 paths:
+
+### Path 1: raw parse failure (e.g. `"enter"`, `"foo"`, malformed TOML)
+
+The hand-written `Deserialize` impl on `VoiceInputToggleKey` (see
+"Settings serialization" above) is the single entry point. It is
+modified to:
+
+1. Attempt the normal parse against the curated unit-variant set
+   plus the `{ custom = "..." }` form.
+2. **On parse failure, return a special `Default` value tagged with
+   the original raw string** instead of erroring out. The tag is
+   stored in a side-channel: a `parking_lot::Mutex<Option<String>>`
+   on `AISettings` named `voice_input_toggle_key_raw_parse_failure`.
+3. Do NOT propagate the parse error — that would prevent the rest
+   of `AISettings` from loading.
+
+After `AISettings::initialize()` completes, a one-shot consumer in
+the AI page's mount hook drains the side-channel:
+- If `Some(raw)`: fire the toast *"Voice input hotkey reset — could
+  not parse `<raw>`"*, log
+  `log::warn!(raw = ?raw, "voice_input_toggle_key parse failed,
+  reset to None")`. Drain to `None` so the toast never re-fires.
+- If `None`: no-op.
+
+### Path 2: parsed-but-unbindable value (e.g. captured from an old
+build that allowed it)
+
+After deserialization succeeds, an additional `validate()` method on
+`VoiceInputToggleKey` checks the resulting `KeyCode` against the
+runtime reject list (modifier-only-but-not-curated, etc.). If the
+check fails:
+- Reset the in-memory value to `None`.
+- Re-write the TOML on disk with the corrected value.
+- Fire the same toast and warn-log as Path 1.
+- The toast text is the same; the side-channel is reused for the
+  raw value (set to the `Debug` representation).
+
+This split — parse failure as one path, post-parse validation as
+another — guarantees A6's toast fires regardless of how the bad
+value got into the file.
 
 ## Test plan
 
