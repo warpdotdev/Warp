@@ -9,9 +9,11 @@
 //! Linux-side hooks.
 //!
 //! [`git_binary`] and [`gh_binary`] return an absolute Linux-side
-//! path when running inside WSL, falling back to the literal program
-//! name everywhere else. The same `/mnt/*` filtering precedent is
-//! used for `compgen` in
+//! path when running inside WSL, and the literal program name on
+//! every other host so `Command::new` performs its normal PATH
+//! lookup at spawn time (preserving call-site `cmd.env("PATH", …)`
+//! overrides). The same `/mnt/*` filtering precedent is used for
+//! `compgen` in
 //! `app/src/terminal/model/session/command_executor/wsl_command_executor.rs`.
 //!
 //! Resolution is cached for the life of the process; PATH is
@@ -48,16 +50,23 @@ pub fn gh_binary() -> &'static OsStr {
 }
 
 fn resolve_or_warn(name: &str) -> OsString {
+    // Outside WSL, return the bare program name so each `Command::new`
+    // performs the OS's normal PATH lookup at spawn time. Resolving up
+    // front would freeze the binary path at module init and silently
+    // ignore call-site `cmd.env("PATH", ...)` overrides used to expose
+    // user-installed hooks (see `run_git_command_with_env` and
+    // `run_gh_command` in `app/src/util/git.rs`).
+    if !is_wsl() {
+        return OsString::from(name);
+    }
     let path_env = std::env::var_os("PATH");
-    match resolve_binary_in_wsl_safe_path(name, path_env.as_deref(), is_wsl()) {
+    match resolve_binary_in_wsl_safe_path(name, path_env.as_deref(), true) {
         Some(p) => p.into_os_string(),
         None => {
-            if is_wsl() {
-                log::warn!(
-                    "wsl: no Linux-side `{name}` found on PATH (excluding /mnt/*); \
-                     falling back to bare `{name}` which may resolve to a Windows .exe"
-                );
-            }
+            log::warn!(
+                "wsl: no Linux-side `{name}` found on PATH (excluding /mnt/*); \
+                 falling back to bare `{name}` which may resolve to a Windows .exe"
+            );
             OsString::from(name)
         }
     }
