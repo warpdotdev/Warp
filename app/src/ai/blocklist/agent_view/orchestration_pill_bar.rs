@@ -46,8 +46,9 @@ use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::pane::view::PaneHeaderAction;
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::icons::Icon;
-use crate::workspace::{RestoreConversationLayout, WorkspaceAction};
+use crate::workspace::{RestoreConversationLayout, WorkspaceAction, WorkspaceRegistry};
 use warp_core::ui::theme::color::internal_colors;
+use warpui::EntityId;
 
 const PILL_HEIGHT: f32 = 22.;
 const PILL_RADIUS: f32 = PILL_HEIGHT / 2.;
@@ -332,19 +333,25 @@ impl OrchestrationPillBar {
         };
 
         // If this child conversation is already open in a *different*
-        // terminal view — whether that's a separate pane in this tab,
-        // another tab, or another window — collapse the create-new
+        // visible terminal view — whether that's a separate pane in this
+        // tab, another tab, or another window — collapse the create-new
         // entries into a single "Focus pane" item that routes the user to
         // the existing owner. The conversation has a single source of
         // truth (one terminal view renders its AI blocks; see
         // `ConversationOwnershipTransferred` in `BlocklistAIHistoryModel`),
         // so offering separate "Open pane" / "Open tab" entries here
         // would imply more than one destination exists.
+        //
+        // We deliberately do NOT use
+        // `ActiveAgentViewsModel::terminal_view_id_for_conversation` here:
+        // every child agent has a hidden child-agent pane registered in
+        // that model (its `AgentViewController` keeps the child as its
+        // `active_conversation_id` to receive events), which would falsely
+        // flag every child as "open elsewhere" even when the orchestrator
+        // is the only visible owner.
         let self_terminal_view_id = self.agent_view_controller.as_ref(ctx).terminal_view_id();
-        let owning_view_id = ActiveAgentViewsModel::as_ref(ctx)
-            .terminal_view_id_for_conversation(conversation_id, ctx);
         let is_open_elsewhere =
-            owning_view_id.is_some() && owning_view_id != Some(self_terminal_view_id);
+            is_conversation_open_in_other_visible_view(conversation_id, self_terminal_view_id, ctx);
 
         let items = if is_open_elsewhere {
             vec![
@@ -1412,18 +1419,18 @@ fn render_pill(
         }
         let _ = kind;
         // Single source of truth: if the conversation is currently owned
-        // by a *different* terminal view than this orchestrator pane
-        // (because it was split off into a separate pane or tab), the
-        // pill should focus that existing pane rather than re-render
-        // the conversation in place. We look up the owner via
-        // `ActiveAgentViewsModel` and route through
+        // by a *different* visible terminal view than this orchestrator
+        // pane (because it was split off into a separate pane or tab),
+        // the pill should focus that existing pane rather than re-render
+        // the conversation in place. The check uses the canonical owner
+        // from `BlocklistAIHistoryModel` (filtered to visible panes only;
+        // see `is_conversation_open_in_other_visible_view` for why we
+        // can't use `ActiveAgentViewsModel` here) and routes through
         // `RestoreOrNavigateToConversation` (mirrors the breadcrumb
         // parent-click path), which handles same-tab/different-tab/
         // different-window navigation uniformly.
-        let owning_view_id = ActiveAgentViewsModel::as_ref(app)
-            .terminal_view_id_for_conversation(conversation_id, app);
         let is_open_elsewhere =
-            owning_view_id.is_some() && owning_view_id != Some(self_terminal_view_id);
+            is_conversation_open_in_other_visible_view(conversation_id, self_terminal_view_id, app);
         if is_open_elsewhere {
             let nav_data = AgentConversationsModel::as_ref(app)
                 .get_conversation(&conversation_id)
@@ -1606,6 +1613,58 @@ struct CrumbSpec {
 const CRUMB_HEIGHT: f32 = 24.;
 const CRUMB_RADIUS: f32 = 4.;
 const CRUMB_HORIZONTAL_PADDING: f32 = 6.;
+
+/// Returns `true` if `conversation_id` is canonically owned (per
+/// `BlocklistAIHistoryModel::live_conversation_ids_for_terminal_view`) by
+/// some *visible* terminal view that is not `self_terminal_view_id`. Used
+/// by the orchestration pill bar to decide between "open in new pane / new
+/// tab" (when no other visible pane shows the conversation) and "focus
+/// pane" (when one does).
+///
+/// `BlocklistAIHistoryModel` is the single source of truth for which
+/// terminal view renders a given conversation's AI blocks (see
+/// `ConversationOwnershipTransferred`), so it correctly reflects the
+/// orchestrator after an in-place switch and the new pane after a split.
+/// However, before any user interaction the canonical owner is the
+/// hidden child-agent pane created by
+/// `create_hidden_child_agent_conversation` — a real terminal view that
+/// we deliberately keep off-screen. Using only the history-model owner
+/// here would treat that hidden pane as "elsewhere" and falsely surface
+/// "Focus pane" for every child the user has not yet opened.
+///
+/// The visible-pane filter resolves both edge cases: walking
+/// `Workspace::tab_views()` and consulting `PaneGroup::visible_pane_ids()`
+/// (which excludes hidden-for-child-agent / hidden-for-close / etc.
+/// panes) confirms the owner is a pane the user can actually navigate to.
+fn is_conversation_open_in_other_visible_view(
+    conversation_id: AIConversationId,
+    self_terminal_view_id: EntityId,
+    app: &AppContext,
+) -> bool {
+    let Some(owner) =
+        BlocklistAIHistoryModel::as_ref(app).terminal_view_id_for_conversation(&conversation_id)
+    else {
+        return false;
+    };
+    if owner == self_terminal_view_id {
+        return false;
+    }
+    let registry = WorkspaceRegistry::as_ref(app);
+    for (_, workspace_handle) in registry.all_workspaces(app) {
+        let workspace = workspace_handle.as_ref(app);
+        for pane_group_handle in workspace.tab_views() {
+            let pane_group = pane_group_handle.as_ref(app);
+            for pane_id in pane_group.visible_pane_ids() {
+                if let Some(terminal_view) = pane_group.terminal_view_from_pane_id(pane_id, app) {
+                    if terminal_view.id() == owner {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
 
 /// Returns `true` if the active conversation in `agent_view_controller` is a
 /// child agent that has been opened in a *different* terminal view than this
