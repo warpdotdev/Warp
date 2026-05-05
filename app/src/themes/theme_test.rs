@@ -1,12 +1,12 @@
 use super::*;
 use crate::util::color::OPAQUE;
+use dirs::home_dir;
 use settings_value::SettingsValue as _;
+use std::path::PathBuf;
 
 #[test]
 #[cfg(not(target_family = "wasm"))]
 fn custom_theme_tilde_path_expansion_test() {
-    use dirs::home_dir;
-
     let home = home_dir().expect("home dir must exist for this test");
 
     // A Custom ThemeKind stored in JSON (as used in settings) with a tilde path.
@@ -35,8 +35,6 @@ fn custom_theme_tilde_path_expansion_test() {
 #[test]
 #[cfg(not(target_family = "wasm"))]
 fn custom_theme_tilde_path_expansion_via_settings_value_test() {
-    use dirs::home_dir;
-
     let home = home_dir().expect("home dir must exist for this test");
 
     // Simulate loading from the TOML settings file via the SettingsValue path
@@ -73,7 +71,7 @@ fn custom_theme_absolute_path_unchanged_test() {
         ThemeKind::Custom(custom) => {
             assert_eq!(
                 custom.path(),
-                std::path::PathBuf::from("/absolute/path/to/theme.yaml"),
+                PathBuf::from("/absolute/path/to/theme.yaml"),
                 "absolute path should be unchanged"
             );
         }
@@ -84,8 +82,6 @@ fn custom_theme_absolute_path_unchanged_test() {
 #[test]
 #[cfg(not(target_family = "wasm"))]
 fn custom_theme_to_file_value_uses_tilde_test() {
-    use dirs::home_dir;
-
     let home = home_dir().expect("home dir must exist for this test");
 
     // Build a CustomTheme with an absolute path under the home dir.
@@ -111,8 +107,6 @@ fn custom_theme_to_file_value_uses_tilde_test() {
 #[test]
 #[cfg(not(target_family = "wasm"))]
 fn custom_theme_settings_value_round_trip_test() {
-    use dirs::home_dir;
-
     let home = home_dir().expect("home dir must exist for this test");
 
     // Start with an absolute path.
