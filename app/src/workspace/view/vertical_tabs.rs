@@ -3708,11 +3708,29 @@ fn render_summary_pane_kind_icons(
                 + secondary_radius
                 - primary_total / 2.;
 
-            let (parent_anchor, child_anchor) = if primary_has_status_badge {
+            // Anchor + offset direction (#10179):
+            //
+            // pathfinder uses positive-Y-down. The BR placement walks the
+            // secondary further into the BR quadrant via (+x, +y) so the
+            // secondary's center sits on the primary circle's BR edge. For
+            // the TR placement, +x still goes right (away from the primary)
+            // but Y must FLIP to negative — otherwise positive Y would push
+            // the secondary DOWN into the primary instead of UP into the TR
+            // quadrant. The corner offset magnitude is the same; only Y's
+            // sign changes.
+            let (parent_anchor, child_anchor, offset_y) = if primary_has_status_badge {
                 // Top-right: leaves BR clear for the status badge.
-                (ParentAnchor::TopRight, ChildAnchor::TopRight)
+                (
+                    ParentAnchor::TopRight,
+                    ChildAnchor::TopRight,
+                    -secondary_corner_offset,
+                )
             } else {
-                (ParentAnchor::BottomRight, ChildAnchor::BottomRight)
+                (
+                    ParentAnchor::BottomRight,
+                    ChildAnchor::BottomRight,
+                    secondary_corner_offset,
+                )
             };
 
             let mut stack = Stack::new().with_child(
@@ -3724,7 +3742,7 @@ fn render_summary_pane_kind_icons(
             stack.add_positioned_child(
                 secondary_with_ring,
                 OffsetPositioning::offset_from_parent(
-                    vec2f(secondary_corner_offset, secondary_corner_offset),
+                    vec2f(secondary_corner_offset, offset_y),
                     ParentOffsetBounds::Unbounded,
                     parent_anchor,
                     child_anchor,
