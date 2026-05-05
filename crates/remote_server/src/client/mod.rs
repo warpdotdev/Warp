@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
 use dashmap::DashMap;
 use futures::channel::oneshot;
 use futures::io::{AsyncRead, AsyncWrite};
@@ -11,13 +12,12 @@ use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
     client_message, server_message, Abort, Authenticate, ClientMessage, DeleteFile, ErrorCode,
-    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
+    Initialize, InitializeResponse, ListCodebaseIndexStatuses, LoadRepoMetadataDirectoryResponse,
     NavigatedToDirectoryResponse, ReadFileContextRequest, ReadFileContextResponse,
     RunCommandRequest, RunCommandResponse, ServerMessage, SessionBootstrapped, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
-
 use warp_core::SessionId;
 use warp_core::{safe_error, safe_warn};
 use warpui::r#async::TransportStream;
@@ -68,6 +68,12 @@ pub enum ClientEvent {
     RepoMetadataUpdated {
         update: repo_metadata::RepoMetadataUpdate,
     },
+    /// A full remote codebase-index status snapshot was pushed by the server.
+    CodebaseIndexStatusesSnapshotReceived {
+        statuses: Vec<RemoteCodebaseIndexStatus>,
+    },
+    /// A single remote codebase-index status update was pushed by the server.
+    CodebaseIndexStatusUpdated { status: RemoteCodebaseIndexStatus },
     /// A server message could not be decoded and had no parseable request_id.
     MessageDecodingError,
 }
@@ -215,6 +221,34 @@ impl RemoteServerClient {
                 safe_error!(
                     safe: ("Remote server unexpected response for Initialize"),
                     full: ("Remote server unexpected response for Initialize: response={other:?}")
+                );
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Sends a `ListCodebaseIndexStatuses` request and awaits the status snapshot response.
+    pub async fn list_codebase_index_statuses(
+        &self,
+    ) -> Result<Vec<RemoteCodebaseIndexStatus>, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::ListCodebaseIndexStatuses(
+                ListCodebaseIndexStatuses {},
+            )),
+        };
+
+        let response = self.send_request(request_id, msg).await?;
+
+        match response.message {
+            Some(server_message::Message::CodebaseIndexStatusesSnapshot(snapshot)) => Ok(
+                crate::codebase_index_proto::proto_to_codebase_index_statuses_snapshot(&snapshot),
+            ),
+            other => {
+                safe_error!(
+                    safe: ("Remote server unexpected response for ListCodebaseIndexStatuses"),
+                    full: ("Remote server unexpected response for ListCodebaseIndexStatuses: response={other:?}")
                 );
                 Err(ClientError::UnexpectedResponse)
             }
@@ -418,6 +452,19 @@ impl RemoteServerClient {
             server_message::Message::RepoMetadataUpdate(push) => {
                 let update = crate::repo_metadata_proto::proto_to_repo_metadata_update(&push)?;
                 Some(ClientEvent::RepoMetadataUpdated { update })
+            }
+            server_message::Message::CodebaseIndexStatusesSnapshot(snapshot) => {
+                Some(ClientEvent::CodebaseIndexStatusesSnapshotReceived {
+                    statuses:
+                        crate::codebase_index_proto::proto_to_codebase_index_statuses_snapshot(
+                            &snapshot,
+                        ),
+                })
+            }
+            server_message::Message::CodebaseIndexStatusUpdated(update) => {
+                let status =
+                    crate::codebase_index_proto::proto_to_codebase_index_status_updated(&update)?;
+                Some(ClientEvent::CodebaseIndexStatusUpdated { status })
             }
             other => {
                 safe_warn!(

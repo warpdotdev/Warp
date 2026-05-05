@@ -39,6 +39,7 @@ async fn round_trip_server_message() {
             InitializeResponse {
                 server_version: "0.1.0".to_string(),
                 host_id: "test-host".to_string(),
+                capabilities: vec![],
             },
         )),
     };

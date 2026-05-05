@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use warp_core::channel::ChannelState;
 use warp_core::safe_error;
 use warp_core::SessionId;
@@ -19,12 +20,13 @@ use warp_util::file::FileId;
 
 use super::proto::{
     client_message, delete_file_response, run_command_response, server_message,
-    write_file_response, Abort, Authenticate, ClientMessage, DeleteFile, DeleteFileResponse,
-    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
-    FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
-    NavigatedToDirectoryResponse, ReadFileContextResponse, RunCommandError, RunCommandErrorCode,
-    RunCommandRequest, RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped,
-    WriteFile, WriteFileResponse, WriteFileSuccess,
+    write_file_response, Abort, Authenticate, ClientMessage, CodebaseIndexStatusUpdated,
+    CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess, ErrorCode,
+    ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, Initialize,
+    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse,
+    ReadFileContextResponse, RunCommandError, RunCommandErrorCode, RunCommandRequest,
+    RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped, WriteFile,
+    WriteFileResponse, WriteFileSuccess,
 };
 
 /// How long the daemon waits with no connections before exiting.
@@ -32,6 +34,9 @@ pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 
 
 /// Unique identifier for a connected proxy session in daemon mode.
 pub type ConnectionId = uuid::Uuid;
+use super::codebase_index_proto::{
+    statuses_to_snapshot_proto, RemoteCodebaseIndexState, RemoteCodebaseIndexStatus,
+};
 use super::protocol::RequestId;
 use crate::ai::agent::FileLocations;
 use crate::ai::blocklist::{read_local_file_context, ReadFileContextResult};
@@ -198,6 +203,8 @@ pub struct ServerModel {
     pending_file_ops: PendingFileOps,
     /// Daemon-wide auth credentials and user identity.
     auth: DaemonAuthContext,
+    /// Remote codebase-index statuses reported to connected clients.
+    codebase_index_statuses_by_repo: HashMap<String, RemoteCodebaseIndexStatus>,
 }
 
 impl Entity for ServerModel {
@@ -223,6 +230,7 @@ impl ServerModel {
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
             auth: DaemonAuthContext::new(),
+            codebase_index_statuses_by_repo: HashMap::new(),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -410,6 +418,8 @@ impl ServerModel {
         ctx: &mut ModelContext<Self>,
     ) {
         let request_id = RequestId::from(msg.request_id);
+        let push_codebase_status_snapshot_after_response =
+            matches!(&msg.message, Some(client_message::Message::Initialize(_)));
 
         let outcome = match msg.message {
             Some(client_message::Message::Initialize(msg)) => {
@@ -440,6 +450,9 @@ impl ServerModel {
             Some(client_message::Message::LoadRepoMetadataDirectory(msg)) => {
                 self.handle_load_repo_metadata_directory(msg, &request_id, ctx)
             }
+            Some(client_message::Message::ListCodebaseIndexStatuses(_)) => {
+                self.handle_list_codebase_index_statuses()
+            }
             Some(client_message::Message::WriteFile(msg)) => {
                 self.handle_write_file(msg, &request_id, conn_id, ctx)
             }
@@ -463,6 +476,9 @@ impl ServerModel {
         match outcome {
             HandlerOutcome::Sync(message) => {
                 self.send_server_message(Some(conn_id), Some(&request_id), message);
+                if push_codebase_status_snapshot_after_response {
+                    self.send_codebase_index_statuses_snapshot(Some(conn_id), None);
+                }
             }
             HandlerOutcome::Async(Some(handle)) => {
                 self.in_progress.insert(request_id, handle);
@@ -472,6 +488,49 @@ impl ServerModel {
                 // the response will be sent via an event subscription.
             }
         }
+    }
+
+    fn send_codebase_index_statuses_snapshot(
+        &self,
+        conn_id: Option<ConnectionId>,
+        request_id: Option<&RequestId>,
+    ) {
+        self.send_server_message(
+            conn_id,
+            request_id,
+            server_message::Message::CodebaseIndexStatusesSnapshot(
+                self.codebase_index_statuses_snapshot(),
+            ),
+        );
+    }
+
+    fn codebase_index_statuses_snapshot(&self) -> CodebaseIndexStatusesSnapshot {
+        statuses_to_snapshot_proto(self.codebase_index_statuses_by_repo.values())
+    }
+
+    fn ensure_not_enabled_codebase_index_status(
+        &mut self,
+        repo_path: String,
+    ) -> Option<RemoteCodebaseIndexStatus> {
+        if self
+            .codebase_index_statuses_by_repo
+            .contains_key(&repo_path)
+        {
+            return None;
+        }
+
+        let last_updated_epoch_millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64);
+        let status = RemoteCodebaseIndexStatus {
+            repo_path: repo_path.clone(),
+            state: RemoteCodebaseIndexState::NotEnabled,
+            last_updated_epoch_millis,
+        };
+        self.codebase_index_statuses_by_repo
+            .insert(repo_path, status.clone());
+        Some(status)
     }
 
     /// Routes a server message to its destination.
@@ -625,6 +684,11 @@ impl ServerModel {
                 crate::crash_reporting::uninit_sentry();
             }
         }
+    }
+    fn handle_list_codebase_index_statuses(&self) -> HandlerOutcome {
+        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusesSnapshot(
+            self.codebase_index_statuses_snapshot(),
+        ))
     }
 
     /// Handles `Authenticate` by replacing the daemon-wide credential.
@@ -860,6 +924,24 @@ impl ServerModel {
                         },
                     ),
                 );
+
+                // Remote codebase indexing is repo-scoped, so only git repo
+                // navigations get a status entry.
+                if is_git {
+                    if let Some(status) =
+                        me.ensure_not_enabled_codebase_index_status(indexed_path.clone())
+                    {
+                        me.send_server_message(
+                            Some(conn_id_for_response),
+                            None,
+                            server_message::Message::CodebaseIndexStatusUpdated(
+                                CodebaseIndexStatusUpdated {
+                                    status: Some((&status).into()),
+                                },
+                            ),
+                        );
+                    }
+                }
 
                 // After responding, push a snapshot if metadata is available.
                 //

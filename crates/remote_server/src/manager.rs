@@ -11,8 +11,9 @@ use crate::client::ClientEvent;
 #[cfg(not(target_family = "wasm"))]
 use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
+use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
+use crate::proto::ServerCapability;
 use crate::setup::PreinstallCheckResult;
-#[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
 use crate::setup::RemotePlatform;
 use crate::setup::RemoteServerSetupState;
@@ -47,6 +48,11 @@ struct ReconnectParams {
     auth_context: Arc<RemoteServerAuthContext>,
     control_path: Option<PathBuf>,
     identity_key: String,
+}
+#[cfg(not(target_family = "wasm"))]
+struct InitializeHandshake {
+    host_id: HostId,
+    remote_codebase_indexing_supported: bool,
 }
 
 /// Error from [`RemoteServerManager::run_connect_and_handshake`] that
@@ -89,6 +95,7 @@ pub enum RemoteServerInitPhase {
 pub enum RemoteServerOperation {
     NavigateToDirectory,
     LoadRepoMetadataDirectory,
+    ListCodebaseIndexStatuses,
 }
 
 /// Classification of a remote server client error for telemetry.
@@ -200,6 +207,8 @@ pub enum RemoteSessionState {
         /// identity, preventing a stale session for a previous identity from
         /// receiving a different user's bearer token.
         identity_key: String,
+        /// Whether this remote daemon advertised the remote codebase-indexing protocol.
+        remote_codebase_indexing_supported: bool,
         /// The transport's owning `Child`. See `Initializing::_child`.
         #[cfg(not(target_family = "wasm"))]
         _child: async_process::Child,
@@ -288,6 +297,8 @@ pub enum RemoteServerManagerEvent {
     /// The last session for this host was disconnected or deregistered.
     /// Downstream features should tear down per-host models.
     HostDisconnected { host_id: HostId },
+    /// Capability support reported by this host's initialized daemon.
+    RemoteCodebaseIndexingCapability { host_id: HostId, supported: bool },
 
     // --- Repo metadata events (forwarded from ClientEvent push channel) ---
     /// Response to a `navigate_to_directory` request.
@@ -311,6 +322,18 @@ pub enum RemoteServerManagerEvent {
     RepoMetadataDirectoryLoaded {
         host_id: HostId,
         update: RepoMetadataUpdate,
+    },
+    /// A full remote codebase-index status snapshot was pushed or requested.
+    CodebaseIndexStatusesSnapshot {
+        remote_identity_key: String,
+        host_id: HostId,
+        statuses: Vec<RemoteCodebaseIndexStatus>,
+    },
+    /// A single remote codebase-index status update was pushed by the daemon.
+    CodebaseIndexStatusUpdated {
+        remote_identity_key: String,
+        host_id: HostId,
+        status: RemoteCodebaseIndexStatus,
     },
 
     // --- Setup events ---
@@ -384,9 +407,12 @@ impl RemoteServerManagerEvent {
             }
             RemoteServerManagerEvent::HostConnected { .. }
             | RemoteServerManagerEvent::HostDisconnected { .. }
+            | RemoteServerManagerEvent::RemoteCodebaseIndexingCapability { .. }
             | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
             | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
-            | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. } => None,
+            | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
+            | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
+            | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. } => None,
         }
     }
 }
@@ -718,12 +744,12 @@ impl RemoteServerManager {
                     )
                     .await
                     {
-                        Ok(host_id) => {
+                        Ok(handshake) => {
                             let _ = spawner
                                 .spawn(move |me, ctx| {
                                     me.mark_session_connected(
                                         session_id,
-                                        host_id,
+                                        handshake,
                                         identity_key,
                                         transport,
                                         ctx,
@@ -768,7 +794,7 @@ impl RemoteServerManager {
     ///    event channel.
     /// 3. Runs the initialize handshake with the current auth token, if any.
     ///
-    /// Returns `Ok(host_id)` on success, or a phase-tagged error.
+    /// Returns `Ok(InitializeHandshake)` on success, or a phase-tagged error.
     #[cfg(not(target_family = "wasm"))]
     async fn run_connect_and_handshake(
         session_id: SessionId,
@@ -776,7 +802,7 @@ impl RemoteServerManager {
         auth_context: &RemoteServerAuthContext,
         spawner: &ModelSpawner<Self>,
         executor: &Arc<warpui::r#async::executor::Background>,
-    ) -> Result<HostId, ConnectAndHandshakeError> {
+    ) -> Result<InitializeHandshake, ConnectAndHandshakeError> {
         // Phase 1: Connect (establish streams, create client).
         let Connection {
             client,
@@ -853,7 +879,7 @@ impl RemoteServerManager {
                 resp.server_version
             );
 
-            const REMOVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+            const REMOVAL_TIMEOUT: Duration = Duration::from_secs(5);
 
             if let Err(e) = transport
                 .remove_remote_server_binary()
@@ -862,7 +888,7 @@ impl RemoteServerManager {
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out after {REMOVAL_TIMEOUT:?}")))
             {
                 log::warn!(
-                    "Remote server stale binary removal failed: session={session_id:?} error={e}"
+                    "Remote server stale binary removal failed: session={session_id:?} error={e:#}"
                 );
             }
             return Err(ConnectAndHandshakeError::Initialize(anyhow::anyhow!(
@@ -872,7 +898,16 @@ impl RemoteServerManager {
             )));
         }
 
-        Ok(HostId::new(resp.host_id))
+        let remote_codebase_indexing_supported = resp.capabilities.iter().any(|capability| {
+            ServerCapability::try_from(*capability)
+                .ok()
+                .is_some_and(|capability| capability == ServerCapability::RemoteCodebaseIndexing)
+        });
+
+        Ok(InitializeHandshake {
+            host_id: HostId::new(resp.host_id),
+            remote_codebase_indexing_supported,
+        })
     }
 
     /// Removes a session from the manager and tears down its connection.
@@ -1063,6 +1098,86 @@ impl RemoteServerManager {
         self.host_to_sessions.get(host_id)
     }
 
+    fn connected_session_for_host(
+        &self,
+        host_id: &HostId,
+    ) -> Option<(SessionId, Arc<RemoteServerClient>, String, bool)> {
+        let sessions = self.host_to_sessions.get(host_id)?;
+        sessions.iter().find_map(|session_id| {
+            let RemoteSessionState::Connected {
+                client,
+                identity_key,
+                remote_codebase_indexing_supported,
+                ..
+            } = self.sessions.get(session_id)?
+            else {
+                return None;
+            };
+            Some((
+                *session_id,
+                client.clone(),
+                identity_key.clone(),
+                *remote_codebase_indexing_supported,
+            ))
+        })
+    }
+
+    /// Requests a bulk remote codebase-index status resync for a connected host.
+    pub fn refresh_codebase_index_statuses(
+        &mut self,
+        host_id: HostId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some((session_id, client, remote_identity_key, supported)) =
+            self.connected_session_for_host(&host_id)
+        else {
+            log::warn!(
+                "Remote server refresh_codebase_index_statuses: no connected client host={host_id}"
+            );
+            return;
+        };
+
+        if !supported {
+            ctx.emit(RemoteServerManagerEvent::RemoteCodebaseIndexingCapability {
+                host_id,
+                supported: false,
+            });
+            return;
+        }
+
+        let spawner = self.spawner.clone();
+        ctx.background_executor()
+            .spawn(async move {
+                match client.list_codebase_index_statuses().await {
+                    Ok(statuses) => {
+                        let _ = spawner
+                            .spawn(move |_me, ctx| {
+                                ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
+                                    remote_identity_key,
+                                    host_id,
+                                    statuses,
+                                });
+                            })
+                            .await;
+                    }
+                    Err(e) => {
+                        log::warn!("Remote server list_codebase_index_statuses failed: session={session_id:?} error={e}");
+                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
+                        let _ = spawner
+                            .spawn(move |_me, ctx| {
+                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
+                                    session_id,
+                                    operation: RemoteServerOperation::ListCodebaseIndexStatuses,
+                                    error_kind,
+                                });
+                            })
+                            .await;
+                    }
+                }
+            })
+            .detach();
+    }
+
     /// Sends a `NavigatedToDirectory` request to the remote server for
     /// the given session and emits the response as a manager event.
     ///
@@ -1229,11 +1344,17 @@ impl RemoteServerManager {
         event: ClientEvent,
         ctx: &mut ModelContext<Self>,
     ) {
-        let Some(host_id) = self.host_id_for_session(session_id) else {
+        let Some(RemoteSessionState::Connected {
+            host_id,
+            identity_key,
+            ..
+        }) = self.sessions.get(&session_id)
+        else {
             log::debug!("Dropping push event for session {session_id:?}: not connected yet");
             return;
         };
         let host_id = host_id.clone();
+        let remote_identity_key = identity_key.clone();
 
         match event {
             ClientEvent::RepoMetadataSnapshotReceived { update } => {
@@ -1241,6 +1362,20 @@ impl RemoteServerManager {
             }
             ClientEvent::RepoMetadataUpdated { update } => {
                 ctx.emit(RemoteServerManagerEvent::RepoMetadataUpdated { host_id, update });
+            }
+            ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses } => {
+                ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
+                    remote_identity_key,
+                    host_id,
+                    statuses,
+                });
+            }
+            ClientEvent::CodebaseIndexStatusUpdated { status } => {
+                ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
+                    remote_identity_key,
+                    host_id,
+                    status,
+                });
             }
             ClientEvent::MessageDecodingError => {
                 ctx.emit(RemoteServerManagerEvent::ServerMessageDecodingError { session_id });
@@ -1257,11 +1392,15 @@ impl RemoteServerManager {
     fn mark_session_connected(
         &mut self,
         session_id: SessionId,
-        host_id: HostId,
+        handshake: InitializeHandshake,
         identity_key: String,
         transport: Arc<dyn RemoteTransport>,
         ctx: &mut ModelContext<Self>,
     ) {
+        let InitializeHandshake {
+            host_id,
+            remote_codebase_indexing_supported,
+        } = handshake;
         log::info!("Remote server connected: session={session_id:?} host={host_id}");
 
         // Only transition if the session is still in Initializing state.
@@ -1281,6 +1420,7 @@ impl RemoteServerManager {
                 client: client.clone(),
                 host_id: host_id.clone(),
                 identity_key,
+                remote_codebase_indexing_supported,
                 _child,
                 control_path,
                 transport,
@@ -1295,6 +1435,10 @@ impl RemoteServerManager {
                 host_id: host_id.clone(),
             });
         }
+        ctx.emit(RemoteServerManagerEvent::RemoteCodebaseIndexingCapability {
+            host_id: host_id.clone(),
+            supported: remote_codebase_indexing_supported,
+        });
         ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
             session_id,
             state: RemoteServerSetupState::Ready,
@@ -1495,7 +1639,7 @@ impl RemoteServerManager {
                 )
                 .await
                 {
-                    Ok(new_host_id) => {
+                    Ok(handshake) => {
                         let _ = spawner
                             .spawn(move |me, ctx| {
                                 // If the session was deregistered during the
@@ -1506,9 +1650,10 @@ impl RemoteServerManager {
                                     );
                                     return;
                                 }
+                                let host_id = handshake.host_id.clone();
                                 me.mark_session_connected(
                                     session_id,
-                                    new_host_id.clone(),
+                                    handshake,
                                     identity_key,
                                     transport,
                                     ctx,
@@ -1516,7 +1661,7 @@ impl RemoteServerManager {
                                 if let Some(client) = me.client_for_session(session_id).cloned() {
                                     ctx.emit(RemoteServerManagerEvent::SessionReconnected {
                                         session_id,
-                                        host_id: new_host_id,
+                                        host_id,
                                         attempt,
                                         client,
                                     });

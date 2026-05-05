@@ -170,10 +170,13 @@ impl Sessions {
                 | RemoteServerManagerEvent::SessionConnectionFailed { .. }
                 | RemoteServerManagerEvent::HostConnected { .. }
                 | RemoteServerManagerEvent::HostDisconnected { .. }
+                | RemoteServerManagerEvent::RemoteCodebaseIndexingCapability { .. }
                 | RemoteServerManagerEvent::NavigatedToDirectory { .. }
                 | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
                 | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
                 | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
+                | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
+                | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. }
                 | RemoteServerManagerEvent::BinaryCheckComplete { .. }
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }

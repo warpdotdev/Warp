@@ -4497,9 +4497,12 @@ impl TerminalView {
                     | RemoteServerManagerEvent::SessionReconnected { .. }
                     | RemoteServerManagerEvent::HostConnected { .. }
                     | RemoteServerManagerEvent::HostDisconnected { .. }
+                    | RemoteServerManagerEvent::RemoteCodebaseIndexingCapability { .. }
                     | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
                     | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
-                    | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. } => {}
+                    | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
+                    | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
+                    | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. } => {}
                 }
             });
         }
