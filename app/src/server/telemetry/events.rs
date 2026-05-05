@@ -4142,9 +4142,7 @@ impl TelemetryEvent {
             | TelemetryEvent::GlobalSearchOpened
             | TelemetryEvent::GlobalSearchQueryStarted
             | TelemetryEvent::GetStartedSkipToTerminal => None,
-            TelemetryEvent::SSHControlMasterError {
-                has_remote_server,
-            } => Some(json!({
+            TelemetryEvent::SSHControlMasterError { has_remote_server } => Some(json!({
                 "has_remote_server": has_remote_server,
             })),
             TelemetryEvent::RemoteServerBinaryCheck {
