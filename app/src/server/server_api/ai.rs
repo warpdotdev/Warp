@@ -520,7 +520,7 @@ pub struct CreateFileArtifactUploadResponse {
 }
 
 /// A single git credential entry returned by `taskGitCredentials`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GitCredential {
     /// The GitHub token (OAuth user token or App installation token).
     pub token: String,
