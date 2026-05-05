@@ -49,21 +49,18 @@
           };
           appCargoToml = builtins.fromTOML (builtins.readFile ./app/Cargo.toml);
           version = "${appCargoToml.package.version}+${self.shortRev or "dirty"}";
-          cargoDepsHash = "sha256-TzYSC82HVRhCxBHLmHw8BIZ4hJKCZfp+s/mfbeAjdQ4=";
           cargoDeps = pkgs.runCommand "warp-terminal-experimental-${version}-vendor" { } ''
             cp -R ${
               rustPlatform.fetchCargoVendor {
                 src = self;
                 name = "warp-terminal-experimental-${version}";
-                hash = cargoDepsHash;
+                hash = "sha256-TzYSC82HVRhCxBHLmHw8BIZ4hJKCZfp+s/mfbeAjdQ4=";
               }
             }/. "$out"
             chmod -R u+w "$out"
 
-            # Cargo's vendored git source layout keeps only the selected
-            # workspace member, while warp_multi_agent_api normally reads the
-            # sibling .proto files from its full upstream workspace checkout.
-            # Point the build script at the pinned source tree fetched by Nix.
+            # warp_multi_agent_api expects sibling .proto files from a full
+            # checkout, so point it at the pinned source tree fetched by Nix.
             protoCrate="$(dirname "$(find "$out" -path '*/warp_multi_agent_api-0.0.0/Cargo.toml' -print -quit)")"
             if [ -z "$protoCrate" ] || [ "$protoCrate" = "." ]; then
               echo "could not find vendored warp_multi_agent_api crate" >&2
@@ -74,8 +71,8 @@
                 'let proto_path = manifest_dir.parent().unwrap().parent().unwrap();' \
                 'let proto_path = std::path::PathBuf::from("${warpProtoApis}/apis/multi_agent/v1");'
 
-            # The warp-workflows build script similarly expects its sibling
-            # specs directory from the full workflows workspace checkout.
+            # warp-workflows expects ../specs from a full checkout, so point it
+            # at the pinned source tree fetched by Nix.
             workflowCrate="$(dirname "$(find "$out" -path '*/warp-workflows-0.1.0/Cargo.toml' -print -quit)")"
             if [ -z "$workflowCrate" ] || [ "$workflowCrate" = "." ]; then
               echo "could not find vendored warp-workflows crate" >&2
