@@ -1883,12 +1883,14 @@ impl RichTextEditorView {
             if url.starts_with('#')
                 && (cmd || matches!(self.interaction_state(ctx), InteractionState::Selectable))
             {
-                self.open_link = None;
-                self.model.update(ctx, |model, ctx| {
-                    model.scroll_to_markdown_anchor(&url, ctx);
-                });
-                ctx.notify();
-                return;
+                let scrolled = self
+                    .model
+                    .update(ctx, |model, ctx| model.scroll_to_markdown_anchor(&url, ctx));
+                if scrolled {
+                    self.open_link = None;
+                    ctx.notify();
+                    return;
+                }
             }
             // In read-only comment chips (Selectable), open the link directly on
             // click instead of showing a tooltip.
