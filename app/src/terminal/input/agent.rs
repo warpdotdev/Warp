@@ -506,7 +506,7 @@ impl Input {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(CLOUD_MODE_V2_TOP_ROW_GAP);
 
-        column.add_child(self.render_cloud_mode_v2_top_row());
+        column.add_child(self.render_cloud_mode_v2_top_row(app));
         column.add_child(self.render_cloud_mode_v2_input_container(appearance, app));
         Align::new(
             ConstrainedBox::new(column.finish())
@@ -528,14 +528,17 @@ impl Input {
         Some(ChildView::new(view).finish())
     }
 
-    fn render_cloud_mode_v2_top_row(&self) -> Box<dyn Element> {
+    fn render_cloud_mode_v2_top_row(&self, app: &AppContext) -> Box<dyn Element> {
         let mut row = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(CLOUD_MODE_V2_TOP_ROW_INNER_GAP);
 
+        // Only show the host selector when a default host is configured.
         if let Some(host) = self.host_selector() {
-            row.add_child(ChildView::new(host).finish());
+            if host.as_ref(app).has_default_host() {
+                row.add_child(ChildView::new(host).finish());
+            }
         }
         if let Some(harness_selector) = self.harness_selector() {
             row.add_child(ChildView::new(harness_selector).finish());

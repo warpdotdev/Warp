@@ -1,15 +1,10 @@
 use chrono::{DateTime, Duration, Utc};
 use instant::Instant;
+use parking_lot::Mutex;
 use persistence::model::AgentConversationData;
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{collections::HashMap, sync::Arc};
 use warp_core::features::FeatureFlag;
-use warpui::{App, EntityId};
+use warpui::{App, EntityId, ModelHandle};
 
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 use crate::ai::ambient_agents::task::{TaskCreatorInfo, TaskStatusMessage};
@@ -17,7 +12,9 @@ use crate::ai::ambient_agents::AgentConfigSnapshot;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
-use crate::ai::blocklist::history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use crate::ai::blocklist::history_model::{
+    BlocklistAIHistoryEvent, BlocklistAIHistoryModel, ConversationStatusUpdate,
+};
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::auth::AuthStateProvider;
 use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
@@ -25,8 +22,8 @@ use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
 use super::{
     AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters,
     AgentRunDisplayStatus, ArtifactFilter, ConversationMetadata, ConversationOrTask,
-    EnvironmentFilter, HarnessFilter, OwnerFilter, StatusFilter, TaskFetchState,
-    MAX_PERSONAL_TASKS, MAX_TEAM_TASKS,
+    ConversationUpdateKind, EnvironmentFilter, HarnessFilter, OwnerFilter, StatusFilter,
+    TaskFetchState, MAX_PERSONAL_TASKS, MAX_TEAM_TASKS,
 };
 use crate::ai::ambient_agents::task::HarnessConfig;
 use warp_cli::agent::Harness;
@@ -65,35 +62,125 @@ fn create_test_task(
     }
 }
 
+type CapturedConversationUpdate = Mutex<Option<ConversationUpdateKind>>;
+
+/// Test-only handler that mirrors the production view subscription: extracts the
+/// `ConversationUpdated` payload and stashes it on a shared cell that test cases assert
+/// against.
+fn handle_agent_conversation_model_event(
+    captured: &CapturedConversationUpdate,
+    event: &AgentConversationsModelEvent,
+) {
+    if let AgentConversationsModelEvent::ConversationUpdated { kind } = event {
+        *captured.lock() = Some(*kind);
+    }
+}
+
+/// Subscribes a [`handle_agent_conversation_model_event`] capture cell to `model` and
+/// returns the cell so individual cases can assert on the most recent emission without
+/// re-implementing the subscription bookkeeping.
+fn subscribe_to_conversation_updated(
+    app: &mut App,
+    model: &ModelHandle<AgentConversationsModel>,
+) -> Arc<CapturedConversationUpdate> {
+    let captured = Arc::new(Mutex::new(None));
+    let captured_clone = captured.clone();
+    app.update(|ctx| {
+        ctx.subscribe_to_model(model, move |_, event, _| {
+            handle_agent_conversation_model_event(&captured_clone, event);
+        });
+    });
+    captured
+}
+
 #[test]
-fn test_conversation_status_update_emits_conversation_updated() {
+fn test_restored_conversation_emits_restored_kind() {
     App::test((), |mut app| async move {
         let _interactive_management_guard =
             FeatureFlag::InteractiveConversationManagementView.override_enabled(true);
         let agent_model = app.add_singleton_model(|_| create_test_model());
-        let saw_conversation_updated = Arc::new(AtomicBool::new(false));
-
-        app.update(|ctx| {
-            let saw_conversation_updated = saw_conversation_updated.clone();
-            ctx.subscribe_to_model(&agent_model, move |_, event, _| {
-                if matches!(event, AgentConversationsModelEvent::ConversationUpdated) {
-                    saw_conversation_updated.store(true, Ordering::SeqCst);
-                }
-            });
-        });
+        let captured = subscribe_to_conversation_updated(&mut app, &agent_model);
 
         agent_model.update(&mut app, |model, ctx| {
             model.handle_history_event(
                 &BlocklistAIHistoryEvent::UpdatedConversationStatus {
                     conversation_id: AIConversationId::new(),
                     terminal_view_id: EntityId::new(),
-                    is_restored: false,
+                    update: ConversationStatusUpdate::Restored,
+                    new_status: ConversationStatus::Success,
                 },
                 ctx,
             );
         });
 
-        assert!(saw_conversation_updated.load(Ordering::SeqCst));
+        let captured = *captured.lock();
+        assert_eq!(captured, Some(ConversationUpdateKind::Restored));
+    });
+}
+
+#[test]
+fn test_status_transition_emits_status_set_with_filter_buckets() {
+    App::test((), |mut app| async move {
+        let _interactive_management_guard =
+            FeatureFlag::InteractiveConversationManagementView.override_enabled(true);
+        let agent_model = app.add_singleton_model(|_| create_test_model());
+        let captured = subscribe_to_conversation_updated(&mut app, &agent_model);
+
+        agent_model.update(&mut app, |model, ctx| {
+            model.handle_history_event(
+                &BlocklistAIHistoryEvent::UpdatedConversationStatus {
+                    conversation_id: AIConversationId::new(),
+                    terminal_view_id: EntityId::new(),
+                    update: ConversationStatusUpdate::Changed {
+                        prev_status: ConversationStatus::InProgress,
+                    },
+                    new_status: ConversationStatus::Success,
+                },
+                ctx,
+            );
+        });
+
+        let captured = *captured.lock();
+        assert_eq!(
+            captured,
+            Some(ConversationUpdateKind::StatusSet {
+                prev_filter: StatusFilter::Working,
+                new_filter: StatusFilter::Done,
+            }),
+        );
+    });
+}
+
+#[test]
+fn test_same_bucket_re_emission_emits_status_set_with_equal_filters() {
+    App::test((), |mut app| async move {
+        let _interactive_management_guard =
+            FeatureFlag::InteractiveConversationManagementView.override_enabled(true);
+        let agent_model = app.add_singleton_model(|_| create_test_model());
+        let captured = subscribe_to_conversation_updated(&mut app, &agent_model);
+
+        agent_model.update(&mut app, |model, ctx| {
+            model.handle_history_event(
+                &BlocklistAIHistoryEvent::UpdatedConversationStatus {
+                    conversation_id: AIConversationId::new(),
+                    terminal_view_id: EntityId::new(),
+                    update: ConversationStatusUpdate::Changed {
+                        prev_status: ConversationStatus::InProgress,
+                    },
+                    new_status: ConversationStatus::InProgress,
+                },
+                ctx,
+            );
+        });
+
+        let captured = *captured.lock();
+        assert_eq!(
+            captured,
+            Some(ConversationUpdateKind::StatusSet {
+                prev_filter: StatusFilter::Working,
+                new_filter: StatusFilter::Working,
+            }),
+        );
     });
 }
 
@@ -152,6 +239,7 @@ fn test_display_status_uses_matching_conversation_for_in_progress_task() {
                 parent_agent_id: None,
                 agent_name: None,
                 parent_conversation_id: None,
+                is_remote_child: false,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
                 last_event_sequence: None,
@@ -182,6 +270,68 @@ fn test_display_status_uses_matching_conversation_for_in_progress_task() {
 }
 
 #[test]
+fn test_display_status_uses_active_execution_over_previous_conversation_status() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let now = Utc::now();
+        let conversation_id = AIConversationId::new();
+        let terminal_view_id = EntityId::new();
+        let task_id = make_uuid(4005);
+        let session_id = make_uuid(4006);
+
+        let conversation = create_restored_conversation(
+            conversation_id,
+            "root-task",
+            AgentConversationData {
+                server_conversation_token: None,
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                parent_conversation_id: None,
+                is_remote_child: false,
+                run_id: Some(task_id.clone()),
+                autoexecute_override: None,
+                last_event_sequence: None,
+            },
+        );
+
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
+            model.update_conversation_status(
+                terminal_view_id,
+                conversation_id,
+                ConversationStatus::Success,
+                ctx,
+            );
+        });
+
+        let mut task = create_test_task(&task_id, "user-a", now);
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_id = Some(session_id.clone());
+        task.session_link = Some("https://example.com/session/followup".to_string());
+        task.is_sandbox_running = true;
+
+        app.update(|ctx| {
+            assert!(task.has_active_execution());
+            assert_eq!(
+                task.active_execution_session_id(),
+                Some(session_id.as_str())
+            );
+            let display_status = AgentRunDisplayStatus::from_task(&task, ctx);
+            assert_eq!(display_status, AgentRunDisplayStatus::TaskInProgress);
+            assert_eq!(display_status.status_filter(), StatusFilter::Working);
+            assert!(display_status.is_cancellable());
+            assert!(display_status.is_working());
+        });
+    });
+}
+
+#[test]
 fn test_display_status_updates_when_blocked_conversation_resumes() {
     App::test((), |mut app| async move {
         let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
@@ -204,6 +354,7 @@ fn test_display_status_updates_when_blocked_conversation_resumes() {
                 parent_agent_id: None,
                 agent_name: None,
                 parent_conversation_id: None,
+                is_remote_child: false,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
                 last_event_sequence: None,
@@ -280,6 +431,7 @@ fn test_display_status_terminal_task_state_overrides_matching_conversation() {
                 parent_agent_id: None,
                 agent_name: None,
                 parent_conversation_id: None,
+                is_remote_child: false,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
                 last_event_sequence: None,
@@ -332,6 +484,7 @@ fn test_status_filter_uses_display_status_for_task_backed_conversations() {
                 parent_agent_id: None,
                 agent_name: None,
                 parent_conversation_id: None,
+                is_remote_child: false,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
                 last_event_sequence: None,
@@ -766,6 +919,7 @@ fn test_get_tasks_and_conversations_prefers_task_when_task_id_matches_conversati
                 parent_agent_id: None,
                 agent_name: None,
                 parent_conversation_id: None,
+                is_remote_child: false,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
                 last_event_sequence: None,
@@ -823,6 +977,7 @@ fn test_get_tasks_and_conversations_prefers_task_when_server_token_matches() {
                 parent_agent_id: None,
                 agent_name: None,
                 parent_conversation_id: None,
+                is_remote_child: false,
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
@@ -879,6 +1034,7 @@ fn test_get_tasks_and_conversations_keeps_unrelated_tasks_and_conversations() {
                 parent_agent_id: None,
                 agent_name: None,
                 parent_conversation_id: None,
+                is_remote_child: false,
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,

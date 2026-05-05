@@ -222,7 +222,7 @@ pub enum TerminalAction {
     },
     InputContextMenuItem(InputContextMenuAction),
     /// Open the menu on the specified [`crate::ai::blocklist::AIBlock`] that lists the blocks that
-    /// were attached to the query in the specifed [`crate::ai::blocklist::AIAgentExchange`] which
+    /// were attached to the query in the specified [`crate::ai::blocklist::AIAgentExchange`] which
     /// is part of the specified [`crate::ai::blocklist::AIConversation`].
     OpenAIBlockAttachedBlocksMenu {
         ai_block_view_id: EntityId,
@@ -412,7 +412,7 @@ pub enum TerminalAction {
     EnterCloudAgentView,
     StartNewAgentConversation,
     /// Toggle the cloud mode conversation details panel
-    ToggleCloudModeDetailsPanel,
+    ToggleConversationDetailsPanel,
     /// Cancel the ambient agent task while it's loading
     CancelAmbientAgentTask,
     OpenInlineHistoryMenu,
@@ -701,7 +701,7 @@ impl fmt::Debug for TerminalAction {
             ExitAgentView => write!(f, "ExitAgentView"),
             EnterCloudAgentView => write!(f, "EnterCloudAgentView"),
             StartNewAgentConversation => write!(f, "StartNewAgentConversation"),
-            ToggleCloudModeDetailsPanel => write!(f, "ToggleCloudModeDetailsPanel"),
+            ToggleConversationDetailsPanel => write!(f, "ToggleConversationDetailsPanel"),
             CancelAmbientAgentTask => write!(f, "CancelAmbientAgentTask"),
             OpenInlineHistoryMenu => write!(f, "OpenInlineHistoryMenu"),
             OpenModelSelector => write!(f, "OpenModelSelector"),

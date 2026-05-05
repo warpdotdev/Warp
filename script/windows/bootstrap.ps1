@@ -22,6 +22,24 @@ if (-not (Get-Command -Name cargo -Type Application -ErrorAction SilentlyContinu
     exit 1
 }
 
+# Visual Studio Build Tools (MSVC compiler + linker + Windows SDK) are required to link Rust crates
+# targeting x86_64-pc-windows-msvc.
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$haveMsvcBuildTools = $false
+if (Test-Path $vswhere) {
+    $vsInstall = & $vswhere -latest -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.Windows11SDK.22621 `
+        -property installationPath
+    if ($vsInstall) { $haveMsvcBuildTools = $true }
+}
+if (-not $haveMsvcBuildTools) {
+    Write-Output 'Installing Visual Studio Build Tools (MSVC + Windows SDK)...'
+    winget install -e --id Microsoft.VisualStudio.2022.BuildTools `
+        --accept-package-agreements --accept-source-agreements `
+        --override '--passive --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --includeRecommended'
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 # A bash executable should come with Git for Windows
 & "$gitBinDir\bash.exe" "$PWD\script\install_cargo_test_deps"
 

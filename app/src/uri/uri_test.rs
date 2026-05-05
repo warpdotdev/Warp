@@ -573,3 +573,89 @@ fn test_parse_tab_path_bare_tilde() {
     let home = dirs::home_dir().expect("HOME must be set for this test");
     assert_eq!(parse_tab_path(&url), Some(home));
 }
+
+// Regression coverage for issue #9005: shell scripts opened via `file://` should run,
+// not open in the editor. Exercised through the pure routing helper to avoid standing
+// up a full `AppContext`.
+
+#[test]
+#[cfg(unix)]
+fn test_open_file_executable_sh_routes_to_execute() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("run.sh");
+    std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(
+        classify_open_file_action(&p),
+        OpenFileAction::ExecuteInSession
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn test_open_file_non_executable_sh_routes_to_editor() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("view.sh");
+    std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
+}
+
+#[test]
+#[cfg(unix)]
+fn test_open_file_executable_bash_zsh_fish_route_to_execute() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["run.bash", "run.zsh", "run.fish"] {
+        let p = dir.path().join(name);
+        std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            classify_open_file_action(&p),
+            OpenFileAction::ExecuteInSession,
+            "{name} should route to ExecuteInSession",
+        );
+    }
+}
+
+#[test]
+fn test_open_file_markdown_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("README.md");
+    std::fs::write(&p, b"# hi\n").unwrap();
+    assert_eq!(classify_open_file_action(&p), OpenFileAction::Notebook);
+}
+
+#[test]
+#[cfg(feature = "local_fs")]
+fn test_open_file_rust_source_still_opens_in_editor() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("main.rs");
+    std::fs::write(&p, b"fn main() {}\n").unwrap();
+    assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
+}
+
+#[test]
+fn test_open_file_directory_routes_to_session() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(
+        classify_open_file_action(dir.path()),
+        OpenFileAction::ExecuteInSession
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn test_open_file_non_runnable_shebang_routes_to_editor() {
+    // Extensionless `#!/bin/sh` file without the user-execute bit. Without the
+    // shebang fall-through this would hit `ExecuteInSession` and the shell would
+    // refuse to run it; the editor is the right place to view it.
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("noext");
+    std::fs::write(&p, b"#!/bin/sh\necho hi\n").unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
+}
