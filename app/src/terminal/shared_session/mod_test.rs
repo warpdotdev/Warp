@@ -1,4 +1,6 @@
-use super::{decode_scrollback, SharedSessionScrollbackType};
+use super::{decode_scrollback, SharedSessionScrollbackType, SharedSessionStatus};
+use session_sharing_protocol::common::Role;
+use session_sharing_protocol::sharer::SessionSourceType;
 
 use crate::ai::blocklist::agent_view::AgentViewState;
 use crate::assert_lines_approx_eq;
@@ -346,4 +348,41 @@ fn test_loading_scrollback_in_alt_screen() {
 
     // Make sure we're in the alt screen.
     assert!(model.is_alt_screen_active());
+}
+
+/// Regression test for GH#9736: the right-click "Copy session sharing link"
+/// menu item must only be offered when a sharing URL actually exists. Pending
+/// shares (which can include shares that failed to establish) and finished
+/// viewer states leave no link to copy and previously surfaced the menu item
+/// anyway, writing a stale or empty value to the clipboard.
+#[test]
+fn has_active_share_link_only_true_for_active_states() {
+    // States with a usable link.
+    assert!(SharedSessionStatus::ActiveSharer.has_active_share_link());
+    assert!(
+        SharedSessionStatus::ActiveViewer { role: Role::Reader }.has_active_share_link(),
+        "ActiveViewer (reader) must offer copy link"
+    );
+    assert!(
+        SharedSessionStatus::ActiveViewer {
+            role: Role::Executor,
+        }
+        .has_active_share_link(),
+        "ActiveViewer (executor) must offer copy link"
+    );
+
+    // States without a usable link — these are the ones that produced
+    // the GH#9736 regression.
+    assert!(!SharedSessionStatus::NotShared.has_active_share_link());
+    assert!(!SharedSessionStatus::SharePending.has_active_share_link());
+    assert!(
+        !SharedSessionStatus::SharePendingPreBootstrap {
+            source_type: SessionSourceType::default(),
+        }
+        .has_active_share_link(),
+        "SharePendingPreBootstrap must not offer copy link — \
+         this is the state a failed-to-share session sits in"
+    );
+    assert!(!SharedSessionStatus::ViewPending.has_active_share_link());
+    assert!(!SharedSessionStatus::FinishedViewer.has_active_share_link());
 }

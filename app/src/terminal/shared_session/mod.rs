@@ -149,6 +149,19 @@ impl SharedSessionStatus {
         !matches!(self, Self::NotShared)
     }
 
+    /// Returns `true` when the session currently has a usable sharing
+    /// link the user can copy — i.e. when the share has fully
+    /// established (sharer side) or been joined (viewer side). Pending
+    /// and finished states return `false` so the right-click "Copy
+    /// session sharing link" menu item is not offered when the link
+    /// would either not exist yet or no longer be valid (GH#9736).
+    pub fn has_active_share_link(&self) -> bool {
+        matches!(
+            self,
+            Self::ActiveSharer | Self::ActiveViewer { .. }
+        )
+    }
+
     pub fn as_keymap_context(&self) -> &'static str {
         match self {
             Self::NotShared => "SharedSessionStatus_NotShared",
