@@ -24,6 +24,7 @@ use crate::settings_view::{SettingsAction as SettingsTabAction, SettingsSection}
 use crate::tab::{NewSessionMenuItem, SelectedTabColor};
 use crate::tab_configs::TabConfig;
 use crate::terminal::available_shells::AvailableShell;
+use crate::terminal::view::ambient_agent::CloudLaunchRequest;
 use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::themes::theme_chooser::ThemeChooserMode;
@@ -491,9 +492,7 @@ pub enum WorkspaceAction {
     /// conversation isn't handoff-able (no synced server token, empty, or no
     /// active conversation at all).
     OpenLocalToCloudHandoffPane {
-        /// Pre-fill the new pane's prompt input (slash command captures the
-        /// trailing argument; the chip leaves this `None`).
-        initial_prompt: Option<String>,
+        request: CloudLaunchRequest,
     },
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {

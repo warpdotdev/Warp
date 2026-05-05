@@ -35,7 +35,7 @@ use crate::{
             listener::agent_supports_rich_status, CLIAgentInputState, CLIAgentSessionsModel,
             CLIAgentSessionsModelEvent,
         },
-        input::{models::InlineModelSelectorTab, MenuPositioningProvider},
+        input::{models::InlineModelSelectorTab, HandoffComposeState, MenuPositioningProvider},
         model_events::ModelEvent,
         profile_model_selector::{ProfileModelSelector, ProfileModelSelectorEvent},
         session_settings::{SessionSettings, SessionSettingsChangedEvent, ToolbarChipSelection},
@@ -111,7 +111,9 @@ pub(crate) use self::environment_selector::sort_environments_by_recency;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::Timer;
 
-pub(crate) use self::environment_selector::{EnvironmentSelector, EnvironmentSelectorEvent};
+pub(crate) use self::environment_selector::{
+    EnvironmentSelector, EnvironmentSelectorEvent, EnvironmentSelectorTarget,
+};
 #[cfg(not(target_family = "wasm"))]
 use crate::server::telemetry::PluginChipTelemetryAction;
 #[cfg(not(target_family = "wasm"))]
@@ -198,8 +200,10 @@ pub struct AgentInputFooter {
     model_selector: ViewHandle<ProfileModelSelector>,
     ftu_callout_close_button: ViewHandle<ActionButton>,
     environment_selector: Option<ViewHandle<EnvironmentSelector>>,
+    handoff_environment_selector: ViewHandle<EnvironmentSelector>,
     prompt_alert: ViewHandle<PromptAlertView>,
     ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
+    handoff_compose_state: ModelHandle<HandoffComposeState>,
     left_display_chips: Vec<ViewHandle<DisplayChip>>,
     right_display_chips: Vec<ViewHandle<DisplayChip>>,
     // Separate set of display chips for the CLI agent footer.
@@ -244,12 +248,13 @@ pub struct AgentInputFooter {
 
 impl AgentInputFooter {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
         terminal_view_id: EntityId,
         ai_input_model: ModelHandle<BlocklistAIInputModel>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
+        handoff_compose_state: ModelHandle<HandoffComposeState>,
         prompt: ModelHandle<PromptType>,
         display_chip_config: DisplayChipConfig,
         ctx: &mut ViewContext<Self>,
@@ -625,11 +630,18 @@ impl AgentInputFooter {
                     ctx.add_typed_action_view(|ctx| {
                         EnvironmentSelector::new(
                             menu_positioning_provider.clone(),
-                            ambient_agent_view_model.clone(),
+                            EnvironmentSelectorTarget::Ambient(ambient_agent_view_model.clone()),
                             ctx,
                         )
                     })
                 });
+        let handoff_environment_selector = ctx.add_typed_action_view(|ctx| {
+            EnvironmentSelector::new(
+                menu_positioning_provider.clone(),
+                EnvironmentSelectorTarget::Handoff(handoff_compose_state.clone()),
+                ctx,
+            )
+        });
 
         if let Some(environment_selector) = environment_selector.as_ref() {
             ctx.subscribe_to_view(environment_selector, |_, _, event, ctx| match event {
@@ -645,11 +657,37 @@ impl AgentInputFooter {
             });
         }
 
+        ctx.subscribe_to_view(
+            &handoff_environment_selector,
+            |_, _, event, ctx| match event {
+                EnvironmentSelectorEvent::MenuVisibilityChanged { open } => {
+                    ctx.emit(AgentInputFooterEvent::ToggledChipMenu { open: *open });
+                    if !*open {
+                        ctx.emit(AgentInputFooterEvent::EnvironmentSelectorClosed);
+                    }
+                }
+                EnvironmentSelectorEvent::OpenEnvironmentManagementPane => {
+                    ctx.emit(AgentInputFooterEvent::OpenEnvironmentManagementPane);
+                }
+            },
+        );
+
         if let Some(ambient_agent_view_model) = ambient_agent_view_model.as_ref() {
             ctx.subscribe_to_model(ambient_agent_view_model, |_, _, _, ctx| {
                 ctx.notify();
             });
         }
+
+        ctx.subscribe_to_model(
+            &handoff_compose_state,
+            |me, handoff_compose_state, _, ctx| {
+                if !handoff_compose_state.as_ref(ctx).is_active() {
+                    me.handoff_environment_selector
+                        .update(ctx, |selector, ctx| selector.close_menu(ctx));
+                }
+                ctx.notify();
+            },
+        );
 
         let prompt_alert = ctx.add_typed_action_view(PromptAlertView::new);
         ctx.subscribe_to_view(&prompt_alert, |_, _, event, ctx| {
@@ -788,8 +826,10 @@ impl AgentInputFooter {
             context_window_button,
             model_selector: profile_model_selector_full,
             environment_selector,
+            handoff_environment_selector,
             prompt_alert,
             terminal_model,
+            handoff_compose_state,
             render_ftu_callout: false,
             left_display_chips: vec![],
             right_display_chips: vec![],
@@ -1531,8 +1571,10 @@ impl AgentInputFooter {
             .environment_selector
             .as_ref()
             .is_some_and(|selector| selector.as_ref(app).is_menu_open());
+        let has_open_handoff_env_selector =
+            self.handoff_environment_selector.as_ref(app).is_menu_open();
 
-        has_open_display_chip || has_open_env_selector
+        has_open_display_chip || has_open_env_selector || has_open_handoff_env_selector
     }
 
     pub fn is_model_selector_open(&self, app: &AppContext) -> bool {
@@ -2075,6 +2117,9 @@ impl View for AgentInputFooter {
                 left_buttons =
                     left_buttons.with_child(ChildView::new(environment_selector).finish());
             }
+        } else if self.handoff_compose_state.as_ref(app).is_active() {
+            left_buttons = left_buttons
+                .with_child(ChildView::new(&self.handoff_environment_selector).finish());
         }
 
         let terminal_model = self.terminal_model.lock();
@@ -2462,9 +2507,7 @@ impl TypedActionView for AgentInputFooter {
             }
             AgentInputFooterAction::OpenHandoffPane => {
                 if AgentToolbarItemKind::handoff_to_cloud_available() {
-                    ctx.emit(AgentInputFooterEvent::OpenHandoffPane {
-                        initial_prompt: None,
-                    });
+                    ctx.emit(AgentInputFooterEvent::OpenHandoffPane);
                 }
             }
             AgentInputFooterAction::ShowContextMenu { position } => {
@@ -2515,9 +2558,7 @@ pub enum AgentInputFooterEvent {
     OpenPluginInstructionsPane(CLIAgent, PluginModalKind),
     /// Local-to-cloud handoff chip clicked. The terminal `Input` subscriber
     /// forwards this to `WorkspaceAction::OpenLocalToCloudHandoffPane`.
-    OpenHandoffPane {
-        initial_prompt: Option<String>,
-    },
+    OpenHandoffPane,
 }
 
 impl Entity for AgentInputFooter {

@@ -6,6 +6,7 @@ mod first_time_setup;
 mod footer;
 mod harness_selector;
 mod host_selector;
+mod launch;
 mod loading_screen;
 mod model;
 mod model_selector;
@@ -25,12 +26,14 @@ pub use harness_selector::{HarnessSelector, HarnessSelectorAction, HarnessSelect
 pub use host_selector::{
     Host, HostSelector, HostSelectorAction, HostSelectorEvent, NakedHeaderButtonTheme,
 };
+pub use launch::CloudLaunchRequest;
+pub(crate) use launch::{CloudLaunchAttachments, CloudLaunchRequestId, CloudLaunchSubmitMode};
 pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loading_screen};
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-pub(crate) use model::PendingHandoff;
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 pub use model::{HandoffSubmissionState, SnapshotUploadStatus};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+pub(crate) use model::{PendingCloudLaunch, PendingHandoff};
 pub use model_selector::{
     HarnessSelection, ModelSelection, ModelSelector, ModelSelectorAction, ModelSelectorEvent,
 };

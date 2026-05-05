@@ -13,6 +13,8 @@ Current code paths this builds on:
 - `Workspace::start_local_to_cloud_handoff` in `app/src/workspace/view.rs (12894-12965)` currently requires an active non-empty conversation with a `server_conversation_token`; otherwise it toasts and opens no pane. `complete_local_to_cloud_handoff_open` in `app/src/workspace/view.rs (12967-13155)` materializes a local fork, pushes the cloud-mode pane, pre-fills an optional prompt, restores the forked conversation, binds the fork token, exits the source agent view, seeds `PendingHandoff`, and starts touched-workspace derivation plus snapshot upload.
 - `PendingHandoff` and handoff readiness live on `AmbientAgentViewModel` in `app/src/terminal/view/ambient_agent/model.rs (78-138)` and `app/src/terminal/view/ambient_agent/model.rs (397-509)`. `submit_handoff` builds a normal `SpawnAgentRequest` with `conversation_id` set to the forked server conversation id and `initial_snapshot_token` set from the prepared upload.
 - `EnvironmentSelector` in `app/src/ai/blocklist/agent_view/agent_input_footer/environment_selector.rs (129-480)` is currently hard-bound to `ModelHandle<AmbientAgentViewModel>`. It persists explicit selections to `CloudAgentSettings::last_selected_environment_id` and only enables while the ambient model is composing. The footer renders it only for ambient cloud panes in `app/src/ai/blocklist/agent_view/agent_input_footer/mod.rs (2014-2039)`.
+- `AgentMessageBar` in `app/src/ai/blocklist/agent_view/agent_message_bar.rs` already owns the shell-mode "backspace to exit shell mode" affordance through `ExitBashModeMessageProducer`; the cloud-prefix affordance should be added there rather than as unrelated input chrome.
+- Agent/AI magenta is available through existing AI color helpers such as `ai_brand_color` in `app/src/ai/blocklist/view_util.rs`, and should be used for the `&` indicator and cloud-mode exit affordance instead of shell-mode blue.
 - `Input::is_cloud_mode_input_v2_composing` already excludes local-to-cloud handoff panes in `app/src/terminal/input/agent.rs:65`, so the new handoff compose path should stay on the existing AgentView input UI.
 ## Proposed changes
 ### 1. Add a shared cloud launch request
@@ -43,13 +45,14 @@ enum InputPrefixMode {
 Activation should mirror the `!` path while defending mutual exclusion:
 1. In `handle_editor_event`, recognize `&` only on `EditOrigin::UserTyped`, only when it is the first character of an otherwise empty buffer, and only when the current input is the fullscreen local AgentView input. Do not activate in terminal mode, cloud-mode panes, CLI-agent rich input, pasted input, buffers with leading whitespace, or locked shell mode.
 2. If the visible `!` shell-mode indicator is active, typed `&` is normal shell text; the user must exit shell mode before entering handoff compose mode.
-3. Strip the literal `&` from the editor buffer, set `HandoffComposeState.active = true`, keep focus in the editor, and notify the footer.
-4. While `HandoffComposeState.active` is true, skip the existing `TERMINAL_INPUT_PREFIX` activation branch. Typed `!` is prompt text in the cloud-launch draft; it must not lock the input to shell mode until the user exits `&` mode.
+3. Strip the literal `&` from the editor buffer, set `HandoffComposeState.active = true`, set the input config directly to `InputConfig { input_type: InputType::AI, is_locked: true }`, keep focus in the editor, and notify the footer. Do not call `unlocked_if_autodetection_enabled` for this transition; cloud-prefix mode is intentionally locked AI until exit.
+4. While `HandoffComposeState.active` is true, skip the existing `TERMINAL_INPUT_PREFIX` activation branch and any autodetection unlock path. Typed `!` is prompt text in the cloud-launch draft; it must not lock the input to shell mode until the user exits `&` mode.
 5. Any other path that locks the input to shell mode while `&` is active, such as explicit terminal-mode actions or `DeleteAllLeft`, should call `exit_handoff_compose_mode` before applying the shell lock. Conversely, `&` activation should no-op if the shell lock is already active. This makes `HandoffComposeState.active` and locked-shell input a defended invariant rather than a rendering convention.
 6. Add a helper like `current_prefix_mode(ctx) -> InputPrefixMode` and route activation, rendering, hint text, Escape/Backspace, Enter behavior, and tests through it. This helper should derive `Shell` from locked `InputType::Shell`, derive `CloudHandoff` from `HandoffComposeState.active`, and never let both be true from a caller's perspective.
-7. Render `&` through `maybe_render_ai_input_indicators` as a sibling of the existing `!` indicator path. Defensively prefer `&` only if `HandoffComposeState.active`; otherwise render `!` from locked-shell state. Tests should assert both cannot render together.
-8. In `set_zero_state_hint_text`, use the handoff hint only when `HandoffComposeState.active` and the editor buffer is empty.
-9. On `BackspaceOnEmptyBuffer` / `BackspaceAtBeginningOfBuffer`, Escape, or clearing the prompt back to empty, call a single `exit_handoff_compose_mode` helper that clears the handoff state but preserves the prompt for Escape.
+7. Render `&` through `maybe_render_ai_input_indicators` as a sibling of the existing `!` indicator path. Defensively prefer `&` only if `HandoffComposeState.active`; otherwise render `!` from locked-shell state. The `&` indicator should use Agent/AI magenta (`ai_brand_color` or the equivalent theme magenta), not `ansi_fg_blue`. Tests should assert both indicators cannot render together.
+8. In `set_zero_state_hint_text`, use the handoff hint only when `HandoffComposeState.active` and the editor buffer is empty. Keep this hint focused on what the prompt will do; the Backspace exit copy belongs to the message bar.
+9. Thread the `HandoffComposeState` handle into the Agent View message bar path by passing it through `BlocklistAIStatusBar::new` and `AgentMessageBar::new`, or by passing a small derived prefix-mode provider if that keeps constructor churn lower. Add an `ExitCloudHandoffModeMessageProducer` parallel to `ExitBashModeMessageProducer` that renders Backspace + "to exit cloud mode", uses Agent/AI magenta when the editor is empty, and follows the same muted/disabled behavior as shell mode when prompt text is present.
+10. On `BackspaceOnEmptyBuffer` / `BackspaceAtBeginningOfBuffer`, Escape, or clearing the prompt back to empty, call a single `exit_handoff_compose_mode` helper that clears the handoff state, restores normal unlocked AI/autodetection behavior for future prompts, but preserves the prompt for Escape.
 On Enter with a non-empty handoff prompt, build a `CloudLaunchRequest::auto_submit` from the current buffer, pre-read cloud-mode-supported image/file attachments using the same logic as `app/src/terminal/input.rs (11926-12131)`, and dispatch the workspace action without clearing the source editor or pending attachments. Workspace claims the launch later on success.
 ### 3. Generalize `EnvironmentSelector`
 Refactor `EnvironmentSelector` so it binds to a small environment-selection target interface instead of directly storing `ModelHandle<AmbientAgentViewModel>`.
@@ -81,20 +84,30 @@ If no environment was explicitly selected, rely on the existing selector/default
 Extend `PendingHandoff` with:
 - `auto_submit: Option<PendingCloudLaunch>` containing prompt, attachments, and request id;
 - `explicit_environment_id: Option<SyncId>` or an equivalent environment-source marker.
+- a submission phase that can distinguish idle manual compose, optimistically queued auto-submit, and active server dispatch. This can be a field on `PendingHandoff`, a small enum on `AmbientAgentViewModel`, or an equivalent representation, but callers need to know whether the user's prompt is hidden because Warp has queued it.
+`PendingCloudLaunch` should carry both:
+- the spawn-ready prompt and `AttachmentInput`s; and
+- a restoration draft containing the prompt plus pending image/file attachment display state for retry.
 When `complete_local_to_cloud_handoff_open` creates the handoff pane:
 1. Apply `explicit_environment_id` to the pane model immediately when present.
-2. Prefill the handoff pane input and install the pending image/file attachment snapshot when `launch.initial_prompt` is present, even for auto-submit. This is what preserves prompt/attachments if prep fails after the pane opens.
-3. Seed `PendingHandoff` with the existing fork/snapshot fields plus the optional `auto_submit` payload.
-4. Mark the source launch claimed only after the pane has been pushed and hydrated.
+2. For `Compose`, prefill the handoff pane input and install the pending image/file attachment snapshot as today.
+3. For `AutoSubmit`, do not leave the submitted prompt visible as editable destination input after the pane is pushed. Instead, seed `PendingHandoff` with the spawn payload and restoration draft, clear or avoid hydrating the destination editor/attachment display before the first visible frame, and move the pane into the queued/starting visual state immediately.
+4. Mark the source launch claimed only after the pane has been pushed and the destination model owns the launch payload/restoration draft.
 5. Start touched-workspace derivation and snapshot upload as today.
 When touched-workspace derivation finishes, keep the current overlap selection behavior only if there was no explicit environment id. This enforces the product priority: explicit `&` selection, then touched-repo overlap, then default.
-Move the readiness check into the model by adding `maybe_auto_submit_handoff(ctx)`. Call it after each `PendingHandoff` mutation that can make readiness true. It should:
-- require `auto_submit.is_some()`;
+Add a model method such as `queue_auto_submit_handoff(ctx)` and call it immediately after seeding `PendingHandoff` for an `AutoSubmit` launch. It should:
+- set the submission phase to optimistically queued;
+- put the cloud pane in the same queued/starting visual family used before the first cloud response, so users do not see an editable prompt sitting in an unqueued pane;
+- retain the restoration draft internally until the server has accepted the run;
+- not call the server yet if touched-workspace derivation or snapshot upload is still pending.
+Move the readiness check into the model by adding or updating `maybe_auto_submit_handoff(ctx)`. Call it after each `PendingHandoff` mutation that can make readiness true. It should:
+- require an optimistically queued auto-submit payload;
 - require `is_handoff_ready_to_submit()`;
-- take the auto-submit payload exactly once;
-- clear the handoff pane input/attachments only immediately before dispatch;
+- take the spawn payload exactly once;
+- transition from queued/preparing to active dispatch;
 - call `submit_handoff(prompt, attachments.spawn_inputs, ctx)`.
-If snapshot upload fails, keep the pane open, keep the prefilled prompt and display attachments, clear or disable the auto-submit payload, and show the existing snapshot failure toast. A subsequent manual Enter should retry snapshot upload for the same touched workspace before calling `submit_handoff`; otherwise the product's retryable failure state is not real.
+If any step after the destination pane owns the launch but before the server accepts the run fails, restore the restoration draft into the handoff pane input, restore the pending image/file attachment display state, reset the submission phase to manual compose/retry, and show the existing failure toast. This includes snapshot upload failure and immediate spawn request failure. A subsequent manual Enter should retry snapshot upload for the same touched workspace before calling `submit_handoff`; otherwise the product's retryable failure state is not real.
+Once the server accepts the cloud run, discard the restoration draft. Later cloud-run failures should follow normal cloud-agent failure behavior rather than repopulating the input.
 ### 7. Slash command clearing semantics
 `execute_slash_command` currently clears every handled slash command after dispatch. `/move-to-cloud` needs a deferred-clear path when it dispatches a `CloudLaunchRequest`; otherwise a pre-pane failure would lose `/move-to-cloud query`.
 Add a command-handler result or a small `SlashCommandExecutionEffect` enum so `/move-to-cloud` can say “handled, but source clear is owned by workspace claim.” Other slash commands should keep the existing clear behavior. When workspace claims a slash-command launch, it clears the source buffer through the same `CloudLaunchRequestId` mechanism used by `&`.
@@ -120,8 +133,9 @@ sequenceDiagram
     else eligible non-empty source
         W->>API: fork_conversation(source token)
         API-->>W: forked_conversation_id
-        W->>HP: Push handoff pane, restore local fork, prefill prompt/attachments
-        W->>M: set PendingHandoff(auto_submit)
+        W->>HP: Push handoff pane, restore local fork
+        W->>M: set PendingHandoff(auto_submit + restore draft)
+        W->>M: queue auto-submit, clear visible draft, show starting
         W->>I: Claim launch and clear source draft
         par background prep
             W->>M: set touched workspace
@@ -129,6 +143,9 @@ sequenceDiagram
         end
         M->>M: maybe_auto_submit_handoff when ready
         M->>API: POST /agent/runs with conversation_id + snapshot token
+        alt prep or immediate spawn failure before server accepts run
+            M->>HP: Restore prompt/attachments for manual retry
+        end
     else blocked or ineligible
         W-->>U: Toast
         Note over I: Source draft remains intact
@@ -137,24 +154,27 @@ sequenceDiagram
 ## Risks and mitigations
 - **Input clears before workspace owns the launch.** The request-id claim protocol keeps source prompt and attachments intact through validation and fork failures. Tests should cover both `&` and `/move-to-cloud query`.
 - **Environment overlap overwrites explicit user choice.** Store explicit environment state on `PendingHandoff` and skip `pick_handoff_overlap_env` when it is present.
-- **Attachment preservation diverges between auto-submit and manual retry.** Carry both spawn-ready `AttachmentInput`s and a display/restoration snapshot. Install the display snapshot in the handoff pane before background prep can fail.
+- **Auto-submit queueing hides the user's prompt before dispatch.** Carry both spawn-ready `AttachmentInput`s and a restoration snapshot. Keep the restoration draft until the server accepts the run, and restore it on any pre-acceptance failure.
 - **Snapshot failure remains unretryable.** Current handoff readiness blocks submit after `SnapshotUploadStatus::Failed`; this feature should add a manual retry branch so the failure pane can recover.
 - **Selected text/block/document context mismatch.** Current cloud-mode submit does not serialize this context. This spec deliberately avoids inventing a one-off path for `&`; general cloud selected-context support should be added once and reused by normal cloud mode, `&`, and `/move-to-cloud query`.
 ## Testing and validation
 ### Unit tests
 - `app/src/terminal/input_test.rs`: add `&` prefix tests parallel to `run_input_mode_prefix_test` for typed-only activation, paste/system insert non-activation, first-character-only activation, stripping, indicator state, Backspace empty-state exit, Escape preserving prompt text, and automatic exit when the prompt is cleared. Cover local fullscreen AgentView only, and assert terminal mode, cloud-mode panes, and CLI-agent rich input do not activate.
+- `app/src/terminal/input_test.rs`: verify `&` activation locks the input as AI even when autodetection is enabled, typed `!` remains prompt text while `&` mode is active, and exiting `&` restores normal AI/autodetection behavior for future prompts.
+- `app/src/terminal/input_test.rs` or view-rendering coverage for `maybe_render_ai_input_indicators`: verify the `&` indicator uses Agent/AI magenta and does not use shell-mode blue.
 - `app/src/terminal/input_test.rs`: verify Enter in handoff compose builds a `CloudLaunchRequest` without clearing the source buffer or pending image/file attachments until a matching claim is received.
+- `app/src/ai/blocklist/agent_view/agent_message_bar*`: verify `ExitCloudHandoffModeMessageProducer` renders Backspace + "to exit cloud mode", uses Agent/AI magenta when the buffer is empty, and follows the shell-mode disabled/muted behavior when the buffer is non-empty.
 - `app/src/ai/blocklist/agent_view/agent_input_footer/*_test.rs` or existing footer tests in `app/src/terminal/input_test.rs`: verify the transient environment selector renders only while `HandoffComposeState.active`, selection updates the handoff state, and selection persists to `CloudAgentSettings::last_selected_environment_id`.
 - `app/src/terminal/input/slash_command_model_tests.rs`: keep optional argument parsing coverage for `/move-to-cloud query`; add coverage for argument text containing spaces.
 - `app/src/terminal/input/slash_commands/*`: test that `/move-to-cloud query` uses the deferred-clear launch effect and `/move-to-cloud` without query stays compose.
-- `app/src/terminal/view/ambient_agent/model.rs` tests: cover `PendingHandoff` auto-submit firing exactly once when touched workspace and snapshot upload both settle, explicit env preventing overlap replacement, and snapshot failure disabling auto-submit while preserving manual retry.
+- `app/src/terminal/view/ambient_agent/model.rs` tests: cover `PendingHandoff` auto-submit entering the optimistically queued phase immediately, firing exactly once when touched workspace and snapshot upload both settle, explicit env preventing overlap replacement, snapshot failure restoring the draft for manual retry, and immediate spawn request failure restoring the draft before server acceptance.
 ### Integration / manual
-- Product behaviors 1-15: type `&`, observe stripped visible indicator, empty-state hint, transient selector, Backspace/Escape/clear exits, and Enter requiring a non-empty prompt.
-- Product behaviors 17 and 29: from an empty local AgentView conversation, `& query` and `/move-to-cloud query` open normal cloud mode and auto-start a fresh run with the prompt and file/image attachments.
-- Product behaviors 18 and 30: from an eligible non-empty local conversation, both auto-run entrypoints open the hydrated handoff pane and dispatch the cloud run once fork, overlap/default env selection, and snapshot upload are ready.
-- Product behaviors 19-22 and 31-32: running/blocked, missing-token, fork-failure, and snapshot-failure cases preserve the source or pane prompt and image/file attachments according to whether workspace claimed the launch.
-- Product behavior 45: `&` and `!` are mutually exclusive in both directions. Verify `&` cannot activate from visible shell mode, typed `!` inside `&` mode remains prompt text, explicit terminal-mode actions exit `&`, and the input never renders both indicators.
-- Product behaviors 36-38 and 46: explicit `&` environment wins over touched-repo overlap and persists as the saved cloud environment; slash-command auto-run still allows overlap/default selection.
+- Product behaviors 1-18: type `&`, observe stripped magenta visible indicator, locked AI mode, empty-state cloud hint, magenta Backspace message, transient selector, Backspace/Escape/clear exits, and Enter requiring a non-empty prompt.
+- Product behaviors 20 and 31-32: from an empty local AgentView conversation, `& query` and `/move-to-cloud query` open normal cloud mode and auto-start a fresh run with the prompt and file/image attachments.
+- Product behaviors 21 and 31-33: from an eligible non-empty local conversation, both auto-run entrypoints open the handoff pane, immediately show queued/starting without an editable prompt gap, and dispatch the cloud run once fork, overlap/default env selection, and snapshot upload are ready.
+- Product behaviors 22-27 and 34-35: running/blocked, missing-token, fork-failure, snapshot-failure, and immediate spawn-failure cases preserve or restore the prompt and image/file attachments according to whether workspace claimed the launch.
+- Product behavior 49: `&` and `!` are mutually exclusive in both directions. Verify `&` cannot activate from visible shell mode, typed `!` inside `&` mode remains prompt text, explicit terminal-mode actions exit `&`, and the input never renders both indicators.
+- Product behaviors 39-41 and 50: explicit `&` environment wins over touched-repo overlap and persists as the saved cloud environment; slash-command auto-run still allows overlap/default selection.
 ### Validation commands
 - Compile the touched Rust targets after implementation. Prefer the repo's normal Rust check command if available in existing docs/scripts; otherwise use the narrowest `cargo check`/Bazel equivalent that covers `app/src/terminal/input.rs`, `app/src/workspace/view.rs`, and `app/src/terminal/view/ambient_agent/model.rs`.
 - Run the focused unit tests added above.

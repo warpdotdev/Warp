@@ -112,6 +112,7 @@ impl TerminalView {
                 | AmbientAgentViewModelEvent::NeedsGithubAuth
                 | AmbientAgentViewModelEvent::Cancelled
                 | AmbientAgentViewModelEvent::HarnessCommandStarted { .. }
+                | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
         ) {
             self.remove_pending_user_query_block(ctx);
         }

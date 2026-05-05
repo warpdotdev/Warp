@@ -50,6 +50,7 @@ use crate::terminal::input::{
 };
 #[cfg(feature = "local_fs")]
 use crate::terminal::model::session::Session;
+use crate::terminal::view::ambient_agent::CloudLaunchRequest;
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::color_dot;
 use crate::view_components::DismissibleToast;
@@ -365,6 +366,7 @@ impl Input {
             return true;
         }
 
+        let mut defer_buffer_clear_until_cloud_launch_claim = false;
         // Handle the slash command action based on its kind
         match command.name {
             add_mcp if command.name == commands::ADD_MCP.name => {
@@ -883,13 +885,21 @@ impl Input {
                 {
                     return false;
                 }
-                // The workspace handler falls through to splitting a fresh cloud-mode
-                // pane when there's nothing to hand off, so we don't need to gate on
-                // `selected_conversation_id` here — the slash command always opens
-                // the new pane.
+                let prompt = argument
+                    .map(|argument| argument.trim())
+                    .filter(|argument| !argument.is_empty())
+                    .map(str::to_owned);
+                let attachments = self.collect_cloud_launch_attachments(ctx);
+                let request = if let Some(prompt) = prompt {
+                    CloudLaunchRequest::auto_submit(prompt, attachments, None)
+                } else {
+                    CloudLaunchRequest::compose().with_attachments(attachments)
+                };
+                self.track_cloud_launch_request(request.id(), ctx);
                 ctx.dispatch_typed_action(&WorkspaceAction::OpenLocalToCloudHandoffPane {
-                    initial_prompt: argument.cloned().filter(|s| !s.is_empty()),
+                    request,
                 });
+                defer_buffer_clear_until_cloud_launch_claim = true;
             }
             fork if command.name == commands::FORK.name => {
                 let Some(conversation_id) = self
@@ -1066,7 +1076,7 @@ impl Input {
 
         // Leave the buffer alone when re-sending a queued prompt (the user may have typed
         // new input while the agent was busy).
-        if !is_queued_prompt {
+        if !is_queued_prompt && !defer_buffer_clear_until_cloud_launch_claim {
             self.editor.update(ctx, |editor, ctx| {
                 editor.clear_buffer(ctx);
             });

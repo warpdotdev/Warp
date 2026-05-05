@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::context_chips::{agent_footer_available_chips, available_chips, ContextChipKind};
-use crate::features::FeatureFlag;
+use crate::features::{is_local_to_cloud_handoff_available, FeatureFlag};
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::ui_components::icons::Icon;
 
@@ -75,9 +75,7 @@ pub enum AgentToolbarItemKind {
 
 impl AgentToolbarItemKind {
     pub fn handoff_to_cloud_available() -> bool {
-        FeatureFlag::OzHandoff.is_enabled()
-            && FeatureFlag::HandoffLocalCloud.is_enabled()
-            && cfg!(all(feature = "local_fs", not(target_family = "wasm")))
+        is_local_to_cloud_handoff_available()
     }
     pub fn available_in(&self) -> ToolbarAvailability {
         match self {
