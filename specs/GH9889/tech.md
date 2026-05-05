@@ -102,23 +102,42 @@ under [`app/src/ai/blocklist/block/view_impl/`](app/src/ai/blocklist/block/view_
 
 - **Prompt bubble (user input):**
   [`view_impl/query.rs::render_query`](app/src/ai/blocklist/block/view_impl/query.rs)
-  is the entry point. The shared text helper
-  `view_impl/common.rs::render_query_text` lays out the user's prompt
-  text. Append a `TimestampLabel` widget bound to
+  is the entry point.
+
+  > **Correction (re-review #10128):** earlier drafts claimed the
+  > prompt path already receives an `AIAgentExchange` (or its id).
+  > It does not. `render_query` takes primitive parameters
+  > (`query: &str`, `user_display_name: &str`, attachments,
+  > redaction state, etc.) via the `Props` struct above
+  > `maybe_render`. The submitted-at timestamp must be plumbed
+  > through.
+
+  Plumbing: extend the `Props` struct in `view_impl/query.rs` with
+  a `submitted_at: DateTime<Local>` field. Add the same field to
+  the `Props` builder at the call site in `view_impl/mod.rs` (or
+  wherever the props are constructed). Source the timestamp from
+  the surrounding block's exchange the same way the `query: &str`
+  is sourced today — the parent block has `AIAgentExchangeId`
+  context and can read `exchange.start_time` from the model. This
+  is one new field on each of two structs and one new call-site
+  argument; no new layer.
+
+  Inside `render_query`, append a `TimestampLabel` widget bound to
   `ExchangeTimes::submitted_at` next to the existing query metadata
-  (avatar, attachments).
+  (avatar, attachments). The shared text helper
+  `view_impl/common.rs::render_query_text` lays out the user's
+  prompt text and is unchanged.
 
 - **Response bubble (agent output):**
   [`view_impl/output.rs`](app/src/ai/blocklist/block/view_impl/output.rs)
-  renders the streaming/finished response output. Append a
-  `TimestampLabel` bound to `ExchangeTimes::completed_at` and a
-  `DurationLabel` bound to `(submitted_at, completed_at)`. If
+  renders the streaming/finished response. The Props/render entry
+  point in this file already has access to the per-exchange model
+  (used to drive streaming state), so plumbing `ExchangeTimes` here
+  is a one-field addition to the same Props pattern (no new layer).
+  Append a `TimestampLabel` bound to `ExchangeTimes::completed_at`
+  and a `DurationLabel` bound to `(submitted_at, completed_at)`. If
   `completed_at` is `None`, render a live `ProgressDurationLabel`
   bound to `submitted_at` plus the shared 1Hz tick instead.
-
-Both bubbles already receive an `AIAgentExchange` (or its id) from
-the parent block, so neither integration requires plumbing new data
-through additional layers.
 
 The bottom-bar `agent_view/agent_message_bar.rs` is not modified.
 
@@ -189,19 +208,19 @@ layout cost in the off case — A5 invariant).
 regain. A pure function `format_relative_or_absolute(...)` implements
 B2.
 
-> **Correction (review #10128):** earlier drafts hard-coded an English
-> 12-hour format string (`%-I:%M %p`), but B2 requires the user's
-> locale-preferred format and explicitly allows 24-hour output. The
-> formatter must respect locale and 24h-vs-12h preferences.
+> **Correction (re-review #10128):** the previous draft proposed
+> using `chrono::Locale` and `format_localized`, but the workspace
+> chrono dependency in `Cargo.toml` is `chrono = { version =
+> "0.4.38", features = ["serde"] }` — the `unstable-locales` feature
+> needed by `format_localized` is **not enabled** and would be a
+> non-trivial addition (it's still gated behind chrono's
+> `unstable-` flag). The corrected design below avoids
+> `format_localized` entirely.
 
 ```rust
 struct ClockFormat {
     /// True if the user's locale uses 24-hour time, false for 12-hour.
     twenty_four_hour: bool,
-    /// Locale tag (e.g. "en-US", "de-DE") used by chrono's locale-aware
-    /// formatters for weekday names. Sourced from the OS at startup; not
-    /// re-read on every tick.
-    locale: chrono::Locale,
 }
 
 fn format_relative_or_absolute(
@@ -216,30 +235,43 @@ fn format_relative_or_absolute(
         d if d < ChronoDuration::hours(1) => format!("{}m ago", d.num_minutes()),
         d if d < ChronoDuration::days(1) => ts.format(time_fmt).to_string(),
         d if d < ChronoDuration::days(7) => {
-            // chrono::format::Locale-aware weekday name + locale-preferred time.
-            ts.format_localized(&format!("%a {time_fmt}"), fmt.locale).to_string()
+            // English weekday + locale-preferred 12/24h time. chrono's
+            // default `%a` returns English short-form ("Mon", "Tue"); we
+            // intentionally do not localize the day name.
+            ts.format(&format!("%a {time_fmt}")).to_string()
         }
         _ => ts.format("%Y-%m-%d %H:%M").to_string(), // ISO-style for >=7d
     }
 }
 ```
 
-`ClockFormat` is sourced from the OS once at startup and cached; it
-does not change per tick. Determination logic:
+V1 weekday names are **English-only** because that's what default
+chrono provides without a feature-flag bump. The 12h-vs-24h preference
+is read from the OS — that's the more impactful localization knob,
+and it works without `unstable-locales`. Localized weekday names
+(German "Mo./Di./Mi.", etc.) are an explicit V2 follow-up that
+requires either:
+1. Enabling `chrono`'s `unstable-locales` feature workspace-wide
+   (changes the dependency contract; needs maintainer sign-off), OR
+2. A small lookup table for short weekday names in the languages
+   Warp's UI strings already cover.
 
-- **macOS:** read `NSLocale.currentLocale` for the 24h/12h preference;
-  the locale comes from the same source.
-- **Windows:** read the `LOCALE_ITIME` and `LOCALE_NAME_USER_DEFAULT`
-  via the existing `windows-rs` bindings used elsewhere in Warp.
-- **Linux:** consult `LC_TIME`/`LANG` (already exposed by Warp's
-  existing locale plumbing).
-- **Fallback:** if any source is unavailable, default to the locale
-  reported by `chrono::Locale::POSIX` (24-hour, English weekday
-  names) so the display is unambiguous.
+`ClockFormat` is sourced from the OS once at startup and cached.
+Determination logic:
+
+- **macOS:** `NSLocale.currentLocale` reports the 24h preference via
+  `localizedString(for: .timeFormat)` parsing.
+- **Windows:** read `LOCALE_ITIME` via the existing `windows-rs`
+  bindings used elsewhere in Warp.
+- **Linux:** consult `LC_TIME`/`LANG` for the locale; map common
+  locales to 24h-vs-12h via a small lookup (`en_US` → 12h, others →
+  24h is a reasonable default).
+- **Fallback:** if any source is unavailable, default to 24h
+  (unambiguous).
 
 The formatter's behavior is exhaustively tested across both
-`twenty_four_hour: true` and `false` plus a non-English locale (T8
-and T9 in the test plan are duplicated for each clock setting).
+`twenty_four_hour: true` and `false` (T8 and T9 in the test plan
+are duplicated for each clock setting).
 
 The leading-zero variants `%-l` (POSIX) vs `%#l` (Windows) are
 handled by a small `cfg!(windows)`-gated helper that picks the
@@ -252,20 +284,50 @@ string `ts.format("%Y-%m-%d %H:%M:%S %:z").to_string()`.
 
 ## Missing-timestamp fallback
 
+> **Correction (re-review #10128):** the previous draft kept a
+> "render dash if `finish_time: None` on a finished exchange" path,
+> but the model's recompute call sites at
+> [conversation.rs:1777](app/src/ai/agent/conversation.rs),
+> [1895](app/src/ai/agent/conversation.rs), and
+> [1962](app/src/ai/agent/conversation.rs) all do
+> `finish_time_from_exchange_messages(...).unwrap_or_else(Local::now)`
+> — i.e., the model **synthesizes** `Local::now()` when the
+> derivation fails. So `exchange.finish_time` is never `None` on a
+> finished exchange in practice; the dash branch never fires. The
+> corrected behavior below makes that explicit.
+
 `exchange.start_time` is `DateTime<Local>` (not `Option<>`), so
-`submitted_at` is always present in normal operation. The fallback
-only fires for `completed_at`, which is `Option<DateTime<Local>>`:
+`submitted_at` is always present.
 
-- If the exchange is not in progress (`output_status` reports
-  finished/errored/cancelled) AND `finish_time` is `None`, the model
-  is in an inconsistent state. Render "—" in the duration slot and
-  emit `log::warn!(exchange_id = ?id, "missing finish_time on
-  finished exchange")` once per exchange id (tracked via a
-  `HashSet<AIAgentExchangeId>` on the `TimestampTickService`).
+`exchange.finish_time` is `Option<DateTime<Local>>`, but per the
+recompute paths above, it is:
+- `None` exactly while the exchange is in progress.
+- `Some(...)` once the exchange transitions out of in-progress —
+  including `Some(Local::now())` synthesized for restored
+  conversations whose stored timestamps were lost.
 
-- If the exchange IS in progress, `completed_at: None` is the
-  expected state, and `ProgressDurationLabel` renders "running for Xs"
-  instead of "—". No warn fires.
+This means the only real branch is **in-progress vs not**. The
+render path:
+- In-progress (`completed_at: None`): render
+  `ProgressDurationLabel` ("running for Xs"). No dash.
+- Not in-progress (`completed_at: Some(t)`): render `t` directly via
+  `TimestampLabel` and `DurationLabel`. No dash.
+
+The dash glyph is only used in two diagnostic-only cases that should
+not happen in production:
+1. **Defensive guard:** if `output_status` reports finished but
+   `finish_time` is somehow `None` (state machine bug), render "—"
+   and emit `log::warn!(exchange_id = ?id, "model invariant: finished
+   exchange has finish_time: None")`. Tracked via a
+   `HashSet<AIAgentExchangeId>` on the `TimestampTickService` so the
+   warn fires at most once per exchange.
+2. **Explicit unset start_time at construction:** can't happen with
+   the current schema (the field is non-`Option<>`), but if a future
+   refactor changes that, the same defensive pattern applies.
+
+Both are debug guard rails — they cost nothing in the happy path
+and protect against silent rendering of garbage if the model
+invariants ever drift.
 
 ## Cancellation handling (B8)
 
@@ -294,17 +356,18 @@ Tests use a fixed `now` (e.g. 2026-05-05 15:47:23) and exercise both
   `"just now"` regardless of locale.
 - T7: `format_relative_or_absolute(now - 5min, now, _)` returns
   `"5m ago"` regardless of locale.
-- T8: `format_relative_or_absolute(now - 3h, now, fmt_12h_en)` returns
+- T8: `format_relative_or_absolute(now - 3h, now, fmt_12h)` returns
   `"12:47 PM"`.
-- T8b: Same input with `fmt_24h_de` (German 24-hour) returns
-  `"12:47"`.
-- T9: `format_relative_or_absolute(now - 3d, now, fmt_12h_en)` returns
-  `"Sun 12:47 PM"` (English weekday).
-- T9b: Same input with `fmt_24h_de` returns `"So. 12:47"` (German
-  weekday + 24h time).
+- T8b: Same input with `fmt_24h` returns `"12:47"`.
+- T9: `format_relative_or_absolute(now - 3d, now, fmt_12h)` returns
+  `"Sun 12:47 PM"`.
+- T9b: Same input with `fmt_24h` returns `"Sun 12:47"` (English
+  weekday name in both — V1 does not localize weekdays; see the
+  format-auto-promotion section's V2 follow-up note).
 - T10: `format_relative_or_absolute(now - 30d, now, _)` returns
-  `"2026-04-05 15:47"` regardless of locale (ISO-style for >=7d
-  bucket; deliberately locale-independent for unambiguous timestamps).
+  `"2026-04-05 15:47"` regardless of clock format (ISO-style for
+  >=7d bucket; deliberately format-independent for unambiguous
+  timestamps).
 - T11: Duration formatter cases (B3): "<1s", "Xs", "Xm Ys", "Xh Ym".
 
 ### Integration tests (`app/src/integration_testing/agent_mode/timestamps_test.rs` — new)
