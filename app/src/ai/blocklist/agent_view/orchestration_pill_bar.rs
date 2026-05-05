@@ -35,7 +35,6 @@ use warpui::{
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
-use crate::ai::agent_conversations_model::{AgentConversationsModel, ConversationOrTask};
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_id;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
@@ -46,7 +45,7 @@ use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::pane::view::PaneHeaderAction;
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::icons::Icon;
-use crate::workspace::{RestoreConversationLayout, WorkspaceAction, WorkspaceRegistry};
+use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 use warp_core::ui::theme::color::internal_colors;
 use warpui::EntityId;
 
@@ -1864,14 +1863,22 @@ pub fn render_orchestration_breadcrumbs(
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
         .with_main_axis_size(MainAxisSize::Min)
         .with_spacing(4.);
+    let self_terminal_view_id = agent_view_controller.terminal_view_id();
     row.add_child(render_crumb(
         parent_spec,
         Some(parent_crumb_mouse_state),
+        self_terminal_view_id,
         theme,
         appearance,
     ));
     row.add_child(chevron);
-    row.add_child(render_crumb(child_spec, None, theme, appearance));
+    row.add_child(render_crumb(
+        child_spec,
+        None,
+        self_terminal_view_id,
+        theme,
+        appearance,
+    ));
 
     let scrollable = NewScrollable::horizontal(
         SingleAxisConfig::Clipped {
@@ -1898,6 +1905,7 @@ pub fn render_orchestration_breadcrumbs(
 fn render_crumb(
     spec: CrumbSpec,
     mouse_state: Option<MouseStateHandle>,
+    self_terminal_view_id: EntityId,
     theme: &WarpTheme,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
@@ -1944,48 +1952,45 @@ fn render_crumb(
     })
     .with_cursor(Cursor::PointingHand)
     .on_click(move |ctx, app, _| {
-        // Prefer focusing an existing terminal view that already has this
-        // conversation open (could be in another pane in this tab, another
-        // tab, or another window) instead of switching the *current* pane
-        // to it. The agent conversations model's per-conversation
-        // `nav_data` carries the (window_id, pane_view_locator,
-        // terminal_view_id) tuple needed to navigate, and
-        // `ActiveAgentViewsModel::is_conversation_open` confirms the
-        // conversation is presently shown there. When that's true we
-        // dispatch `RestoreOrNavigateToConversation` — the workspace
-        // handler short-circuits to focusing the existing pane (and
-        // switching tabs / windows as needed) before falling through to
-        // any restore layout.
+        // Focus the pane that already hosts the parent conversation
+        // rather than switching this (split-off child) pane to it.
         //
-        // When the conversation isn't open anywhere we fall back to the
-        // original behaviour of switching the current pane in place via
-        // `SwitchAgentViewToConversation`. That keeps the breadcrumb
-        // useful even after the orchestrator's pane has been closed and
-        // its conversation persists only in history.
-        let nav_data = AgentConversationsModel::as_ref(app)
-            .get_conversation(&conversation_id)
-            .and_then(|entry| match entry {
-                ConversationOrTask::Conversation(metadata) => Some(metadata.nav_data.clone()),
-                ConversationOrTask::Task(_) => None,
-            });
-        let is_open_elsewhere = nav_data.is_some()
-            && ActiveAgentViewsModel::as_ref(app).is_conversation_open(conversation_id, app);
-        if is_open_elsewhere {
-            if let Some(nav_data) = nav_data {
-                ctx.dispatch_typed_action(WorkspaceAction::RestoreOrNavigateToConversation {
-                    pane_view_locator: nav_data.pane_view_locator,
-                    window_id: nav_data.window_id,
-                    conversation_id,
-                    terminal_view_id: nav_data.terminal_view_id,
-                    // `ActivePane` matches our "open here if not visible
-                    // anywhere" fall-back. The workspace handler only
-                    // consults `restore_layout` when the navigation tuple
-                    // is incomplete or stale, so when we found a real open
-                    // pane this is effectively unused.
-                    restore_layout: Some(RestoreConversationLayout::ActivePane),
-                });
+        // Pick the focus path based on where the parent's canonical
+        // owner pane lives, mirroring the orchestration pill bar's
+        // "Focus pane" handler:
+        //   * Same pane group as us (sibling pane in this tab) —
+        //     dispatch `TerminalAction::RevealChildAgent`, which the
+        //     pane group handles by walking visible terminal panes and
+        //     focusing the one whose active conversation matches.
+        //     Going through the workspace's `focus_pane` from a
+        //     different `ViewContext` doesn't reliably move focus when
+        //     the destination is in the same pane group.
+        //   * Different pane group (other tab / window) — dispatch
+        //     `WorkspaceAction::FocusTerminalViewInWorkspace`, which
+        //     walks all tabs/windows and activates the containing tab
+        //     as needed.
+        //   * No canonical owner anywhere — fall back to
+        //     `SwitchAgentViewToConversation` so the breadcrumb stays
+        //     useful even after the orchestrator pane has been closed
+        //     and the parent conversation only persists in history.
+        if let Some(owner_view_id) =
+            BlocklistAIHistoryModel::as_ref(app).terminal_view_id_for_conversation(&conversation_id)
+        {
+            let self_pane_group_id =
+                pane_group_id_containing_terminal_view(self_terminal_view_id, app);
+            let owner_pane_group_id = pane_group_id_containing_terminal_view(owner_view_id, app);
+            if owner_pane_group_id.is_some() && owner_pane_group_id == self_pane_group_id {
+                ctx.dispatch_typed_action(
+                    PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
+                        TerminalAction::RevealChildAgent { conversation_id },
+                    ),
+                );
                 return;
             }
+            ctx.dispatch_typed_action(WorkspaceAction::FocusTerminalViewInWorkspace {
+                terminal_view_id: owner_view_id,
+            });
+            return;
         }
         ctx.dispatch_typed_action(
             PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
