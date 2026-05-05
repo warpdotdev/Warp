@@ -32,6 +32,7 @@ pub mod schedule;
 pub mod secret;
 pub mod share;
 pub mod task;
+pub mod vault;
 pub const OZ_RUN_ID_ENV: &str = "OZ_RUN_ID";
 pub const OZ_PARENT_RUN_ID_ENV: &str = "OZ_PARENT_RUN_ID";
 pub const OZ_CLI_ENV: &str = "OZ_CLI";
@@ -523,6 +524,10 @@ pub enum CliCommand {
     /// Manage secrets.
     #[command(subcommand)]
     Secret(crate::secret::SecretCommand),
+
+    /// Inject secrets from external vaults into the current shell session.
+    #[command(subcommand)]
+    Vault(crate::vault::VaultCommand),
 
     /// Issue and manage federated identity tokens.
     #[command(subcommand)]

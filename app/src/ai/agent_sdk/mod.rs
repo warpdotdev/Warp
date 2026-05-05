@@ -37,6 +37,7 @@ use warp_cli::{
     schedule::ScheduleSubcommand,
     secret::SecretCommand,
     share::ShareRequest,
+    vault::VaultCommand,
     task::{MessageCommand, TaskCommand},
     CliCommand, GlobalOptions,
 };
@@ -101,6 +102,7 @@ pub(crate) mod retry;
 mod schedule;
 mod secret;
 mod telemetry;
+mod vault;
 #[cfg(test)]
 mod test_support;
 mod text_layout;
@@ -179,6 +181,9 @@ fn dispatch_command(
                 return Err(anyhow::anyhow!("invalid value 'secret'"));
             }
             secret::run(ctx, global_options, secret_cmd)
+        }
+        CliCommand::Vault(vault_cmd) => {
+            vault::run(ctx, global_options, vault_cmd)
         }
         CliCommand::Federate(federate_cmd) => {
             if !FeatureFlag::OzIdentityFederation.is_enabled() {
@@ -1295,6 +1300,7 @@ fn command_requires_auth(command: &CliCommand) -> bool {
         CliCommand::Integration(_) => true,
         CliCommand::Schedule(_) => true,
         CliCommand::Secret(_) => true,
+        CliCommand::Vault(_) => false,
         CliCommand::Federate(_) => true,
         CliCommand::HarnessSupport(_) => true,
         CliCommand::Artifact(_) => true,
@@ -1494,6 +1500,7 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
             SecretCommand::Update(_) => CliTelemetryEvent::SecretUpdate,
             SecretCommand::List(_) => CliTelemetryEvent::SecretList,
         },
+        CliCommand::Vault(_) => CliTelemetryEvent::VaultInject,
         CliCommand::Federate(federate_cmd) => match federate_cmd {
             FederateCommand::IssueToken(_) => CliTelemetryEvent::FederateIssueToken,
             FederateCommand::IssueGcpToken(_) => CliTelemetryEvent::FederateIssueGcpToken,

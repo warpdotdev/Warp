@@ -112,6 +112,8 @@ pub(super) enum CliTelemetryEvent {
     HarnessSupportNotifyUser,
     /// Executing `warp harness-support finish-task`
     HarnessSupportFinishTask { success: bool },
+    /// Executing `oz vault inject`
+    VaultInject,
 }
 
 impl TelemetryEvent for CliTelemetryEvent {
@@ -188,6 +190,7 @@ impl TelemetryEvent for CliTelemetryEvent {
             CliTelemetryEvent::HarnessSupportFinishTask { success } => {
                 Some(json!({ "success": success }))
             }
+            CliTelemetryEvent::VaultInject => None,
         }
     }
 
@@ -274,6 +277,7 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::HarnessSupportFinishTask => {
                 "CLI.Execute.HarnessSupport.FinishTask"
             }
+            CliTelemetryEventDiscriminants::VaultInject => "CLI.Execute.Vault.Inject",
         }
     }
 
@@ -395,6 +399,9 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             }
             CliTelemetryEventDiscriminants::HarnessSupportFinishTask => {
                 "Reported task completion via harness-support from the Warp CLI"
+            }
+            CliTelemetryEventDiscriminants::VaultInject => {
+                "Injected secrets from AWS Secrets Manager via the Warp CLI"
             }
         }
     }
