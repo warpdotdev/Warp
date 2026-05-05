@@ -56,7 +56,7 @@ fn write_surfaced_parent_bridge_message(state_dir: &Path, record: &MessageBridge
 #[test]
 fn claude_command_uses_session_id_when_not_resuming() {
     let uuid = Uuid::new_v4();
-    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, false);
+    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, None, false);
     assert!(
         cmd.contains(&format!("--session-id {uuid}")),
         "expected --session-id flag in non-resume command, got: {cmd}"
@@ -70,7 +70,7 @@ fn claude_command_uses_session_id_when_not_resuming() {
 #[test]
 fn claude_command_uses_resume_flag_when_resuming() {
     let uuid = Uuid::new_v4();
-    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, true);
+    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, None, true);
     assert!(
         cmd.contains(&format!("--resume {uuid}")),
         "expected --resume flag in resume command, got: {cmd}"
@@ -84,7 +84,14 @@ fn claude_command_uses_resume_flag_when_resuming() {
 #[test]
 fn claude_command_pipes_prompt_path() {
     let uuid = Uuid::new_v4();
-    let cmd = claude_command("claude", &uuid, "/tmp/prompt with spaces.txt", None, true);
+    let cmd = claude_command(
+        "claude",
+        &uuid,
+        "/tmp/prompt with spaces.txt",
+        None,
+        None,
+        true,
+    );
     assert!(
         cmd.contains("< '/tmp/prompt with spaces.txt'"),
         "expected single-quoted stdin redirect of the prompt path, got: {cmd}"
@@ -119,6 +126,47 @@ fn write_session_index_entry_creates_expected_entry() {
         entry["transcriptPath"],
         Value::String(format!("projects/{encoded}/{session_id}.jsonl"))
     );
+}
+
+#[test]
+fn serialize_claude_mcp_config_cli_server() {
+    let servers = HashMap::from([(
+        "test-server".to_string(),
+        JSONMCPServer {
+            transport_type: JSONTransportType::CLIServer {
+                command: "node".to_string(),
+                args: vec!["server.js".to_string()],
+                env: HashMap::from([("API_KEY".to_string(), "secret".to_string())]),
+                working_directory: None,
+            },
+        },
+    )]);
+    let json = serialize_claude_mcp_config(&servers).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let server = &parsed["mcpServers"]["test-server"];
+    assert_eq!(server["type"], "stdio");
+    assert_eq!(server["command"], "node");
+    assert_eq!(server["args"][0], "server.js");
+    assert_eq!(server["env"]["API_KEY"], "secret");
+}
+
+#[test]
+fn serialize_claude_mcp_config_sse_server() {
+    let servers = HashMap::from([(
+        "remote".to_string(),
+        JSONMCPServer {
+            transport_type: JSONTransportType::SSEServer {
+                url: "https://mcp.example.com".to_string(),
+                headers: HashMap::from([("Authorization".to_string(), "Bearer tok".to_string())]),
+            },
+        },
+    )]);
+    let json = serialize_claude_mcp_config(&servers).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let server = &parsed["mcpServers"]["remote"];
+    assert_eq!(server["type"], "sse");
+    assert_eq!(server["url"], "https://mcp.example.com");
+    assert_eq!(server["headers"]["Authorization"], "Bearer tok");
 }
 
 #[test]
@@ -583,11 +631,16 @@ fn prepare_claude_config_none_suffix_preserves_existing_responses() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_suffix_from_resolved_env_vars() {
+fn resolve_suffix_from_raw_value_secret() {
     std::env::remove_var(ANTHROPIC_API_KEY_ENV);
     let key = "sk-ant-api03-abcdefghij1234567890ABCDEFGHIJ1234567890abcdefghij1234567890QLWn-dUnuwQ-hIhDiAAA";
-    let resolved = HashMap::from([(OsString::from("ANTHROPIC_API_KEY"), OsString::from(key))]);
-    let suffix = resolve_anthropic_api_key_suffix(&resolved);
+    let secrets = HashMap::from([(
+        "ANTHROPIC_API_KEY".to_string(),
+        ManagedSecretValue::RawValue {
+            value: key.to_string(),
+        },
+    )]);
+    let suffix = resolve_anthropic_api_key_suffix(&secrets);
     assert_eq!(suffix.as_deref(), Some("QLWn-dUnuwQ-hIhDiAAA"));
 }
 
@@ -595,8 +648,13 @@ fn resolve_suffix_from_resolved_env_vars() {
 #[serial_test::serial]
 fn resolve_suffix_returns_none_for_short_key() {
     std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-    let resolved = HashMap::from([(OsString::from("ANTHROPIC_API_KEY"), OsString::from("short"))]);
-    assert_eq!(resolve_anthropic_api_key_suffix(&resolved), None);
+    let secrets = HashMap::from([(
+        "ANTHROPIC_API_KEY".to_string(),
+        ManagedSecretValue::RawValue {
+            value: "short".to_string(),
+        },
+    )]);
+    assert_eq!(resolve_anthropic_api_key_suffix(&secrets), None);
 }
 
 #[test]
@@ -691,14 +749,15 @@ fn prepare_local_wake_command_rehydrates_transcript_with_self_managed_listener()
 fn suffix_uses_worker_injected_env_when_present() {
     let worker_key = "sk-ant-api03-WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW-worker-suffix!";
     std::env::set_var(ANTHROPIC_API_KEY_ENV, worker_key);
-    // Even when the resolved map has a different value, the worker env wins.
-    let resolved = HashMap::from([(
-        OsString::from("ANTHROPIC_API_KEY"),
-        OsString::from(
-            "sk-ant-api03-RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR-resolved-val!",
-        ),
+    // Even when the secrets map has a different value, the env var wins.
+    let secrets = HashMap::from([(
+        "ANTHROPIC_API_KEY".to_string(),
+        ManagedSecretValue::RawValue {
+            value: "sk-ant-api03-RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR-resolved-val!"
+                .to_string(),
+        },
     )]);
-    let suffix = resolve_anthropic_api_key_suffix(&resolved);
+    let suffix = resolve_anthropic_api_key_suffix(&secrets);
     let expected = &worker_key[worker_key.len() - 20..];
     assert_eq!(suffix.as_deref(), Some(expected));
     std::env::remove_var(ANTHROPIC_API_KEY_ENV);

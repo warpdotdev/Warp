@@ -17,7 +17,7 @@ use std::{
 use crate::ai::blocklist::task_status_sync_model::TaskStatusSyncModel;
 use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
 use crate::ai::llms::{LLMId, LLMPreferences};
-use crate::ai::mcp::MCPServerState;
+use crate::ai::mcp::{JSONMCPServer, MCPServerState};
 use crate::ai::skills::{SkillManager, SkillWatcher};
 use crate::ai::{
     agent::conversation::AIConversationId,
@@ -53,7 +53,7 @@ use crate::{
         execution_profiles::profiles::AIExecutionProfilesModel,
         mcp::{
             file_based_manager::{FileBasedMCPManager, FileBasedMCPManagerEvent},
-            parsing::{normalize_mcp_json, ParsedTemplatableMCPServerResult},
+            parsing::{normalize_mcp_json, resolve_json, ParsedTemplatableMCPServerResult},
             templatable_manager::TemplatableMCPServerManagerEvent,
             TemplatableMCPServerInstallation, TemplatableMCPServerManager,
         },
@@ -783,6 +783,44 @@ impl AgentDriver {
         }
     }
 
+    /// Resolve MCP specs into a map of MCP name to `JSONMCPServer` for use in
+    /// third-party harnesses. Each spec is fully resolved (secrets applied, templates
+    /// rendered) so harnesses can serialize directly into their native config format.
+    fn resolve_mcp_specs_to_json(
+        specs: &[MCPSpec],
+        secrets: &HashMap<String, ManagedSecretValue>,
+        ctx: &ModelContext<Self>,
+    ) -> Result<HashMap<String, JSONMCPServer>, AgentDriverError> {
+        let (existing_uuids, mut ephemeral_installations) = Self::resolve_mcp_specs(specs)?;
+        let mut result = HashMap::new();
+
+        // Resolve UUID-referenced servers from the TemplatableMCPServerManager.
+        let manager = TemplatableMCPServerManager::as_ref(ctx);
+        for uuid in &existing_uuids {
+            let installation = manager
+                .get_installed_server(uuid)
+                .ok_or(AgentDriverError::MCPServerNotFound(*uuid))?
+                .clone();
+            let mut installation = installation;
+            installation.apply_secrets(secrets);
+            let resolved = resolve_json(&installation);
+            let servers: HashMap<String, JSONMCPServer> = serde_json::from_str(&resolved)
+                .map_err(|e| AgentDriverError::MCPJsonParseError(e.to_string()))?;
+            result.extend(servers);
+        }
+
+        // Resolve ephemeral (inline JSON) servers.
+        for installation in ephemeral_installations.iter_mut() {
+            installation.apply_secrets(secrets);
+            let resolved = resolve_json(installation);
+            let servers: HashMap<String, JSONMCPServer> = serde_json::from_str(&resolved)
+                .map_err(|e| AgentDriverError::MCPJsonParseError(e.to_string()))?;
+            result.extend(servers);
+        }
+
+        Ok(result)
+    }
+
     /// Resolve MCP specs into UUIDs for existing servers and ephemeral installations for inline specs.
     ///
     /// Returns (existing_server_uuids, ephemeral_installations)
@@ -1444,8 +1482,13 @@ impl AgentDriver {
             }
             HarnessKind::ThirdParty(harness) => {
                 let harness_exit_rx = Self::setup_harness(harness.as_ref(), &foreground).await?;
-                let runner =
-                    Self::prepare_harness(&task.prompt, harness.as_ref(), &foreground).await?;
+                let runner = Self::prepare_harness(
+                    &task.prompt,
+                    &task.mcp_specs,
+                    harness.as_ref(),
+                    &foreground,
+                )
+                .await?;
 
                 if let Some(task_id) = task_id_for_refresh {
                     let harness_fut =
@@ -1507,6 +1550,7 @@ impl AgentDriver {
     /// return a handle to the harness runner.
     async fn prepare_harness(
         prompt: &AgentRunPrompt,
+        mcp_specs: &[MCPSpec],
         harness: &dyn ThirdPartyHarness,
         foreground: &ModelSpawner<Self>,
     ) -> Result<Arc<dyn harness::HarnessRunner>, AgentDriverError> {
@@ -1563,18 +1607,38 @@ impl AgentDriver {
             }
         };
 
-        // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
-        // Pass the terminal env vars (which include the resolved secrets) so harnesses
-        // can look up auth keys without re-deriving precedence.
-        let resolved_env_vars = foreground
-            .spawn(|me, _| Arc::clone(&me.resolved_env_vars))
+        let secrets = foreground
+            .spawn(|me, _| Arc::clone(&me.secrets))
             .await
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
+
+        // Resolve MCP specs into harness-native JSON format.
+        let mcp_specs = mcp_specs.to_vec();
+        let secrets_for_mcp = Arc::clone(&secrets);
+        let resolved_mcp_servers = foreground
+            .spawn(move |_, ctx| Self::resolve_mcp_specs_to_json(&mcp_specs, &secrets_for_mcp, ctx))
+            .await
+            .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
+        let resolved_mcp_servers = resolved_mcp_servers?;
+        if !resolved_mcp_servers.is_empty() {
+            log::info!(
+                "Resolved {} MCP server(s) for third-party harness",
+                resolved_mcp_servers.len()
+            );
+        }
+
+        // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
         harness.prepare_environment_config(
             &working_dir,
             system_prompt.as_deref(),
-            &resolved_env_vars,
+            &secrets,
+            &resolved_mcp_servers,
         )?;
+
+        // Pull the resume payload off the driver so the harness runner can rehydrate any
+        // existing session/conversation state before launching its CLI. The payload variant
+        // is harness-specific; harnesses match on their own [`ResumePayload`] variant and
+        // ignore others.
         let resume = foreground
             .spawn(|me, _| me.resume_payload.take())
             .await
@@ -1590,6 +1654,7 @@ impl AgentDriver {
                 server_api,
                 terminal_driver,
                 resume,
+                &resolved_mcp_servers,
             )?
             .into();
 
