@@ -13,6 +13,7 @@ pub mod prompt_snapshot;
 pub mod prompt_type;
 pub mod renderer;
 pub mod spacing;
+pub mod worktree;
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -183,6 +184,9 @@ pub enum ContextChipKind {
     Subshell,
     /// A chip that shows the plan and todo list for the current conversation.
     AgentPlanAndTodoList,
+    /// A chip that lists git worktrees of the current repository and lets the user open one in a
+    /// new tab.
+    GitWorktrees,
 }
 
 impl ContextChipKind {
@@ -358,6 +362,13 @@ impl ContextChipKind {
                 |_| Some(ChipValue::Text(String::new())),
                 RefreshConfig::OnDemandOnly,
             )),
+            Self::GitWorktrees if !FeatureFlag::GitWorktreesChip.is_enabled() => None,
+            Self::GitWorktrees => Some(ContextChip::shell_builtin(
+                "Git Worktrees",
+                builtins::shell_git_worktree_list(),
+                None,
+                GIT_REFRESH_CONFIG,
+            )),
         }
     }
 
@@ -406,6 +417,7 @@ impl ContextChipKind {
             Self::Ssh => ChipValue::Text("alice@127.0.0.1".to_string()),
             Self::Subshell => ChipValue::Text("bash".to_string()),
             Self::AgentPlanAndTodoList => ChipValue::Text("Plan and Todo List".to_string()),
+            Self::GitWorktrees => ChipValue::Text("worktree-feature".to_string()),
         }
     }
 
@@ -438,6 +450,7 @@ impl ContextChipKind {
             Self::Ssh => prompt_colors.input_prompt_ssh,
             Self::Subshell => prompt_colors.input_prompt_subshell,
             Self::AgentPlanAndTodoList => prompt_colors.input_prompt_agent_mode_hint,
+            Self::GitWorktrees => prompt_colors.input_prompt_branch,
             Self::Custom { .. } => ColorU::new(255, 255, 255, 255),
         };
 
@@ -527,6 +540,7 @@ impl ContextChipKind {
             }
             Self::NodeVersion => Some(Icon::NodeJS),
             Self::ShellGitBranch | Self::SvnBranch => Some(Icon::GitBranch),
+            Self::GitWorktrees => Some(Icon::GitWorktree),
             Self::GitDiffStats | Self::SvnDirtyItems => Some(Icon::File),
             Self::GithubPullRequest => Some(Icon::Github),
             Self::KubernetesContext => Some(Icon::Globe),
@@ -555,6 +569,9 @@ pub fn available_chips() -> Vec<ContextChipKind> {
     ];
     if FeatureFlag::GithubPrPromptChip.is_enabled() {
         chips.push(ContextChipKind::GithubPullRequest);
+    }
+    if FeatureFlag::GitWorktreesChip.is_enabled() {
+        chips.push(ContextChipKind::GitWorktrees);
     }
     chips.extend([
         ContextChipKind::Date,

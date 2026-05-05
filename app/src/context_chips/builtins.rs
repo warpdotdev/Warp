@@ -159,6 +159,23 @@ pub fn shell_other_git_branches() -> ShellCommandGenerator {
     ShellCommandGenerator::new(command, Some(vec!["git".to_owned()]))
 }
 
+/// Generator that emits the porcelain output of `git worktree list`. The chip stores the raw
+/// porcelain text and parses it on demand for menu rendering (see
+/// [`crate::context_chips::worktree::parse_porcelain_list`]).
+pub fn shell_git_worktree_list() -> ShellCommandGenerator {
+    const SH_COMMAND: &str = "GIT_OPTIONAL_LOCKS=0 git worktree list --porcelain";
+    let pwsh_command = safe_git_powershell("git worktree list --porcelain");
+
+    let command = ShellCommand::shell_specific([
+        (ShellType::PowerShell, pwsh_command),
+        (ShellType::Bash, SH_COMMAND.to_string()),
+        (ShellType::Zsh, SH_COMMAND.to_string()),
+        (ShellType::Fish, SH_COMMAND.to_string()),
+    ]);
+
+    ShellCommandGenerator::new(command, Some(vec!["git".to_owned()]))
+}
+
 /// Generator function to get summary of git diff (num files changed and num lines changed).
 ///
 /// Used as a remote-session fallback when GitRepoStatusModel is unavailable.

@@ -1664,6 +1664,10 @@ pub enum Event {
     Pane(PaneEvent),
     OpenSettings(SettingsSection),
     AskAIAssistant(AskAIType),
+    /// Bubbles a new-tab-at-path request from the input layer up to the workspace.
+    OpenDirectoryInNewTab {
+        path: PathBuf,
+    },
     /// Event propagates terminal inputs up to the workspace,
     /// to be processed on the way back down through the view hierarchy.
     SyncInput(SyncEvent),
@@ -20163,6 +20167,9 @@ impl TerminalView {
                 ctx.emit(Event::CancelSharedSessionConversation {
                     server_conversation_token: *server_conversation_token,
                 });
+            }
+            InputEvent::OpenDirectoryInNewTab { path } => {
+                ctx.emit(Event::OpenDirectoryInNewTab { path: path.clone() });
             }
             InputEvent::ClearSelectedBlock => self.clear_selected_blocks(ctx),
             InputEvent::SelectRecentBlocks { count } => {

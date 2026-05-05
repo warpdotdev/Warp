@@ -1017,6 +1017,11 @@ pub enum Event {
     OpenFilesPalette {
         source: PaletteSource,
     },
+    /// Open a directory in a brand-new tab. Bubbles up through `terminal_pane` to
+    /// `pane_group::Event::OpenDirectoryInNewTab`, which workspace handles.
+    OpenDirectoryInNewTab {
+        path: PathBuf,
+    },
     TryHandlePassiveCodeDiff(CodeDiffAction),
     ToggleAIDocumentPane {
         document_id: AIDocumentId,
@@ -5211,6 +5216,9 @@ impl Input {
                     document_id: *document_id,
                     document_version: *document_version,
                 });
+            }
+            PromptDisplayEvent::OpenWorktreeInNewTab(path) => {
+                ctx.emit(Event::OpenDirectoryInNewTab { path: path.clone() });
             }
         }
     }
