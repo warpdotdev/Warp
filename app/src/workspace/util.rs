@@ -125,6 +125,7 @@ pub struct WorkspaceState {
     pub is_tab_config_params_modal_open: bool,
     pub is_session_config_modal_open: bool,
     pub is_new_worktree_modal_open: bool,
+    pub is_create_worktree_modal_open: bool,
     pub is_remove_tab_config_dialog_open: bool,
     /// Whether the transcript details panel is open (WASM only, for conversation transcript viewing).
     pub is_transcript_details_panel_open: bool,

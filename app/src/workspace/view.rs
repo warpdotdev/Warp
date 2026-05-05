@@ -474,6 +474,10 @@ use crate::tab_configs::telemetry::{
 };
 #[cfg(feature = "local_fs")]
 use crate::tab_configs::telemetry::{NewWorktreeConfigOpenSource, WorktreeBranchNamingMode};
+use crate::tab_configs::create_worktree_modal::{
+    CreateWorktreeModal, CreateWorktreeModalEvent, CreateWorktreeModalSeed,
+};
+use crate::tab_configs::worktree_picker::WorktreePickerEntry;
 use crate::tab_configs::{
     NewWorktreeModal, NewWorktreeModalEvent, TabConfigParamsModal, TabConfigParamsModalEvent,
 };
@@ -970,6 +974,7 @@ pub struct Workspace {
     pending_session_config_tab_config_chip_tutorial:
         Option<PendingSessionConfigTabConfigChipTutorial>,
     new_worktree_modal: ModalViewState<Modal<NewWorktreeModal>>,
+    create_worktree_modal: ModalViewState<Modal<CreateWorktreeModal>>,
     close_session_confirmation_dialog: ViewHandle<CloseSessionConfirmationDialog>,
     rewind_confirmation_dialog: ViewHandle<RewindConfirmationDialog>,
     delete_conversation_confirmation_dialog: ViewHandle<DeleteConversationConfirmationDialog>,
@@ -1948,6 +1953,38 @@ impl Workspace {
         ModalViewState::new(modal)
     }
 
+    fn build_create_worktree_modal(
+        ctx: &mut ViewContext<Self>,
+    ) -> ModalViewState<Modal<CreateWorktreeModal>> {
+        let body = ctx.add_typed_action_view(CreateWorktreeModal::new);
+        ctx.subscribe_to_view(&body, |me, _, event, ctx| {
+            me.handle_create_worktree_modal_body_event(event, ctx);
+        });
+        let modal = ctx.add_typed_action_view(|ctx| {
+            Modal::new(None, body, ctx)
+                .with_modal_style(UiComponentStyles {
+                    width: Some(460.),
+                    height: Some(600.),
+                    ..Default::default()
+                })
+                .with_body_style(UiComponentStyles {
+                    padding: Some(Coords {
+                        top: 0.,
+                        bottom: 0.,
+                        left: 0.,
+                        right: 0.,
+                    }),
+                    height: Some(600.),
+                    background: Some(ElementFill::None),
+                    ..Default::default()
+                })
+        });
+        ctx.subscribe_to_view(&modal, |me, _, event, ctx| {
+            me.handle_create_worktree_modal_event(event, ctx);
+        });
+        ModalViewState::new(modal)
+    }
+
     fn build_remove_tab_config_confirmation_dialog(
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<RemoveTabConfigConfirmationDialog> {
@@ -2726,6 +2763,7 @@ impl Workspace {
 
         let tab_config_params_modal = Self::build_tab_config_params_modal(ctx);
         let new_worktree_modal = Self::build_new_worktree_modal(ctx);
+        let create_worktree_modal = Self::build_create_worktree_modal(ctx);
 
         let session_config_modal = Self::build_session_config_modal(ctx);
 
@@ -3130,6 +3168,7 @@ impl Workspace {
             show_session_config_tab_config_chip: false,
             pending_session_config_tab_config_chip_tutorial: None,
             new_worktree_modal,
+            create_worktree_modal,
             close_session_confirmation_dialog,
             rewind_confirmation_dialog,
             delete_conversation_confirmation_dialog,
@@ -9146,6 +9185,180 @@ impl Workspace {
             });
         });
         ctx.notify();
+    }
+
+    /// Builds the modal seed from porcelain output + current worktree path, then
+    /// opens the chip-triggered create-worktree modal.
+    fn handle_open_create_worktree_modal_from_chip(
+        &mut self,
+        porcelain_output: String,
+        current_worktree_path: Option<std::path::PathBuf>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        use crate::context_chips::worktree::parse_porcelain_list;
+
+        let worktrees = parse_porcelain_list(&porcelain_output);
+
+        // Detect root (the worktree whose .git is a directory) and use its
+        // basename as a prefix on linked worktree display names — mirroring
+        // the chip menu's `RootName_worktreename` convention.
+        let root_path = worktrees
+            .iter()
+            .find(|wt| wt.path.join(".git").is_dir())
+            .map(|wt| wt.path.clone());
+        let root_name = root_path
+            .as_ref()
+            .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
+
+        let entries: Vec<WorktreePickerEntry> = worktrees
+            .iter()
+            .map(|wt| {
+                let is_main = root_path.as_deref() == Some(wt.path.as_path());
+                let display_name = match (&root_name, is_main) {
+                    (Some(root), false) => format!("{root}_{}", wt.name()),
+                    _ => wt.name(),
+                };
+                WorktreePickerEntry {
+                    display_name,
+                    path: wt.path.clone(),
+                    is_main,
+                }
+            })
+            .collect();
+
+        // Default destination = `~/.warp/worktrees/<root_name>/`. If we can't
+        // detect a root, fall back to the user's home dir (rare; bare-repo case).
+        let default_destination_dir = match root_name.as_deref() {
+            Some(name) => dirs::home_dir()
+                .map(|h| h.join(".warp").join("worktrees").join(name))
+                .unwrap_or_else(|| std::path::PathBuf::from(".")),
+            None => dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")),
+        };
+
+        let seed = CreateWorktreeModalSeed {
+            worktree_entries: entries,
+            current_worktree_path,
+            default_destination_dir,
+        };
+
+        self.create_worktree_modal.view.update(ctx, |modal, ctx| {
+            modal.body().update(ctx, |body, ctx| {
+                body.on_open(seed, ctx);
+            });
+        });
+        self.create_worktree_modal.open();
+        self.current_workspace_state.is_create_worktree_modal_open = true;
+        ctx.notify();
+    }
+
+    fn handle_create_worktree_modal_event(
+        &mut self,
+        event: &ModalEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            ModalEvent::Close => self.close_create_worktree_modal(ctx),
+        }
+    }
+
+    fn handle_create_worktree_modal_body_event(
+        &mut self,
+        event: &CreateWorktreeModalEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            CreateWorktreeModalEvent::Close => self.close_create_worktree_modal(ctx),
+            CreateWorktreeModalEvent::Submit {
+                source_worktree,
+                branch,
+                destination,
+                worktree_name,
+            } => {
+                self.close_create_worktree_modal(ctx);
+                self.execute_create_worktree(
+                    source_worktree.clone(),
+                    branch.clone(),
+                    destination.clone(),
+                    worktree_name.clone(),
+                    ctx,
+                );
+            }
+        }
+    }
+
+    fn close_create_worktree_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        self.current_workspace_state.is_create_worktree_modal_open = false;
+        self.create_worktree_modal.close();
+        ctx.notify();
+    }
+
+    /// Spawns `git worktree add <destination> <branch>` from `source_worktree` as
+    /// the cwd. On success, opens the new worktree in a tab and marks the chip
+    /// as pending so the count refreshes.
+    fn execute_create_worktree(
+        &mut self,
+        source_worktree: std::path::PathBuf,
+        branch: String,
+        destination: std::path::PathBuf,
+        worktree_name: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        // Hint the chip that its count is about to change.
+        crate::context_chips::display_chip::mark_worktree_chip_pending();
+
+        #[cfg(feature = "local_fs")]
+        {
+            let dest_for_open = destination.clone();
+            ctx.spawn(
+                async move {
+                    use crate::util::git::run_git_command;
+                    let dest_str = destination.to_string_lossy().into_owned();
+                    // Create a NEW branch named after the worktree, based on the
+                    // selected source branch. This avoids "branch already checked
+                    // out elsewhere" errors when the source branch is the one the
+                    // user is currently on, and matches the convention from APP-3679.
+                    let args: Vec<&str> =
+                        vec!["worktree", "add", "-b", &worktree_name, &dest_str, &branch];
+                    let result = run_git_command(&source_worktree, &args).await;
+                    (dest_for_open, result)
+                },
+                move |me, (dest, result), ctx| match result {
+                    Ok(_) => {
+                        me.open_directory_in_new_tab(dest, ctx);
+                        ctx.notify();
+                    }
+                    Err(err) => {
+                        log::error!("git worktree add failed: {err}");
+                        // Translate the most common git failure into actionable guidance.
+                        // `fatal: invalid reference: <name>` means the source repo has
+                        // no commits on that ref (often a brand-new repo), so we point
+                        // the user at the fix instead of surfacing the raw git message.
+                        let raw = err.to_string();
+                        let friendly = if raw.contains("invalid reference") {
+                            "Repository has no commits on the selected branch yet. Create an initial commit before creating a worktree.".to_string()
+                        } else if raw.contains("already exists") {
+                            "A worktree or directory already exists at that destination.".to_string()
+                        } else if raw.contains("is already used by") || raw.contains("is already checked out") {
+                            "That branch is already checked out in another worktree.".to_string()
+                        } else if raw.contains("a branch named") && raw.contains("already exists") {
+                            "A branch with that name already exists. Pick a different worktree name.".to_string()
+                        } else {
+                            format!("Failed to create worktree: {err}")
+                        };
+                        me.toast_stack.update(ctx, |toast_stack, ctx| {
+                            let toast = DismissibleToast::error(friendly);
+                            toast_stack.add_persistent_toast(toast, ctx);
+                        });
+                    }
+                },
+            );
+        }
+
+        #[cfg(not(feature = "local_fs"))]
+        {
+            let _ = (source_worktree, branch, destination, _worktree_name);
+            log::warn!("git worktree add is not supported on this build");
+        }
     }
 
     fn handle_new_worktree_modal_event(&mut self, event: &ModalEvent, ctx: &mut ViewContext<Self>) {
@@ -20479,6 +20692,16 @@ impl TypedActionView for Workspace {
                 self.current_workspace_state.is_new_worktree_modal_open = true;
                 ctx.notify();
             }
+            OpenCreateWorktreeModalFromChip {
+                porcelain_output,
+                current_worktree_path,
+            } => {
+                self.handle_open_create_worktree_modal_from_chip(
+                    porcelain_output.clone(),
+                    current_worktree_path.clone(),
+                    ctx,
+                );
+            }
             OpenNewWorktreeRepoPicker => {
                 self.open_repo_picker_for_new_worktree_modal(ctx);
             }
@@ -23164,6 +23387,10 @@ impl View for Workspace {
 
         if self.new_worktree_modal.is_open() {
             stack.add_child(self.new_worktree_modal.render());
+        }
+
+        if self.create_worktree_modal.is_open() {
+            stack.add_child(self.create_worktree_modal.render());
         }
 
         if self.workflow_modal.as_ref(app).is_open() {

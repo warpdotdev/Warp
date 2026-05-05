@@ -59,6 +59,7 @@ use super::{
     github_pr_display_text_from_url, render_text_from_kind, ChipResult, ContextChipKind,
 };
 use crate::workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME;
+use crate::WorkspaceAction;
 
 /// Helper function to render git diff stats content (file icon or +- icons, file count, bullet, +/- counts)
 /// Used by both the context chips and the AI control panel
@@ -487,6 +488,9 @@ pub struct WorktreeMenuItem {
     /// True for the main (root) worktree — the one whose `.git` is a directory rather
     /// than a file pointer. Root is never removable; its trash icon is hidden.
     pub is_main: bool,
+    /// `<this-branch> -> <origin>` line shown below the path. None when the
+    /// reflog has been pruned or origin can't be determined (e.g. root).
+    pub branch_arrow_origin: Option<String>,
     /// Hover state for the trailing trash icon, owned per-item so opacity reacts to mouse moves.
     pub trash_mouse_state: MouseStateHandle,
 }
@@ -525,7 +529,7 @@ impl GenericMenuItem for WorktreeMenuItem {
         let line_height = appearance.line_height_ratio();
 
         const VERTICAL_BAR_WIDTH: f32 = 3.;
-        const VERTICAL_BAR_HEIGHT: f32 = 28.;
+        const VERTICAL_BAR_HEIGHT: f32 = 44.;
         const ICON_SIZE: f32 = 16.;
         const ICON_GAP: f32 = 8.;
 
@@ -588,10 +592,29 @@ impl GenericMenuItem for WorktreeMenuItem {
             .with_line_height_ratio(line_height)
             .finish();
 
+        // 3rd line: "<branch> → <origin>", subtle. ALWAYS rendered (with the same
+        // height) so every row in the UniformList is the same height — UniformList
+        // measures the first item and reuses that height for the rest, so a
+        // missing 3rd line on the root would shrink every row and clip the others.
+        const ROW_GAP: f32 = 3.;
+        let arrow_text = self
+            .branch_arrow_origin
+            .clone()
+            .map(|s| crate::util::truncation::truncate_from_end(&s, 44))
+            .unwrap_or_else(|| " ".to_string());
+        let arrow_line = Text::new_inline(arrow_text, ui_font_family, font_size - 1.)
+            .with_color(Fill::Solid(path_color).into())
+            .with_line_height_ratio(line_height)
+            .finish();
+
+        let path_row = Container::new(path_text).with_margin_top(ROW_GAP).finish();
+        let arrow_row = Container::new(arrow_line).with_margin_top(ROW_GAP).finish();
+
         let name_path_column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_child(name_text)
-            .with_child(path_text)
+            .with_child(path_row)
+            .with_child(arrow_row)
             .finish();
 
         // Trailing slot: "root" badge on the main worktree (not removable), or the
@@ -695,6 +718,22 @@ pub fn mark_worktree_chip_pending() {
 fn worktree_chip_pending() -> bool {
     let until = WORKTREE_PENDING_UNTIL_MS.load(std::sync::atomic::Ordering::Relaxed);
     current_unix_millis() < until
+}
+
+/// Spawn a sleep just longer than the pending duration that triggers a chip re-render
+/// when it wakes. Without this the chip keeps rendering `⟳` after the deadline
+/// expires until something else (hover, prompt notify) causes a render.
+fn schedule_pending_clear_render(ctx: &mut ViewContext<DisplayChip>) {
+    use warpui::r#async::Timer;
+    let delay = std::time::Duration::from_millis(WORKTREE_PENDING_DURATION_MS + 100);
+    ctx.spawn(
+        async move {
+            Timer::after(delay).await;
+        },
+        |_, _, ctx| {
+            ctx.notify();
+        },
+    );
 }
 
 /// Footer entry for the worktrees chip menu. Phase 2 wires this to open the creation modal; in
@@ -875,11 +914,19 @@ impl DisplayChip {
                             (Some(root), false) => format!("{root}_{}", wt.name()),
                             _ => wt.name(),
                         };
+                        // `<this-branch> -> <origin>` when both are known.
+                        let branch_arrow_origin = match (&wt.branch, &wt.origin_branch) {
+                            (Some(branch), Some(origin)) => {
+                                Some(format!("{branch} → {origin}"))
+                            }
+                            _ => None,
+                        };
                         WorktreeMenuItem {
                             display_name,
                             path: wt.path.clone(),
                             is_current: Some(idx) == current_index,
                             is_main,
+                            branch_arrow_origin,
                             trash_mouse_state: MouseStateHandle::default(),
                         }
                     })
@@ -898,8 +945,34 @@ impl DisplayChip {
                 ctx.subscribe_to_view(&menu_view, |me, _, event, ctx| match event {
                     PromptDisplayMenuEvent::MenuAction(generic_event) => {
                         let action_data = generic_event.action_item.action_data();
-                        // Phase 2 wires the footer to open the creation modal; for now ignore.
+                        // Footer "Create new worktree…" — dispatch the workspace action
+                        // that opens the existing NewWorktreeModal. The action bubbles
+                        // up the view tree until the workspace handles it (no need to
+                        // thread a custom event through 5 layers).
                         if action_data == "__create_new_worktree__" {
+                            // Pass the parsed porcelain text + current worktree path
+                            // so the workspace handler can build the modal seed
+                            // without re-shelling.
+                            let porcelain_output = me.text().to_string();
+                            let current_path = match &me.display_chip_kind {
+                                DisplayChipKind::GitWorktrees {
+                                    worktrees,
+                                    current_index,
+                                    ..
+                                } => current_index
+                                    .and_then(|i| worktrees.get(i))
+                                    .map(|wt| wt.path.clone()),
+                                _ => None,
+                            };
+                            ctx.dispatch_typed_action(
+                                &WorkspaceAction::OpenCreateWorktreeModalFromChip {
+                                    porcelain_output,
+                                    current_worktree_path: current_path,
+                                },
+                            );
+                            me.close_git_worktrees_menu(ctx);
+                            ctx.emit(PromptDisplayChipEvent::ToggleMenu { open: false });
+                            ctx.notify();
                             return;
                         }
 
@@ -938,6 +1011,7 @@ impl DisplayChip {
                         // they decide to remove. Snappier perceived latency than waiting for the
                         // workspace handler to fire.
                         mark_worktree_chip_pending();
+                        schedule_pending_clear_render(ctx);
                         let path = std::path::PathBuf::from(action_data);
                         ctx.emit(PromptDisplayChipEvent::RequestRemoveWorktree(path));
                         me.close_git_worktrees_menu(ctx);
@@ -1501,25 +1575,17 @@ impl DisplayChip {
         } else {
             alternative_count.to_string()
         };
-        // Match the menu's `RootName_worktreename` convention so the chip label and
-        // menu items share the same disambiguating prefix. Root shows just its own name.
-        let root_name: Option<String> = worktrees
-            .iter()
-            .find(|wt| wt.path.join(".git").is_dir())
-            .map(|wt| wt.name());
-        let current_display_name = current_index.and_then(|i| worktrees.get(i)).map(|current| {
-            let is_main = current.path.join(".git").is_dir();
-            match (&root_name, is_main) {
-                (Some(root), false) => format!("{root}_{}", current.name()),
-                _ => current.name(),
-            }
-        });
+        // Chip label uses the SHORT name (just the basename) to keep the prompt
+        // compact. The full `RootName_worktreename` form is reserved for the menu
+        // where the extra context is useful for disambiguation.
+        let current_display_name = current_index
+            .and_then(|i| worktrees.get(i))
+            .map(|current| current.name());
+        // No truncation on the chip itself — show the full worktree name. The
+        // menu items still truncate at their own limit; the chip in the prompt
+        // shows the user's actual current worktree name verbatim.
         let chip_label = match current_display_name {
-            Some(name) => format!(
-                "{} · {}",
-                crate::util::truncation::truncate_from_end(&name, 20),
-                count_str
-            ),
+            Some(name) => format!("{name} · {count_str}"),
             None if pending => "⟳ worktrees".to_string(),
             None => format!("{} worktrees", alternative_count),
         };

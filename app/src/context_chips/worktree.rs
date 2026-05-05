@@ -7,6 +7,10 @@ pub struct Worktree {
     pub head: Option<String>,
     pub is_detached: bool,
     pub is_bare: bool,
+    /// Branch this worktree's branch was created from, parsed from the reflog
+    /// "branch: Created from <ref>" entry. `None` if the reflog has been pruned
+    /// or the branch was created in a way git doesn't record (e.g. renames).
+    pub origin_branch: Option<String>,
 }
 
 impl Worktree {
@@ -19,10 +23,19 @@ impl Worktree {
 }
 
 pub fn parse_porcelain_list(input: &str) -> Vec<Worktree> {
+    // Split on the optional `---ORIGIN---` marker. Everything before is standard
+    // porcelain output; everything after is one `<path>|<branch>|<origin>` line per
+    // worktree, produced by our extended shell command.
+    const ORIGIN_MARKER: &str = "---ORIGIN---";
+    let (porcelain_part, origin_part) = match input.find(ORIGIN_MARKER) {
+        Some(idx) => (&input[..idx], Some(&input[idx + ORIGIN_MARKER.len()..])),
+        None => (input, None),
+    };
+
     let mut out = Vec::new();
     let mut current: Option<PartialWorktree> = None;
 
-    for line in input.lines() {
+    for line in porcelain_part.lines() {
         let line = line.trim_end();
         if line.is_empty() {
             if let Some(wt) = current.take().and_then(PartialWorktree::finish) {
@@ -77,6 +90,30 @@ pub fn parse_porcelain_list(input: &str) -> Vec<Worktree> {
         out.push(wt);
     }
 
+    // Apply origin info: each line in the origin section is `<path>|<branch>|<origin>`.
+    // The origin field may be empty (no reflog entry found) — leave as None in that case.
+    if let Some(origin_part) = origin_part {
+        for line in origin_part.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let mut parts = line.splitn(3, '|');
+            let path = parts.next();
+            let _branch = parts.next();
+            let origin = parts.next();
+            if let (Some(path), Some(origin)) = (path, origin) {
+                if origin.is_empty() {
+                    continue;
+                }
+                let path_buf = PathBuf::from(path);
+                if let Some(wt) = out.iter_mut().find(|wt| wt.path == path_buf) {
+                    wt.origin_branch = Some(origin.to_string());
+                }
+            }
+        }
+    }
+
     out
 }
 
@@ -112,6 +149,7 @@ impl PartialWorktree {
             head: self.head,
             is_detached: self.is_detached,
             is_bare: self.is_bare,
+            origin_branch: None,
         })
     }
 }
@@ -194,6 +232,7 @@ bare
             head: None,
             is_detached: false,
             is_bare: false,
+            origin_branch: None,
         };
         assert_eq!(wt.name(), "/");
     }
@@ -207,6 +246,7 @@ bare
                 head: None,
                 is_detached: false,
                 is_bare: false,
+                origin_branch: None,
             },
             Worktree {
                 path: PathBuf::from("/tmp/wt-b"),
@@ -214,6 +254,7 @@ bare
                 head: None,
                 is_detached: false,
                 is_bare: false,
+                origin_branch: None,
             },
         ];
         let current = current_worktree(&worktrees, Path::new("/tmp/wt-b"));
