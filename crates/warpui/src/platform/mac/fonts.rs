@@ -573,8 +573,15 @@ impl crate::platform::FontDB for FontDB {
         point_size: f32,
         glyph_id: GlyphId,
         scale: Vector2F,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
     ) -> Result<RectI> {
+        // CoreText handles subpixel rendering internally via its own
+        // antialiasing settings (CGContextSetShouldSmoothFonts and the
+        // user's "Use font smoothing when available" preference). We do
+        // not opt into the cosmic-text/swash subpixel path on macOS, so
+        // this flag is intentionally ignored here.
+        let _ = lcd_subpixel;
         self.rasterizer
             .glyph_raster_bounds(font_id, point_size, glyph_id, scale, glyph_config)
     }
@@ -583,6 +590,7 @@ impl crate::platform::FontDB for FontDB {
         Ok(self.font(font_id).typographic_bounds(glyph_id)?.to_i32())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn rasterize_glyph(
         &self,
         font_id: FontId,
@@ -590,9 +598,13 @@ impl crate::platform::FontDB for FontDB {
         glyph_id: GlyphId,
         scale: Vector2F,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
         format: RasterFormat,
     ) -> Result<RasterizedGlyph> {
+        // See glyph_raster_bounds above: CoreText owns the subpixel
+        // decision on macOS, so the flag is a no-op here.
+        let _ = lcd_subpixel;
         self.rasterizer.rasterize_glyph(
             font_id,
             point_size,

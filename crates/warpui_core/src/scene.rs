@@ -94,6 +94,11 @@ pub struct Glyph {
     pub position: Vector2F,
     pub fade: Option<GlyphFade>,
     pub color: ColorU,
+    /// Whether this glyph should take the LCD subpixel path. Set by
+    /// [`Scene::draw_glyph`] from the renderer's capabilities and the
+    /// surface's transparency. Treated as a preference: a backend without a
+    /// subpixel pipeline silently falls back to grayscale.
+    pub lcd_subpixel: bool,
 }
 
 #[derive(Clone, Default)]
@@ -654,6 +659,23 @@ impl Scene {
         font_size: f32,
         color: ColorU,
     ) -> &mut Glyph {
+        // Subpixel rasterisation is gated on two conditions: the renderer
+        // built the dual-source-blend pipeline, and the window background
+        // is not heavily translucent. The strongly translucent case has
+        // to be excluded because the subpixel pipeline declares
+        // `ColorWrites::COLOR`, which preserves whatever alpha the
+        // background quad wrote; when that alpha is well below 1.0 the
+        // compositor blends the desktop into the glyph strokes
+        // themselves. Routing those glyphs through the mono pipeline
+        // (its `ColorWrites::all()` plus ALPHA_BLENDING drives
+        // framebuffer alpha to 1.0 at covered pixels) avoids the bleed
+        // at the cost of edge sharpness; the gate threshold (defined in
+        // the app layer) keeps mild translucency on the LCD path so most
+        // users do not pay that cost. Inspired by zed's
+        // `should_use_subpixel_rendering` gate.
+        let lcd_subpixel = self.rendering_config.lcd_subpixel_supported
+            && !self.rendering_config.transparent_background;
+
         // TODO: Support hit testing on glyphs?
         let layer = self.active_layer();
         layer.glyphs.push(Glyph {
@@ -665,6 +687,7 @@ impl Scene {
             position,
             color,
             fade: None,
+            lcd_subpixel,
         });
         layer.glyphs.last_mut().unwrap()
     }

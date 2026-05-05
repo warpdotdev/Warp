@@ -1,3 +1,4 @@
+pub mod gamma;
 mod gpu_info;
 pub mod texture_cache;
 pub use gpu_info::{GPUBackend, GPUDeviceInfo, GPUDeviceType, OnGPUDeviceSelected};
@@ -74,6 +75,30 @@ pub struct Config {
     pub gpu_power_preference: GPUPowerPreference,
 
     pub backend_preference: Option<GraphicsBackend>,
+
+    /// Whether the renderer supports compositing glyphs through LCD subpixel
+    /// rasterization. Set to true only when the GPU exposes the dual-source
+    /// blending feature and the renderer has built the corresponding
+    /// pipeline. Scene-time glyph classification consults this flag to
+    /// decide whether a given glyph can take the subpixel path.
+    pub lcd_subpixel_supported: bool,
+
+    /// Whether the active window's background is heavily translucent
+    /// (the `appearance.window.override_opacity` user setting is below
+    /// the LCD gate threshold defined in the app layer). Glyph
+    /// classification uses this to disable the LCD subpixel path on
+    /// strongly translucent surfaces, where the per-channel coverage
+    /// pipeline's `ColorWrites::COLOR` leaves the framebuffer alpha at
+    /// the background quad's translucent value, letting the compositor
+    /// blend the desktop into the glyph strokes themselves. The mono
+    /// pipeline's `ColorWrites::all()` writes alpha = 1.0 at covered
+    /// pixels so this bleed does not occur there. The gate threshold is
+    /// intentionally not "any translucency" because the mono path loses
+    /// edge resolution at fractional DPI; trading off mild bleed against
+    /// edge sharpness keeps mild translucency on the LCD path. Inspired
+    /// by zed's `should_use_subpixel_rendering` gate on
+    /// `WindowBackgroundAppearance != Opaque`.
+    pub transparent_background: bool,
 }
 
 #[derive(Clone, Debug, Default)]

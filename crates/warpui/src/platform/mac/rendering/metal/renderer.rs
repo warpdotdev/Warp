@@ -1,4 +1,4 @@
-use crate::rendering::atlas::{AllocatedRegion, TextureId};
+use crate::rendering::atlas::{AllocatedRegion, AtlasTextureKind, TextureId};
 use crate::rendering::{get_best_dash_gap, GlyphCache, GlyphRasterBoundsFn, RasterizeGlyphFn};
 use warpui_core::{
     fonts::{self, SubpixelAlignment},
@@ -621,26 +621,38 @@ impl<'a> Frame<'a> {
 
         let scale_factor = self.scene.scale_factor();
 
-        let mut texture_to_glyph: HashMap<TextureId, Vec<shader::PerGlyphUniforms>> =
-            HashMap::new();
+        let mut texture_to_glyph: HashMap<
+            (AtlasTextureKind, TextureId),
+            Vec<shader::PerGlyphUniforms>,
+        > = HashMap::new();
         for glyph in &layer.glyphs {
             let glyph_position = glyph.position * scale_factor;
             let subpixel_alignment = SubpixelAlignment::new(glyph_position);
 
+            // Subpixel rasterization is not used on macOS: CoreText handles
+            // its own subpixel decisions, and the cosmic-text/swash subpixel
+            // path is wired only into the wgpu/Linux/BSD renderer. The kind
+            // dimension on the cache key still has to be supplied; with
+            // lcd_subpixel=false the cache always returns the Generic kind,
+            // but the create-texture callback ignores it for the same reason.
+            let lcd_subpixel = false;
             match self.resources.glyph_cache.get(
                 glyph.glyph_key,
                 self.scene.scale_factor(),
                 subpixel_alignment,
-                &|atlas_size| create_new_texture_atlas(atlas_size, self.ctx.device),
+                lcd_subpixel,
+                &|atlas_size, _kind| create_new_texture_atlas(atlas_size, self.ctx.device),
                 &insert_glyph_into_texture,
-                &|glyph_key, scale, alignment| {
-                    self.ctx.glyph_raster_bounds(glyph_key, scale, alignment)
+                &|glyph_key, scale, lcd_subpixel, glyph_config| {
+                    self.ctx
+                        .glyph_raster_bounds(glyph_key, scale, lcd_subpixel, glyph_config)
                 },
-                &|glyph_key, scale, subpixel_alignment, glyph_config, format| {
+                &|glyph_key, scale, subpixel_alignment, lcd_subpixel, glyph_config, format| {
                     self.ctx.rasterize_glyph(
                         glyph_key,
                         scale,
                         subpixel_alignment,
+                        lcd_subpixel,
                         glyph_config,
                         format,
                     )
@@ -676,10 +688,11 @@ impl<'a> Frame<'a> {
                         gto.is_emoji,
                     );
 
-                    if let Some(per_glyph_uniforms) = texture_to_glyph.get_mut(&gto.texture_id) {
+                    let key = (gto.kind, gto.texture_id);
+                    if let Some(per_glyph_uniforms) = texture_to_glyph.get_mut(&key) {
                         per_glyph_uniforms.push(uniform);
                     } else {
-                        texture_to_glyph.insert(gto.texture_id, vec![uniform]);
+                        texture_to_glyph.insert(key, vec![uniform]);
                     }
                 }
                 Ok(None) => {}
@@ -696,7 +709,7 @@ impl<'a> Frame<'a> {
             return;
         }
 
-        for (texture_id, per_glyph_uniforms) in texture_to_glyph {
+        for ((kind, texture_id), per_glyph_uniforms) in texture_to_glyph {
             let per_glyph_uniforms_buffer = new_metal_buffer(
                 self.ctx.device,
                 &per_glyph_uniforms,
@@ -716,7 +729,7 @@ impl<'a> Frame<'a> {
             let texture = self
                 .resources
                 .glyph_cache
-                .texture(&texture_id)
+                .texture(kind, &texture_id)
                 .expect("texture ID should be in atlas");
 
             self.command_encoder.set_fragment_texture(0, Some(texture));
@@ -925,24 +938,34 @@ pub(super) struct MetalDrawContext<'a> {
 }
 
 impl MetalDrawContext<'_> {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rasterize_glyph(
         &self,
         glyph_key: GlyphKey,
         scale: Vector2F,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
         format: canvas::RasterFormat,
     ) -> anyhow::Result<RasterizedGlyph> {
-        (self.rasterize_glyph_fn)(glyph_key, scale, subpixel_alignment, glyph_config, format)
+        (self.rasterize_glyph_fn)(
+            glyph_key,
+            scale,
+            subpixel_alignment,
+            lcd_subpixel,
+            glyph_config,
+            format,
+        )
     }
 
     pub(super) fn glyph_raster_bounds(
         &self,
         glyph_key: GlyphKey,
         scale: Vector2F,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
     ) -> anyhow::Result<RectI> {
-        (self.glyph_raster_bounds_fn)(glyph_key, scale, glyph_config)
+        (self.glyph_raster_bounds_fn)(glyph_key, scale, lcd_subpixel, glyph_config)
     }
 }
 
@@ -970,17 +993,23 @@ impl super::super::Renderer for Renderer {
             device: metal_device,
             drawable,
             drawable_size: window.physical_size(),
-            rasterize_glyph_fn: &|glyph_key, scale, subpixel_alignment, glyph_config, format| {
+            rasterize_glyph_fn: &|glyph_key,
+                                  scale,
+                                  subpixel_alignment,
+                                  lcd_subpixel,
+                                  glyph_config,
+                                  format| {
                 font_cache.rasterized_glyph(
                     glyph_key,
                     scale,
                     subpixel_alignment,
+                    lcd_subpixel,
                     glyph_config,
                     format,
                 )
             },
-            glyph_raster_bounds_fn: &|glyph_key, scale, alignment| {
-                font_cache.glyph_raster_bounds(glyph_key, scale, alignment)
+            glyph_raster_bounds_fn: &|glyph_key, scale, lcd_subpixel, glyph_config| {
+                font_cache.glyph_raster_bounds(glyph_key, scale, lcd_subpixel, glyph_config)
             },
         };
 

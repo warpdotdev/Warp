@@ -26,6 +26,7 @@ use crate::{
         ThemeSettings,
     },
     themes::theme::{ThemeKind, WarpTheme},
+    window_settings::{WindowSettings, WindowSettingsChangedEvent},
     ASSETS,
 };
 
@@ -130,6 +131,37 @@ impl AppearanceManager {
                 _ => {}
             },
         );
+
+        // Mirror the window-translucency user setting into the
+        // AppContext-level latch consumed by `rendering_config()`. Done
+        // here (rather than in the renderer) because the setting lives in
+        // the app crate. The latch gates the LCD subpixel pipeline off on
+        // heavily translucent windows, where its `ColorWrites::COLOR`
+        // would otherwise let the compositor blend the desktop into the
+        // glyph strokes themselves. The threshold trades the small bleed
+        // at mild translucency (where it is barely perceptible and the
+        // mono path's lower edge resolution would be a worse regression)
+        // against the heavy bleed at strong translucency (where the
+        // wallpaper visibly dominates and the gate is worth its cost).
+        // AppearanceManager is registered before any window is created,
+        // so the initial seed below lands ahead of the first frame.
+        //
+        // TODO: this is one bit per window. Local opaque regions inside a
+        // translucent window (the active block's row background, modal
+        // scrims, etc.) still fall through to the mono path even though
+        // the rect immediately under the glyph is opaque and LCD would be
+        // safe there. A per-glyph route based on the underlying rect's
+        // alpha would fix it, but Scene::draw_glyph has no view of which
+        // rect sits behind a given glyph today.
+        const LCD_GATE_OPACITY_THRESHOLD: u8 = 70;
+        ctx.subscribe_to_model(&WindowSettings::handle(ctx), move |_, event, ctx| {
+            if matches!(event, WindowSettingsChangedEvent::BackgroundOpacity { .. }) {
+                let opacity = *WindowSettings::as_ref(ctx).background_opacity.value();
+                ctx.set_transparent_background(opacity < LCD_GATE_OPACITY_THRESHOLD);
+            }
+        });
+        let initial_opacity = *WindowSettings::as_ref(ctx).background_opacity.value();
+        ctx.set_transparent_background(initial_opacity < LCD_GATE_OPACITY_THRESHOLD);
 
         Self {
             transient_theme: None,

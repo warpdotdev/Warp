@@ -10,6 +10,20 @@ use cosmic_text::{CacheKey, CacheKeyFlags};
 use pathfinder_geometry::rect::RectI;
 use pathfinder_geometry::vector::{vec2i, Vector2F, Vector2I};
 
+fn cache_key_flags(lcd_subpixel: bool) -> CacheKeyFlags {
+    if lcd_subpixel {
+        // Request subpixel coverage but keep swash's full source list
+        // [ColorOutline, ColorBitmap, Outline]. Scene::draw_glyph sets
+        // lcd_subpixel from device + surface state without knowing whether
+        // the glyph is emoji, so adding OUTLINE_ONLY here would strip the
+        // colour sources from emoji glyphs and stop them routing to the
+        // Polychrome atlas.
+        CacheKeyFlags::SUBPIXEL_BGRA
+    } else {
+        CacheKeyFlags::empty()
+    }
+}
+
 impl FontDB {
     pub(super) fn glyph_raster_bounds(
         &self,
@@ -17,6 +31,7 @@ impl FontDB {
         size: f32,
         glyph_id: GlyphId,
         scale: Vector2F,
+        lcd_subpixel: bool,
         _glyph_config: &GlyphConfig,
     ) -> Result<RectI> {
         let Ok(_typographic_bounds) = self
@@ -46,7 +61,7 @@ impl FontDB {
                     glyph_id as u16,
                     size * scale.x(),
                     (0., 0.),
-                    CacheKeyFlags::empty(),
+                    cache_key_flags(lcd_subpixel),
                 )
                 .0,
             )
@@ -66,11 +81,12 @@ impl FontDB {
         glyph_id: GlyphId,
         scale: Vector2F,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         glyph_config: &GlyphConfig,
         requested_format: RasterFormat,
     ) -> Result<RasterizedGlyph> {
         let raster_bounds =
-            self.glyph_raster_bounds(font_id, size, glyph_id, scale, glyph_config)?;
+            self.glyph_raster_bounds(font_id, size, glyph_id, scale, lcd_subpixel, glyph_config)?;
 
         let id = *self
             .text_layout_system
@@ -89,7 +105,7 @@ impl FontDB {
                     glyph_id as u16,
                     size * scale.x(),
                     (subpixel_alignment.to_offset().x(), 0.),
-                    CacheKeyFlags::empty(),
+                    cache_key_flags(lcd_subpixel),
                 )
                 .0,
             )

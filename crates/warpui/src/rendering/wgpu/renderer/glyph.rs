@@ -1,5 +1,5 @@
 use crate::fonts::SubpixelAlignment;
-use crate::rendering::atlas::TextureId;
+use crate::rendering::atlas::{AtlasTextureKind, TextureId};
 use crate::rendering::wgpu::renderer::WGPUContext;
 use crate::rendering::wgpu::texture_with_bind_group::TextureWithBindGroup;
 use crate::rendering::wgpu::{resources, shader_types};
@@ -18,9 +18,25 @@ use wgpu::{
 
 use super::util::create_buffer_init;
 
+fn format_for_kind(kind: AtlasTextureKind) -> wgpu::TextureFormat {
+    match kind {
+        // R8Unorm: one coverage byte per texel for non-emoji grayscale.
+        AtlasTextureKind::Generic => wgpu::TextureFormat::R8Unorm,
+        // Bgra8Unorm: three per-channel coverage values, sampled as .rgb.
+        AtlasTextureKind::Subpixel => wgpu::TextureFormat::Bgra8Unorm,
+        // Bgra8Unorm: full RGBA emoji bitmaps after a CPU R<->B swap on upload.
+        AtlasTextureKind::Polychrome => wgpu::TextureFormat::Bgra8Unorm,
+    }
+}
+
 pub(super) struct Pipeline {
     glyph_cache: GlyphCache<TextureWithBindGroup>,
     render_pipeline: RenderPipeline,
+    /// Render pipeline that composites LCD subpixel glyphs through dual-source
+    /// blending. Created only when the device exposes the corresponding
+    /// feature; otherwise the renderer silently falls back to the mono
+    /// pipeline for any glyphs that were classified as Subpixel.
+    subpixel_render_pipeline: Option<RenderPipeline>,
     texture_bind_group_layout: BindGroupLayout,
     sampler: Sampler,
 }
@@ -36,6 +52,7 @@ pub(super) struct LayerState {
 }
 
 pub(super) struct PerTextureState {
+    kind: AtlasTextureKind,
     texture_id: TextureId,
     start_offset: usize,
     len: usize,
@@ -104,7 +121,7 @@ impl Pipeline {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(color_target)],
+                targets: &[Some(color_target.clone())],
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
@@ -116,6 +133,83 @@ impl Pipeline {
             cache: None,
         });
 
+        // Build the subpixel pipeline only when dual-source blending is
+        // available. The combined module concatenates the two WGSL files and
+        // prepends `enable dual_source_blending;` (required by WGSL whenever
+        // a shader uses @blend_src). The vertex stage and bind-group layout
+        // are shared with the mono pipeline.
+        let subpixel_render_pipeline = if device
+            .features()
+            .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
+        {
+            const SUBPIXEL_SHADER_PRELUDE: &str = "enable dual_source_blending;\n";
+            let combined_source = format!(
+                "{SUBPIXEL_SHADER_PRELUDE}{}\n{}",
+                include_str!("../shaders/glyph_shader.wgsl"),
+                include_str!("../shaders/glyph_subpixel_shader.wgsl"),
+            );
+            let subpixel_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Glyph Subpixel Shader"),
+                source: wgpu::ShaderSource::Wgsl(Cow::Owned(combined_source)),
+            });
+
+            // Dual-source blend: each destination LCD subpixel is multiplied
+            // by its own index-1 coverage; index 0 supplies the unmodulated
+            // text colour. ColorWrites::COLOR keeps the framebuffer alpha
+            // intact so the compositor's alpha is not corrupted by coverage.
+            let subpixel_blend = wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::Src1,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrc1,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+            };
+            let subpixel_target = wgpu::ColorTargetState {
+                format: color_target.format,
+                blend: Some(subpixel_blend),
+                write_mask: wgpu::ColorWrites::COLOR,
+            };
+
+            Some(
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Glyph Subpixel Render pipeline"),
+                    layout: Some(&glyph_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &subpixel_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[
+                            shader_types::Vertex::desc(),
+                            shaders::GlyphInstanceData::desc(),
+                        ],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &subpixel_shader,
+                        entry_point: Some("fs_subpixel_main"),
+                        targets: &[Some(subpixel_target)],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
+                }),
+            )
+        } else {
+            None
+        };
+
+        // Linear sampling: quad origins are floored to integer physical
+        // pixels at scene-build time, so fragment centres land on texel
+        // centres and Linear is identical to Nearest in practice while
+        // degrading gracefully if a future change introduces sub-texel UVs.
+        // Matches gpui's atlas_sampler in Zed.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
@@ -125,6 +219,7 @@ impl Pipeline {
         Self {
             glyph_cache: GlyphCache::new(glyph_config),
             render_pipeline,
+            subpixel_render_pipeline,
             texture_bind_group_layout,
             sampler,
         }
@@ -148,18 +243,35 @@ impl Pipeline {
 
         let scale_factor = scene.scale_factor();
 
-        let mut texture_to_glyph: HashMap<TextureId, Vec<shaders::GlyphInstanceData>> =
-            HashMap::new();
+        let mut texture_to_glyph: HashMap<
+            (AtlasTextureKind, TextureId),
+            Vec<shaders::GlyphInstanceData>,
+        > = HashMap::new();
+        // Per-renderer override on the scene-time classification. The
+        // scene flag comes from a process-wide AppContext atomic, so a
+        // multi-window deployment where adapters disagree about
+        // dual-source-blending support can hand a Subpixel-classified
+        // glyph to a renderer whose subpixel_render_pipeline was never
+        // built. Routing such a glyph through the cache would put it in
+        // the Bgra8Unorm Subpixel atlas; pipeline_for_kind's mono
+        // fallback then samples that atlas with fs_main, which only
+        // reads the .r channel and would render with the wrong alpha
+        // shape. Anding with the local pipeline state here keeps the
+        // cache, atlas, and pipeline choices consistent.
+        let renderer_supports_subpixel = self.subpixel_render_pipeline.is_some();
         for glyph in &layer.glyphs {
             let glyph_position = glyph.position * scale_factor;
             let subpixel_alignment = SubpixelAlignment::new(glyph_position);
+            let lcd_subpixel = glyph.lcd_subpixel && renderer_supports_subpixel;
             match self.glyph_cache.get(
                 glyph.glyph_key,
                 scene.scale_factor(),
                 subpixel_alignment,
-                &|size| {
+                lcd_subpixel,
+                &|size, kind| {
                     TextureWithBindGroup::new(
                         size,
+                        format_for_kind(kind),
                         &ctx.resources.device,
                         &self.texture_bind_group_layout,
                         &self.sampler,
@@ -181,10 +293,11 @@ impl Pipeline {
                         Some(GlyphFade::Horizontal { start, end }) => (start, end),
                     };
 
-                    // Adjust the horizontal position by the subpixel alignment
-                    // so that we only shift the glyph over by the amount that
-                    // isn't accounted for in the subpixel-rasterized glyph.
-                    let glyph_position = glyph_position - subpixel_alignment.to_offset();
+                    // Snap the quad origin to an integer physical pixel. The
+                    // rasterizer has already baked this bucket's subpixel
+                    // offset into the cached bitmap, so an integer-aligned
+                    // quad maps fragment centres exactly to texel centres.
+                    let glyph_position = glyph_position.floor();
 
                     // Make sure to pass the glyph size in the atlas
                     // Not the size of the render bounds (which may be smaller)
@@ -204,7 +317,7 @@ impl Pipeline {
                     );
 
                     texture_to_glyph
-                        .entry(gto.texture_id)
+                        .entry((gto.kind, gto.texture_id))
                         .or_default()
                         .push(glyph_instance_data);
                 }
@@ -222,14 +335,24 @@ impl Pipeline {
             return None;
         }
 
+        // Sort by atlas kind so draw() can issue one set_pipeline per kind
+        // run; HashMap iteration order would otherwise interleave kinds and
+        // force redundant pipeline switches.
+        let mut entries: Vec<(
+            (AtlasTextureKind, TextureId),
+            Vec<shaders::GlyphInstanceData>,
+        )> = texture_to_glyph.into_iter().collect();
+        entries.sort_by_key(|((kind, _), _)| *kind);
+
         let mut start_offset = per_frame_state.glyph_data.len();
-        let per_texture_data = texture_to_glyph
+        let per_texture_data = entries
             .into_iter()
-            .map(|(texture_id, mut glyph_instance_data)| {
+            .map(|((kind, texture_id), mut glyph_instance_data)| {
                 let len = glyph_instance_data.len();
                 per_frame_state.glyph_data.append(&mut glyph_instance_data);
 
                 let state = PerTextureState {
+                    kind,
                     texture_id,
                     start_offset,
                     len,
@@ -271,13 +394,23 @@ impl Pipeline {
             return;
         };
 
-        render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(1, buffer.slice(..));
 
+        // Re-issue set_pipeline only on kind transitions; glyph batches are
+        // dominated by runs of one kind, so this collapses them into a
+        // single state change.
+        let mut active_kind: Option<AtlasTextureKind> = None;
+
         for per_texture_state in &layer_state.textures {
+            if active_kind != Some(per_texture_state.kind) {
+                let pipeline = self.pipeline_for_kind(per_texture_state.kind);
+                render_pass.set_pipeline(pipeline);
+                active_kind = Some(per_texture_state.kind);
+            }
+
             let texture_with_view = self
                 .glyph_cache
-                .texture(&per_texture_state.texture_id)
+                .texture(per_texture_state.kind, &per_texture_state.texture_id)
                 .expect("texture ID should be in atlas");
 
             render_pass.set_bind_group(1, texture_with_view.bind_group(), &[]);
@@ -287,6 +420,23 @@ impl Pipeline {
                 0,
                 per_texture_state.start_offset as u32..end_offset as u32,
             );
+        }
+    }
+
+    /// Picks the render pipeline for an atlas kind. Subpixel needs the
+    /// dual-source-blend pipeline; if that pipeline was not built (no
+    /// hardware support) the renderer falls back to the mono pipeline so a
+    /// stray Subpixel glyph cannot panic the draw loop.
+    fn pipeline_for_kind(&self, kind: AtlasTextureKind) -> &RenderPipeline {
+        match kind {
+            // Generic and Polychrome share the mono pipeline; the is_emoji
+            // flag in the per-glyph data switches the fragment shader
+            // between coverage and direct-RGBA modes.
+            AtlasTextureKind::Generic | AtlasTextureKind::Polychrome => &self.render_pipeline,
+            AtlasTextureKind::Subpixel => self
+                .subpixel_render_pipeline
+                .as_ref()
+                .unwrap_or(&self.render_pipeline),
         }
     }
 }

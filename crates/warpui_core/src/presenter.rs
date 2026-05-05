@@ -409,7 +409,9 @@ impl Presenter {
         max_texture_dimension_2d: Option<u32>,
         ctx: &mut AppContext,
     ) -> (Scene, Option<Instant>, HashSet<AssetHandle>) {
-        let mut scene = Scene::new(scale_factor, ctx.rendering_config());
+        let mut config = ctx.rendering_config();
+        config.lcd_subpixel_supported = ctx.gpu_supports_lcd_subpixel(self.window_id);
+        let mut scene = Scene::new(scale_factor, config);
         let mut repaint_at = None;
         let mut pending_assets = HashSet::new();
 

@@ -17,7 +17,11 @@ impl Uniforms {
             label: Some("Quad Uniforms Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                // The glyph fragment shader reads gamma_ratios and the two
+                // enhanced_contrast factors from this buffer, on top of the
+                // viewport_size the vertex stage needs. Visibility has to
+                // cover both stages.
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -62,7 +66,20 @@ impl Uniforms {
         drawable_size: Vector2F,
         resources: &Resources,
     ) {
-        let uniforms = shader_types::Uniforms::new(drawable_size);
+        // Gamma and Stage 1 contrast factors are cached on Resources but
+        // re-uploaded per-frame so the uniform buffer's payload stays
+        // self-contained. The CompositeAlphaMode is intentionally not
+        // sampled here: the pipeline's BlendState::ALPHA_BLENDING
+        // already converts straight-alpha shader output into the
+        // pre-multiplied framebuffer that the PreMultiplied compositor
+        // expects, so the shader does not need to pre-multiply on its
+        // side.
+        let uniforms = shader_types::Uniforms::new(
+            drawable_size,
+            resources.gamma_ratios,
+            resources.grayscale_enhanced_contrast,
+            resources.subpixel_enhanced_contrast,
+        );
         resources
             .queue
             .write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniforms]));

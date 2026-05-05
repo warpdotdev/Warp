@@ -672,8 +672,10 @@ impl ToWinsize for &SizeInfo {
         winsize {
             ws_row: self.rows as libc::c_ushort,
             ws_col: self.columns as libc::c_ushort,
-            ws_xpixel: self.pane_width_px().as_f32() as libc::c_ushort,
-            ws_ypixel: self.pane_height_px().as_f32() as libc::c_ushort,
+            ws_xpixel: (self.pane_width_px().as_f32() * self.scale_factor).round()
+                as libc::c_ushort,
+            ws_ypixel: (self.pane_height_px().as_f32() * self.scale_factor).round()
+                as libc::c_ushort,
         }
     }
 }

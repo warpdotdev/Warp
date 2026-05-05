@@ -219,6 +219,7 @@ fn render_prompt_ps1(
         cell_dimensions.y().into_pixels(),
         0.0.into_pixels(),
         0.0.into_pixels(),
+        1.0,
     );
     let enforce_minimum_contrast = *FontSettings::as_ref(app).enforce_minimum_contrast;
     let obfuscate_secrets = get_secret_obfuscation_mode(app);

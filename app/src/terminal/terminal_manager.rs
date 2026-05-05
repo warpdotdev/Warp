@@ -65,6 +65,7 @@ pub(super) fn compute_block_size(initial_size: Vector2F, ctx: &mut AppContext) -
             appearance.monospace_font_family(),
             appearance.monospace_font_size(),
             appearance.ui_builder().line_height_ratio(),
+            1.0, // overwritten immediately on first layout when ViewContext is available
         )
     };
     let maximum_grid_size = *TerminalSettings::as_ref(ctx).maximum_grid_size.value();
