@@ -7,6 +7,8 @@
 
 #[cfg(feature = "local_fs")]
 use std::path::Path;
+#[cfg(any(test, feature = "test-util"))]
+use std::path::PathBuf;
 
 use warp_core::HostId;
 use warp_util::standardized_path::StandardizedPath;
@@ -14,6 +16,7 @@ use warpui::{AppContext, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::file_tree_store::FileTreeState;
 use crate::file_tree_update::RepoMetadataUpdate;
+use crate::git_status::GitStatus;
 use crate::local_model::{
     GetContentsArgs, IndexedRepoState, LocalRepoMetadataModel, RepoContent, RepositoryMetadataEvent,
 };
@@ -354,6 +357,22 @@ impl RepoMetadataModel {
     pub fn is_lazy_loaded_path(&self, path: &StandardizedPath, ctx: &AppContext) -> bool {
         self.local.as_ref(ctx).is_lazy_loaded_path(path)
     }
+
+    pub fn git_status_for(&self, path: &StandardizedPath, ctx: &AppContext) -> Option<GitStatus> {
+        self.local.as_ref(ctx).git_status_for(path)
+    }
+
+    pub fn is_dirty_dir(&self, path: &StandardizedPath, ctx: &AppContext) -> bool {
+        self.local.as_ref(ctx).is_dirty_dir(path)
+    }
+
+    pub fn dirty_dir_status_for(
+        &self,
+        path: &StandardizedPath,
+        ctx: &AppContext,
+    ) -> Option<GitStatus> {
+        self.local.as_ref(ctx).dirty_dir_status_for(path)
+    }
 }
 
 impl warpui::Entity for RepoMetadataModel {
@@ -373,6 +392,18 @@ impl RepoMetadataModel {
     ) {
         self.local.update(ctx, |local, _ctx| {
             local.insert_test_state(repo_path, state);
+        });
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    pub fn recompute_git_statuses_for_test(
+        &self,
+        repo_path: StandardizedPath,
+        changed_paths: Vec<PathBuf>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.local.update(ctx, |local, _ctx| {
+            local.recompute_git_statuses_for_test(&repo_path, changed_paths);
         });
     }
 }

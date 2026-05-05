@@ -5,6 +5,7 @@
 mod tests {
     use crate::entry::{DirectoryEntry, Entry, FileMetadata};
     use crate::file_tree_store::{FileTreeEntry, FileTreeEntryState, FileTreeState};
+    use crate::git_status::GitStatus;
     use crate::local_model::{
         GetContentsArgs, IndexedRepoState, LocalRepoMetadataModel, RepoUpdate,
         RepositoryMetadataEvent,
@@ -16,7 +17,8 @@ mod tests {
     use ignore::gitignore::Gitignore;
     use std::cell::RefCell;
     use std::collections::HashMap;
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{Path, PathBuf};
     use std::rc::Rc;
     use std::time::Duration;
     use virtual_fs::{Stub, VirtualFS};
@@ -28,6 +30,8 @@ mod tests {
         fn new_for_test() -> Self {
             Self {
                 repositories: HashMap::new(),
+                git_statuses: HashMap::new(),
+                dirty_dirs: HashMap::new(),
                 lazy_loaded_paths: Default::default(),
                 #[cfg(feature = "local_fs")]
                 watcher: Default::default(),
@@ -608,6 +612,91 @@ mod tests {
                 .unwrap()
                 .loaded());
         });
+    }
+
+    #[test]
+    fn git_status_recompute_marks_modified_file_and_dirty_ancestors() -> anyhow::Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
+        let repo = git2::Repository::init(temp_dir.path())?;
+        let nested_dir = temp_dir.path().join("src/nested");
+        fs::create_dir_all(&nested_dir)?;
+        let modified_file = nested_dir.join("main.rs");
+        fs::write(&modified_file, "baseline\n")?;
+        commit_paths(&repo, &[Path::new("src/nested/main.rs")])?;
+        fs::write(&modified_file, "modified\n")?;
+
+        let repo_root = StandardizedPath::try_from_local(temp_dir.path())?;
+        let src_dir = StandardizedPath::try_from_local(&temp_dir.path().join("src"))?;
+        let nested_dir_std = StandardizedPath::try_from_local(&nested_dir)?;
+        let modified_file_std = StandardizedPath::try_from_local(&modified_file)?;
+
+        let root = Entry::Directory(DirectoryEntry {
+            path: repo_root.clone(),
+            children: vec![Entry::Directory(DirectoryEntry {
+                path: src_dir.clone(),
+                children: vec![Entry::Directory(DirectoryEntry {
+                    path: nested_dir_std.clone(),
+                    children: vec![Entry::File(FileMetadata::new(modified_file.clone(), false))],
+                    ignored: false,
+                    loaded: true,
+                })],
+                ignored: false,
+                loaded: true,
+            })],
+            ignored: false,
+            loaded: true,
+        });
+
+        let mut model = LocalRepoMetadataModel::new_for_test();
+        model.repositories.insert(
+            repo_root.clone(),
+            IndexedRepoState::Indexed(FileTreeState::new_lazy_loaded(root)),
+        );
+
+        let update = RepoUpdate {
+            added: vec![modified_file.clone()],
+            deleted: vec![],
+            moved: HashMap::new(),
+        };
+        let computation =
+            LocalRepoMetadataModel::compute_git_status_computation(&repo_root, &update);
+        model.recompute_git_statuses(&repo_root, computation);
+
+        assert_eq!(
+            model.git_status_for(&modified_file_std),
+            Some(GitStatus::Modified)
+        );
+        assert!(model.is_dirty_dir(&nested_dir_std));
+        assert!(model.is_dirty_dir(&src_dir));
+        assert!(model.is_dirty_dir(&repo_root));
+        assert_eq!(
+            model.dirty_dir_status_for(&src_dir),
+            Some(GitStatus::Modified)
+        );
+
+        Ok(())
+    }
+
+    fn commit_paths(repo: &git2::Repository, paths: &[&Path]) -> anyhow::Result<()> {
+        let mut index = repo.index()?;
+        for path in paths {
+            index.add_path(path)?;
+        }
+        index.write()?;
+
+        let tree_id = index.write_tree()?;
+        let tree = repo.find_tree(tree_id)?;
+        let signature = git2::Signature::now("Warp Test", "test@example.com")?;
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            "initial commit",
+            &tree,
+            &[],
+        )?;
+
+        Ok(())
     }
 
     #[test]

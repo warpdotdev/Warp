@@ -5,7 +5,7 @@
 //! all repositories tracked by Warp.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -21,8 +21,11 @@ pub enum RepoContent<'a> {
 
 use warp_util::standardized_path::StandardizedPath;
 
+#[cfg(not(target_family = "wasm"))]
+use crate::{entry::is_git_internal_path, git_status::statuses_for_repo};
 use crate::{
     entry::{Entry, FileId, IgnoredPathStrategy},
+    git_status::GitStatus,
     gitignores_for_directory, matches_gitignores,
     repository::Repository,
     telemetry::RepoMetadataTelemetryEvent,
@@ -110,6 +113,10 @@ pub enum IndexedRepoState {
 pub struct LocalRepoMetadataModel {
     /// Mapping from repository path to its indexed state.
     repositories: HashMap<StandardizedPath, IndexedRepoState>,
+    /// Per-file git status, keyed by repository root.
+    git_statuses: HashMap<StandardizedPath, HashMap<StandardizedPath, GitStatus>>,
+    /// Directory rollups for repositories with dirty descendants.
+    dirty_dirs: HashMap<StandardizedPath, HashSet<StandardizedPath>>,
     /// Refcounts for lazily-loaded standalone paths tracked in the model.
     lazy_loaded_paths: HashMap<StandardizedPath, usize>,
     /// File system watcher for monitoring changes.
@@ -126,6 +133,13 @@ struct RepoUpdate {
     added: Vec<PathBuf>,
     deleted: Vec<PathBuf>,
     moved: HashMap<PathBuf, PathBuf>,
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[derive(Debug)]
+struct GitStatusComputation {
+    changed_paths: Option<Vec<PathBuf>>,
+    statuses: Result<HashMap<StandardizedPath, GitStatus>, String>,
 }
 
 /// Describes a single file-tree mutation computed on a background thread.
@@ -199,6 +213,8 @@ impl LocalRepoMetadataModel {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let mut model = Self {
             repositories: HashMap::new(),
+            git_statuses: HashMap::new(),
+            dirty_dirs: HashMap::new(),
             lazy_loaded_paths: HashMap::new(),
             #[cfg(feature = "local_fs")]
             watcher: None,
@@ -297,9 +313,18 @@ impl LocalRepoMetadataModel {
                             &gitignores_clone,
                         )
                         .await;
-                        (mutations, repo_path_clone, lazy_load)
+                        let git_status_computation = Self::compute_git_status_computation(
+                            &repo_path_clone,
+                            &repo_scoped_update,
+                        );
+                        (
+                            mutations,
+                            repo_path_clone,
+                            lazy_load,
+                            git_status_computation,
+                        )
                     },
-                    |model, (mutations, repo_path, lazy_load), ctx| {
+                    |model, (mutations, repo_path, lazy_load, git_status_computation), ctx| {
                         if let Some(IndexedRepoState::Indexed(state)) =
                             model.repositories.get_mut(&repo_path)
                         {
@@ -309,6 +334,7 @@ impl LocalRepoMetadataModel {
                                 lazy_load,
                                 model.emit_incremental_updates,
                             );
+                            model.recompute_git_statuses(&repo_path, git_status_computation);
                             ctx.emit(RepositoryMetadataEvent::FileTreeEntryUpdated {
                                 path: repo_path,
                             });
@@ -405,6 +431,9 @@ impl LocalRepoMetadataModel {
         ctx: &mut ModelContext<Self>,
     ) -> Result<(), RepoMetadataError> {
         if self.repositories.remove(repo_path).is_some() {
+            self.git_statuses.remove(repo_path);
+            self.dirty_dirs.remove(repo_path);
+
             // Unregister from watcher
             #[cfg(feature = "local_fs")]
             {
@@ -452,6 +481,25 @@ impl LocalRepoMetadataModel {
     /// Returns whether the given path is tracked as a lazily-loaded standalone path.
     pub fn is_lazy_loaded_path(&self, path: &StandardizedPath) -> bool {
         self.lazy_loaded_paths.contains_key(path)
+    }
+
+    pub fn git_status_for(&self, path: &StandardizedPath) -> Option<GitStatus> {
+        self.git_statuses
+            .values()
+            .find_map(|statuses| statuses.get(path).copied())
+    }
+
+    pub fn is_dirty_dir(&self, path: &StandardizedPath) -> bool {
+        self.dirty_dirs.values().any(|dirs| dirs.contains(path))
+    }
+
+    pub fn dirty_dir_status_for(&self, path: &StandardizedPath) -> Option<GitStatus> {
+        self.git_statuses
+            .values()
+            .flat_map(HashMap::iter)
+            .filter(|(status_path, _status)| status_path.starts_with(path))
+            .map(|(_status_path, status)| *status)
+            .min_by_key(|status| Self::git_status_rollup_priority(*status))
     }
 
     /// Lazily indexes a standalone path with only the first level of children.
@@ -626,6 +674,148 @@ impl LocalRepoMetadataModel {
         }
 
         mutations
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn compute_git_status_computation(
+        repo_path: &StandardizedPath,
+        update: &RepoUpdate,
+    ) -> GitStatusComputation {
+        let changed_paths = Self::git_status_changed_paths(update);
+        let statuses = match repo_path.to_local_path() {
+            Some(_) if changed_paths.as_ref().is_some_and(Vec::is_empty) => Ok(HashMap::new()),
+            Some(repo_root) => {
+                let pathspecs = changed_paths
+                    .as_ref()
+                    .map(|paths| paths.iter().map(PathBuf::as_path).collect::<Vec<&Path>>());
+                statuses_for_repo(&repo_root, pathspecs.as_deref()).map_err(|e| e.to_string())
+            }
+            None => Err(RepoMetadataError::PathEncodingMismatch(repo_path.clone()).to_string()),
+        };
+
+        GitStatusComputation {
+            changed_paths,
+            statuses,
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn git_status_changed_paths(update: &RepoUpdate) -> Option<Vec<PathBuf>> {
+        let mut changed_paths = Vec::new();
+        for path in update
+            .added
+            .iter()
+            .chain(update.deleted.iter())
+            .chain(update.moved.keys())
+            .chain(update.moved.values())
+        {
+            if is_git_internal_path(path) {
+                return None;
+            }
+            if !changed_paths.contains(path) {
+                changed_paths.push(path.clone());
+            }
+        }
+
+        Some(changed_paths)
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn recompute_git_statuses(
+        &mut self,
+        repo_path: &StandardizedPath,
+        computation: GitStatusComputation,
+    ) {
+        let statuses = match computation.statuses {
+            Ok(statuses) => statuses,
+            Err(error) => {
+                log::warn!("Failed to refresh git statuses for {repo_path}: {error}");
+                return;
+            }
+        };
+
+        match computation.changed_paths {
+            Some(changed_paths) => {
+                let repo_statuses = self.git_statuses.entry(repo_path.clone()).or_default();
+                for path in changed_paths {
+                    let Some(std_path) = StandardizedPath::try_from_local(&path).ok() else {
+                        continue;
+                    };
+                    repo_statuses.remove(&std_path);
+                }
+                repo_statuses.extend(statuses);
+            }
+            None => {
+                self.git_statuses.insert(repo_path.clone(), statuses);
+            }
+        }
+
+        self.recompute_dirty_dirs(repo_path);
+    }
+
+    fn recompute_dirty_dirs(&mut self, repo_path: &StandardizedPath) {
+        let Some(statuses) = self.git_statuses.get(repo_path) else {
+            self.dirty_dirs.remove(repo_path);
+            return;
+        };
+
+        let mut dirty_dirs = HashSet::new();
+        for path in statuses.keys() {
+            for ancestor in path.ancestors().skip(1) {
+                if !ancestor.starts_with(repo_path) {
+                    break;
+                }
+                dirty_dirs.insert(ancestor);
+            }
+        }
+
+        if dirty_dirs.is_empty() {
+            self.dirty_dirs.remove(repo_path);
+        } else {
+            self.dirty_dirs.insert(repo_path.clone(), dirty_dirs);
+        }
+    }
+
+    fn git_status_rollup_priority(status: GitStatus) -> u8 {
+        match status {
+            GitStatus::Conflict => 0,
+            GitStatus::Deleted => 1,
+            GitStatus::Modified => 2,
+            GitStatus::Added | GitStatus::Untracked | GitStatus::Renamed => 3,
+            GitStatus::Ignored => 4,
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn spawn_full_git_status_refresh(
+        repo_path: StandardizedPath,
+        ctx: &mut ModelContext<'_, Self>,
+    ) {
+        ctx.spawn(
+            async move {
+                let statuses = match repo_path.to_local_path() {
+                    Some(repo_root) => {
+                        statuses_for_repo(&repo_root, None).map_err(|e| e.to_string())
+                    }
+                    None => {
+                        Err(RepoMetadataError::PathEncodingMismatch(repo_path.clone()).to_string())
+                    }
+                };
+                (
+                    repo_path,
+                    GitStatusComputation {
+                        changed_paths: None,
+                        statuses,
+                    },
+                )
+            },
+            |model, (repo_path, git_status_computation), ctx| {
+                if model.repositories.contains_key(&repo_path) {
+                    model.recompute_git_statuses(&repo_path, git_status_computation);
+                    ctx.emit(RepositoryMetadataEvent::FileTreeEntryUpdated { path: repo_path });
+                }
+            },
+        );
     }
 
     /// Phase 2: Applies pre-computed mutations to the file tree on the main thread.
@@ -936,6 +1126,8 @@ impl LocalRepoMetadataModel {
                                 repo_path_str,
                                 files.len()
                             );
+                            #[cfg(not(target_family = "wasm"))]
+                            Self::spawn_full_git_status_refresh(std_repo_path, ctx);
                         }
                     }
                     Err(e) => {
@@ -1024,6 +1216,21 @@ impl LocalRepoMetadataModel {
     pub fn insert_test_state(&mut self, repo_path: StandardizedPath, state: FileTreeState) {
         self.repositories
             .insert(repo_path, IndexedRepoState::Indexed(state));
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    pub fn recompute_git_statuses_for_test(
+        &mut self,
+        repo_path: &StandardizedPath,
+        changed_paths: Vec<PathBuf>,
+    ) {
+        let update = RepoUpdate {
+            added: changed_paths,
+            deleted: vec![],
+            moved: HashMap::new(),
+        };
+        let computation = Self::compute_git_status_computation(repo_path, &update);
+        self.recompute_git_statuses(repo_path, computation);
     }
 }
 
