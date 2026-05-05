@@ -13,7 +13,10 @@ use warpui::AppContext;
 use warpui::SingletonEntity;
 
 use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::agent_conversations_model::{AgentConversationsModel, ConversationOrTask};
+use crate::ai::agent_conversations_model::{
+    AgentConversationEntry, AgentConversationProvenance, AgentConversationsModel,
+    ConversationOrTask,
+};
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::terminal::cli_agent_sessions::listener::agent_supports_rich_status;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
@@ -93,6 +96,37 @@ pub(crate) fn conversation_or_task_agent_icon_variant(
             .is_some_and(|m| m.ambient_agent_task_id.is_some()),
     };
     Some(agent_icon_variant_for_run(harness, status, is_ambient))
+}
+
+pub(crate) fn agent_conversation_entry_icon_variant(
+    entry: &AgentConversationEntry,
+) -> Option<IconWithStatusVariant> {
+    let status = entry.display.status.to_conversation_status();
+    let is_ambient = matches!(entry.provenance, AgentConversationProvenance::AmbientRun)
+        || entry.backing.has_ambient_run
+        || entry.identity.ambient_agent_task_id.is_some();
+    Some(match entry.provenance {
+        AgentConversationProvenance::AmbientRun => agent_icon_variant_for_run(
+            entry.display.harness.unwrap_or(Harness::Oz),
+            status,
+            is_ambient,
+        ),
+        AgentConversationProvenance::LocalInteractive
+        | AgentConversationProvenance::CloudSyncedConversation => {
+            if is_ambient {
+                agent_icon_variant_for_run(
+                    entry.display.harness.unwrap_or(Harness::Oz),
+                    status,
+                    is_ambient,
+                )
+            } else {
+                IconWithStatusVariant::OzAgent {
+                    status: Some(status),
+                    is_ambient,
+                }
+            }
+        }
+    })
 }
 
 /// Primitive inputs to the terminal-view waterfall, gathered once from the live

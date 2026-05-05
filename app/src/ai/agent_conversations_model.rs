@@ -1,8 +1,3 @@
-#[allow(dead_code)]
-pub mod entry;
-
-pub use entry::AgentConversationEntry;
-
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
@@ -346,6 +341,32 @@ impl AgentRunDisplayStatus {
         }
     }
 
+    pub fn to_conversation_status(&self) -> ConversationStatus {
+        match self {
+            AgentRunDisplayStatus::TaskQueued
+            | AgentRunDisplayStatus::TaskPending
+            | AgentRunDisplayStatus::TaskClaimed
+            | AgentRunDisplayStatus::TaskInProgress
+            | AgentRunDisplayStatus::ConversationInProgress => ConversationStatus::InProgress,
+            AgentRunDisplayStatus::TaskSucceeded | AgentRunDisplayStatus::ConversationSucceeded => {
+                ConversationStatus::Success
+            }
+            AgentRunDisplayStatus::TaskFailed
+            | AgentRunDisplayStatus::TaskError
+            | AgentRunDisplayStatus::TaskUnknown
+            | AgentRunDisplayStatus::ConversationError => ConversationStatus::Error,
+            AgentRunDisplayStatus::TaskBlocked { blocked_action }
+            | AgentRunDisplayStatus::ConversationBlocked { blocked_action } => {
+                ConversationStatus::Blocked {
+                    blocked_action: blocked_action.clone(),
+                }
+            }
+            AgentRunDisplayStatus::TaskCancelled | AgentRunDisplayStatus::ConversationCancelled => {
+                ConversationStatus::Cancelled
+            }
+        }
+    }
+
     pub fn is_cancellable(&self) -> bool {
         self.is_working()
     }
@@ -421,6 +442,14 @@ impl std::fmt::Display for AgentRunDisplayStatus {
 pub struct ConversationMetadata {
     pub nav_data: ConversationNavigationData,
 }
+
+#[allow(dead_code)]
+pub mod entry;
+
+pub use entry::{
+    AgentConversationEntry, AgentConversationEntryId, AgentConversationNavigationSubject,
+    AgentConversationProvenance,
+};
 
 /// ConversationOrTask is a wrapper around either conversation
 /// or task data stored in the `AgentConversationsModel`.
@@ -1485,6 +1514,194 @@ impl AgentConversationsModel {
             .filter(|entry| entry.matches_filters(filters, app))
             .sorted_by(|a, b| b.display.last_updated.cmp(&a.display.last_updated))
             .collect()
+    }
+
+    pub fn get_entry_by_id(
+        &self,
+        id: &AgentConversationEntryId,
+        app: &AppContext,
+    ) -> Option<AgentConversationEntry> {
+        let history_model = BlocklistAIHistoryModel::as_ref(app);
+        match id {
+            AgentConversationEntryId::AmbientRun(task_id) => self
+                .tasks
+                .get(task_id)
+                .map(|task| entry::entry_for_task(task, history_model, app)),
+            AgentConversationEntryId::Conversation(conversation_id) => self
+                .conversations
+                .get(conversation_id)
+                .map(|metadata| entry::entry_for_conversation(metadata, history_model, app))
+                .or_else(|| {
+                    history_model
+                        .get_conversation_metadata(conversation_id)
+                        .map(|metadata| {
+                            let nav_data =
+                                ConversationNavigationData::from_historical_conversation_metadata(
+                                    metadata,
+                                );
+                            entry::entry_for_historical_metadata(
+                                metadata,
+                                nav_data,
+                                history_model,
+                                app,
+                            )
+                        })
+                }),
+        }
+    }
+
+    pub fn resolve_open_action(
+        subject: AgentConversationNavigationSubject,
+        restore_layout: Option<RestoreConversationLayout>,
+        app: &AppContext,
+    ) -> Option<WorkspaceAction> {
+        let model = Self::as_ref(app);
+        match subject {
+            AgentConversationNavigationSubject::Entry(id) => model
+                .get_entry_by_id(&id, app)
+                .and_then(|entry| model.resolve_entry_open_action(&entry, restore_layout, app)),
+            AgentConversationNavigationSubject::ServerToken(server_token) => model
+                .entry_for_server_token(&server_token, app)
+                .and_then(|entry| model.resolve_entry_open_action(&entry, restore_layout, app))
+                .or_else(|| {
+                    Some(WorkspaceAction::OpenConversationTranscriptViewer {
+                        ambient_agent_task_id: model.task_id_for_server_token(&server_token),
+                        conversation_id: server_token,
+                    })
+                }),
+        }
+    }
+
+    fn resolve_entry_open_action(
+        &self,
+        entry: &AgentConversationEntry,
+        restore_layout: Option<RestoreConversationLayout>,
+        app: &AppContext,
+    ) -> Option<WorkspaceAction> {
+        let active_views_model = ActiveAgentViewsModel::as_ref(app);
+
+        if let Some(task_id) = entry.identity.ambient_agent_task_id {
+            if let Some(terminal_view_id) =
+                active_views_model.get_terminal_view_id_for_ambient_task(task_id)
+            {
+                return Some(WorkspaceAction::FocusTerminalViewInWorkspace { terminal_view_id });
+            }
+        }
+
+        if let Some(conversation_id) = entry.identity.local_conversation_id {
+            if active_views_model.is_conversation_open(conversation_id, app) {
+                if let Some(nav_data) = self
+                    .conversations
+                    .get(&conversation_id)
+                    .map(|metadata| &metadata.nav_data)
+                {
+                    return Some(WorkspaceAction::RestoreOrNavigateToConversation {
+                        conversation_id,
+                        window_id: nav_data.window_id,
+                        pane_view_locator: nav_data.pane_view_locator,
+                        terminal_view_id: nav_data.terminal_view_id,
+                        restore_layout,
+                    });
+                }
+
+                if let Some(terminal_view_id) =
+                    active_views_model.get_terminal_view_id_for_conversation(conversation_id, app)
+                {
+                    return Some(WorkspaceAction::FocusTerminalViewInWorkspace {
+                        terminal_view_id,
+                    });
+                }
+            }
+        }
+
+        if let Some(task_id) = entry.identity.ambient_agent_task_id {
+            if let Some(session_id) = self
+                .tasks
+                .get(&task_id)
+                .and_then(AmbientAgentTask::active_execution_session_id)
+                .and_then(Self::parse_session_id)
+            {
+                return Some(WorkspaceAction::OpenAmbientAgentSession {
+                    session_id,
+                    task_id,
+                });
+            }
+        }
+
+        if let Some(conversation_id) = entry.identity.local_conversation_id {
+            let nav_data = self
+                .conversations
+                .get(&conversation_id)
+                .map(|metadata| &metadata.nav_data);
+            if entry.backing.has_loaded_conversation
+                || entry.backing.has_local_persisted_data
+                || nav_data.is_some()
+            {
+                return Some(WorkspaceAction::RestoreOrNavigateToConversation {
+                    conversation_id,
+                    window_id: nav_data.and_then(|nav_data| nav_data.window_id),
+                    pane_view_locator: None,
+                    terminal_view_id: nav_data.and_then(|nav_data| nav_data.terminal_view_id),
+                    restore_layout,
+                });
+            }
+        }
+
+        entry
+            .identity
+            .server_conversation_token
+            .as_ref()
+            .map(|token| WorkspaceAction::OpenConversationTranscriptViewer {
+                conversation_id: token.clone(),
+                ambient_agent_task_id: entry.identity.ambient_agent_task_id,
+            })
+    }
+
+    fn entry_for_server_token(
+        &self,
+        server_token: &ServerConversationToken,
+        app: &AppContext,
+    ) -> Option<AgentConversationEntry> {
+        let history_model = BlocklistAIHistoryModel::as_ref(app);
+        if let Some(task) = self.tasks.values().find(|task| {
+            task.conversation_id()
+                .is_some_and(|conversation_id| conversation_id == server_token.as_str())
+        }) {
+            return Some(entry::entry_for_task(task, history_model, app));
+        }
+
+        let conversation_id = history_model.find_conversation_id_by_server_token(server_token)?;
+        if let Some(task) = self.tasks.values().find(|task| {
+            entry::conversation_id_shadowed_by_task(task, history_model) == Some(conversation_id)
+        }) {
+            return Some(entry::entry_for_task(task, history_model, app));
+        }
+
+        self.get_entry_by_id(
+            &AgentConversationEntryId::Conversation(conversation_id),
+            app,
+        )
+    }
+
+    fn task_id_for_server_token(
+        &self,
+        server_token: &ServerConversationToken,
+    ) -> Option<AmbientAgentTaskId> {
+        self.tasks.values().find_map(|task| {
+            task.conversation_id()
+                .is_some_and(|conversation_id| conversation_id == server_token.as_str())
+                .then_some(task.task_id)
+        })
+    }
+
+    fn parse_session_id(session_id: &str) -> Option<SessionId> {
+        match session_id.parse::<SessionId>() {
+            Ok(session_id) => Some(session_id),
+            Err(e) => {
+                log::warn!("Failed to parse shared session ID: {e}");
+                None
+            }
+        }
     }
 
     fn handle_history_event(
