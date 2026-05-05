@@ -105,12 +105,12 @@ use warpui::{
     ViewHandle,
 };
 
+#[cfg(feature = "local_fs")]
+pub(crate) use self::environment_selector::sort_environments_by_recency;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::Timer;
 
-pub(crate) use self::environment_selector::{
-    sort_environments_by_recency, EnvironmentSelector, EnvironmentSelectorEvent,
-};
+pub(crate) use self::environment_selector::{EnvironmentSelector, EnvironmentSelectorEvent};
 #[cfg(not(target_family = "wasm"))]
 use crate::server::telemetry::PluginChipTelemetryAction;
 #[cfg(not(target_family = "wasm"))]
