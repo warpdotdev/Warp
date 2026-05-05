@@ -199,6 +199,7 @@ tikv-jemallocator = { version = "0.6", optional = true, features = [
     "override_allocator_on_supported_platforms",
 ] }
 toml = "0.8.13"
+toml_edit.workspace = true
 tracing.workspace = true
 ui_components.workspace = true
 unicase = "2.7.0"
@@ -348,11 +349,11 @@ nix = { workspace = true, features = [
     "mman",
 ] }
 
-[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
 crash-handler = { version = "0.6.3", optional = true }
 minidumper = { version = "0.8.3", optional = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
 freedesktop-desktop-entry = "0.5.0"
 x11rb.workspace = true
 zbus.workspace = true

@@ -692,6 +692,9 @@ impl TryFrom<AIAgentActionResult> for api::request::input::user_inputs::user_inp
             AIAgentActionResultType::AskUserQuestion(ask_user_question_result) => {
                 Some(ask_user_question_result.into())
             }
+            AIAgentActionResultType::RunAgents(orchestrate_result) => {
+                Some(orchestrate_result.try_into()?)
+            }
         };
         Ok(
             api::request::input::user_inputs::user_input::Input::ToolCallResult(
@@ -940,7 +943,7 @@ impl From<BlockContext> for api::ExecutedShellCommand {
     }
 }
 
-/// Trys to convert a [`serde_json::Value`] to a [`prost_types::Value`].
+/// Tries to convert a [`serde_json::Value`] to a [`prost_types::Value`].
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
 fn serde_json_to_prost(value: serde_json::Value) -> Result<prost_types::Value, String> {
     use prost_types::value::Kind::*;

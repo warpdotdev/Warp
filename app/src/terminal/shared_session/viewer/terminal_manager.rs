@@ -361,6 +361,12 @@ impl TerminalManager {
             }
         }
 
+        if FeatureFlag::CloudModeSetupV2.is_enabled() {
+            self.model
+                .lock()
+                .block_list_mut()
+                .set_is_executing_oz_environment_startup_commands(true);
+        }
         self.connect_session(
             session_id,
             SharedSessionInitialLoadMode::AppendFollowupScrollback,
@@ -1559,7 +1565,23 @@ impl TerminalManager {
         model
             .lock()
             .clear_write_to_pty_events_for_shared_session_tx();
-        *current_network.lock() = None;
+        if FeatureFlag::HandoffCloudCloud.is_enabled() {
+            terminal_view.update(ctx, |terminal_view, ctx| {
+                if let Some(ambient_agent_view_model) =
+                    terminal_view.ambient_agent_view_model().cloned()
+                {
+                    ambient_agent_view_model.update(ctx, |model, _| {
+                        model.record_ambient_execution_ended(ended_session_id);
+                    });
+                }
+                terminal_view.on_ambient_agent_execution_ended(ctx);
+            });
+        }
+        if Self::current_network(current_network)
+            .is_some_and(|network| network.as_ref(ctx).session_id() == ended_session_id)
+        {
+            *current_network.lock() = None;
+        }
         true
     }
 }

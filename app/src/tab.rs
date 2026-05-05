@@ -601,6 +601,16 @@ pub struct TabComponent<'a> {
     tooltip_git_branch: Option<String>,
     is_drag_target: bool,
     background_opacity: u8,
+    /// Set to `true` when this `TabComponent` is being rendered inside the
+    /// floating chip overlay used during a cross-window tab drag. In that
+    /// mode `build()` skips the outer `SavePosition`, `Draggable`, and
+    /// `DropTarget` wrappers so the chip:
+    ///   * does not write to `tab_position_id(tab_index)` in the target
+    ///     window's position cache (which would corrupt
+    ///     `tab_insertion_index_for_cursor` and cause the empty-slot
+    ///     flicker), and
+    ///   * does not act as its own draggable / drop target.
+    for_drag_ghost: bool,
 }
 
 /// Structure that holds TabComponent styles.
@@ -755,7 +765,15 @@ impl<'a> TabComponent<'a> {
             tooltip_git_branch,
             is_drag_target,
             background_opacity,
+            for_drag_ghost: false,
         }
+    }
+
+    /// Marks this tab as being rendered inside the floating chip used by the
+    /// cross-window tab drag overlay. See [`TabComponent::for_drag_ghost`].
+    pub fn for_drag_ghost(mut self) -> Self {
+        self.for_drag_ghost = true;
+        self
     }
 
     /// Returns the agent indicator for the focused session's active conversation,
@@ -1442,6 +1460,13 @@ impl<'a> TabComponent<'a> {
                         .into_solid_bias_top_color(),
                 )
                 .finish()
+        } else if self.for_drag_ghost {
+            // The chip overlay is a purely visual snapshot of the source tab.
+            // It must not act as a drop target — both because that's not
+            // semantically meaningful for an element that follows the cursor,
+            // and because the inner `DropTarget`'s position is unrelated to
+            // any real tab in the target window.
+            tab.finish()
         } else {
             DropTarget::new(
                 tab.finish(),
@@ -1472,6 +1497,8 @@ impl UiComponent for TabComponent<'_> {
         let is_any_tab_dragging = self.tab_bar.is_any_tab_dragging;
         let draggable_state = self.tab.draggable_state.clone();
         let mouse_close_state = self.tab.close_mouse_state.clone();
+        // Capture before `self` is moved into the Hoverable closure below.
+        let for_drag_ghost = self.for_drag_ghost;
 
         // Extract values before moving self into closure
         let tooltip_text = self.tooltip_message.clone();
@@ -1656,22 +1683,32 @@ impl UiComponent for TabComponent<'_> {
                 .finish()
         };
 
-        let draggable = Draggable::new(draggable_state, constrained_tab)
-            .on_drag_start(|ctx, _, _| ctx.dispatch_typed_action(WorkspaceAction::StartTabDrag))
-            .on_drag(move |ctx, _, rect, _| {
-                ctx.dispatch_typed_action(WorkspaceAction::DragTab {
-                    tab_index,
-                    tab_position: rect,
-                });
-            })
-            .on_drop(|ctx, _, _, _| ctx.dispatch_typed_action(WorkspaceAction::DropTab));
-        let draggable = if FeatureFlag::DragTabsToWindows.is_enabled() {
-            draggable
+        // Skip the `Draggable` and `SavePosition` wrappers when rendering
+        // the tab inside the cross-window drag chip overlay. Wrapping the
+        // chip in another `Draggable` would interfere with the in-flight
+        // drag, and writing a `SavePosition` keyed by `tab_position_id(0)`
+        // would clobber the target window's real tab 0 entry in the
+        // position cache, breaking `tab_insertion_index_for_cursor`.
+        let full_tab: Box<dyn Element> = if for_drag_ghost {
+            constrained_tab
         } else {
-            draggable.with_drag_axis(DragAxis::HorizontalOnly)
+            let draggable = Draggable::new(draggable_state, constrained_tab)
+                .on_drag_start(|ctx, _, _| ctx.dispatch_typed_action(WorkspaceAction::StartTabDrag))
+                .on_drag(move |ctx, _, rect, _| {
+                    ctx.dispatch_typed_action(WorkspaceAction::DragTab {
+                        tab_index,
+                        tab_position: rect,
+                    });
+                })
+                .on_drop(|ctx, _, _, _| ctx.dispatch_typed_action(WorkspaceAction::DropTab));
+            let draggable = if FeatureFlag::DragTabsToWindows.is_enabled() {
+                draggable
+            } else {
+                draggable.with_drag_axis(DragAxis::HorizontalOnly)
+            };
+            let tab_with_drag: Box<dyn Element> = draggable.finish();
+            SavePosition::new(tab_with_drag, &tab_position_id(tab_index)).finish()
         };
-        let tab_with_drag: Box<dyn Element> = draggable.finish();
-        let full_tab = SavePosition::new(tab_with_drag, &tab_position_id(tab_index)).finish();
 
         if FeatureFlag::NewTabStyling.is_enabled() {
             Shrinkable::new(1.0, full_tab)

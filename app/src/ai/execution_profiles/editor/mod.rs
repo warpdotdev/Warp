@@ -28,6 +28,7 @@ use crate::{
 use ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent};
 use itertools::Itertools;
 use regex::Regex;
+use thousands::Separable;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::fonts::Properties;
 use warpui::platform::Cursor;
@@ -125,7 +126,6 @@ struct TooltipMouseStateHandles {
     call_mcp_servers_tooltip_mouse_state: MouseStateHandle,
     // Separate mouse state handles for text input editors (for workspace override tooltips)
     command_allowlist_editor_tooltip_mouse_state: MouseStateHandle,
-    command_denylist_editor_tooltip_mouse_state: MouseStateHandle,
     directory_allowlist_editor_tooltip_mouse_state: MouseStateHandle,
     mcp_allowlist_editor_tooltip_mouse_state: MouseStateHandle,
     mcp_denylist_editor_tooltip_mouse_state: MouseStateHandle,
@@ -253,6 +253,7 @@ pub struct ExecutionProfileEditorView {
     directory_allowlist_editor: ViewHandle<SubmittableTextInput>,
     command_allowlist_mouse_state_handles: Vec<MouseStateHandle>,
     command_denylist_mouse_state_handles: Vec<MouseStateHandle>,
+    command_denylist_tooltip_mouse_state_handles: Vec<MouseStateHandle>,
     directory_allowlist_mouse_state_handles: Vec<MouseStateHandle>,
     mcp_allowlist_dropdown: ViewHandle<FilterableDropdown<ExecutionProfileEditorViewAction>>,
     mcp_allowlist_mouse_state_handles: Vec<MouseStateHandle>,
@@ -514,7 +515,7 @@ impl ExecutionProfileEditorView {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_buffer_text(&initial_context_window_value.to_string(), ctx);
+            editor.set_buffer_text(&initial_context_window_value.separate_with_commas(), ctx);
             editor
         });
         let last_synced_context_window_editor_value = Some(initial_context_window_value);
@@ -628,6 +629,11 @@ impl ExecutionProfileEditorView {
             directory_allowlist_editor,
             command_allowlist_mouse_state_handles,
             command_denylist_mouse_state_handles,
+            command_denylist_tooltip_mouse_state_handles: profile_data
+                .command_denylist
+                .iter()
+                .map(|_| Default::default())
+                .collect(),
             directory_allowlist_mouse_state_handles,
             mcp_allowlist_dropdown,
             mcp_allowlist_mouse_state_handles,
@@ -803,6 +809,7 @@ impl ExecutionProfileEditorView {
         ctx.subscribe_to_model(&workspace, |me, workspace, event, ctx| {
             if let UserWorkspacesEvent::TeamsChanged = event {
                 Self::update_all_editor_interaction_states(me, workspace, ctx);
+                me.update_mouse_state_handles(ctx);
                 ctx.notify();
             }
         });
@@ -840,6 +847,12 @@ impl ExecutionProfileEditorView {
             .collect();
 
         self.command_denylist_mouse_state_handles = current_permissions
+            .command_denylist
+            .iter()
+            .map(|_| Default::default())
+            .collect();
+
+        self.command_denylist_tooltip_mouse_state_handles = current_permissions
             .command_denylist
             .iter()
             .map(|_| Default::default())
@@ -1276,7 +1289,7 @@ impl ExecutionProfileEditorView {
 
         Self::update_editor_interaction_state(
             view.command_denylist_editor.as_ref(ctx).editor().clone(),
-            is_any_ai_enabled && !ai_autonomy_settings.has_override_for_execute_commands_denylist(),
+            is_any_ai_enabled,
             ctx,
         );
 
@@ -1366,14 +1379,14 @@ impl ExecutionProfileEditorView {
             return;
         };
 
-        let formatted = value.to_string();
+        let formatted = value.separate_with_commas();
         let should_update = if force {
             true
         } else {
             match self.last_synced_context_window_editor_value {
                 Some(last_value) => {
                     self.context_window_editor.as_ref(ctx).buffer_text(ctx)
-                        == last_value.to_string()
+                        == last_value.separate_with_commas()
                 }
                 None => true,
             }
@@ -1495,7 +1508,7 @@ impl TypedActionView for ExecutionProfileEditorView {
                 // in the input box without persisting to the profile yet.
                 // Persistence happens on SetContextWindowSize (drop / commit).
                 if self.configurable_context_window(ctx).is_some() {
-                    let formatted = value.to_string();
+                    let formatted = value.separate_with_commas();
                     self.context_window_editor.update(ctx, |editor, ctx| {
                         editor.system_reset_buffer_text(&formatted, ctx);
                     });

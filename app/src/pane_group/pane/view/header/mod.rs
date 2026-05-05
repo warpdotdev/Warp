@@ -821,9 +821,9 @@ impl<P: BackingView> View for PaneHeader<P> {
     }
 }
 
-/// Based on the drag position and target pane, calcuates which direction the pane should move.
+/// Based on the drag position and target pane, calculates which direction the pane should move.
 ///
-/// We determine the split by dividing the pane into four quadrants, each refering to a split direction:
+/// We determine the split by dividing the pane into four quadrants, each referring to a split direction:
 /// +--------+
 /// |\ up   /|
 /// | \    / |

@@ -4,7 +4,7 @@ mod str_index_map;
 mod swash_rasterizer;
 mod text_layout;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod linux;
 
 #[cfg(target_os = "windows")]
@@ -60,7 +60,7 @@ struct FontFamily {
     fonts: Vec<FontHandle>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod loader {
     use super::*;
     use crate::windowing::winit::fonts::linux::{Error, FontconfigLoader};
@@ -115,7 +115,7 @@ mod loader {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "windows")))]
 mod loader {
     use super::*;
     #[cfg(not(target_family = "wasm"))]
@@ -159,7 +159,7 @@ fn load_font_family_from_bytes(name: &str, font_bytes: Vec<Vec<u8>>) -> Result<F
 }
 
 /// Enum indicating whether font validation should enforce that the font supports the english language.
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))]
 #[derive(Copy, Clone)]
 enum ValidateFontSupportsEn {
     Yes,

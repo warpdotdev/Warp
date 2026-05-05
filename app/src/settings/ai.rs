@@ -1728,11 +1728,7 @@ impl AISettings {
     }
 
     pub fn is_command_denylist_editable(&self, app: &AppContext) -> bool {
-        let set_by_workspace = UserWorkspaces::as_ref(app)
-            .ai_autonomy_settings()
-            .has_override_for_execute_commands_denylist();
-
-        self.is_any_ai_enabled(app) && !set_by_workspace
+        self.is_any_ai_enabled(app)
     }
 
     pub fn is_command_allowlist_editable(&self, app: &AppContext) -> bool {

@@ -178,7 +178,7 @@ impl ToSentryTags for CrashRecoveryMetadata {
     }
 }
 
-/// Initializes the crash reporting susbsystem.  Returns whether or not crash
+/// Initializes the crash reporting subsystem.  Returns whether or not crash
 /// reporting is active.
 pub(crate) fn init(ctx: &mut AppContext) -> bool {
     if !FeatureFlag::CrashReporting.is_enabled() {

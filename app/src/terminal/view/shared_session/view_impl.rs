@@ -1,5 +1,7 @@
 //! [`TerminalView`]-specific implementation for shared sessions.
 
+use crate::ai::agent_conversations_model::AgentConversationsModel;
+use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::auth::UserUid;
 use crate::context_chips::ContextChipKind;
@@ -69,6 +71,8 @@ use super::adapter::{Adapter, Kind, Participant};
 use super::sharer::inactivity_modal::InactivityModalEvent;
 use super::sharer::Sharer;
 use super::viewer::Viewer;
+#[cfg(not(target_family = "wasm"))]
+use super::ConversationEndedTombstoneEvent;
 use super::ConversationEndedTombstoneView;
 
 impl TerminalView {
@@ -116,6 +120,44 @@ impl TerminalView {
             self.shared_session_source_type(),
             Some(SessionSourceType::AmbientAgent { .. })
         )
+    }
+
+    pub(in crate::terminal::view) fn owned_ambient_agent_task_id(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<AmbientAgentTaskId> {
+        let task_id = self.model.lock().ambient_agent_task_id()?;
+        self.is_current_user_creator_of_ambient_task(task_id, ctx)
+            .then_some(task_id)
+    }
+
+    fn is_current_user_creator_of_ambient_task(
+        &self,
+        task_id: AmbientAgentTaskId,
+        ctx: &AppContext,
+    ) -> bool {
+        let Some(current_user_uid) = self.auth_state.user_id().map(|uid| uid.as_string()) else {
+            return false;
+        };
+
+        AgentConversationsModel::as_ref(ctx)
+            .get_task_data(&task_id)
+            .and_then(|task| task.creator.map(|creator| creator.uid))
+            .is_some_and(|creator_uid| creator_uid == current_user_uid)
+    }
+
+    pub(in crate::terminal::view) fn enable_owned_cloud_followup_input(
+        &mut self,
+        task_id: AmbientAgentTaskId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.pending_cloud_followup_task_id = Some(task_id);
+        self.input.update(ctx, |input, ctx| {
+            input.reset_after_cloud_followup_submission(ctx);
+            input.set_input_mode_agent(true, ctx);
+        });
+        self.update_pane_configuration(ctx);
+        ctx.notify();
     }
 
     pub(super) fn handle_viewer_role_change_menu_event(
@@ -663,7 +705,7 @@ impl TerminalView {
         if FeatureFlag::CloudMode.is_enabled()
             && matches!(source_type, SessionSourceType::AmbientAgent { .. })
         {
-            self.maybe_auto_open_cloud_mode_details_panel(ctx);
+            self.maybe_auto_open_conversation_details_panel(ctx);
         }
 
         send_telemetry_from_ctx!(
@@ -682,11 +724,13 @@ impl TerminalView {
     /// Clear the presence manager and handle any UI necessary on shared session end.
     /// Applies to both sharer and viewer when the session sharing ends.
     pub fn on_session_share_ended(&mut self, ctx: &mut ViewContext<Self>) {
+        let viewed_ambient_task_id_owned_by_current_user = self.owned_ambient_agent_task_id(ctx);
         let should_insert_tombstone = {
             let model = self.model.lock();
             FeatureFlag::CloudModeSetupV2.is_enabled()
                 && model.is_shared_ambient_agent_session()
-                && !self.has_inserted_conversation_ended_tombstone
+                && viewed_ambient_task_id_owned_by_current_user.is_none()
+                && self.conversation_ended_tombstone_view_id.is_none()
                 && !model.is_receiving_agent_conversation_replay()
         };
         if should_insert_tombstone {
@@ -727,13 +771,17 @@ impl TerminalView {
             });
         });
 
-        // When the session is ended, the input should be uneditable iff this is a viewer.
-        if self.model.lock().shared_session_status().is_viewer() {
-            self.input().update(ctx, |input, ctx| {
-                input.editor().update(ctx, |editor, ctx| {
-                    editor.set_interaction_state(InteractionState::Selectable, ctx);
+        if self.pending_cloud_followup_task_id.is_none() {
+            if let Some(task_id) = viewed_ambient_task_id_owned_by_current_user {
+                self.enable_owned_cloud_followup_input(task_id, ctx);
+            } else if self.model.lock().shared_session_status().is_viewer() {
+                // When the session is ended, the input should be uneditable iff this is a viewer.
+                self.input().update(ctx, |input, ctx| {
+                    input.editor().update(ctx, |editor, ctx| {
+                        editor.set_interaction_state(InteractionState::Selectable, ctx);
+                    });
                 });
-            });
+            }
         }
 
         self.pane_configuration.update(ctx, |pane_config, ctx| {
@@ -742,6 +790,72 @@ impl TerminalView {
             pane_config.notify_header_content_changed(ctx);
             ctx.notify();
         });
+    }
+
+    pub fn on_ambient_agent_execution_ended(&mut self, ctx: &mut ViewContext<Self>) {
+        let has_live_shared_session = {
+            let status = self.model.lock().shared_session_status().clone();
+            status.is_active_viewer() || status.is_active_sharer()
+        };
+        self.handle_non_running_ambient_agent_task(has_live_shared_session, ctx);
+    }
+
+    fn handle_non_running_ambient_agent_task(
+        &mut self,
+        has_live_shared_session: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
+            AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
+                model.mark_task_execution_ended(task_id, ctx);
+            });
+        }
+        self.refresh_conversation_details_panel_if_open(ctx);
+        if !FeatureFlag::HandoffCloudCloud.is_enabled()
+            || !FeatureFlag::CloudModeSetupV2.is_enabled()
+            || self.conversation_ended_tombstone_view_id.is_some()
+            || self.pending_cloud_followup_task_id.is_some()
+        {
+            return;
+        }
+        if let Some(task_id) = self.owned_ambient_agent_task_id(ctx) {
+            if !has_live_shared_session {
+                self.enable_owned_cloud_followup_input(task_id, ctx);
+            }
+            return;
+        }
+
+        self.insert_conversation_ended_tombstone(ctx);
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn start_cloud_followup_from_tombstone(
+        &mut self,
+        task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::HandoffCloudCloud.is_enabled() {
+            return;
+        }
+
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
+            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
+            return;
+        };
+
+        if ambient_agent_view_model.as_ref(ctx).task_id() != Some(task_id) {
+            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
+            return;
+        }
+        self.remove_conversation_ended_tombstone(ctx);
+
+        self.pending_cloud_followup_task_id = Some(task_id);
+        self.input.update(ctx, |input, ctx| {
+            input.reset_after_cloud_followup_submission(ctx);
+            input.set_input_mode_agent(true, ctx);
+        });
+        self.focus_input_box(ctx);
+        ctx.notify();
     }
 
     pub fn handle_inactivity_modal_event(
@@ -1287,7 +1401,7 @@ impl TerminalView {
         // This avoids a race condition if a viewer receives a role change
         // before catching up, by ensuring the view is still pending.
         if self.model.lock().shared_session_status().is_active_viewer() {
-            // If not an active viewer now, role and status will be udpated
+            // If not an active viewer now, role and status will be updated
             // in the call `process_ordered_terminal_event`.
             self.model
                 .lock()
@@ -1543,12 +1657,22 @@ impl TerminalView {
     }
 
     pub fn insert_conversation_ended_tombstone(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.conversation_ended_tombstone_view_id.is_some() {
+            self.remove_conversation_ended_tombstone(ctx);
+        }
         let task_id = self.model.lock().ambient_agent_task_id();
         let terminal_view_id = self.id();
 
         let tombstone_view_handle = ctx.add_typed_action_view(|ctx| {
             ConversationEndedTombstoneView::new(ctx, terminal_view_id, task_id)
         });
+        #[cfg(not(target_family = "wasm"))]
+        ctx.subscribe_to_view(&tombstone_view_handle, |me, _, event, ctx| match event {
+            ConversationEndedTombstoneEvent::ContinueInCloud { task_id } => {
+                me.start_cloud_followup_from_tombstone(*task_id, ctx);
+            }
+        });
+        let tombstone_view_id = tombstone_view_handle.id();
         self.insert_rich_content(
             None,
             tombstone_view_handle,
@@ -1558,7 +1682,19 @@ impl TerminalView {
             },
             ctx,
         );
-        self.has_inserted_conversation_ended_tombstone = true;
+        self.conversation_ended_tombstone_view_id = Some(tombstone_view_id);
+    }
+
+    fn remove_conversation_ended_tombstone(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(view_id) = self.conversation_ended_tombstone_view_id.take() else {
+            return;
+        };
+        self.model
+            .lock()
+            .block_list_mut()
+            .remove_rich_content(view_id);
+        self.rich_content_views.retain(|rc| rc.view_id() != view_id);
+        ctx.notify();
     }
 
     /// Updates shared session reconnection banner, participant avatars and
@@ -1585,7 +1721,7 @@ impl TerminalView {
             shared_session.on_reconnection_status_changed(is_reconnecting, ctx);
         }
 
-        // Input is diabled for an offline executor and re-enabled when back online.
+        // Input is disabled for an offline executor and re-enabled when back online.
         if self.model.lock().shared_session_status().is_executor() {
             let interaction_state = if is_reconnecting {
                 InteractionState::Selectable

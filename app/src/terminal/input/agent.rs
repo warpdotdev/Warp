@@ -17,6 +17,7 @@ use crate::{
     },
     appearance::Appearance,
     context_chips::spacing::{self},
+    editor::position_id_for_cursor,
     features::FeatureFlag,
     settings::InputModeSettings,
     terminal::{settings::TerminalSettings, view::TerminalAction},
@@ -251,7 +252,9 @@ impl Input {
                 .is_profile_selector()
         {
             column.add_child(ChildView::new(&self.inline_profile_selector_view).finish());
-        } else if self.suggestions_mode_model.as_ref(app).is_slash_commands() {
+        } else if self.suggestions_mode_model.as_ref(app).is_slash_commands()
+            && !self.is_cloud_mode_input_v2_composing(app)
+        {
             column.add_child(ChildView::new(&self.inline_slash_commands_view).finish());
         } else if self.suggestions_mode_model.as_ref(app).is_prompts_menu() {
             column.add_child(ChildView::new(&self.inline_prompts_menu_view).finish());
@@ -361,6 +364,7 @@ impl Input {
                 .on_left_mouse_down(|ctx, _, _| {
                     ctx.dispatch_typed_action(TerminalAction::ClearSelectionsWhenShellMode);
                     ctx.dispatch_typed_action(InputAction::FocusInputBox);
+                    ctx.dispatch_typed_action(InputAction::DismissCloudModeV2SlashCommandsMenu);
                     DispatchEventResult::StopPropagation
                 })
                 .finish()
@@ -393,14 +397,56 @@ impl Input {
             );
         }
 
+        if self.suggestions_mode_model.as_ref(app).is_slash_commands() {
+            if let Some(view) = self.cloud_mode_v2_slash_commands_view.as_ref() {
+                let cursor_position = position_id_for_cursor(self.editor.id());
+                stack.add_positioned_overlay_child(
+                    ChildView::new(view).finish(),
+                    OffsetPositioning::from_axes(
+                        PositioningAxis::relative_to_stack_child(
+                            &cursor_position,
+                            PositionedElementOffsetBounds::WindowByPosition,
+                            OffsetType::Pixel(0.),
+                            AnchorPair::new(XAxisAnchor::Left, XAxisAnchor::Left),
+                        ),
+                        PositioningAxis::relative_to_stack_child(
+                            &cursor_position,
+                            PositionedElementOffsetBounds::Unbounded,
+                            OffsetType::Pixel(4.),
+                            AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top),
+                        ),
+                    ),
+                );
+            }
+        }
+
         if let Some(selected_workflow_state) = self.workflows_state.selected_workflow_state.as_ref()
         {
             if selected_workflow_state.should_show_more_info_view {
-                add_workflow_info_overlay(
-                    &mut stack,
-                    selected_workflow_state,
-                    self.size_info(app).pane_height_px().as_f32(),
-                    menu_positioning,
+                let prompt_position = self.prompt_save_position_id();
+                let workflows_info_view = Container::new(
+                    ChildView::new(&selected_workflow_state.more_info_view).finish(),
+                )
+                .finish();
+                stack.add_positioned_overlay_child(
+                    ConstrainedBox::new(workflows_info_view)
+                        .with_max_width(CLOUD_MODE_V2_MAX_WIDTH)
+                        .with_max_height(self.size_info(app).pane_height_px().as_f32() * 0.35)
+                        .finish(),
+                    OffsetPositioning::from_axes(
+                        PositioningAxis::relative_to_stack_child(
+                            &prompt_position,
+                            PositionedElementOffsetBounds::WindowByPosition,
+                            OffsetType::Pixel(0.),
+                            AnchorPair::new(XAxisAnchor::Left, XAxisAnchor::Left),
+                        ),
+                        PositioningAxis::relative_to_stack_child(
+                            &prompt_position,
+                            PositionedElementOffsetBounds::Unbounded,
+                            OffsetType::Pixel(0.),
+                            AnchorPair::new(YAxisAnchor::Top, YAxisAnchor::Bottom),
+                        ),
+                    ),
                 );
             }
         }
@@ -460,7 +506,7 @@ impl Input {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(CLOUD_MODE_V2_TOP_ROW_GAP);
 
-        column.add_child(self.render_cloud_mode_v2_top_row());
+        column.add_child(self.render_cloud_mode_v2_top_row(app));
         column.add_child(self.render_cloud_mode_v2_input_container(appearance, app));
         Align::new(
             ConstrainedBox::new(column.finish())
@@ -482,14 +528,17 @@ impl Input {
         Some(ChildView::new(view).finish())
     }
 
-    fn render_cloud_mode_v2_top_row(&self) -> Box<dyn Element> {
+    fn render_cloud_mode_v2_top_row(&self, app: &AppContext) -> Box<dyn Element> {
         let mut row = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(CLOUD_MODE_V2_TOP_ROW_INNER_GAP);
 
+        // Only show the host selector when a default host is configured.
         if let Some(host) = self.host_selector() {
-            row.add_child(ChildView::new(host).finish());
+            if host.as_ref(app).has_default_host() {
+                row.add_child(ChildView::new(host).finish());
+            }
         }
         if let Some(harness_selector) = self.harness_selector() {
             row.add_child(ChildView::new(harness_selector).finish());

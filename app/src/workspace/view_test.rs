@@ -268,7 +268,7 @@ fn transferred_tab_workspace(
                 vertical_tabs_panel_open,
                 right_panel_open: false,
                 is_right_panel_maximized: false,
-                for_drag_preview: false,
+                is_tab_drag_preview: false,
             },
             ctx,
         )

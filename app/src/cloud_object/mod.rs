@@ -382,7 +382,7 @@ pub trait CloudObject: Debug {
         true
     }
 
-    /// Sets the content change status on this object's metadat
+    /// Sets the content change status on this object's metadata
     fn set_pending_content_changes_status(
         &mut self,
         pending_content_changes_status: CloudObjectSyncStatus,

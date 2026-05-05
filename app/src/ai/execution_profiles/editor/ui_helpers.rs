@@ -7,6 +7,7 @@ use crate::view_components::{Dropdown, SubmittableTextInput};
 use crate::Appearance;
 use crate::TemplatableMCPServerManager;
 use pathfinder_geometry::vector::vec2f;
+use thousands::Separable;
 use uuid::Uuid;
 use warp_core::features::FeatureFlag;
 use warpui::elements::Dismiss;
@@ -315,8 +316,8 @@ fn render_context_window_row(
     )
     .with_color(appearance.theme().active_ui_text_color().into())
     .finish();
-    let min_label_text = min.to_string();
-    let max_label_text = max.to_string();
+    let min_label_text = min.separate_with_commas();
+    let max_label_text = max.separate_with_commas();
     let desc = Text::new(
         "The base model's working memory — how many tokens of your conversation, code, and documents it can consider at once. Larger windows enable longer conversations and more coherent responses over bigger codebases, at the cost of higher latency and compute usage.".to_string(),
         appearance.ui_font_family(),
@@ -664,10 +665,12 @@ where
             item: display_fn(&item),
             mouse_state_handle,
             on_remove_action: on_remove_action(item),
+            is_disabled: !is_editable,
+            tooltip_mouse_state: None,
         })
         .collect();
 
-    let list = render_input_list(None, input_items, editor, !is_editable, appearance);
+    let list = render_input_list(None, input_items, editor, appearance);
     let list_element = if !is_editable {
         wrap_disabled_with_workspace_override_tooltip(list, tooltip_mouse_state, appearance)
     } else {
@@ -747,24 +750,59 @@ fn render_command_denylist_section(
     appearance: &Appearance,
     app: &warpui::AppContext,
 ) -> Box<dyn Element> {
-    let ai_settings = AISettings::as_ref(app);
-    let is_editable = ai_settings.is_command_denylist_editable(app);
+    use crate::ai::blocklist::BlocklistAIPermissions;
 
-    render_list_section(
+    let ai_disabled = !AISettings::as_ref(app).is_any_ai_enabled(app);
+    let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(app);
+    let mut tooltip_idx = 0usize;
+
+    let input_items: Vec<InputListItem<ExecutionProfileEditorViewAction>> = profile_data
+        .command_denylist
+        .iter()
+        .cloned()
+        .zip(view.command_denylist_mouse_state_handles.iter().cloned())
+        .rev()
+        .map(|(predicate, mouse_state_handle)| {
+            let is_org = org_denylist.contains(&predicate);
+            let tooltip_mouse_state = if is_org {
+                let handle = view
+                    .command_denylist_tooltip_mouse_state_handles
+                    .get(tooltip_idx)
+                    .cloned();
+                tooltip_idx += 1;
+                handle
+            } else {
+                None
+            };
+            InputListItem {
+                item: predicate.to_string(),
+                mouse_state_handle,
+                on_remove_action: ExecutionProfileEditorViewAction::RemoveFromCommandDenylist {
+                    predicate,
+                },
+                is_disabled: is_org || ai_disabled,
+                tooltip_mouse_state,
+            }
+        })
+        .collect();
+
+    let list = render_input_list(
+        None,
+        input_items,
+        Some(&view.command_denylist_editor),
+        appearance,
+    );
+
+    let mut column = Flex::column().with_child(create_section_header(
         "Command denylist",
         "Regular expressions to match commands that Oz should always ask permission to execute.",
-        &profile_data.command_denylist,
-        &view.command_denylist_mouse_state_handles,
-        Some(&view.command_denylist_editor),
-        None,
-        |predicate| ExecutionProfileEditorViewAction::RemoveFromCommandDenylist { predicate },
-        |item| item.to_string(),
         appearance,
-        is_editable,
-        view.tooltip_mouse_state_handles
-            .command_denylist_editor_tooltip_mouse_state
-            .clone(),
-    )
+    ));
+    column = column.with_child(list);
+
+    Container::new(column.finish())
+        .with_margin_bottom(16.)
+        .finish()
 }
 
 fn display_mcp_name(uuid: &Uuid, app: &AppContext) -> String {

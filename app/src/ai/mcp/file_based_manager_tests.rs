@@ -3,7 +3,7 @@ use crate::ai::mcp::FileMCPWatcher;
 use crate::ai::mcp::ParsedTemplatableMCPServerResult;
 use crate::auth::AuthStateProvider;
 use crate::settings::{AISettings, FocusedTerminalInfo};
-use crate::warp_managed_paths_watcher::{warp_data_dir, WarpManagedPathsWatcher};
+use crate::warp_managed_paths_watcher::{warp_managed_mcp_config_path, WarpManagedPathsWatcher};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use repo_metadata::{
     repositories::DetectedRepositories, watcher::DirectoryWatcher, RepoMetadataModel,
@@ -255,28 +255,37 @@ fn test_update_file_based_servers_removes_unreferenced_servers() {
     });
 }
 
-/// A globally-scoped Warp installation always auto-spawns, regardless of the
-/// `file_based_mcp_enabled` toggle.
+/// A Warp-global installation detected from the managed `~/.warp*/.mcp.json`
+/// watcher uses the home directory as its logical root and still always
+/// auto-spawns.
 #[test]
-fn test_global_warp_server_always_spawns() {
+fn test_global_warp_server_from_managed_home_root_always_spawns() {
     let _flag_guard = FeatureFlag::FileBasedMcp.override_enabled(true);
-    let warp_root = warp_data_dir();
+    let Some(warp_mcp_config_path) = warp_managed_mcp_config_path() else {
+        return;
+    };
     let parsed = parse_mcp_json(r#"{"global-warp": {"command": "npx", "args": ["warp"]}}"#);
 
     App::test((), |mut app| async move {
         let manager = setup_app(&mut app);
         let events = subscribe_events(&mut app, &manager);
 
-        // Toggle is off by default; global Warp server should still spawn.
+        // Toggle is off by default; the watcher-produced Warp root should still
+        // be classified as the global Warp config and auto-spawn.
         manager.update(&mut app, |m, ctx| {
-            m.apply_parsed_servers(warp_root.clone(), MCPProvider::Warp, parsed, ctx);
+            m.apply_parsed_servers(
+                warp_mcp_config_path.root_path.clone(),
+                MCPProvider::Warp,
+                parsed,
+                ctx,
+            );
         });
 
         events.update(&mut app, |e, _| {
             assert_eq!(
                 e.spawned_uuids.len(),
                 1,
-                "Global Warp server should auto-spawn regardless of toggle"
+                "Managed Warp MCP config should auto-spawn regardless of toggle"
             );
         });
 
@@ -287,13 +296,12 @@ fn test_global_warp_server_always_spawns() {
         events.update(&mut app, |e, _| {
             assert!(
                 e.despawned_uuids.is_empty(),
-                "Global Warp server should never be despawned by toggle changes, got: {:?}",
+                "Managed Warp MCP config should never be despawned by toggle changes, got: {:?}",
                 e.despawned_uuids
             );
         });
     });
 }
-
 /// A globally-scoped non-Warp installation only auto-spawns when the toggle is on.
 #[test]
 fn test_global_non_warp_server_respects_toggle() {

@@ -1507,7 +1507,7 @@ impl AppearanceSettingsPageView {
         // If we're on a non-Linux platform, render the dropdown item in the
         // actual font.  We currently don't do this on Linux because
         // pre-loading all of the fonts is too expensive.
-        if cfg!(not(target_os = "linux")) {
+        if cfg!(not(any(target_os = "linux", target_os = "freebsd"))) {
             if let Some(family_id) = ctx.font_cache().family_id_for_name(&font_name) {
                 initial_dropdown_item = initial_dropdown_item.with_font_override(family_id);
             }
@@ -1916,7 +1916,7 @@ impl AppearanceSettingsPageView {
                         // If we're on a non-Linux platform, render the dropdown item in the
                         // actual font.  We currently don't do this on Linux because
                         // pre-loading all of the fonts is too expensive.
-                        if cfg!(not(target_os = "linux")) {
+                        if cfg!(not(any(target_os = "linux", target_os = "freebsd"))) {
                             if let Some(family_id) = family {
                                 dropdown = dropdown.with_font_override(*family_id)
                             }
@@ -1977,7 +1977,7 @@ impl AppearanceSettingsPageView {
                     // If we're on a non-Linux platform, render the dropdown item in the
                     // actual font.  We currently don't do this on Linux because
                     // pre-loading all of the fonts is too expensive.
-                    if cfg!(not(target_os = "linux")) {
+                    if cfg!(not(any(target_os = "linux", target_os = "freebsd"))) {
                         if let Some(family_id) = family {
                             dropdown = dropdown.with_font_override(*family_id)
                         }

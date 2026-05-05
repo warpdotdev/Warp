@@ -13,8 +13,8 @@ use warpui::ui_components::button::ButtonVariant;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::{
     AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters, ArtifactFilter,
-    ConversationOrTask, CreatedOnFilter, CreatorFilter, EnvironmentFilter, HarnessFilter,
-    OwnerFilter, SessionStatus, SourceFilter, StatusFilter,
+    ConversationOrTask, ConversationUpdateKind, CreatedOnFilter, CreatorFilter, EnvironmentFilter,
+    HarnessFilter, OwnerFilter, SessionStatus, SourceFilter, StatusFilter,
 };
 use crate::ai::agent_management::agent_type_selector::{
     AgentType, AgentTypeSelector, AgentTypeSelectorEvent,
@@ -1237,10 +1237,8 @@ impl AgentManagementView {
                 self.refresh_details_panel_if_needed(ctx);
                 self.get_tasks_from_model(ctx);
             }
-            AgentConversationsModelEvent::ConversationUpdated => {
-                self.get_tasks_from_model(ctx);
-                self.refresh_details_panel_if_needed(ctx);
-                ctx.notify();
+            AgentConversationsModelEvent::ConversationUpdated { kind } => {
+                self.handle_conversation_updated(*kind, ctx);
             }
             AgentConversationsModelEvent::ConversationArtifactsUpdated { conversation_id } => {
                 self.update_artifacts_for_conversation(*conversation_id, ctx);
@@ -1254,6 +1252,39 @@ impl AgentManagementView {
         if let Some(item_id) = self.selected_item_id.clone() {
             self.update_details_panel_for_item(&item_id, ctx);
         }
+    }
+
+    /// Decide how much work a `ConversationUpdated` event requires, based on its kind and the
+    /// active status filter:
+    /// * `Restored`: the underlying status didn't change, so the visible cards don't change
+    ///   either. Just refresh the details panel.
+    /// * `StatusSet` that crosses the active status filter: rebuild the
+    ///   card list via `get_tasks_from_model`.
+    /// * `StatusSet` that doesn't cross the active filter (or `All` is active):
+    ///   just refresh the details panel re-render so the status icon picks up the new value.
+    fn handle_conversation_updated(
+        &mut self,
+        kind: ConversationUpdateKind,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match kind {
+            ConversationUpdateKind::Restored => {}
+            ConversationUpdateKind::StatusSet {
+                prev_filter,
+                new_filter,
+            } => {
+                if self
+                    .filters
+                    .status
+                    .is_membership_crossed(prev_filter, new_filter)
+                {
+                    self.get_tasks_from_model(ctx);
+                } else {
+                    ctx.notify();
+                }
+            }
+        }
+        self.refresh_details_panel_if_needed(ctx);
     }
 
     /// Update the details panel with fresh data for the given item.
