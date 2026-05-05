@@ -5,30 +5,33 @@ Figma: none provided
 
 ## Summary
 
-Clicking an image file in the File Tree currently routes through the binary-file fallback and hands the file to the OS default app, or for SVG opens raw XML in the Code Editor. v1 fixes this by routing supported image extensions through the existing **Lightbox** overlay component, which already knows how to render an image, dim the workspace behind a scrim, dismiss on Escape / scrim-click / × button, and step through a list of images with Left and Right arrows. The Lightbox is a transient overlay over the workspace, not a new tab variant; it is not draggable, splittable, or restored across sessions.
+Clicking a supported image file (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`) in the File Tree currently routes through the binary-file fallback and hands the file to the OS default app, or, for SVG, opens raw XML in the Code Editor. v1 fixes this by routing those extensions through the existing **Lightbox** overlay component, which already renders a single image, dims the workspace behind a scrim, and dismisses on Escape, scrim-click, or close button.
+
+v1 is intentionally minimal: a **single, fully modal, single-image** Lightbox. No sibling navigation, no zoom, no animated playback, no thumbnail strip. Those are tracked as follow-ups so v1 can ship without coupling to features that need more design and implementation work.
 
 ## Problem
 
-Warp's File Tree treats every clicked file as a candidate for the Code Editor or for the OS default app. For image files this means the user either gets bumped out to Finder/Preview (raster formats hit `is_binary_file` and fall through to `FileTarget::SystemGeneric`) or sees raw XML (SVG is text-classified and lands in the Code Editor). There is no way today to glance at an image asset (an icon, a screenshot, a logo, an SVG) from inside Warp without leaving the window.
+For image files the File Tree either bumps the user out to Finder/Preview (raster formats hit `is_binary_file` and fall through to `FileTarget::SystemGeneric`) or shows raw XML (SVG is text-classified and lands in the Code Editor). There is no way today to glance at an image asset (an icon, a screenshot, a logo, an SVG) from inside Warp without leaving the window.
 
-The maintainer-preferred shape for v1 is the existing Lightbox component. It already renders an image with `Image::new(asset_source).contain()`, has open/close/replace lifecycle driven by `WorkspaceAction::OpenLightbox` and `UpdateLightboxImage`, supports a multi-image array with prev/next navigation, and overlays the active workspace without disturbing tab and split state. Reusing it gives users a fast preview affordance in one release without committing the codebase to a parallel "image tab" surface that would need its own restore, dragging, splitting, and persistence story.
+The maintainer-preferred shape for v1 is the existing Lightbox component. It already renders an image with `Image::new(asset_source).contain()`, has open/close lifecycle driven by `WorkspaceAction::OpenLightbox`, and overlays the active workspace without disturbing tab and split state. Reusing it gives users a fast preview affordance in one release without committing the codebase to a parallel "image tab" surface that would need its own restore, dragging, splitting, and persistence story.
 
 ## Goals
 
-- Clicking a supported image file (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`) in the File Tree opens the existing Lightbox overlay over the active workspace window.
-- The Lightbox uses the existing image rendering pipeline (`Image::new(...).contain()` backed by `ImageType` in `crates/warpui_core/src/image_cache.rs`); no new image-rendering code is introduced.
-- Left / Right arrow keys, with the Lightbox focused, step through other supported image files in the same directory, sorted by case-insensitive natural filename order. Navigation does not wrap.
-- Loading and decode-error states for the active image surface inside the Lightbox without crashing or blocking neighbour navigation.
-- Telemetry distinguishes the image-preview open path from the existing `MarkdownViewer`, `CodeEditor`, and `SystemGeneric` open paths, via the existing `CodePanelsFileOpened.target` field.
-- The decode path enforces a maximum image dimension and a maximum decoded-pixel cap so a maliciously large or malformed file cannot exhaust process memory.
+- Clicking a supported image file (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`) in the File Tree opens the existing Lightbox overlay over the active workspace window, showing only that one image.
+- The Lightbox uses the existing image rendering pipeline (`Image::new(...).contain()` backed by `ImageType` in `crates/warpui_core/src/image_cache.rs`); no new image-rendering element is introduced.
+- Loading and decode-error states for the image surface inside the Lightbox without crashing.
+- Pre-read and per-decode size limits so a maliciously large or malformed file cannot exhaust process memory before or during decode.
+- Telemetry distinguishes the image-preview open path from the existing `MarkdownViewer`, `CodeEditor`, and `SystemGeneric` open paths via the existing `CodePanelsFileOpened.target` field.
 
 ## Non-goals
 
+- **Sibling navigation.** Left/Right arrow keys do not step through other images in the directory in v1. The Lightbox is single-image only. Sibling navigation is tracked as a follow-up.
 - Zoom (`Cmd+=`, `Cmd+-`, `Cmd+0`), trackpad pinch-zoom, click-drag pan.
 - Status footer (filename, pixel dimensions, file size, format string).
-- Animation play/pause control and persistent pause state across navigation.
+- Continuous playback of animated GIF/WebP in the Lightbox. v1 reuses today's Lightbox rendering, which already shows only the first frame because it never calls the GPUI `Image::enable_animation_with_start_time` plumbing. v1 hardens the global decoder against pathological animated input (frame-count and total-pixel budgets), but the changelog section continues to animate exactly as today; no animated surface that exists today is regressed.
+- Animation play/pause control and persistent pause state.
 - EXIF orientation rotation and embedded ICC color profile honoring.
-- A visible thumbnail strip in the Lightbox (the sibling list exists internally to drive arrow navigation; it is not rendered).
+- Visible thumbnail strip.
 - Format support beyond `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`. HEIC, HEIF, BMP, TIFF, AVIF, ICO are out of scope for v1.
 - Magic-byte content sniffing when extension and content disagree.
 - Right-click context menu on the image (Copy Image, Copy file path, Reveal in Finder, Attach as Agent context).
@@ -46,34 +49,23 @@ The maintainer-preferred shape for v1 is the existing Lightbox component. It alr
 - Keyboard-only entry uses the same path: navigating to the file in the tree with the arrow keys and pressing Enter opens the Lightbox identically to a click. (The File Tree's keyboard activation already resolves through the same `open_file` function as the click path.)
 - The Lightbox attaches to the workspace window that initiated the click; multi-window users see the overlay only on the originating window, since `Workspace.lightbox_view` is per-workspace.
 
+### Modality (the Lightbox is fully modal in v1)
+
+While the Lightbox is open, **the entire workspace window is inert**, including the File Tree, terminal panes, Code Editor panes, and tab bar. The scrim covers the workspace and intercepts pointer input. Keyboard input is routed to the Lightbox.
+
+To open another file, the user dismisses the Lightbox first (Escape, scrim click, or close button), then clicks the next file. There is no "click another file in the File Tree to swap the Lightbox image" path in v1; that interaction is reserved for the sibling-navigation follow-up, where it can be designed deliberately rather than emerging from focus-stealing as a side effect.
+
+This is the same modality contract the Lightbox already enforces in its existing screenshot/artifact use cases. v1 does not loosen it.
+
 ### Inside the Lightbox
 
 - The image renders centered, fit to the viewport via `Image::new(...).contain()`: aspect ratio preserved, never upscaled past the image's native pixel dimensions.
 - The Lightbox renders as a child of the workspace's main render `Stack`, so the scrim covers the whole workspace (all panes are dimmed, not just the active pane). This matches today's screenshot/artifact Lightbox behavior.
 - Underlying panes remain visible behind the scrim and do not receive input while the Lightbox is open.
-- While bytes are still being read or decoded, the existing loading indicator is shown. Arrow-key navigation remains responsive; an in-flight decode never blocks navigation.
-- If an image fails to read or decode, or fails the size/dimension cap, the Lightbox shows a non-blocking error state for that entry that includes the filename. Neighbour navigation still works; no other tab or pane is affected.
+- While bytes are still being read or decoded, the existing loading indicator is shown.
+- If the file fails the pre-read size cap, fails to read, fails to decode, or exceeds the decoded-pixel cap, the Lightbox shows a non-blocking error state that includes the filename and a short reason. The Lightbox never crashes the workspace.
 - SVG renders via the existing `usvg` + `resvg` pipeline used by `ImageType`.
-- Animated GIF and animated WebP files render their **first frame only** in v1. Continuous playback requires the GPUI `Image` element's `enable_animation_with_start_time(Instant)` plumbing and a per-frame redraw loop, which the Lightbox does not wire today; turning that on is tracked as a follow-up so v1 can ship without animation-timing or pause/play UX work. Files still load successfully and the user sees a static preview that is unambiguously the image they clicked.
-
-### Navigation
-
-- Left and Right arrow keys, with the Lightbox focused, navigate to the previous and next supported image files in the same directory as the opened image.
-- Sibling list construction:
-  - The directory is scanned at open time; entries are filtered by `is_supported_image_file` and sorted in case-insensitive natural order so `image2.png` precedes `image10.png`.
-  - Hidden files (those whose name starts with `.`) are included only if the originally clicked file is itself hidden; otherwise they are excluded, matching the File Tree's default visibility.
-  - Symlinks are followed for the entry-type check; broken symlinks are surfaced as the per-entry decode/read error described above and do not block neighbour navigation.
-- Navigation does not wrap. The previous-arrow control is hidden or disabled when the first image is shown; the next-arrow control is hidden or disabled when the last image is shown.
-- Holding an arrow key produces standard OS key-repeat: index advances per repeat event; in-flight decodes for skipped indices are not cancelled but their results are ignored if the index has moved on.
-- If only one supported image exists in the directory, both arrow controls are hidden; the Lightbox renders that single image.
-
-### Opening a second image while one is already open
-
-- Clicking another file in the File Tree shifts focus from the Lightbox to the tree, which fires `LightboxViewEvent::FocusLost`. The existing workspace handler tears down the open Lightbox before any new open path runs. The second click then proceeds through its normal target:
-  - If the second file is a supported image, a fresh Lightbox opens cold on that image. There is no overlay stacking; the previous Lightbox is gone before the new one appears.
-  - If the second file is text/markdown/binary, it opens in its normal target (Code Editor, Markdown viewer, OS default app, external editor) and no Lightbox opens. The Lightbox does not return after the new file is opened.
-- Clicking the same image whose Lightbox was open dismisses (via FocusLost) and re-opens cold on that same image. From the user's perspective this is effectively a no-op (same image still shown), with one quick rebuild of the sibling list.
-- The "replace overlay in place via `update_params`" reuse path that exists in the `OpenLightbox` handler is not exercised by the file-tree click flow because focus always moves first. That reuse path is preserved for non-focus-stealing dispatch sites (today: agent screenshot / artifact Lightboxes) and is not a v1 file-tree concern.
+- Animated GIF and animated WebP files render their **first frame only**. The Lightbox today never calls `Image::enable_animation_with_start_time`, so animated raster formats already render as a static first frame in this surface; v1 reuses that behavior unchanged. Continuous playback in the Lightbox is tracked as a follow-up. No global decoder behavior changes; the changelog section's animated-image rendering is untouched.
 
 ### Dismiss and focus restoration
 
@@ -82,52 +74,74 @@ The maintainer-preferred shape for v1 is the existing Lightbox component. It alr
 
 ### Filesystem mutations during preview
 
-- If the file or its parent directory is deleted, renamed, or moved while the Lightbox is open, the active entry surfaces as a per-entry read or decode error per the rules above. Already-loaded images in the asset cache continue to render. The Lightbox does not refetch on its own; the user can navigate or dismiss.
+- If the file is deleted, renamed, or moved while the Lightbox is open, the entry stays on whatever bytes the asset cache already loaded and renders normally. The Lightbox does not refetch on its own; the user can dismiss and reopen.
+- If the read started but had not completed when the file was removed, the read fails and the Lightbox surfaces the per-entry error state described above.
 
-### Error and limit handling
+### Performance posture
 
-- Decode errors, read errors, and dimension/pixel-cap rejections all surface as the same per-entry error state with the filename shown. The Lightbox never crashes the workspace.
-- Files whose extension is in the supported set but whose decoded pixel count or maximum dimension exceeds the cap (see Goals and the tech spec for exact values) render as the per-entry error state. They do not get a partial render.
+- Image bytes are read on the background executor; the bytes-to-RGBA decode itself runs on the foreground executor (`AssetCache::load_asynchronously` invokes `try_from_bytes` on the foreground executor before publishing the loaded asset). v1 does not change this. The decoder caps below bound the worst-case decode time, and the loading indicator is shown until decode completes; a file that would exceed the caps is rejected at the pre-read step before any decode runs.
+- Moving decode to the background executor is a follow-up that affects every Lightbox surface, not just file-tree previews; it is intentionally not entangled with this v1.
+- The pre-read metadata check also runs on the foreground executor in v1. On a stalled NFS/sshfs/FUSE mount this can briefly freeze the workspace until the FS timeout; v1 accepts this tradeoff to keep the new code path small. Moving the metadata check off-thread is enumerated as part of the same follow-up.
+
+### Limits (visible to the user only as the per-entry error state)
+
+- **Pre-read file-size cap.** Files whose on-disk size exceeds a fixed cap are rejected before the bytes are read into memory. The Lightbox opens directly into the per-entry error state with the filename shown.
+- **Bounded read.** The actual file read is bounded by the same cap, so a file that grows after the metadata check or a symlink to a special device cannot bypass the limit.
+- **Decoded-dimension and decoded-pixel caps.** Files whose declared image dimensions or `width × height` pixel count exceed fixed maximums are rejected at decode time and surface as the per-entry error state.
+- **Animated frame budget.** Animated GIF and animated WebP files whose total frame count or whose summed pixels-across-frames exceed fixed maximums are rejected during decoding (without first materializing every frame into memory).
+- **SVG intrinsic-dimension cap.** SVG files whose declared `<svg width=... height=...>` exceeds a fixed maximum render dimension are rejected at parse time, before rasterization.
+
+The exact cap values are defined in the tech spec. From the user's perspective, the contract is: a normal photo (4000×3000), a typical screenshot, a typical 4K image, a typical icon SVG, and a typical app-asset PNG all open. A multi-gigabyte file, a 65535×65535 decompression bomb, a many-thousand-frame animated WebP, and a 200-byte SVG declaring 200000×200000 dimensions all do not open and do not crash.
 
 ### Accessibility
 
-- The filename of the active image is exposed as the accessible label of the rendered image so screen readers announce it.
-- The keyboard-only entry path described above (tree navigation + Enter, then arrows in the Lightbox, then Escape) is the documented a11y flow.
-- High-contrast mode: the existing scrim color (RGBA 0,0,0,230) and existing close/prev/next button styling are unchanged in v1; behavior is identical to today's Lightbox usage in screenshot/artifact previews.
+- The keyboard-only entry path (tree navigation + Enter, then Escape to dismiss) is the documented a11y flow and is supported via existing keyboard navigation.
+- The active image's filename is rendered as the visible `description` slot in the Lightbox, so it is reachable via standard text-focus a11y traversal.
+- v1 does **not** ship a screen-reader label on the rendered image element itself. The GPUI `Image` element does not currently expose an accessibility-label API; adding that plumbing (so VoiceOver announces "image, screenshot.png" rather than a generic "image") is the first accessibility follow-up. The product spec was previously narrower on this point; verification against the codebase showed the API does not exist, so v1 is honest about what ships.
+- High-contrast mode: the existing scrim color (RGBA 0,0,0,230) and existing close-button styling are unchanged in v1; behavior is identical to today's Lightbox usage in screenshot/artifact previews.
 - Reduced-motion preference: v1 does not add new motion. Any open/close fade is whatever the existing Lightbox already does.
 
 ### Unaffected surfaces
 
 - Terminal escape-sequence handling, inline-image protocols on the terminal grid, and the agent-mode image-attach pipeline are unchanged.
+- The changelog section's animated-image rendering is unchanged.
+- The artifact / screenshot Lightbox call sites are unchanged in behavior; they continue to render via the same component.
 - Files outside the supported extension set continue to follow their existing target (Code Editor for text, `SystemGeneric` for binary, external editor per user preference, etc.).
 
 ## Success criteria
 
-- Clicking each of `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg` in the File Tree opens the Lightbox.
-- Left / Right arrow keys step through siblings in case-insensitive natural order, do not wrap, and remain responsive while a decode is in flight.
-- Escape, scrim click, and × button all dismiss the Lightbox and restore focus to the previously-active tab pane.
-- Opening a second image while the Lightbox is open results in the first Lightbox tearing down (via `FocusLost` from the file-tree click) and a fresh Lightbox opening cold on the second image. No second overlay stacks; the first is gone before the new one appears.
-- A corrupt PNG, an unreadable file, and an oversize PNG (above the dimension/pixel cap) all surface as per-entry errors with the filename shown; navigation continues; no crash.
-- An animated GIF and an animated WebP open and render their first frame statically (continuous playback is a follow-up); SVG renders via `usvg` / `resvg`.
-- Telemetry events for image opens are distinguishable from `MarkdownViewer` / `CodeEditor` / `SystemGeneric` opens via the `target` field on `CodePanelsFileOpened`.
-- Non-image binary files (`.zip`, `.mp3`, `.exe`, `.pdf`, etc.) continue to route to `SystemGeneric` exactly as before; no regression.
+1. Clicking each of `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg` in the File Tree opens the Lightbox showing that single image.
+2. While the Lightbox is open, clicks on the File Tree, terminal panes, Code Editor panes, and tab bar do nothing; the user must dismiss first.
+3. Escape, scrim click, and × button all dismiss the Lightbox and restore focus to the previously-active tab pane.
+4. A corrupt image, an unreadable file, and a mislabeled file (e.g. a `.png` containing tarball bytes) each surface as the per-entry error state with the filename shown; no crash and no permanent spinner.
+5. A file above the pre-read size cap (e.g. a 100 MB `.png`) opens directly into the per-entry error state without being read into memory or decoded.
+6. A symlink to a special file (e.g. `/dev/zero`) opens directly into the per-entry error state; no read is attempted.
+7. A file below the size cap but above the dimension or pixel cap (e.g. a 10000×10000 PNG) surfaces as the per-entry error state at decode time; no partial render, no OOM.
+8. An animated GIF and an animated WebP with normal frame counts open and render their first frame statically. The changelog section continues to animate as it does today (unchanged).
+9. An animated file with a pathological frame count or pathological per-frame size surfaces as the per-entry error state mid-decode, without first materializing every frame.
+10. SVG renders via `usvg` / `resvg`. A small SVG declaring a pathological `<svg width="200000" height="200000">` surfaces as the per-entry error state at parse time, before rasterization.
+11. Telemetry events for image opens are distinguishable from `MarkdownViewer` / `CodeEditor` / `SystemGeneric` opens via the `target` field on `CodePanelsFileOpened`.
+12. Non-image binary files (`.zip`, `.mp3`, `.exe`, `.pdf`, `.bmp`, `.tiff`, `.ico`, etc.) continue to route to `SystemGeneric` exactly as before; no regression.
 
 ## Validation
 
-- Unit tests for the natural-sort helper covering case differences, numeric runs (`a1.png`, `a2.png`, `a10.png`, `A11.png`), and the leading-dot hidden-file filter.
-- Unit tests for the resolver-priority change: `resolve_file_target_with_editor_choice` returns `FileTarget::ImagePreview` for each supported extension, ahead of both the markdown/code probe (so SVG is captured) and the binary fallthrough (so PNG/JPEG/etc. are captured).
-- Unit tests confirming non-image binary extensions (`.zip`, `.mp3`, `.exe`, `.pdf`) still resolve to `SystemGeneric`.
-- Unit tests for the decoder-limit guard: a synthesized PNG header declaring dimensions above the cap is rejected with an error type the Lightbox surfaces as the per-entry error state.
-- Manual: each behavior listed under User Experience above, against fixtures including a small image, a 10000×10000 PNG, an animated GIF, an animated WebP, an SVG, a corrupt PNG, a broken symlink, a directory with 5000 images (smoke test for scan latency), and a directory with mixed hidden/visible images.
+Tied 1:1 to the success criteria above and detailed in the tech spec's Testing and validation section. In summary:
+
+- Unit tests for the resolver returning `FileTarget::ImagePreview` for each supported extension and `SystemGeneric` for each non-image binary extension.
+- Unit tests for the pre-read size cap rejecting an oversize file before any decode, and for the bounded read in the asset cache rejecting a file that grows past the cap after the metadata stat.
+- Unit tests for the decoder caps: rejecting a synthesized PNG header declaring dimensions above the cap, rejecting a header declaring a pixel count above the pixel cap, rejecting an animated fixture above the frame-count cap, rejecting an animated fixture above the total-pixel-budget cap, rejecting an SVG declaring intrinsic dimensions above the SVG render cap.
+- Regression unit tests confirming the existing global `ImageType::try_from_bytes` continues to construct `AnimatedBitmap` for legitimate animated WebP and GIF (no regression for the changelog).
+- Manual: each behavior listed under User Experience above against fixtures including a small image, a 4000×3000 photo, a 5000×5000 PNG (below caps), a 10000×10000 PNG (above the dimension and pixel caps), a 100 MB sparse-file `.png` (above the pre-read cap), a symlink to `/dev/zero` (rejected for non-regular-file), a normal animated GIF, a 500-frame animated GIF (above the frame-count cap), a normal animated WebP, a small SVG, a `<svg width="200000" height="200000">` SVG (above the intrinsic-dimension cap), a `.png` containing tarball bytes (mislabeled), a corrupt PNG, and the workspace's existing changelog page (regression check on animation).
 
 ## Alternatives considered
 
 - **A new `ImagePreview` tab variant** with its own restore/drag/split story. Rejected by the maintainer in the issue thread; the Lightbox overlay matches the v1 surface area better and avoids committing the codebase to a parallel image-tab system.
 - **Routing image files through the existing Code Editor with a binary-buffer renderer.** Rejected because the Code Editor's tab/pane model does not have an image-rendering element and would need substantially more new code than dispatching the existing Lightbox.
+- **Including sibling navigation in v1.** Earlier drafts of this spec included Left/Right arrow navigation across the directory's image files. That introduced a long tail of design work (modal contract conflicts, lazy-preload window, sibling-list cap algorithm, NFS scan responsiveness) that is unjustified for the first release. The single-image v1 ships the user-visible win (no more bounce to Finder, no more raw SVG) without those entanglements; sibling navigation is tracked as the first follow-up.
+- **Including animated playback in v1.** The existing Lightbox does not animate, and wiring `Image::enable_animation_with_start_time` requires per-frame redraw plumbing and a play/pause UX. First-frame static is a defensible v1 because it is unambiguously the image the user clicked, and it matches the Lightbox's existing behavior for the same formats today.
 - **Always opening through the OS default app.** This is today's behavior for raster formats and is precisely the user complaint in the issue; rejected.
 - **Only fixing SVG (since SVG is the worst-looking case today, opening as raw XML).** Rejected as a half-fix; the issue explicitly calls out raster formats and SVG together.
 
 ## Open questions
 
-- Exact dimension and pixel-count caps for the decoder-limit guard. The tech spec proposes values aligned with the existing agent-mode caps in `app/src/util/image.rs`; product is comfortable with whatever the tech spec lands on as long as a 10000×10000 PNG is rejected gracefully and a 4000×3000 photo opens.
-- Whether the sibling scan should ever be moved off the UI thread for cold-cache cases (very large directories on NFS / FUSE / `~/Library/Caches`-scale `read_dir`). v1 keeps it synchronous; the tech spec lists a follow-up for moving it to the background executor if telemetry or QA shows visible UI freezes.
+- The tech spec lands on concrete values for the pre-read cap, decoded-dimension cap, decoded-pixel cap, animated-frame budget, and SVG intrinsic-dimension cap. Product is comfortable with these values as long as the user-visible contract holds: a 4000×3000 photo opens, a typical screenshot opens, a typical app-asset PNG/SVG opens, a 100 MB or larger file is rejected before being read, and a 10000×10000 PNG is rejected at decode time. The follow-up for moving decode and metadata to the background executor may relax the dimension/pixel caps once the foreground-stall risk is removed.
