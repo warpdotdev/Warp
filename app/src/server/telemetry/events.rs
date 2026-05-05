@@ -1631,6 +1631,9 @@ pub enum TelemetryEvent {
     ToggleFocusPaneOnHover {
         enabled: bool,
     },
+    TogglePaneSpecificFontSize {
+        enabled: bool,
+    },
     WarpAICharacterLimitExceeded,
     OpenInputContextMenu,
     InputCutSelectedText,
@@ -2993,6 +2996,9 @@ impl TelemetryEvent {
                 "is_in_agent_view": is_in_agent_view,
             })),
             TelemetryEvent::ToggleFocusPaneOnHover { enabled } => Some(json!({
+                "enabled": enabled,
+            })),
+            TelemetryEvent::TogglePaneSpecificFontSize { enabled } => Some(json!({
                 "enabled": enabled,
             })),
             TelemetryEvent::BlockCompletedOnDogfoodOnly {
@@ -4861,6 +4867,7 @@ impl TelemetryEvent {
             | TelemetryEvent::WarpAIAction { .. }
             | TelemetryEvent::UsedWarpAIPreparedPrompt { .. }
             | TelemetryEvent::ToggleFocusPaneOnHover { .. }
+            | TelemetryEvent::TogglePaneSpecificFontSize { .. }
             | TelemetryEvent::WarpAICharacterLimitExceeded
             | TelemetryEvent::OpenInputContextMenu
             | TelemetryEvent::InputCutSelectedText
@@ -5249,6 +5256,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 EnablementState::Flag(FeatureFlag::SuggestedRules)
             }
             Self::ToggleFocusPaneOnHover { .. } => EnablementState::Always,
+            Self::TogglePaneSpecificFontSize { .. } => EnablementState::Always,
             Self::InitiateAnonymousUserSignup { .. }
             | Self::LoginLaterButtonClicked
             | Self::LoginLaterConfirmationButtonClicked
@@ -5735,6 +5743,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ReinputCommands => "Context Menu: Reinput Commands",
             Self::ToggleSettingsSync => "Toggle Settings Sync",
             Self::ToggleFocusPaneOnHover => "Toggle Focus Pane On Hover",
+            Self::TogglePaneSpecificFontSize => "Toggle Pane-Specific Font Size",
             Self::LoginLaterButtonClicked => "Login Later Button Clicked",
             Self::LoginLaterConfirmationButtonClicked => "Login Later Confirmation Button Clicked",
             Self::JumpToPreviousCommand => "Jumped to Previous Command",
@@ -6616,6 +6625,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::ToggleFocusPaneOnHover => {
                 "Toggled on/off focus pane on hover feature, which causes panes to automatically focus when hovering over them"
+            }
+            Self::TogglePaneSpecificFontSize => {
+                "Toggled on/off pane-specific font size, which scopes font size adjustments to the focused pane instead of applying them globally"
             }
             Self::SetNewWindowsAtCustomSize => {
                 "Set new windows at custom size through Settings -> Appearance"
