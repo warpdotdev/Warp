@@ -13,6 +13,7 @@ use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, workspace_for_window, OpenLaunchConfigArg};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
+use crate::tab_configs::TabConfig;
 use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
@@ -681,11 +682,10 @@ fn handle_tab_config_uri(primary_window_id: Option<WindowId>, url: &Url, ctx: &m
     };
 
     let (configs, _errors) = load_tab_configs(&tab_configs_dir());
-    let Some(config) = find_matching_tab_config(desired.as_str(), &configs) else {
+    let Some(config) = find_matching_tab_config(desired.as_str(), configs) else {
         log::warn!("couldn't find a tab config matching '{}'", desired);
         return;
     };
-    let config = config.clone();
 
     let force_new_window = url
         .query_pairs()
@@ -720,12 +720,9 @@ fn handle_tab_config_uri(primary_window_id: Option<WindowId>, url: &Url, ctx: &m
 
 /// Case-insensitive match against each tab config's file stem. Tab config
 /// `name` fields are not unique across files, so we key off the filename.
-fn find_matching_tab_config<'a>(
-    target: &str,
-    configs: &'a [crate::tab_configs::TabConfig],
-) -> Option<&'a crate::tab_configs::TabConfig> {
+fn find_matching_tab_config(target: &str, configs: Vec<TabConfig>) -> Option<TabConfig> {
     let stem = remove_extension(target).unwrap_or(target).to_lowercase();
-    configs.iter().find(|c| {
+    configs.into_iter().find(|c| {
         c.source_path
             .as_ref()
             .and_then(|p| p.file_stem())
