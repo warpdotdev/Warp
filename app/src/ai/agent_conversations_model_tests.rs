@@ -1081,6 +1081,181 @@ fn test_resolve_open_action_handles_server_token_subject_without_entry() {
 }
 
 #[test]
+fn test_resolve_copy_link_prefers_active_session_link() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let session_link = "https://example.com/session/active";
+        let mut task = create_test_task(&make_uuid(8300), "user-a", now);
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_id = Some(make_uuid(8301));
+        task.session_link = Some(session_link.to_string());
+        task.conversation_id = Some("session-backed-token".to_string());
+        task.is_sandbox_running = true;
+        let task_id = task.task_id;
+
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.tasks.insert(task_id, task);
+            model
+        });
+
+        app.update(|ctx| {
+            let link = AgentConversationsModel::resolve_copy_link(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                ctx,
+            );
+
+            assert_eq!(link.as_deref(), Some(session_link));
+        });
+    });
+}
+
+#[test]
+fn test_resolve_copy_link_uses_cloud_conversation_link_for_inactive_task() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let token = "inactive-task-token";
+        let mut task = create_test_task(&make_uuid(8302), "user-a", Utc::now());
+        task.conversation_id = Some(token.to_string());
+        let task_id = task.task_id;
+
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.tasks.insert(task_id, task);
+            model
+        });
+
+        app.update(|ctx| {
+            let link = AgentConversationsModel::resolve_copy_link(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                ctx,
+            );
+
+            assert_eq!(
+                link,
+                Some(ServerConversationToken::new(token.to_string()).conversation_link())
+            );
+
+            let entry = AgentConversationsModel::as_ref(ctx)
+                .get_entry_by_id(&AgentConversationEntryId::AmbientRun(task_id), ctx)
+                .expect("task entry should exist");
+            assert!(entry.capabilities.can_copy_link);
+        });
+    });
+}
+
+#[test]
+fn test_resolve_copy_link_returns_none_for_local_only_unsynced_conversation() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let conversation_id = AIConversationId::new();
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.conversations.insert(
+                conversation_id,
+                create_test_conversation_metadata(conversation_id, "Local only"),
+            );
+            model
+        });
+
+        app.update(|ctx| {
+            let link = AgentConversationsModel::resolve_copy_link(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::Conversation(
+                    conversation_id,
+                )),
+                ctx,
+            );
+
+            assert_eq!(link, None);
+
+            let entry = AgentConversationsModel::as_ref(ctx)
+                .get_entry_by_id(
+                    &AgentConversationEntryId::Conversation(conversation_id),
+                    ctx,
+                )
+                .expect("conversation entry should exist");
+            assert!(!entry.capabilities.can_copy_link);
+        });
+    });
+}
+
+#[test]
+fn test_resolve_copy_link_uses_attached_synced_conversation_for_task_without_token() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+        add_entry_projection_test_models(&mut app);
+
+        let conversation_id = AIConversationId::new();
+        let token = "attached-conversation-token";
+        let task_id = make_uuid(8303);
+        let conversation = create_restored_conversation(
+            conversation_id,
+            "root-task",
+            AgentConversationData {
+                server_conversation_token: Some(token.to_string()),
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                parent_conversation_id: None,
+                is_remote_child: false,
+                run_id: Some(task_id.clone()),
+                autoexecute_override: None,
+                last_event_sequence: None,
+            },
+        );
+
+        BlocklistAIHistoryModel::handle(&app).update(&mut app, |model, ctx| {
+            model.restore_conversations(EntityId::new(), vec![conversation], ctx);
+        });
+
+        let mut task = create_test_task(&task_id, "user-a", Utc::now());
+        task.conversation_id = None;
+        let task_id = task.task_id;
+
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.tasks.insert(task_id, task);
+            model.conversations.insert(
+                conversation_id,
+                create_test_conversation_metadata(conversation_id, "Conversation"),
+            );
+            model
+        });
+
+        app.update(|ctx| {
+            let link = AgentConversationsModel::resolve_copy_link(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                ctx,
+            );
+
+            assert_eq!(
+                link,
+                Some(ServerConversationToken::new(token.to_string()).conversation_link())
+            );
+
+            let entry = AgentConversationsModel::as_ref(ctx)
+                .get_entry_by_id(&AgentConversationEntryId::AmbientRun(task_id), ctx)
+                .expect("task entry should exist");
+            assert!(entry.capabilities.can_copy_link);
+            assert_eq!(entry.identity.local_conversation_id, Some(conversation_id));
+        });
+    });
+}
+
+#[test]
 fn test_eviction_protects_personal_from_team_overflow() {
     // Add 50 old personal tasks + 600 new team tasks
     // After eviction: all 50 personal remain, only 300 team remain

@@ -469,6 +469,7 @@ pub enum ConversationOrTask<'a> {
     Conversation(&'a ConversationMetadata),
 }
 
+#[allow(dead_code)]
 impl ConversationOrTask<'_> {
     pub fn title(&self, app: &AppContext) -> String {
         match self {
@@ -1577,6 +1578,22 @@ impl AgentConversationsModel {
         }
     }
 
+    pub fn resolve_copy_link(
+        subject: AgentConversationNavigationSubject,
+        app: &AppContext,
+    ) -> Option<String> {
+        let model = Self::as_ref(app);
+        match subject {
+            AgentConversationNavigationSubject::Entry(id) => model
+                .get_entry_by_id(&id, app)
+                .and_then(|entry| model.resolve_entry_copy_link(&entry)),
+            AgentConversationNavigationSubject::ServerToken(server_token) => model
+                .entry_for_server_token(&server_token, app)
+                .and_then(|entry| model.resolve_entry_copy_link(&entry))
+                .or_else(|| Some(server_token.conversation_link())),
+        }
+    }
+
     fn resolve_entry_open_action(
         &self,
         entry: &AgentConversationEntry,
@@ -1660,6 +1677,28 @@ impl AgentConversationsModel {
                 conversation_id: token.clone(),
                 ambient_agent_task_id: entry.identity.ambient_agent_task_id,
             })
+    }
+
+    fn resolve_entry_copy_link(&self, entry: &AgentConversationEntry) -> Option<String> {
+        if let Some(task_id) = entry.identity.ambient_agent_task_id {
+            if let Some(session_link) = self.tasks.get(&task_id).and_then(|task| {
+                task.has_active_execution()
+                    .then(|| {
+                        task.active_run_execution()
+                            .session_link
+                            .map(ToString::to_string)
+                    })
+                    .flatten()
+            }) {
+                return Some(session_link);
+            }
+        }
+
+        entry
+            .identity
+            .server_conversation_token
+            .as_ref()
+            .map(ServerConversationToken::conversation_link)
     }
 
     fn entry_for_server_token(
@@ -1786,6 +1825,7 @@ impl AgentConversationsModel {
 
     /// Returns an iterator with all tasks and conversations with filters applied, sorted with the
     /// most recently updated items first.
+    #[allow(dead_code)]
     pub fn get_tasks_and_conversations(
         &self,
         filters: &AgentManagementFilters,
@@ -1856,6 +1896,7 @@ impl AgentConversationsModel {
     }
 
     /// Get a task by its task ID
+    #[allow(dead_code)]
     pub fn get_task(&self, task_id: &AmbientAgentTaskId) -> Option<ConversationOrTask<'_>> {
         self.tasks.get(task_id).map(ConversationOrTask::Task)
     }
