@@ -292,7 +292,6 @@ pub struct WarpAiPolicy {
     pub is_code_suggestions_toggleable: bool,
     pub is_prompt_suggestions_toggleable: bool,
     pub is_next_command_enabled: bool,
-    #[serde(default)]
     pub is_git_operations_ai_enabled: bool,
     pub is_voice_enabled: bool,
 }
