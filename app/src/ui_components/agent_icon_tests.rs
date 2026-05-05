@@ -72,10 +72,9 @@ enum CanonicalRunState {
     CloudClaudePreDispatch,
     /// Cloud Claude harness selected, dispatch in flight (status = InProgress, no session).
     CloudClaudeInProgress,
-    /// Viewing a finished cloud Codex transcript whose VM has shut down: no live CLI session,
-    /// no live AmbientAgentViewModel harness selection, but the conversation's server metadata
-    /// reports a Codex harness and an ambient task id. Tabs/headers must still render the
-    /// Codex brand circle with the cloud-lobe overlay so the transcript reads as cloud Codex.
+    /// Viewing a finished cloud Codex transcript whose VM has shut down. No live ambient
+    /// model exists, so the harness comes from the conversation's server metadata; the icon
+    /// must still render as cloud Codex.
     ViewingCloudCodexTranscript,
     /// Local Claude CLI session with a plugin listener (rich status), in-progress.
     LocalClaudePluginInProgress,
@@ -200,9 +199,8 @@ impl CanonicalRunState {
                 has_selected_conversation: false,
             },
             ViewingCloudCodexTranscript => TerminalIconInputs {
-                // VM has shut down: the live ambient model is gone, so the caller resolves
-                // `is_ambient` and the third-party CLI agent from the conversation's server
-                // metadata. The waterfall sees the same shape as a live cloud Codex run.
+                // VM has shut down: the caller resolves these fields from the conversation's
+                // server metadata, so the waterfall sees the same shape as a live run.
                 is_ambient: true,
                 cli_session: None,
                 selected_third_party_cli_agent: Some(CLIAgent::Codex),

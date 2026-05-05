@@ -25,54 +25,39 @@ use crate::ui_components::icon_with_status::IconWithStatusVariant;
 /// not an agent surface (plain terminal / shell / empty conversation).
 ///
 /// Resolution order:
-/// 1. A [`CLIAgentSessionsModel`] session with a known agent (observed reality) wins.
-///    Plugin-backed sessions surface rich status; command-detected sessions don't.
-/// 2. An ambient run with a selected third-party harness uses the harness's CLI brand. The
-///    harness can come from any of:
-///    - the live [`AmbientAgentViewModel`] (so the brand circle shows even before the CLI
-///      has started),
-///    - the selected conversation's server metadata (live cloud Oz runs whose conversation
-///      is loaded), or
-///    - the [`AmbientAgentTask`] looked up by the model's transcript task id (transcripts
-///      of cloud Claude/Codex/Gemini runs whose VM has shut down — these have no
-///      materialized [`AIConversation`] carrying server metadata).
-/// 3. A selected conversation or ambient Oz run falls back to the Oz agent variant.
+/// 1. A [`CLIAgentSessionsModel`] session with a known agent wins. Plugin-backed sessions
+///    surface rich status; command-detected sessions don't.
+/// 2. A task-backed run defers to [`conversation_or_task_agent_icon_variant`] so the
+///    terminal chrome and the matching conversation list card stay in lockstep.
+/// 3. Live ambient pre-dispatch or a selected local conversation falls through to the
+///    no-task waterfall.
 /// 4. Everything else returns `None` so the caller renders a plain-terminal indicator.
 pub(crate) fn terminal_view_agent_icon_variant(
     terminal_view: &TerminalView,
     app: &AppContext,
 ) -> Option<IconWithStatusVariant> {
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-    let conversation_metadata = terminal_view.selected_conversation_server_metadata(app);
-    let ambient_task_id = terminal_view.ambient_agent_task_id_for_details_panel(app);
-    let task_harness = ambient_task_id.and_then(|task_id| {
-        AgentConversationsModel::as_ref(app)
-            .get_task_data(&task_id)
-            .and_then(|task| {
-                task.agent_config_snapshot
-                    .as_ref()
-                    .and_then(|s| s.harness.as_ref())
-                    .map(|h| h.harness_type)
-            })
-    });
 
-    // Treat the terminal as ambient if any of the cloud signals are set: the live ambient
-    // model, the selected conversation's server metadata, or a transcript task id stored
-    // on the terminal model. The last covers CLI-agent transcripts, which carry no
-    // [`AmbientAgentViewModel`] and no server-metadata-bearing conversation.
-    let is_ambient = terminal_view.is_ambient_agent_session(app)
-        || conversation_metadata.is_some_and(|m| m.ambient_agent_task_id.is_some())
-        || ambient_task_id.is_some();
-    let selected_third_party_cli_agent = terminal_view
-        .ambient_agent_view_model()
-        .and_then(|model| model.as_ref(app).selected_third_party_cli_agent())
+    // Resolve the ambient task id from [`TerminalView::ambient_agent_task_id_for_details_panel`],
+    // falling back to the selected conversation's server metadata for restored cloud transcripts.
+    let ambient_task_id = terminal_view
+        .ambient_agent_task_id_for_details_panel(app)
         .or_else(|| {
-            conversation_metadata
-                .map(|m| Harness::from(m.harness))
-                .and_then(CLIAgent::from_harness)
-        })
-        .or_else(|| task_harness.and_then(CLIAgent::from_harness));
+            terminal_view
+                .selected_conversation_server_metadata(app)
+                .and_then(|m| m.ambient_agent_task_id)
+        });
+    let task_data = ambient_task_id
+        .and_then(|task_id| AgentConversationsModel::as_ref(app).get_task_data(&task_id));
 
+    // Defer to the card helper when we have task data and no CLI session takes precedence.
+    if cli_agent_session.is_none() {
+        if let Some(task) = task_data.as_ref() {
+            return conversation_or_task_agent_icon_variant(&ConversationOrTask::Task(task), app);
+        }
+    }
+
+    let is_ambient = terminal_view.is_ambient_agent_session(app) || ambient_task_id.is_some();
     let inputs = TerminalIconInputs {
         is_ambient,
         cli_session: cli_agent_session.map(|session| CLISessionInputs {
@@ -81,7 +66,9 @@ pub(crate) fn terminal_view_agent_icon_variant(
             status: session.status.to_conversation_status(),
             supports_rich_status: agent_supports_rich_status(&session.agent),
         }),
-        selected_third_party_cli_agent,
+        selected_third_party_cli_agent: terminal_view
+            .ambient_agent_view_model()
+            .and_then(|model| model.as_ref(app).selected_third_party_cli_agent()),
         selected_conversation_status: terminal_view.selected_conversation_status_for_display(app),
         has_selected_conversation: terminal_view
             .selected_conversation_display_title(app)
@@ -109,15 +96,12 @@ pub(crate) fn conversation_or_task_agent_icon_variant(
 }
 
 /// Primitive inputs to the terminal-view waterfall, gathered once from the live
-/// [`TerminalView`] / [`AppContext`]. Keeping the decision logic in terms of these
-/// primitives makes it testable without a live app.
+/// [`TerminalView`] / [`AppContext`].
 struct TerminalIconInputs {
     is_ambient: bool,
     cli_session: Option<CLISessionInputs>,
-    /// The third-party CLI agent associated with this run, sourced from the live
-    /// [`AmbientAgentViewModel`], the selected conversation's server metadata, or the
-    /// [`AmbientAgentTask`] looked up by the model's transcript task id.
-    /// `None` for Oz or when no harness is known.
+    /// Third-party CLI agent for a live ambient run before task data is available (e.g.
+    /// Claude pre-dispatch). `None` otherwise; task-derived harnesses are handled upstream.
     selected_third_party_cli_agent: Option<CLIAgent>,
     /// The conversation status that the terminal view would surface in its status-icon slot.
     selected_conversation_status: Option<ConversationStatus>,
@@ -158,12 +142,9 @@ fn agent_icon_variant_from_terminal_inputs(
         });
     }
 
-    // 2. Ambient run with a known third-party harness. Render the harness's brand circle
-    //    whether the harness came from the live `AmbientAgentViewModel` (live cloud run,
-    //    possibly pre-dispatch), the selected conversation's server metadata, or a task
-    //    lookup keyed by the transcript task id (CLI-agent transcripts whose VM has shut
-    //    down). `Unknown` is filtered so a harness this client doesn't recognize doesn't
-    //    render an unbranded gray circle.
+    // 2. Live ambient run with a third-party harness selected, before task data is
+    //    available (e.g. Claude pre-dispatch). `Unknown` is filtered so an unrecognized
+    //    harness doesn't render as an unbranded gray circle.
     if inputs.is_ambient {
         if let Some(agent) = inputs
             .selected_third_party_cli_agent
