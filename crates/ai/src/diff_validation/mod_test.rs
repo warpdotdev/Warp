@@ -754,7 +754,13 @@ impl ActionButtonTheme for DefaultWeightAgentInputButtonTheme {\n\
         1,
         "Expected 1 delta (subsumed hunk should be dropped), got {}: {:?}",
         deltas.len(),
-        deltas.iter().map(|d| &d.replacement_line_range).collect::<Vec<_>>(),
+        deltas
+            .iter()
+            .map(|d| &d.replacement_line_range)
+            .collect::<Vec<_>>(),
     );
-    assert!(deltas[0].insertion.is_empty(), "The surviving delta should be the deletion");
+    assert!(
+        deltas[0].insertion.is_empty(),
+        "The surviving delta should be the deletion"
+    );
 }
