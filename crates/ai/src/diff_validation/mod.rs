@@ -402,6 +402,14 @@ pub fn fuzzy_match_v4a_diffs(
         }
     }
 
+    // Sort by start line and remove overlapping deltas. When the LLM produces
+    // multiple hunks targeting the same region (e.g. a large deletion whose
+    // matched range subsumes a nearby single-line edit), the overlapping delta
+    // must be dropped — applying both would produce an invalid edit range in
+    // the editor buffer (see WARP-CLIENT-DEV-NYY).
+    deltas.sort_by_key(|d| d.replacement_line_range.start);
+    deltas = deduplicate_overlapping_deltas(deltas);
+
     let update_deltas_empty = deltas.is_empty();
     let failures = if failures.fuzzy_match_failures > 0
         || failures.missing_line_numbers > 0
@@ -418,6 +426,33 @@ pub fn fuzzy_match_v4a_diffs(
         failures,
         original_content: file_content,
     }
+}
+
+/// Given a list of `DiffDelta`s sorted by `replacement_line_range.start`,
+/// drop any delta whose range overlaps with the preceding accepted delta.
+///
+/// "Overlaps" means `B.start < A.end` (strictly inside or partial overlap).
+/// Adjacent ranges (`A.end == B.start`) are kept.
+fn deduplicate_overlapping_deltas(sorted_deltas: Vec<DiffDelta>) -> Vec<DiffDelta> {
+    let mut result: Vec<DiffDelta> = Vec::with_capacity(sorted_deltas.len());
+
+    for delta in sorted_deltas {
+        let dominated = result.last().is_some_and(|prev| {
+            delta.replacement_line_range.start < prev.replacement_line_range.end
+        });
+        if dominated {
+            log::warn!(
+                "Dropping V4A delta with overlapping range {:?} \
+                 (subsumed by preceding delta with range {:?})",
+                delta.replacement_line_range,
+                result.last().unwrap().replacement_line_range,
+            );
+            continue;
+        }
+        result.push(delta);
+    }
+
+    result
 }
 
 fn fuzzy_match_file_diffs(

@@ -6719,8 +6719,9 @@ impl CodeReviewView {
                 // `has_upstream` controls the label/icon on the push-chained
                 // intent (Commit and push vs Commit and publish).
                 let diff_state = self.diff_state_model.as_ref(ctx);
-                let allow_create_pr =
-                    diff_state.pr_info().is_none() && !diff_state.is_on_main_branch();
+                let allow_create_pr = diff_state.pr_info().is_none()
+                    && !diff_state.is_pr_info_refreshing()
+                    && !diff_state.is_on_main_branch();
                 let has_upstream = diff_state.upstream_ref().is_some();
                 ctx.add_typed_action_view(|ctx| {
                     GitDialog::new_for_commit(
@@ -6773,6 +6774,7 @@ impl CodeReviewView {
         let has_uncommitted_changes = self.has_uncommitted_changes(app);
         let has_upstream = diff_state.upstream_ref().is_some();
         let has_local_commits = !diff_state.unpushed_commits().is_empty();
+        let is_pr_info_refreshing = diff_state.is_pr_info_refreshing();
         // False when upstream == main (e.g. after `git checkout -b feature origin/master`),
         // which means the branch hasn't been pushed to its own remote ref yet.
         let upstream_differs_from_main = diff_state.upstream_differs_from_main();
@@ -6785,7 +6787,11 @@ impl CodeReviewView {
             PrimaryGitActionMode::Push
         } else if diff_state.pr_info().is_some() {
             PrimaryGitActionMode::ViewPr
-        } else if has_upstream && !diff_state.is_on_main_branch() && upstream_differs_from_main {
+        } else if !is_pr_info_refreshing
+            && has_upstream
+            && !diff_state.is_on_main_branch()
+            && upstream_differs_from_main
+        {
             PrimaryGitActionMode::CreatePr
         } else {
             // Nothing actionable — show Commit disabled.
@@ -6822,6 +6828,7 @@ impl CodeReviewView {
                     button.set_label("Push", ctx);
                     button.set_icon(Some(Icon::ArrowUp), ctx);
                     button.set_disabled(false, ctx);
+                    button.clear_tooltip(ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenPushDialog),
                         ctx,
@@ -6837,6 +6844,7 @@ impl CodeReviewView {
                     button.set_label("Create PR", ctx);
                     button.set_icon(Some(Icon::Github), ctx);
                     button.set_disabled(false, ctx);
+                    button.clear_tooltip(ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenCreatePrDialog),
                         ctx,
@@ -6845,7 +6853,9 @@ impl CodeReviewView {
                 });
             }
             PrimaryGitActionMode::ViewPr => {
-                let pr_info = self.diff_state_model.as_ref(ctx).pr_info().cloned();
+                let diff_state = self.diff_state_model.as_ref(ctx);
+                let pr_info = diff_state.pr_info().cloned();
+                let is_pr_info_refreshing = diff_state.is_pr_info_refreshing();
                 if let Some(pr_info) = pr_info {
                     let url = pr_info.url.clone();
                     let number = pr_info.number;
@@ -6853,7 +6863,11 @@ impl CodeReviewView {
                     self.git_primary_action_button.update(ctx, |button, ctx| {
                         button.set_label(label, ctx);
                         button.set_icon(Some(Icon::Github), ctx);
-                        button.set_disabled(false, ctx);
+                        button.set_disabled(is_pr_info_refreshing, ctx);
+                        button.set_tooltip(
+                            is_pr_info_refreshing.then_some("Refreshing PR info"),
+                            ctx,
+                        );
                         button.set_on_click(
                             move |ctx| {
                                 ctx.dispatch_typed_action(CodeReviewAction::ViewPr(url.clone()))
@@ -6869,6 +6883,7 @@ impl CodeReviewView {
                     button.set_label("Publish", ctx);
                     button.set_icon(Some(Icon::UploadCloud), ctx);
                     button.set_disabled(false, ctx);
+                    button.clear_tooltip(ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::PublishBranch),
                         ctx,
@@ -6917,10 +6932,12 @@ impl CodeReviewView {
     /// (e.g. a worktree branch whose tracking was auto-set to origin/master).
     fn pr_menu_item(&self, app: &AppContext) -> MenuItem<CodeReviewAction> {
         let diff_state = self.diff_state_model.as_ref(app);
+        let is_pr_info_refreshing = diff_state.is_pr_info_refreshing();
         if let Some(pr_info) = diff_state.pr_info().cloned() {
             MenuItemFields::new(format!("PR #{}", pr_info.number))
                 .with_icon(Icon::Github)
                 .with_on_select_action(CodeReviewAction::ViewPr(pr_info.url))
+                .with_disabled(is_pr_info_refreshing)
                 .into_item()
         } else {
             let is_on_main = diff_state.is_on_main_branch();
@@ -6929,7 +6946,12 @@ impl CodeReviewView {
             MenuItemFields::new("Create PR")
                 .with_icon(Icon::Github)
                 .with_on_select_action(CodeReviewAction::OpenCreatePrDialog)
-                .with_disabled(is_on_main || !has_upstream || !upstream_differs_from_main)
+                .with_disabled(
+                    is_pr_info_refreshing
+                        || is_on_main
+                        || !has_upstream
+                        || !upstream_differs_from_main,
+                )
                 .into_item()
         }
     }

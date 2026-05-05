@@ -71,6 +71,14 @@ pub enum ClientEvent {
     /// A server message could not be decoded and had no parseable request_id.
     MessageDecodingError,
 }
+/// Parameters for the `Initialize` handshake, sent to the daemon at
+/// connection time.
+pub struct InitializeParams {
+    pub user_id: String,
+    pub user_email: String,
+    pub crash_reporting_enabled: bool,
+}
+
 /// Client for communicating with a `remote_server` process over the remote server protocol.
 ///
 /// Exposes async request/response APIs over generic I/O streams (child-process pipes,
@@ -186,12 +194,16 @@ impl RemoteServerClient {
     pub async fn initialize(
         &self,
         auth_token: Option<&str>,
+        params: InitializeParams,
     ) -> Result<InitializeResponse, ClientError> {
         let request_id = RequestId::new();
         let msg = ClientMessage {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::Initialize(Initialize {
                 auth_token: auth_token.unwrap_or_default().to_owned(),
+                user_id: params.user_id,
+                user_email: params.user_email,
+                crash_reporting_enabled: params.crash_reporting_enabled,
             })),
         };
 
@@ -217,6 +229,20 @@ impl RemoteServerClient {
             message: Some(client_message::Message::Authenticate(Authenticate {
                 auth_token: auth_token.to_owned(),
             })),
+        };
+        self.send_notification(msg);
+    }
+
+    /// Sends an `UpdatePreferences` notification when the user's privacy
+    /// settings change (e.g. toggling crash reporting).
+    pub fn update_preferences(&self, crash_reporting_enabled: bool) {
+        let msg = ClientMessage {
+            request_id: String::new(),
+            message: Some(client_message::Message::UpdatePreferences(
+                crate::proto::UpdatePreferences {
+                    crash_reporting_enabled,
+                },
+            )),
         };
         self.send_notification(msg);
     }

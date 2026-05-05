@@ -37,16 +37,16 @@ fn local_to_cloud_initializes_remote_with_empty_environment() {
     let mut state =
         RunAgentsEditState::from_request(&make_request("oz", RunAgentsExecutionMode::Local));
     assert!(matches!(
-        state.execution_mode,
+        state.orch.execution_mode,
         RunAgentsExecutionMode::Local
     ));
 
-    state.toggle_execution_mode_to_remote(true);
+    state.orch.toggle_execution_mode_to_remote(true);
     let RunAgentsExecutionMode::Remote {
         environment_id,
         worker_host,
         computer_use_enabled,
-    } = state.execution_mode
+    } = state.orch.execution_mode
     else {
         panic!("expected Remote after toggle");
     };
@@ -65,9 +65,9 @@ fn cloud_to_local_drops_environment() {
             computer_use_enabled: false,
         },
     ));
-    state.toggle_execution_mode_to_remote(false);
+    state.orch.toggle_execution_mode_to_remote(false);
     assert!(matches!(
-        state.execution_mode,
+        state.orch.execution_mode,
         RunAgentsExecutionMode::Local
     ));
 }
@@ -76,8 +76,8 @@ fn cloud_to_local_drops_environment() {
 fn local_to_cloud_resets_opencode_to_oz() {
     let mut state =
         RunAgentsEditState::from_request(&make_request("opencode", RunAgentsExecutionMode::Local));
-    state.toggle_execution_mode_to_remote(true);
-    assert_eq!(state.harness_type, "oz");
+    state.orch.toggle_execution_mode_to_remote(true);
+    assert_eq!(state.orch.harness_type, "oz");
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn cloud_without_env_no_longer_disables_accept() {
         },
     ));
     assert!(
-        state.accept_disabled_reason().is_none(),
+        state.orch.accept_disabled_reason().is_none(),
         "Cloud without env should NOT disable Accept (soft recommendation only)"
     );
 }
@@ -107,7 +107,7 @@ fn cloud_with_opencode_disables_accept() {
             computer_use_enabled: false,
         },
     ));
-    let reason = state.accept_disabled_reason();
+    let reason = state.orch.accept_disabled_reason();
     assert!(reason.is_some(), "Cloud + OpenCode should disable Accept");
     assert!(reason.unwrap().contains("OpenCode"));
 }
@@ -118,7 +118,7 @@ fn local_with_any_harness_does_not_disable_accept() {
         let state =
             RunAgentsEditState::from_request(&make_request(harness, RunAgentsExecutionMode::Local));
         assert!(
-            state.accept_disabled_reason().is_none(),
+            state.orch.accept_disabled_reason().is_none(),
             "Local + {harness} should allow Accept"
         );
     }
@@ -136,7 +136,7 @@ fn cloud_with_env_and_non_opencode_harness_allows_accept() {
             },
         ));
         assert!(
-            state.accept_disabled_reason().is_none(),
+            state.orch.accept_disabled_reason().is_none(),
             "Cloud + env + {harness} should allow Accept"
         );
     }
@@ -146,9 +146,9 @@ fn cloud_with_env_and_non_opencode_harness_allows_accept() {
 fn set_environment_id_no_op_in_local_mode() {
     let mut state =
         RunAgentsEditState::from_request(&make_request("oz", RunAgentsExecutionMode::Local));
-    state.set_environment_id("env-1".to_string());
+    state.orch.set_environment_id("env-1".to_string());
     assert!(matches!(
-        state.execution_mode,
+        state.orch.execution_mode,
         RunAgentsExecutionMode::Local
     ));
 }
@@ -163,8 +163,8 @@ fn set_environment_id_updates_remote() {
             computer_use_enabled: false,
         },
     ));
-    state.set_environment_id("new-env".to_string());
-    let RunAgentsExecutionMode::Remote { environment_id, .. } = state.execution_mode else {
+    state.orch.set_environment_id("new-env".to_string());
+    let RunAgentsExecutionMode::Remote { environment_id, .. } = state.orch.execution_mode else {
         panic!("expected Remote");
     };
     assert_eq!(environment_id, "new-env");
@@ -305,6 +305,251 @@ mod format_terminal_state_tests {
     }
 }
 
+mod should_auto_launch_tests {
+    use super::super::{should_auto_launch, RunAgentsEditState};
+    use super::*;
+    use ai::agent::orchestration_config::{
+        OrchestrationConfig, OrchestrationConfigStatus, OrchestrationExecutionMode,
+    };
+
+    fn matching_config() -> (OrchestrationConfig, OrchestrationConfigStatus) {
+        (
+            OrchestrationConfig {
+                model_id: "auto".to_string(),
+                harness_type: "oz".to_string(),
+                execution_mode: OrchestrationExecutionMode::Local,
+            },
+            OrchestrationConfigStatus::Approved,
+        )
+    }
+
+    fn default_state() -> RunAgentsEditState {
+        RunAgentsEditState::from_request(&make_request("oz", RunAgentsExecutionMode::Local))
+    }
+
+    #[test]
+    fn returns_true_when_all_conditions_met() {
+        let state = default_state();
+        let config = Some(matching_config());
+        assert!(should_auto_launch(false, false, false, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_already_auto_launched() {
+        let state = default_state();
+        let config = Some(matching_config());
+        assert!(!should_auto_launch(true, false, false, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_denied() {
+        let state = default_state();
+        let config = Some(matching_config());
+        assert!(!should_auto_launch(false, true, false, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_spawning() {
+        let state = default_state();
+        let config = Some(matching_config());
+        assert!(!should_auto_launch(false, false, true, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_editor_open() {
+        let mut state = default_state();
+        state.is_editor_open = true;
+        let config = Some(matching_config());
+        assert!(!should_auto_launch(false, false, false, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_agent_run_configs_empty() {
+        let mut state = default_state();
+        state.agent_run_configs.clear();
+        let config = Some(matching_config());
+        assert!(!should_auto_launch(false, false, false, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_no_active_config() {
+        let state = default_state();
+        assert!(!should_auto_launch(false, false, false, &state, &None));
+    }
+
+    #[test]
+    fn returns_false_when_config_not_approved() {
+        let state = default_state();
+        let config = Some((
+            OrchestrationConfig {
+                model_id: "auto".to_string(),
+                harness_type: "oz".to_string(),
+                execution_mode: OrchestrationExecutionMode::Local,
+            },
+            OrchestrationConfigStatus::None,
+        ));
+        assert!(!should_auto_launch(false, false, false, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_config_disapproved() {
+        let state = default_state();
+        let config = Some((
+            OrchestrationConfig {
+                model_id: "auto".to_string(),
+                harness_type: "oz".to_string(),
+                execution_mode: OrchestrationExecutionMode::Local,
+            },
+            OrchestrationConfigStatus::Disapproved,
+        ));
+        assert!(!should_auto_launch(false, false, false, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_model_id_mismatches() {
+        let state = default_state();
+        let config = Some((
+            OrchestrationConfig {
+                model_id: "claude-4".to_string(),
+                harness_type: "oz".to_string(),
+                execution_mode: OrchestrationExecutionMode::Local,
+            },
+            OrchestrationConfigStatus::Approved,
+        ));
+        assert!(!should_auto_launch(false, false, false, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_harness_type_mismatches() {
+        let state = default_state();
+        let config = Some((
+            OrchestrationConfig {
+                model_id: "auto".to_string(),
+                harness_type: "claude".to_string(),
+                execution_mode: OrchestrationExecutionMode::Local,
+            },
+            OrchestrationConfigStatus::Approved,
+        ));
+        assert!(!should_auto_launch(false, false, false, &state, &config));
+    }
+
+    #[test]
+    fn returns_false_when_execution_mode_mismatches() {
+        let state = default_state();
+        let config = Some((
+            OrchestrationConfig {
+                model_id: "auto".to_string(),
+                harness_type: "oz".to_string(),
+                execution_mode: OrchestrationExecutionMode::Remote {
+                    environment_id: "env-1".to_string(),
+                    worker_host: "warp".to_string(),
+                },
+            },
+            OrchestrationConfigStatus::Approved,
+        ));
+        assert!(!should_auto_launch(false, false, false, &state, &config));
+    }
+
+    #[test]
+    fn matches_remote_config_when_fields_agree() {
+        let state = RunAgentsEditState::from_request(&make_request(
+            "oz",
+            RunAgentsExecutionMode::Remote {
+                environment_id: "env-1".to_string(),
+                worker_host: "warp".to_string(),
+                computer_use_enabled: false,
+            },
+        ));
+        let config = Some((
+            OrchestrationConfig {
+                model_id: "auto".to_string(),
+                harness_type: "oz".to_string(),
+                execution_mode: OrchestrationExecutionMode::Remote {
+                    environment_id: "env-1".to_string(),
+                    worker_host: "warp".to_string(),
+                },
+            },
+            OrchestrationConfigStatus::Approved,
+        ));
+        assert!(should_auto_launch(false, false, false, &state, &config));
+    }
+
+    #[test]
+    fn empty_model_id_inherits_from_config() {
+        let mut req = make_request("oz", RunAgentsExecutionMode::Local);
+        req.model_id = String::new();
+        let state = RunAgentsEditState::from_request(&req);
+        let config = Some(matching_config());
+        assert!(
+            should_auto_launch(false, false, false, &state, &config),
+            "Empty model_id on request should inherit from config and match"
+        );
+    }
+}
+
+mod compute_is_denied_tests {
+    use super::super::compute_is_denied;
+    use ai::agent::orchestration_config::{
+        OrchestrationConfig, OrchestrationConfigStatus, OrchestrationExecutionMode,
+    };
+
+    fn some_config(
+        status: OrchestrationConfigStatus,
+    ) -> Option<(OrchestrationConfig, OrchestrationConfigStatus)> {
+        Some((
+            OrchestrationConfig {
+                model_id: "auto".to_string(),
+                harness_type: "oz".to_string(),
+                execution_mode: OrchestrationExecutionMode::Local,
+            },
+            status,
+        ))
+    }
+
+    #[test]
+    fn false_when_no_denied_result_and_no_config() {
+        assert!(!compute_is_denied(false, &None));
+    }
+
+    #[test]
+    fn true_when_has_denied_result_from_history() {
+        assert!(compute_is_denied(true, &None));
+    }
+
+    #[test]
+    fn true_when_config_is_disapproved() {
+        let config = some_config(OrchestrationConfigStatus::Disapproved);
+        assert!(compute_is_denied(false, &config));
+    }
+
+    #[test]
+    fn true_when_both_denied_and_disapproved() {
+        let config = some_config(OrchestrationConfigStatus::Disapproved);
+        assert!(compute_is_denied(true, &config));
+    }
+
+    #[test]
+    fn false_when_config_is_approved() {
+        let config = some_config(OrchestrationConfigStatus::Approved);
+        assert!(!compute_is_denied(false, &config));
+    }
+
+    #[test]
+    fn false_when_config_status_is_none() {
+        let config = some_config(OrchestrationConfigStatus::None);
+        assert!(!compute_is_denied(false, &config));
+    }
+
+    #[test]
+    fn denied_result_overrides_approved_config() {
+        let config = some_config(OrchestrationConfigStatus::Approved);
+        assert!(
+            compute_is_denied(true, &config),
+            "History denied result should take precedence over approved config"
+        );
+    }
+}
+
 #[test]
 fn local_to_cloud_idempotent_when_already_remote() {
     let mut state = RunAgentsEditState::from_request(&make_request(
@@ -315,12 +560,12 @@ fn local_to_cloud_idempotent_when_already_remote() {
             computer_use_enabled: true,
         },
     ));
-    state.toggle_execution_mode_to_remote(true);
+    state.orch.toggle_execution_mode_to_remote(true);
     let RunAgentsExecutionMode::Remote {
         environment_id,
         computer_use_enabled,
         ..
-    } = state.execution_mode
+    } = state.orch.execution_mode
     else {
         panic!("expected Remote");
     };

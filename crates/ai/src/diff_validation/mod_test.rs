@@ -679,3 +679,88 @@ fn test_custom_lines() {
     assert_eq!(lines("foo\nbar").collect_vec(), vec!["foo", "bar"]);
     assert_eq!(lines("foo\nbar\n").collect_vec(), vec!["foo", "bar"]);
 }
+
+/// Regression test for WARP-CLIENT-DEV-NYY: panic "Invalid edit range 4042..3982".
+///
+/// Reproduces the crash from MAA conversation d71bf84b (request b621adb3).
+/// Two V4A hunks target the same region: a large deletion whose matched range
+/// subsumes a nearby single-line edit. Without `deduplicate_overlapping_deltas`,
+/// both deltas survive and `Buffer::edit` panics on the overlapping ranges.
+#[test]
+fn test_v4a_maa_crash_d71bf84b_no_overlapping_deltas() {
+    // File content where hunk A (deletion) and hunk B (delegate tweak) both
+    // match, and hunk A's matched range fully contains hunk B's.
+    // The `ActiveMicButtonTheme.background` line that hunk B targets sits
+    // inside `DefaultWeightAgentInputButtonTheme`'s impl, so hunk A's
+    // deletion (which covers the whole impl) subsumes hunk B.
+    let file_content = "\
+        }\n\
+    }\n\
+}\n\
+\n\
+struct DefaultWeightAgentInputButtonTheme;\n\
+\n\
+impl ActionButtonTheme for DefaultWeightAgentInputButtonTheme {\n\
+    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {\n\
+        AgentInputButtonTheme.background(hovered, appearance)\n\
+    }\n\
+\n\
+    fn text_color(\n\
+        &self,\n\
+        hovered: bool,\n\
+        background: Option<Fill>,\n\
+        appearance: &Appearance,\n\
+    ) -> ColorU {\n\
+        AgentInputButtonTheme.text_color(hovered, background, appearance)\n\
+    }\n\
+\n\
+    fn border(&self, appearance: &Appearance) -> Option<ColorU> {\n\
+        AgentInputButtonTheme.border(appearance)\n\
+    }\n\
+\n\
+    fn should_opt_out_of_contrast_adjustment(&self) -> bool {\n\
+        true\n\
+    }\n\
+}";
+
+    let hunks = vec![
+        // Hunk A: delete the entire DefaultWeightAgentInputButtonTheme block.
+        V4AHunk {
+            change_context: vec![],
+            pre_context: "        }\n    }\n}".to_string(),
+            old: "\nstruct DefaultWeightAgentInputButtonTheme;\n\nimpl ActionButtonTheme for DefaultWeightAgentInputButtonTheme {\n    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {\n        AgentInputButtonTheme.background(hovered, appearance)\n    }\n\n    fn text_color(\n        &self,\n        hovered: bool,\n        background: Option<Fill>,\n        appearance: &Appearance,\n    ) -> ColorU {\n        AgentInputButtonTheme.text_color(hovered, background, appearance)\n    }\n\n    fn border(&self, appearance: &Appearance) -> Option<ColorU> {\n        AgentInputButtonTheme.border(appearance)\n    }\n\n    fn should_opt_out_of_contrast_adjustment(&self) -> bool {\n        true\n    }\n}".to_string(),
+            new: String::new(),
+            post_context: String::new(),
+        },
+        // Hunk B: tweak a delegate call inside the same region hunk A deletes.
+        // Its preContext + old match a line inside hunk A's range, so it
+        // produces a delta whose range overlaps with hunk A's.
+        V4AHunk {
+            change_context: vec![],
+            pre_context: "impl ActionButtonTheme for DefaultWeightAgentInputButtonTheme {\n    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {".to_string(),
+            old: "        AgentInputButtonTheme.background(hovered, appearance)".to_string(),
+            new: "        AgentInputButtonTheme::default().background(hovered, appearance)".to_string(),
+            post_context: "    }".to_string(),
+        },
+    ];
+
+    let diff = fuzzy_match_v4a_diffs("mod.rs", &hunks, None, file_content);
+    let deltas = deltas(&diff);
+
+    // Hunk B's matched range is inside hunk A's, so deduplication must drop it.
+    // Only hunk A's delta (the deletion) should survive.
+    assert_eq!(
+        deltas.len(),
+        1,
+        "Expected 1 delta (subsumed hunk should be dropped), got {}: {:?}",
+        deltas.len(),
+        deltas
+            .iter()
+            .map(|d| &d.replacement_line_range)
+            .collect::<Vec<_>>(),
+    );
+    assert!(
+        deltas[0].insertion.is_empty(),
+        "The surviving delta should be the deletion"
+    );
+}

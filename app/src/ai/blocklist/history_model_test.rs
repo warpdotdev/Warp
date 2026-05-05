@@ -1318,3 +1318,195 @@ fn test_set_server_conversation_token_rebinds_reverse_index() {
         });
     });
 }
+
+/// REMOTE-1519 fork-on-chip-click flow.
+/// Forking the local conversation must:
+/// 1. carry the source's server token forward as `forked_from_*` (so the
+/// cloud agent's response stream can be reconciled to the right local
+/// conversation during replay), and
+/// 2. accept a binding to the cloud T_C via
+/// `set_server_conversation_token_for_conversation` such that the reverse
+/// index resolves the cloud token to the forked conversation.
+#[test]
+fn test_fork_then_bind_handoff_token_resolves_to_forked_conversation() {
+    use crate::ai::agent::conversation::AIConversation;
+    use crate::persistence::model::AgentConversationData;
+    use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
+
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        // `fork_conversation` writes the new conversation through the
+        // sqlite sender, so a mock sender must be wired up.
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(2);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        // Build a source conversation with a real root task (so `fork_conversation`
+        // has a `Task::source()` to copy forward) and the local-side server token T_L.
+        let source_id = AIConversationId::new();
+        let root_task = create_api_task(
+            "root-task",
+            vec![create_message("root-task-message", "root-task")],
+        );
+        let source = AIConversation::new_restored(
+            source_id,
+            vec![root_task],
+            Some(AgentConversationData {
+                server_conversation_token: Some("src-token".to_string()),
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                parent_conversation_id: None,
+                is_remote_child: false,
+                run_id: None,
+                autoexecute_override: None,
+                last_event_sequence: None,
+            }),
+        )
+        .expect("restored source conversation should build");
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![source], ctx);
+        });
+
+        // Fork the local conversation (REMOTE-1519: fork-on-chip-click).
+        let forked_id = history_model.update(&mut app, |model, ctx| {
+            let source = model
+                .conversation(&source_id)
+                .expect("source conversation must be in memory after restore")
+                .clone();
+            let forked = model
+                .fork_conversation(&source, "[Fork] ", false, ctx)
+                .expect("fork must succeed when sqlite sender is wired up");
+            assert_eq!(
+                forked
+                    .forked_from_server_conversation_token()
+                    .map(|t| t.as_str()),
+                Some("src-token"),
+                "forked conversation must carry its source token for replay reconciliation",
+            );
+            assert!(
+                forked.server_conversation_token().is_none(),
+                "freshly forked conversation must not yet have a server token of its own",
+            );
+            forked.id()
+        });
+
+        // Bind the cloud T_C returned by the fork RPC to the forked conversation.
+        history_model.update(&mut app, |model, _| {
+            model.set_server_conversation_token_for_conversation(forked_id, "cloud-T".to_string());
+        });
+
+        let cloud_token = ServerConversationToken::new("cloud-T".to_string());
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model.find_conversation_id_by_server_token(&cloud_token),
+                Some(forked_id),
+                "after binding, cloud T_C must resolve to the forked conversation",
+            );
+        });
+    });
+}
+
+/// REMOTE-1519 local-to-cloud handoff requires `preserve_task_ids: true` so the local fork's
+/// task store matches the cloud-side fork (a byte-for-byte GCS copy of the source). Verifies
+/// that root and subtask ids are preserved across the fork, the subtask's `parent_task_id`
+/// reference still points at the source's root id, and only the root task description is
+/// prefixed.
+#[test]
+fn test_fork_conversation_preserves_task_ids_when_requested() {
+    use crate::ai::agent::conversation::AIConversation;
+    use crate::persistence::model::AgentConversationData;
+    use crate::test_util::ai_agent_tasks::{create_api_subtask, create_api_task, create_message};
+
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(2);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        let source_id = AIConversationId::new();
+        let mut root_task = create_api_task(
+            "root-task-id",
+            vec![create_message("root-msg", "root-task-id")],
+        );
+        root_task.description = "Original root".to_string();
+        let mut subtask = create_api_subtask(
+            "subtask-id",
+            "root-task-id",
+            vec![create_message("sub-msg", "subtask-id")],
+        );
+        subtask.description = "Original subtask".to_string();
+        let source = AIConversation::new_restored(
+            source_id,
+            vec![root_task, subtask],
+            Some(AgentConversationData {
+                server_conversation_token: Some("src-token".to_string()),
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                parent_conversation_id: None,
+                is_remote_child: false,
+                run_id: None,
+                autoexecute_override: None,
+                last_event_sequence: None,
+            }),
+        )
+        .expect("restored source conversation should build");
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![source], ctx);
+        });
+
+        history_model.update(&mut app, |model, ctx| {
+            let source = model
+                .conversation(&source_id)
+                .expect("source conversation must be in memory after restore")
+                .clone();
+            let forked = model
+                .fork_conversation(&source, "[Fork] ", true, ctx)
+                .expect("fork must succeed when sqlite sender is wired up");
+
+            let forked_tasks: Vec<&warp_multi_agent_api::Task> =
+                forked.all_tasks().filter_map(|t| t.source()).collect();
+            let forked_root = forked_tasks
+                .iter()
+                .find(|t| t.id == "root-task-id")
+                .expect("root task id must be preserved across fork");
+            let forked_subtask = forked_tasks
+                .iter()
+                .find(|t| t.id == "subtask-id")
+                .expect("subtask id must be preserved across fork");
+            assert_eq!(
+                forked_subtask
+                    .dependencies
+                    .as_ref()
+                    .map(|d| d.parent_task_id.as_str()),
+                Some("root-task-id"),
+                "subtask must still reference the original root task id",
+            );
+            assert_eq!(
+                forked_root.description, "[Fork] Original root",
+                "root task description must be prefixed",
+            );
+            assert_eq!(
+                forked_subtask.description, "Original subtask",
+                "subtask description must not be prefixed",
+            );
+        });
+    });
+}

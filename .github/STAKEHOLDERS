@@ -209,5 +209,13 @@
 /crates/managed_secrets/ @bnavetta @ianhodge
 /crates/warp_web_event_bus/ @bnavetta @ianhodge
 
+# Command signatures v2
+/command-signatures-v2/ @zachbai
+
+# OS-level bootstrap scripts
+/script/linux/bootstrap @acarl005
+/script/macos/bootstrap @acarl005
+/script/windows/bootstrap.ps1 @acarl005
+
 # Shell completions in the Warp CLI
 /crates/warp_cli/src/completions.rs @zachbai @szgupta @alokedesai

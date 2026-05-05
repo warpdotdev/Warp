@@ -1,12 +1,17 @@
 use chrono::{DateTime, Duration, Utc};
 use instant::Instant;
 use parking_lot::Mutex;
-use persistence::model::AgentConversationData;
+use persistence::model::{AgentConversationData, ConversationUsageMetadata};
 use std::{collections::HashMap, sync::Arc};
 use warp_core::features::FeatureFlag;
-use warpui::{App, EntityId, ModelHandle};
+use warpui::{App, EntityId, ModelHandle, SingletonEntity};
 
-use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
+use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
+use crate::ai::agent::api::ServerConversationToken;
+use crate::ai::agent::conversation::{
+    AIAgentHarness, AIConversation, AIConversationId, ConversationStatus,
+    ServerAIConversationMetadata,
+};
 use crate::ai::ambient_agents::task::{TaskCreatorInfo, TaskStatusMessage};
 use crate::ai::ambient_agents::AgentConfigSnapshot;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -17,8 +22,11 @@ use crate::ai::blocklist::history_model::{
 };
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::auth::AuthStateProvider;
+use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions};
+use crate::server::ids::ServerId;
 use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
 
+use super::entry::{AgentConversationEntryId, AgentConversationProvenance};
 use super::{
     AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters,
     AgentRunDisplayStatus, ArtifactFilter, ConversationMetadata, ConversationOrTask,
@@ -604,6 +612,298 @@ fn all_owner_filters() -> AgentManagementFilters {
         owners: OwnerFilter::All,
         ..Default::default()
     }
+}
+
+fn add_entry_projection_test_models(app: &mut App) {
+    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
+    app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+    app.add_singleton_model(|_| ActiveAgentViewsModel::new());
+}
+
+fn mock_server_metadata() -> ServerMetadata {
+    ServerMetadata {
+        uid: ServerId::default(),
+        revision: Revision::now(),
+        metadata_last_updated_ts: Utc::now().into(),
+        trashed_ts: None,
+        folder_id: None,
+        is_welcome_object: false,
+        creator_uid: None,
+        last_editor_uid: None,
+        current_editor_uid: None,
+    }
+}
+
+fn mock_server_permissions() -> ServerPermissions {
+    ServerPermissions {
+        space: Owner::mock_current_user(),
+        guests: Vec::new(),
+        anyone_link_sharing: None,
+        permissions_last_updated_ts: Utc::now().into(),
+    }
+}
+
+fn create_server_conversation_metadata(
+    title: &str,
+    server_token: &str,
+    ambient_agent_task_id: Option<AmbientAgentTaskId>,
+) -> ServerAIConversationMetadata {
+    ServerAIConversationMetadata {
+        title: title.to_string(),
+        working_directory: None,
+        harness: AIAgentHarness::Oz,
+        usage: ConversationUsageMetadata {
+            was_summarized: false,
+            context_window_usage: 0.0,
+            credits_spent: 0.0,
+            credits_spent_for_last_block: None,
+            token_usage: vec![],
+            tool_usage_metadata: Default::default(),
+        },
+        metadata: mock_server_metadata(),
+        permissions: mock_server_permissions(),
+        ambient_agent_task_id,
+        server_conversation_token: ServerConversationToken::new(server_token.to_string()),
+        artifacts: Vec::new(),
+    }
+}
+
+#[test]
+fn test_get_entries_includes_task_only_entry() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let mut model = create_test_model();
+        let task = create_test_task(&make_uuid(8100), "user-a", now);
+        model.tasks.insert(task.task_id, task.clone());
+
+        app.update(|ctx| {
+            let entries = model.get_entries(&all_owner_filters(), ctx);
+
+            assert_eq!(entries.len(), 1);
+            let entry = &entries[0];
+            assert_eq!(entry.id, AgentConversationEntryId::AmbientRun(task.task_id));
+            assert_eq!(entry.identity.ambient_agent_task_id, Some(task.task_id));
+            assert_eq!(entry.identity.local_conversation_id, None);
+            assert_eq!(entry.provenance, AgentConversationProvenance::AmbientRun);
+            assert!(entry.backing.has_ambient_run);
+            assert!(!entry.backing.has_loaded_conversation);
+        });
+    });
+}
+
+#[test]
+fn test_get_entries_includes_local_only_entry() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let conversation_id = AIConversationId::new();
+        let mut model = create_test_model();
+        model.conversations.insert(
+            conversation_id,
+            create_test_conversation_metadata(conversation_id, "Local conversation"),
+        );
+
+        app.update(|ctx| {
+            let entries = model.get_entries(&all_owner_filters(), ctx);
+
+            assert_eq!(entries.len(), 1);
+            let entry = &entries[0];
+            assert_eq!(
+                entry.id,
+                AgentConversationEntryId::Conversation(conversation_id)
+            );
+            assert_eq!(entry.identity.local_conversation_id, Some(conversation_id));
+            assert_eq!(entry.identity.ambient_agent_task_id, None);
+            assert_eq!(
+                entry.provenance,
+                AgentConversationProvenance::LocalInteractive
+            );
+            assert_eq!(entry.display.title, "Local conversation");
+        });
+    });
+}
+
+#[test]
+fn test_get_entries_includes_cloud_metadata_only_entry() {
+    App::test((), |mut app| async move {
+        let token = "cloud-token-only";
+        add_entry_projection_test_models(&mut app);
+        BlocklistAIHistoryModel::handle(&app).update(&mut app, |model, _| {
+            model.merge_cloud_conversation_metadata(vec![create_server_conversation_metadata(
+                "Cloud conversation",
+                token,
+                None,
+            )]);
+        });
+
+        let model = create_test_model();
+
+        app.update(|ctx| {
+            let entries = model.get_entries(&all_owner_filters(), ctx);
+
+            assert_eq!(entries.len(), 1);
+            let entry = &entries[0];
+            assert_eq!(
+                entry
+                    .identity
+                    .server_conversation_token
+                    .as_ref()
+                    .map(|t| t.as_str()),
+                Some(token)
+            );
+            assert_eq!(
+                entry.provenance,
+                AgentConversationProvenance::CloudSyncedConversation
+            );
+            assert!(entry.backing.has_cloud_data);
+            assert!(!entry.backing.has_loaded_conversation);
+            assert!(!entry.backing.has_local_persisted_data);
+        });
+    });
+}
+
+#[test]
+fn test_get_entries_merges_task_and_local_conversation_by_run_id() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let conversation_id = AIConversationId::new();
+        let task_id = make_uuid(8101);
+        let conversation = create_restored_conversation(
+            conversation_id,
+            "root-task",
+            AgentConversationData {
+                server_conversation_token: None,
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                parent_conversation_id: None,
+                is_remote_child: false,
+                run_id: Some(task_id.clone()),
+                autoexecute_override: None,
+                last_event_sequence: None,
+            },
+        );
+
+        BlocklistAIHistoryModel::handle(&app).update(&mut app, |model, ctx| {
+            model.restore_conversations(EntityId::new(), vec![conversation], ctx);
+        });
+
+        let mut model = create_test_model();
+        let task = create_test_task(&task_id, "user-a", now);
+        model.tasks.insert(task.task_id, task.clone());
+        model.conversations.insert(
+            conversation_id,
+            create_test_conversation_metadata(conversation_id, "Conversation"),
+        );
+
+        app.update(|ctx| {
+            let entries = model.get_entries(&all_owner_filters(), ctx);
+
+            assert_eq!(entries.len(), 1);
+            let entry = &entries[0];
+            assert_eq!(entry.id, AgentConversationEntryId::AmbientRun(task.task_id));
+            assert_eq!(entry.identity.local_conversation_id, Some(conversation_id));
+            assert_eq!(entry.identity.ambient_agent_task_id, Some(task.task_id));
+            assert!(entry.backing.has_loaded_conversation);
+        });
+    });
+}
+
+#[test]
+fn test_get_entries_merges_task_and_local_conversation_by_server_token() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let conversation_id = AIConversationId::new();
+        let server_token = "entry-server-token";
+        let conversation = create_restored_conversation(
+            conversation_id,
+            "root-task",
+            AgentConversationData {
+                server_conversation_token: Some(server_token.to_string()),
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                parent_conversation_id: None,
+                is_remote_child: false,
+                run_id: None,
+                autoexecute_override: None,
+                last_event_sequence: None,
+            },
+        );
+
+        BlocklistAIHistoryModel::handle(&app).update(&mut app, |model, ctx| {
+            model.restore_conversations(EntityId::new(), vec![conversation], ctx);
+        });
+
+        let mut model = create_test_model();
+        let mut task = create_test_task(&make_uuid(8102), "user-a", now);
+        task.conversation_id = Some(server_token.to_string());
+        model.tasks.insert(task.task_id, task.clone());
+        model.conversations.insert(
+            conversation_id,
+            create_test_conversation_metadata(conversation_id, "Conversation"),
+        );
+
+        app.update(|ctx| {
+            let entries = model.get_entries(&all_owner_filters(), ctx);
+
+            assert_eq!(entries.len(), 1);
+            let entry = &entries[0];
+            assert_eq!(entry.id, AgentConversationEntryId::AmbientRun(task.task_id));
+            assert_eq!(entry.identity.local_conversation_id, Some(conversation_id));
+            assert_eq!(
+                entry
+                    .identity
+                    .server_conversation_token
+                    .as_ref()
+                    .map(|t| t.as_str()),
+                Some(server_token)
+            );
+        });
+    });
+}
+
+#[test]
+fn test_get_entries_keeps_unrelated_task_and_conversation_entries() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let conversation_id = AIConversationId::new();
+        let mut model = create_test_model();
+        let mut task = create_test_task(&make_uuid(8103), "user-a", now);
+        task.conversation_id = Some("different-token".to_string());
+        model.tasks.insert(task.task_id, task.clone());
+        model.conversations.insert(
+            conversation_id,
+            create_test_conversation_metadata(conversation_id, "Conversation"),
+        );
+
+        app.update(|ctx| {
+            let entries = model.get_entries(&all_owner_filters(), ctx);
+
+            assert_eq!(entries.len(), 2);
+            assert!(entries
+                .iter()
+                .any(|entry| entry.id == AgentConversationEntryId::AmbientRun(task.task_id)));
+            assert!(entries.iter().any(|entry| {
+                entry.id == AgentConversationEntryId::Conversation(conversation_id)
+            }));
+        });
+    });
 }
 
 #[test]

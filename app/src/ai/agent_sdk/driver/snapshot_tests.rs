@@ -248,7 +248,6 @@ fn run(
         .block_on(upload_snapshot_from_declarations_file(
             &declarations_path,
             client,
-            &fake_task_id(),
         ))
         .expect("pipeline returned None");
     let summary = SnapshotSummary::from_entries(&outcome.entries, outcome.manifest_uploaded);
@@ -276,7 +275,7 @@ fn parse_declarations_ignores_blank_lines() {
         "{\"version\":1,\"kind\":\"file\",\"path\":\"/abs/file.txt\"}\n",
         "\n",
     );
-    let entries = parse_declarations(contents, &fake_task_id());
+    let entries = parse_declarations(contents);
     assert_eq!(
         entries,
         vec![
@@ -302,7 +301,7 @@ fn parse_declarations_skips_malformed_lines_without_aborting() {
         "{\"version\":1,\"kind\":\"file\"}\n",
         "{\"version\":1,\"kind\":\"file\",\"path\":\"/abs/also-good\",\"extra\":true}\n",
     );
-    let entries = parse_declarations(contents, &fake_task_id());
+    let entries = parse_declarations(contents);
     assert_eq!(
         entries,
         vec![
@@ -325,7 +324,7 @@ fn parse_declarations_skips_missing_or_unsupported_versions() {
         "{\"version\":2,\"kind\":\"repo\",\"path\":\"/abs/unsupported-version\"}\n",
         "{\"version\":1,\"kind\":\"file\",\"path\":\"/abs/good\"}\n",
     );
-    let entries = parse_declarations(contents, &fake_task_id());
+    let entries = parse_declarations(contents);
     assert_eq!(
         entries,
         vec![DeclarationEntry {
@@ -342,7 +341,7 @@ fn parse_declarations_tolerates_crlf_line_endings() {
         "{\"version\":1,\"kind\":\"repo\",\"path\":\"/abs/good\"}\r\n",
         "{\"version\":1,\"kind\":\"file\",\"path\":\"/abs/also-good\"}\r\n",
     );
-    let entries = parse_declarations(contents, &fake_task_id());
+    let entries = parse_declarations(contents);
     assert_eq!(
         entries,
         vec![
@@ -365,7 +364,7 @@ fn parse_declarations_skips_lines_with_empty_path() {
         "{\"version\":1,\"kind\":\"file\",\"path\":\"   \"}\n",
         "{\"version\":1,\"kind\":\"repo\",\"path\":\"/abs/still-good\"}\n",
     );
-    let entries = parse_declarations(contents, &fake_task_id());
+    let entries = parse_declarations(contents);
     assert_eq!(
         entries,
         vec![DeclarationEntry {
@@ -382,7 +381,7 @@ fn parse_declarations_deduplicates_kind_path_pairs() {
         "{\"version\":1,\"kind\":\"repo\",\"path\":\"/abs/repo\"}\n",
         "{\"version\":1,\"kind\":\"file\",\"path\":\"/abs/repo\"}\n",
     );
-    let entries = parse_declarations(contents, &fake_task_id());
+    let entries = parse_declarations(contents);
     assert_eq!(
         entries,
         vec![
@@ -406,11 +405,7 @@ fn upload_skipped_when_declarations_file_missing() {
     let client = TestClient::new(server.url());
     let outcome = Runtime::new()
         .unwrap()
-        .block_on(upload_snapshot_from_declarations_file(
-            &missing,
-            client,
-            &fake_task_id(),
-        ));
+        .block_on(upload_snapshot_from_declarations_file(&missing, client));
     assert!(
         outcome.is_none(),
         "missing declarations file should skip the upload"
@@ -426,11 +421,7 @@ fn upload_skipped_when_declarations_file_empty() {
     let client = TestClient::new(server.url());
     let outcome = Runtime::new()
         .unwrap()
-        .block_on(upload_snapshot_from_declarations_file(
-            &decl,
-            client,
-            &fake_task_id(),
-        ));
+        .block_on(upload_snapshot_from_declarations_file(&decl, client));
     assert!(outcome.is_none(), "empty declarations file should skip");
 }
 
@@ -447,11 +438,7 @@ fn upload_skipped_when_declarations_file_has_no_valid_jsonl_entries() {
     let client = TestClient::new(server.url());
     let outcome = Runtime::new()
         .unwrap()
-        .block_on(upload_snapshot_from_declarations_file(
-            &decl,
-            client,
-            &fake_task_id(),
-        ));
+        .block_on(upload_snapshot_from_declarations_file(&decl, client));
     assert!(
         outcome.is_none(),
         "declarations file with no valid entries should skip"
@@ -980,7 +967,6 @@ fn e2e_get_snapshot_upload_targets_failure_returns_none() {
         .block_on(upload_snapshot_from_declarations_file(
             &declarations_path,
             client,
-            &fake_task_id(),
         ));
     assert!(
         outcome.is_none(),
@@ -1024,7 +1010,6 @@ fn e2e_short_response_leaves_trailing_file_without_target() {
         .block_on(upload_snapshot_from_declarations_file(
             &declarations_path,
             client,
-            &fake_task_id(),
         ))
         .expect("pipeline returned None");
     let summary = SnapshotSummary::from_entries(&outcome.entries, outcome.manifest_uploaded);
@@ -1256,7 +1241,7 @@ fn drop_files_covered_by_repos_handles_nested_repo_paths() {
 /// about for assertions, ignoring any lines the helper tests weren't asked to produce.
 fn parsed_file_paths(path: &Path) -> Vec<String> {
     let contents = fs::read_to_string(path).unwrap_or_default();
-    let entries = parse_declarations(&contents, &fake_task_id());
+    let entries = parse_declarations(&contents);
     entries
         .into_iter()
         .filter(|e| e.kind == EntryKind::File)
@@ -1451,11 +1436,7 @@ fn e2e_repo_plus_inside_and_outside_files_filters_overlap() {
     let client = TestClient::new(server.url());
     let outcome = Runtime::new()
         .unwrap()
-        .block_on(upload_snapshot_from_declarations_file(
-            &decl_path,
-            client,
-            &fake_task_id(),
-        ))
+        .block_on(upload_snapshot_from_declarations_file(&decl_path, client))
         .expect("pipeline returned None");
     let summary = SnapshotSummary::from_entries(&outcome.entries, outcome.manifest_uploaded);
 

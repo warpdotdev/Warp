@@ -433,6 +433,36 @@ pub enum TerminalAction {
     SwitchAgentViewToConversation {
         conversation_id: AIConversationId,
     },
+    /// Open a child agent conversation in a separate pane (split off from
+    /// the orchestrator). Dispatched from the orchestration pill bar's
+    /// 3-dot overflow menu ("Open in new pane"). For child agents that have
+    /// a hidden pane in `child_agent_panes` this reveals the existing pane;
+    /// for already-visible panes it focuses the existing pane.
+    OpenChildAgentInNewPane {
+        conversation_id: AIConversationId,
+    },
+    /// Open a child agent conversation in a separate tab. V2-of-V2 stub:
+    /// dispatched from the orchestration pill bar's 3-dot overflow menu
+    /// ("Open in new tab"). For now this falls back to the same path as
+    /// `OpenChildAgentInNewPane` until tab-level routing is wired through.
+    OpenChildAgentInNewTab {
+        conversation_id: AIConversationId,
+    },
+    /// Stop a child agent conversation: cancel the in-flight ambient task
+    /// (if any) and the local conversation's controller. The conversation
+    /// itself stays alive so the user can still navigate to it. Dispatched
+    /// from the orchestration pill bar's 3-dot overflow menu ("Stop agent").
+    StopAgentConversation {
+        conversation_id: AIConversationId,
+    },
+    /// Kill a child agent conversation: stop it (if running), then remove
+    /// the conversation from local history. Cloud-side cleanup is intentionally
+    /// not done in V2 — the user is removing it from their local view.
+    /// Dispatched from the orchestration pill bar's 3-dot overflow menu
+    /// ("Kill agent").
+    KillAgentConversation {
+        conversation_id: AIConversationId,
+    },
     /// Toggle PTY recording for this session.
     ToggleSessionRecording,
     /// Open the rich input editor for composing a prompt to send to a CLI agent.
@@ -711,6 +741,10 @@ impl fmt::Debug for TerminalAction {
             ToggleUsageFooter => write!(f, "ToggleUsageFooter"),
             RevealChildAgent { .. } => write!(f, "RevealChildAgent"),
             SwitchAgentViewToConversation { .. } => write!(f, "SwitchAgentViewToConversation"),
+            OpenChildAgentInNewPane { .. } => write!(f, "OpenChildAgentInNewPane"),
+            OpenChildAgentInNewTab { .. } => write!(f, "OpenChildAgentInNewTab"),
+            StopAgentConversation { .. } => write!(f, "StopAgentConversation"),
+            KillAgentConversation { .. } => write!(f, "KillAgentConversation"),
             ToggleSessionRecording => write!(f, "ToggleSessionRecording"),
             OpenCLIAgentRichInput => write!(f, "OpenCLIAgentRichInput"),
         }

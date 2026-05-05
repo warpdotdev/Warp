@@ -1,3 +1,8 @@
+#[allow(dead_code)]
+pub mod entry;
+
+pub use entry::AgentConversationEntry;
+
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
@@ -273,7 +278,7 @@ impl AgentRunDisplayStatus {
                     return Self::from_task_state(task);
                 }
                 let history_model = BlocklistAIHistoryModel::as_ref(app);
-                AgentConversationsModel::conversation_id_shadowed_by_task(task, history_model)
+                entry::conversation_id_shadowed_by_task(task, history_model)
                     .and_then(|conversation_id| history_model.conversation(&conversation_id))
                     .map(|conversation| Self::from_conversation_status(conversation.status()))
                     .unwrap_or_else(|| Self::from_task_state(task))
@@ -607,7 +612,7 @@ impl ConversationOrTask<'_> {
     }
 
     /// Resolve the effective execution harness for this run.
-    pub fn harness(&self) -> Option<Harness> {
+    pub fn harness(&self, app: &AppContext) -> Option<Harness> {
         match self {
             ConversationOrTask::Task(task) => {
                 task.agent_config_snapshot.as_ref().and_then(|config| {
@@ -618,7 +623,10 @@ impl ConversationOrTask<'_> {
                         .or(Some(Harness::Oz))
                 })
             }
-            ConversationOrTask::Conversation(_) => Some(Harness::Oz),
+            ConversationOrTask::Conversation(metadata) => BlocklistAIHistoryModel::as_ref(app)
+                .get_server_conversation_metadata(&metadata.nav_data.id)
+                .map(|m| Harness::from(m.harness))
+                .or(Some(Harness::Oz)),
         }
     }
 
@@ -741,10 +749,10 @@ impl ConversationOrTask<'_> {
     }
 
     /// Check if this item matches the harness filter.
-    fn matches_harness(&self, harness_filter: &HarnessFilter) -> bool {
+    fn matches_harness(&self, harness_filter: &HarnessFilter, app: &AppContext) -> bool {
         match harness_filter {
             HarnessFilter::All => true,
-            HarnessFilter::Specific(h) => self.harness() == Some(*h),
+            HarnessFilter::Specific(h) => self.harness(app) == Some(*h),
         }
     }
 
@@ -1415,32 +1423,67 @@ impl AgentConversationsModel {
         }
     }
 
-    /// Returns the local conversation ID represented by the given task, if this task and a
-    /// conversation entry both point at the same underlying local run.
-    ///
-    /// We first match using the orchestration agent ID (task ID / run ID under v2), and fall back
-    /// to the server conversation token for cases where the task only carries conversation identity
-    /// through `conversation_id`.
-    fn conversation_id_shadowed_by_task(
-        task: &AmbientAgentTask,
-        history_model: &BlocklistAIHistoryModel,
-    ) -> Option<AIConversationId> {
-        history_model
-            .conversation_id_for_agent_id(&task.run_id().to_string())
-            .or_else(|| {
-                task.conversation_id().and_then(|conversation_id| {
-                    history_model.find_conversation_id_by_server_token(
-                        &ServerConversationToken::new(conversation_id.to_string()),
-                    )
-                })
-            })
-    }
-
     fn conversation_ids_shadowed_by_tasks(&self, app: &AppContext) -> HashSet<AIConversationId> {
         let history_model = BlocklistAIHistoryModel::as_ref(app);
         self.tasks
             .values()
-            .filter_map(|task| Self::conversation_id_shadowed_by_task(task, history_model))
+            .filter_map(|task| entry::conversation_id_shadowed_by_task(task, history_model))
+            .collect()
+    }
+
+    /// Returns normalized, owned entries for agent management/navigation surfaces.
+    ///
+    /// This projection keeps task, local conversation, and cloud metadata identity together while
+    /// leaving the current `ConversationOrTask` call sites unchanged.
+    #[allow(dead_code)]
+    pub fn get_entries(
+        &self,
+        filters: &AgentManagementFilters,
+        app: &AppContext,
+    ) -> Vec<AgentConversationEntry> {
+        let history_model = BlocklistAIHistoryModel::as_ref(app);
+        let mut entries = Vec::new();
+        let mut attached_conversation_ids = HashSet::new();
+        let mut emitted_conversation_ids = HashSet::new();
+
+        for task in self.tasks.values() {
+            let entry = entry::entry_for_task(task, history_model, app);
+            if let Some(conversation_id) = entry.identity.local_conversation_id {
+                attached_conversation_ids.insert(conversation_id);
+            }
+            entries.push(entry);
+        }
+
+        for metadata in self.conversations.values() {
+            let conversation_id = metadata.nav_data.id;
+            if attached_conversation_ids.contains(&conversation_id) {
+                continue;
+            }
+            let entry = entry::entry_for_conversation(metadata, history_model, app);
+            emitted_conversation_ids.insert(conversation_id);
+            entries.push(entry);
+        }
+
+        for metadata in history_model.get_local_conversations_metadata() {
+            if attached_conversation_ids.contains(&metadata.id)
+                || emitted_conversation_ids.contains(&metadata.id)
+            {
+                continue;
+            }
+            let nav_data =
+                ConversationNavigationData::from_historical_conversation_metadata(metadata);
+            entries.push(entry::entry_for_historical_metadata(
+                metadata,
+                nav_data,
+                history_model,
+                app,
+            ));
+        }
+
+        entries
+            .into_iter()
+            .filter(|entry| entry.matches_filters(filters, app))
+            .sorted_by(|a, b| b.display.last_updated.cmp(&a.display.last_updated))
             .collect()
     }
 
@@ -1523,8 +1566,9 @@ impl AgentConversationsModel {
             // UpdateTaskDescription, last_updated uses exchange.start_time which is set at append time).
             | BlocklistAIHistoryEvent::UpdatedStreamingExchange { .. }
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+            | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            => {}
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
         }
     }
 
@@ -1571,7 +1615,8 @@ impl AgentConversationsModel {
         };
 
         let harness_filter_value = filters.harness;
-        let harness_filter = move |t: &ConversationOrTask| t.matches_harness(&harness_filter_value);
+        let harness_filter =
+            move |t: &ConversationOrTask| t.matches_harness(&harness_filter_value, app);
 
         let tasks_iter = self.tasks.values().map(ConversationOrTask::Task);
         let conversations_iter = self
