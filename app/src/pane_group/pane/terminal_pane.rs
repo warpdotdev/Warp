@@ -1107,21 +1107,28 @@ fn handle_terminal_view_event(
                 ctx.emit(pane_group::Event::FreeTierLimitCheckTriggered);
             }
             Event::RevealChildAgent { conversation_id } => {
-                // Hidden child pane case: reveal it, then focus.
-                if let Some(&child_pane_id) = group.child_agent_panes.get(conversation_id) {
+                // Prefer a visible pane that already hosts the
+                // conversation over revealing the hidden child pane.
+                // Once the user has opened the child in a sibling pane
+                // (via "Open in new pane" / "Open in new tab"), the
+                // hidden pane that was originally created at agent
+                // start is empty — its terminal model never accumulated
+                // rendered AI blocks for the conversation — so revealing
+                // it would surface a blank pane next to the real one.
+                // The entry in `child_agent_panes` is never cleaned up
+                // when the child is split off, so we cannot rely on its
+                // presence as a signal that no visible pane exists.
+                if let Some(visible_pane_id) =
+                    group.find_visible_terminal_pane_for_conversation(*conversation_id, ctx)
+                {
+                    group.focus_pane(visible_pane_id.into(), true, ctx);
+                } else if let Some(&child_pane_id) = group.child_agent_panes.get(conversation_id) {
+                    // No visible pane has the conversation yet — reveal
+                    // the hidden child pane that was registered when the
+                    // child agent was first started.
                     group.panes.show_pane_for_child_agent(child_pane_id);
                     group.handle_pane_count_change(ctx);
                     group.focus_pane(child_pane_id, true, ctx);
-                } else if let Some(visible_pane_id) =
-                    group.find_visible_terminal_pane_for_conversation(*conversation_id, ctx)
-                {
-                    // Already-visible pane case (e.g. a pinned child pill in
-                    // the orchestrator's pill bar): the child has been opened
-                    // in another pane via "Open in new pane"/"Open in new tab"
-                    // and is no longer in `child_agent_panes`. Walk visible
-                    // terminal panes, find the one whose terminal view has
-                    // this conversation active, and focus it in place.
-                    group.focus_pane(visible_pane_id.into(), true, ctx);
                 } else {
                     log::warn!("No pane found for child conversation {conversation_id:?}");
                 }
