@@ -117,13 +117,14 @@ You can use **any coding agent** to implement a contribution — for example, Wa
 
 If you'd rather have an **Oz cloud agent** implement a ready issue for you, mention **@oss-maintainers** on the issue to request it. Approved requests run **for free** on complimentary Oz credits — you don't need to set up your own Oz account or pay for compute.
 
-## Becoming a Collaborator
+## Code Review
 
-Contributors with several merged PRs may be invited to become collaborators. Collaborators receive expanded permissions including the ability to:
+All pull requests go through a two-stage review process:
 
-- Assign [Oz](https://warp.dev/oz) to work on issues by mentioning `@oz` in a comment on any issue that has a readiness label.
-- Use complimentary Oz credits for contributions to this repository.
-- Apply and manage issue labels.
+1. **Oz review** — When you open a PR, [Oz](https://warp.dev/oz) is automatically assigned and produces the first review. Oz checks for correctness, style, test coverage, and alignment with the linked issue and any associated specs.
+2. **Warp team review** — Only after Oz has **approved** the PR is it routed to a Warp team subject-matter expert for a final human review. PRs that have not yet been approved by Oz will not be assigned to a team member.
+
+You do not need to manually request reviewers at any stage. After pushing changes that address Oz's feedback, comment `/oz-review` on the PR to request a re-review — you can do this up to **three times** per PR. If something looks stuck or you need additional reviews, mention **@oss-maintainers** on the PR to escalate to the team.
 
 ## Development Setup
 

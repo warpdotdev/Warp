@@ -28,7 +28,6 @@ use warpui::{
 };
 
 use crate::ai::agent::api::ServerConversationToken;
-#[cfg(target_family = "wasm")]
 use crate::ai::agent::conversation::AIConversation;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::agent_conversations_model::AgentRunDisplayStatus;
@@ -42,7 +41,6 @@ use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironment};
 use crate::ai::harness_display;
 use crate::appearance::Appearance;
-#[cfg(target_family = "wasm")]
 use crate::auth::UserUid;
 use crate::notebooks::NotebookId;
 use crate::send_telemetry_from_ctx;
@@ -64,7 +62,6 @@ use crate::view_components::copyable_text_field::{
 };
 use crate::view_components::DismissibleToast;
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
-#[cfg(target_family = "wasm")]
 use crate::workspaces::user_profiles::UserProfiles;
 
 const FIELD_SPACING: f32 = 16.0;
@@ -161,7 +158,6 @@ impl CreatorInfo {
     }
 
     /// Create a CreatorInfo with just the first character as a fallback.
-    #[cfg(target_family = "wasm")]
     pub fn from_uid_fallback(uid: &str) -> Self {
         let first_char = uid.chars().next().unwrap_or('?').to_uppercase().to_string();
         Self::new(first_char, None)
@@ -224,7 +220,10 @@ impl ConversationDetailsData {
                     .and_then(|metadata| metadata.initial_working_directory.clone())
             })
     }
-    #[cfg(target_family = "wasm")]
+
+    /// Build details data from an in-memory `AIConversation`. Used both by the WASM
+    /// transcript/shared-session details panel and by the native pane-level details panel
+    /// when the active conversation is a local (non-cloud) Warp Agent run.
     pub fn from_conversation(conversation: &AIConversation, app: &AppContext) -> Self {
         let mut directory = None;
         let mut conversation_id = None;
@@ -559,6 +558,14 @@ impl ConversationDetailsPanel {
         self.set_action_buttons(&data, ctx);
         self.data = data;
         ctx.notify();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn task_display_status_for_test(&self) -> Option<AgentRunDisplayStatus> {
+        match &self.data.mode {
+            PanelMode::Task { display_status, .. } => display_status.clone(),
+            PanelMode::Conversation { .. } => None,
+        }
     }
 
     #[cfg(not(target_family = "wasm"))]

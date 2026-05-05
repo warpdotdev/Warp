@@ -50,7 +50,7 @@ The rest of the code in this repository is licensed under the [AGPL v3](LICENSE-
 Warp's client codebase is open source and lives in this repository. We welcome community contributions and have designed a lightweight workflow to help new contributors get started. For the full contribution flow, read our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
 
 > [!TIP]
-> **Chat with contributors and the Warp team** in the [`#oss-contributors`](https://warpcommunity.slack.com/archives/C0B0LM8N4DB) Slack channel — a good place for ad-hoc questions, design discussion, and pairing with maintainers. New here? [Join the Warp Slack community](https://go.warp.dev/join-preview) first, then jump into `#oss-contributors`.
+> Maintaining a popular open-source project? [Apply for Oz credits](https://tally.so/r/LZWxqG) to bring [agentic workflows](https://github.com/warpdotdev/oz-for-oss) like issue triage, PR review, and community management to your repo.
 
 ### Issue to PR
 
@@ -77,7 +77,7 @@ Interested in joining the team? See our [open roles](https://www.warp.dev/career
 ## Support and Questions
 
 1. See our [docs](https://docs.warp.dev/) for a comprehensive guide to Warp's features.
-2. Join our [Slack Community](https://go.warp.dev/join-preview) to connect with other users and get help from the Warp team — contributors hang out in [`#oss-contributors`](https://warpcommunity.slack.com/archives/C0B0LM8N4DB).
+2. Join our [Slack Community](https://go.warp.dev/join-preview) to connect with other users and get help from the Warp team.
 3. Try our [Preview build](https://www.warp.dev/download-preview) to test the latest experimental features.
 4. Mention **@oss-maintainers** on any issue to escalate to the team — for example, if you encounter problems with the automated agents.
 

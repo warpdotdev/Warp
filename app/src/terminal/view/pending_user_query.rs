@@ -7,7 +7,7 @@ use crate::{
         blocklist::block::{FinishReason, PendingUserQueryBlock, PendingUserQueryBlockEvent},
     },
     auth::AuthStateProvider,
-    terminal::TerminalView,
+    terminal::{view::PendingUserQueryKind, TerminalView},
 };
 
 use super::rich_content::RichContentMetadata;
@@ -31,10 +31,12 @@ impl TerminalView {
         prompt: String,
         show_close_button: bool,
         show_send_now_button: bool,
+        kind: PendingUserQueryKind,
         ctx: &mut ViewContext<Self>,
         on_send_now: impl Fn(&mut TerminalView, &mut ViewContext<TerminalView>) + 'static,
     ) {
         self.remove_pending_user_query_block(ctx);
+        self.pending_user_query_kind = Some(kind);
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
         let user_display_name = auth_state
             .username_for_display()
@@ -73,38 +75,22 @@ impl TerminalView {
         self.pending_user_query_view_id = Some(view_id);
     }
 
-    fn insert_pending_user_query_block(
-        &mut self,
-        prompt: String,
-        show_close_button: bool,
-        show_send_now_button: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let prompt_for_send_now = prompt.clone();
-        self.insert_pending_user_query_block_with_send_now(
-            prompt,
-            show_close_button,
-            show_send_now_button,
-            ctx,
-            move |terminal_view, ctx| {
-                terminal_view.send_queued_prompt_now(prompt_for_send_now.clone(), ctx);
-            },
-        );
-    }
-
-    /// Inserts a pending user query block for a non-oz Cloud Mode run whose harness CLI
-    /// has not yet started.
+    /// Inserts a pending user query block for a Cloud Mode run whose real user query has not yet
+    /// arrived in the shared-session transcript.
     /// The block shows the user's prompt with a "Queued" badge and no buttons: the
-    /// queued state is owned by the run's lifecycle (harness start, failure, cancel,
-    /// or auth required), not by a local `/queue`-style callback, so the prompt is not
-    /// re-submitted when the block is removed.
+    /// queued state is owned by the run's lifecycle, not by a local `/queue`-style callback, so
+    /// the prompt is not re-submitted when the block is removed.
     pub(in crate::terminal::view) fn insert_cloud_mode_queued_user_query_block(
         &mut self,
         prompt: String,
         ctx: &mut ViewContext<Self>,
     ) {
         self.insert_pending_user_query_block(
-            prompt, /* show_close_button */ false, /* show_send_now_button */ false, ctx,
+            prompt,
+            /* show_close_button */ false,
+            /* show_send_now_button */ false,
+            PendingUserQueryKind::CloudMode,
+            ctx,
         );
     }
 
@@ -113,6 +99,7 @@ impl TerminalView {
     /// (Safe to call from within the callback itself — the caller `.take()`s it first.)
     pub(super) fn remove_pending_user_query_block(&mut self, ctx: &mut ViewContext<Self>) {
         self.queued_prompt_callback = None;
+        self.pending_user_query_kind = None;
         if let Some(view_id) = self.pending_user_query_view_id.take() {
             self.model
                 .lock()
@@ -253,6 +240,7 @@ impl TerminalView {
                 prompt.clone(),
                 show_close_button,
                 show_send_now_button,
+                PendingUserQueryKind::QueuedPrompt,
                 ctx,
             );
         }

@@ -319,6 +319,9 @@ impl From<&AIAgentActionType> for PersistedAIAgentActionType {
             },
             AIAgentActionType::StartAgent { .. } => Self::NotPersisted,
             AIAgentActionType::SendMessageToAgent { .. } => Self::NotPersisted,
+            // Orchestrate is rendered from the in-history tool call message;
+            // there is no per-action state we need to persist locally.
+            AIAgentActionType::RunAgents(_) => Self::NotPersisted,
         }
     }
 }

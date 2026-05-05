@@ -28,7 +28,7 @@ use crate::server::server_api::ai::{
     AgentConfigSnapshot, AmbientAgentTaskState, AttachmentInput, SpawnAgentRequest,
 };
 use crate::server::server_api::{AIApiError, CloudAgentCapacityError, ServerApiProvider};
-use crate::terminal::view::ambient_agent::SetupCommandState;
+use crate::terminal::view::ambient_agent::{SetupCommandGroupId, SetupCommandState};
 use crate::terminal::CLIAgent;
 
 use super::AmbientAgentProgressUIState;
@@ -128,15 +128,20 @@ pub struct AmbientAgentViewModel {
     /// Selected worker host for the cloud agent run. Populated from the HostSelector
     /// (which resolves env var > workspace setting) and read by `spawn_agent`.
     worker_host: Option<String>,
-    /// Whether the optimistic InitialUserQuery block has been inserted for the current run.
-    has_inserted_cloud_mode_user_query_block: bool,
     /// Whether the harness CLI (e.g. `claude`, `gemini`) has started running for a non-oz run.
     /// Used to transition the cloud-mode setup UI out of the pre-first-exchange phase when
     /// there is no oz `AppendedExchange` to key off of.
     harness_command_started: bool,
 
+    /// Session ID for the currently running ambient execution, if the run has attached to a live
+    /// shared session.
     active_execution_session_id: Option<SessionId>,
+    /// Session ID for the most recently finished ambient execution.
+    /// Used as the previous session ID when submitting a follow-up so polling can wait for a
+    /// different fresh session after the prior execution has ended.
     last_ended_execution_session_id: Option<SessionId>,
+    /// Prompt text for a follow-up that has been submitted but not yet attached to a new session.
+    pending_followup_prompt: Option<String>,
 }
 
 impl AmbientAgentViewModel {
@@ -167,10 +172,10 @@ impl AmbientAgentViewModel {
             conversation_id: None,
             harness: Harness::default(),
             worker_host: None,
-            has_inserted_cloud_mode_user_query_block: false,
             harness_command_started: false,
             active_execution_session_id: None,
             last_ended_execution_session_id: None,
+            pending_followup_prompt: None,
         }
     }
 
@@ -186,15 +191,43 @@ impl AmbientAgentViewModel {
         &mut self.setup_commands_state
     }
 
+    pub(super) fn start_new_setup_command_group(&mut self, ctx: &mut ModelContext<Self>) {
+        self.setup_commands_state.start_new_group();
+        self.harness_command_started = false;
+        ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+    }
+
+    pub(super) fn finish_setup_command_group(
+        &mut self,
+        group_id: SetupCommandGroupId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.setup_commands_state.is_running(group_id) {
+            self.setup_commands_state.finish_group(group_id);
+            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+        }
+    }
+
+    pub(super) fn set_setup_command_group_visibility(
+        &mut self,
+        group_id: SetupCommandGroupId,
+        is_visible: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if is_visible != self.setup_commands_state.should_expand(group_id) {
+            self.setup_commands_state
+                .set_should_expand(group_id, is_visible);
+            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+        }
+    }
+
     pub(super) fn set_setup_command_visibility(
         &mut self,
         is_visible: bool,
         ctx: &mut ModelContext<Self>,
     ) {
-        if is_visible != self.setup_commands_state.should_expand() {
-            self.setup_commands_state.set_should_expand(is_visible);
-            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
-        }
+        let group_id = self.setup_commands_state.current_group_id();
+        self.set_setup_command_group_visibility(group_id, is_visible, ctx);
     }
 
     /// Handles CloudModel events to keep environment_id in sync.
@@ -335,14 +368,6 @@ impl AmbientAgentViewModel {
         self.task_id
     }
 
-    pub fn has_inserted_cloud_mode_user_query_block(&self) -> bool {
-        self.has_inserted_cloud_mode_user_query_block
-    }
-
-    pub fn set_has_inserted_cloud_mode_user_query_block(&mut self, has_inserted: bool) {
-        self.has_inserted_cloud_mode_user_query_block = has_inserted;
-    }
-
     /// Whether or not this terminal session is in the setup state (first-time environment creation).
     pub fn is_in_setup(&self) -> bool {
         matches!(self.status, Status::Setup)
@@ -473,6 +498,7 @@ impl AmbientAgentViewModel {
     /// terminal manager to append that session's scrollback to the existing transcript.
     pub fn attach_followup_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
         self.stop_progress_timer();
+        self.pending_followup_prompt = None;
         self.active_execution_session_id = Some(session_id);
         self.last_ended_execution_session_id = None;
         self.status = Status::AgentRunning;
@@ -501,8 +527,15 @@ impl AmbientAgentViewModel {
             .active_execution_session_id
             .or(self.last_ended_execution_session_id);
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let stream = submit_run_followup(prompt, task_id, previous_session_id, ai_client, None);
+        let stream = submit_run_followup(
+            prompt.clone(),
+            task_id,
+            previous_session_id,
+            ai_client,
+            None,
+        );
 
+        self.pending_followup_prompt = Some(prompt);
         self.status = Status::WaitingForSession {
             progress: AgentProgress::new(),
             kind: SessionStartupKind::Followup,
@@ -521,16 +554,32 @@ impl AmbientAgentViewModel {
         &self.status
     }
 
+    pub fn pending_followup_prompt(&self) -> Option<&str> {
+        self.pending_followup_prompt.as_deref()
+    }
+
+    pub fn should_show_followup_progress(&self) -> bool {
+        self.pending_followup_prompt.is_some()
+            && matches!(
+                self.status,
+                Status::WaitingForSession { .. }
+                    | Status::Failed { .. }
+                    | Status::NeedsGithubAuth { .. }
+                    | Status::Cancelled { .. }
+            )
+    }
+
     /// Reset cloud-specific prompt state so a retained cloud view can compose a new task.
     pub fn reset_for_new_cloud_prompt(&mut self, ctx: &mut ModelContext<Self>) {
         self.status = Status::Composing;
         self.environment_id = None;
         self.task_id = None;
         self.conversation_id = None;
-        self.has_inserted_cloud_mode_user_query_block = false;
         self.harness_command_started = false;
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
+        self.pending_followup_prompt = None;
+        self.setup_commands_state = Default::default();
         self.stop_progress_timer();
         ctx.notify();
     }
@@ -784,6 +833,7 @@ impl AmbientAgentViewModel {
                     };
                     self.active_execution_session_id = Some(session_id);
                     self.last_ended_execution_session_id = None;
+                    self.pending_followup_prompt = None;
                     self.status = Status::AgentRunning;
                     ctx.emit(event);
                 }
@@ -903,6 +953,7 @@ impl AmbientAgentViewModel {
             progress,
             error_message: error_message.clone(),
         };
+        self.pending_followup_prompt = None;
         ctx.emit(AmbientAgentViewModelEvent::Failed { error_message });
     }
 
@@ -938,6 +989,7 @@ impl AmbientAgentViewModel {
             error_message,
             auth_url,
         };
+        self.pending_followup_prompt = None;
 
         ctx.emit(AmbientAgentViewModelEvent::NeedsGithubAuth);
     }
@@ -965,6 +1017,7 @@ impl AmbientAgentViewModel {
         };
 
         self.status = Status::Cancelled { progress };
+        self.pending_followup_prompt = None;
 
         ctx.emit(AmbientAgentViewModelEvent::Cancelled);
     }

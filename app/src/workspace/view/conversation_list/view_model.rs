@@ -41,7 +41,7 @@ impl ConversationListViewModel {
                 }
                 // Status changes don't affect the set of IDs (status is read
                 // at render time via get_item_by_id); just signal a re-render.
-                AgentConversationsModelEvent::ConversationUpdated => {
+                AgentConversationsModelEvent::ConversationUpdated { .. } => {
                     ctx.emit(ConversationListViewModelEvent);
                 }
                 // Artifact updates don't affect the conversation list
