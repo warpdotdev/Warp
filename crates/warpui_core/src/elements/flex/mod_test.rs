@@ -193,7 +193,7 @@ fn test_flex_main_axis_alignment() {
             let view_3_size = vec2f(50., 50.);
 
             // The view has a min axis size, so each element should be rendered right next to
-            // each other and and the flex should take up the total size of the elements.
+            // each other and the flex should take up the total size of the elements.
             assert_eq!(view_1, RectF::new(Vector2F::zero(), view_1_size));
             assert_eq!(view_2, RectF::new(vec2f(50., 0.), view_2_size));
             assert_eq!(view_3, RectF::new(vec2f(100., 0.), view_3_size));
@@ -257,7 +257,7 @@ fn test_flex_main_axis_alignment() {
                 .get_position("flex")
                 .expect("position should exist");
 
-            // Ensure that the the elements are evenly spaced (with no extra space at the
+            // Ensure that the elements are evenly spaced (with no extra space at the
             // beginning or end) and that the flex expands out to the max size of the window.
             assert_eq!(view_1, RectF::new(Vector2F::zero(), view_1_size));
             assert_eq!(view_2, RectF::new(vec2f(125., 0.), view_2_size));
@@ -289,7 +289,7 @@ fn test_flex_main_axis_alignment() {
                 .get_position("flex")
                 .expect("position should exist");
 
-            // Ensure that the the elements are evenly spaced, including space before and after
+            // Ensure that the elements are evenly spaced, including space before and after
             // the child elements, and that the flex expands out to the max size of the window.
             assert_eq!(view_1, RectF::new(vec2f(37.5, 0.), view_1_size));
             assert_eq!(view_2, RectF::new(vec2f(125., 0.), view_2_size));

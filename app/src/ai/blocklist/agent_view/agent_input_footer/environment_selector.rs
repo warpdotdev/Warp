@@ -236,10 +236,38 @@ impl EnvironmentSelector {
         self.is_menu_open
     }
 
+    pub fn open_menu(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.is_configuring(ctx) {
+            return;
+        }
+        self.set_menu_visibility(true, ctx);
+    }
+
     fn is_configuring(&self, ctx: &AppContext) -> bool {
         self.ambient_agent_model
             .as_ref(ctx)
             .is_configuring_ambient_agent()
+    }
+
+    fn highlight_selected_environment(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(selected_id) = self
+            .ambient_agent_model
+            .as_ref(ctx)
+            .selected_environment_id()
+            .cloned()
+        else {
+            return;
+        };
+
+        let mut environments = CloudAmbientAgentEnvironment::get_all(ctx);
+        sort_environments_by_recency(&mut environments);
+        let Some(index) = environments.iter().position(|env| env.id == selected_id) else {
+            return;
+        };
+
+        self.dropdown.update(ctx, |menu, ctx| {
+            menu.select_index(index, ctx);
+        });
     }
 
     fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
@@ -251,6 +279,7 @@ impl EnvironmentSelector {
         if is_open {
             send_telemetry_from_ctx!(CloudAgentTelemetryEvent::EnvironmentSelectorOpened, ctx);
             ctx.focus(&self.dropdown);
+            self.highlight_selected_environment(ctx);
         }
         ctx.emit(EnvironmentSelectorEvent::MenuVisibilityChanged { open: is_open });
         ctx.notify();
@@ -328,6 +357,10 @@ impl EnvironmentSelector {
         self.dropdown.update(ctx, |menu, ctx| {
             menu.update_menu_items(menu_items, ctx);
         });
+
+        if self.is_menu_open {
+            self.highlight_selected_environment(ctx);
+        }
     }
 
     fn refresh_button(&mut self, ctx: &mut ViewContext<Self>) {

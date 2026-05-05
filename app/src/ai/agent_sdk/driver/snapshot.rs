@@ -30,11 +30,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use command::r#async::Command;
 use command::Stdio;
 use futures::future::join_all;
+use tokio::fs::{self as tokio_fs, OpenOptions};
+use tokio::io::AsyncWriteExt as _;
+use tokio::sync::{mpsc, oneshot};
 use warp_core::report_error;
+use warpui::r#async::executor::Background;
 use warpui::r#async::FutureExt as _;
 
 use crate::ai::agent_sdk::retry::with_bounded_retry;
@@ -97,6 +101,15 @@ struct DeclarationLine {
     version: Option<u32>,
     kind: String,
     path: String,
+}
+
+/// Serialize-only sibling of [`DeclarationLine`] used by the writer task to emit `file`
+/// entries with a fixed `version` and `kind`.
+#[derive(serde::Serialize)]
+struct FileDeclaration<'a> {
+    version: u32,
+    kind: &'a str,
+    path: &'a str,
 }
 
 /// Invoke `snapshot-declarations.sh` to (re)generate the declarations file consumed by the
@@ -311,6 +324,243 @@ fn parse_declarations(contents: &str, task_id: &AmbientAgentTaskId) -> Vec<Decla
     entries
 }
 
+/// Drop `file` declarations whose path is already covered by a declared `repo` path so the
+/// gather step does not double-upload files the repo patch already carries.
+fn drop_files_covered_by_repos(entries: Vec<DeclarationEntry>) -> Vec<DeclarationEntry> {
+    let repo_paths: Vec<PathBuf> = entries
+        .iter()
+        .filter(|entry| entry.kind == EntryKind::Repo)
+        .map(|entry| PathBuf::from(&entry.path))
+        .collect();
+    if repo_paths.is_empty() {
+        return entries;
+    }
+    entries
+        .into_iter()
+        .filter(|entry| {
+            if entry.kind != EntryKind::File {
+                return true;
+            }
+            let file_path = Path::new(&entry.path);
+            for repo in &repo_paths {
+                if file_path.starts_with(repo) {
+                    log::info!(
+                        "Dropping file declaration '{}' covered by repo '{}'",
+                        entry.path,
+                        repo.display()
+                    );
+                    return false;
+                }
+            }
+            true
+        })
+        .collect()
+}
+
+// --- Declarations writer: SDK driver → declarations file ---
+
+/// Commands accepted by the async declarations writer task.
+enum WriterCommand {
+    /// Append `file` entries for the given paths to the declarations file.
+    Append(Vec<String>),
+    /// Acknowledge once every previously-queued command has finished its fs writes.
+    Flush(oneshot::Sender<()>),
+}
+
+/// Handle used by the SDK driver to enqueue `file` declaration appends from the subscription
+/// thread without ever touching the filesystem inline.
+///
+/// The handle owns an unbounded `mpsc` sender into a dedicated writer task spawned by
+/// [`DeclarationsWriterHandle::new`]. The writer task owns the `seen: HashSet<String>` and
+/// the resolved declarations path, and processes commands sequentially, which serializes
+/// writes within the process. Handles are cheaply cloneable because the underlying sender is;
+/// dropping every handle closes the channel and lets the writer task exit cleanly.
+#[derive(Clone)]
+pub(super) struct DeclarationsWriterHandle {
+    tx: mpsc::UnboundedSender<WriterCommand>,
+}
+
+impl DeclarationsWriterHandle {
+    /// Spawn the writer task on `background` and return a fire-and-forget handle.
+    pub(super) fn new(
+        task_id: AmbientAgentTaskId,
+        working_dir: PathBuf,
+        background: &Background,
+    ) -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let declarations_path = resolve_declarations_path(Some(&task_id));
+        background
+            .spawn(writer_task(rx, declarations_path, working_dir, task_id))
+            .detach();
+        Self { tx }
+    }
+
+    /// Test-facing constructor that bypasses env-var-dependent path resolution and uses
+    /// `tokio::spawn` directly so tests can run without standing up a `Background`.
+    #[cfg(all(test, not(windows)))]
+    pub(super) fn new_at_path(
+        declarations_path: PathBuf,
+        working_dir: PathBuf,
+        task_id: AmbientAgentTaskId,
+    ) -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(writer_task(rx, declarations_path, working_dir, task_id));
+        Self { tx }
+    }
+
+    /// Enqueue `paths` for appending as `file` entries.
+    ///
+    /// Non-blocking; the subscription handler can call this from a sync context. Empty
+    /// input is a no-op.
+    pub(super) fn append(&self, paths: Vec<String>) {
+        if paths.is_empty() {
+            return;
+        }
+        if let Err(e) = self.tx.send(WriterCommand::Append(paths)) {
+            log::warn!("Declarations writer channel closed; dropping append: {e}");
+        }
+    }
+
+    /// Awaits until every previously-queued `append` has finished its fs writes.
+    ///
+    /// Called once from `AgentDriver::run_snapshot_upload` immediately before
+    /// `snapshot::run_declarations_script`, so no driver-side write is in flight when the
+    /// bash script starts its own appends.
+    pub(super) async fn flush(&self) {
+        let (ack_tx, ack_rx) = oneshot::channel();
+        if self.tx.send(WriterCommand::Flush(ack_tx)).is_err() {
+            // Writer task has already exited; nothing is queued, nothing to drain.
+            return;
+        }
+        if ack_rx.await.is_err() {
+            log::warn!("Declarations writer flush oneshot dropped without ack");
+        }
+    }
+}
+
+/// Writer task loop: owns the `seen` set, lazily opens the file per write, and services
+/// `Append` and `Flush` commands in order.
+async fn writer_task(
+    mut rx: mpsc::UnboundedReceiver<WriterCommand>,
+    declarations_path: PathBuf,
+    working_dir: PathBuf,
+    task_id: AmbientAgentTaskId,
+) {
+    let mut seen: HashSet<String> = HashSet::new();
+    while let Some(cmd) = rx.recv().await {
+        match cmd {
+            WriterCommand::Append(paths) => {
+                for path in paths {
+                    process_append_path(
+                        path,
+                        &declarations_path,
+                        &working_dir,
+                        &task_id,
+                        &mut seen,
+                    )
+                    .await;
+                }
+            }
+            WriterCommand::Flush(ack) => {
+                let _ = ack.send(());
+            }
+        }
+    }
+}
+
+/// Normalize, preempt against existing repos, and write one JSONL line for `raw_path`.
+/// All failures log at WARN and return without advancing `seen`.
+async fn process_append_path(
+    raw_path: String,
+    declarations_path: &Path,
+    working_dir: &Path,
+    task_id: &AmbientAgentTaskId,
+    seen: &mut HashSet<String>,
+) {
+    let candidate = Path::new(&raw_path);
+    let absolute = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        working_dir.join(candidate)
+    };
+    if !absolute.is_absolute() {
+        log::warn!(
+            "Skipping non-absolute file-edit path {absolute:?} for declarations (task {task_id})"
+        );
+        return;
+    }
+    let Some(absolute_str) = absolute.to_str().map(str::to_owned) else {
+        log::warn!(
+            "Skipping non-UTF-8 file-edit path {absolute:?} for declarations (task {task_id})"
+        );
+        return;
+    };
+    if seen.contains(&absolute_str) {
+        return;
+    }
+    if path_is_under_existing_repo(&absolute).await {
+        log::debug!(
+            "Skipping file declaration for '{absolute_str}': already inside an existing git repo (task {task_id})"
+        );
+        seen.insert(absolute_str);
+        return;
+    }
+    match append_declaration_line(declarations_path, &absolute_str).await {
+        Ok(()) => {
+            seen.insert(absolute_str);
+        }
+        Err(e) => {
+            log::warn!(
+                "Failed to append file declaration for '{absolute_str}': {e:#} (task {task_id})"
+            );
+        }
+    }
+}
+
+/// Walk ancestors of `path` and return `true` if any of them already contains a `.git`
+/// directory. Cheap enough to run per path: one `stat(2)` per ancestor up to `/`.
+async fn path_is_under_existing_repo(path: &Path) -> bool {
+    let mut current = path.parent();
+    while let Some(dir) = current {
+        let git_dir = dir.join(".git");
+        if tokio_fs::try_exists(&git_dir).await.unwrap_or(false) {
+            return true;
+        }
+        current = dir.parent();
+    }
+    false
+}
+
+/// Open the declarations file in append-create mode and write one JSONL line for `path`.
+/// The serialized shape matches the schema the parser expects.
+async fn append_declaration_line(declarations_path: &Path, path: &str) -> Result<()> {
+    if let Some(parent) = declarations_path.parent() {
+        tokio_fs::create_dir_all(parent)
+            .await
+            .with_context(|| format!("create_dir_all {}", parent.display()))?;
+    }
+    let mut line = serde_json::to_string(&FileDeclaration {
+        version: DECLARATION_VERSION,
+        kind: "file",
+        path,
+    })
+    .context("serialize file declaration")?;
+    line.push('\n');
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(declarations_path)
+        .await
+        .with_context(|| format!("open declarations file {}", declarations_path.display()))?;
+    file.write_all(line.as_bytes())
+        .await
+        .with_context(|| format!("write declarations file {}", declarations_path.display()))?;
+    file.flush()
+        .await
+        .with_context(|| format!("flush declarations file {}", declarations_path.display()))?;
+    Ok(())
+}
+
 // --- Gather phase: upload blobs and per-entry results ---
 
 struct SnapshotUploadFile {
@@ -463,6 +713,7 @@ async fn upload_snapshot_from_declarations_file(
         path.display()
     );
     let declarations = read_and_parse_declarations(path, task_id)?;
+    let declarations = drop_files_covered_by_repos(declarations);
     let (repo_count, file_count) = declarations
         .iter()
         .fold((0usize, 0usize), |(r, f), e| match e.kind {

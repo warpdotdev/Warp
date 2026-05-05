@@ -75,7 +75,7 @@ impl fmt::Debug for AsciiDebug<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "\"")?;
         for &byte in self.0 {
-            // Check if the byte is a standard printable charcter.
+            // Check if the byte is a standard printable character.
             if (32..126).contains(&byte) {
                 write!(f, "{}", byte as char)?;
             } else {

@@ -6,6 +6,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use warp_core::channel::ChannelState;
+use warp_core::safe_error;
 use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::platform::TerminationMode;
@@ -511,14 +512,18 @@ impl ServerModel {
     }
 
     /// Handles `Initialize` by returning the server version and host id.
+    ///
+    /// `server_version` is the release tag the daemon was built from
+    /// (`GIT_RELEASE_TAG`) or the empty string for `cargo run` / locally
+    /// deployed builds. The client treats an empty version as "unknown" and
+    /// skips strict version enforcement, which keeps the
+    /// `script/deploy_remote_server` developer workflow functional.
     fn handle_initialize(&mut self, msg: Initialize, request_id: &RequestId) -> HandlerOutcome {
         log::info!("Handling Initialize (request_id={request_id})");
         if !msg.auth_token.is_empty() {
             self.auth_token = Some(msg.auth_token);
         }
-        let server_version = ChannelState::app_version()
-            .unwrap_or(env!("CARGO_PKG_VERSION"))
-            .to_string();
+        let server_version = ChannelState::app_version().unwrap_or("").to_string();
         HandlerOutcome::Sync(server_message::Message::InitializeResponse(
             InitializeResponse {
                 server_version,
@@ -571,9 +576,9 @@ impl ServerModel {
         );
 
         let Some(shell_type) = ShellType::from_name(&msg.shell_type) else {
-            log::error!(
-                "Unknown shell_type {:?} in SessionBootstrapped for session {session_id:?}",
-                msg.shell_type,
+            safe_error!(
+                safe: ("Received unknown shell_type in SessionBootstrapped: shell_type={:?}", msg.shell_type),
+                full: ("Received unknown shell_type in SessionBootstrapped: shell_type={:?} session={session_id:?}", msg.shell_type)
             );
             return;
         };
@@ -624,7 +629,10 @@ impl ServerModel {
         };
 
         let Some(executor) = self.executors.get(&session_id).cloned() else {
-            log::error!("No executor for session {session_id:?}, session was never initialized");
+            safe_error!(
+                safe: ("No executor for RunCommand, session was never initialized"),
+                full: ("No executor for RunCommand, session was never initialized: session={session_id:?}")
+            );
             return HandlerOutcome::Sync(server_message::Message::RunCommandResponse(
                 RunCommandResponse {
                     result: Some(run_command_response::Result::Error(RunCommandError {

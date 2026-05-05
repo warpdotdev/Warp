@@ -6,6 +6,7 @@ use warp_cli::agent::Harness;
 use warp_terminal::model::BlockId;
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
+use crate::ai::agent::display_user_query_with_mode;
 use crate::ai::AIRequestUsageModel;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
@@ -16,7 +17,6 @@ use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryM
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
 use crate::server::server_api::ai::SpawnAgentRequest;
-use crate::terminal::view::ambient_agent::CloudModeInitialUserQuery;
 use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
 use crate::terminal::view::TerminalView;
 use crate::terminal::CLIAgent;
@@ -30,9 +30,8 @@ use super::loading_screen::{
     render_cloud_mode_cancelled_screen, render_cloud_mode_error_screen,
     render_cloud_mode_github_auth_required_screen, render_cloud_mode_loading_screen,
 };
-use super::{
-    is_cloud_agent_pre_first_exchange, AmbientAgentEntryBlock, AmbientAgentViewModelEvent,
-};
+use super::{AmbientAgentEntryBlock, AmbientAgentViewModelEvent};
+use crate::terminal::view::Event as TerminalViewEvent;
 const CHILD_AGENT_GITHUB_AUTH_REQUIRED_BLOCKED_ACTION: &str =
     "GitHub authentication required before starting the child agent.";
 
@@ -97,10 +96,15 @@ impl TerminalView {
         event: &AmbientAgentViewModelEvent,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Tear down the non-oz cloud-mode queued-prompt block on terminal / transition
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.clone() else {
+            return;
+        };
+
+        // Tear down the cloud-mode queued-prompt block on terminal / transition
         // events that replace it. `Failed`, `NeedsGithubAuth`, and `Cancelled` hand off
         // to the existing error / auth / cancelled UI; `HarnessCommandStarted` hands
-        // off to the live harness CLI block. Idempotent and cheap when no block exists.
+        // off to the live third-party harness CLI block. Idempotent and cheap when no
+        // block exists.
         if matches!(
             event,
             AmbientAgentViewModelEvent::Failed { .. }
@@ -115,11 +119,13 @@ impl TerminalView {
             AmbientAgentViewModelEvent::EnteredSetupState => {
                 // Re-render to show the setup view.
                 self.update_pane_configuration(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::EnteredComposingState => {
                 // Update pane configuration to show cloud indicator.
                 self.update_pane_configuration(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
             }
             AmbientAgentViewModelEvent::DispatchedAgent => {
                 // Pane chrome (e.g. cloud indicator, task id) must update on viewer surfaces
@@ -135,47 +141,21 @@ impl TerminalView {
                     return;
                 }
                 if FeatureFlag::CloudModeSetupV2.is_enabled() {
-                    if self
-                        .ambient_agent_view_model
+                    // Render the submitted cloud prompt via the queued-prompt UI while the
+                    // real shared-session transcript catches up. `request.prompt` is stored
+                    // stripped of any `/plan` / `/orchestrate` prefix; rebuild the display
+                    // form from `request.mode` so the user sees exactly what they typed.
+                    let prompt = ambient_agent_view_model
                         .as_ref(ctx)
-                        .is_third_party_harness()
-                    {
-                        // Non-oz runs: render the submitted prompt via the queued-prompt UI.
-                        // The block is removed later by `HarnessCommandStarted` / failure /
-                        // cancel / auth handlers.
-                        let prompt = self
-                            .ambient_agent_view_model
-                            .as_ref(ctx)
-                            .request()
-                            .map(|request| request.prompt.clone())
-                            .unwrap_or_default();
-                        if !prompt.is_empty() {
-                            self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
-                        }
-                    } else {
-                        let initial_user_query = ctx.add_view(|ctx| {
-                            CloudModeInitialUserQuery::new(
-                                self.ambient_agent_view_model.clone(),
-                                ctx,
-                            )
-                        });
-                        self.insert_rich_content(
-                            None,
-                            initial_user_query,
-                            None,
-                            RichContentInsertionPosition::Append {
-                                insert_below_long_running_block: true,
-                            },
-                            ctx,
-                        );
-                        self.ambient_agent_view_model.update(ctx, |model, _| {
-                            model.set_has_inserted_cloud_mode_user_query_block(true);
-                        });
+                        .request()
+                        .map(|request| display_user_query_with_mode(request.mode, &request.prompt))
+                        .unwrap_or_default();
+                    if !prompt.is_empty() {
+                        self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
                     }
                 } else {
                     // Reset tip cooldown so the first tip shows for 60 seconds
-                    let tip_model = self
-                        .ambient_agent_view_model
+                    let tip_model = ambient_agent_view_model
                         .as_ref(ctx)
                         .ui_state
                         .tip_model
@@ -185,19 +165,47 @@ impl TerminalView {
                     });
                 }
                 // Re-render to show loading state.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::SessionReady { .. } => {
+            AmbientAgentViewModelEvent::FollowupDispatched => {
+                if FeatureFlag::CloudModeSetupV2.is_enabled() {
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.start_new_setup_command_group(ctx);
+                    });
+                }
+                self.update_active_ambient_agent_conversation_status(
+                    ConversationStatus::InProgress,
+                    None,
+                    ctx,
+                );
+                let pending_prompt = ambient_agent_view_model
+                    .as_ref(ctx)
+                    .pending_followup_prompt()
+                    .map(str::to_owned);
+                if let Some(prompt) = pending_prompt {
+                    self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
+                }
+                ctx.notify();
+            }
+            AmbientAgentViewModelEvent::SessionReady { .. }
+            | AmbientAgentViewModelEvent::FollowupSessionReady { .. } => {
+                if matches!(
+                    event,
+                    AmbientAgentViewModelEvent::FollowupSessionReady { .. }
+                ) {
+                    self.pending_cloud_followup_task_id = None;
+                }
                 // Auto-open details panel for local cloud mode once the session is ready.
-                self.maybe_auto_open_cloud_mode_details_panel(ctx);
+                self.maybe_auto_open_conversation_details_panel(ctx);
                 // Re-render to hide the loading screen now that the session is ready.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::EnvironmentSelected => {}
             AmbientAgentViewModelEvent::ProgressUpdated => {
                 // Refresh the tip (respects 60s cooldown internally)
-                let tip_model = self
-                    .ambient_agent_view_model
+                let tip_model = ambient_agent_view_model
                     .as_ref(ctx)
                     .ui_state
                     .tip_model
@@ -207,24 +215,27 @@ impl TerminalView {
                 });
                 // Update pane header to reflect any changes (e.g., task_id being set)
                 self.update_pane_configuration(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::Failed { error_message } => {
+                self.pending_cloud_followup_task_id = None;
                 self.update_active_ambient_agent_conversation_status(
                     ConversationStatus::Error,
                     Some(error_message.clone()),
                     ctx,
                 );
                 // Refresh the details panel to show failed status
-                if self.is_cloud_mode_details_panel_open {
-                    self.fetch_and_update_cloud_mode_details_panel(ctx);
+                if self.is_conversation_details_panel_open {
+                    self.fetch_and_update_conversation_details_panel(ctx);
                 }
                 // Re-render to show the error state in the footer.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::ShowCloudAgentCapacityModal => {
                 if FeatureFlag::CloudMode.is_enabled()
-                    && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                    && ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
                     && !self.model.lock().is_shared_ambient_agent_session()
                 {
                     ctx.emit(crate::terminal::view::Event::ShowCloudAgentCapacityModal {
@@ -236,7 +247,7 @@ impl TerminalView {
             }
             AmbientAgentViewModelEvent::ShowAICreditModal => {
                 if FeatureFlag::CloudMode.is_enabled()
-                    && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                    && ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
                     && !self.model.lock().is_shared_ambient_agent_session()
                 {
                     self.show_out_of_credits_modal(ctx);
@@ -245,6 +256,7 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::NeedsGithubAuth => {
+                self.pending_cloud_followup_task_id = None;
                 if self.active_ambient_agent_conversation_is_child(ctx) {
                     self.update_active_ambient_agent_conversation_status(
                         ConversationStatus::Blocked {
@@ -256,25 +268,30 @@ impl TerminalView {
                     );
                 }
                 // Re-render to show the GitHub auth required state in the footer.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::Cancelled => {
+                self.pending_cloud_followup_task_id = None;
                 self.update_active_ambient_agent_conversation_status(
                     ConversationStatus::Cancelled,
                     None,
                     ctx,
                 );
                 // Refresh the details panel to show cancelled status
-                if self.is_cloud_mode_details_panel_open {
-                    self.fetch_and_update_cloud_mode_details_panel(ctx);
+                if self.is_conversation_details_panel_open {
+                    self.fetch_and_update_conversation_details_panel(ctx);
                 }
                 // Re-render to show the cancelled state in the footer.
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::HarnessSelected => {
                 self.maybe_enter_agent_view_for_shared_third_party_viewer(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
+            AmbientAgentViewModelEvent::HostSelected => {}
             AmbientAgentViewModelEvent::HarnessCommandStarted => {
                 // Stop classifying new blocks as environment setup commands, mirroring the
                 // Oz path in the `AppendedExchange` handler. Flipping this flag to `false`
@@ -292,13 +309,16 @@ impl TerminalView {
                     }
                 }
                 // Collapse the setup-commands summary, matching the oz first-exchange behavior.
-                self.ambient_agent_view_model.update(ctx, |model, ctx| {
+                ambient_agent_view_model.update(ctx, |model, ctx| {
+                    let group_id = model.setup_command_state().current_group_id();
+                    model.finish_setup_command_group(group_id, ctx);
                     model.set_setup_command_visibility(false, ctx);
                 });
                 // Force a fresh viewer size report to the sharer so the harness CLI (e.g.
                 // the claude TUI) starts at our terminal's actual dimensions instead of
                 // whatever the sandbox PTY was sized to during setup.
                 self.force_report_viewer_terminal_size(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => (),
@@ -314,11 +334,16 @@ impl TerminalView {
             return;
         }
 
-        if !is_cloud_agent_pre_first_exchange(
-            &self.ambient_agent_view_model,
-            &self.agent_view_controller,
-            ctx,
-        ) {
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.clone() else {
+            return;
+        };
+
+        if !self
+            .model
+            .lock()
+            .block_list()
+            .is_executing_oz_environment_startup_commands()
+        {
             return;
         }
 
@@ -327,13 +352,12 @@ impl TerminalView {
         // and should NOT be classified as a setup command; the `HarnessCommandStarted`
         // handler flips the block-list flag so the block renders like a normal CLI-agent
         // session.
-        if self
-            .ambient_agent_view_model
+        if ambient_agent_view_model
             .as_ref(ctx)
             .is_third_party_harness()
             && self.active_block_matches_run_harness(ctx)
         {
-            self.ambient_agent_view_model.update(ctx, |model, ctx| {
+            ambient_agent_view_model.update(ctx, |model, ctx| {
                 model.mark_harness_command_started(ctx);
             });
             return;
@@ -342,14 +366,17 @@ impl TerminalView {
         let Some(block_index) = self.model.lock().block_list().block_index_for_id(block_id) else {
             return;
         };
+        let group_id = ambient_agent_view_model
+            .as_ref(ctx)
+            .setup_command_state()
+            .current_group_id();
 
-        if !self
-            .ambient_agent_view_model
+        if !ambient_agent_view_model
             .as_ref(ctx)
             .setup_command_state()
             .did_execute_a_setup_command()
         {
-            self.ambient_agent_view_model.update(ctx, |model, _| {
+            ambient_agent_view_model.update(ctx, |model, _| {
                 model
                     .setup_command_state_mut()
                     .set_did_execute_a_setup_command(true);
@@ -357,7 +384,8 @@ impl TerminalView {
 
             let setup_command_text = ctx.add_typed_action_view(|ctx| {
                 super::CloudModeSetupTextBlock::new(
-                    self.ambient_agent_view_model.clone(),
+                    group_id,
+                    ambient_agent_view_model.clone(),
                     self.agent_view_controller.clone(),
                     ctx,
                 )
@@ -373,8 +401,9 @@ impl TerminalView {
 
         let setup_command_block = ctx.add_typed_action_view(|ctx| {
             super::CloudModeSetupCommandBlock::new(
+                group_id,
                 block_id.clone(),
-                self.ambient_agent_view_model.clone(),
+                ambient_agent_view_model.clone(),
                 &self.model_events_handle,
                 self.model.clone(),
                 ctx,
@@ -420,8 +449,10 @@ impl TerminalView {
         {
             return;
         }
-        if !self
-            .ambient_agent_view_model
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
+            return;
+        };
+        if !ambient_agent_view_model
             .as_ref(ctx)
             .is_third_party_harness()
         {
@@ -483,11 +514,15 @@ impl TerminalView {
         let Some(cli_agent) = CLIAgent::detect(&command, None, None, ctx) else {
             return false;
         };
-        match self.ambient_agent_view_model.as_ref(ctx).selected_harness() {
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
+            return false;
+        };
+        match ambient_agent_view_model.as_ref(ctx).selected_harness() {
             Harness::Oz => false,
             Harness::Claude => matches!(cli_agent, CLIAgent::Claude),
             Harness::OpenCode => matches!(cli_agent, CLIAgent::OpenCode),
             Harness::Gemini => matches!(cli_agent, CLIAgent::Gemini),
+            Harness::Codex => matches!(cli_agent, CLIAgent::Codex),
             Harness::Unknown => false,
         }
     }
@@ -503,15 +538,15 @@ impl TerminalView {
         initial_prompt: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let ambient_agent_view = self.ambient_agent_view_model.as_ref(ctx);
-        let is_nested_cloud_mode =
-            ambient_agent_view.is_ambient_agent() && ambient_agent_view.has_parent_terminal();
+        let is_nested_cloud_mode = self.is_nested_cloud_mode(ctx);
 
         // (1) If we're currently in an empty cloud mode session (setup/composing; no
         // dispatched query yet), do not allow creating a new cloud mode session.
         if is_nested_cloud_mode
-            && (ambient_agent_view.is_in_setup()
-                || ambient_agent_view.is_configuring_ambient_agent())
+            && self.ambient_agent_view_model.as_ref().is_some_and(|model| {
+                let model = model.as_ref(ctx);
+                model.is_in_setup() || model.is_configuring_ambient_agent()
+            })
         {
             return;
         }
@@ -616,7 +651,14 @@ impl TerminalView {
         // Only insert an ambient agent entry block once the agent is actually dispatched.
         // This avoids persisting an empty "New cloud agent" entry when the user enters cloud mode
         // but exits without sending anything.
-        let ambient_agent_view_model = terminal_view.as_ref(ctx).ambient_agent_view_model().clone();
+        let Some(ambient_agent_view_model) = terminal_view
+            .as_ref(ctx)
+            .ambient_agent_view_model()
+            .cloned()
+        else {
+            log::warn!("Cloud mode view was created without an ambient agent view model");
+            return;
+        };
         let terminal_view_weak = terminal_view.downgrade();
         let terminal_manager_weak = terminal_manager.downgrade();
         let pane_stack = self.pane_stack.clone();
@@ -669,13 +711,9 @@ impl TerminalView {
         });
 
         let pane_config = self.pane_configuration.clone();
+        let ambient_agent_view_model_for_update = ambient_agent_view_model.clone();
         terminal_view.update(ctx, |view, ctx| {
             view.set_pane_configuration(pane_config);
-
-            // Mark as having a parent since it's pushed onto an existing pane stack
-            view.ambient_agent_view_model.update(ctx, |model, _ctx| {
-                model.set_has_parent_terminal(true);
-            });
 
             if let Some(request) = spawn_request {
                 // Spawn the agent immediately with the provided request.
@@ -684,7 +722,7 @@ impl TerminalView {
                     AgentViewEntryOrigin::CloudAgent,
                     ctx,
                 );
-                view.ambient_agent_view_model.update(ctx, |model, ctx| {
+                ambient_agent_view_model_for_update.update(ctx, |model, ctx| {
                     model.spawn_agent_with_request(request, ctx);
                 });
             } else {
@@ -719,7 +757,10 @@ impl TerminalView {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
+            return Empty::new().finish();
+        };
+        let ambient_agent_model = ambient_agent_view_model.as_ref(app);
         let Some(progress) = ambient_agent_model.agent_progress() else {
             return Empty::new().finish();
         };
@@ -782,10 +823,12 @@ impl TerminalView {
             }
             super::FirstTimeCloudAgentSetupViewEvent::EnvironmentCreated => {
                 // Set the environment on the ambient agent view model
-                self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                    // Transition from Setup to Composing
-                    model.enter_composing_from_setup(ctx);
-                });
+                if let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() {
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        // Transition from Setup to Composing
+                        model.enter_composing_from_setup(ctx);
+                    });
+                }
 
                 // Focus the input box so user can start typing
                 self.focus_input_box(ctx);
@@ -793,42 +836,71 @@ impl TerminalView {
         }
     }
 
-    /// Fetches task data and updates the cloud mode details panel.
-    pub(in crate::terminal::view) fn fetch_and_update_cloud_mode_details_panel(
+    /// Fetches task data and updates the conversation details panel.
+    ///
+    /// Prefers cloud `AmbientAgentTask` data when this terminal view has an
+    /// associated task ID. Otherwise falls back to populating the panel from
+    /// the active local `AIConversation`, so the same panel can surface
+    /// conversation metadata for non-cloud Warp Agent runs (APP-3595).
+    pub(in crate::terminal::view) fn fetch_and_update_conversation_details_panel(
         &mut self,
         ctx: &mut ViewContext<Self>,
     ) {
-        let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) else {
-            log::warn!("fetch_and_update_cloud_mode_details_panel called without task_id");
-            return;
-        };
+        if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
+            let task = crate::ai::agent_conversations_model::AgentConversationsModel::handle(ctx)
+                .update(ctx, |model, ctx| {
+                    model.get_or_async_fetch_task_data(&task_id, ctx)
+                });
 
-        let task = crate::ai::agent_conversations_model::AgentConversationsModel::handle(ctx)
-            .update(ctx, |model, ctx| {
-                model.get_or_async_fetch_task_data(&task_id, ctx)
+            let data = task
+                .as_ref()
+                .map(|task| ConversationDetailsData::from_task(task, None, None, ctx))
+                .unwrap_or_else(|| ConversationDetailsData::from_task_id(task_id));
+            self.conversation_details_panel.update(ctx, |panel, ctx| {
+                panel.set_conversation_details(data, ctx);
             });
-
-        let data = task
-            .as_ref()
-            .map(|task| ConversationDetailsData::from_task(task, None, None, ctx))
-            .unwrap_or_else(|| ConversationDetailsData::from_task_id(task_id));
-        self.cloud_mode_details_panel.update(ctx, |panel, ctx| {
-            panel.set_conversation_details(data, ctx);
-        });
-    }
-
-    /// Auto-opens the cloud mode details panel once.
-    /// This is used for local cloud mode sessions (after SessionReady) and shared ambient sessions (after join).
-    pub(in crate::terminal::view) fn maybe_auto_open_cloud_mode_details_panel(
-        &mut self,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if self.has_auto_opened_cloud_mode_details_panel {
             return;
         }
-        self.is_cloud_mode_details_panel_open = true;
-        self.has_auto_opened_cloud_mode_details_panel = true;
-        self.fetch_and_update_cloud_mode_details_panel(ctx);
+
+        // No backing cloud task — populate from the active local conversation, if any.
+        let view_id = self.id();
+        let history_model = BlocklistAIHistoryModel::handle(ctx);
+        let data = history_model
+            .as_ref(ctx)
+            .active_conversation(view_id)
+            .map(|conversation| ConversationDetailsData::from_conversation(conversation, ctx));
+
+        if let Some(data) = data {
+            self.conversation_details_panel.update(ctx, |panel, ctx| {
+                panel.set_conversation_details(data, ctx);
+            });
+        }
+    }
+
+    pub(in crate::terminal::view) fn refresh_conversation_details_panel_if_open(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.is_conversation_details_panel_open && self.can_show_conversation_details_ui(ctx) {
+            self.fetch_and_update_conversation_details_panel(ctx);
+            ctx.notify();
+        }
+    }
+
+    /// Auto-opens the conversation details panel once for cloud mode runs.
+    /// This is used for local cloud mode sessions (after `SessionReady`) and
+    /// shared ambient sessions (after join). Local non-cloud conversations
+    /// require an explicit user click on the pane-header toggle button.
+    pub(in crate::terminal::view) fn maybe_auto_open_conversation_details_panel(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.has_auto_opened_conversation_details_panel {
+            return;
+        }
+        self.is_conversation_details_panel_open = true;
+        self.has_auto_opened_conversation_details_panel = true;
+        self.fetch_and_update_conversation_details_panel(ctx);
         ctx.notify();
     }
 }

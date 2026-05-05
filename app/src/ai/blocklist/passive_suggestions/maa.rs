@@ -94,7 +94,7 @@ pub struct PassiveSuggestionsModel {
     latest_request: Option<Request>,
     pending_file_read_handle: Option<SpawnedFutureHandle>,
     terminal_model: Arc<FairMutex<TerminalModel>>,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
+    ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     terminal_view_id: EntityId,
@@ -108,7 +108,7 @@ impl PassiveSuggestionsModel {
         terminal_model: Arc<FairMutex<TerminalModel>>,
         ai_controller: ModelHandle<BlocklistAIController>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
+        ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
@@ -136,6 +136,12 @@ impl PassiveSuggestionsModel {
         }
         // Dropping the [`Request`] aborts the spawned stream handle.
         self.latest_request.take();
+    }
+
+    fn is_ambient_agent_session(&self, ctx: &ModelContext<Self>) -> bool {
+        self.ambient_agent_view_model
+            .as_ref()
+            .is_some_and(|model| model.as_ref(ctx).is_ambient_agent())
     }
 
     /// Sends a MAA request to generate passive suggestions.
@@ -394,7 +400,7 @@ impl PassiveSuggestionsModel {
         }
 
         // Suppress passive suggestions in cloud mode sessions.
-        if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
+        if self.is_ambient_agent_session(ctx) {
             return;
         }
 
@@ -443,7 +449,7 @@ impl PassiveSuggestionsModel {
     ) {
         self.abort_pending_requests(ctx);
         // Suppress passive suggestions in cloud mode sessions.
-        if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
+        if self.is_ambient_agent_session(ctx) {
             return;
         }
 

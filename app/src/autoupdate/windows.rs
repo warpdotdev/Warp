@@ -152,6 +152,10 @@ pub(super) fn check_and_report_update_errors(ctx: &mut AppContext) {
             // Recent Inno Setup versions try to enable a security feature which is unavailable on
             // Windows 10 versions prior to 22H2 and this call fails. The failure is benign.
             b"setprocessmitigationpolicy failed with error code 87",
+            // Bundled skill files whose names contain "error" appear in "Dest filename:" log lines
+            // and produce false positives.
+            b"error-codes.md",
+            b"error-recovery.md",
         ];
 
         let mut error_count = memchr::memmem::find_iter(&contents_lowercase, b"error").count();

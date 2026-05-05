@@ -499,6 +499,8 @@ pub enum CLIAgentType {
     Pi,
     Auggie,
     Cursor,
+    Goose,
+    Vibe,
     Unknown,
 }
 
@@ -523,8 +525,8 @@ pub enum NotificationAgentVariant {
 impl From<NotificationSourceAgent> for NotificationAgentVariant {
     fn from(agent: NotificationSourceAgent) -> Self {
         match agent {
-            NotificationSourceAgent::Oz => Self::Oz,
-            NotificationSourceAgent::CLI(cli_agent) => Self::CLIAgent(cli_agent.into()),
+            NotificationSourceAgent::Oz { .. } => Self::Oz,
+            NotificationSourceAgent::CLI { agent, .. } => Self::CLIAgent(agent.into()),
         }
     }
 }
@@ -1129,6 +1131,7 @@ pub enum TelemetryAgentViewEntryOrigin {
     ChildAgent,
     LinearDeepLink,
     ThirdPartyCloudAgent,
+    OrchestrationPillBar,
 }
 
 impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
@@ -1178,6 +1181,7 @@ impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
             AgentViewEntryOrigin::DefaultSessionMode => Self::DefaultSessionMode,
             AgentViewEntryOrigin::ChildAgent => Self::ChildAgent,
             AgentViewEntryOrigin::LinearDeepLink => Self::LinearDeepLink,
+            AgentViewEntryOrigin::OrchestrationPillBar => Self::OrchestrationPillBar,
         }
     }
 }
@@ -1890,7 +1894,7 @@ pub enum TelemetryEvent {
 
         /// The server-generated output ID for the output in this block.
         ///
-        /// This is only populated if the some part of the response was succesfully received.
+        /// This is only populated if the some part of the response was successfully received.
         server_output_id: Option<ServerOutputId>,
 
         was_autodetected_ai_query: bool,
@@ -2492,6 +2496,9 @@ pub enum TelemetryEvent {
         model_type: String,
         model_value: String,
     },
+    AIExecutionProfileContextWindowSelected {
+        tokens: Option<u32>,
+    },
     /// The AI input was not sent because there was already an in-flight request.
     AIInputNotSent {
         entrypoint: Option<EntrypointType>,
@@ -2764,13 +2771,15 @@ pub enum TelemetryEvent {
     CloudAgentCapacityModalUpgradeClicked,
     /// Emitted when a RequestComputerUse action is approved (manually or auto-executed).
     ComputerUseApproved {
-        conversation_id: AIConversationId,
+        client_conversation_id: AIConversationId,
+        server_conversation_id: Option<String>,
         is_autoexecuted: bool,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
     },
     /// Emitted when a RequestComputerUse action is cancelled/rejected.
     ComputerUseCancelled {
-        conversation_id: AIConversationId,
+        client_conversation_id: AIConversationId,
+        server_conversation_id: Option<String>,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
     },
     /// Emitted when a warp://linear deeplink is opened.
@@ -2826,6 +2835,24 @@ pub enum TelemetryEvent {
         installed_binary: bool,
         remote_os: Option<String>,
         remote_arch: Option<String>,
+        /// Short description of the remote libc (e.g. "glibc 2.35",
+        /// "musl", "unknown"). `None` when the preinstall check did
+        /// not run (e.g. macOS hosts).
+        remote_libc: Option<String>,
+    },
+    /// Emitted when the preinstall check classifies the remote host as
+    /// unsupported by the prebuilt remote-server binary, so the controller
+    /// silently falls back to the legacy SSH/`RemoteCommandExecutor`
+    /// flow without surfacing an install prompt.
+    RemoteServerHostUnsupported {
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+        /// Detected libc on the remote host, e.g. `"glibc 2.28"`,
+        /// `"musl"`, `"unknown"`.
+        detected_libc: String,
+        /// Required minimum glibc reported by the script. Empty when
+        /// the unsupported classification was not glibc-related.
+        required_glibc: String,
     },
 }
 
@@ -4175,11 +4202,24 @@ impl TelemetryEvent {
                 installed_binary,
                 remote_os,
                 remote_arch,
+                remote_libc,
             } => Some(json!({
                 "duration_ms": duration_ms,
                 "installed_binary": installed_binary,
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
+                "remote_libc": remote_libc,
+            })),
+            TelemetryEvent::RemoteServerHostUnsupported {
+                remote_os,
+                remote_arch,
+                detected_libc,
+                required_glibc,
+            } => Some(json!({
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+                "detected_libc": detected_libc,
+                "required_glibc": required_glibc,
             })),
             TelemetryEvent::ConversationListItemOpened { is_ambient_agent } => Some(json!({
                 "is_ambient_agent": is_ambient_agent,
@@ -4222,6 +4262,9 @@ impl TelemetryEvent {
             } => Some(json!({
                 "model_type": model_type,
                 "model_value": model_value,
+            })),
+            TelemetryEvent::AIExecutionProfileContextWindowSelected { tokens } => Some(json!({
+                "tokens": tokens,
             })),
             TelemetryEvent::AIInputNotSent {
                 entrypoint,
@@ -4498,19 +4541,23 @@ impl TelemetryEvent {
             TelemetryEvent::CloudAgentCapacityModalDismissed => None,
             TelemetryEvent::CloudAgentCapacityModalUpgradeClicked => None,
             TelemetryEvent::ComputerUseApproved {
-                conversation_id,
+                client_conversation_id,
+                server_conversation_id,
                 is_autoexecuted,
                 ambient_agent_task_id,
             } => Some(json!({
-                "conversation_id": conversation_id,
+                "client_conversation_id": client_conversation_id,
+                "server_conversation_id": server_conversation_id,
                 "is_autoexecuted": is_autoexecuted,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
             TelemetryEvent::ComputerUseCancelled {
-                conversation_id,
+                client_conversation_id,
+                server_conversation_id,
                 ambient_agent_task_id,
             } => Some(json!({
-                "conversation_id": conversation_id,
+                "client_conversation_id": client_conversation_id,
+                "server_conversation_id": server_conversation_id,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
             TelemetryEvent::FreeTierLimitHitInterstitialDisplayed => None,
@@ -4917,6 +4964,7 @@ impl TelemetryEvent {
             | TelemetryEvent::AIExecutionProfileRemovedFromAllowlist { .. }
             | TelemetryEvent::AIExecutionProfileRemovedFromDenylist { .. }
             | TelemetryEvent::AIExecutionProfileModelSelected { .. }
+            | TelemetryEvent::AIExecutionProfileContextWindowSelected { .. }
             | TelemetryEvent::OpenSlashMenu { .. }
             | TelemetryEvent::SlashCommandAccepted { .. }
             | TelemetryEvent::AgentModeSetupBannerAccepted
@@ -4987,7 +5035,8 @@ impl TelemetryEvent {
             | TelemetryEvent::RemoteServerDisconnection { .. }
             | TelemetryEvent::RemoteServerClientRequestError { .. }
             | TelemetryEvent::RemoteServerMessageDecodingError { .. }
-            | TelemetryEvent::RemoteServerSetupDuration { .. } => false,
+            | TelemetryEvent::RemoteServerSetupDuration { .. }
+            | TelemetryEvent::RemoteServerHostUnsupported { .. } => false,
             #[cfg(feature = "local_fs")]
             TelemetryEvent::CodePaneOpened { .. }
             | TelemetryEvent::CodePanelsFileOpened { .. }
@@ -5476,7 +5525,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::AIExecutionProfileAddedToDenylist { .. }
             | Self::AIExecutionProfileRemovedFromAllowlist { .. }
             | Self::AIExecutionProfileRemovedFromDenylist { .. }
-            | Self::AIExecutionProfileModelSelected { .. } => {
+            | Self::AIExecutionProfileModelSelected { .. }
+            | Self::AIExecutionProfileContextWindowSelected { .. } => {
                 EnablementState::Flag(FeatureFlag::MultiProfile)
             }
             Self::AIInputNotSent { .. } => EnablementState::Always,
@@ -5553,7 +5603,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::RemoteServerDisconnection
             | Self::RemoteServerClientRequestError
             | Self::RemoteServerMessageDecodingError
-            | Self::RemoteServerSetupDuration => {
+            | Self::RemoteServerSetupDuration
+            | Self::RemoteServerHostUnsupported => {
                 EnablementState::Flag(FeatureFlag::SshRemoteServer)
             }
         }
@@ -5959,6 +6010,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerClientRequestError => "RemoteServer.ClientRequestError",
             Self::RemoteServerMessageDecodingError => "RemoteServer.MessageDecodingError",
             Self::RemoteServerSetupDuration => "RemoteServer.SetupDuration",
+            Self::RemoteServerHostUnsupported => "RemoteServer.HostUnsupported",
             #[cfg(windows)]
             Self::WSLRegistryError => "WSL Distribution Registry Error",
             #[cfg(windows)]
@@ -6028,6 +6080,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "AI Execution Profile: Removed From Denylist"
             }
             Self::AIExecutionProfileModelSelected { .. } => "AI Execution Profile: Model Selected",
+            Self::AIExecutionProfileContextWindowSelected { .. } => {
+                "AI Execution Profile: Context Window Selected"
+            }
             Self::AIInputNotSent { .. } => "AI Input Not Sent",
             Self::OpenSlashMenu { .. } => "Open Slash Menu",
             Self::SlashCommandAccepted { .. } => "Slash Command Accepted",
@@ -6103,6 +6158,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
 
     fn description(&self) -> &'static str {
         match self {
+            Self::AIExecutionProfileContextWindowSelected => {
+                "Selected a context window limit for an execution profile's base model"
+            }
             Self::AISuggestedAgentModeWorkflowAdded => {
                 "User created an AI suggested Agent Mode workflow"
             }
@@ -6989,6 +7047,10 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::RemoteServerSetupDuration => {
                 "End-to-end duration of the remote server setup flow"
+            }
+            Self::RemoteServerHostUnsupported => {
+                "Preinstall check classified the remote host as unsupported, \
+                 falling back to the legacy SSH flow"
             }
         }
     }

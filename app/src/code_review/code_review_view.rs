@@ -52,7 +52,7 @@ use crate::{
         hidden_lines::calculate_hidden_lines,
         telemetry_event::{
             AddToContextOrigin, CodeReviewContextDestination, CodeReviewTelemetryEvent,
-            PaneStateChange,
+            GitButtonKind, PaneStateChange,
         },
     },
 };
@@ -1272,6 +1272,7 @@ impl CodeReviewView {
             Menu::new()
                 .prevent_interaction_with_other_elements()
                 .with_drop_shadow()
+                .with_width(140.)
         });
         ctx.subscribe_to_view(&git_operations_menu, |me, _, event, ctx| match event {
             MenuEvent::ItemSelected | MenuEvent::Close { .. } => {
@@ -6709,9 +6710,6 @@ impl CodeReviewView {
             .diff_state_model
             .read(ctx, |model, _| model.get_current_branch_name())
             .unwrap_or_default();
-        let parent_branch_name = self
-            .diff_state_model
-            .read(ctx, |model, _| model.get_parent_branch_name());
 
         let dialog = match kind {
             GitDialogKind::Commit => {
@@ -6728,7 +6726,6 @@ impl CodeReviewView {
                     GitDialog::new_for_commit(
                         repo_path,
                         branch_name,
-                        parent_branch_name,
                         allow_create_pr,
                         has_upstream,
                         ctx,
@@ -6743,9 +6740,14 @@ impl CodeReviewView {
                     GitDialog::new_for_push(repo_path, branch_name, publish, commits, ctx)
                 })
             }
-            GitDialogKind::CreatePr => ctx.add_typed_action_view(|ctx| {
-                GitDialog::new_for_pr(repo_path, branch_name, parent_branch_name, ctx)
-            }),
+            GitDialogKind::CreatePr => {
+                let base_branch_name = self
+                    .diff_state_model
+                    .read(ctx, |model, _| model.get_main_branch_name());
+                ctx.add_typed_action_view(|ctx| {
+                    GitDialog::new_for_pr(repo_path, branch_name, base_branch_name, ctx)
+                })
+            }
         };
 
         ctx.subscribe_to_view(&dialog, move |me, _, event, ctx| {
@@ -7660,18 +7662,48 @@ impl TypedActionView for CodeReviewView {
                 }
             }
             CodeReviewAction::OpenCommitDialog => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::Commit,
+                    },
+                    ctx
+                );
                 self.open_git_dialog(GitDialogKind::Commit, ctx);
             }
             CodeReviewAction::PublishBranch => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::Publish,
+                    },
+                    ctx
+                );
                 self.open_git_dialog(GitDialogKind::Push { publish: true }, ctx);
             }
             CodeReviewAction::OpenPushDialog => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::Push,
+                    },
+                    ctx
+                );
                 self.open_git_dialog(GitDialogKind::Push { publish: false }, ctx);
             }
             CodeReviewAction::OpenCreatePrDialog => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::CreatePr,
+                    },
+                    ctx
+                );
                 self.open_git_dialog(GitDialogKind::CreatePr, ctx);
             }
             CodeReviewAction::ViewPr(url) => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::ViewPr,
+                    },
+                    ctx
+                );
                 ctx.open_url(url);
             }
             CodeReviewAction::ToggleGitOperationsMenu => {
@@ -7765,7 +7797,11 @@ impl BackingView for CodeReviewView {
                 AppContext::show_native_platform_modal(ctx, dialog);
             } else if cfg!(all(
                 not(target_family = "wasm"),
-                any(target_os = "linux", target_os = "windows")
+                any(
+                    target_os = "linux",
+                    target_os = "freebsd",
+                    target_os = "windows"
+                )
             )) {
                 // Find the workspace to show the Warp-native modal
                 if let Some(workspace) = ctx

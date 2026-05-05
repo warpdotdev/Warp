@@ -43,13 +43,10 @@ fn create_sharer_and_viewer_models_with_same_block(
     let mut viewer_model = terminal_model_for_viewer(channel_event_proxy);
     let block = sharer_model.block_list().last_non_hidden_block().unwrap();
     let serialized_block = SerializedBlock::from(block);
-    viewer_model.load_shared_session_scrollback(
-        &[
-            serialized_block,
-            SerializedBlock::new_active_block_for_test(),
-        ],
-        false,
-    );
+    viewer_model.load_shared_session_scrollback(&[
+        serialized_block,
+        SerializedBlock::new_active_block_for_test(),
+    ]);
 
     assert_eq!(
         viewer_model

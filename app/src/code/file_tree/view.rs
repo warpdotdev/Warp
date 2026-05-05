@@ -1288,6 +1288,12 @@ impl FileTreeView {
                         {
                             Some(state.entry.clone())
                         }
+                        Some(IndexedRepoState::Pending) => {
+                            // Repo is being (re-)indexed. Keep whatever entry
+                            // we already have so the tree doesn't flash to a
+                            // loading state during the transition.
+                            continue;
+                        }
                         _ => None,
                     }
                 };
@@ -1555,14 +1561,21 @@ impl FileTreeView {
         }
 
         let id = repo_metadata::RepositoryIdentifier::local(path.clone());
-        let entry = RepoMetadataModel::as_ref(ctx)
-            .get_repository(&id, ctx)
-            .map(|state| state.entry.clone());
+        let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&id, ctx);
         if let Some(root_dir) = self.root_directories.get_mut(path) {
-            root_dir.entry = match entry {
-                Some(entry) => entry,
-                None => Self::create_empty_entry(path),
-            };
+            match repo_state {
+                Some(IndexedRepoState::Indexed(state)) => {
+                    root_dir.entry = state.entry.clone();
+                }
+                Some(IndexedRepoState::Pending) => {
+                    // Repo is being (re-)indexed. Keep whatever entry we already
+                    // have so the tree doesn't flash back to a loading state
+                    // during the Pending → Indexed transition.
+                }
+                Some(IndexedRepoState::Failed(_)) | None => {
+                    root_dir.entry = Self::create_empty_entry(path);
+                }
+            }
         }
     }
 
@@ -2890,6 +2903,13 @@ impl View for FileTreeView {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         if matches!(self.enablement, CodingPanelEnablementState::Disabled) {
             return self.render_error_state(DISABLED_TEXT.to_string(), app);
+        }
+
+        if matches!(
+            self.enablement,
+            CodingPanelEnablementState::PendingRemoteSession
+        ) {
+            return self.render_loading_state(app);
         }
 
         if self.displayed_directories.is_empty() {

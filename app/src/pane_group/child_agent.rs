@@ -1,5 +1,7 @@
-use std::{collections::HashMap, ffi::OsString};
+use std::{collections::HashMap, ffi::OsString, path::PathBuf};
 
+use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::attachment_utils::attachments_download_dir;
 use warpui::{EntityId, SingletonEntity, ViewContext, ViewHandle};
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
@@ -14,6 +16,31 @@ pub(crate) struct HiddenChildAgentConversation {
     pub terminal_view: ViewHandle<TerminalView>,
     pub terminal_view_id: EntityId,
     pub conversation_id: AIConversationId,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct HiddenChildAgentTaskContext {
+    pub task_id: AmbientAgentTaskId,
+    pub working_dir: Option<PathBuf>,
+}
+
+pub(crate) fn apply_hidden_child_agent_task_context(
+    terminal_view: &ViewHandle<TerminalView>,
+    task_context: &HiddenChildAgentTaskContext,
+    ctx: &mut ViewContext<PaneGroup>,
+) {
+    let task_id = task_context.task_id;
+    let working_dir = task_context.working_dir.clone();
+
+    terminal_view.update(ctx, move |terminal_view, ctx| {
+        terminal_view
+            .ai_controller()
+            .update(ctx, |controller, ctx| {
+                controller.set_ambient_agent_task_id(Some(task_id), ctx);
+                if let Some(working_dir) = working_dir.as_deref() {
+                    controller.set_attachments_download_dir(attachments_download_dir(working_dir));
+                }
+            });
+    });
 }
 
 fn propagate_parent_agent_settings(
@@ -72,6 +99,7 @@ pub(crate) fn create_hidden_child_agent_conversation(
     name: String,
     parent_conversation_id: AIConversationId,
     env_vars: HashMap<OsString, OsString>,
+    task_context: Option<HiddenChildAgentTaskContext>,
     ctx: &mut ViewContext<PaneGroup>,
 ) -> Option<HiddenChildAgentConversation> {
     let new_pane_id =
@@ -84,6 +112,9 @@ pub(crate) fn create_hidden_child_agent_conversation(
 
     let terminal_view_id = new_terminal_view.id();
     propagate_parent_agent_settings(group, parent_pane_id, terminal_view_id, ctx);
+    if let Some(task_context) = task_context.as_ref() {
+        apply_hidden_child_agent_task_context(&new_terminal_view, task_context, ctx);
+    }
 
     let conversation_id =
         start_new_child_conversation(terminal_view_id, name, parent_conversation_id, ctx);
@@ -117,6 +148,7 @@ fn create_error_child_agent_conversation_context(
         name.clone(),
         parent_conversation_id,
         HashMap::new(),
+        None,
         ctx,
     ) {
         return Some((Some(terminal_view), terminal_view_id, conversation_id));

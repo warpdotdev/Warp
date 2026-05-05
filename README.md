@@ -31,6 +31,14 @@
 
 You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/) for platform-specific instructions.
 
+## Warp Contributions Overview Dashboard
+
+Explore [build.warp.dev](https://build.warp.dev) to:
+- Watch thousands of Oz agents triage issues, write specs, implement changes, and review PRs
+- View top contributors and in-flight features
+- Track your own issues with GitHub sign-in
+- Click into active agent sessions in a web-compiled Warp terminal
+
 ## Licensing
 
 Warp's UI framework (the `warpui_core` and `warpui` crates) are licensed under the [MIT license](LICENSE-MIT).
@@ -40,6 +48,9 @@ The rest of the code in this repository is licensed under the [AGPL v3](LICENSE-
 ## Open Source & Contributing
 
 Warp's client codebase is open source and lives in this repository. We welcome community contributions and have designed a lightweight workflow to help new contributors get started. For the full contribution flow, read our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
+
+> [!TIP]
+> Maintaining a popular open-source project? [Apply for Oz credits](https://tally.so/r/LZWxqG) to bring [agentic workflows](https://github.com/warpdotdev/oz-for-oss) like issue triage, PR review, and community management to your repo.
 
 ### Issue to PR
 

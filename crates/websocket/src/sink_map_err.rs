@@ -13,7 +13,7 @@ where
 }
 
 /// Helper struct to map the [`Err`] of an underlying [`Sink`].
-/// This is a fork of the the `SinkMapErr` defined within `futures-util`
+/// This is a fork of the `SinkMapErr` defined within `futures-util`
 /// (https://docs.rs/futures/latest/futures/sink/struct.SinkMapErr.html) except that it does _not_
 /// panic if the caller tries to write to the sink after a previous attempt to write returned an
 /// error. See <https://github.com/rust-lang/futures-rs/issues/2108> for more details about the

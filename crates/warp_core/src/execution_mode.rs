@@ -74,6 +74,13 @@ impl AppExecutionMode {
         self.is_app()
     }
 
+    /// Whether the app can show interactive onboarding UIs (e.g. the onboarding
+    /// callout tutorial). Onboarding requires a user to interact with it, so it
+    /// is disabled in headless modes like SDK/CLI.
+    pub fn can_show_onboarding(&self) -> bool {
+        self.is_app()
+    }
+
     /// Whether the app can sync agent conversations (tasks and cloud conversation metadata).
     /// In CLI mode, we don't need this data since there's no user viewing it.
     pub fn can_fetch_agent_runs_for_management(&self) -> bool {

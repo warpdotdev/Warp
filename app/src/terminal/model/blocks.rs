@@ -722,6 +722,47 @@ impl BlockList {
         );
     }
 
+    pub(super) fn append_followup_shared_session_scrollback(
+        &mut self,
+        scrollback: &[SerializedBlock],
+    ) {
+        self.set_bootstrapped();
+        let mut processor = Processor::new();
+
+        let Some((active_block, completed_blocks)) = scrollback.split_last() else {
+            return;
+        };
+
+        for block in completed_blocks {
+            if self.block_index_for_id(&block.id).is_some() {
+                continue;
+            }
+            if block.start_ts.is_some() && block.completed_ts.is_some() {
+                self.finish_active_block_before_followup_append();
+                self.restore_block(block, BootstrapStage::PostBootstrapPrecmd, &mut processor);
+            } else {
+                log::warn!("A non-active follow-up scrollback block was either not started or not completed");
+            }
+        }
+
+        if self.block_index_for_id(&active_block.id).is_none() {
+            debug_assert!(active_block.completed_ts.is_none());
+            self.finish_active_block_before_followup_append();
+            self.restore_block(
+                active_block,
+                BootstrapStage::PostBootstrapPrecmd,
+                &mut processor,
+            );
+        }
+    }
+
+    fn finish_active_block_before_followup_append(&mut self) {
+        if !self.active_block().finished() {
+            self.active_block_mut().finish(0);
+            self.update_active_block_height();
+        }
+    }
+
     /// This is an important function in the block list lifecycle. After this
     /// is called, there's an invariant where we always have an active block
     /// that's hidden until it's `start`ed.
@@ -2636,6 +2677,7 @@ impl BlockList {
 
         // Start the block and add the command
         self.active_block_mut().start();
+        self.active_block_mut().disable_reset_grid_checks();
         processor.parse_bytes(self, command.as_bytes(), &mut io::sink());
 
         // Simulate preexec to transition to Executing state
@@ -2880,6 +2922,7 @@ impl BlockList {
             self.active_block_mut().start_background(None);
         } else {
             self.active_block_mut().start();
+            self.active_block_mut().disable_reset_grid_checks();
         }
 
         if let Some(serialized_ai_metadata) = block.ai_metadata.as_ref().and_then(|ai_metadata| {
