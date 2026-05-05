@@ -321,17 +321,37 @@ language and is independently revertable.
 > telemetry. The two were inconsistent. Resolved: paths are PII
 > across both surfaces.
 
+> **Correction (re-review #10129, security):** the previous draft
+> sent `internal_name` for all grammar sources. Hardcoded and
+> bundled names are well-known (they ship in the Warp binary), but
+> user-local `internal_name` is **user-controlled** — a customer's
+> private project might define a grammar named `acme-internal-dsl`
+> and disclose that name to analytics on every startup. Resolved
+> below by stripping `internal_name` for `UserLocal`-sourced
+> events.
+
 **Telemetry events** (sent to Warp's analytics):
-- `grammar_loaded`: one-time at startup. Payload: `internal_name`,
-  `source` (Hardcoded / Bundled / UserLocal as a tag, no path),
-  `parser_kind` (rust_crate / wasm), `ts_abi`.
-- `grammar_load_failed`: one-time. Payload: `internal_name` (if
-  the TOML parsed far enough to extract it), `reason_kind` (one of
-  `schema_parse`, `schema_version`, `native_lib`,
-  `parser_crate_not_found`, `wasm_instantiate`, `wasm_abi`,
-  `highlight_query`, `indent_query`, `symbols_query`),
-  `source_kind` (Hardcoded / Bundled / UserLocal). Paths are NOT
-  in the payload.
+- `grammar_loaded` (one-time at startup):
+  - For **Hardcoded** and **Bundled** sources: payload includes
+    `internal_name`, `source` tag, `parser_kind` (rust_crate /
+    wasm), `ts_abi`. Names are public (they ship in Warp).
+  - For **UserLocal** sources: payload is `{ source:
+    "user_local", parser_kind, ts_abi }` — **no `internal_name`,
+    no path, no `name_hash`.** The team gets aggregate counts of
+    user-local-grammar adoption without learning *which* grammars
+    individual users installed.
+- `grammar_load_failed` (one-time):
+  - For **Hardcoded** and **Bundled**: `internal_name` (if the
+    TOML parsed far enough to extract it), `reason_kind` (one of
+    `schema_parse`, `schema_version`, `native_lib`,
+    `parser_crate_not_found`, `wasm_instantiate`, `wasm_abi`,
+    `highlight_query`, `indent_query`, `symbols_query`),
+    `source_kind`. No paths.
+  - For **UserLocal**: `{ source_kind: "user_local",
+    reason_kind }` — no `internal_name`, no path. The
+    reason_kind alone is enough to identify systemic user-local
+    failure modes (e.g. `wasm_abi` mismatches after a Warp
+    upgrade) without disclosing user-controlled strings.
 - Both events respect Warp's existing global telemetry opt-out.
 
 **Local logs** (`log::error!`, `log::warn!`, `log::info!`):

@@ -74,13 +74,40 @@ contributor experience matches G1 above.
 ### G2 — Bundled (source-tree) grammars: no hand-written match arms,
 ### but does ship with Warp
 
-A contributor sending a PR to Warp can add a new language by
-dropping `crates/languages/grammars/<lang>/` with a `language.toml`,
-the tree-sitter `*.scm` files, and either a `grammar.wasm` or a new
-entry in the compile-time `bundled_parsers.rs` parser map. **No
-edits to `language_by_filename`, `language_by_name`,
-`to_arborium_name`, or `get_arborium_highlight_query` are required.**
-The new language ships with the next Warp release.
+> **Correction (re-review #10129):** the previous wording said "no
+> edits to lib.rs were required," which understated the actual
+> Rust/Cargo changes. The honest list is below.
+
+A contributor sending a PR to Warp adds a new language by:
+
+1. Creating `crates/languages/grammars/<lang>/` with
+   `language.toml`, `highlights.scm`, and the optional
+   `*.scm` query files.
+2. **Adding the parser** in one of two ways:
+   - **Cargo-dep parser:** add a new line to
+     `crates/languages/Cargo.toml` (`tree-sitter-<lang> =
+     "..."`), and a single entry mapping `"<lang>"` →
+     `tree_sitter_<lang>::LANGUAGE` in
+     `crates/languages/src/bundled_parsers.rs`. This is a Rust
+     edit, but it is a **mechanical one-line addition in two
+     places**, not the five-place hand-coded match-statement
+     spread the issue was asking us to remove.
+   - **Bundled WASM parser:** drop `grammar.wasm` in the same
+     directory. No Rust edits at all (once G1 is enabled — until
+     then, bundled WASM is treated as `Failed`).
+3. Sending the PR; the new language ships with the next Warp
+   release after merge.
+
+**No edits required** in any case to:
+`language_by_filename`, `language_by_name`,
+`to_arborium_name`, or `get_arborium_highlight_query`.
+
+The bundled path requires `cargo build` and a Warp release. What
+it satisfies is the original issue's "distribute work on
+syntax-highlight feature requests to individual contributors"
+outcome by removing the five-place hand-edit, the cross-crate
+`arborium`-upstream gate, and the implicit "you must understand
+the lookup match-statements" learning curve.
 
 The bundled path still requires `cargo build` and a Warp release —
 it does NOT satisfy G1's "no release" property. What it satisfies is
@@ -296,8 +323,13 @@ a "minimum viable" grammar contribution low-effort.
 
 ### B7 — Discoverability of installed grammars
 
-A new command `warp_grammars list` (or a settings-page surface,
-Settings → Editor → Languages) shows:
+> **Correction (re-review #10129):** the previous draft offered
+> "CLI command OR settings page" as alternatives, but A7
+> requires the settings page. Resolved: the **Settings → Editor
+> → Languages page is the required deliverable.** The CLI
+> command is a non-V1 follow-up.
+
+`Settings → Editor → Languages` shows:
 - Each loaded language, its source (bundled / user-local), its
   parser revision, and the file extensions it claims.
 - Each failed-to-load grammar with its failure reason.
@@ -320,30 +352,52 @@ A1. A contributor adds `crates/languages/grammars/nim/` containing
     `.nim` files render with syntax highlighting in Warp.
     No edits to `lib.rs` were required.
 
-A2. A user drops `~/.warp/grammars/zig/` containing
-    `language.toml`, `highlights.scm`, and `grammar.wasm`. After
-    restarting Warp, `.zig` files render with syntax highlighting.
+> **Correction (re-review #10129):** the previous A2/A4/A5/A6
+> required user-local WASM grammars to load and render in V1, but
+> the goal section explicitly defers G1 (user-local) until the
+> tree-sitter version question resolves. The criteria below are
+> rewritten so V1 ships only G2 (bundled). The user-local
+> acceptance criteria are kept as **A2.future / A4.future / etc.**
+> for the follow-up PR that flips the gate.
+
+A2. A user-local grammar directory at
+    `~/.warp/grammars/zig/` is **detected** by `discover_grammars()`
+    and surfaces in `Settings → Editor → Languages` as
+    `LoadResult::Failed { reason: UserLocalWasmNotYetSupported }`
+    with a friendly message ("User-local grammars are coming
+    soon"). The directory is NOT loaded as a parser in V1.
 
 A3. The 32 existing languages render bit-for-bit identically to
     today. The existing test suite (`crates/languages/src/lib_tests.rs`,
     `crates/syntax_tree/src/queries/indent_query_tests.rs`) passes
     unchanged.
 
-A4. A user-local `nim` grammar with a `language.toml` that
-    collides with a future bundled `nim` (different file extensions
-    too) is ignored; bundled wins. A `log::warn!` fires.
+A4. (V1 — bundled-only path) A second bundled grammar with the
+    same `internal_name` as a hardcoded language is dropped from
+    the merged list and a basename-only `log::warn!` fires.
+    Hardcoded > Bundled precedence is preserved.
 
-A5. A user-local grammar with malformed `language.toml` does not
+A5. A bundled grammar with malformed `language.toml` does not
     break Warp startup; the failure surfaces via the in-app
     notification and `Settings → Editor → Languages` view.
 
-A6. An attempt to load a `grammar.so` (native dylib) from a
-    user-local directory fails with a clear "native dynamic
-    libraries are not supported; use grammar.wasm" error message.
-    No `dlopen` is attempted.
+A6. An attempt to declare `parser.native_lib = "grammar.so"` (in
+    bundled OR user-local) is rejected at schema-validate time
+    with the B5 error message. No `dlopen` is attempted.
 
-A7. The new `Settings → Editor → Languages` page lists all loaded
-    grammars and any failures.
+A7. The `Settings → Editor → Languages` page lists all loaded
+    grammars and any failures (including
+    `UserLocalWasmNotYetSupported` entries).
+
+**Future acceptance criteria (deferred to G1 follow-up PR):**
+
+- A2.future. A user drops `~/.warp/grammars/zig/` containing
+  `language.toml`, `highlights.scm`, and `grammar.wasm`. After
+  restarting Warp, `.zig` files render with syntax highlighting.
+- A4.future. A user-local grammar that collides with a hardcoded
+  language is dropped; hardcoded wins.
+- A5.future. A user-local grammar with malformed `language.toml`
+  surfaces the failure but doesn't break startup.
 
 ## Risks and decisions for tech.md
 
