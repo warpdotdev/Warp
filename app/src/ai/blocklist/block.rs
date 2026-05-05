@@ -46,9 +46,7 @@ use crate::code_review::comment_rendering::{CommentViewCard, HeaderClickHandler}
 use crate::terminal::model::BlockId;
 use crate::terminal::model_events::ModelEvent;
 use crate::terminal::model_events::ModelEventDispatcher;
-use crate::terminal::view::ambient_agent::{
-    is_cloud_agent_pre_first_exchange, AmbientAgentViewModel,
-};
+use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
 use crate::terminal::TerminalModel;
 use crate::view_components::action_button::{
     ActionButtonTheme, NakedTheme, PrimaryTheme, SecondaryTheme,
@@ -1214,24 +1212,21 @@ impl AIBlock {
             ctx.subscribe_to_model(&agent_view_controller, |_, _, _, ctx| ctx.notify());
         }
 
-        // Re-render when the cloud agent transitions through setup phases so the response
-        // footer toggles correctly with `is_cloud_agent_pre_first_exchange`.
+        // Handoff prep emits ambient-agent events before submit, while still composing.
+        // Only the run lifecycle events can change `is_cloud_agent_pre_first_exchange`
+        // for this block's footer.
         if let Some(ambient_agent_view_model) = ambient_agent_view_model.as_ref() {
-            ctx.subscribe_to_model(
-                ambient_agent_view_model,
-                |me, ambient_agent_view_model, _event, ctx| {
-                    let still_pre_first_exchange = is_cloud_agent_pre_first_exchange(
-                        Some(&ambient_agent_view_model),
-                        &me.agent_view_controller,
-                        &me.terminal_model,
-                        ctx,
-                    );
-                    if !still_pre_first_exchange {
-                        ctx.notify();
-                        ctx.unsubscribe_to_model(&ambient_agent_view_model);
-                    }
-                },
-            );
+            ctx.subscribe_to_model(ambient_agent_view_model, |_, _, event, ctx| match event {
+                AmbientAgentViewModelEvent::DispatchedAgent
+                | AmbientAgentViewModelEvent::FollowupDispatched
+                | AmbientAgentViewModelEvent::SessionReady { .. }
+                | AmbientAgentViewModelEvent::FollowupSessionReady { .. }
+                | AmbientAgentViewModelEvent::Failed { .. }
+                | AmbientAgentViewModelEvent::NeedsGithubAuth
+                | AmbientAgentViewModelEvent::Cancelled
+                | AmbientAgentViewModelEvent::HarnessCommandStarted => ctx.notify(),
+                _ => {}
+            });
         }
 
         ctx.subscribe_to_model(&context_model, |_, _, event, ctx| {
