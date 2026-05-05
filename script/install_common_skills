@@ -127,6 +127,12 @@ prepare_common_skills_source() {
   local source_dir="$3"
 
   if [[ -d "${repo_url}" ]]; then
+    if [[ -n "${WARP_COMMON_SKILLS_REF:-}" ]]; then
+      git clone "${repo_url}" "${source_dir}"
+      git -C "${source_dir}" checkout --quiet "${ref}"
+      echo "${source_dir}"
+      return
+    fi
     echo "${repo_url}"
     return
   fi
