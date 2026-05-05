@@ -477,7 +477,6 @@ use crate::tab_configs::telemetry::{NewWorktreeConfigOpenSource, WorktreeBranchN
 use crate::tab_configs::create_worktree_modal::{
     CreateWorktreeModal, CreateWorktreeModalEvent, CreateWorktreeModalSeed,
 };
-use crate::tab_configs::worktree_picker::WorktreePickerEntry;
 use crate::tab_configs::{
     NewWorktreeModal, NewWorktreeModalEvent, TabConfigParamsModal, TabConfigParamsModalEvent,
 };
@@ -9199,35 +9198,12 @@ impl Workspace {
 
         let worktrees = parse_porcelain_list(&porcelain_output);
 
-        // Detect root (the worktree whose .git is a directory) and use its
-        // basename as a prefix on linked worktree display names — mirroring
-        // the chip menu's `RootName_worktreename` convention.
-        let root_path = worktrees
+        // Default destination = `~/.warp/worktrees/<root_name>/`. The root is the
+        // worktree whose `.git` is a directory rather than a file pointer.
+        let root_name = worktrees
             .iter()
             .find(|wt| wt.path.join(".git").is_dir())
-            .map(|wt| wt.path.clone());
-        let root_name = root_path
-            .as_ref()
-            .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
-
-        let entries: Vec<WorktreePickerEntry> = worktrees
-            .iter()
-            .map(|wt| {
-                let is_main = root_path.as_deref() == Some(wt.path.as_path());
-                let display_name = match (&root_name, is_main) {
-                    (Some(root), false) => format!("{root}_{}", wt.name()),
-                    _ => wt.name(),
-                };
-                WorktreePickerEntry {
-                    display_name,
-                    path: wt.path.clone(),
-                    is_main,
-                }
-            })
-            .collect();
-
-        // Default destination = `~/.warp/worktrees/<root_name>/`. If we can't
-        // detect a root, fall back to the user's home dir (rare; bare-repo case).
+            .and_then(|wt| wt.path.file_name().map(|s| s.to_string_lossy().into_owned()));
         let default_destination_dir = match root_name.as_deref() {
             Some(name) => dirs::home_dir()
                 .map(|h| h.join(".warp").join("worktrees").join(name))
@@ -9236,7 +9212,6 @@ impl Workspace {
         };
 
         let seed = CreateWorktreeModalSeed {
-            worktree_entries: entries,
             current_worktree_path,
             default_destination_dir,
         };

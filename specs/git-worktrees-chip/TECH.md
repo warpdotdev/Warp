@@ -1,190 +1,137 @@
-# Git Worktrees Context Chip — Spec
-
-## Scope
-
-This spec covers the full feature in three sequenced phases. Each phase ships independently behind the same feature flag.
-
-- **Fase 1** — Read-only chip: lists existing worktrees and opens a selected worktree in a new tab.
-- **Fase 2** — Creation modal: extends `NewWorktreeModal` with a base-ref picker (Current HEAD or Pick a base → local/remote branches) and a "Fetch from remote first" checkbox. Worktree name is required (no autogeneration).
-- **Fase 3** — Removal flow: "Remove worktree" menu item with confirmation; after `git worktree remove`, automatically closes any tab whose CWD is under the removed worktree's path.
-
-Phases 2 and 3 share infrastructure with Fase 1 (the chip is the only entry point for both creation and removal actions).
+# Git Worktrees Context Chip — Tech Spec
 
 ## Context
 
-Warp's prompt input renders a row of "context chips" above the editor (working directory, git branch, git diff stats, etc.). The chip system is plug-in: each chip is a `ContextChipKind` enum variant that wires a value generator (typically a shell command) to a renderer (`DisplayChip`) and an optional click menu.
+A new `ContextChipKind::GitWorktrees` chip in `app/src/context_chips/`. Lists the current repo's worktrees in the prompt, opens them in tabs, and provides creation / removal flows via a new modal and a confirmation dialog respectively. The chip's data comes from a single shell command (`git worktree list --porcelain` + a per-worktree reflog suffix), so the value layer follows the existing pattern used by `ShellGitBranch` and `GitDiffStats` — no new model or filesystem watcher in this PR.
 
-This feature adds a `GitWorktrees` chip that, across the three phases, becomes the central UI surface for inspecting, creating, and removing git worktrees in the active repo. Worktrees follow Warp's existing convention of living under `~/.warp/worktrees/{repo_name}/{worktree_name}` (established by APP-3679), so the chip operates inside a known path namespace rather than discovering arbitrary worktree locations.
+See `PRODUCT.md` in this directory for behavior, edge cases, and validation steps.
 
 ### Relevant code
 
-**Chip system (Fase 1):**
-- `app/src/context_chips/mod.rs:159` — `ContextChipKind` enum (19 variants today). Add `GitWorktrees` here, then wire it in `to_chip()` at line 189.
-- `app/src/context_chips/builtins.rs:149` — `shell_other_git_branches()` is the closest template for a shell-backed list generator. Add `shell_git_worktree_list()` next to it (only used as fallback; primary data source is the watcher — see below).
-- `app/src/context_chips/display_chip.rs` — `git_branch_chip()` (~line 995), `git_diff_stats_chip()` (~line 1113), `working_directory_chip()` (~line 1213) are the structural templates for the new `git_worktrees_chip()`.
-- `app/src/context_chips/display_menu.rs:89` — `ChipMenuType` enum (`Directories`, `Branches`, `CodeReview`, `Environments`). Add `Worktrees`. The `Branches` variant is the closest behavioral analogue.
-- `app/src/context_chips/display.rs:403` — `PromptDisplay::render()` already iterates `display_chips` and respects `should_render()`; no changes needed here.
-- `app/src/workspace/view.rs:7266` — `open_directory_in_new_tab(path: PathBuf)` already exists and creates a single-terminal pane layout with `initial_directory` set.
+**Chip itself (new):**
+- `app/src/context_chips/mod.rs` — `ContextChipKind::GitWorktrees` variant + wiring in `to_chip()`, `placeholder_value`, `default_styles`, `udi_icon`, and `available_chips()` (gated by `FeatureFlag::GitWorktreesChip`).
+- `app/src/context_chips/builtins.rs` — `shell_git_worktree_list()` shell generator; emits porcelain output followed by `---ORIGIN---` and per-worktree `<path>|<branch>|<origin>` lines parsed from each branch's reflog.
+- `app/src/context_chips/worktree.rs` (new) — `Worktree` struct + `parse_porcelain_list()` parser (with origin-section support) + `current_worktree()` helper + 9 unit tests.
+- `app/src/context_chips/display_chip.rs` — `DisplayChipKind::GitWorktrees` variant, the `git_worktrees_chip()` render method, the `WorktreeMenuItem` and `CreateWorktreeFooterItem` `GenericMenuItem` impls (with `custom_body` for the 3-line layout), the static `WORKTREE_PENDING_UNTIL_MS` + `mark_worktree_chip_pending()` API, and the menu-event subscriber that bubbles open / remove / create requests.
+- `app/src/context_chips/display_menu.rs` — `ChipMenuType::Worktrees` variant, `DisplayChipMenuAction::TrailingActionInvoked { action_data }`, `PromptDisplayMenuEvent::TrailingActionInvoked`, and the `GenericMenuItem::custom_body()` trait extension that lets an item replace the default `[icon | name | right_side_element]` layout.
+- `app/src/context_chips/display.rs` — `PromptDisplayEvent::OpenWorktreeInNewTab(PathBuf)` + `RequestRemoveWorktree(PathBuf)` variants and their relays.
+- `crates/warp_features/src/lib.rs` — `FeatureFlag::GitWorktreesChip` + `FeatureFlag::GitWorktreesChipCreate`. Both added to `DOGFOOD_FLAGS` for internal builds.
+- `app/assets/bundled/svg/worktree-icon.svg` (new) + `crates/warp_core/src/ui/icons.rs` — `Icon::GitWorktree` registered.
 
-**Worktree convention and creation modal (Fase 2):**
-- `app/src/tab_configs/tab_config.rs:42-59` — `generated_worktree_repo_dir(repo_path)` and `generated_worktree_path(repo_path, worktree_name)` define the hard-coded path convention `~/.warp/worktrees/{repo}/{name}`. No user override.
-- `app/src/tab_configs/new_worktree_modal.rs:97-290` — Existing `NewWorktreeModal` from APP-3679. Inputs today: `RepoPicker`, `BranchPicker`, autogenerate-name checkbox + manual name field. Submits `NewWorktreeModalEvent::Submit { repo, branch, autogenerate_name }`.
-- `app/src/tab_configs/branch_picker.rs:51-233` — `BranchPicker`. `refetch_branches(cwd)` already supports cross-repo. **Limitation**: only lists local branches (uses `git branch` / `git for-each-ref refs/heads`). Fase 2 must extend with a "Remote" tab that runs `git for-each-ref refs/remotes/`.
-- `app/src/tab_configs/repo_picker.rs` — `RepoPicker` (used by the modal; no changes required).
-- `app/src/workspace/view.rs:9176-9258` — `handle_new_worktree_submit()` writes the TOML and opens the resulting tab config. Fase 2 modifies this to optionally run `git fetch` first.
+**Open-in-new-tab plumbing (mostly reused):**
+- `terminal::input::Event::OpenDirectoryInNewTab { path }` + `RequestRemoveWorktree { path }` (and their relays through `terminal::view::Event` and `pane_group::Event`).
+- Workspace handler: `pane_group::Event::OpenDirectoryInNewTab` → existing `Workspace::open_directory_in_new_tab` (no new code in workspace for the open flow).
 
-**Filesystem watcher (Fase 1):**
-- `app/src/code_review/git_status_update.rs:147-212` — `GitRepoStatusModel::new`, `should_refresh_metadata()` at lines 259-277. Pull-based with `MetadataChanged` event subscription; refcounted singleton cache.
-- `crates/repo_metadata/src/watcher.rs:143-155` — Tier 1 routing already sends `.git/worktrees/<name>/` events to the matching repo's `external_git_directory`.
-- `crates/repo_metadata/src/watcher.rs:431-451` — `should_ignore_git_path` filter; currently allows only HEAD, `refs/heads/*`, and `index.lock`. Fase 1 extends this to also pass directory-add/delete events for `.git/worktrees/` itself.
-- `crates/repo_metadata/src/repository.rs:62` — `Repository` struct already exposes `external_git_dir` and `shared_git_root`.
+**Remove flow:**
+- `app/src/workspace/remove_worktree_confirmation_dialog.rs` (new) — view + `Source` + event/action enums, mirroring the structure of `delete_conversation_confirmation_dialog.rs`.
+- `app/src/workspace/view.rs::handle_remove_worktree_request` — async git status + unpushed check, then opens the dialog with the populated source.
+- `app/src/workspace/view.rs::execute_remove_worktree` — closes affected tabs synchronously (snappy), then spawns `git worktree remove [--force] <path>`. `--force` only when dirty (the user already saw and confirmed the warning).
 
-**Tab close + tab→cwd mapping (Fase 3):**
-- `app/src/workspace/view.rs:10347-10446` — `close_tab(index, skip_confirmation, add_to_undo_stack)`.
-- `app/src/pane_group/mod.rs:6532-6541` — `terminal_view_working_directories(ctx) -> Vec<(EntityId, Option<String>)>`. Iterate `self.tabs`, call this on each `PaneGroup` to find tabs whose CWD is under a given path.
-
-**Cross-reference:** `specs/APP-3679/TECH.md` — Existing worktree-creation work. Fase 2 of this spec extends APP-3679's modal directly (does not create a parallel creation path).
+**Create flow:**
+- `app/src/tab_configs/create_worktree_modal.rs` (new) — `CreateWorktreeModal` view, `CreateWorktreeModalSeed`, `CreateWorktreeModalEvent`, `CreateWorktreeModalAction`. Built per the open/closed principle: the existing `NewWorktreeModal` (APP-3679) stays untouched.
+- `WorkspaceAction::OpenCreateWorktreeModalFromChip { porcelain_output, current_worktree_path }` (in `workspace/action.rs`) — the chip dispatches this, the workspace builds a seed and opens the modal. Action carries the porcelain text so the workspace doesn't have to re-shell.
+- `app/src/workspace/view.rs::execute_create_worktree` — runs `git worktree add -b <branch_name> <destination> <source_branch>` and opens the result in a new tab. `-b` is critical so the source branch (often the user's current branch) isn't double-checked-out.
 
 ## Proposed changes
 
-### Fase 1 — Listing chip + open in new tab
+### 1. Chip foundation
 
-**1. New `ContextChipKind::GitWorktrees` variant** in `app/src/context_chips/mod.rs`:
-- Variant added to the enum and wired in `to_chip()` as a `shell_builtin` with `GIT_REFRESH_CONFIG`. Behind `FeatureFlag::GitWorktreesChip` for staged rollout (mirrors `GithubPullRequest` at `mod.rs:303`).
+- New `ContextChipKind::GitWorktrees` enum variant + 6 match-arm updates in `mod.rs` (`to_chip`, `placeholder_value`, `default_styles`, `udi_icon`, etc.).
+- Behind `FeatureFlag::GitWorktreesChip` for staged rollout. Footer item gated by sibling `GitWorktreesChipCreate` flag.
+- New `WORKTREES_REFRESH_CONFIG` (5s polling, vs. the 30s default `GIT_REFRESH_CONFIG` used by branch / diff-stats). Tighter so the count reflects worktree changes within ~5s.
+- New `worktree.rs` module with the porcelain parser. The parser also handles the optional `---ORIGIN---` section emitted by our extended shell command, attaching `origin_branch` to each `Worktree`.
 
-**2. Refresh strategy — shell-on-refresh for now, watcher integration deferred to Fase 1.1**:
-- Phase 1 ships with the same `GIT_REFRESH_CONFIG` (30s periodic refresh) used by `git_branch_chip` and `git_diff_stats_chip`. This matches the existing pattern and avoids touching shared infrastructure in `crates/repo_metadata/`.
-- The watcher integration (Option A: extend `RepositoryUpdate` with `worktrees_changed`, emit `GitRepoStatusEvent::WorktreesChanged` from `git_status_update.rs`) is now a Fase 1.1 follow-up, scoped as a perf/responsiveness improvement. Splitting it from this PR keeps the surface small and avoids regression risk on the existing chips that already depend on `GitRepoStatusModel`.
+### 2. Shell command (extended porcelain)
 
-**3. Shell generator** `shell_git_worktree_list()` in `app/src/context_chips/builtins.rs`: runs `GIT_OPTIONAL_LOCKS=0 git worktree list --porcelain` (per-shell mapping mirroring `shell_other_git_branches()`).
+`shell_git_worktree_list()` runs:
 
-**4. Porcelain parser** in new module `app/src/context_chips/worktree.rs`:
-- Pure function `parse_porcelain_list(input: &str) -> Vec<Worktree>`.
-- `Worktree { path: PathBuf, branch: Option<String>, head: Option<String>, is_detached: bool, is_bare: bool }` plus `name()` helper (basename, falls back to full path).
-- Helper `current_worktree(&[Worktree], cwd: &Path) -> Option<&Worktree>` — best-effort match by canonicalized path equality or prefix.
-- 7 unit tests covering: single, multiple, detached HEAD, bare repo, empty input, name fallback, current detection.
+```bash
+git worktree list --porcelain && \
+  echo '---ORIGIN---' && \
+  git worktree list --porcelain | awk '/^worktree/{print $2}' | \
+  while read wt; do
+    br=$(git -C "$wt" rev-parse --abbrev-ref HEAD)
+    if [ -n "$br" ] && [ "$br" != "HEAD" ]; then
+      origin=$(git -C "$wt" reflog show "$br" --format=%gs | \
+        awk -F'Created from ' '/Created from /{print $2; exit}')
+      printf '%s|%s|%s\n' "$wt" "$br" "$origin"
+    fi
+  done
+```
 
-**5. Chip rendering** `git_worktrees_chip()` in `app/src/context_chips/display_chip.rs`:
-- **Icon**: `Icon::GitBranch` placeholder (designer to provide a dedicated worktrees icon). The label `"wt"` was explicitly rejected.
-- **Label**: basename of the *current* worktree's path (matched via `worktree::current_worktree(&worktrees, current_repo_path)`). Falls back to `"{count} worktrees"` if the current path can't be matched.
-- **`should_render()`**: existing `_ => true` arm in `ContextChipKind::should_render` is reused. The chip naturally hides outside a git repo because the shell command produces no output. Hiding when there's only 1 worktree is a follow-up (currently shows a single-item menu) — small UX miss tracked in Open questions.
-- **Click handler**: dispatches `DisplayChipAction::OpenWorktreesSelector`, which delegates to `ToggleMenu` and routes per-kind through `handle_action`.
+Cost is N+1 git invocations per refresh (5s). Negligible for the typical N (2-5 worktrees). PowerShell falls back to plain porcelain (origin display is best-effort, missing on Windows for this PR).
 
-**6. Menu** `ChipMenuType::Worktrees` in `app/src/context_chips/display_menu.rs`:
-- New variant `Worktrees` added to `ChipMenuType`. All grouped match arms that contained `Branches` were extended to also include `Worktrees` (visual padding, search-input config, scroll behavior, drop shadow). Search placeholder: `"Search worktrees..."`.
-- `WorktreeMenuItem { display_name, path, is_current }` in `display_chip.rs` implements `GenericMenuItem`. The current worktree is non-clickable: the menu subscriber checks `is_current` on the action item and short-circuits with a menu-close instead of opening a tab.
-- (Naming note: the public type used as a menu item is `WorktreeMenuItem`, not `Worktree` — the `Worktree` name is owned by the parser module to keep porcelain semantics distinct from UI rendering.)
-- Footer item: `CreateWorktreeFooterItem` ("Create new worktree…", `Icon::Plus`). Wired only when `FeatureFlag::GitWorktreesChipCreate` is enabled; until Fase 2 it's effectively hidden. Even if surfaced, the click is treated as a no-op (sentinel `__create_new_worktree__` in `action_data` is matched and ignored by the subscriber).
+### 3. Chip rendering (multi-line menu items)
 
-**7. Click action wiring (chain)**:
-- `PromptDisplayChipEvent::OpenWorktreeInNewTab(PathBuf)` (`display_chip.rs`)
-  → relayed by `PromptDisplay::reset_chips` subscriber as `PromptDisplayEvent::OpenWorktreeInNewTab(PathBuf)` (`display.rs`)
-  → handled in `terminal/input.rs::handle_prompt_event`, emits `Event::OpenDirectoryInNewTab { path }`
-  → `pane_group::pane::terminal_pane.rs` relays to `pane_group::Event::OpenDirectoryInNewTab { path }` (already plumbed for the file tree at `left_panel.rs:776`)
-  → workspace handler at `view.rs:13257` already calls `self.open_directory_in_new_tab(path, ctx)`.
-- No new code in `workspace/view.rs`; this reuses the same path the file tree uses.
+`DisplayChipKind::GitWorktrees { menu_open, menu, worktrees, current_index }` is the new variant. The render path goes through `git_worktrees_chip()` for the chip itself and `WorktreeMenuItem::custom_body()` for the menu items.
 
-### Fase 2 — Creation modal
+`custom_body` was added as a new method on the `GenericMenuItem` trait (default `None`). When present, the menu's `UniformList` renderer uses it instead of the default `[icon | name | right_side_element]` layout. This was the cleanest way to support the chip's 3-line item layout (name + path + branch→origin) without disturbing the other menu types (Branches, Directories, Environments, CodeReview).
 
-Extend `NewWorktreeModal` in `app/src/tab_configs/new_worktree_modal.rs`:
+`WorktreeMenuItem::custom_body` always renders 3 lines (with an empty spacer line when origin is unknown) so every row in the `UniformList` has the same height — `UniformList` measures the first item's layout once and reuses that height for all rows; mismatched rows clip into each other otherwise.
 
-**1. Base-ref selector (replaces existing single branch picker)**:
-- Radio group with two options:
-  - **Current HEAD** (default — quick path, uses the active terminal's HEAD).
-  - **Pick a base** — activates a tabbed picker with **Local** and **Remote** tabs.
-    - **Local** tab: existing `BranchPicker` behavior (lists `refs/heads/*`).
-    - **Remote** tab: extend `BranchPicker` to support `git for-each-ref refs/remotes/`. Items render as `origin/main`, `origin/develop`, etc.
-- The dropdown subsumes the original "main root" radio idea — `main` is just one entry in the local list, `origin/main` is one entry in the remote list.
+The pending indicator (`⟳` in place of the count for ~6s after a remove or create) is driven by a static `AtomicU64` (`WORKTREE_PENDING_UNTIL_MS`) that any handler can flip via `mark_worktree_chip_pending()`. The chip's `TrailingActionInvoked` subscriber spawns a `Timer` (`schedule_pending_clear_render`) that triggers `ctx.notify()` ~100ms after the deadline so the chip re-renders without waiting for a hover / next refresh.
 
-**2. "Fetch from remote first" checkbox**:
-- Default ON when the selected base is a remote ref.
-- Default OFF when base is Current HEAD or a local branch.
-- When checked: runs `git fetch origin <ref-name>` before the worktree creation. Surfaces fetch errors inline and does not proceed.
-- Auto-pull is explicitly rejected (mutates local branches without consent, can produce merge conflicts). Auto-fetch is safe (only updates remote-tracking refs).
+### 4. Remove flow
 
-**3. Worktree name**:
-- Field is **required** (autogenerate checkbox removed).
-- Open button disabled until non-empty.
+- `RemoveWorktreeConfirmationDialog` view file mirrors `delete_conversation_confirmation_dialog.rs`. Source is `RemoveWorktreeDialogSource { path, worktree_name, tabs_to_close, dirty_status }`.
+- `Workspace::handle_remove_worktree_request` runs `git status --porcelain` + `git rev-list --count @{u}..HEAD` async, builds the source, and opens the dialog.
+- `WorktreeDirtyStatus { has_uncommitted_changes, has_untracked_files, has_unpushed_commits }` summarizes the warning section.
+- `Workspace::execute_remove_worktree` snapshots the affected tab indices via `tabs_under_worktree_path()` (which iterates `self.tabs` and calls `pane_group.terminal_view_working_directories(ctx)`), closes them synchronously, then spawns `git worktree remove [--force] <path>` in the background. Tab closure is intentionally before the git command so the UI feels snappy — if git fails, a toast surfaces; tabs stay closed because the user already confirmed the destructive intent.
+- Friendly error messages translate common git failures (`invalid reference`, `is already used by`, `already exists`, branch-name conflicts) into actionable copy.
 
-**4. Submit handler** (extend `handle_new_worktree_submit` in `workspace/view.rs:9176`):
-- Resolve target path via existing `generated_worktree_path(repo, name)` from `tab_config.rs:42`.
-- Run `git fetch` if checkbox checked.
-- Run `git worktree add <target_path> <ref>` (no `--force`; let it fail loudly if the branch is already checked out elsewhere).
-- Open the new worktree in a new tab via `open_directory_in_new_tab(target_path)` (the same path Fase 1 uses — keeps behavior consistent).
+### 5. Create flow (new modal, open/closed)
 
-**5. Trigger from chip**: the menu's "Create new worktree…" footer item dispatches an action that opens the modal pre-populated with the current repo.
+- `CreateWorktreeModal` is a brand-new view — does NOT modify `NewWorktreeModal` from APP-3679.
+- Inputs: `BranchPicker` (source branch), destination editor, name editor, branch-name editor, footer Cancel / Create.
+- The branch-name editor auto-mirrors the worktree-name editor char-by-char; the mirror stops the moment the user manually edits the branch name (tracked via `branch_name_overridden` + comparing the editor buffer against `last_programmatic_branch_value`).
+- The Create button is rendered subdued with no `on_click` when the form is invalid (empty name or invalid characters).
+- A live preview of the final destination path renders below the inputs.
+- Submit emits `CreateWorktreeModalEvent::Submit { source_worktree, branch, destination, worktree_name }`. The workspace runs `git worktree add -b <worktree_name> <destination> <branch>` from `source_worktree` (any worktree of the repo; git resolves up to the repo root). On success, `open_directory_in_new_tab(destination)`.
 
-### Fase 3 — Remove worktree + close associated tabs
+### 6. Action / event chain
 
-**1. Menu item per worktree**: each `Worktree` item in the menu (except the current one) gets a "Remove worktree" affordance (right-side action button or context-menu).
+The chip can't directly call workspace methods, so events bubble through the existing tree:
 
-**2. Confirmation dialog** (reuse existing confirm modal pattern):
-- Lists the path being removed.
-- Lists tabs that will close (queried via `terminal_view_working_directories(ctx)` filtered by path prefix).
-- Calls `git status --porcelain` on the worktree path; if dirty, surfaces a warning ("3 unstaged changes will be lost") and requires a second click.
-
-**3. Removal action**:
-- Run `git worktree remove <path>`. No `--force` by default (let git reject removal of dirty/locked worktrees).
-- If the user opted into "force remove" via the dirty-warning second-click, run with `--force`.
-
-**4. Tab cleanup**:
-- After successful removal, iterate `self.tabs` in workspace; for each `PaneGroup`, call `terminal_view_working_directories(ctx)`.
-- Any tab whose CWD starts with the removed path: call `close_tab(tab_index, true, true)` (skip confirmation since user already confirmed at the worktree level; add to undo stack so the user can recover if a tab matched unexpectedly).
-- Tabs whose terminals have `cd`-ed outside the worktree path do **not** close — this is correct behavior.
-
-## Open questions
-
-- **Icon choice**: Designer to provide. Placeholder during dev: `Icon::GitBranch` (same as branch chip).
-- **Hide chip when ≤1 worktree**: Spec called for hiding; implementation currently uses the existing `should_render` default arm (always render when value present). The chip therefore appears even with one worktree, showing a single-item menu. Tracked as a follow-up — fixing requires either parsing `value` inside `should_render` (awkward, no chip-level access to porcelain) or filtering at the chip-display level.
-- **`git worktree remove` on dirty worktree** (Fase 3): Three plausible UX paths — (a) bare warning + force opt-in via second click [recommended], (b) block removal entirely, (c) auto-stash before removing. Decide before Fase 3 review.
-- **Confirm dialog presentation** (Fase 3): How exactly to render the "N tabs will close" list — full paths, basenames, terminal numbers, or all three? Designer call.
+- **Open in new tab**: `PromptDisplayChipEvent::OpenWorktreeInNewTab(path)` → `PromptDisplayEvent::OpenWorktreeInNewTab` → `terminal::input::Event::OpenDirectoryInNewTab` → `terminal::view::Event::OpenDirectoryInNewTab` → `pane_group::Event::OpenDirectoryInNewTab` → workspace handler.
+- **Remove**: identical chain with the `RequestRemoveWorktree` variants on each layer.
+- **Create**: chip dispatches `WorkspaceAction::OpenCreateWorktreeModalFromChip { porcelain_output, current_worktree_path }` directly (typed actions bubble up the view tree until the workspace handles them — no per-layer relay needed).
 
 ## Testing and validation
 
-**Fase 1**:
-- *Unit (shipped)*: 7 tests in `app/src/context_chips/worktree.rs` covering parser (single, multiple, detached HEAD, bare repo, empty input), name fallback, current-worktree match.
-- *Unit (follow-up)*: Chip label derivation (current matched / not matched / empty) — currently inlined in chip construction; extract for direct testing.
-- *Unit (Fase 1.1)*: Watcher emits `WorktreesChanged` on `.git/worktrees/<name>/` dir add/delete; doesn't emit on file modifications within.
-- *Manual*: Repo with 3 worktrees → click chip → list shows 3 entries with current one identifiable → select non-current → new tab opens at correct path.
-- *Manual*: Non-git directory → chip absent (shell command returns nothing).
-- *Manual*: Toggle `FeatureFlag::GitWorktreesChip` off → chip gone.
-- *Manual*: Repo with 1 worktree → chip currently shows (see Open questions about hiding).
+**Unit tests** (in `worktree.rs`):
+- `parses_single_worktree`, `parses_multiple_worktrees`, `parses_detached_head_entry`, `parses_bare_entry`, `empty_input_yields_empty_vec`, `name_falls_back_to_full_path_when_no_basename`, `current_worktree_matches_exact_path`.
+- `parses_origin_section_into_matching_worktrees` — origin attaches when `<path>` matches; empty origin leaves `origin_branch = None`.
+- `missing_origin_section_is_backward_compatible` — porcelain-only input still parses.
+- `origin_section_ignores_unknown_paths` — origin entry pointing at a path not in the porcelain list is silently dropped.
+- `origin_section_ignores_malformed_lines` — lines without enough `|`-separated fields are skipped.
 
-**Fase 2**:
-- *Manual*: Create from Current HEAD → new worktree at `~/.warp/worktrees/{repo}/{name}` checked out at HEAD's commit.
-- *Manual*: Create from local branch (e.g. `feature/x`) → new worktree at that branch's commit; original worktree's local branches untouched.
-- *Manual*: Create from `origin/main` with fetch ON → fetch runs, worktree created at fresh `origin/main` commit.
-- *Manual*: Create from `origin/main` with fetch OFF → worktree created at locally-cached `origin/main` ref (may be stale).
-- *Manual*: Empty name → Open button disabled.
-- *Manual*: Branch already checked out elsewhere → `git worktree add` fails, error surfaced in modal.
-
-**Fase 3**:
-- *Manual*: Create 2 worktrees, open tabs in both, remove one → only the removed worktree's tabs close.
-- *Manual*: Tab where user `cd`-ed outside the worktree → does not close (verify by `pwd`).
-- *Manual*: Remove dirty worktree → warning shown, second click with force succeeds.
-- *Manual*: Remove dirty worktree without force → `git worktree remove` fails, no tabs closed.
+**Manual validation** (covered in `PRODUCT.md` § Validation):
+- Chip render + count, menu layout (green bar / root badge / trash), open-in-new-tab.
+- Remove: confirm dialog content, dirty warning, tab cleanup, friendly error toasts.
+- Create: branch-name auto-mirror + override behavior, validation message + disabled button on empty name, friendly errors, new tab opens at the created worktree.
+- Pending `⟳` indicator clears automatically (no hover required) within ~6s.
 
 **Build**:
-- `cargo check -p warp` clean across all phases.
-- `cargo nextest run -p warp context_chips` passes.
-- `cargo nextest run -p warp tab_configs` passes (Fase 2 touches `new_worktree_modal`).
+- `cargo check -p warp` — clean (no warnings related to this work).
+- `cargo nextest run -p warp context_chips::worktree` — 11 tests pass.
 
 ## Risks and mitigations
 
-- **Watcher extension churn (Fase 1.1)**: changing `RepositoryUpdate` and `should_ignore_git_path` will affect every consumer of `GitRepoStatusModel` when implemented. Mitigation: a new flag defaulting to `false` so existing consumers ignore it. Regression test: `git_branch_chip` and `git_diff_stats_chip` continue to refresh on HEAD/index changes only.
-- **Shell-on-refresh polling cost (Fase 1)**: `git worktree list --porcelain` runs every 30s while the chip is enabled. Cheap on small repos, measurable on monorepos with 50+ worktrees. Mitigation: behind feature flag during dogfooding; benchmark before stable rollout. Watcher integration (Fase 1.1) eliminates polling.
-- **`git worktree remove` on dirty worktree**: user could lose unstaged changes. Mitigation: confirm dialog runs `git status --porcelain` first, lists unstaged files, requires explicit force opt-in.
-- **Path prefix false positives in tab close**: a worktree at `~/.warp/worktrees/repo/foo` could match `~/.warp/worktrees/repo/foo-bar` if compared as raw string prefix. Mitigation: compare with trailing separator (`path.starts_with(&format!("{}/", removed_path))`) or canonicalize and use `PathBuf::starts_with`.
-- **Fetch race on modal close**: user dismisses the modal mid-fetch. Mitigation: cancel the spawned fetch task on dismiss; if fetch already completed, the worktree is not created.
-- **Branch picker remote tab cost**: `git for-each-ref refs/remotes/` on a large monorepo can return thousands of entries. Mitigation: limit to top N most-recently-updated and add a search input (already present in `BranchPicker`).
-- **Conflict with APP-3679 spec**: Fase 2 directly modifies the modal that APP-3679 introduced. Mitigation: spec changes land in the same PR as the code; APP-3679's TECH.md gets a forward-pointer to this spec.
+- **Polling cost**: 5s polling is N+1 git invocations per cycle. Acceptable for typical N (2-5). Watcher integration is deferred — see follow-ups.
+- **`UniformList` row sizing**: the menu's `UniformList` measures the first item's height and reuses it. Mismatched item heights clip — mitigated by always rendering 3 lines (with an empty spacer when origin is unknown).
+- **Tab cleanup false positives**: a tab whose terminal CWD is under the removed worktree path closes. Mitigated by canonicalizing both sides; tabs the user `cd`-ed out of stay open. Path-prefix match uses `starts_with` on canonical paths.
+- **Snappy tab close vs. git failure**: tabs close before the git command runs. If git fails the worktree stays but tabs are gone. Mitigated by the upfront confirmation dialog (the user already accepted the destructive intent) and a persistent error toast.
+- **Branch-name auto-mirror edge cases**: typing identical text into the branch field as our auto-fill is indistinguishable from "user accepted the auto-fill" — fine, mirror keeps working. Pasting an identical value via clipboard would also leave it in mirror mode; acceptable.
+- **Reflog dependency for origin**: branches whose reflog has been pruned (default 90d for unreachable, configurable) lose their origin display. We render an empty spacer; not surfaced as an error.
 
 ## Follow-ups
 
-- **Fase 1.1 — Watcher integration**: extend `GitRepoStatusModel` with `WorktreesChanged` event so the chip refreshes on `.git/worktrees/` dir add/delete instead of polling every 30s.
-- **Hide chip when ≤1 worktree**: needs porcelain access in `should_render` (or chip-display-level filtering); currently the chip renders even for single-worktree repos.
-- Tag tabs explicitly as "worktree-owned" (add metadata to `TabData`) so Fase 3 doesn't rely on CWD prefix matching.
-- Support worktrees created outside the `~/.warp/worktrees/` convention (created via raw `git worktree add` from terminal). They will appear in the chip list (since `git worktree list` returns all of them) but Fase 2 always creates inside the convention.
-- Per-worktree dirty indicator in the menu (e.g. `●` next to dirty worktrees). Cost: `git status --porcelain` per worktree per refresh — design carefully (parallelize, cache, throttle).
-- "Reveal in Finder" / "Copy path" affordances on menu items.
-- Worktree pruning UI (`git worktree prune` for stale `.git/worktrees/<name>` dirs whose path no longer exists).
+- **Watcher integration (Fase 1.1)**: extend `GitRepoStatusModel` (`app/src/code_review/git_status_update.rs`) to detect `.git/worktrees/` directory add/delete and emit a new `GitRepoStatusEvent::WorktreesChanged`. Replace polling with subscription. Eliminates the up-to-5s lag on count updates.
+- **Designer-provided icon**: current `worktree-icon.svg` is a placeholder folder + branch glyph. Designer review pending.
+- **Working-directory chip compaction in worktrees**: when the user is inside a known worktree, the working-dir chip duplicates the worktree name (last segment). Setting / heuristic to compact this — deferred until a user complains.
+- **Hide chip when ≤1 worktree**: `should_render` doesn't have access to the chip's parsed value. Solved by either inverting the check into the chip-display layer or threading porcelain through `should_render`. Deferred.
+- **Tag tabs as "worktree-owned"**: would replace the path-prefix match in the remove flow with a deterministic tab→worktree association. Cleaner but adds metadata to `TabData`.
+- **`git worktree prune` UI**: stale registrations whose paths no longer exist could surface as a maintenance action.
+- **Per-worktree dirty indicator in the menu**: `git status` per worktree per refresh; design carefully (parallelize, cache, throttle) before shipping.
+- **Branch prefix radios in create modal**: `feature/`, `fix/`, `chore/`, etc. as quick-pick prefixes that auto-fill into the branch name. Defer until the modal sees real usage.
+- **Resolve origin = "HEAD"**: when worktrees are created without an explicit base branch, the reflog literally records "Created from HEAD". Possible heuristic resolution (find the closest branch containing the commit) could replace the literal display.

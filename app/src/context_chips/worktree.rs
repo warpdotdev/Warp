@@ -260,4 +260,71 @@ bare
         let current = current_worktree(&worktrees, Path::new("/tmp/wt-b"));
         assert_eq!(current.map(|wt| wt.name()), Some("wt-b".to_string()));
     }
+
+    #[test]
+    fn parses_origin_section_into_matching_worktrees() {
+        let input = "\
+worktree /Users/me/proj
+HEAD abc123
+branch refs/heads/main
+
+worktree /Users/me/proj-feat
+HEAD def456
+branch refs/heads/feature/auth
+---ORIGIN---
+/Users/me/proj|main|
+/Users/me/proj-feat|feature/auth|main
+";
+        let worktrees = parse_porcelain_list(input);
+        assert_eq!(worktrees.len(), 2);
+        // Empty origin (root or unknown) leaves origin_branch as None.
+        assert_eq!(worktrees[0].origin_branch, None);
+        // Non-empty origin attaches to the matching path.
+        assert_eq!(
+            worktrees[1].origin_branch.as_deref(),
+            Some("main")
+        );
+    }
+
+    #[test]
+    fn missing_origin_section_is_backward_compatible() {
+        let input = "\
+worktree /Users/me/proj
+HEAD abc123
+branch refs/heads/main
+";
+        let worktrees = parse_porcelain_list(input);
+        assert_eq!(worktrees.len(), 1);
+        assert_eq!(worktrees[0].origin_branch, None);
+    }
+
+    #[test]
+    fn origin_section_ignores_unknown_paths() {
+        let input = "\
+worktree /Users/me/proj
+HEAD abc123
+branch refs/heads/main
+---ORIGIN---
+/Users/me/some-other-path|main|develop
+";
+        let worktrees = parse_porcelain_list(input);
+        // Origin entry pointed at a path not in the porcelain list — silently dropped.
+        assert_eq!(worktrees[0].origin_branch, None);
+    }
+
+    #[test]
+    fn origin_section_ignores_malformed_lines() {
+        let input = "\
+worktree /Users/me/proj
+HEAD abc123
+branch refs/heads/main
+---ORIGIN---
+not enough fields
+/Users/me/proj
+/Users/me/proj|main|main
+";
+        let worktrees = parse_porcelain_list(input);
+        // First two malformed lines skipped; third one is valid and applies.
+        assert_eq!(worktrees[0].origin_branch.as_deref(), Some("main"));
+    }
 }

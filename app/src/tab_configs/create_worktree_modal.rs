@@ -23,10 +23,7 @@ use warpui::{
     fonts::{Properties, Weight},
     keymap::FixedBinding,
     platform::Cursor,
-    ui_components::{
-        button::ButtonVariant,
-        components::{UiComponent, UiComponentStyles},
-    },
+    ui_components::button::ButtonVariant,
     AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
@@ -35,9 +32,7 @@ use warp_core::ui::theme::color::internal_colors;
 use crate::{
     appearance::Appearance,
     editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions},
-    modal::ModalAction,
     tab_configs::branch_picker::BranchPicker,
-    tab_configs::worktree_picker::WorktreePickerEntry,
 };
 
 pub fn init(app: &mut AppContext) {
@@ -75,15 +70,12 @@ fn is_valid_worktree_name(name: &str) -> bool {
 }
 
 /// Configuration the workspace passes to seed the modal when opening it from the
-/// worktrees chip.
+/// worktrees chip. The modal silently uses `current_worktree_path` as the cwd for
+/// the eventual `git worktree add` (any worktree of the repo works) and pre-fills
+/// the destination input with `default_destination_dir`.
 #[derive(Clone, Debug)]
 pub struct CreateWorktreeModalSeed {
-    /// Worktree entries to populate the source picker, in display order.
-    pub worktree_entries: Vec<WorktreePickerEntry>,
-    /// Path of the worktree the user is currently in (matched against entries to
-    /// pre-select the source).
     pub current_worktree_path: Option<PathBuf>,
-    /// Default destination directory root (typically `~/.warp/worktrees/{repo}/`).
     pub default_destination_dir: PathBuf,
 }
 
@@ -408,7 +400,7 @@ impl View for CreateWorktreeModal {
                 theme,
             ))
             .with_child(
-                Container::new(label("Branch name (auto-mirrors, editable)"))
+                Container::new(label("Branch name"))
                     .with_margin_top(SECTION_GAP)
                     .finish(),
             )
