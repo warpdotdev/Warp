@@ -107,10 +107,10 @@
 # Blocklist UX / modality and cloud mode UI / shell compatibility / completions and bootstrap / warpifying
 /app/src/ai/blocklist/ @zachbai
 /app/src/root_view.rs @zachbai
-/app/src/terminal/bootstrap.rs @zachbai
+/app/src/terminal/bootstrap.rs @zachbai @acarl005
 /app/src/terminal/warpify/ @zachbai
 /app/src/settings_view/warpify_page.rs @zachbai
-/app/assets/bundled/bootstrap/ @zachbai
+/app/assets/bundled/bootstrap/ @zachbai @acarl005
 /crates/warp_completer/ @zachbai @szgupta @alokedesai
 
 # Agent mode
@@ -208,6 +208,9 @@
 /crates/isolation_platform/ @bnavetta @ianhodge
 /crates/managed_secrets/ @bnavetta @ianhodge
 /crates/warp_web_event_bus/ @bnavetta @ianhodge
+
+# Command signatures v2
+/command-signatures-v2/ @zachbai
 
 # Shell completions in the Warp CLI
 /crates/warp_cli/src/completions.rs @zachbai @szgupta @alokedesai
