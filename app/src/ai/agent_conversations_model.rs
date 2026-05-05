@@ -1524,10 +1524,8 @@ impl AgentConversationsModel {
             | BlocklistAIHistoryEvent::UpdatedStreamingExchange { .. }
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
             | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
-            | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => {}
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
-            => {}
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
         }
     }
 
