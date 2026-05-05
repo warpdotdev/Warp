@@ -452,10 +452,13 @@ impl OrchestrationPillBar {
             alive.insert(child.id());
         }
         let mut mouse_states = self.mouse_states.borrow_mut();
+        let mut overflow_states = self.overflow_button_mouse_states.borrow_mut();
         for id in &alive {
             mouse_states.entry(*id).or_default();
+            overflow_states.entry(*id).or_default();
         }
         mouse_states.retain(|id, _| alive.contains(id));
+        overflow_states.retain(|id, _| alive.contains(id));
     }
 
     /// Builds the ordered list of pills to render. Returns `None` when the
