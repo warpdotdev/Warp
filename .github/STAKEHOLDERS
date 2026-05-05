@@ -213,9 +213,9 @@
 /command-signatures-v2/ @zachbai
 
 # OS-level bootstrap scripts
-/script/linux/bootstrap @vorporeal @zachbai @alokedesai @bnavetta @acarl005
-/script/macos/bootstrap @vorporeal @zachbai @alokedesai @bnavetta @acarl005
-/script/windows/bootstrap.ps1 @vorporeal @zachbai @alokedesai @bnavetta @acarl005
+/script/linux/bootstrap @acarl005
+/script/macos/bootstrap @acarl005
+/script/windows/bootstrap.ps1 @acarl005
 
 # Shell completions in the Warp CLI
 /crates/warp_cli/src/completions.rs @zachbai @szgupta @alokedesai
