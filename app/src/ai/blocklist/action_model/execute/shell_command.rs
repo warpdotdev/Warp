@@ -1,7 +1,3 @@
-#[cfg(test)]
-#[path = "shell_command_tests.rs"]
-mod tests;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -897,3 +893,7 @@ enum ActionResult {
     Cancelled,
     BlockNotFound,
 }
+
+#[cfg(test)]
+#[path = "shell_command_tests.rs"]
+mod tests;
