@@ -7353,6 +7353,41 @@ impl Workspace {
         });
     }
 
+    /// If a tab already has a terminal whose CWD matches `path` (canonicalized
+    /// equality), activate that tab instead of opening a new one. Falls back to
+    /// `open_directory_in_new_tab` when no match is found. Avoids accumulating
+    /// duplicate tabs when the user clicks the same worktree (or file-tree
+    /// folder) repeatedly.
+    fn activate_or_open_directory_in_tab(
+        &mut self,
+        path: PathBuf,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let needle = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let mut found_index: Option<usize> = None;
+        for (idx, tab) in self.tabs.iter().enumerate() {
+            let cwds: Vec<(EntityId, Option<String>)> = tab
+                .pane_group
+                .read(ctx, |pg, ctx| {
+                    pg.terminal_view_working_directories(ctx).collect()
+                });
+            let any_match = cwds.iter().any(|(_, cwd)| {
+                let Some(cwd) = cwd.as_deref() else { return false };
+                let cwd_path = std::path::PathBuf::from(cwd);
+                let cwd_canon = cwd_path.canonicalize().unwrap_or(cwd_path);
+                cwd_canon == needle
+            });
+            if any_match {
+                found_index = Some(idx);
+                break;
+            }
+        }
+        match found_index {
+            Some(idx) => self.activate_tab(idx, ctx),
+            None => self.open_directory_in_new_tab(path, ctx),
+        }
+    }
+
     fn open_directory_in_new_tab(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
         let options = NewTerminalOptions::default().with_initial_directory(path);
         self.add_tab_with_pane_layout(
@@ -13871,7 +13906,7 @@ impl Workspace {
                 self.cd_to_directory(path.clone(), ctx);
             }
             pane_group::Event::OpenDirectoryInNewTab { path } => {
-                self.open_directory_in_new_tab(path.clone(), ctx);
+                self.activate_or_open_directory_in_tab(path.clone(), ctx);
             }
             pane_group::Event::RequestRemoveWorktree { path } => {
                 self.handle_remove_worktree_request(path.clone(), ctx);
