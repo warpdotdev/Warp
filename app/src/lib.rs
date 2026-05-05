@@ -1668,7 +1668,11 @@ fn initialize_app(
         );
     }
 
-    ctx.add_singleton_model(RepoOutlines::new);
+    if launch_mode.supports_indexing() {
+        ctx.add_singleton_model(RepoOutlines::new);
+    } else {
+        ctx.add_singleton_model(|ctx| RepoOutlines::new_with_indexing_enabled(false, ctx));
+    }
     ctx.add_singleton_model(|ctx| {
         warp_core::sync_queue::SyncQueue::<SyncTask>::new_with_rate_limit(
             &ctx.background_executor(),
@@ -1840,6 +1844,7 @@ fn initialize_app(
             codebase_limits.max_files_per_repo,
             codebase_limits.embedding_generation_batch_size,
             server_api_provider.as_ref(ctx).get(),
+            launch_mode.supports_indexing(),
             ctx,
         )
     });
