@@ -1986,6 +1986,7 @@ impl AgentDriver {
                 | BlocklistAIHistoryEvent::ClearedActiveConversation { .. }
                 | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
                 | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => (),
+            BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => (),
             }
         });
 

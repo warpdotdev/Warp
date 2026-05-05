@@ -28,7 +28,7 @@ use crate::server::server_api::ai::{
     AgentConfigSnapshot, AmbientAgentTaskState, AttachmentInput, SpawnAgentRequest,
 };
 use crate::server::server_api::{AIApiError, CloudAgentCapacityError, ServerApiProvider};
-use crate::terminal::view::ambient_agent::SetupCommandState;
+use crate::terminal::view::ambient_agent::{SetupCommandGroupId, SetupCommandState};
 use crate::terminal::CLIAgent;
 
 use super::AmbientAgentProgressUIState;
@@ -128,13 +128,10 @@ pub struct AmbientAgentViewModel {
     /// Selected worker host for the cloud agent run. Populated from the HostSelector
     /// (which resolves env var > workspace setting) and read by `spawn_agent`.
     worker_host: Option<String>,
-    /// Whether the optimistic InitialUserQuery block has been inserted for the current run.
-    has_inserted_cloud_mode_user_query_block: bool,
     /// Whether the harness CLI (e.g. `claude`, `gemini`) has started running for a non-oz run.
     /// Used to transition the cloud-mode setup UI out of the pre-first-exchange phase when
     /// there is no oz `AppendedExchange` to key off of.
     harness_command_started: bool,
-    optimistically_rendered_user_queries: Vec<String>,
 
     /// Session ID for the currently running ambient execution, if the run has attached to a live
     /// shared session.
@@ -175,9 +172,7 @@ impl AmbientAgentViewModel {
             conversation_id: None,
             harness: Harness::default(),
             worker_host: None,
-            has_inserted_cloud_mode_user_query_block: false,
             harness_command_started: false,
-            optimistically_rendered_user_queries: vec![],
             active_execution_session_id: None,
             last_ended_execution_session_id: None,
             pending_followup_prompt: None,
@@ -196,15 +191,43 @@ impl AmbientAgentViewModel {
         &mut self.setup_commands_state
     }
 
+    pub(super) fn start_new_setup_command_group(&mut self, ctx: &mut ModelContext<Self>) {
+        self.setup_commands_state.start_new_group();
+        self.harness_command_started = false;
+        ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+    }
+
+    pub(super) fn finish_setup_command_group(
+        &mut self,
+        group_id: SetupCommandGroupId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.setup_commands_state.is_running(group_id) {
+            self.setup_commands_state.finish_group(group_id);
+            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+        }
+    }
+
+    pub(super) fn set_setup_command_group_visibility(
+        &mut self,
+        group_id: SetupCommandGroupId,
+        is_visible: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if is_visible != self.setup_commands_state.should_expand(group_id) {
+            self.setup_commands_state
+                .set_should_expand(group_id, is_visible);
+            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+        }
+    }
+
     pub(super) fn set_setup_command_visibility(
         &mut self,
         is_visible: bool,
         ctx: &mut ModelContext<Self>,
     ) {
-        if is_visible != self.setup_commands_state.should_expand() {
-            self.setup_commands_state.set_should_expand(is_visible);
-            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
-        }
+        let group_id = self.setup_commands_state.current_group_id();
+        self.set_setup_command_group_visibility(group_id, is_visible, ctx);
     }
 
     /// Handles CloudModel events to keep environment_id in sync.
@@ -343,24 +366,6 @@ impl AmbientAgentViewModel {
     /// Returns the task ID for the current cloud agent task, if one has been spawned.
     pub fn task_id(&self) -> Option<AmbientAgentTaskId> {
         self.task_id
-    }
-
-    pub fn has_inserted_cloud_mode_user_query_block(&self) -> bool {
-        self.has_inserted_cloud_mode_user_query_block
-    }
-
-    pub fn set_has_inserted_cloud_mode_user_query_block(&mut self, has_inserted: bool) {
-        self.has_inserted_cloud_mode_user_query_block = has_inserted;
-    }
-
-    pub fn record_optimistic_user_query(&mut self, prompt: String) {
-        self.optimistically_rendered_user_queries.push(prompt);
-    }
-
-    pub fn has_optimistic_user_query(&self, prompt: &str) -> bool {
-        self.optimistically_rendered_user_queries
-            .iter()
-            .any(|query| query == prompt)
     }
 
     /// Whether or not this terminal session is in the setup state (first-time environment creation).
@@ -570,12 +575,11 @@ impl AmbientAgentViewModel {
         self.environment_id = None;
         self.task_id = None;
         self.conversation_id = None;
-        self.has_inserted_cloud_mode_user_query_block = false;
         self.harness_command_started = false;
-        self.optimistically_rendered_user_queries.clear();
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
         self.pending_followup_prompt = None;
+        self.setup_commands_state = Default::default();
         self.stop_progress_timer();
         ctx.notify();
     }

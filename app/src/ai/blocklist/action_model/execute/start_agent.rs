@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use futures::{future::BoxFuture, FutureExt};
 use warpui::{Entity, ModelContext, SingletonEntity};
 
@@ -14,10 +16,12 @@ use warp_core::features::FeatureFlag;
 
 use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessActionInput};
 
-/// The result sent back to the executor after observing the child agent's lifecycle.
-enum StartAgentDecision {
-    /// The child conversation was created successfully.
-    Started { agent_id: String },
+/// Per-request outcome of a StartAgent dispatch.
+#[derive(Debug, Clone)]
+pub enum StartAgentOutcome {
+    Started {
+        agent_id: String,
+    },
     /// An error occurred while starting the agent.
     Error(String),
 }
@@ -31,10 +35,21 @@ fn invalid_local_child_harness_error(harness_type: &str) -> String {
     }
 }
 
-/// Groups the data for a single StartAgent invocation as it flows from the
-/// executor through the terminal view and pane group into the controller.
+/// Opaque, monotonically increasing request identifier.
+/// Disambiguates parallel in-flight StartAgent requests.
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Default)]
+pub struct StartAgentRequestId(u64);
+
+impl StartAgentRequestId {
+    #[cfg(test)]
+    pub const fn from_raw_for_test(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Clone)]
 pub struct StartAgentRequest {
+    pub id: StartAgentRequestId,
     pub name: String,
     pub prompt: String,
     pub execution_mode: StartAgentExecutionMode,
@@ -43,19 +58,16 @@ pub struct StartAgentRequest {
     pub parent_run_id: Option<String>,
 }
 
-/// Tracks a single in-flight StartAgent action. At most one can be pending at
-/// a time because StartAgent actions execute serially (RunningActionPhase::Serial).
 struct PendingStartAgent {
     parent_conversation_id: AIConversationId,
-    /// Set when `StartedNewConversation` fires for a conversation whose
-    /// `parent_conversation_id` matches.
+    /// Set once the child conversation is synchronously created.
     child_conversation_id: Option<AIConversationId>,
-    sender: async_channel::Sender<StartAgentDecision>,
+    sender: async_channel::Sender<StartAgentOutcome>,
 }
 
 pub struct StartAgentExecutor {
-    /// The currently pending StartAgent action, if any.
-    pending: Option<PendingStartAgent>,
+    pending: HashMap<StartAgentRequestId, PendingStartAgent>,
+    next_request_id: u64,
 }
 
 impl StartAgentExecutor {
@@ -63,7 +75,37 @@ impl StartAgentExecutor {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         ctx.subscribe_to_model(&history_model, Self::handle_history_event);
 
-        Self { pending: None }
+        Self {
+            pending: HashMap::new(),
+            next_request_id: 0,
+        }
+    }
+
+    fn next_request_id(&mut self) -> StartAgentRequestId {
+        let id = self.next_request_id;
+        self.next_request_id = self.next_request_id.wrapping_add(1);
+        StartAgentRequestId(id)
+    }
+
+    /// Links a pending request to its freshly-created child
+    /// conversation so subsequent history events can find it.
+    fn record_child_conversation(
+        &mut self,
+        request_id: StartAgentRequestId,
+        child_conversation_id: AIConversationId,
+    ) {
+        if let Some(pending) = self.pending.get_mut(&request_id) {
+            pending.child_conversation_id = Some(child_conversation_id);
+        }
+    }
+
+    fn find_pending_by_child(
+        &self,
+        child_conversation_id: &AIConversationId,
+    ) -> Option<StartAgentRequestId> {
+        self.pending.iter().find_map(|(id, pending)| {
+            (pending.child_conversation_id.as_ref() == Some(child_conversation_id)).then_some(*id)
+        })
     }
 
     fn handle_history_event(
@@ -72,41 +114,19 @@ impl StartAgentExecutor {
         ctx: &mut ModelContext<Self>,
     ) {
         match event {
-            BlocklistAIHistoryEvent::StartedNewConversation {
-                new_conversation_id,
-                ..
-            } => {
-                let Some(pending) = self.pending.as_mut() else {
-                    return;
-                };
-                if pending.child_conversation_id.is_some() {
-                    return;
-                }
-                let history = BlocklistAIHistoryModel::as_ref(ctx);
-                let Some(conversation) = history.conversation(new_conversation_id) else {
-                    return;
-                };
-                if conversation.parent_conversation_id() == Some(pending.parent_conversation_id) {
-                    pending.child_conversation_id = Some(*new_conversation_id);
-                }
-            }
             BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
                 conversation_id, ..
             } => {
-                let matches = self
-                    .pending
-                    .as_ref()
-                    .is_some_and(|p| p.child_conversation_id.as_ref() == Some(conversation_id));
-                if !matches {
+                let Some(request_id) = self.find_pending_by_child(conversation_id) else {
                     return;
-                }
-                let pending = self.pending.take().unwrap();
+                };
+                let pending = self.pending.remove(&request_id).unwrap();
                 let agent_id = BlocklistAIHistoryModel::as_ref(ctx)
                     .conversation(conversation_id)
                     .and_then(|c| c.orchestration_agent_id());
                 match agent_id {
                     Some(id) => {
-                        let _ = pending.sender.try_send(StartAgentDecision::Started {
+                        let _ = pending.sender.try_send(StartAgentOutcome::Started {
                             agent_id: id.clone(),
                         });
                         if FeatureFlag::OrchestrationV2.is_enabled() {
@@ -128,7 +148,7 @@ impl StartAgentExecutor {
                             "ConversationServerTokenAssigned fired but no agent identifier for \
                              {conversation_id:?}"
                         );
-                        let _ = pending.sender.try_send(StartAgentDecision::Error(
+                        let _ = pending.sender.try_send(StartAgentOutcome::Error(
                             "Server did not assign an agent identifier".to_string(),
                         ));
                         if !FeatureFlag::OrchestrationV2.is_enabled() {
@@ -147,13 +167,9 @@ impl StartAgentExecutor {
             BlocklistAIHistoryEvent::UpdatedConversationStatus {
                 conversation_id, ..
             } => {
-                let matches = self
-                    .pending
-                    .as_ref()
-                    .is_some_and(|p| p.child_conversation_id.as_ref() == Some(conversation_id));
-                if !matches {
+                let Some(request_id) = self.find_pending_by_child(conversation_id) else {
                     return;
-                }
+                };
                 let history = BlocklistAIHistoryModel::as_ref(ctx);
                 let Some(conversation) = history.conversation(conversation_id) else {
                     return;
@@ -163,10 +179,10 @@ impl StartAgentExecutor {
                     conversation.status_error_message(),
                 );
                 if let Some(error_msg) = error_msg {
-                    let pending = self.pending.take().unwrap();
+                    let pending = self.pending.remove(&request_id).unwrap();
                     let _ = pending
                         .sender
-                        .try_send(StartAgentDecision::Error(error_msg.clone()));
+                        .try_send(StartAgentOutcome::Error(error_msg.clone()));
                     if !FeatureFlag::OrchestrationV2.is_enabled() {
                         OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
                             svc.emit_child_startup_errored(
@@ -179,7 +195,14 @@ impl StartAgentExecutor {
                     }
                 }
             }
-            BlocklistAIHistoryEvent::CreatedSubtask { .. }
+            BlocklistAIHistoryEvent::NewConversationRequestComplete {
+                request_id,
+                conversation_id,
+            } => {
+                self.record_child_conversation(*request_id, *conversation_id);
+            }
+            BlocklistAIHistoryEvent::StartedNewConversation { .. }
+            | BlocklistAIHistoryEvent::CreatedSubtask { .. }
             | BlocklistAIHistoryEvent::UpgradedTask { .. }
             | BlocklistAIHistoryEvent::AppendedExchange { .. }
             | BlocklistAIHistoryEvent::ReassignedExchange { .. }
@@ -231,7 +254,10 @@ impl StartAgentExecutor {
         let version = *version;
         let parent_conversation_id = input.conversation_id;
         let (execution_mode, parent_run_id) = match execution_mode.clone() {
-            StartAgentExecutionMode::Local { harness_type: None } => {
+            StartAgentExecutionMode::Local {
+                harness_type: None,
+                model_id,
+            } => {
                 // Legacy local Oz child agents do not use
                 // StartAgentRequest.parent_run_id. Instead, the child
                 // conversation is linked back to its parent on the first
@@ -241,10 +267,17 @@ impl StartAgentExecutor {
                 // child agents and local third-party harness children need
                 // parent_run_id here because their run is spawned before that
                 // first child request exists.
-                (StartAgentExecutionMode::Local { harness_type: None }, None)
+                (
+                    StartAgentExecutionMode::Local {
+                        harness_type: None,
+                        model_id,
+                    },
+                    None,
+                )
             }
             StartAgentExecutionMode::Local {
                 harness_type: Some(harness_type),
+                model_id,
             } => {
                 let Some(harness) = Harness::parse_local_child_harness(&harness_type) else {
                     return ActionExecution::Sync(AIAgentActionResultType::StartAgent(
@@ -282,6 +315,7 @@ impl StartAgentExecutor {
                 (
                     StartAgentExecutionMode::Local {
                         harness_type: Some(harness.to_string()),
+                        model_id,
                     },
                     Some(parent_run_id),
                 )
@@ -357,13 +391,18 @@ impl StartAgentExecutor {
         };
 
         let (sender, receiver) = async_channel::bounded(1);
-        self.pending = Some(PendingStartAgent {
-            parent_conversation_id,
-            child_conversation_id: None,
-            sender,
-        });
+        let request_id = self.next_request_id();
+        self.pending.insert(
+            request_id,
+            PendingStartAgent {
+                parent_conversation_id,
+                child_conversation_id: None,
+                sender,
+            },
+        );
 
         ctx.emit(StartAgentExecutorEvent::CreateAgent(StartAgentRequest {
+            id: request_id,
             name: name.clone(),
             prompt,
             execution_mode,
@@ -374,13 +413,13 @@ impl StartAgentExecutor {
 
         ActionExecution::new_async(async move { receiver.recv().await }, move |result, _ctx| {
             match result {
-                Ok(StartAgentDecision::Started { agent_id }) => {
+                Ok(StartAgentOutcome::Started { agent_id }) => {
                     AIAgentActionResultType::StartAgent(StartAgentResult::Success {
                         agent_id,
                         version,
                     })
                 }
-                Ok(StartAgentDecision::Error(error)) => {
+                Ok(StartAgentOutcome::Error(error)) => {
                     AIAgentActionResultType::StartAgent(StartAgentResult::Error { error, version })
                 }
                 Err(_) => {
@@ -388,6 +427,41 @@ impl StartAgentExecutor {
                 }
             }
         })
+    }
+
+    /// Dispatch a pre-validated StartAgent request. Returns a receiver
+    /// for the resulting [`StartAgentOutcome`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn dispatch(
+        &mut self,
+        name: String,
+        prompt: String,
+        execution_mode: StartAgentExecutionMode,
+        lifecycle_subscription: Option<Vec<LifecycleEventType>>,
+        parent_conversation_id: AIConversationId,
+        parent_run_id: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) -> async_channel::Receiver<StartAgentOutcome> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let request_id = self.next_request_id();
+        self.pending.insert(
+            request_id,
+            PendingStartAgent {
+                parent_conversation_id,
+                child_conversation_id: None,
+                sender,
+            },
+        );
+        ctx.emit(StartAgentExecutorEvent::CreateAgent(StartAgentRequest {
+            id: request_id,
+            name,
+            prompt,
+            execution_mode,
+            lifecycle_subscription,
+            parent_conversation_id,
+            parent_run_id,
+        }));
+        receiver
     }
 
     pub(super) fn preprocess_action(

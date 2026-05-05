@@ -361,6 +361,12 @@ impl TerminalManager {
             }
         }
 
+        if FeatureFlag::CloudModeSetupV2.is_enabled() {
+            self.model
+                .lock()
+                .block_list_mut()
+                .set_is_executing_oz_environment_startup_commands(true);
+        }
         self.connect_session(
             session_id,
             SharedSessionInitialLoadMode::AppendFollowupScrollback,

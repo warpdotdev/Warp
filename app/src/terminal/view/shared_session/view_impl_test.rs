@@ -848,10 +848,10 @@ fn test_on_ambient_agent_execution_ended_refreshes_open_details_panel_to_termina
                 model.enter_viewing_existing_session(task_id, ctx);
             });
 
-            view.is_cloud_mode_details_panel_open = true;
-            view.fetch_and_update_cloud_mode_details_panel(ctx);
+            view.is_conversation_details_panel_open = true;
+            view.fetch_and_update_conversation_details_panel(ctx);
             assert_eq!(
-                view.cloud_mode_details_panel
+                view.conversation_details_panel
                     .as_ref(ctx)
                     .task_display_status_for_test(),
                 Some(AgentRunDisplayStatus::TaskInProgress)
@@ -859,7 +859,7 @@ fn test_on_ambient_agent_execution_ended_refreshes_open_details_panel_to_termina
 
             view.on_ambient_agent_execution_ended(ctx);
             assert_eq!(
-                view.cloud_mode_details_panel
+                view.conversation_details_panel
                     .as_ref(ctx)
                     .task_display_status_for_test(),
                 Some(AgentRunDisplayStatus::ConversationSucceeded)

@@ -2677,6 +2677,7 @@ impl BlockList {
 
         // Start the block and add the command
         self.active_block_mut().start();
+        self.active_block_mut().disable_reset_grid_checks();
         processor.parse_bytes(self, command.as_bytes(), &mut io::sink());
 
         // Simulate preexec to transition to Executing state
@@ -2921,6 +2922,7 @@ impl BlockList {
             self.active_block_mut().start_background(None);
         } else {
             self.active_block_mut().start();
+            self.active_block_mut().disable_reset_grid_checks();
         }
 
         if let Some(serialized_ai_metadata) = block.ai_metadata.as_ref().and_then(|ai_metadata| {

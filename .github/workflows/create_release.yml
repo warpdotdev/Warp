@@ -111,6 +111,9 @@ jobs:
         shell: bash
         env:
           CHANNEL: ${{ steps.get-config.outputs.channel }}
+          # See https://github.com/orgs/community/discussions/151442 for why we need to use
+          # a PAT here.
+          GITHUB_TOKEN: ${{ secrets.CREATE_RELEASE_TAG_PUSH_PAT }}
 
       - name: Create GitHub release
         if: ${{ steps.set_publish.outputs.should_publish == 'true' }}
