@@ -2,7 +2,8 @@ use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{AIAgentHarness, AIConversation, AIConversationId};
 use crate::ai::agent_conversations_model::{
-    AgentConversationsModel, AgentConversationsModelEvent, ConversationOrTask,
+    AgentConversationEntryId, AgentConversationNavigationSubject, AgentConversationsModel,
+    AgentConversationsModelEvent,
 };
 use crate::ai::ai_document_view::AIDocumentView;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -1818,9 +1819,14 @@ impl PaneGroup {
                 });
 
                 let restore_kind = match &task_data {
-                    Some((_, Some(task))) => {
-                        let item = ConversationOrTask::Task(task);
-                        match item.get_open_action(None, ctx) {
+                    Some((task_id, Some(_))) => {
+                        match AgentConversationsModel::resolve_open_action(
+                            AgentConversationNavigationSubject::Entry(
+                                AgentConversationEntryId::AmbientRun(*task_id),
+                            ),
+                            None,
+                            ctx,
+                        ) {
                             Some(WorkspaceAction::OpenAmbientAgentSession {
                                 session_id, ..
                             }) => AmbientRestoreKind::SharedSession { session_id },
@@ -3340,8 +3346,13 @@ impl PaneGroup {
                 continue;
             };
 
-            let item = ConversationOrTask::Task(&task);
-            match item.get_open_action(None, ctx) {
+            match AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task.task_id,
+                )),
+                None,
+                ctx,
+            ) {
                 Some(WorkspaceAction::OpenAmbientAgentSession {
                     session_id,
                     task_id: _,
