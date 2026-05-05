@@ -1,8 +1,8 @@
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::PathBuf;
 
-use super::resolve_binary_in_wsl_safe_path;
+use super::{known_bare_name, resolve_binary_in_wsl_safe_path};
 
 #[cfg(unix)]
 fn make_executable(path: &std::path::Path) {
@@ -143,4 +143,26 @@ fn handles_non_utf8_path_components() {
     let resolved =
         resolve_binary_in_wsl_safe_path("git", Some(path_env.as_os_str()), true).unwrap();
     assert_eq!(resolved, dir.path().join("git"));
+}
+
+#[test]
+fn known_bare_name_recognizes_git_and_gh() {
+    assert_eq!(known_bare_name(OsStr::new("git")), Some("git"));
+    assert_eq!(known_bare_name(OsStr::new("gh")), Some("gh"));
+}
+
+#[test]
+fn known_bare_name_skips_paths() {
+    assert_eq!(known_bare_name(OsStr::new("/usr/bin/git")), None);
+    assert_eq!(known_bare_name(OsStr::new("./git")), None);
+    assert_eq!(known_bare_name(OsStr::new("bin/git")), None);
+    #[cfg(windows)]
+    assert_eq!(known_bare_name(OsStr::new("C:\\git\\git.exe")), None);
+}
+
+#[test]
+fn known_bare_name_skips_unknowns() {
+    assert_eq!(known_bare_name(OsStr::new("ls")), None);
+    assert_eq!(known_bare_name(OsStr::new("python")), None);
+    assert_eq!(known_bare_name(OsStr::new("")), None);
 }

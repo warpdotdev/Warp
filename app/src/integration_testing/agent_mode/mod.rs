@@ -44,14 +44,14 @@ pub fn output_code_diff_with_base_commit(
     log::debug!(
         "[GIT OPERATION] mod.rs output_code_diff_with_base_commit git checkout {base_commit} -- {test_files_str}"
     );
-    let _ = Command::new(warp_util::wsl::git_binary())
+    let _ = Command::new("git")
         .args(["checkout", base_commit, "--", test_files_str])
         .current_dir(working_dir)
         .output();
     log::debug!(
         "[GIT OPERATION] mod.rs output_code_diff_with_base_commit git --no-pager diff {base_commit}"
     );
-    let git_diff_output = Command::new(warp_util::wsl::git_binary())
+    let git_diff_output = Command::new("git")
         .args(["--no-pager", "diff", base_commit])
         .current_dir(working_dir)
         .output();
@@ -104,7 +104,7 @@ pub fn output_code_diff_debug_info(app: &mut App, window_id: WindowId) {
                     log::debug!(
                         "[GIT OPERATION] mod.rs output_code_diff_debug_info git diff -- {file_name}"
                     );
-                    let output = Command::new(warp_util::wsl::git_binary())
+                    let output = Command::new("git")
                         .args(["diff", "--", &file_name])
                         .current_dir(&current_dir)
                         .output();

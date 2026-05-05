@@ -80,7 +80,7 @@ fn insert_lines(path: &Path, before_line_number: usize, new_lines: &[String]) {
 }
 
 fn run_git(test_dir: &Path, args: &[&str]) {
-    let status = Command::new(warp_util::wsl::git_binary())
+    let status = Command::new("git")
         .args(args)
         .current_dir(test_dir)
         .status()

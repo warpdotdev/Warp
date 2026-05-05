@@ -8,7 +8,7 @@ use super::{detect_current_branch, detect_current_branch_display};
 
 /// Helper: run a git command inside the given repo directory.
 async fn git(repo: &Path, args: &[&str]) -> String {
-    let output = Command::new(warp_util::wsl::git_binary())
+    let output = Command::new("git")
         .args(args)
         .current_dir(repo)
         .stdout(Stdio::piped())

@@ -16,7 +16,7 @@ pub fn get_virtualized_environment() -> Option<VirtualEnvironment> {
         }
     };
 
-    if warp_util::wsl::is_wsl() {
+    if command::wsl::is_wsl() {
         return Some(VirtualEnvironment {
             name: "wsl".to_owned(),
         });

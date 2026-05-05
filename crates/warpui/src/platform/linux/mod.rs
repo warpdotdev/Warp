@@ -56,7 +56,7 @@ pub fn user_windowing_system() -> WindowingSystem {
 }
 
 pub fn is_wsl() -> bool {
-    warp_util::wsl::is_wsl()
+    command::wsl::is_wsl()
 }
 
 pub fn is_wayland_env_var_set() -> bool {

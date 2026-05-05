@@ -16,7 +16,6 @@ rand.workspace = true
 dirs.workspace = true
 hex.workspace = true
 lazy_static.workspace = true
-log.workspace = true
 mime_guess.workspace = true
 regex.workspace = true
 thiserror.workspace = true
@@ -34,5 +33,4 @@ windows.workspace = true
 gloo.workspace = true
 
 [dev-dependencies]
-tempfile = "3.8.0"
 warpui.workspace = true

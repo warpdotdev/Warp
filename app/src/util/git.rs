@@ -30,7 +30,7 @@ pub async fn run_git_command_with_env(
         "[GIT OPERATION] git.rs run_git_command git {}",
         args.join(" ")
     );
-    let mut cmd = Command::new(warp_util::wsl::git_binary());
+    let mut cmd = Command::new("git");
     cmd.arg("-c")
         .arg("diff.autoRefreshIndex=false")
         .args(args)
@@ -81,7 +81,7 @@ pub async fn run_git_command_with_env(
 /// Returns an empty set on any failure (not a git repo, git not found, etc.).
 #[cfg(feature = "local_fs")]
 pub fn list_local_branches_sync(repo_path: &Path) -> HashSet<String> {
-    let output = command::blocking::Command::new(warp_util::wsl::git_binary())
+    let output = command::blocking::Command::new("git")
         .args(["branch", "--list", "--format=%(refname:short)"])
         .current_dir(repo_path)
         .stdout(command::Stdio::piped())
@@ -761,7 +761,7 @@ async fn run_gh_command(repo_path: &Path, args: &[&str], path_env: Option<&str>)
         args.join(" ")
     );
 
-    let mut cmd = Command::new(warp_util::wsl::gh_binary());
+    let mut cmd = Command::new("gh");
     cmd.args(args)
         .current_dir(repo_path)
         .stdin(Stdio::null())
