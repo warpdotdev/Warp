@@ -679,3 +679,101 @@ fn test_custom_lines() {
     assert_eq!(lines("foo\nbar").collect_vec(), vec!["foo", "bar"]);
     assert_eq!(lines("foo\nbar\n").collect_vec(), vec!["foo", "bar"]);
 }
+
+/// Regression test for WARP-CLIENT-DEV-NYY: panic "Invalid edit range 4042..3982".
+///
+/// Reproduces the crash from MAA conversation d71bf84b (request b621adb3) with
+/// just the two offending V4A hunks: a large deletion (hunk 3: delete
+/// `DefaultWeightAgentInputButtonTheme`) whose matched range subsumes a nearby
+/// single-line edit (hunk 4: `ActiveMicButtonTheme.background` delegate).
+///
+/// Without deduplication, `fuzzy_match_v4a_diffs` produces overlapping deltas
+/// (e.g. 46..71 and 64..65), which causes `Buffer::edit` to panic when
+/// `CodeEditorModel::apply_diffs` feeds them to `insert_at_offsets`.
+#[test]
+fn test_v4a_maa_crash_d71bf84b_no_overlapping_deltas() {
+    // Minimal file content covering the region matched by the two hunks.
+    // Lines 1–46: closing `}` of `impl AgentInputButtonTheme` +
+    // `DefaultWeightAgentInputButtonTheme` + start of `ActiveMicButtonTheme`.
+    let file_content = "\
+        }\n\
+    }\n\
+}\n\
+\n\
+struct DefaultWeightAgentInputButtonTheme;\n\
+\n\
+impl ActionButtonTheme for DefaultWeightAgentInputButtonTheme {\n\
+    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {\n\
+        AgentInputButtonTheme.background(hovered, appearance)\n\
+    }\n\
+\n\
+    fn text_color(\n\
+        &self,\n\
+        hovered: bool,\n\
+        background: Option<Fill>,\n\
+        appearance: &Appearance,\n\
+    ) -> ColorU {\n\
+        AgentInputButtonTheme.text_color(hovered, background, appearance)\n\
+    }\n\
+\n\
+    fn border(&self, appearance: &Appearance) -> Option<ColorU> {\n\
+        AgentInputButtonTheme.border(appearance)\n\
+    }\n\
+\n\
+    fn should_opt_out_of_contrast_adjustment(&self) -> bool {\n\
+        true\n\
+    }\n\
+}\n\
+\n\
+/// Theme for the mic button.\n\
+/// Uses a blue icon when active (hovered, listening, or transcribing).\n\
+pub(crate) struct ActiveMicButtonTheme;\n\
+\n\
+impl ActionButtonTheme for ActiveMicButtonTheme {\n\
+    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {\n\
+        AgentInputButtonTheme.background(hovered, appearance)\n\
+    }\n\
+}";
+
+    // Only the two hunks that produce overlapping deltas.
+    let hunks = vec![
+        // Hunk 3 from MAA data: delete DefaultWeightAgentInputButtonTheme
+        V4AHunk {
+            change_context: vec![],
+            pre_context: "        }\n    }\n}".to_string(),
+            old: "\nstruct DefaultWeightAgentInputButtonTheme;\n\nimpl ActionButtonTheme for DefaultWeightAgentInputButtonTheme {\n    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {\n        AgentInputButtonTheme.background(hovered, appearance)\n    }\n\n    fn text_color(\n        &self,\n        hovered: bool,\n        background: Option<Fill>,\n        appearance: &Appearance,\n    ) -> ColorU {\n        AgentInputButtonTheme.text_color(hovered, background, appearance)\n    }\n\n    fn border(&self, appearance: &Appearance) -> Option<ColorU> {\n        AgentInputButtonTheme.border(appearance)\n    }\n\n    fn should_opt_out_of_contrast_adjustment(&self) -> bool {\n        true\n    }\n}".to_string(),
+            new: String::new(),
+            post_context: String::new(),
+        },
+        // Hunk 4 from MAA data: ActiveMicButtonTheme.background delegate
+        V4AHunk {
+            change_context: vec![],
+            pre_context: "\n/// Theme for the mic button.\n/// Uses a blue icon when active (hovered, listening, or transcribing).\npub(crate) struct ActiveMicButtonTheme;\n\nimpl ActionButtonTheme for ActiveMicButtonTheme {\n    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {".to_string(),
+            old: "        AgentInputButtonTheme.background(hovered, appearance)".to_string(),
+            new: "        AgentInputButtonTheme::default().background(hovered, appearance)".to_string(),
+            post_context: "    }".to_string(),
+        },
+    ];
+
+    let diff = fuzzy_match_v4a_diffs("mod.rs", &hunks, None, file_content);
+    let deltas = deltas(&diff);
+
+    // Both hunks should match.
+    assert_eq!(
+        deltas.len(),
+        2,
+        "Expected 2 matched deltas, got {}",
+        deltas.len()
+    );
+
+    // Core invariant: deltas must not overlap after sorting by start line.
+    assert!(
+        deltas[0].replacement_line_range.end <= deltas[1].replacement_line_range.start,
+        "Overlapping deltas detected — this causes the \"Invalid edit range\" panic \
+         (WARP-CLIENT-DEV-NYY).\n\
+         Delta A: lines {:?}\n\
+         Delta B: lines {:?}",
+        deltas[0].replacement_line_range,
+        deltas[1].replacement_line_range,
+    );
+}
