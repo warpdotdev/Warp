@@ -1,3 +1,4 @@
+use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskId};
@@ -20,10 +21,17 @@ use super::{
 ///
 /// Task-backed rows use the ambient run ID even when they are attached to a local
 /// conversation, so task-specific affordances do not disappear when local data is present.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AgentConversationEntryId {
     AmbientRun(AmbientAgentTaskId),
     Conversation(AIConversationId),
+}
+
+/// Navigation request input for resolving an entry or server-token handle at action time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentConversationNavigationSubject {
+    Entry(AgentConversationEntryId),
+    ServerToken(ServerConversationToken),
 }
 
 /// Normalized row data for agent conversation list, management, and navigation surfaces.
@@ -241,6 +249,17 @@ pub(super) fn entry_for_task(
             })
         });
     let status = item.display_status(app);
+    let has_active_session_id = task
+        .active_execution_session_id()
+        .and_then(parse_session_id)
+        .is_some();
+    let has_open_ambient_session = ActiveAgentViewsModel::as_ref(app)
+        .get_terminal_view_id_for_ambient_task(task.task_id)
+        .is_some();
+    let can_open = has_open_ambient_session
+        || has_active_session_id
+        || local_conversation_id.is_some()
+        || server_conversation_token.is_some();
 
     AgentConversationEntry {
         id: AgentConversationEntryId::AmbientRun(task.task_id),
@@ -279,7 +298,7 @@ pub(super) fn entry_for_task(
             has_ambient_run: true,
         },
         capabilities: AgentConversationCapabilities {
-            can_open: item.get_open_action(None, app).is_some(),
+            can_open,
             can_copy_link: item.session_or_conversation_link(app).is_some(),
             can_share: task.conversation_id().is_some()
                 || local_conversation_id
@@ -389,7 +408,9 @@ fn entry_for_conversation_parts(
                 .is_some_and(AIConversationMetadata::is_ambient_agent_conversation),
         },
         capabilities: AgentConversationCapabilities {
-            can_open: item.get_open_action(None, app).is_some(),
+            can_open: has_local_persisted_data
+                || has_cloud_data
+                || item.get_open_action(None, app).is_some(),
             can_copy_link: item.session_or_conversation_link(app).is_some(),
             can_share: history_model.can_conversation_be_shared(&conversation_id),
             can_delete: has_local_persisted_data,
@@ -414,4 +435,14 @@ fn server_conversation_token_for_conversation(
                 .and_then(|metadata| metadata.server_conversation_token.clone())
         })
         .or_else(|| nav_data.and_then(|nav_data| nav_data.server_conversation_token.clone()))
+}
+
+fn parse_session_id(session_id: &str) -> Option<SessionId> {
+    match session_id.parse::<SessionId>() {
+        Ok(session_id) => Some(session_id),
+        Err(e) => {
+            log::warn!("Failed to parse shared session ID: {e}");
+            None
+        }
+    }
 }

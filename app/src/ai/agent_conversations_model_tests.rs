@@ -26,7 +26,9 @@ use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions};
 use crate::server::ids::ServerId;
 use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
 
-use super::entry::{AgentConversationEntryId, AgentConversationProvenance};
+use super::entry::{
+    AgentConversationEntryId, AgentConversationNavigationSubject, AgentConversationProvenance,
+};
 use super::{
     AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters,
     AgentRunDisplayStatus, ArtifactFilter, ConversationMetadata, ConversationOrTask,
@@ -34,6 +36,7 @@ use super::{
     TaskFetchState, MAX_PERSONAL_TASKS, MAX_TEAM_TASKS,
 };
 use crate::ai::ambient_agents::task::HarnessConfig;
+use crate::workspace::WorkspaceAction;
 use warp_cli::agent::Harness;
 
 /// Creates a test task with specified creator UID and updated_at time
@@ -902,6 +905,177 @@ fn test_get_entries_keeps_unrelated_task_and_conversation_entries() {
             assert!(entries.iter().any(|entry| {
                 entry.id == AgentConversationEntryId::Conversation(conversation_id)
             }));
+        });
+    });
+}
+
+#[test]
+fn test_resolve_open_action_prefers_active_ambient_terminal() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let task = create_test_task(&make_uuid(8200), "user-a", now);
+        let task_id = task.task_id;
+        let terminal_view_id = EntityId::new();
+
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.tasks.insert(task_id, task);
+            model
+        });
+        ActiveAgentViewsModel::handle(&app).update(&mut app, |model, ctx| {
+            model.register_ambient_session(terminal_view_id, task_id, ctx);
+        });
+
+        app.update(|ctx| {
+            let action = AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                None,
+                ctx,
+            );
+
+            assert!(matches!(
+                action,
+                Some(WorkspaceAction::FocusTerminalViewInWorkspace { terminal_view_id: id })
+                    if id == terminal_view_id
+            ));
+        });
+    });
+}
+
+#[test]
+fn test_resolve_open_action_opens_active_ambient_session() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let session_id = make_uuid(8201);
+        let mut task = create_test_task(&make_uuid(8202), "user-a", now);
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_id = Some(session_id.clone());
+        task.session_link = Some("https://example.com/session".to_string());
+        task.is_sandbox_running = true;
+        let task_id = task.task_id;
+
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.tasks.insert(task_id, task);
+            model
+        });
+
+        app.update(|ctx| {
+            let action = AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                None,
+                ctx,
+            );
+
+            assert!(matches!(
+                action,
+                Some(WorkspaceAction::OpenAmbientAgentSession {
+                    session_id: resolved_session_id,
+                    task_id: resolved_task_id,
+                }) if resolved_session_id.to_string() == session_id && resolved_task_id == task_id
+            ));
+        });
+    });
+}
+
+#[test]
+fn test_resolve_open_action_falls_back_to_local_conversation_for_invalid_session() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let conversation_id = AIConversationId::new();
+        let task_id = make_uuid(8203);
+        let conversation = create_restored_conversation(
+            conversation_id,
+            "root-task",
+            AgentConversationData {
+                server_conversation_token: None,
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                parent_conversation_id: None,
+                is_remote_child: false,
+                run_id: Some(task_id.clone()),
+                autoexecute_override: None,
+                last_event_sequence: None,
+            },
+        );
+
+        BlocklistAIHistoryModel::handle(&app).update(&mut app, |model, ctx| {
+            model.restore_conversations(EntityId::new(), vec![conversation], ctx);
+        });
+
+        let mut task = create_test_task(&task_id, "user-a", now);
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_id = Some("not-a-session-id".to_string());
+        task.session_link = Some("https://example.com/session".to_string());
+        task.is_sandbox_running = true;
+        let task_id = task.task_id;
+
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.tasks.insert(task_id, task);
+            model.conversations.insert(
+                conversation_id,
+                create_test_conversation_metadata(conversation_id, "Conversation"),
+            );
+            model
+        });
+
+        app.update(|ctx| {
+            let action = AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                None,
+                ctx,
+            );
+
+            assert!(matches!(
+                action,
+                Some(WorkspaceAction::RestoreOrNavigateToConversation {
+                    conversation_id: resolved_conversation_id,
+                    ..
+                }) if resolved_conversation_id == conversation_id
+            ));
+        });
+    });
+}
+
+#[test]
+fn test_resolve_open_action_handles_server_token_subject_without_entry() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+        app.add_singleton_model(|_| create_test_model());
+
+        let server_token = ServerConversationToken::new("server-token-subject".to_string());
+        app.update(|ctx| {
+            let action = AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::ServerToken(server_token.clone()),
+                None,
+                ctx,
+            );
+
+            assert!(matches!(
+                action,
+                Some(WorkspaceAction::OpenConversationTranscriptViewer {
+                    conversation_id,
+                    ambient_agent_task_id: None,
+                }) if conversation_id == server_token
+            ));
         });
     });
 }

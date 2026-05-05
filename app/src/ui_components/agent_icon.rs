@@ -13,7 +13,7 @@ use warpui::AppContext;
 use warpui::SingletonEntity;
 
 use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::agent_conversations_model::ConversationOrTask;
+use crate::ai::agent_conversations_model::{AgentConversationEntry, AgentConversationProvenance};
 use crate::terminal::cli_agent_sessions::listener::agent_supports_rich_status;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::view::TerminalView;
@@ -54,20 +54,16 @@ pub(crate) fn terminal_view_agent_icon_variant(
     agent_icon_variant_from_terminal_inputs(&inputs)
 }
 
-/// Returns the agent-icon variant for a [`ConversationOrTask`] card row.
-///
-/// Task rows resolve their harness from [`ConversationOrTask::harness`]; conversation
-/// rows have no harness signal and always render as local Oz per the product spec.
-pub(crate) fn conversation_or_task_agent_icon_variant(
-    src: &ConversationOrTask<'_>,
-    app: &AppContext,
+pub(crate) fn agent_conversation_entry_icon_variant(
+    entry: &AgentConversationEntry,
 ) -> Option<IconWithStatusVariant> {
-    let status = src.status(app);
-    Some(match src {
-        ConversationOrTask::Task(_) => {
-            agent_icon_variant_for_task(src.harness().unwrap_or(Harness::Oz), status)
+    let status = entry.display.status.to_conversation_status();
+    Some(match entry.provenance {
+        AgentConversationProvenance::AmbientRun => {
+            agent_icon_variant_for_task(entry.display.harness.unwrap_or(Harness::Oz), status)
         }
-        ConversationOrTask::Conversation(_) => IconWithStatusVariant::OzAgent {
+        AgentConversationProvenance::LocalInteractive
+        | AgentConversationProvenance::CloudSyncedConversation => IconWithStatusVariant::OzAgent {
             status: Some(status),
             is_ambient: false,
         },
