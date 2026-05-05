@@ -310,7 +310,7 @@ mod tests {
             || "user id/with spaces".to_string(),
             String::new,
             String::new,
-            || true,
+            true,
         ))
     }
 
