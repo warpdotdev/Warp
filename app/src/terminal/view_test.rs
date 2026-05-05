@@ -1,3 +1,11 @@
+use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent::task::TaskId;
+use crate::ai::agent::{
+    AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, UserQueryMode,
+};
+use crate::ai::ambient_agents::AmbientAgentTaskId;
+use chrono::Local;
+use parking_lot::FairMutex;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -5,19 +13,11 @@ use std::pin::pin;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
-use chrono::Local;
-use parking_lot::FairMutex;
 use warp_terminal::model::escape_sequences::{BRACKETED_PASTE_END, BRACKETED_PASTE_START};
-use warpui::{App, ReadModel};
 use warpui::{
     notification::UserNotification, platform::WindowStyle, Presenter, WindowInvalidation,
 };
-use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::agent::task::TaskId;
-use crate::ai::agent::{
-    AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, UserQueryMode,
-};
-use crate::ai::ambient_agents::AmbientAgentTaskId;
+use warpui::{App, ReadModel};
 
 use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
 use crate::ai::blocklist::block::cli_controller::UserTakeOverReason;
@@ -76,11 +76,9 @@ fn has_pending_user_query_block(view: &TerminalView) -> bool {
     let Some(view_id) = view.pending_user_query_view_id else {
         return false;
     };
-    view.rich_content_views
-        .iter()
-        .any(|rich_content| {
-            rich_content.view_id() == view_id && rich_content.is_pending_user_query()
-        })
+    view.rich_content_views.iter().any(|rich_content| {
+        rich_content.view_id() == view_id && rich_content.is_pending_user_query()
+    })
 }
 
 fn exchange_with_inputs(inputs: Vec<AIAgentInput>) -> AIAgentExchange {

@@ -908,11 +908,7 @@ impl View for AIBlock {
                                             // Get the display info from the participant
                                             // who sent this query.
                                             (
-                                                participant
-                                                    .info
-                                                    .profile_data
-                                                    .display_name
-                                                    .clone(),
+                                                participant.info.profile_data.display_name.clone(),
                                                 participant.info.profile_data.photo_url.clone(),
                                                 Some(participant.color),
                                             )

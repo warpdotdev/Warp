@@ -30,9 +30,7 @@ use super::loading_screen::{
     render_cloud_mode_cancelled_screen, render_cloud_mode_error_screen,
     render_cloud_mode_github_auth_required_screen, render_cloud_mode_loading_screen,
 };
-use super::{
-    is_cloud_agent_pre_first_exchange, AmbientAgentEntryBlock, AmbientAgentViewModelEvent,
-};
+use super::{AmbientAgentEntryBlock, AmbientAgentViewModelEvent};
 use crate::terminal::view::Event as TerminalViewEvent;
 const CHILD_AGENT_GITHUB_AUTH_REQUIRED_BLOCKED_ACTION: &str =
     "GitHub authentication required before starting the child agent.";
@@ -171,6 +169,11 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::FollowupDispatched => {
+                if FeatureFlag::CloudModeSetupV2.is_enabled() {
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.start_new_setup_command_group(ctx);
+                    });
+                }
                 self.update_active_ambient_agent_conversation_status(
                     ConversationStatus::InProgress,
                     None,
@@ -307,6 +310,8 @@ impl TerminalView {
                 }
                 // Collapse the setup-commands summary, matching the oz first-exchange behavior.
                 ambient_agent_view_model.update(ctx, |model, ctx| {
+                    let group_id = model.setup_command_state().current_group_id();
+                    model.finish_setup_command_group(group_id, ctx);
                     model.set_setup_command_visibility(false, ctx);
                 });
                 // Force a fresh viewer size report to the sharer so the harness CLI (e.g.
@@ -333,11 +338,12 @@ impl TerminalView {
             return;
         };
 
-        if !is_cloud_agent_pre_first_exchange(
-            self.ambient_agent_view_model.as_ref(),
-            &self.agent_view_controller,
-            ctx,
-        ) {
+        if !self
+            .model
+            .lock()
+            .block_list()
+            .is_executing_oz_environment_startup_commands()
+        {
             return;
         }
 
@@ -360,6 +366,10 @@ impl TerminalView {
         let Some(block_index) = self.model.lock().block_list().block_index_for_id(block_id) else {
             return;
         };
+        let group_id = ambient_agent_view_model
+            .as_ref(ctx)
+            .setup_command_state()
+            .current_group_id();
 
         if !ambient_agent_view_model
             .as_ref(ctx)
@@ -374,6 +384,7 @@ impl TerminalView {
 
             let setup_command_text = ctx.add_typed_action_view(|ctx| {
                 super::CloudModeSetupTextBlock::new(
+                    group_id,
                     ambient_agent_view_model.clone(),
                     self.agent_view_controller.clone(),
                     ctx,
@@ -390,6 +401,7 @@ impl TerminalView {
 
         let setup_command_block = ctx.add_typed_action_view(|ctx| {
             super::CloudModeSetupCommandBlock::new(
+                group_id,
                 block_id.clone(),
                 ambient_agent_view_model.clone(),
                 &self.model_events_handle,
