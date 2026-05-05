@@ -204,6 +204,20 @@ A8. The display format auto-promotes from "just now" → "Xm ago" →
    user disables the new setting, so the team can see the opt-out
    rate. No timestamp-display telemetry beyond that.
 
+   **Privacy guardrails (security review #10128):**
+   - The `setting_changed` payload is `{ setting: "agents.show_message_timestamps",
+     new_value: bool }`. No timestamp values, no exchange/conversation
+     IDs, no message content, no clock format / locale info.
+   - The event respects the existing global telemetry opt-out — if
+     the user has disabled product analytics, no event fires regardless
+     of the setting toggle.
+   - The setting itself follows `SyncToCloud::Always`, so the boolean
+     value is synced as part of normal settings sync (already
+     covered by Warp's settings privacy controls; no new data class).
+   - No client-side ticker / counter values are ever transmitted.
+   - The feature does not introduce any new server-side telemetry
+     channels.
+
 ## Reporter-supplied detail (preserved)
 
 The reporter explicitly cited "long agent tasks" and "reference past
