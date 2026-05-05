@@ -79,6 +79,20 @@ use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 use ai::project_context::model::ProjectContextModel;
 use pane_group::{NotebookPane, PaneState, SplitPaneState, TerminalPaneId};
 use session_sharing_protocol::common::SessionId;
+
+#[test]
+fn tab_bar_reserves_space_for_right_side_traffic_lights() {
+    assert!(should_reserve_traffic_light_space_in_tab_bar(
+        TrafficLightSide::Right
+    ));
+}
+
+#[test]
+fn tab_bar_does_not_reserve_space_for_left_side_traffic_lights() {
+    assert!(!should_reserve_traffic_light_space_in_tab_bar(
+        TrafficLightSide::Left
+    ));
+}
 use terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use terminal::view::ActiveSessionState;
 use warp_editor::editor::NavigationKey;
