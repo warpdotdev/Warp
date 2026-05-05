@@ -5,12 +5,15 @@
 
 set -e
 
-if ! [ -d "/Applications/Xcode.app" ]; then
-    echo "Please install Xcode from the App Store before continuing."
-    exit 1
+DEVELOPER_DIR="$(xcode-select -p 2>/dev/null || true)"
+if [ -z "$DEVELOPER_DIR" ] || [ ! -x "$DEVELOPER_DIR/usr/bin/xcodebuild" ] || [ "$DEVELOPER_DIR" = "/Library/Developer/CommandLineTools" ]; then
+    XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | head -n 1)"
+    if [ -z "$XCODE_APP" ]; then
+        echo "Please install Xcode before continuing."
+        exit 1
+    fi
+    sudo xcode-select --switch "$XCODE_APP/Contents/Developer"
 fi
-
-sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 # Mimic actually launching XCode, which performs some necessary set-up of the
 # development environment.
 xcodebuild -runFirstLaunch
