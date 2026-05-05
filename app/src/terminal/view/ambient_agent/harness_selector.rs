@@ -125,6 +125,7 @@ impl HarnessSelector {
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, _event, ctx| {
                 me.refresh_menu(ctx);
+                me.refresh_button(ctx);
             },
         );
 
@@ -268,7 +269,8 @@ fn build_menu_items(
         if is_disabled {
             fields = fields
                 .with_disabled(true)
-                .with_override_text_color(disabled_text_color);
+                .with_override_text_color(disabled_text_color)
+                .with_tooltip("Disabled by your administrator");
         }
         items.push(MenuItem::Item(fields));
     }

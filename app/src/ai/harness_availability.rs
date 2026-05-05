@@ -83,13 +83,9 @@ impl HarnessAvailabilityModel {
             .unwrap_or_else(|| harness_display::display_name(harness))
     }
 
-    pub fn enabled_harness_count(&self) -> usize {
-        self.harnesses.iter().filter(|h| h.enabled).count()
-    }
-
-    /// Whether the harness selector should be shown (>1 enabled harness).
+    /// Whether the harness selector should be shown (>1 known harness, including disabled).
     pub fn should_show_harness_selector(&self) -> bool {
-        FeatureFlag::AgentHarness.is_enabled() && self.enabled_harness_count() > 1
+        FeatureFlag::AgentHarness.is_enabled() && self.harnesses.len() > 1
     }
 
     /// Whether any harness is available at all (at least one enabled).

@@ -205,6 +205,20 @@ impl AmbientAgentViewModel {
 
         let ui_state = AmbientAgentProgressUIState::new(ctx);
 
+        let harness = Harness::default();
+        let availability = HarnessAvailabilityModel::as_ref(ctx);
+        // If the default harness is not available, find the first available one.
+        let harness = if !availability.is_harness_enabled(harness) {
+            availability
+                .available_harnesses()
+                .iter()
+                .find(|h| h.enabled)
+                .map(|h| h.harness)
+                .unwrap_or(harness)
+        } else {
+            harness
+        };
+
         Self {
             status: Status::Composing,
             request: None,
@@ -215,7 +229,7 @@ impl AmbientAgentViewModel {
             setup_commands_state: Default::default(),
             task_id: None,
             conversation_id: None,
-            harness: Harness::default(),
+            harness,
             worker_host: None,
             harness_command_started: false,
             active_execution_session_id: None,
