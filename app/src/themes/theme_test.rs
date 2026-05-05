@@ -37,8 +37,7 @@ fn custom_theme_tilde_path_expansion_test() {
 fn custom_theme_tilde_path_expansion_via_settings_value_test() {
     let home = home_dir().expect("home dir must exist for this test");
 
-    // Simulate loading from the TOML settings file via the SettingsValue path
-    // (which bypasses serde and previously skipped tilde expansion).
+    // Test tilde expansion via SettingsValue path (which previously skipped expansion).
     let file_value = serde_json::json!({
         "name": "My Theme",
         "path": "~/.warp/themes/my_theme.yaml"

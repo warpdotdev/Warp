@@ -165,9 +165,7 @@ pub struct CustomTheme {
     path: PathBuf,
 }
 
-// The SettingsValue derive bypasses serde, so use the serde passthrough instead.
-// This ensures the #[serde(deserialize_with/serialize_with)] annotations on
-// the path field are respected when reading/writing settings.toml.
+// Use serde passthrough to respect #[serde] annotations on path field for tilde expansion.
 impl settings_value::SettingsValue for CustomTheme {}
 
 fn deserialize_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
