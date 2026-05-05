@@ -26,6 +26,7 @@ if [ -z "$DEVELOPER_DIR" ] || [ ! -x "$DEVELOPER_DIR/usr/bin/xcodebuild" ] || [ 
         echo "Please install Xcode before continuing."
         exit 1
     fi
+    echo "Selected Xcode at $XCODE_APP"
     warp_sudo xcode-select --switch "$XCODE_APP/Contents/Developer"
 fi
 # Mimic actually launching XCode, which performs some necessary set-up of the
