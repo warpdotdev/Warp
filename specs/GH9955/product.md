@@ -35,15 +35,44 @@ mechanisms.
 
 ## Goal
 
-A contributor can add a new language to Warp's syntax highlighting
-**without modifying compiled Rust code and without releasing Warp**,
-by dropping a directory of files into either:
-- the Warp source tree (a "bundled" community contribution that
-  ships with the next release), or
-- a user-local config directory (a "user-local" grammar that loads
-  at startup on the contributor's machine).
+> **Correction (review #10129):** earlier drafts conflated the two
+> paths under one "no compiled Rust changes / no release" goal. A
+> source-tree bundled grammar still ships in Warp and the tech spec
+> requires Cargo / parser-map changes for it. The goal is split below.
 
-The mechanism preserves Warp's tree-sitter substrate (the right
+The contributor experience has two distinct paths:
+
+### G1 — User-local grammars: no Warp release required
+
+A contributor with admin access to their own machine can add a new
+language **without modifying compiled Rust code and without
+releasing Warp** by dropping a directory of files into a user-local
+config directory (`$XDG_CONFIG_HOME/warp/grammars/<lang>/` or
+`~/.warp/grammars/<lang>/`). The grammar loads at next Warp startup.
+
+User-local grammars are WASM-only (see B5) so the load path is fully
+sandboxed and adding one does not require recompiling Warp.
+
+### G2 — Bundled (source-tree) grammars: no hand-written match arms,
+### but does ship with Warp
+
+A contributor sending a PR to Warp can add a new language by
+dropping `crates/languages/grammars/<lang>/` with a `language.toml`,
+the tree-sitter `*.scm` files, and either a `grammar.wasm` or a new
+entry in the compile-time `bundled_parsers.rs` parser map. **No
+edits to `language_by_filename`, `language_by_name`,
+`to_arborium_name`, or `get_arborium_highlight_query` are required.**
+The new language ships with the next Warp release.
+
+The bundled path still requires `cargo build` and a Warp release —
+it does NOT satisfy G1's "no release" property. What it satisfies is
+the original issue's "distribute work on syntax-highlight feature
+requests to individual contributors" outcome by removing the
+five-place hand-edit and the `arborium`-upstream gate.
+
+### Substrate
+
+Both paths preserve Warp's tree-sitter substrate (the right
 substrate; not switching to TextMate-style regex grammars), and the
 existing 32 first-class languages keep working with no behavior
 change.
@@ -123,11 +152,21 @@ aliases = ["nim-lang"]        # markdown ```nim-lang code blocks
 ```
 
 The hand-coded `language_by_filename` and `normalize_language_name`
-match statements are replaced with a registry-driven lookup. The
-existing 32 languages get their associations migrated from the
-match statements to per-language `language.toml` files in a
-single mechanical PR (this spec calls out that PR as a follow-up,
-not part of V1).
+match statements are replaced with a registry-driven lookup.
+
+> **Correction (review #10129):** earlier drafts described the
+> 32-language migration as "a single mechanical PR" while B4 and
+> tech.md require independently revertable per-language migrations.
+> The single canonical strategy is below.
+
+The existing 32 languages migrate **one language per PR**, each
+independently revertable, with the hardcoded path remaining as a
+fallthrough for unmigrated languages. The migration template is in
+tech.md §"Migration strategy for the 32 existing languages." V1
+of the discovery PR migrates **zero** languages — it only adds the
+discovery layer beside the hardcoded match statements. There is no
+"single mechanical PR" follow-up; each language's migration is its
+own PR.
 
 ### B4 — Backwards compatibility for the existing 32 languages
 
@@ -144,30 +183,81 @@ hardcoded one only after manual migration of that language
 User-local grammars must ship as `grammar.wasm`. Native dynamic
 libraries (`.so`, `.dylib`, `.dll`) are explicitly rejected and
 never loaded. The WASM is loaded via tree-sitter's existing WASM
-runtime. WASM provides the sandboxing that makes user-local
-grammars safe.
+runtime.
 
 Bundled grammars (the Warp source tree) can be either WASM or a
 Rust crate reference. The Rust crate reference is for the existing
 `arborium` languages and for any future first-class language that
 warrants a Cargo dependency.
 
+> **Correction (review #10129, security):** earlier drafts treated
+> "WASM" as a sufficient sandboxing claim. WASM by itself does not
+> bound CPU, memory, or input size. The contract is below.
+
+**WASM safety contract for user-local grammars:**
+
+- **No host capabilities.** The tree-sitter WASM runtime exposes no
+  filesystem, network, or process capabilities to grammar code by
+  design. The loader rejects any WASM module that attempts to import
+  symbols outside tree-sitter's required exports.
+- **CPU bound — parse timeout.** Each parse invocation is gated by
+  `parser.set_timeout_micros(WARP_GRAMMAR_PARSE_TIMEOUT_US)`
+  (default 100ms). Grammars whose parse exceeds the timeout return
+  partial results; the editor falls back to no-syntax-tree rendering
+  for that buffer until the next edit.
+- **Memory bound — input-size cap.** Grammars are not invoked on
+  buffers larger than `WARP_GRAMMAR_MAX_INPUT_BYTES` (default 8MiB,
+  matching the existing editor large-file threshold). Larger
+  buffers fall through to plain rendering.
+- **Memory bound — runtime cap.** The WASM runtime is configured
+  with a hard memory cap of `WARP_GRAMMAR_MAX_RUNTIME_BYTES` (default
+  64MiB) per parser instance. Exceeding it triggers a parser reset
+  and a one-time warn log per grammar.
+- **Startup-load timeout.** WASM module instantiation is wrapped in
+  a 5-second hard timeout. A grammar that fails to instantiate in
+  time is treated as a load failure (B6).
+- **No worker isolation in V1.** All parsers share the editor
+  thread. A grammar that hangs (despite the timeout) can starve the
+  syntax-tree refresh on other buffers; this is documented as a known
+  limitation. Worker-thread isolation is a follow-up.
+
+The above limits are tunable per-platform via env vars in case
+specific Linux/Windows configurations need different defaults; the
+defaults are conservative.
+
 ### B6 — Validation and clear failure modes
 
 A grammar directory that fails to load (malformed `language.toml`,
 WASM that fails to instantiate, `highlights.scm` that fails to
 parse against the grammar) does NOT break Warp startup. Instead:
-- A `log::error!` fires with the directory path and the failure
-  reason.
+- A `log::error!` fires with the **basename of the directory** and
+  the failure reason. The full directory path is NOT logged (see
+  privacy note below).
 - A persistent in-app notification surfaces the failure (one
-  notification per failed grammar, dismissible).
+  notification per failed grammar, dismissible). The in-app UI
+  shows the full path because that's local to the user's machine
+  and useful for debugging.
 - The language is omitted from the registry but other languages
   load normally.
 
-A grammar with valid `language.toml` and parser but a missing
+> **Correction (review #10129, security):** earlier drafts logged
+> the full grammar directory path, which can leak usernames or
+> private project paths in shared logs. tech.md's telemetry section
+> separately identified paths as PII. The two were inconsistent.
+> Resolved: logs use basenames only; full paths appear only in the
+> local Settings UI.
+
+A grammar with valid `language.toml` and parser but a **missing**
 `highlights.scm` loads as a syntax-tree-aware language with no
 coloring (you still get bracket pairing, indent, etc.). This makes
 a "minimum viable" grammar contribution low-effort.
+
+> **Correction (review #10129):** earlier drafts said "missing
+> highlights.scm loads without coloring" while the tech loader
+> rejected highlight-query failures as `LoadFailure`. tech.md is
+> updated to distinguish missing-file (load without coloring,
+> emit info-level log) from invalid-query (load with no language
+> at all, emit error-level + notification).
 
 ### B7 — Discoverability of installed grammars
 

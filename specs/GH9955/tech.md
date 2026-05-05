@@ -65,27 +65,53 @@ pairs = [
 ]
 
 [parser]
-# Bundled grammars: a Cargo dep on a tree-sitter grammar crate.
-# Mutually exclusive with [parser.wasm].
-rust_crate = "tree-sitter-nim"
-
-# User-local grammars: WASM file path relative to the grammar dir.
-# Mutually exclusive with [parser.rust_crate].
-wasm = "grammar.wasm"
+# Exactly one of `rust_crate` (bundled only) or `wasm` (bundled or
+# user-local) must be set. The schema validate() rejects setting
+# both or neither. The two examples below show the canonical
+# bundled and user-local shapes.
 
 # Optional: pin the tree-sitter ABI version this grammar was
 # compiled against; loader rejects mismatches with a clear error.
 ts_abi = 14
 ```
 
+> **Correction (review #10129):** earlier drafts showed both
+> `rust_crate` and `wasm` set in the same example block while the
+> comments said they were mutually exclusive. The two canonical
+> shapes are split below.
+
+**Bundled-grammar shape (Rust crate parser):**
+```toml
+[parser]
+rust_crate = "tree-sitter-nim"
+ts_abi = 14
+```
+
+**Bundled or user-local shape (WASM parser):**
+```toml
+[parser]
+wasm = "grammar.wasm"   # path relative to the grammar dir
+ts_abi = 14
+```
+
 The schema lives in a new module `crates/languages/src/schema.rs`
-with `serde::Deserialize` derives and a `validate()` method that
-rejects mutually-exclusive parser fields, missing files, and
-unknown bracket characters.
+with `serde::Deserialize` derives and a `validate()` method that:
+- Rejects setting both `rust_crate` and `wasm`.
+- Rejects setting neither.
+- Rejects `rust_crate` in user-local grammars (only WASM is allowed
+  there per B5).
+- Rejects unknown bracket characters.
+- Rejects unknown top-level keys to surface typos to contributors.
 
 ## Loader architecture
 
 ### `crates/languages/src/loader.rs` (new)
+
+> **Correction (review #10129):** earlier drafts had `LoadedLanguage`
+> with a mandatory `language: Arc<Language>` plus an optional
+> `failure`. That can't represent a grammar that fails before a
+> `Language` is constructed (e.g. malformed `language.toml`). The
+> shape below is a tagged sum so failed grammars are first-class.
 
 ```rust
 pub enum LanguageSource {
@@ -94,44 +120,95 @@ pub enum LanguageSource {
     UserLocal { dir: PathBuf },
 }
 
+/// One result of attempting to load a grammar from a directory or
+/// from the hardcoded path. Either we got a `Language`, or we got
+/// a `FailedGrammar` describing what went wrong.
+pub enum LoadResult {
+    Loaded(LoadedLanguage),
+    Failed(FailedGrammar),
+}
+
 pub struct LoadedLanguage {
     pub language: Arc<Language>,
     pub source: LanguageSource,
-    pub failure: Option<LoadFailure>,
+    /// Non-fatal warnings (e.g. missing optional `highlights.scm`).
+    /// The grammar is in the registry; these are surfaced in the
+    /// Settings UI but do not prevent the language from loading.
+    pub warnings: Vec<LoadWarning>,
 }
 
-pub struct LoadFailure {
-    pub directory: PathBuf,
-    pub reason: String,
+pub struct FailedGrammar {
+    pub source: LanguageSource,
+    /// Best-effort name extracted from `language.toml` if it parsed
+    /// far enough; `None` if even the TOML parse failed.
+    pub internal_name: Option<String>,
+    pub reason: LoadFailureReason,
     pub schema_version: Option<u32>,
 }
 
-pub fn discover_grammars() -> Vec<LoadedLanguage> { ... }
+pub enum LoadFailureReason {
+    SchemaParse(String),
+    SchemaVersionMismatch { found: u32 },
+    NativeLibAttempted,
+    ParserCrateNotFound { crate_name: String },
+    WasmInstantiate(String),
+    WasmAbiMismatch { host: u32, grammar: u32 },
+    HighlightQueryInvalid(String),  // syntactically wrong vs grammar
+    IndentQueryInvalid(String),
+    SymbolsQueryInvalid(String),
+}
+
+pub enum LoadWarning {
+    HighlightsScmMissing,   // optional file absent — no coloring,
+                            // grammar still loads
+    IndentsScmMissing,
+    IdentifiersScmMissing,
+}
+
+pub fn discover_grammars() -> Vec<LoadResult> { ... }
 ```
 
 `discover_grammars()` is called once at startup. It walks the three
-sources in priority order, deduplicates by `internal_name`, and
-returns the merged list with any failures attached.
+sources in priority order, deduplicates by `internal_name` across
+loaded results (failed grammars are kept regardless of dedup so
+their failure surfaces in Settings), and returns one `LoadResult`
+per attempted directory.
 
 ### Loading a single grammar
 
+> **Correction (review #10129):** earlier drafts treated highlight-
+> query load failures as `LoadFailure` and returned, contradicting
+> product B6 which allowed missing `highlights.scm` to load without
+> coloring. The two cases are now distinct.
+
 For each grammar directory:
-1. Parse `language.toml` (`schema.rs::parse`). On failure: record
-   `LoadFailure`, return.
-2. Resolve the parser:
-   - `rust_crate`: look up via a compile-time-built map of crate
-     name → `ParserGrammar` (this map is the only hand-edited list
-     for bundled grammars; it lives in
-     `crates/languages/src/bundled_parsers.rs` and is the
-     mechanical PR follow-up B4 references).
+1. Parse `language.toml` (`schema.rs::parse`). On failure: return
+   `LoadResult::Failed { reason: SchemaParse }`.
+2. Validate schema constraints (`schema.rs::validate`). On failure:
+   return `LoadResult::Failed`.
+3. Resolve the parser:
+   - `rust_crate`: look up via the compile-time `bundled_parsers.rs`
+     map. On miss: return `LoadResult::Failed { reason:
+     ParserCrateNotFound }`.
    - `wasm`: `tree_sitter::WasmStore::load_language(&wasm_bytes)`.
-     Reject if `WasmStore` reports an ABI mismatch with the host's
-     `tree_sitter::TREE_SITTER_LANGUAGE_VERSION`.
-3. Compile `highlights.scm` against the resolved grammar via
-   `Query::new`. On failure: record `LoadFailure`, return.
-4. Compile `indents.scm` and `identifiers.scm` (optional).
-5. Construct the `Language` struct with all fields populated.
-6. Return as `Ok(LoadedLanguage)`.
+     On instantiate failure: return `LoadResult::Failed { reason:
+     WasmInstantiate }`. On ABI mismatch with the host's
+     `tree_sitter::TREE_SITTER_LANGUAGE_VERSION`: return
+     `LoadResult::Failed { reason: WasmAbiMismatch }`.
+4. **`highlights.scm` (optional file):**
+   - **File missing:** record `LoadWarning::HighlightsScmMissing`,
+     continue with no highlight query. The grammar will load
+     without coloring (B6's "minimum viable contribution" path).
+   - **File present but `Query::new` fails:** the contributor
+     intended to provide a query and got it wrong; return
+     `LoadResult::Failed { reason: HighlightQueryInvalid }`. This
+     is treated as a hard failure because shipping a grammar with
+     a broken query is worse than no query at all.
+5. **`indents.scm` and `identifiers.scm` (optional files):** same
+   missing-vs-invalid split. Missing → `LoadWarning`. Invalid →
+   `LoadResult::Failed`.
+6. Construct the `Language` struct with all available fields.
+7. Return `LoadResult::Loaded(LoadedLanguage { ..., warnings })`.
 
 ### Native dynamic-library rejection
 
@@ -171,8 +248,9 @@ queried first; if it returns `None`, fall through to the
 - `language_by_filename(path: &Path)` — unchanged signature;
   consults hardcoded path first, then `AssociationIndex` extension
   / filename / shebang lookups.
-- New: `loaded_languages() -> &[LoadedLanguage]` — for the new
-  Settings → Editor → Languages page.
+- New: `loaded_languages() -> &[LoadResult]` — for the new
+  Settings → Editor → Languages page. Returns one entry per
+  attempted directory (loaded, with-warnings, or failed).
 
 No change for any current consumer; they continue to call the same
 two functions.
@@ -191,8 +269,10 @@ two functions.
 
 ## Migration strategy for the 32 existing languages
 
-Each existing language migrates in one mechanical PR with the
-following steps:
+> **Correction (review #10129):** earlier drafts called this "a
+> single mechanical PR." It is actually **one PR per language**,
+> each independently revertable. The product spec is now consistent
+> with this. Each PR follows this template:
 
 1. Create `crates/languages/grammars/<lang>/language.toml` with the
    file associations and parser reference matching the current
@@ -215,13 +295,35 @@ V1 of THIS PR migrates **zero** existing languages — only adds the
 discovery mechanism beside them. Each follow-up PR migrates one
 language and is independently revertable.
 
-## Telemetry
+## Telemetry and logging privacy
 
-- One-time `grammar_loaded` event at startup with `internal_name`,
-  `source`, and `parser_kind` (rust_crate / wasm).
-- One-time `grammar_load_failed` event with `internal_name` (if
-  parseable), `reason_kind` (schema / parser / query / abi), and
-  the path is **omitted** (PII risk).
+> **Correction (review #10129):** product B6 said logs include the
+> grammar directory path; this section said paths are PII for
+> telemetry. The two were inconsistent. Resolved: paths are PII
+> across both surfaces.
+
+**Telemetry events** (sent to Warp's analytics):
+- `grammar_loaded`: one-time at startup. Payload: `internal_name`,
+  `source` (Hardcoded / Bundled / UserLocal as a tag, no path),
+  `parser_kind` (rust_crate / wasm), `ts_abi`.
+- `grammar_load_failed`: one-time. Payload: `internal_name` (if
+  the TOML parsed far enough to extract it), `reason_kind` (one of
+  `schema_parse`, `schema_version`, `native_lib`,
+  `parser_crate_not_found`, `wasm_instantiate`, `wasm_abi`,
+  `highlight_query`, `indent_query`, `symbols_query`),
+  `source_kind` (Hardcoded / Bundled / UserLocal). Paths are NOT
+  in the payload.
+- Both events respect Warp's existing global telemetry opt-out.
+
+**Local logs** (`log::error!`, `log::warn!`, `log::info!`):
+- Use the **basename** of the grammar directory only (e.g.,
+  `nim`, `zig`). The full path is never logged.
+- The exception is the in-app Settings UI, which DOES show the
+  full path because it is local to the user and useful for
+  debugging. The Settings UI is not log output.
+
+**No payload contains:** raw `language.toml` contents, the
+contents of `.scm` files, the WASM binary, or absolute paths.
 
 ## Test plan
 
@@ -241,27 +343,51 @@ language and is independently revertable.
 ### Unit tests (`crates/languages/src/loader_test.rs` — new)
 
 - T6: A bundled grammar with a stub WASM that fails to instantiate
-  surfaces as a `LoadFailure` and does NOT panic.
+  surfaces as `LoadResult::Failed { reason: WasmInstantiate, .. }`
+  and does NOT panic.
 - T7: A user-local grammar whose `internal_name` collides with a
   hardcoded language is dropped from the merged list and a warn
-  fires.
+  fires (basename only, no full path in the log message).
 - T8: A user-local grammar whose `internal_name` collides with a
   bundled grammar (after a hypothetical migration) is dropped;
   bundled wins.
 - T9: ABI mismatch (host ABI 14, grammar declares ABI 13) surfaces
-  as a `LoadFailure` with reason "abi mismatch".
+  as `LoadResult::Failed { reason: WasmAbiMismatch { host: 14,
+  grammar: 13 } }`.
+- T10 (new): Missing `highlights.scm` produces
+  `LoadResult::Loaded { warnings: [HighlightsScmMissing], .. }`.
+  The grammar IS in the registry; coloring is absent.
+- T11 (new): Present-but-invalid `highlights.scm` (parses against
+  a different grammar) produces `LoadResult::Failed { reason:
+  HighlightQueryInvalid }`. The grammar is NOT in the registry.
+- T12 (new): Same missing-vs-invalid distinction for `indents.scm`
+  and `identifiers.scm`.
+- T13 (new): A WASM grammar whose import list includes a non-
+  tree-sitter symbol (e.g. fs read) is rejected at load.
+- T14 (new): A grammar that triggers `parser.set_timeout_micros`
+  (parse exceeds 100ms on a fixture buffer) returns partial parse
+  results and emits one warn-level log.
 
 ### Integration test (`crates/languages/src/integration_test.rs` — new)
 
 - IT1: Create a temp dir with a fixture grammar (a real
   tree-sitter-toml grammar shrunk to a minimal subset), point
   `WARP_USER_GRAMMAR_DIR` env var at it, call
-  `discover_grammars()`. Assert the language is loaded and
+  `discover_grammars()`. Assert the language returns as
+  `LoadResult::Loaded(...)` and
   `language_by_filename(Path::new("test.example"))` returns it.
 - IT2: Same as IT1 but with malformed TOML; assert the rest of the
-  registry loads normally and the failure is reported.
+  registry loads normally and the failure is reported as
+  `LoadResult::Failed { reason: SchemaParse(_) }`.
 - IT3: Call `loaded_languages()` after discovery and assert the 32
   hardcoded languages are present alongside the test fixture.
+- IT4 (new): Drop a fixture WASM grammar with the same
+  `internal_name` as a hardcoded language; verify the user-local
+  one is dropped, a warn fires with basename only, and the
+  hardcoded language continues to handle that name.
+- IT5 (new): Feed a 16MiB buffer through a user-local grammar;
+  verify the input-size cap kicks in and the buffer falls back to
+  plain rendering with a one-time info log.
 
 ### Regression (existing test files unchanged)
 
