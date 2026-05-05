@@ -1347,21 +1347,15 @@ impl NotebooksEditorModel {
 
     fn markdown_anchor_slug(text: &str) -> String {
         let mut slug = String::new();
-        let mut previous_hyphen = false;
 
-        for ch in text.trim().chars().flat_map(|ch| ch.to_lowercase()) {
-            if ch.is_alphanumeric() || ch == '_' {
-                slug.push(ch);
-                previous_hyphen = false;
-            } else if (ch.is_whitespace() || ch == '-') && !previous_hyphen && !slug.is_empty() {
+        for ch in text.trim().to_lowercase().chars() {
+            if ch.is_whitespace() {
                 slug.push('-');
-                previous_hyphen = true;
+            } else if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                slug.push(ch);
             }
         }
 
-        if previous_hyphen {
-            slug.pop();
-        }
         slug
     }
 

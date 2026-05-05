@@ -541,6 +541,25 @@ fn test_markdown_anchor_target_normalizes_heading_text() {
 }
 
 #[test]
+fn test_markdown_anchor_target_preserves_separator_runs() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown("## A & B\nFirst\n\n## A B\nSecond", &mut app, true);
+
+        editor.read(&app, |editor, ctx| {
+            let symbol_separated = editor
+                .markdown_anchor_target("#a--b", ctx)
+                .expect("Symbol-separated heading should match double hyphen slug");
+            let space_separated = editor
+                .markdown_anchor_target("#a-b", ctx)
+                .expect("Space-separated heading should match single hyphen slug");
+
+            assert!(space_separated.start > symbol_separated.start);
+        });
+    })
+}
+
+#[test]
 fn test_markdown_anchor_target_handles_duplicate_headings() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);

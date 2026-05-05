@@ -10,6 +10,8 @@ Use this file in a Warp notebook/editor test flow to verify Markdown fragment li
 - [Duplicate heading again](#duplicate-heading-1)
 - [Natural suffix heading](#duplicate-heading-2)
 - [Mixed case and symbols](#mixed-case--symbols)
+- [Symbol-separated heading](#a--b)
+- [Space-separated heading](#a-b)
 - [Bottom target](#bottom-target)
 
 ## Basic heading
@@ -35,6 +37,14 @@ Expected: this natural suffix heading should not steal `#duplicate-heading-1`; i
 ## Mixed CASE & Symbols
 
 Expected: mixed case and symbols normalize to `#mixed-case--symbols`.
+
+## A & B
+
+Expected: punctuation is dropped after spaces become hyphens, so this resolves to `#a--b`.
+
+## A B
+
+Expected: this resolves to `#a-b`, remaining distinct from `#a--b`.
 
 ## Scroll padding section 1
 
