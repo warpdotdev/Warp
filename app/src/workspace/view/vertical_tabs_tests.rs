@@ -15,10 +15,11 @@ use super::{
     compact_branch_subtitle_display, detail_sidecar_width_and_bounds,
     detail_target_for_hovered_row, format_summary_primary_labels,
     non_terminal_search_text_fragments, pane_ids_for_display_granularity,
-    pane_search_text_fragments, preferred_agent_tab_titles, search_fragments_contain_query,
-    select_summary_pane_kind_icons, should_keep_detail_sidecar_visible_for_mouse_position,
-    summary_overflow_count, summary_search_text_fragments, terminal_kind_badge_label,
-    terminal_primary_line_data, terminal_pull_request_badge_label, terminal_search_text_fragments,
+    pane_row_display_title_override, pane_search_text_fragments, preferred_agent_tab_titles,
+    search_fragments_contain_query, select_summary_pane_kind_icons,
+    should_keep_detail_sidecar_visible_for_mouse_position, summary_overflow_count,
+    summary_search_text_fragments, terminal_kind_badge_label, terminal_primary_line_data,
+    terminal_pull_request_badge_label, terminal_search_text_fragments,
     terminal_title_fallback_font, uses_outer_group_container, visible_pane_ids_for_detail_target,
     vtab_diff_stats_text, AgentTabTextPreference, SummaryPaneKind, SummaryPaneKindIcons,
     TerminalAgentText, TerminalPrimaryLineData, TerminalPrimaryLineFont, VerticalTabsDetailTarget,
@@ -623,6 +624,40 @@ fn tabs_granularity_does_not_use_outer_group_container() {
     assert!(!uses_outer_group_container(
         VerticalTabsDisplayGranularity::Tabs
     ));
+}
+
+#[test]
+fn panes_granularity_render_suppresses_inline_custom_tab_title() {
+    assert_eq!(
+        pane_row_display_title_override(
+            Some("Production API".to_string()),
+            VerticalTabsDisplayGranularity::Panes,
+        ),
+        None
+    );
+}
+
+#[test]
+fn panes_granularity_search_adds_group_title_without_replacing_pane_title() {
+    let fragments = pane_search_text_fragments(
+        Some("Production API"),
+        vec!["cargo nextest run".to_string(), "~/warp".to_string()],
+    );
+
+    assert!(search_fragments_contain_query(&fragments, "production api"));
+    assert!(search_fragments_contain_query(&fragments, "cargo nextest"));
+    assert!(search_fragments_contain_query(&fragments, "~/warp"));
+}
+
+#[test]
+fn tabs_granularity_render_keeps_inline_custom_tab_title() {
+    assert_eq!(
+        pane_row_display_title_override(
+            Some("Production API".to_string()),
+            VerticalTabsDisplayGranularity::Tabs,
+        ),
+        Some("Production API".to_string())
+    );
 }
 
 #[test]
