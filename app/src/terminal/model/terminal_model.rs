@@ -1,5 +1,6 @@
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::SerializedBlockListItem;
+use crate::tab::SelectedTabColor;
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::block_list_element::GridType;
 use crate::terminal::event::{
@@ -3555,6 +3556,11 @@ impl ansi::Handler for TerminalModel {
             self.event_proxy
                 .send_terminal_event(Event::PluggableNotification { title, body });
         }
+    }
+
+    fn set_tab_color(&mut self, color: SelectedTabColor) {
+        self.event_proxy
+            .send_terminal_event(Event::SetTabColor(color));
     }
 
     fn set_keyboard_enhancement_flags(

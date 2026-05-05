@@ -7,6 +7,7 @@ use warpui::color::ColorU;
 
 use super::dcs_hooks::*;
 use super::ProcessorInput;
+use crate::tab::SelectedTabColor;
 use crate::terminal::model::completions::{ShellCompletion, ShellCompletionUpdate};
 use crate::terminal::model::image_map::StoredImageMetadata;
 use crate::terminal::model::iterm_image::{ITermImage, ITermImageMetadata};
@@ -27,6 +28,10 @@ use crate::terminal::model::{
 pub trait Handler {
     /// OSC to set window title.
     fn set_title(&mut self, _: Option<String>);
+
+    /// OSC 1337 SetTabColor: programmatically set the manual tab color of the
+    /// tab whose PTY emitted this sequence.
+    fn set_tab_color(&mut self, _color: SelectedTabColor) {}
 
     /// Set the cursor style.
     fn set_cursor_style(&mut self, _: Option<CursorStyle>);

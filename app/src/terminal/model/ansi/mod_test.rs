@@ -3,9 +3,11 @@ use warp_core::command::ExitCode;
 use warpui::color::ColorU;
 
 use super::*;
+use crate::tab::SelectedTabColor;
 use crate::terminal::model::index::VisibleRow;
 use crate::terminal::model::session::SessionId;
 use crate::terminal::model::{ansi::InputBufferValue, selection::ScrollDelta};
+use crate::themes::theme::AnsiColorIdentifier;
 use std::{collections::HashSet, io, io::Write, path::PathBuf};
 
 const HEX_ENCODED_JSON_DCS_START: &[u8] = &[0x1b, 0x50, 0x24, 0x64];
@@ -19,6 +21,8 @@ struct MockHandler {
     identity_reported: bool,
     d_proto_hooks: Vec<DProtoHook>,
     pluggable_notifications: Vec<(Option<String>, String)>,
+    tab_color_calls: Vec<SelectedTabColor>,
+    iterm_image_starts: usize,
 }
 
 impl Handler for MockHandler {
@@ -221,6 +225,17 @@ impl Handler for MockHandler {
         self.pluggable_notifications.push((title, body));
     }
 
+    fn set_tab_color(&mut self, color: SelectedTabColor) {
+        self.tab_color_calls.push(color);
+    }
+
+    fn start_iterm_image_receiving(
+        &mut self,
+        _metadata: crate::terminal::model::iterm_image::ITermImageMetadata,
+    ) {
+        self.iterm_image_starts += 1;
+    }
+
     fn set_keyboard_enhancement_flags(
         &mut self,
         _mode: KeyboardModes,
@@ -244,6 +259,8 @@ impl Default for MockHandler {
             identity_reported: false,
             d_proto_hooks: Vec::new(),
             pluggable_notifications: Vec::new(),
+            tab_color_calls: Vec::new(),
+            iterm_image_starts: 0,
         }
     }
 }
@@ -884,4 +901,105 @@ fn tmux_pane_writer_returns_original_byte_count() {
     let output_str = String::from_utf8(output).unwrap();
     assert!(output_str.starts_with("send-keys -Ht %42"));
     assert!(output_str.ends_with('\n'));
+}
+
+#[test]
+fn parse_osc_1337_set_tab_color_named() {
+    let bytes = b"\x1b]1337;SetTabColor=red\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(
+        handler.tab_color_calls,
+        vec![SelectedTabColor::Color(AnsiColorIdentifier::Red)]
+    );
+    assert_eq!(handler.iterm_image_starts, 0);
+}
+
+#[test]
+fn parse_osc_1337_set_tab_color_case_insensitive() {
+    let bytes = b"\x1b]1337;SetTabColor=BLUE\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(
+        handler.tab_color_calls,
+        vec![SelectedTabColor::Color(AnsiColorIdentifier::Blue)]
+    );
+}
+
+#[test]
+fn parse_osc_1337_set_tab_color_trims_whitespace() {
+    let bytes = b"\x1b]1337;SetTabColor=  cyan  \x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(
+        handler.tab_color_calls,
+        vec![SelectedTabColor::Color(AnsiColorIdentifier::Cyan)]
+    );
+}
+
+#[test]
+fn parse_osc_1337_set_tab_color_st_terminator() {
+    let bytes = b"\x1b]1337;SetTabColor=green\x1b\\";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(
+        handler.tab_color_calls,
+        vec![SelectedTabColor::Color(AnsiColorIdentifier::Green)]
+    );
+}
+
+#[test]
+fn parse_osc_1337_set_tab_color_clear_aliases() {
+    let bytes = b"\x1b]1337;SetTabColor=none\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(handler.tab_color_calls, vec![SelectedTabColor::Cleared]);
+}
+
+#[test]
+fn parse_osc_1337_set_tab_color_default_aliases() {
+    let bytes = b"\x1b]1337;SetTabColor=default\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(handler.tab_color_calls, vec![SelectedTabColor::Unset]);
+}
+
+#[test]
+fn parse_osc_1337_set_tab_color_unknown_value_is_silent() {
+    let bytes = b"\x1b]1337;SetTabColor=purple\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.tab_color_calls.is_empty());
+    assert_eq!(handler.iterm_image_starts, 0);
+}
+
+#[test]
+fn parse_osc_1337_set_tab_color_empty_value_is_silent() {
+    let bytes = b"\x1b]1337;SetTabColor=\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.tab_color_calls.is_empty());
+}
+
+#[test]
+fn parse_osc_1337_unknown_subkey_does_not_call_set_tab_color() {
+    // SomeOtherKey is not File=/MultipartFile=/FilePart=/FileEnd or SetTabColor=,
+    // so it should fall through to `unhandled` without disturbing either path.
+    let bytes = b"\x1b]1337;SomeOtherKey=red\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.tab_color_calls.is_empty());
+    assert_eq!(handler.iterm_image_starts, 0);
+}
+
+#[test]
+fn parse_osc_1337_iterm_image_still_dispatched() {
+    // Ensure the SetTabColor branch does not steal the iTerm File= dispatch.
+    // The MockHandler counts start_iterm_image_receiving calls; only the
+    // image branch invokes it.
+    let bytes = b"\x1b]1337;File=name=Zm9vLnBuZw==;size=2:AA==\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.tab_color_calls.is_empty());
+    assert_eq!(handler.iterm_image_starts, 1);
 }
