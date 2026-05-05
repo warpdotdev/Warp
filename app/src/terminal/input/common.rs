@@ -16,7 +16,7 @@ use crate::{
     ui_components::icons::Icon,
     workspaces::user_workspaces::UserWorkspaces,
 };
-use pathfinder_geometry::vector::vec2f;
+use pathfinder_geometry::vector::{vec2f, Vector2F};
 use vim::vim::{VimMode, VimState};
 use warp_completer::completer::Description;
 use warp_core::features::FeatureFlag;
@@ -30,7 +30,7 @@ use warpui::{
     fonts::Weight,
     presenter::ChildView,
     ui_components::components::{UiComponent, UiComponentStyles},
-    AppContext, EntityId, SingletonEntity, ViewHandle,
+    AppContext, EntityId, EventContext, SingletonEntity, ViewHandle,
 };
 
 /// Whether the terminal input message bar should be shown.
@@ -159,6 +159,33 @@ pub(super) fn wrap_input_with_terminal_padding_and_focus_handler(
             .with_padding_left(terminal_padding)
             .finish()
     }
+}
+
+pub(super) fn wrap_input_with_prompt_context_menu_handler(
+    view_id: EntityId,
+    child: Box<dyn Element>,
+) -> Box<dyn Element> {
+    EventHandler::new(child)
+        .on_right_mouse_down(move |ctx, _, position| {
+            open_prompt_context_menu_from_input_surface(view_id, position, ctx)
+        })
+        .finish()
+}
+
+fn open_prompt_context_menu_from_input_surface(
+    view_id: EntityId,
+    position: Vector2F,
+    ctx: &mut EventContext,
+) -> DispatchEventResult {
+    let position_id = format!("prompt_area_{view_id}");
+    let Some(prompt_rect) = ctx.element_position_by_id(&position_id) else {
+        return DispatchEventResult::PropagateToParent;
+    };
+
+    ctx.dispatch_typed_action(TerminalAction::PromptContextMenu {
+        position_offset_from_prompt: position - prompt_rect.origin(),
+    });
+    DispatchEventResult::StopPropagation
 }
 
 /// Renders the selected workflow info overlay over the input.

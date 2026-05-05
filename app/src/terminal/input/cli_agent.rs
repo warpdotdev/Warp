@@ -1,5 +1,8 @@
 use super::{
-    common::{add_input_suggestions_overlays, wrap_input_with_terminal_padding_and_focus_handler},
+    common::{
+        add_input_suggestions_overlays, wrap_input_with_prompt_context_menu_handler,
+        wrap_input_with_terminal_padding_and_focus_handler,
+    },
     Input, InputAction, InputDropTargetData, CLI_AGENT_RICH_INPUT_EDITOR_BOTTOM_PADDING,
     CLI_AGENT_RICH_INPUT_EDITOR_MAX_HEIGHT, CLI_AGENT_RICH_INPUT_EDITOR_TOP_PADDING,
     TERMINAL_VIEW_PADDING_LEFT,
@@ -115,6 +118,7 @@ impl Input {
             InputDropTargetData::new(self.weak_view_handle.clone()),
         )
         .finish();
+        let drop_target = wrap_input_with_prompt_context_menu_handler(self.view_id, drop_target);
 
         let input = SavePosition::new(
             Hoverable::new(self.hoverable_handle.clone(), |_| drop_target)
