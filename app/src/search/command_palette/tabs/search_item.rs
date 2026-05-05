@@ -10,6 +10,8 @@ use warpui::elements::{ConstrainedBox, Container, Flex, ParentElement, Text};
 use warpui::fonts::{Properties, Weight};
 use warpui::{AppContext, Element, SingletonEntity};
 
+/// These items appear in the ctrl-tab palette only, not the main command palette.
+/// Scoring matches against queries is not supported since only ranking by recency is needed.
 pub struct SearchItem {
     tab: TabNavigationData,
     mru_rank: usize,
@@ -25,7 +27,7 @@ impl SearchItemTrait for SearchItem {
     type Action = CommandPaletteItemAction;
 
     fn is_multiline(&self) -> bool {
-        true
+        self.tab.subtitle.is_some()
     }
 
     fn render_icon(
@@ -100,6 +102,9 @@ impl SearchItemTrait for SearchItem {
     }
 
     fn accessibility_help_message(&self) -> Option<String> {
-        Some("Press enter to navigate to this tab.".into())
+        Some(format!(
+            "Press enter to navigate to tab: {}.",
+            self.tab.title
+        ))
     }
 }

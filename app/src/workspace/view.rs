@@ -4804,11 +4804,12 @@ impl Workspace {
         self.tabs.len()
     }
 
+    #[cfg(test)]
     pub fn tab_mru_order(&self) -> &[EntityId] {
         &self.tab_mru_order
     }
 
-    pub fn activate_tab_by_pane_group_id(
+    pub(crate) fn activate_tab_by_pane_group_id(
         &mut self,
         pane_group_id: EntityId,
         ctx: &mut ViewContext<Self>,
@@ -4822,7 +4823,7 @@ impl Workspace {
         }
     }
 
-    pub fn tab_navigation_data(
+    fn tab_navigation_data(
         &self,
         window_id: WindowId,
         ctx: &AppContext,
@@ -10137,7 +10138,8 @@ impl Workspace {
 
     fn cycle_session(&mut self, direction: SessionCycleDirection, ctx: &mut ViewContext<Self>) {
         let keys_settings = KeysSettings::as_ref(ctx);
-        match *keys_settings.ctrl_tab_behavior {
+        let ctrl_tab_behavior = *keys_settings.ctrl_tab_behavior;
+        match ctrl_tab_behavior {
             CtrlTabBehavior::ActivatePrevNextTab => match direction {
                 SessionCycleDirection::Next => {
                     self.activate_next_tab(ctx);
@@ -10146,9 +10148,10 @@ impl Workspace {
                     self.activate_prev_tab(ctx);
                 }
             },
-            CtrlTabBehavior::CycleMostRecentSession => {
+            CtrlTabBehavior::CycleMostRecentSession | CtrlTabBehavior::CycleMostRecentTab => {
                 self.current_workspace_state.is_palette_open = false;
-                if !self.current_workspace_state.is_ctrl_tab_palette_open {
+                let palette_was_open = self.current_workspace_state.is_ctrl_tab_palette_open;
+                if !palette_was_open {
                     self.open_palette_action(
                         PaletteMode::Navigation,
                         PaletteSource::CtrlTab {
@@ -10161,35 +10164,15 @@ impl Workspace {
                         ctx,
                     );
                 }
-                self.ctrl_tab_palette
-                    .update(ctx, |palette, ctx| match direction {
-                        SessionCycleDirection::Next => {
-                            palette.select_next_item(ctx);
-                        }
-                        SessionCycleDirection::Previous => {
-                            palette.select_prev_item(ctx);
-                        }
-                    });
-                ctx.notify();
-            }
-            CtrlTabBehavior::CycleMostRecentTab => {
-                self.current_workspace_state.is_palette_open = false;
-                if !self.current_workspace_state.is_ctrl_tab_palette_open {
-                    self.open_palette_action(
-                        PaletteMode::Navigation,
-                        PaletteSource::CtrlTab {
-                            shift_pressed_initially: matches!(
-                                direction,
-                                SessionCycleDirection::Previous
-                            ),
-                        },
-                        None,
-                        ctx,
-                    );
-                } else {
-                    // Only advance selection when palette is already open.
-                    // On first open, set_initial_selection_offset(1) already
-                    // pre-selects the second item (most recent previous tab).
+                // CycleMostRecentSession: always advance (async sources need explicit
+                // advance after palette open). CycleMostRecentTab: advance only when
+                // palette was already open (sync offset handles first-open selection).
+                if palette_was_open
+                    || matches!(
+                        ctrl_tab_behavior,
+                        CtrlTabBehavior::CycleMostRecentSession
+                    )
+                {
                     self.ctrl_tab_palette
                         .update(ctx, |palette, ctx| match direction {
                             SessionCycleDirection::Next => {
@@ -10339,7 +10322,6 @@ impl Workspace {
         ctx.dispatch_global_action("workspace:save_app", ());
         ctx.notify();
     }
-
 
     fn should_confirm_close_session(&self, ctx: &mut ViewContext<Self>) -> bool {
         // If we're closing the only remaining tab, we're actually going to close the window.
@@ -11562,8 +11544,6 @@ impl Workspace {
 
         self.tabs.push(TabData::new(new_pane_group.clone()));
         let new_tab_index = self.tab_count() - 1;
-        self.tab_mru_order
-            .push(self.tabs[new_tab_index].pane_group.id());
         self.activate_tab_internal(new_tab_index, ctx);
 
         // Get both IDs from the NEW tab's pane group
@@ -12299,30 +12279,37 @@ impl Workspace {
             .clone();
         let data_source_store = self.ctrl_tab_palette.as_ref(ctx).data_source_store.clone();
 
-        if query_filter == QueryFilter::Tabs {
-            let window_id = ctx.window_id();
-            let tabs = self.tab_navigation_data(window_id, ctx.as_ref());
-            data_source_store.update(ctx, |store, ctx| {
-                store.reset_ctrl_tab_mixer(mixer, tabs, ctx);
-            });
-        } else {
-            data_source_store.update(ctx, |store, ctx| {
-                store.restore_ctrl_tab_session_mixer(mixer, ctx);
-            });
+        match query_filter {
+            QueryFilter::Tabs => {
+                let window_id = ctx.window_id();
+                let tabs = self.tab_navigation_data(window_id, ctx.as_ref());
+                data_source_store.update(ctx, |store, ctx| {
+                    store.reset_ctrl_tab_mixer(mixer, tabs, ctx);
+                });
+            }
+            QueryFilter::Sessions => {
+                data_source_store.update(ctx, |store, ctx| {
+                    store.restore_ctrl_tab_session_mixer(mixer, ctx);
+                });
+            }
+            _ => {}
         }
 
         self.ctrl_tab_palette.update(ctx, |view, ctx| {
-            if query_filter == QueryFilter::Tabs {
-                // Set offset BEFORE filter: the tabs query is synchronous, so results
-                // arrive during set_active_query_filter. The offset must already be
-                // stored so on_mixer_results_changed picks it up.
-                view.set_initial_selection_offset(offset, ctx);
-                view.set_active_query_filter(query_filter, ctx);
-            } else {
-                // Sessions (and other async sources): set filter first, then offset.
-                // The existing post-open select_next_item handles initial selection.
-                view.set_active_query_filter(query_filter, ctx);
-                view.set_initial_selection_offset(offset, ctx);
+            match query_filter {
+                QueryFilter::Tabs => {
+                    // Set offset BEFORE filter: the tabs query is synchronous, so results
+                    // arrive during set_active_query_filter. The offset must already be
+                    // stored so on_mixer_results_changed picks it up.
+                    view.set_initial_selection_offset(offset, ctx);
+                    view.set_active_query_filter(query_filter, ctx);
+                }
+                _ => {
+                    // Sessions (and other async sources): set filter first, then offset.
+                    // The existing post-open select_next_item handles initial selection.
+                    view.set_active_query_filter(query_filter, ctx);
+                    view.set_initial_selection_offset(offset, ctx);
+                }
             }
         });
 

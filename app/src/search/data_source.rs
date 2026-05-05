@@ -53,10 +53,6 @@ lazy_static! {
         primary_text: "sessions:",
         aliases: vec![]
     };
-    static ref TABS_FILTER_ATOM: FilterAtom = FilterAtom {
-        primary_text: "tabs:",
-        aliases: vec![]
-    };
     static ref CONVERSATIONS_FILTER_ATOM: FilterAtom = FilterAtom {
         primary_text: "conversations:",
         aliases: vec![]
@@ -281,7 +277,7 @@ impl QueryFilter {
             QueryFilter::NaturalLanguage => &NATURAL_LANGUAGE_FILTER_ATOM,
             QueryFilter::Actions => &ACTIONS_FILTER_ATOM,
             QueryFilter::Sessions => &SESSIONS_FILTER_ATOM,
-            QueryFilter::Tabs => &TABS_FILTER_ATOM,
+            QueryFilter::Tabs => &NO_FILTER_ATOM,
             QueryFilter::Conversations => &CONVERSATIONS_FILTER_ATOM,
             QueryFilter::LaunchConfigurations => &LAUNCH_CONFIG_FILTER_ATOM,
             QueryFilter::Drive => &DRIVE_FILTER_ATOM,
