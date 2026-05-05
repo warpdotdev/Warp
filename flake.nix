@@ -165,7 +165,7 @@
             };
             postInstall =
               let
-                installDir = "$out/opt/warpdotdev/warp-terminal";
+                installDir = "$out/opt/warpdotdev/warp-terminal-experimental";
                 resourcesDir = "${installDir}/resources";
                 releaseChannel = "stable";
                 libraryPath = lib.makeLibraryPath linuxRuntimeLibraries;
@@ -191,15 +191,15 @@
 
                 install -Dm644 \
                   "${resourcesDir}/THIRD_PARTY_LICENSES.txt" \
-                  "$out/share/licenses/warp-terminal/THIRD_PARTY_LICENSES.txt"
+                  "$out/share/licenses/warp-terminal-experimental/THIRD_PARTY_LICENSES.txt"
 
-                install -Dm644 LICENSE-AGPL "$out/share/licenses/warp-terminal/LICENSE-AGPL"
-                install -Dm644 LICENSE-MIT "$out/share/licenses/warp-terminal/LICENSE-MIT"
+                install -Dm644 LICENSE-AGPL "$out/share/licenses/warp-terminal-experimental/LICENSE-AGPL"
+                install -Dm644 LICENSE-MIT "$out/share/licenses/warp-terminal-experimental/LICENSE-MIT"
 
                 install -Dm644 app/channels/oss/dev.warp.WarpOss.desktop \
                   "$out/share/applications/dev.warp.WarpOss.desktop"
                 substituteInPlace "$out/share/applications/dev.warp.WarpOss.desktop" \
-                  --replace-fail "Exec=warp-oss %U" "Exec=warp-terminal %U"
+                  --replace-fail "Exec=warp-oss %U" "Exec=warp-terminal-experimental %U"
 
                 for size in 16x16 32x32 64x64 128x128 256x256 512x512; do
                   icon="app/channels/oss/icon/no-padding/$size.png"
@@ -215,11 +215,11 @@
 
                 mkdir -p "$out/bin"
                 ln -s "${installDir}/warp-oss" "$out/bin/warp-oss"
-                ln -s "${installDir}/warp-oss" "$out/bin/warp-terminal"
+                ln -s "${installDir}/warp-oss" "$out/bin/warp-terminal-experimental"
               '';
 
             postFixup = lib.optionalString pkgs.stdenv.isLinux ''
-              wrapped="/opt/warpdotdev/warp-terminal/.warp-oss-wrapped"
+              wrapped="/opt/warpdotdev/warp-terminal-experimental/.warp-oss-wrapped"
               if [ -e "$out$wrapped" ] && ! patchelf --print-needed "$out$wrapped" | grep -q '^libfontconfig\.so\.1$'; then
                 patchelf --add-needed libfontconfig.so.1 "$out$wrapped"
               fi
@@ -229,7 +229,7 @@
               description = "Warp is an agentic development environment, born out of the terminal (Experimental Nix Support, Linux-only).";
               homepage = "https://www.warp.dev";
               license = lib.licenses.agpl3Only;
-              mainProgram = "warp-terminal";
+              mainProgram = "warp-terminal-experimental";
               platforms = systems;
               sourceProvenance = with lib.sourceTypes; [ fromSource ];
             };
@@ -237,7 +237,6 @@
         in
         {
           inherit warp-terminal-experimental;
-          default = warp-terminal-experimental;
         }
       );
 
