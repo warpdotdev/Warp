@@ -1041,13 +1041,22 @@ fn render_hover_card(
     // when available, falling back to the most recent exchange. Hidden
     // entirely when neither is populated (e.g. cloud agents whose CWD
     // hasn't synced yet).
+    //
+    // Use `dirs::home_dir()` (cross-platform: `$HOME` on unix,
+    // `%USERPROFILE%` on Windows) to find the home prefix, then defer to
+    // the shared `warp_util::path::user_friendly_path` helper so the cwd
+    // displays as `~/foo` regardless of OS — and matches the same
+    // tilde-substitution behaviour used by the tab title, prompt header,
+    // and pwd chip.
+    let home_dir = dirs::home_dir();
+    let home_dir_str = home_dir.as_deref().and_then(|p| p.to_str());
     let cwd_line: Option<Box<dyn Element>> = conversation
         .initial_working_directory()
         .or_else(|| conversation.current_working_directory())
         .filter(|s| !s.is_empty())
         .map(|cwd| {
             Text::new(
-                shorten_home_path(&cwd),
+                warp_util::path::user_friendly_path(&cwd, home_dir_str).into_owned(),
                 appearance.ui_font_family(),
                 appearance.monospace_font_size() - 1.,
             )
@@ -1224,28 +1233,6 @@ fn render_status_badge(
         .with_background_color(coloru_with_opacity(color, 10))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
         .finish()
-}
-
-/// Replaces a `$HOME` prefix in a path with `~` so the working-directory
-/// line in the hover card matches user expectations (`~/warp-internal`
-/// rather than the full absolute path). Falls back to the original path
-/// when `$HOME` is unset or doesn't prefix the path.
-fn shorten_home_path(path: &str) -> String {
-    if let Some(home) = std::env::var_os("HOME") {
-        if let Some(home_str) = home.to_str() {
-            if !home_str.is_empty() {
-                if let Some(rest) = path.strip_prefix(home_str) {
-                    if rest.is_empty() {
-                        return "~".to_string();
-                    }
-                    if let Some(stripped) = rest.strip_prefix('/') {
-                        return format!("~/{stripped}");
-                    }
-                }
-            }
-        }
-    }
-    path.to_string()
 }
 
 /// Renders a small icon + label chip used inside the hover details card.
