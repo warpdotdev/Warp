@@ -5,7 +5,6 @@ param(
     [ValidateSet('dev', 'preview', 'stable', 'oss')]
     [string]$Channel = 'oss',
 
-    [Parameter(Mandatory = $true)]
     [string]$AssetPath,
 
     [string]$Tag = '',
@@ -429,9 +428,13 @@ function Test-ShouldPreserveExistingNotes {
 
 Assert-CommandExists -Name 'git'
 
-$resolvedAssetPath = [System.IO.Path]::GetFullPath($AssetPath)
-if (-not (Test-Path -LiteralPath $resolvedAssetPath -PathType Leaf)) {
-    throw "Asset not found: $resolvedAssetPath"
+$hasAssetPath = -not [string]::IsNullOrWhiteSpace($AssetPath)
+$resolvedAssetPath = ''
+if ($hasAssetPath) {
+    $resolvedAssetPath = [System.IO.Path]::GetFullPath($AssetPath)
+    if (-not (Test-Path -LiteralPath $resolvedAssetPath -PathType Leaf)) {
+        throw "Asset not found: $resolvedAssetPath"
+    }
 }
 
 $gitHubRepo = Resolve-GitHubRepo -ExplicitRepo $Repo
@@ -457,7 +460,7 @@ $title = "$releaseBaseName $Tag"
 Write-Output "Repo: $gitHubRepo"
 Write-Output "Tag: $Tag"
 Write-Output "Title: $title"
-Write-Output "Asset: $resolvedAssetPath"
+Write-Output "Asset: $(if ($hasAssetPath) { $resolvedAssetPath } else { '(none)' })"
 Write-Output "BaseRef: $effectiveBaseRef"
 Write-Output "ToRef: $ToRef"
 Write-Output "TargetCommit: $targetCommitSha"
@@ -531,15 +534,20 @@ try {
             Invoke-External -FilePath 'gh' -Arguments $editArguments
         }
 
-        Invoke-External -FilePath 'gh' -Arguments @('release', 'upload', $Tag, $resolvedAssetPath, '--repo', $gitHubRepo, '--clobber')
+        if ($hasAssetPath) {
+            Invoke-External -FilePath 'gh' -Arguments @('release', 'upload', $Tag, $resolvedAssetPath, '--repo', $gitHubRepo, '--clobber')
+        }
     } else {
         $createArguments = @(
-            'release', 'create', $Tag, $resolvedAssetPath,
+            'release', 'create', $Tag,
             '--repo', $gitHubRepo,
             '--title', $title,
             '--notes-file', $resolvedNotesPath,
             '--target', $targetCommitSha
         )
+        if ($hasAssetPath) {
+            $createArguments += $resolvedAssetPath
+        }
         if ($Draft) {
             $createArguments += '--draft'
         }
