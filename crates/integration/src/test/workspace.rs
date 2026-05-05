@@ -20,6 +20,7 @@ use warp::integration_testing::workspace::{
 };
 use warp::{
     cmd_or_ctrl_shift,
+    features::FeatureFlag,
     integration_testing::{
         clipboard::assert_clipboard_contains_string,
         pane_group::assert_focused_pane_index,
@@ -33,6 +34,7 @@ use warp::{
     },
     settings::PaneSettings,
     terminal::shell::ShellType,
+    workspace::tab_settings::TabSettings,
     workspace::{WorkspaceAction, NEW_TAB_BUTTON_POSITION_ID},
 };
 use warpui::{
@@ -50,9 +52,34 @@ use super::new_builder;
 const SOURCE_WINDOW_KEY: &str = "source window";
 const TARGET_WINDOW_KEY: &str = "target window";
 const DETACHED_WINDOW_KEY: &str = "detached window";
+const METADATA_TAB_TITLE: &str = "Integration Metadata Tab";
+const METADATA_BRANCH: &str = "main";
 
 fn tab_position_id(tab_index: usize) -> String {
     format!("tab_position_{tab_index}")
+}
+
+fn vertical_tab_pane_row_position_id(app: &mut warpui::App, window_id: WindowId) -> String {
+    let workspace = workspace_view(app, window_id);
+    let pane_group = workspace.read(app, |workspace, _ctx| {
+        workspace
+            .get_pane_group_view(0)
+            .expect("pane group should exist")
+            .clone()
+    });
+    let pane_group_id = pane_group.id();
+    pane_group.read(app, |pane_group, _ctx| {
+        let pane_id = pane_group
+            .terminal_pane_ids()
+            .next()
+            .expect("terminal pane should exist");
+        format!("vertical_tabs:pane_row:{pane_group_id:?}:{pane_id}")
+    })
+}
+
+fn should_run_tab_context_menu_metadata_test() -> bool {
+    let (starter, _) = current_shell_starter_and_version();
+    starter.shell_type() != ShellType::PowerShell
 }
 
 fn set_active_tab_name(name: &'static str) -> TestStep {
@@ -62,6 +89,91 @@ fn set_active_tab_name(name: &'static str) -> TestStep {
             workspace.handle_action(&WorkspaceAction::SetActiveTabName(name.to_string()), ctx);
         });
     })
+}
+
+fn enable_vertical_tabs() -> TestStep {
+    FeatureFlag::VerticalTabs.set_enabled(true);
+    new_step_with_default_assertions("Enable vertical tabs").add_assertion(|app, _window_id| {
+        TabSettings::handle(app).update(app, |settings, ctx| {
+            settings
+                .use_vertical_tabs
+                .set_value(true, ctx)
+                .expect("vertical tabs setting should update");
+            async_assert!(*settings.use_vertical_tabs)
+        })
+    })
+}
+
+fn open_horizontal_tab_context_menu(step_name: &'static str) -> TestStep {
+    new_step_with_default_assertions(step_name)
+        .with_right_click_on_saved_position(tab_position_id(0))
+}
+
+fn open_vertical_tab_context_menu(step_name: &'static str) -> TestStep {
+    new_step_with_default_assertions(step_name)
+        .with_right_click_on_saved_position_fn(vertical_tab_pane_row_position_id)
+}
+
+fn add_tab_context_metadata_setup_steps(builder: Builder) -> Builder {
+    builder
+        .set_should_run_test(should_run_tab_context_menu_metadata_test)
+        .use_tmp_filesystem_for_test_root_directory()
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(set_active_tab_name(METADATA_TAB_TITLE))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            0,
+            format!(
+                "git init -b {METADATA_BRANCH}; git config user.email \"test@test.com\"; git config user.name \"Git TestUser\""
+            ),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            0,
+            "touch file".into(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(
+            new_step_with_default_assertions("Git branch metadata should be populated")
+                .set_timeout(Duration::from_secs(15))
+                .add_assertion(assert_current_git_branch(METADATA_BRANCH)),
+        )
+}
+
+fn add_tab_context_metadata_copy_steps(
+    builder: Builder,
+    open_tab_context_menu: fn(&'static str) -> TestStep,
+) -> Builder {
+    builder
+        .with_step(open_tab_context_menu(
+            "Open tab context menu for branch copy",
+        ))
+        .with_step(
+            new_step_with_default_assertions("Copy branch from tab context menu")
+                .with_click_on_saved_position("Copy branch")
+                .add_assertion(assert_clipboard_contains_string(
+                    METADATA_BRANCH.to_string(),
+                )),
+        )
+        .with_step(open_tab_context_menu(
+            "Open tab context menu for title copy",
+        ))
+        .with_step(
+            new_step_with_default_assertions("Copy tab title from tab context menu")
+                .with_click_on_saved_position("Copy tab title")
+                .add_assertion(assert_clipboard_contains_string(
+                    METADATA_TAB_TITLE.to_string(),
+                )),
+        )
+        .with_step(open_tab_context_menu(
+            "Open tab context menu for working directory copy",
+        ))
+        .with_step(
+            new_step_with_default_assertions("Copy working directory from tab context menu")
+                .with_click_on_saved_position("Copy Working Directory")
+                .add_assertion(assert_clipboard_contains_home()),
+        )
 }
 
 fn assert_current_git_branch(expected_branch: &'static str) -> AssertionCallback {
@@ -249,60 +361,14 @@ pub fn test_active_session_follows_focus() -> Builder {
 }
 
 pub fn test_tab_context_menu_copies_metadata() -> Builder {
-    new_builder()
-        .set_should_run_test(|| {
-            let (starter, _) = current_shell_starter_and_version();
-            starter.shell_type() != ShellType::PowerShell
-        })
-        .use_tmp_filesystem_for_test_root_directory()
-        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(set_active_tab_name("Integration Metadata Tab"))
-        .with_step(execute_command_for_single_terminal_in_tab(
-            0,
-            "git init -b main; git config user.email \"test@test.com\"; git config user.name \"Git TestUser\"".into(),
-            ExpectedExitStatus::Success,
-            (),
-        ))
-        .with_step(execute_command_for_single_terminal_in_tab(
-            0,
-            "touch file".into(),
-            ExpectedExitStatus::Success,
-            (),
-        ))
-        .with_step(
-            new_step_with_default_assertions("Git branch metadata should be populated")
-                .set_timeout(Duration::from_secs(15))
-                .add_assertion(assert_current_git_branch("main")),
-        )
-        .with_step(
-            new_step_with_default_assertions("Open tab context menu for branch copy")
-                .with_right_click_on_saved_position(tab_position_id(0)),
-        )
-        .with_step(
-            new_step_with_default_assertions("Copy branch from tab context menu")
-                .with_click_on_saved_position("Copy branch")
-                .add_assertion(assert_clipboard_contains_string("main".to_string())),
-        )
-        .with_step(
-            new_step_with_default_assertions("Open tab context menu for title copy")
-                .with_right_click_on_saved_position(tab_position_id(0)),
-        )
-        .with_step(
-            new_step_with_default_assertions("Copy tab title from tab context menu")
-                .with_click_on_saved_position("Copy tab title")
-                .add_assertion(assert_clipboard_contains_string(
-                    "Integration Metadata Tab".to_string(),
-                )),
-        )
-        .with_step(
-            new_step_with_default_assertions("Open tab context menu for working directory copy")
-                .with_right_click_on_saved_position(tab_position_id(0)),
-        )
-        .with_step(
-            new_step_with_default_assertions("Copy working directory from tab context menu")
-                .with_click_on_saved_position("Copy Working Directory")
-                .add_assertion(assert_clipboard_contains_home()),
-        )
+    let builder = add_tab_context_metadata_setup_steps(new_builder());
+    add_tab_context_metadata_copy_steps(builder, open_horizontal_tab_context_menu)
+}
+
+pub fn test_vertical_tab_context_menu_copies_metadata() -> Builder {
+    let builder =
+        add_tab_context_metadata_setup_steps(new_builder()).with_step(enable_vertical_tabs());
+    add_tab_context_metadata_copy_steps(builder, open_vertical_tab_context_menu)
 }
 
 pub fn test_focus_panes_on_hover() -> Builder {
