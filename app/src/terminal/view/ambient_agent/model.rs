@@ -32,7 +32,9 @@ use crate::server::server_api::ai::InitialSnapshotToken;
 use crate::server::server_api::ai::{
     AgentConfigSnapshot, AmbientAgentTaskState, AttachmentInput, SpawnAgentRequest,
 };
-use crate::server::server_api::{AIApiError, CloudAgentCapacityError, ServerApiProvider};
+use crate::server::server_api::{
+    AIApiError, ClientError, CloudAgentCapacityError, ServerApiProvider,
+};
 use crate::terminal::view::ambient_agent::{SetupCommandGroupId, SetupCommandState};
 use crate::terminal::CLIAgent;
 
@@ -383,10 +385,23 @@ impl AmbientAgentViewModel {
     }
 
     pub fn selected_harness(&self) -> Harness {
-        self.harness
+        if self.is_local_to_cloud_handoff() {
+            Harness::Oz
+        } else {
+            self.harness
+        }
     }
 
     pub fn set_harness(&mut self, harness: Harness, ctx: &mut ModelContext<Self>) {
+        // for local to cloud handoff, oz is the only option
+        // (we'll need to update this to lock to the correct 3p harness if/when
+        // we implement local -> cloud handoff for non-oz conversations).
+        let harness = if self.is_local_to_cloud_handoff() {
+            Harness::Oz
+        } else {
+            harness
+        };
+
         if self.harness == harness {
             return;
         }
@@ -401,7 +416,7 @@ impl AmbientAgentViewModel {
     /// True when the run is configured to use a non-Oz execution harness and the
     /// required feature flags are enabled.
     pub(super) fn is_third_party_harness(&self) -> bool {
-        FeatureFlag::AgentHarness.is_enabled() && self.harness != Harness::Oz
+        FeatureFlag::AgentHarness.is_enabled() && self.selected_harness() != Harness::Oz
     }
 
     /// Returns the [`CLIAgent`] corresponding to the currently selected harness when it is a
@@ -409,7 +424,7 @@ impl AmbientAgentViewModel {
     /// Used to drive the correct tab icon for a cloud run as soon as a non-oz harness is
     /// selected, even before the CLI session is registered with [`CLIAgentSessionsModel`].
     pub fn selected_third_party_cli_agent(&self) -> Option<CLIAgent> {
-        CLIAgent::from_harness(self.harness)
+        CLIAgent::from_harness(self.selected_harness())
     }
 
     /// True when this pane is a local-to-cloud handoff pane. Set when the handoff opens
@@ -452,7 +467,11 @@ impl AmbientAgentViewModel {
         pending: Option<PendingHandoff>,
         ctx: &mut ModelContext<Self>,
     ) {
+        let previous_harness = self.selected_harness();
         self.pending_handoff = pending;
+        if self.selected_harness() != previous_harness {
+            ctx.emit(AmbientAgentViewModelEvent::HarnessSelected);
+        }
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
     }
 
@@ -798,8 +817,9 @@ impl AmbientAgentViewModel {
             ComputerUsePermission::resolve_cloud_agent_state(ctx);
         let computer_use_enabled = Some(enabled);
 
-        let harness_override =
-            (self.harness != Harness::Oz).then(|| HarnessConfig::from_harness_type(self.harness));
+        let selected_harness = self.selected_harness();
+        let harness_override = (selected_harness != Harness::Oz)
+            .then(|| HarnessConfig::from_harness_type(selected_harness));
 
         AgentConfigSnapshot {
             environment_id: self.environment_id.as_ref().map(|id| id.to_string()),
@@ -1068,7 +1088,6 @@ impl AmbientAgentViewModel {
             ctx
         );
 
-        use crate::server::server_api::ClientError;
         if let Some(client_error) = err.downcast_ref::<ClientError>() {
             if let Some(auth_url) = &client_error.auth_url {
                 self.handle_needs_github_auth(auth_url.clone(), client_error.error.clone(), ctx);

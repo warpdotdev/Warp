@@ -324,6 +324,10 @@ impl ActionButton {
         self.has_menu = has_menu;
         self
     }
+    pub fn set_has_menu(&mut self, has_menu: bool, ctx: &mut ViewContext<Self>) {
+        self.has_menu = has_menu;
+        ctx.notify();
+    }
 
     #[allow(dead_code)]
     pub fn with_callout(mut self, callout: Callout) -> Self {
