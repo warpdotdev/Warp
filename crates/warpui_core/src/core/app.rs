@@ -1185,9 +1185,15 @@ impl AppContext {
     /// All views in every window are invalidated when this is invoked.
     ///
     /// ## Validation
-    /// The zoom factor is clamped to the range [0.5, 4.0].
+    /// The zoom factor is clamped to the range [0.5, 3.5], matching
+    /// `WindowSettings::ZoomLevel::VALUES` (50%–350%). This range is shared
+    /// with [`AppContext::set_window_zoom_factor`] so that
+    /// `Workspace::adjust_zoom`'s discrete-step lookup can always find the
+    /// effective zoom in the VALUES table; values outside the range would
+    /// dead-end the keyboard shortcut until `reset_window_zoom_factor` is
+    /// called.
     pub fn set_zoom_factor(&mut self, zoom_factor: f32) {
-        let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 4.0));
+        let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 3.5));
         self.zoom_factor = zoom_factor;
         self.invalidate_all_views();
     }
