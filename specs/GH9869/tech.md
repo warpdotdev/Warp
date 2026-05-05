@@ -102,6 +102,44 @@ Drop the `EnumIter` derive (it would now be wrong for the payload
 variant). Existing call sites of `iter()` are limited to
 `all_possible_values()` itself, so this is a one-line removal.
 
+### Displaying a persisted `Custom(KeyCode)` in the dropdown
+
+> **Correction (re-review #10127):** the previous draft did not
+> specify how the dropdown shows the *currently selected* value
+> when that value is a `Custom(KeyCode)` outside
+> `predefined_options()`. Resolved below.
+
+When the user has previously bound a `Custom(KeyCode::F19)` (or
+similar), the dropdown still uses `predefined_options()` for the
+**list of choices**, but the **selected-row label** is rendered
+from the live setting value:
+
+1. The dropdown's `set_selected_by_index` call at
+   [app/src/settings_view/ai_page.rs:529](app/src/settings_view/ai_page.rs)
+   currently looks up the index of the current value in
+   `predefined_options()`. For a `Custom` value this lookup
+   returns `None`.
+2. On `None`, instead of falling back to index 0 (which would
+   *change* the persisted value to the first predefined option on
+   render — a silent data-loss bug), the dropdown gets a virtual
+   "current row" prepended to the list with the label
+   `format!("Custom: {}", custom_display(key_code))` and gets
+   selected.
+3. The virtual row is **read-only as a list entry** — clicking it
+   re-opens the press-to-capture modal pre-populated with the
+   current `KeyCode` (so the user sees what they have and can
+   confirm or change). It is removed from the list as soon as a
+   different option is selected.
+
+This keeps `predefined_options()` finite and small while
+correctly displaying any `Custom(...)` already in the user's
+TOML, including values from a future build that captured a key
+the current build's predefined list doesn't surface.
+
+`custom_display(KeyCode)` is the same friendly-name helper used
+in the modal display (see "Display name for new variants" below)
+so both surfaces show the same string for the same `KeyCode`.
+
 ### Settings serialization
 
 The existing `implement_setting_for_enum!` macro
@@ -457,7 +495,12 @@ disk file is consistent and subsequent launches are quiet.
 3. Confirm the macOS Caps Lock press-to-toggle decision (vs
    "document the difference and don't fix"). Discord and Krisp
    both go press-to-toggle.
-4. Should the press-to-capture modal expose the captured `KeyCode`
-   spelling to the user (debug aid), or only the friendly display
-   name? Recommendation: friendly name with a hover tooltip
-   showing `KeyCode::F19` for users who care.
+4. ~~Should the press-to-capture modal expose the captured
+   `KeyCode` spelling to the user?~~ **Resolved (re-review
+   #10127):** the modal shows the friendly display name primarily
+   (e.g. "F19", "Caps Lock"), with the protocol-level `KeyCode`
+   spelling (e.g. `KeyCode::F19`) shown only in a hover tooltip
+   on the captured-key label. This matches the dropdown's
+   "Custom: F19" rendering above and keeps the same friendly name
+   on both surfaces. Power users get the protocol spelling without
+   noise for everyone else.

@@ -131,9 +131,15 @@ replace or rename any existing variant.
 The press-to-capture flow rejects (with an inline error message and
 no save) any key that would brick the user's keyboard:
 - The currently-bound app-quit shortcut.
-- The currently-bound voice-input shortcut itself (no infinite loop).
 - Enter, Escape, Tab, Backspace, Space (would block the agent input).
 - Modifier-only without the >800ms held-modifier rule (B3 carve-out).
+
+> **Correction (re-review #10127):** the previous draft included
+> "the currently-bound voice-input shortcut itself" as a reject-list
+> entry. That would have prevented users from changing an existing
+> custom hotkey — the literal opposite of the modal's purpose. The
+> tech spec already removed the rule (capture is accepted; same-key
+> re-confirm is a no-op short-circuit). Product B5 now matches.
 
 ### B6 — "None" remains the disable option
 
