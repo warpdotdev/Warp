@@ -661,42 +661,42 @@ fn test_open_file_non_runnable_shebang_routes_to_editor() {
 }
 
 #[test]
-fn test_pane_uri_host_parsing() {
-    let result = UriHost::from_str("pane");
-    assert!(matches!(result, Ok(UriHost::Pane)));
+fn test_session_uri_host_parsing() {
+    let result = UriHost::from_str("session");
+    assert!(matches!(result, Ok(UriHost::Session)));
 }
 
 #[test]
-fn test_pane_uri_validation() {
+fn test_session_uri_validation() {
     let url = Url::parse(&format!(
-        "{}://pane/A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+        "{}://session/A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
         ChannelState::url_scheme()
     ))
     .unwrap();
     let host = validate_custom_uri(&url).unwrap();
-    assert!(matches!(host, UriHost::Pane));
+    assert!(matches!(host, UriHost::Session));
 }
 
 #[test]
-fn test_pane_uri_empty_path_does_not_panic() {
-    let url = Url::parse(&format!("{}://pane/", ChannelState::url_scheme())).unwrap();
+fn test_session_uri_empty_path_does_not_panic() {
+    let url = Url::parse(&format!("{}://session/", ChannelState::url_scheme())).unwrap();
     let host = validate_custom_uri(&url).unwrap();
-    assert!(matches!(host, UriHost::Pane));
+    assert!(matches!(host, UriHost::Session));
 }
 
 #[test]
-fn test_pane_uri_invalid_hex_does_not_panic() {
+fn test_session_uri_invalid_hex_does_not_panic() {
     let url = Url::parse(&format!(
-        "{}://pane/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+        "{}://session/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
         ChannelState::url_scheme()
     ))
     .unwrap();
     let host = validate_custom_uri(&url).unwrap();
-    assert!(matches!(host, UriHost::Pane));
+    assert!(matches!(host, UriHost::Session));
 }
 
 #[test]
-fn test_pane_uri_case_insensitive_hex() {
+fn test_session_uri_case_insensitive_hex() {
     let upper = "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4";
     let lower = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4";
     let upper_bytes = super::decode_uuid_hex(upper).expect("upper hex should decode");

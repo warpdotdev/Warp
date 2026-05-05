@@ -81,8 +81,8 @@ pub enum UriHost {
     Codex,
     /// Actions triggered from Linear integrations (e.g. work on issue).
     Linear,
-    /// Focuses a specific terminal pane by its persistent UUID.
-    Pane,
+    /// Focuses a specific terminal pane by its persistent session UUID.
+    Session,
 }
 
 impl FromStr for UriHost {
@@ -104,7 +104,7 @@ impl FromStr for UriHost {
             "mcp" => Ok(Self::Mcp),
             "codex" => Ok(Self::Codex),
             "linear" => Ok(Self::Linear),
-            "pane" => Ok(Self::Pane),
+            "session" => Ok(Self::Session),
             _ => Err(anyhow!("Received url with unexpected host: {}", s)),
         }
     }
@@ -456,7 +456,7 @@ impl UriHost {
                     log::warn!("{err}");
                 }
             },
-            UriHost::Pane => {
+            UriHost::Session => {
                 let uuid_hex = url
                     .path_segments()
                     .into_iter()
@@ -466,7 +466,7 @@ impl UriHost {
 
                 let Some(uuid_bytes) = decode_uuid_hex(uuid_hex) else {
                     log::warn!(
-                        "pane deep link received invalid UUID hex (safe: len={})",
+                        "session deep link received invalid UUID hex (safe: len={})",
                         uuid_hex.len()
                     );
                     return;
@@ -479,7 +479,7 @@ impl UriHost {
                         workspace.as_ref(ctx).tab_views().find_map(|pane_group| {
                             let pane_id = pane_group
                                 .as_ref(ctx)
-                                .find_pane_by_session_uuid(&uuid_bytes)?;
+                                .find_terminal_pane_by_session_uuid(&uuid_bytes)?;
                             Some((
                                 *win_id,
                                 PaneViewLocator {
@@ -501,7 +501,7 @@ impl UriHost {
                         );
                     }
                 } else {
-                    log::warn!("pane deep link could not find pane with given UUID");
+                    log::warn!("session deep link could not find pane with given UUID");
                 }
             }
         }
@@ -526,7 +526,7 @@ impl UriHost {
             Self::Codex => W::default(),
             // Linear deeplink opens a new tab with agent view
             Self::Linear => W::default(),
-            Self::Pane => W::Nothing,
+            Self::Session => W::Nothing,
         }
     }
 }
@@ -1395,7 +1395,7 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
         | UriHost::Mcp
         | UriHost::Codex
         | UriHost::Linear
-        | UriHost::Pane => true,
+        | UriHost::Session => true,
         // Auth and Home only allow the desktop redirect path
         UriHost::Auth | UriHost::Home => false,
     };
@@ -1423,9 +1423,12 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
 /// (e.g. some `file://` URLs on certain platforms); the literal `-` is used
 /// as a placeholder in that case so the formatter never panics.
 fn safe_url_log_fields(url: &Url) -> String {
-    let host = url.host_str().unwrap_or("-");
-    let path = if host == "pane" { "[redacted]" } else { url.path() };
-    format!("scheme={} host={} path={}", url.scheme(), host, path)
+    format!(
+        "scheme={} host={} path={}",
+        url.scheme(),
+        url.host_str().unwrap_or("-"),
+        url.path(),
+    )
 }
 
 fn decode_uuid_hex(hex: &str) -> Option<Vec<u8>> {
