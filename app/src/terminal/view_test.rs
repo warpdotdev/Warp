@@ -3755,6 +3755,7 @@ fn open_cli_agent_rich_input_for_agent_with_window_id(
 fn ctrl_g_closes_cli_agent_rich_input_when_editor_is_focused() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
         // Register keybindings so keystroke dispatch can match the Ctrl-G binding.
         app.update(|ctx| {
             crate::terminal::init(ctx);
