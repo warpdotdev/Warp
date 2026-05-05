@@ -172,15 +172,25 @@ fn deserialize_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let path = PathBuf::deserialize(deserializer)?;
-    Ok(expand_tilde(path))
+    // Normalize backslashes to forward slashes for cross-platform compatibility.
+    let raw = String::deserialize(deserializer)?;
+    let normalized = raw.replace('\\', "/");
+    Ok(expand_tilde(PathBuf::from(normalized)))
 }
 
 fn serialize_tilde_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    contract_tilde(path.to_path_buf()).serialize(serializer)
+    let contracted = contract_tilde(path.to_path_buf());
+    // Normalize to forward slashes for cross-platform portability.
+    // Windows would emit backslashes, which Unix treats as filename characters.
+    let portable = contracted
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/");
+    portable.serialize(serializer)
 }
 
 impl CustomTheme {
