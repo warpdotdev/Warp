@@ -656,9 +656,21 @@ impl TypedActionView for OrchestrationPillBar {
                 //
                 // Resolve the canonical owner directly from
                 // `BlocklistAIHistoryModel` (the single source of truth)
-                // and dispatch `FocusTerminalViewInWorkspace`, which
-                // walks every workspace and shifts focus to the matching
-                // terminal view without touching ownership.
+                // and pick the appropriate focus action based on whether
+                // the owner pane lives in the same pane group as us:
+                //   * Same pane group (sibling pane in this tab) —
+                //     dispatch `TerminalAction::RevealChildAgent`. The
+                //     pane group's handler walks visible terminal panes
+                //     and calls `group.focus_pane(.., true, ctx)` from
+                //     its own `ViewContext<PaneGroup>`, which actually
+                //     shifts focus to the sibling pane. Going through
+                //     the workspace's `focus_pane` from a different
+                //     `ViewContext` doesn't reliably move focus when the
+                //     destination is in the same pane group.
+                //   * Different pane group (other tab / window) —
+                //     dispatch `WorkspaceAction::FocusTerminalViewInWorkspace`,
+                //     which walks all tabs/windows and activates the
+                //     containing tab as needed.
                 let owner_view_id =
                     BlocklistAIHistoryModel::as_ref(ctx).terminal_view_id_for_conversation(id);
                 let Some(owner_view_id) = owner_view_id else {
@@ -674,9 +686,22 @@ impl TypedActionView for OrchestrationPillBar {
                     );
                     return;
                 };
-                ctx.dispatch_typed_action(&WorkspaceAction::FocusTerminalViewInWorkspace {
-                    terminal_view_id: owner_view_id,
-                });
+                let self_pane_group_id = self.agent_view_controller.as_ref(ctx).pane_group_id();
+                let owner_pane_group_id =
+                    pane_group_id_containing_terminal_view(owner_view_id, ctx);
+                if owner_pane_group_id.is_some() && owner_pane_group_id == self_pane_group_id {
+                    ctx.dispatch_typed_action(
+                        &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
+                            TerminalAction::RevealChildAgent {
+                                conversation_id: *id,
+                            },
+                        ),
+                    );
+                } else {
+                    ctx.dispatch_typed_action(&WorkspaceAction::FocusTerminalViewInWorkspace {
+                        terminal_view_id: owner_view_id,
+                    });
+                }
             }
         }
     }
@@ -1654,6 +1679,32 @@ fn is_conversation_open_in_other_visible_view(
         }
     }
     false
+}
+
+/// Walks every visible terminal pane across every workspace/tab and
+/// returns the `EntityId` of the `PaneGroup` that contains the given
+/// `terminal_view_id`, if any. Used by the pill bar to decide between
+/// the same-pane-group focus path (`RevealChildAgent`) and the
+/// cross-pane-group path (`FocusTerminalViewInWorkspace`).
+fn pane_group_id_containing_terminal_view(
+    terminal_view_id: EntityId,
+    app: &AppContext,
+) -> Option<EntityId> {
+    let registry = WorkspaceRegistry::as_ref(app);
+    for (_, workspace_handle) in registry.all_workspaces(app) {
+        let workspace = workspace_handle.as_ref(app);
+        for pane_group_handle in workspace.tab_views() {
+            let pane_group = pane_group_handle.as_ref(app);
+            for pane_id in pane_group.visible_pane_ids() {
+                if let Some(terminal_view) = pane_group.terminal_view_from_pane_id(pane_id, app) {
+                    if terminal_view.id() == terminal_view_id {
+                        return Some(pane_group_handle.id());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Returns `true` if the active conversation in `agent_view_controller` is a
