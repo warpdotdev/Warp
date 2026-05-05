@@ -10295,16 +10295,13 @@ impl TerminalView {
                         let directory_for_detection =
                             native_directory.as_deref().unwrap_or(active_directory);
 
-                        let fut = DetectedRepositories::handle(ctx).update(
-                            ctx,
-                            |updater, ctx| {
-                                updater.detect_possible_git_repo(
-                                    directory_for_detection,
-                                    RepoDetectionSource::TerminalNavigation,
-                                    ctx,
-                                )
-                            },
-                        );
+                        let fut = DetectedRepositories::handle(ctx).update(ctx, |updater, ctx| {
+                            updater.detect_possible_git_repo(
+                                directory_for_detection,
+                                RepoDetectionSource::TerminalNavigation,
+                                ctx,
+                            )
+                        });
 
                         ctx.spawn(fut, move |me, repo_path_opt, ctx| {
                             let old_repo_path = me.current_repo_path.clone();
@@ -10323,18 +10320,24 @@ impl TerminalView {
                                 callback(me, ctx);
                             }
 
-                            let Some(active_directory) = me.active_session_path_if_local(ctx) else {
+                            let Some(active_directory) = me.active_session_path_if_local(ctx)
+                            else {
                                 me.clear_git_repo_status(ctx);
                                 return;
                             };
 
                             if let Some(repo_path) = &repo_path_opt {
-                                let Ok(active_directory) = repo_metadata::CanonicalizedPath::try_from(active_directory) else {
+                                let Ok(active_directory) =
+                                    repo_metadata::CanonicalizedPath::try_from(active_directory)
+                                else {
                                     return;
                                 };
 
                                 // Make sure the repo path is still an ancestor of the active directory.
-                                let is_ancestor = active_directory.as_path_buf().ancestors().any(|ancestor| ancestor == repo_path.as_path());
+                                let is_ancestor = active_directory
+                                    .as_path_buf()
+                                    .ancestors()
+                                    .any(|ancestor| ancestor == repo_path.as_path());
                                 if !is_ancestor {
                                     return;
                                 }
@@ -10358,18 +10361,13 @@ impl TerminalView {
 
                                 if FeatureFlag::AIContextMenuEnabled.is_enabled() {
                                     me.input.update(ctx, |input, ctx| {
-                                        input.check_and_update_ai_context_menu_disabled_state(
-                                            ctx,
-                                        );
+                                        input.check_and_update_ai_context_menu_disabled_state(ctx);
                                     });
                                 }
 
                                 me.start_lsp_server_in_active_pwd(ctx);
 
-                                me.update_repo_banner_state(
-                                    repo_path.clone(),
-                                    ctx,
-                                );
+                                me.update_repo_banner_state(repo_path.clone(), ctx);
                             } else {
                                 me.clear_git_repo_status(ctx);
                                 ctx.notify();
@@ -10394,11 +10392,7 @@ impl TerminalView {
         }
 
         self.input.update(ctx, |view, ctx| {
-            view.set_active_block_metadata(
-                block_metadata.clone(),
-                is_after_in_band_command,
-                ctx,
-            );
+            view.set_active_block_metadata(block_metadata.clone(), is_after_in_band_command, ctx);
             // Now that we've received the metadata for the active block, redraw the
             // prompt area so it's up to date.
             ctx.notify();

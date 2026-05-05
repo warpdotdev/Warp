@@ -26,8 +26,8 @@ fn block_working_directory_updated_does_not_drain_finish_senders() {
         let terminal_view_id = EntityId::new();
         let sessions = app.add_model(|_| Sessions::new_for_test());
         let (_model_events_tx, model_events_rx) = unbounded();
-        let model_event_dispatcher = app
-            .add_model(|ctx| ModelEventDispatcher::new(model_events_rx, sessions.clone(), ctx));
+        let model_event_dispatcher =
+            app.add_model(|ctx| ModelEventDispatcher::new(model_events_rx, sessions.clone(), ctx));
         let active_session = app.add_model(|ctx| {
             ActiveSession::new(sessions.clone(), model_event_dispatcher.clone(), ctx)
         });
@@ -48,7 +48,10 @@ fn block_working_directory_updated_does_not_drain_finish_senders() {
         executor.update(&mut app, |executor, _ctx| {
             executor.block_finished_senders.insert(selector, tx);
         });
-        assert_eq!(app.read(|ctx| executor.as_ref(ctx).block_finished_senders.len()), 1);
+        assert_eq!(
+            app.read(|ctx| executor.as_ref(ctx).block_finished_senders.len()),
+            1
+        );
 
         // OSC 7 update — must NOT drain or resolve the finish sender.
         model_event_dispatcher.update(&mut app, |_dispatcher, ctx| {

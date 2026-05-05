@@ -29,8 +29,7 @@ use crate::{
         block_list_element::GridType,
         event::{
             BlockCompletedEvent, BlockLatencyData, BlockMetadataReceivedEvent, BlockType,
-            BlockWorkingDirectoryUpdatedEvent, Event,
-            UserBlockCompleted,
+            BlockWorkingDirectoryUpdatedEvent, Event, UserBlockCompleted,
         },
         event_listener::ChannelEventListener,
         model::{
@@ -3228,21 +3227,22 @@ impl ansi::Handler for Block {
         // `ai/blocklist/action_model/execute/shell_command.rs`. Subscribers
         // that genuinely care about CWD changes opt in by also listening to
         // `BlockWorkingDirectoryUpdated`.
-        self.event_proxy.send_terminal_event(Event::BlockWorkingDirectoryUpdated(
-            BlockWorkingDirectoryUpdatedEvent {
-                block_metadata: self.metadata(),
-                block_index: self.block_index,
-                // Preserve the block's in-band status so listeners can keep
-                // applying the same in-band guard they apply to precmd-driven
-                // metadata updates (e.g. skipping repo-detection / chip
-                // refreshes for in-band command blocks).
-                is_for_in_band_command: self.is_for_in_band_command,
-                is_done_bootstrapping: matches!(
-                    self.bootstrap_stage,
-                    BootstrapStage::PostBootstrapPrecmd
-                ),
-            },
-        ));
+        self.event_proxy
+            .send_terminal_event(Event::BlockWorkingDirectoryUpdated(
+                BlockWorkingDirectoryUpdatedEvent {
+                    block_metadata: self.metadata(),
+                    block_index: self.block_index,
+                    // Preserve the block's in-band status so listeners can keep
+                    // applying the same in-band guard they apply to precmd-driven
+                    // metadata updates (e.g. skipping repo-detection / chip
+                    // refreshes for in-band command blocks).
+                    is_for_in_band_command: self.is_for_in_band_command,
+                    is_done_bootstrapping: matches!(
+                        self.bootstrap_stage,
+                        BootstrapStage::PostBootstrapPrecmd
+                    ),
+                },
+            ));
     }
 
     fn precmd(&mut self, data: PrecmdValue) {
