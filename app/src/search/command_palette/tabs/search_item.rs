@@ -8,7 +8,7 @@ use crate::ui_components::icons::Icon;
 use ordered_float::OrderedFloat;
 use warpui::elements::{ConstrainedBox, Container, Flex, ParentElement, Text};
 use warpui::fonts::{Properties, Weight};
-use warpui::{AppContext, Element, SingletonEntity};
+use warpui::{AppContext, Element};
 
 /// These items appear in the ctrl-tab palette only, not the main command palette.
 /// Scoring matches against queries is not supported since only ranking by recency is needed.
