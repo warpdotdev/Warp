@@ -1257,6 +1257,90 @@ impl NotebooksEditorModel {
         self.content.as_ref(app).link_url_at_offset(offset)
     }
 
+    pub fn scroll_to_markdown_anchor(
+        &mut self,
+        anchor: &str,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        let Some(range) = self.markdown_anchor_target(anchor, ctx) else {
+            return false;
+        };
+
+        self.render_state.update(ctx, |render_state, _| {
+            render_state
+                .request_autoscroll_to(AutoScrollMode::PositionOffsetInViewportCenter(range.start));
+        });
+        true
+    }
+
+    fn markdown_anchor_target(&self, anchor: &str, ctx: &AppContext) -> Option<Range<CharOffset>> {
+        let anchor = Self::normalize_markdown_anchor(anchor)?;
+        let content = self.content.as_ref(ctx);
+        let mut seen_slugs = HashMap::<String, usize>::new();
+
+        for outline in content.outline_blocks() {
+            if !matches!(
+                &outline.block_type,
+                BlockType::Text(BufferBlockStyle::Header { .. })
+            ) {
+                continue;
+            }
+
+            let heading = content
+                .text_in_range(outline.start + 1..outline.end)
+                .into_string();
+            let slug = Self::markdown_anchor_slug(&heading);
+            if slug.is_empty() {
+                continue;
+            }
+
+            let count = seen_slugs.entry(slug.clone()).or_insert(0);
+            let unique_slug = if *count == 0 {
+                slug
+            } else {
+                format!("{slug}-{count}")
+            };
+            *count += 1;
+
+            if unique_slug == anchor {
+                return Some(outline.start..outline.end);
+            }
+        }
+
+        None
+    }
+
+    fn normalize_markdown_anchor(anchor: &str) -> Option<String> {
+        let fragment = anchor.strip_prefix('#')?;
+        if fragment.is_empty() {
+            return None;
+        }
+
+        let decoded = urlencoding::decode(fragment).ok()?;
+        let slug = Self::markdown_anchor_slug(decoded.as_ref());
+        (!slug.is_empty()).then_some(slug)
+    }
+
+    fn markdown_anchor_slug(text: &str) -> String {
+        let mut slug = String::new();
+        let mut previous_hyphen = false;
+
+        for ch in text.trim().chars().flat_map(|ch| ch.to_lowercase()) {
+            if ch.is_alphanumeric() || ch == '_' {
+                slug.push(ch);
+                previous_hyphen = false;
+            } else if (ch.is_whitespace() || ch == '-') && !previous_hyphen && !slug.is_empty() {
+                slug.push('-');
+                previous_hyphen = true;
+            }
+        }
+
+        if previous_hyphen {
+            slug.pop();
+        }
+        slug
+    }
+
     /// Whether or not there's an active command block selection.
     pub fn has_command_selection(&self, ctx: &AppContext) -> bool {
         self.child_models

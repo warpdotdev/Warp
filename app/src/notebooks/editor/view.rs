@@ -1880,6 +1880,14 @@ impl RichTextEditorView {
         };
 
         if let Some(url) = url {
+            if url.starts_with('#') {
+                self.open_link = None;
+                self.model.update(ctx, |model, ctx| {
+                    model.scroll_to_markdown_anchor(&url, ctx);
+                });
+                ctx.notify();
+                return;
+            }
             // In read-only comment chips (Selectable), open the link directly on
             // click instead of showing a tooltip.
             if cmd || matches!(self.interaction_state(ctx), InteractionState::Selectable) {

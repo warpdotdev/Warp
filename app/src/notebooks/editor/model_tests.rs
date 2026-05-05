@@ -499,6 +499,68 @@ fn test_inline_markdown_double_leading_underscore_not_italic() {
 }
 
 #[test]
+fn test_markdown_anchor_target_matches_heading() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown("- [Goal](#goal)\n\n## Goal\nBody", &mut app, true);
+
+        editor.read(&app, |editor, ctx| {
+            let range = editor
+                .markdown_anchor_target("#goal", ctx)
+                .expect("Anchor should match heading");
+            let heading = editor
+                .content
+                .as_ref(ctx)
+                .text_in_range(range.start + 1..range.end)
+                .into_string();
+
+            assert_eq!(heading, "Goal");
+        });
+    })
+}
+
+#[test]
+fn test_markdown_anchor_target_normalizes_heading_text() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown("## My **Bold** Goal!\nBody", &mut app, true);
+
+        editor.read(&app, |editor, ctx| {
+            let range = editor
+                .markdown_anchor_target("#my-bold-goal", ctx)
+                .expect("Anchor should match normalized heading");
+            let heading = editor
+                .content
+                .as_ref(ctx)
+                .text_in_range(range.start + 1..range.end)
+                .into_string();
+
+            assert_eq!(heading, "My Bold Goal!");
+        });
+    })
+}
+
+#[test]
+fn test_markdown_anchor_target_handles_duplicate_headings() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown("## Goal\nFirst\n\n## Goal\nSecond", &mut app, true);
+
+        editor.read(&app, |editor, ctx| {
+            let first = editor
+                .markdown_anchor_target("#goal", ctx)
+                .expect("First anchor should match");
+            let second = editor
+                .markdown_anchor_target("#goal-1", ctx)
+                .expect("Duplicate anchor should match");
+
+            assert!(second.start > first.start);
+            assert!(editor.markdown_anchor_target("#goal-2", ctx).is_none());
+        });
+    })
+}
+
+#[test]
 fn test_cursor_bias_editing() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
