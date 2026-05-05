@@ -194,7 +194,8 @@ impl StartAgentExecutor {
             | BlocklistAIHistoryEvent::DeletedConversation { .. }
             | BlocklistAIHistoryEvent::RestoredConversations { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
-            | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. } => {}
+            | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
+            | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. } => {}
         }
     }
 

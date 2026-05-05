@@ -1616,6 +1616,7 @@ fn handle_ai_history_event(
         | BlocklistAIHistoryEvent::UpgradedTask { .. }
         | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
         | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
-        | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => (),
+        | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+        | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. } => (),
     }
 }

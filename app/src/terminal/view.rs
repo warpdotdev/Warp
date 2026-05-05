@@ -4930,6 +4930,42 @@ impl TerminalView {
             .unwrap_or(false)
     }
 
+    /// If this terminal view's agent view is currently displaying the given
+    /// child conversation, switch the agent view back to its parent
+    /// orchestrator conversation.
+    ///
+    /// Used after the user picks "Open in new pane"/"Open in new tab" from
+    /// the orchestration pill bar's 3-dot menu. The new pane/tab takes over
+    /// ownership of the child conversation, so this view should silently
+    /// revert to the orchestrator so the user is left looking at the parent
+    /// (and the pill bar's in-place pill click works again).
+    fn revert_agent_view_to_parent_if_displaying_child(
+        &mut self,
+        child_conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let active_conversation_id = self
+            .agent_view_controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .active_conversation_id();
+        if active_conversation_id != Some(child_conversation_id) {
+            return;
+        }
+        let parent_conversation_id = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&child_conversation_id)
+            .and_then(|c| c.parent_conversation_id());
+        let Some(parent_conversation_id) = parent_conversation_id else {
+            return;
+        };
+        self.enter_agent_view_for_conversation(
+            None,
+            AgentViewEntryOrigin::OrchestrationPillBar,
+            parent_conversation_id,
+            ctx,
+        );
+    }
+
     fn handle_agent_todos_popup_event(
         &mut self,
         event: &AgentTodosPopupEvent,
@@ -5454,6 +5490,46 @@ impl TerminalView {
                     pane_config.set_title(self.terminal_title.clone(), ctx);
                 });
                 self.is_using_conversation_for_pane_header_title = false;
+            }
+            BlocklistAIHistoryEvent::ConversationOwnershipTransferred {
+                conversation_id,
+                previous_terminal_view_id,
+                ..
+            } => {
+                // The conversation has moved to another terminal view. We are
+                // the previous owner (the per-view filter at the top of this
+                // function uses `previous_terminal_view_id`), so drop any
+                // rendered AI blocks and agent-view entry blocks tagged to
+                // this conversation. Otherwise the user sees a transcript
+                // split across two panes (old exchanges here, new exchanges
+                // in the new owner).
+                if *previous_terminal_view_id != self.view_id {
+                    return;
+                }
+                let view_ids_to_remove = self
+                    .rich_content_views
+                    .iter()
+                    .filter_map(|view| {
+                        let belongs_to_conversation = match view.metadata() {
+                            Some(RichContentMetadata::AIBlock(metadata)) => {
+                                metadata.conversation_id == *conversation_id
+                            }
+                            Some(RichContentMetadata::AgentViewEntry(metadata)) => {
+                                metadata.conversation_id == *conversation_id
+                            }
+                            _ => false,
+                        };
+                        belongs_to_conversation.then_some(view.view_id())
+                    })
+                    .collect_vec();
+                for view_id_to_remove in view_ids_to_remove.into_iter() {
+                    self.model
+                        .lock()
+                        .block_list_mut()
+                        .remove_rich_content(view_id_to_remove);
+                    self.rich_content_views
+                        .retain(|view| view.view_id() != view_id_to_remove);
+                }
             }
             BlocklistAIHistoryEvent::CreatedSubtask { .. }
             | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }
@@ -25570,6 +25646,7 @@ impl TypedActionView for TerminalView {
                 ctx.emit(Event::OpenChildAgentInNewPane {
                     conversation_id: *conversation_id,
                 });
+                self.revert_agent_view_to_parent_if_displaying_child(*conversation_id, ctx);
             }
             OpenChildAgentInNewTab { conversation_id } => {
                 // "Open in new tab": bubble up to the workspace, which is
@@ -25583,6 +25660,7 @@ impl TypedActionView for TerminalView {
                 ctx.emit(Event::OpenChildAgentInNewTab {
                     conversation_id: *conversation_id,
                 });
+                self.revert_agent_view_to_parent_if_displaying_child(*conversation_id, ctx);
             }
             StopAgentConversation { conversation_id } => {
                 // Cancel the ambient task only if the conversation is

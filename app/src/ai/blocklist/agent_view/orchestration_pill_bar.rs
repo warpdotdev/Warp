@@ -186,6 +186,12 @@ pub enum OrchestrationPillBarAction {
     /// hover-in delay so the details card can be rendered as an overlay.
     /// `None` clears the hovered pill (cursor left the bar).
     SetHoveredPill(Option<AIConversationId>),
+    /// Menu item: focus the existing pane/tab that already owns the
+    /// child agent's transcript instead of splitting/opening a new one.
+    /// Used when the conversation is open elsewhere; mirrors the
+    /// breadcrumb parent click's `RestoreOrNavigateToConversation`
+    /// dispatch.
+    FocusOpenedConversation(AIConversationId),
 }
 
 /// View that renders the orchestration pill bar above the agent view content.
@@ -325,29 +331,65 @@ impl OrchestrationPillBar {
             )
         };
 
-        let items = vec![
-            item(
-                "Open in new pane",
-                Icon::ArrowSplit,
-                OrchestrationPillBarAction::OpenInNewPane(conversation_id),
-            ),
-            item(
-                "Open in new tab",
-                Icon::Plus,
-                OrchestrationPillBarAction::OpenInNewTab(conversation_id),
-            ),
-            MenuItem::Separator,
-            item(
-                "Stop agent",
-                Icon::Stop,
-                OrchestrationPillBarAction::Stop(conversation_id),
-            ),
-            item(
-                "Kill agent",
-                Icon::Trash,
-                OrchestrationPillBarAction::Kill(conversation_id),
-            ),
-        ];
+        // If this child conversation is already open in a *different*
+        // terminal view — whether that's a separate pane in this tab,
+        // another tab, or another window — collapse the create-new
+        // entries into a single "Focus pane" item that routes the user to
+        // the existing owner. The conversation has a single source of
+        // truth (one terminal view renders its AI blocks; see
+        // `ConversationOwnershipTransferred` in `BlocklistAIHistoryModel`),
+        // so offering separate "Open pane" / "Open tab" entries here
+        // would imply more than one destination exists.
+        let self_terminal_view_id = self.agent_view_controller.as_ref(ctx).terminal_view_id();
+        let owning_view_id = ActiveAgentViewsModel::as_ref(ctx)
+            .terminal_view_id_for_conversation(conversation_id, ctx);
+        let is_open_elsewhere =
+            owning_view_id.is_some() && owning_view_id != Some(self_terminal_view_id);
+
+        let items = if is_open_elsewhere {
+            vec![
+                item(
+                    "Focus pane",
+                    Icon::ArrowSplit,
+                    OrchestrationPillBarAction::FocusOpenedConversation(conversation_id),
+                ),
+                MenuItem::Separator,
+                item(
+                    "Stop agent",
+                    Icon::Stop,
+                    OrchestrationPillBarAction::Stop(conversation_id),
+                ),
+                item(
+                    "Kill agent",
+                    Icon::Trash,
+                    OrchestrationPillBarAction::Kill(conversation_id),
+                ),
+            ]
+        } else {
+            vec![
+                item(
+                    "Open in new pane",
+                    Icon::ArrowSplit,
+                    OrchestrationPillBarAction::OpenInNewPane(conversation_id),
+                ),
+                item(
+                    "Open in new tab",
+                    Icon::Plus,
+                    OrchestrationPillBarAction::OpenInNewTab(conversation_id),
+                ),
+                MenuItem::Separator,
+                item(
+                    "Stop agent",
+                    Icon::Stop,
+                    OrchestrationPillBarAction::Stop(conversation_id),
+                ),
+                item(
+                    "Kill agent",
+                    Icon::Trash,
+                    OrchestrationPillBarAction::Kill(conversation_id),
+                ),
+            ]
+        };
 
         self.menu.update(ctx, |menu, ctx| {
             menu.set_items(items, ctx);
@@ -589,6 +631,43 @@ impl TypedActionView for OrchestrationPillBar {
             OrchestrationPillBarAction::SetHoveredPill(id) => {
                 self.set_hovered_pill(*id, ctx);
             }
+            OrchestrationPillBarAction::FocusOpenedConversation(id) => {
+                self.close_menu(ctx);
+                let nav_data = AgentConversationsModel::as_ref(ctx)
+                    .get_conversation(id)
+                    .and_then(|entry| match entry {
+                        ConversationOrTask::Conversation(metadata) => {
+                            Some(metadata.nav_data.clone())
+                        }
+                        ConversationOrTask::Task(_) => None,
+                    });
+                let Some(nav_data) = nav_data else {
+                    // No nav data means we don't actually know where it's
+                    // open; fall back to the in-place switch so the user
+                    // still gets *some* visible action from the click.
+                    log::warn!(
+                        "FocusOpenedConversation: no nav_data for {id:?}; falling back to switch-in-place"
+                    );
+                    ctx.dispatch_typed_action(
+                        &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
+                            TerminalAction::SwitchAgentViewToConversation {
+                                conversation_id: *id,
+                            },
+                        ),
+                    );
+                    return;
+                };
+                ctx.dispatch_typed_action(&WorkspaceAction::RestoreOrNavigateToConversation {
+                    pane_view_locator: nav_data.pane_view_locator,
+                    window_id: nav_data.window_id,
+                    conversation_id: *id,
+                    terminal_view_id: nav_data.terminal_view_id,
+                    // ActivePane mirrors the breadcrumb fallback; the
+                    // workspace handler only consults restore_layout
+                    // when the navigation tuple is incomplete or stale.
+                    restore_layout: Some(RestoreConversationLayout::ActivePane),
+                });
+            }
         }
     }
 }
@@ -633,6 +712,12 @@ impl View for OrchestrationPillBar {
         let mut mouse_states = self.mouse_states.borrow_mut();
         let mut overflow_states = self.overflow_button_mouse_states.borrow_mut();
         let menu_open_for = self.menu_open_for;
+        // Cache this view's terminal_view_id once so each pill click can
+        // cheaply check whether its target conversation is currently
+        // owned by *another* terminal view. The pill bar renders inside
+        // the orchestrator pane, so any child whose owner differs from
+        // this id has been split off into another pane/tab.
+        let self_terminal_view_id = self.agent_view_controller.as_ref(app).terminal_view_id();
         for spec in specs {
             let mouse_state = mouse_states
                 .entry(spec.conversation_id)
@@ -653,6 +738,7 @@ impl View for OrchestrationPillBar {
                 mouse_state,
                 overflow_mouse_state,
                 menu_is_open_for_this,
+                self_terminal_view_id,
                 app,
             ));
         }
@@ -1139,6 +1225,7 @@ fn render_pill(
     mouse_state: MouseStateHandle,
     overflow_mouse_state: MouseStateHandle,
     menu_is_open_for_this: bool,
+    self_terminal_view_id: warpui::EntityId,
     app: &AppContext,
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
@@ -1319,11 +1406,42 @@ fn render_pill(
         };
         ctx.dispatch_typed_action(OrchestrationPillBarAction::SetHoveredPill(payload));
     })
-    .on_click(move |ctx, _app, _| {
+    .on_click(move |ctx, app, _| {
         if is_selected {
             return;
         }
         let _ = kind;
+        // Single source of truth: if the conversation is currently owned
+        // by a *different* terminal view than this orchestrator pane
+        // (because it was split off into a separate pane or tab), the
+        // pill should focus that existing pane rather than re-render
+        // the conversation in place. We look up the owner via
+        // `ActiveAgentViewsModel` and route through
+        // `RestoreOrNavigateToConversation` (mirrors the breadcrumb
+        // parent-click path), which handles same-tab/different-tab/
+        // different-window navigation uniformly.
+        let owning_view_id = ActiveAgentViewsModel::as_ref(app)
+            .terminal_view_id_for_conversation(conversation_id, app);
+        let is_open_elsewhere =
+            owning_view_id.is_some() && owning_view_id != Some(self_terminal_view_id);
+        if is_open_elsewhere {
+            let nav_data = AgentConversationsModel::as_ref(app)
+                .get_conversation(&conversation_id)
+                .and_then(|entry| match entry {
+                    ConversationOrTask::Conversation(metadata) => Some(metadata.nav_data.clone()),
+                    ConversationOrTask::Task(_) => None,
+                });
+            if let Some(nav_data) = nav_data {
+                ctx.dispatch_typed_action(WorkspaceAction::RestoreOrNavigateToConversation {
+                    pane_view_locator: nav_data.pane_view_locator,
+                    window_id: nav_data.window_id,
+                    conversation_id,
+                    terminal_view_id: nav_data.terminal_view_id,
+                    restore_layout: Some(RestoreConversationLayout::ActivePane),
+                });
+                return;
+            }
+        }
         // Pinned pills focus the existing pane/tab that already hosts this
         // child agent (via `RevealChildAgent`, which the pane group treats
         // as a request to show + focus an existing child pane). Unpinned

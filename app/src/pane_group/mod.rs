@@ -4322,6 +4322,12 @@ impl PaneGroup {
     /// Definitively close the pane. This does not go through the undo close check where we might hide the pane instead of
     /// discarding it.
     fn discard_pane(&mut self, pane_id: PaneId, ctx: &mut ViewContext<Self>) {
+        // Same ownership-transfer rationale as `close_pane`: a hard discard
+        // (e.g. via the undo stack expiring) also needs to relinquish any
+        // child agent conversations back to their parents so the
+        // orchestrator's pill bar keeps working in-place.
+        self.transfer_child_agent_conversations_to_parents_on_close(pane_id, ctx);
+
         if let Some(terminal_view) = self.terminal_view_from_pane_id(pane_id, ctx) {
             let terminal_view_id = terminal_view.id();
 
@@ -4335,6 +4341,47 @@ impl PaneGroup {
         }
 
         self.cleanup_closed_pane(pane_id, ctx);
+    }
+
+    /// For each child agent conversation currently live in the closing
+    /// pane's terminal view, transfer ownership back to whichever pane owns
+    /// its parent (orchestrator) conversation. No-op for non-child
+    /// conversations and for child conversations whose parent has no
+    /// resolvable owning view.
+    fn transfer_child_agent_conversations_to_parents_on_close(
+        &mut self,
+        pane_id: PaneId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(terminal_view) = self.terminal_view_from_pane_id(pane_id, ctx) else {
+            return;
+        };
+        let closing_view_id = terminal_view.id();
+
+        let history_handle = BlocklistAIHistoryModel::handle(ctx);
+        let transfers: Vec<(AIConversationId, EntityId)> = history_handle
+            .as_ref(ctx)
+            .all_live_conversations_for_terminal_view(closing_view_id)
+            .filter_map(|conversation| {
+                let parent_id = conversation.parent_conversation_id()?;
+                let parent_owner = history_handle
+                    .as_ref(ctx)
+                    .terminal_view_id_for_conversation(&parent_id)?;
+                if parent_owner == closing_view_id {
+                    return None;
+                }
+                Some((conversation.id(), parent_owner))
+            })
+            .collect();
+
+        if transfers.is_empty() {
+            return;
+        }
+        history_handle.update(ctx, |history_model, ctx| {
+            for (child_id, parent_owner) in transfers {
+                history_model.set_active_conversation_id(child_id, parent_owner, ctx);
+            }
+        });
     }
 
     /// If this pane was the active session and or focused pane, focuses the previous session and pane.
@@ -4424,6 +4471,15 @@ impl PaneGroup {
         if !self.pane_contents.contains_key(&pane_id) {
             return;
         }
+
+        // Before any close path runs, transfer ownership of any child agent
+        // conversations live in this view back to the pane that owns each
+        // child's parent conversation. This keeps the orchestrator pane's
+        // orchestration pill bar in-place click working after the split-off
+        // pane that took over the child's transcript closes. Safe to run even
+        // for hide-for-undo: re-opening the closed pane would re-restore the
+        // conversation into the (visible) view via the normal load path.
+        self.transfer_child_agent_conversations_to_parents_on_close(pane_id, ctx);
 
         // If this pane is a child agent, re-hide it instead of closing it.
         if self.is_child_agent_pane(pane_id) {

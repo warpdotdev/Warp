@@ -223,7 +223,8 @@ impl OrchestrationEventStreamer {
             | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }
             | BlocklistAIHistoryEvent::SplitConversation { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
-            | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. } => {}
+            | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
+            | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. } => {}
             BlocklistAIHistoryEvent::RestoredConversations {
                 conversation_ids, ..
             } => {
