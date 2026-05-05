@@ -1,3 +1,11 @@
+#[allow(dead_code)]
+pub mod entry;
+
+pub use entry::{
+    AgentConversationEntry, AgentConversationEntryId, AgentConversationNavigationSubject,
+    AgentConversationProvenance,
+};
+
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
@@ -443,14 +451,6 @@ pub struct ConversationMetadata {
     pub nav_data: ConversationNavigationData,
 }
 
-#[allow(dead_code)]
-pub mod entry;
-
-pub use entry::{
-    AgentConversationEntry, AgentConversationEntryId, AgentConversationNavigationSubject,
-    AgentConversationProvenance,
-};
-
 /// ConversationOrTask is a wrapper around either conversation
 /// or task data stored in the `AgentConversationsModel`.
 ///
@@ -586,13 +586,9 @@ impl ConversationOrTask<'_> {
     /// Returns the session ID for tasks, if we have one.
     pub fn session_id(&self) -> Option<SessionId> {
         match self {
-            ConversationOrTask::Task(task) => task.session_id.as_deref().and_then(|s| {
-                let session_id = s.parse::<SessionId>();
-                if let Err(ref e) = session_id {
-                    log::warn!("Failed to parse shared session ID: {e}");
-                }
-                session_id.ok()
-            }),
+            ConversationOrTask::Task(task) => {
+                task.session_id.as_deref().and_then(entry::parse_session_id)
+            }
             ConversationOrTask::Conversation(_) => None,
         }
     }
@@ -1619,7 +1615,7 @@ impl AgentConversationsModel {
                 .tasks
                 .get(&task_id)
                 .and_then(AmbientAgentTask::active_execution_session_id)
-                .and_then(Self::parse_session_id)
+                .and_then(entry::parse_session_id)
             {
                 return Some(WorkspaceAction::OpenAmbientAgentSession {
                     session_id,
@@ -1692,16 +1688,6 @@ impl AgentConversationsModel {
                 .is_some_and(|conversation_id| conversation_id == server_token.as_str())
                 .then_some(task.task_id)
         })
-    }
-
-    fn parse_session_id(session_id: &str) -> Option<SessionId> {
-        match session_id.parse::<SessionId>() {
-            Ok(session_id) => Some(session_id),
-            Err(e) => {
-                log::warn!("Failed to parse shared session ID: {e}");
-                None
-            }
-        }
     }
 
     fn handle_history_event(

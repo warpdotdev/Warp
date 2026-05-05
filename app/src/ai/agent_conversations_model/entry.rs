@@ -1,4 +1,4 @@
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
+use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskId};
@@ -25,6 +25,17 @@ use super::{
 pub enum AgentConversationEntryId {
     AmbientRun(AmbientAgentTaskId),
     Conversation(AIConversationId),
+}
+
+impl From<ConversationOrTaskId> for AgentConversationEntryId {
+    fn from(id: ConversationOrTaskId) -> Self {
+        match id {
+            ConversationOrTaskId::ConversationId(conversation_id) => {
+                AgentConversationEntryId::Conversation(conversation_id)
+            }
+            ConversationOrTaskId::TaskId(task_id) => AgentConversationEntryId::AmbientRun(task_id),
+        }
+    }
 }
 
 /// Navigation request input for resolving an entry or server-token handle at action time.
@@ -437,7 +448,7 @@ fn server_conversation_token_for_conversation(
         .or_else(|| nav_data.and_then(|nav_data| nav_data.server_conversation_token.clone()))
 }
 
-fn parse_session_id(session_id: &str) -> Option<SessionId> {
+pub(super) fn parse_session_id(session_id: &str) -> Option<SessionId> {
     match session_id.parse::<SessionId>() {
         Ok(session_id) => Some(session_id),
         Err(e) => {

@@ -198,23 +198,6 @@ pub fn register_conversation_list_view_bindings(app: &mut AppContext) {
     ]);
 }
 
-fn entry_id_from_conversation_or_task_id(id: ConversationOrTaskId) -> AgentConversationEntryId {
-    match id {
-        ConversationOrTaskId::ConversationId(conversation_id) => {
-            AgentConversationEntryId::Conversation(conversation_id)
-        }
-        ConversationOrTaskId::TaskId(task_id) => AgentConversationEntryId::AmbientRun(task_id),
-    }
-}
-
-fn conversation_or_task_id_from_entry_id(id: AgentConversationEntryId) -> ConversationOrTaskId {
-    match id {
-        AgentConversationEntryId::Conversation(conversation_id) => {
-            ConversationOrTaskId::ConversationId(conversation_id)
-        }
-        AgentConversationEntryId::AmbientRun(task_id) => ConversationOrTaskId::TaskId(task_id),
-    }
-}
 impl ConversationListView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let view_model = ctx.add_model(ConversationListViewModel::new);
@@ -316,7 +299,7 @@ impl ConversationListView {
                 active_views_model.get_all_open_conversation_ids(ctx)
             }
             .into_iter()
-            .map(entry_id_from_conversation_or_task_id)
+            .map(AgentConversationEntryId::from)
             .collect();
 
         let focused_new_conversation =
@@ -361,7 +344,7 @@ impl ConversationListView {
             let get_time = |item: &ListItem| match item {
                 ListItem::Conversation(entry) => {
                     let entry_time = active_views_model
-                        .get_last_opened_time(&conversation_or_task_id_from_entry_id(entry.id));
+                        .get_last_opened_time(&ConversationOrTaskId::from(entry.id));
                     let local_time = model
                         .get_item_by_id(&entry.id, ctx)
                         .and_then(|item| item.identity.local_conversation_id)
@@ -448,7 +431,7 @@ impl ConversationListView {
         let focused_conversation =
             ActiveAgentViewsModel::as_ref(ctx).get_focused_conversation(ctx.window_id());
         self.selected_index = focused_conversation
-            .map(entry_id_from_conversation_or_task_id)
+            .map(AgentConversationEntryId::from)
             .and_then(|id| self.get_index_of_conversation_id(id));
 
         if let Some(index) = self.selected_index {
@@ -1022,6 +1005,8 @@ impl TypedActionView for ConversationListView {
                 else {
                     return;
                 };
+
+                // Set the share dialog target and open it
                 self.share_dialog_open_for = Some(*conversation_id);
                 self.sharing_dialog.update(ctx, |dialog, ctx| {
                     dialog.set_target(
@@ -1219,7 +1204,7 @@ impl View for ConversationListView {
             let overflow_menu_state = self.overflow_menu_state;
             let focused_conversation = ActiveAgentViewsModel::as_ref(app)
                 .get_focused_conversation(self.window_id)
-                .map(entry_id_from_conversation_or_task_id);
+                .map(AgentConversationEntryId::from);
             let sharing_dialog = self.sharing_dialog.clone();
             let share_dialog_open_for = self.share_dialog_open_for;
             let list_position_id = self.get_position_id();
