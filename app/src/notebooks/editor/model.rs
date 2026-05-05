@@ -1,5 +1,11 @@
 use base64::{prelude::BASE64_STANDARD, Engine as _};
-use std::{any::Any, borrow::Cow, collections::HashMap, ops::Range, time::Duration};
+use std::{
+    any::Any,
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    ops::Range,
+    time::Duration,
+};
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -1277,6 +1283,7 @@ impl NotebooksEditorModel {
         let anchor = Self::normalize_markdown_anchor(anchor)?;
         let content = self.content.as_ref(ctx);
         let mut seen_slugs = HashMap::<String, usize>::new();
+        let mut used_slugs = HashSet::<String>::new();
 
         for outline in content.outline_blocks() {
             if !matches!(
@@ -1294,13 +1301,8 @@ impl NotebooksEditorModel {
                 continue;
             }
 
-            let count = seen_slugs.entry(slug.clone()).or_insert(0);
-            let unique_slug = if *count == 0 {
-                slug
-            } else {
-                format!("{slug}-{count}")
-            };
-            *count += 1;
+            let unique_slug =
+                Self::unique_markdown_anchor_slug(&slug, &mut seen_slugs, &mut used_slugs);
 
             if unique_slug == anchor {
                 return Some(outline.start..outline.end);
@@ -1308,6 +1310,28 @@ impl NotebooksEditorModel {
         }
 
         None
+    }
+
+    fn unique_markdown_anchor_slug(
+        slug: &str,
+        seen_slugs: &mut HashMap<String, usize>,
+        used_slugs: &mut HashSet<String>,
+    ) -> String {
+        let suffix = seen_slugs.entry(slug.to_string()).or_insert(0);
+        let mut candidate = if *suffix == 0 {
+            slug.to_string()
+        } else {
+            format!("{slug}-{suffix}")
+        };
+
+        while used_slugs.contains(&candidate) {
+            *suffix += 1;
+            candidate = format!("{slug}-{suffix}");
+        }
+
+        *suffix += 1;
+        used_slugs.insert(candidate.clone());
+        candidate
     }
 
     fn normalize_markdown_anchor(anchor: &str) -> Option<String> {

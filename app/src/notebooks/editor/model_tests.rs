@@ -561,6 +561,29 @@ fn test_markdown_anchor_target_handles_duplicate_headings() {
 }
 
 #[test]
+fn test_markdown_anchor_target_avoids_slug_collisions() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown(
+            "## Goal\nFirst\n\n## Goal\nSecond\n\n## Goal-1\nNatural suffix",
+            &mut app,
+            true,
+        );
+
+        editor.read(&app, |editor, ctx| {
+            let duplicate = editor
+                .markdown_anchor_target("#goal-1", ctx)
+                .expect("Duplicate anchor should match");
+            let natural_suffix = editor
+                .markdown_anchor_target("#goal-1-1", ctx)
+                .expect("Colliding natural suffix should remain reachable");
+
+            assert!(natural_suffix.start > duplicate.start);
+        });
+    })
+}
+
+#[test]
 fn test_cursor_bias_editing() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
