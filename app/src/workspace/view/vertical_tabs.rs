@@ -3674,8 +3674,18 @@ fn render_summary_pane_kind_icons(
             render_summary_pane_kind_icon_circle(kind, VERTICAL_TABS_ICON_SIZE, appearance)
         }
         SummaryPaneKindIcons::Pair { primary, secondary } => {
-            // The secondary icon sits at the BR of the primary at roughly badge
+            // The secondary icon sits at the corner of the primary at roughly badge
             // proportions, with a small cutout ring separating it from the primary.
+            //
+            // Corner choice (#9868 / #10179): when the primary is an agent kind, the
+            // bottom-right slot is already used by the status badge that
+            // `render_icon_with_status` paints. Placing the secondary at BR there
+            // would cover the badge — defeating the whole purpose of #9868. So we
+            // shift the secondary to the top-right corner whenever the primary
+            // produces a status-aware variant. Non-agent primary kinds keep the
+            // existing BR placement (no badge to occlude).
+            let primary_has_status_badge =
+                summary_pane_kind_to_status_variant(&primary).is_some();
             let primary_total = VERTICAL_TABS_ICON_SIZE;
             let secondary_total = VERTICAL_TABS_ICON_SIZE * 0.5;
             let ring_padding = secondary_total * 0.1;
@@ -3698,6 +3708,13 @@ fn render_summary_pane_kind_icons(
                 + secondary_radius
                 - primary_total / 2.;
 
+            let (parent_anchor, child_anchor) = if primary_has_status_badge {
+                // Top-right: leaves BR clear for the status badge.
+                (ParentAnchor::TopRight, ChildAnchor::TopRight)
+            } else {
+                (ParentAnchor::BottomRight, ChildAnchor::BottomRight)
+            };
+
             let mut stack = Stack::new().with_child(
                 ConstrainedBox::new(primary_icon)
                     .with_width(primary_total)
@@ -3709,8 +3726,8 @@ fn render_summary_pane_kind_icons(
                 OffsetPositioning::offset_from_parent(
                     vec2f(secondary_corner_offset, secondary_corner_offset),
                     ParentOffsetBounds::Unbounded,
-                    ParentAnchor::BottomRight,
-                    ChildAnchor::BottomRight,
+                    parent_anchor,
+                    child_anchor,
                 ),
             );
             ConstrainedBox::new(stack.finish())

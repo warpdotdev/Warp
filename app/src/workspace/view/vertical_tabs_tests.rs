@@ -234,6 +234,64 @@ fn summary_view_returns_none_for_non_agent_kinds() {
     assert!(summary_pane_kind_to_status_variant(&SummaryPaneKind::Settings).is_none());
 }
 
+// Regression test for #10179: when the primary kind in a Pair has a status
+// badge (i.e., is an agent), the secondary icon must be placed at TR not BR
+// — otherwise the BR-anchored status badge gets occluded by the secondary.
+//
+// The placement decision in render_summary_pane_kind_icons is gated on
+// `summary_pane_kind_to_status_variant(primary).is_some()`. This test pins
+// the contract that decision-flag depends on, so a future refactor that
+// changes which kinds report a badge automatically updates the layout
+// behavior in lockstep.
+#[test]
+fn pair_icon_placement_avoids_badge_for_agent_primary() {
+    // Every agent kind (Oz/CLI, ambient/non-ambient, with or without status)
+    // routes through the status-aware path now, so the pair-icon layout
+    // must move the secondary to TR for all of them.
+    for kind in [
+        SummaryPaneKind::OzAgent {
+            is_ambient: true,
+            status: Some(ConversationStatus::InProgress),
+        },
+        SummaryPaneKind::OzAgent {
+            is_ambient: false,
+            status: None,
+        },
+        SummaryPaneKind::CLIAgent {
+            agent: CLIAgent::Claude,
+            is_ambient: true,
+            status: Some(ConversationStatus::Success),
+        },
+        SummaryPaneKind::CLIAgent {
+            agent: CLIAgent::Claude,
+            is_ambient: false,
+            status: None,
+        },
+    ] {
+        assert!(
+            summary_pane_kind_to_status_variant(&kind).is_some(),
+            "agent kind must produce a status-aware variant; pair-icon \
+             placement relies on this to move the secondary to TR and \
+             avoid covering the BR-anchored status badge"
+        );
+    }
+
+    // Non-agent primaries don't paint a badge, so the secondary takes BR
+    // (existing layout, unchanged by #10179).
+    for kind in [
+        SummaryPaneKind::Terminal,
+        code_summary_kind("main.rs"),
+        SummaryPaneKind::Notebook { is_plan: false },
+        SummaryPaneKind::Settings,
+    ] {
+        assert!(
+            summary_pane_kind_to_status_variant(&kind).is_none(),
+            "non-agent kind must NOT produce a status-aware variant; \
+             pair-icon placement keeps the secondary at BR for these"
+        );
+    }
+}
+
 #[test]
 fn summary_pane_kind_icons_dedup_ignores_status() {
     // Two Oz agents with different statuses still collapse to a single icon
