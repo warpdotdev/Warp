@@ -207,6 +207,97 @@ async fn finish_highlighting(
 }
 
 #[test]
+fn markdown_heading_slug_normalizes_heading_text() {
+    assert_eq!(super::markdown_heading_slug("Goal"), "goal");
+    assert_eq!(
+        super::markdown_heading_slug("  Goal & Launch Plan!  "),
+        "goal-launch-plan"
+    );
+    assert_eq!(
+        super::markdown_heading_slug("Repeated---Heading"),
+        "repeated-heading"
+    );
+}
+
+#[test]
+fn markdown_anchor_slug_from_url_only_accepts_same_document_anchors() {
+    assert_eq!(
+        super::markdown_anchor_slug_from_url("#Goal%20%26%20Launch%20Plan!").as_deref(),
+        Some("goal-launch-plan")
+    );
+    assert_eq!(super::markdown_anchor_slug_from_url("#").as_deref(), None);
+    assert_eq!(
+        super::markdown_anchor_slug_from_url("https://warp.dev/#goal").as_deref(),
+        None
+    );
+}
+
+#[test]
+fn markdown_anchor_offset_resolves_headings_and_duplicates() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let model = model_from_markdown(
+            "# Goal\n\n## Goal & Launch Plan!\n\n## Goal 1\n\n## Goal\n\nParagraph",
+            &mut app,
+            true,
+        );
+
+        let first_goal = model
+            .read(&app, |model, ctx| model.markdown_anchor_offset("goal", ctx))
+            .expect("first heading should resolve");
+        let launch_plan = model
+            .read(&app, |model, ctx| {
+                model.markdown_anchor_offset("goal-launch-plan", ctx)
+            })
+            .expect("punctuated heading should resolve");
+        let goal_one = model
+            .read(&app, |model, ctx| {
+                model.markdown_anchor_offset("goal-1", ctx)
+            })
+            .expect("colliding heading slug should resolve");
+        let second_goal = model
+            .read(&app, |model, ctx| {
+                model.markdown_anchor_offset("goal-2", ctx)
+            })
+            .expect("duplicate heading should skip colliding slug");
+
+        assert!(first_goal < launch_plan);
+        assert!(launch_plan < goal_one);
+        assert!(goal_one < second_goal);
+        assert_eq!(
+            model.read(&app, |model, ctx| model
+                .markdown_anchor_offset("missing", ctx)),
+            None
+        );
+    });
+}
+
+#[test]
+fn jump_to_markdown_anchor_selects_heading_offset() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let model = model_from_markdown("# Intro\n\n## Goal\n", &mut app, true);
+        let goal_offset = model
+            .read(&app, |model, ctx| model.markdown_anchor_offset("goal", ctx))
+            .expect("heading should resolve");
+
+        let jumped = model
+            .update(&mut app, |model, ctx| {
+                model.jump_to_markdown_anchor("goal", ctx)
+            })
+            .is_some();
+
+        assert!(jumped);
+        assert_eq!(
+            model.read(&app, |model, ctx| {
+                model.selection_model.as_ref(ctx).first_selection_head()
+            }),
+            goal_offset
+        );
+    });
+}
+
+#[test]
 fn test_edit_command_submodel() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);

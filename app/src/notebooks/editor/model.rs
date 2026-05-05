@@ -1,5 +1,11 @@
 use base64::{prelude::BASE64_STANDARD, Engine as _};
-use std::{any::Any, borrow::Cow, collections::HashMap, ops::Range, time::Duration};
+use std::{
+    any::Any,
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    ops::Range,
+    time::Duration,
+};
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -29,11 +35,6 @@ use string_offset::CharOffset;
 use warp_core::features::FeatureFlag;
 use warp_core::semantic_selection::SemanticSelection;
 use warp_editor::{
-    content::{buffer::ShouldAutoscroll, selection_model::BufferSelectionModel},
-    model::BufferUpdateWrapper,
-    render::model::{BlockItem, StyleUpdateAction},
-};
-use warp_editor::{
     content::{
         buffer::{
             AutoScrollBehavior, Buffer, BufferEditAction, BufferEvent, BufferSelectAction,
@@ -41,7 +42,8 @@ use warp_editor::{
         },
         text::{
             BlockHeaderSize, BlockType, BufferBlockItem, BufferBlockStyle, BufferTextStyle,
-            CodeBlockType, IndentBehavior, IndentUnit, TextStyles, TextStylesWithMetadata,
+            CodeBlockType, IndentBehavior, IndentUnit, LineCount, TextStyles,
+            TextStylesWithMetadata,
         },
     },
     model::{CoreEditorModel, RichTextEditorModel},
@@ -49,7 +51,16 @@ use warp_editor::{
     search::Searcher,
     selection::{SelectionMode, SelectionModel, TextDirection, TextUnit},
 };
+use warp_editor::{
+    content::{
+        buffer::{ShouldAutoscroll, ToBufferCharOffset},
+        selection_model::BufferSelectionModel,
+    },
+    model::BufferUpdateWrapper,
+    render::model::{BlockItem, StyleUpdateAction},
+};
 use warpui::elements::ListIndentLevel;
+use warpui::{text::point::Point, units::Pixels};
 
 use super::{
     super::telemetry::SelectionMode as TelemetrySelectionMode, embedding_model::NotebookEmbed,
@@ -1257,6 +1268,58 @@ impl NotebooksEditorModel {
         self.content.as_ref(app).link_url_at_offset(offset)
     }
 
+    pub fn markdown_anchor_offset(
+        &self,
+        anchor_slug: &str,
+        app: &AppContext,
+    ) -> Option<CharOffset> {
+        let content = self.content.as_ref(app);
+        let mut generated_slugs = HashSet::new();
+
+        for row in 0..=content.max_point().row {
+            let line_start = Point::new(row, 0).to_buffer_char_offset(content);
+            if !matches!(
+                content.block_type_at_point(line_start),
+                BlockType::Text(BufferBlockStyle::Header { .. })
+            ) {
+                continue;
+            }
+
+            let line_end = content.line_end(LineCount::from(row as usize));
+            let heading_text = content.text_in_range(line_start..line_end).to_string();
+            let base_slug = markdown_heading_slug(&heading_text);
+            if base_slug.is_empty() {
+                continue;
+            }
+
+            let mut heading_slug = base_slug.clone();
+            let mut suffix = 1;
+            while !generated_slugs.insert(heading_slug.clone()) {
+                heading_slug = format!("{base_slug}-{suffix}");
+                suffix += 1;
+            }
+
+            if heading_slug == anchor_slug {
+                return Some(line_start);
+            }
+        }
+
+        None
+    }
+
+    pub fn jump_to_markdown_anchor(
+        &mut self,
+        anchor_slug: &str,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<bool> {
+        let offset = self.markdown_anchor_offset(anchor_slug, ctx)?;
+        let had_command_selection = self.select_at(offset, false, ctx);
+        self.render_state.update(ctx, |render_state, _| {
+            render_state.request_autoscroll_to_exact_vertical(offset, Pixels::zero());
+        });
+        Some(had_command_selection)
+    }
+
     /// Whether or not there's an active command block selection.
     pub fn has_command_selection(&self, ctx: &AppContext) -> bool {
         self.child_models
@@ -2161,6 +2224,34 @@ fn is_valid_url(content: &str) -> Option<String> {
         Ok(_) => Some(content.to_string()),
         Err(_) => None,
     }
+}
+
+pub(super) fn markdown_anchor_slug_from_url(url: &str) -> Option<String> {
+    let anchor = url.strip_prefix('#')?;
+    let decoded = urlencoding::decode(anchor).ok()?;
+    let slug = markdown_heading_slug(decoded.as_ref());
+    (!slug.is_empty()).then_some(slug)
+}
+
+fn markdown_heading_slug(text: &str) -> String {
+    let mut slug = String::new();
+    let mut pending_hyphen = false;
+
+    for char in text.trim().chars() {
+        if char.is_alphanumeric() {
+            if pending_hyphen && !slug.is_empty() {
+                slug.push('-');
+            }
+            for lower in char.to_lowercase() {
+                slug.push(lower);
+            }
+            pending_hyphen = false;
+        } else if char.is_whitespace() || char == '-' {
+            pending_hyphen = true;
+        }
+    }
+
+    slug
 }
 
 fn notebook_tab_indentation(block_style: &BufferBlockStyle, shift: bool) -> IndentBehavior {
