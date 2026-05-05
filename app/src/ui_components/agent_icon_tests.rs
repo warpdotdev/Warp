@@ -4,7 +4,8 @@
 //! the same [`IconWithStatusVariant`]. Surfaces today are:
 //! - Terminal view (vertical tabs + pane header) via
 //!   [`super::agent_icon_variant_from_terminal_inputs`]
-//! - Task cards (conversation list) via [`super::agent_icon_variant_for_task`]
+//! - Run cards (conversation list, agent management view) via
+//!   [`super::agent_icon_variant_for_run`]
 //! - Notification mailbox — exercised in `notifications/item_tests.rs`
 //!
 //! Adding a new canonical state is a one-enum-variant + one `expected` arm + one `*_inputs`
@@ -12,7 +13,7 @@
 use warp_cli::agent::Harness;
 
 use super::{
-    agent_icon_variant_for_task, agent_icon_variant_from_terminal_inputs, CLISessionInputs,
+    agent_icon_variant_for_run, agent_icon_variant_from_terminal_inputs, CLISessionInputs,
     TerminalIconInputs,
 };
 use crate::ai::agent::conversation::ConversationStatus;
@@ -71,6 +72,11 @@ enum CanonicalRunState {
     CloudClaudePreDispatch,
     /// Cloud Claude harness selected, dispatch in flight (status = InProgress, no session).
     CloudClaudeInProgress,
+    /// Viewing a finished cloud Codex transcript whose VM has shut down: no live CLI session,
+    /// no live AmbientAgentViewModel harness selection, but the conversation's server metadata
+    /// reports a Codex harness and an ambient task id. Tabs/headers must still render the
+    /// Codex brand circle with the cloud-lobe overlay so the transcript reads as cloud Codex.
+    ViewingCloudCodexTranscript,
     /// Local Claude CLI session with a plugin listener (rich status), in-progress.
     LocalClaudePluginInProgress,
     /// Local Claude CLI session with a plugin listener (rich status), blocked.
@@ -88,6 +94,7 @@ impl CanonicalRunState {
             CloudOzInProgress,
             CloudClaudePreDispatch,
             CloudClaudeInProgress,
+            ViewingCloudCodexTranscript,
             LocalClaudePluginInProgress,
             LocalClaudePluginBlocked,
             LocalClaudeCommandDetected,
@@ -124,6 +131,12 @@ impl CanonicalRunState {
                 status: Some(ConversationStatus::InProgress),
                 is_ambient: true,
             }),
+            ViewingCloudCodexTranscript => Some(AgentIconFields {
+                is_cli: true,
+                cli_agent: Some(CLIAgent::Codex),
+                status: Some(ConversationStatus::Success),
+                is_ambient: true,
+            }),
             LocalClaudePluginInProgress => Some(AgentIconFields {
                 is_cli: true,
                 cli_agent: Some(CLIAgent::Claude),
@@ -154,37 +167,47 @@ impl CanonicalRunState {
             PlainTerminal => TerminalIconInputs {
                 is_ambient: false,
                 cli_session: None,
-                ambient_selected_third_party_cli_agent: None,
+                selected_third_party_cli_agent: None,
                 selected_conversation_status: None,
                 has_selected_conversation: false,
             },
             LocalOzInProgress => TerminalIconInputs {
                 is_ambient: false,
                 cli_session: None,
-                ambient_selected_third_party_cli_agent: None,
+                selected_third_party_cli_agent: None,
                 selected_conversation_status: Some(ConversationStatus::InProgress),
                 has_selected_conversation: true,
             },
             CloudOzInProgress => TerminalIconInputs {
                 is_ambient: true,
                 cli_session: None,
-                ambient_selected_third_party_cli_agent: None,
+                selected_third_party_cli_agent: None,
                 selected_conversation_status: Some(ConversationStatus::InProgress),
                 has_selected_conversation: false,
             },
             CloudClaudePreDispatch => TerminalIconInputs {
                 is_ambient: true,
                 cli_session: None,
-                ambient_selected_third_party_cli_agent: Some(CLIAgent::Claude),
+                selected_third_party_cli_agent: Some(CLIAgent::Claude),
                 selected_conversation_status: None,
                 has_selected_conversation: false,
             },
             CloudClaudeInProgress => TerminalIconInputs {
                 is_ambient: true,
                 cli_session: None,
-                ambient_selected_third_party_cli_agent: Some(CLIAgent::Claude),
+                selected_third_party_cli_agent: Some(CLIAgent::Claude),
                 selected_conversation_status: Some(ConversationStatus::InProgress),
                 has_selected_conversation: false,
+            },
+            ViewingCloudCodexTranscript => TerminalIconInputs {
+                // VM has shut down: the live ambient model is gone, so the caller resolves
+                // `is_ambient` and the third-party CLI agent from the conversation's server
+                // metadata. The waterfall sees the same shape as a live cloud Codex run.
+                is_ambient: true,
+                cli_session: None,
+                selected_third_party_cli_agent: Some(CLIAgent::Codex),
+                selected_conversation_status: Some(ConversationStatus::Success),
+                has_selected_conversation: true,
             },
             LocalClaudePluginInProgress => TerminalIconInputs {
                 is_ambient: false,
@@ -194,7 +217,7 @@ impl CanonicalRunState {
                     status: ConversationStatus::InProgress,
                     supports_rich_status: true,
                 }),
-                ambient_selected_third_party_cli_agent: None,
+                selected_third_party_cli_agent: None,
                 selected_conversation_status: None,
                 has_selected_conversation: false,
             },
@@ -208,7 +231,7 @@ impl CanonicalRunState {
                     },
                     supports_rich_status: true,
                 }),
-                ambient_selected_third_party_cli_agent: None,
+                selected_third_party_cli_agent: None,
                 selected_conversation_status: None,
                 has_selected_conversation: false,
             },
@@ -220,21 +243,24 @@ impl CanonicalRunState {
                     status: ConversationStatus::InProgress,
                     supports_rich_status: false,
                 }),
-                ambient_selected_third_party_cli_agent: None,
+                selected_third_party_cli_agent: None,
                 selected_conversation_status: None,
                 has_selected_conversation: false,
             },
         }
     }
 
-    /// Task-card inputs for this state, if it can surface as a task card.
+    /// Run-card inputs for this state, if it can surface as a run card.
     /// Cards only exist for cloud/ambient runs; local states return `None`.
-    fn task_inputs(&self) -> Option<(Harness, ConversationStatus)> {
+    fn run_inputs(&self) -> Option<(Harness, ConversationStatus, bool)> {
         use CanonicalRunState::*;
         match self {
-            CloudOzInProgress => Some((Harness::Oz, ConversationStatus::InProgress)),
+            CloudOzInProgress => Some((Harness::Oz, ConversationStatus::InProgress, true)),
             CloudClaudePreDispatch | CloudClaudeInProgress => {
-                Some((Harness::Claude, ConversationStatus::InProgress))
+                Some((Harness::Claude, ConversationStatus::InProgress, true))
+            }
+            ViewingCloudCodexTranscript => {
+                Some((Harness::Codex, ConversationStatus::Success, true))
             }
             PlainTerminal
             | LocalOzInProgress
@@ -260,17 +286,17 @@ fn every_canonical_state_produces_consistent_icon_across_surfaces() {
             "terminal surface disagreed for {state:?}"
         );
 
-        if let Some((harness, status)) = state.task_inputs() {
-            let task_variant = agent_icon_variant_for_task(harness, status.clone());
-            let task_actual = AgentIconFields::from_variant(&task_variant);
-            // Task cards always populate status (they derive it from `ConversationOrTask::status`).
-            let expected_for_task = expected.clone().map(|mut fields| {
+        if let Some((harness, status, is_ambient)) = state.run_inputs() {
+            let run_variant = agent_icon_variant_for_run(harness, status.clone(), is_ambient);
+            let run_actual = AgentIconFields::from_variant(&run_variant);
+            // Run cards always populate status (they derive it from `ConversationOrTask::status`).
+            let expected_for_run = expected.clone().map(|mut fields| {
                 fields.status = Some(status);
                 fields
             });
             assert_eq!(
-                task_actual, expected_for_task,
-                "task surface disagreed for {state:?}"
+                run_actual, expected_for_run,
+                "run-card surface disagreed for {state:?}"
             );
         }
     }
@@ -312,16 +338,16 @@ fn cli_agent_from_harness_maps_known_harnesses() {
 }
 
 #[test]
-fn task_with_oz_or_unknown_harness_renders_as_oz() {
+fn run_card_with_oz_or_unknown_harness_renders_as_oz() {
     // Oz harness explicitly: local Oz is the spec-defined fallback.
-    let variant = agent_icon_variant_for_task(Harness::Oz, ConversationStatus::Success);
+    let variant = agent_icon_variant_for_run(Harness::Oz, ConversationStatus::Success, true);
     let fields = AgentIconFields::from_variant(&variant).unwrap();
     assert!(!fields.is_cli);
     assert!(fields.is_ambient);
 
     // Unknown harness (e.g. server surfaced a future variant): also falls back to Oz so we
     // don't render an unbranded gray circle.
-    let variant = agent_icon_variant_for_task(Harness::Unknown, ConversationStatus::Success);
+    let variant = agent_icon_variant_for_run(Harness::Unknown, ConversationStatus::Success, true);
     let fields = AgentIconFields::from_variant(&variant).unwrap();
     assert!(!fields.is_cli);
     assert!(fields.is_ambient);

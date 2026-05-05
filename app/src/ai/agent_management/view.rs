@@ -1837,7 +1837,7 @@ impl AgentManagementView {
         }
 
         if FeatureFlag::AgentHarness.is_enabled() {
-            if let Some(harness) = card_data.harness() {
+            if let Some(harness) = card_data.harness(app) {
                 metadata_parts.push(format!(
                     "Harness: {}",
                     harness_display::display_name(harness)

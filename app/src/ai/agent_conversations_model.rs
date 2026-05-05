@@ -607,7 +607,7 @@ impl ConversationOrTask<'_> {
     }
 
     /// Resolve the effective execution harness for this run.
-    pub fn harness(&self) -> Option<Harness> {
+    pub fn harness(&self, app: &AppContext) -> Option<Harness> {
         match self {
             ConversationOrTask::Task(task) => {
                 task.agent_config_snapshot.as_ref().and_then(|config| {
@@ -618,7 +618,10 @@ impl ConversationOrTask<'_> {
                         .or(Some(Harness::Oz))
                 })
             }
-            ConversationOrTask::Conversation(_) => Some(Harness::Oz),
+            ConversationOrTask::Conversation(metadata) => BlocklistAIHistoryModel::as_ref(app)
+                .get_server_conversation_metadata(&metadata.nav_data.id)
+                .map(|m| Harness::from(m.harness))
+                .or(Some(Harness::Oz)),
         }
     }
 
@@ -741,10 +744,10 @@ impl ConversationOrTask<'_> {
     }
 
     /// Check if this item matches the harness filter.
-    fn matches_harness(&self, harness_filter: &HarnessFilter) -> bool {
+    fn matches_harness(&self, harness_filter: &HarnessFilter, app: &AppContext) -> bool {
         match harness_filter {
             HarnessFilter::All => true,
-            HarnessFilter::Specific(h) => self.harness() == Some(*h),
+            HarnessFilter::Specific(h) => self.harness(app) == Some(*h),
         }
     }
 
@@ -1571,7 +1574,8 @@ impl AgentConversationsModel {
         };
 
         let harness_filter_value = filters.harness;
-        let harness_filter = move |t: &ConversationOrTask| t.matches_harness(&harness_filter_value);
+        let harness_filter =
+            move |t: &ConversationOrTask| t.matches_harness(&harness_filter_value, app);
 
         let tasks_iter = self.tasks.values().map(ConversationOrTask::Task);
         let conversations_iter = self
