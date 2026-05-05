@@ -26,7 +26,7 @@ fn assert_custom_theme_is_not_syncable(custom_theme: CustomTheme) {
 }
 
 #[test]
-fn custom_theme_path_under_theme_root_serializes_relative() {
+fn custom_theme_path_under_theme_root_storage_helper_returns_relative_path() {
     let root = PathBuf::from("/home/user/.local/share/warp-terminal/themes");
     let path = root.join("catppuccin/catppuccin_mocha.yml");
 
@@ -66,7 +66,7 @@ fn custom_theme_relative_parent_dir_path_is_not_portable() {
 }
 
 #[test]
-fn custom_theme_absolute_parent_dir_path_under_theme_root_is_preserved_nonportable_and_not_serialized_relative(
+fn custom_theme_absolute_parent_dir_path_under_theme_root_storage_helper_preserves_path_and_rejects_portability(
 ) {
     let root = PathBuf::from("/Users/example/.warp/themes");
     let path = root.join("../outside.yml");
@@ -143,7 +143,7 @@ fn custom_theme_windows_absolute_path_string_is_not_portable() {
 }
 
 #[test]
-fn custom_theme_windows_absolute_path_string_does_not_serialize_relative() {
+fn custom_theme_windows_absolute_path_string_storage_helper_preserves_path() {
     let root = PathBuf::from("/Users/example/.warp/themes");
     let stored = PathBuf::from(r"C:\Users\example\AppData\Roaming\warp\Warp\data\themes\mocha.yml");
 
@@ -178,7 +178,7 @@ fn custom_theme_relative_backslash_path_is_not_portable() {
 
 #[test]
 #[cfg(not(windows))]
-fn custom_theme_relative_backslash_path_does_not_serialize_as_portable_relative() {
+fn custom_theme_relative_backslash_path_storage_helper_preserves_path() {
     let root = PathBuf::from("/Users/example/.warp/themes");
     let stored = PathBuf::from(r"catppuccin\mocha.yml");
 
@@ -204,6 +204,8 @@ fn custom_theme_serde_preserves_unportable_raw_paths() {
         "",
         ".",
         "./mocha.yml",
+        "../outside.yml",
+        "catppuccin/../mocha.yml",
         r"catppuccin\mocha.yml",
         "C:/Users/example/AppData/Roaming/warp/Warp/data/themes/mocha.yml",
         "C:themes/mocha.yml",
@@ -234,6 +236,8 @@ fn custom_theme_settings_value_preserves_unportable_raw_paths() {
         "",
         ".",
         "./mocha.yml",
+        "../outside.yml",
+        "catppuccin/../mocha.yml",
         r"catppuccin\mocha.yml",
         "C:/Users/example/AppData/Roaming/warp/Warp/data/themes/mocha.yml",
         "C:themes/mocha.yml",
