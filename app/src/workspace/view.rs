@@ -2933,7 +2933,7 @@ impl Workspace {
                 // Update transcript details if task or conversation data is updated
                 AgentConversationsModelEvent::NewTasksReceived
                 | AgentConversationsModelEvent::TasksUpdated
-                | AgentConversationsModelEvent::ConversationUpdated
+                | AgentConversationsModelEvent::ConversationUpdated { .. }
                 | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. } => {
                     me.update_transcript_details_panel_data(ctx);
                 }
@@ -5621,18 +5621,27 @@ impl Workspace {
             #[allow(unused_variables)]
             AIFactViewEvent::OpenFile(path) => {
                 #[cfg(feature = "local_fs")]
-                self.open_code(
-                    CodeSource::Link {
-                        path: path.clone(),
-                        range_start: None,
-                        range_end: None,
-                    },
-                    *EditorSettings::as_ref(ctx).open_file_layout.value(),
-                    None,  // no line/column specified
-                    false, // preview
-                    &[],
-                    ctx,
-                );
+                {
+                    let settings = EditorSettings::as_ref(ctx);
+                    let target = resolve_file_target_with_editor_choice(
+                        path,
+                        *settings.open_file_editor,
+                        *settings.prefer_markdown_viewer,
+                        *settings.open_file_layout,
+                        None,
+                    );
+                    self.open_file_with_target(
+                        path.clone(),
+                        target,
+                        None,
+                        CodeSource::Link {
+                            path: path.clone(),
+                            range_start: None,
+                            range_end: None,
+                        },
+                        ctx,
+                    );
+                }
             }
             AIFactViewEvent::InitializeProject(path) => {
                 let active_terminal_view = self
@@ -7979,10 +7988,6 @@ impl Workspace {
         context: Option<&CodeReviewPaneContext>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !*TabSettings::as_ref(ctx).show_code_review_button {
-            return;
-        }
-
         // If context is provided, use it directly. Otherwise, derive from active pane group.
         let context_data: Option<(
             Option<PathBuf>,
@@ -18285,6 +18290,18 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
+            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+                Self::add_panel_with_separator(
+                    &mut main_content,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::CodeReview,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
             }
         } else if !is_right_maximized {
             main_content = main_content.with_child(Shrinkable::new(1.0, terminal_content).finish());
@@ -18915,6 +18932,18 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
+            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+                Self::add_panel_with_separator(
+                    &mut panels_view,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::CodeReview,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
             }
         }
 
@@ -18974,7 +19003,7 @@ impl Workspace {
     }
 
     /// Renders a configurable panel for the given toolbar item, if it is open.
-    /// Returns `None` if the panel should not be rendered (item not available,
+    /// Returns `None` if the panel should not be rendered (item not supported,
     /// panel not open, or item is not a panel type).
     fn render_config_panel(
         &self,
@@ -18983,7 +19012,7 @@ impl Workspace {
         config: &HeaderToolbarChipSelection,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        if !item.is_available(app) || !item.is_panel() {
+        if !item.is_supported(app) || !item.is_panel() {
             return None;
         }
         match item {
@@ -19029,7 +19058,7 @@ impl Workspace {
         if !pane_group.right_panel_open || !pane_group.is_right_panel_maximized {
             return None;
         }
-        if !HeaderToolbarItemKind::CodeReview.is_available(app) {
+        if !HeaderToolbarItemKind::CodeReview.is_supported(app) {
             return None;
         }
         Some(Shrinkable::new(1.0, ChildView::new(&self.right_panel_view).finish()).finish())
@@ -22259,15 +22288,27 @@ impl View for Workspace {
                 && self.vertical_tabs_panel_open;
 
             if is_vertical {
-                // Anchor the menu below the vertical-tabs + button.
+                // Anchor the menu below the vertical-tabs + button. The anchor
+                // side mirrors which side the tabs panel itself is on, so the
+                // menu always expands inward and stays inside the window.
+                let tabs_side =
+                    Self::tabs_panel_side(&TabSettings::as_ref(app).header_toolbar_chip_selection);
+                let (anchor, child_anchor) = match tabs_side {
+                    PanelPosition::Left => {
+                        (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft)
+                    }
+                    PanelPosition::Right => {
+                        (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight)
+                    }
+                };
                 stack.add_positioned_overlay_child(
                     ChildView::new(&self.new_session_dropdown_menu).finish(),
                     OffsetPositioning::offset_from_save_position_element(
                         vertical_tabs::VERTICAL_TABS_ADD_TAB_POSITION_ID,
                         vec2f(0., 4.),
                         PositionedElementOffsetBounds::WindowBySize,
-                        PositionedElementAnchor::BottomLeft,
-                        ChildAnchor::TopLeft,
+                        anchor,
+                        child_anchor,
                     ),
                 );
             } else {

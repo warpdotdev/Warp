@@ -5,12 +5,14 @@
 
 set -e
 
+. "$PWD/script/warp_sudo"
+
 if ! [ -d "/Applications/Xcode.app" ]; then
     echo "Please install Xcode from the App Store before continuing."
     exit 1
 fi
 
-sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+warp_sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 # Mimic actually launching XCode, which performs some necessary set-up of the
 # development environment.
 xcodebuild -runFirstLaunch
