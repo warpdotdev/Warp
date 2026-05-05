@@ -68,6 +68,17 @@ pub trait GenericMenuItem: Debug + 'static {
     fn right_side_element(&self, _app: &AppContext) -> Option<Box<dyn Element>> {
         None
     }
+
+    /// When `Some`, replaces the default `[icon | name | right_side_element]` layout
+    /// of this item with a fully custom body. The item row container (background,
+    /// click handler for selection, border) still wraps the body — and `name()` is
+    /// still used for search filtering — but the inside is yours to render.
+    ///
+    /// Use this when an item needs a multi-line or non-standard layout (e.g. the
+    /// worktrees menu, where each item shows a name on top and a path below).
+    fn custom_body(&self, _app: &AppContext) -> Option<Box<dyn Element>> {
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +217,9 @@ pub enum DisplayChipMenuAction {
     SelectEnter,
     SelectFixedFooterOption,
     CopyEnvironmentSidecarField { key: String, value: String },
+    /// Fired when an item's secondary action (e.g. trash icon) is clicked.
+    /// `action_data` is the item-specific identifier (e.g. worktree path).
+    TrailingActionInvoked { action_data: String },
     Close,
 }
 
@@ -1108,6 +1122,11 @@ impl DisplayChipMenu {
                             }
                         };
 
+                        // If the item provides a custom body, use it INSTEAD of the default
+                        // [icon | name | right_side_element] layout. The row container,
+                        // background, click handler, and border are still applied below.
+                        let custom_body = item.custom_body(app);
+
                         // Create main container with SpaceBetween to float right elements to far right
                         let mut main_container = Flex::row()
                             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -1206,7 +1225,14 @@ impl DisplayChipMenu {
                             main_container.add_child(right_element);
                         }
 
-                        let mut container = Container::new(main_container.finish())
+                        // If a custom body was provided, use it in place of the default
+                        // [icon | name | right_side] layout assembled above.
+                        let body_element: Box<dyn Element> = match custom_body {
+                            Some(custom) => custom,
+                            None => main_container.finish(),
+                        };
+
+                        let mut container = Container::new(body_element)
                             .with_horizontal_padding(item_horizontal_padding)
                             .with_vertical_padding(item_vertical_padding);
 
@@ -1419,6 +1445,12 @@ pub struct GenericMenuEvent {
 
 pub enum PromptDisplayMenuEvent {
     MenuAction(GenericMenuEvent),
+    /// A trailing action (e.g. trash icon) was clicked on an item. `action_data`
+    /// identifies which item — typically the same string returned by the item's
+    /// `action_data()` for selection.
+    TrailingActionInvoked {
+        action_data: String,
+    },
     CloseMenu,
 }
 
@@ -1464,6 +1496,11 @@ impl TypedActionView for DisplayChipMenu {
                 );
 
                 ctx.notify();
+            }
+            DisplayChipMenuAction::TrailingActionInvoked { action_data } => {
+                ctx.emit(PromptDisplayMenuEvent::TrailingActionInvoked {
+                    action_data: action_data.clone(),
+                });
             }
             DisplayChipMenuAction::Close => self.close(ctx),
         }

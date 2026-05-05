@@ -111,6 +111,7 @@ pub struct WorkspaceState {
     pub is_close_session_confirmation_dialog_open: bool,
     pub is_rewind_confirmation_dialog_open: bool,
     pub is_delete_conversation_confirmation_dialog_open: bool,
+    pub is_remove_worktree_confirmation_dialog_open: bool,
     pub is_native_quit_modal_open: bool,
     pub is_shared_objects_creation_denied_modal_open: bool,
     pub is_suggested_agent_mode_workflow_modal_open: bool,

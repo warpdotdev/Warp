@@ -443,6 +443,10 @@ use super::delete_conversation_confirmation_dialog::{
     DeleteConversationConfirmationDialog, DeleteConversationConfirmationEvent,
     DeleteConversationDialogSource,
 };
+use super::remove_worktree_confirmation_dialog::{
+    RemoveWorktreeConfirmationDialog, RemoveWorktreeConfirmationEvent,
+    RemoveWorktreeDialogSource, WorktreeDirtyStatus,
+};
 use super::native_modal::{NativeModal, NativeModalEvent};
 use super::one_time_modal_model::OneTimeModalEvent;
 use super::rewind_confirmation_dialog::{
@@ -969,6 +973,7 @@ pub struct Workspace {
     close_session_confirmation_dialog: ViewHandle<CloseSessionConfirmationDialog>,
     rewind_confirmation_dialog: ViewHandle<RewindConfirmationDialog>,
     delete_conversation_confirmation_dialog: ViewHandle<DeleteConversationConfirmationDialog>,
+    remove_worktree_confirmation_dialog: ViewHandle<RemoveWorktreeConfirmationDialog>,
     resource_center_view: ViewHandle<ResourceCenterView>,
     command_search_view: ViewHandle<CommandSearchView>,
     autoupdate_unable_to_update_banner_dismissed: bool,
@@ -1754,6 +1759,16 @@ impl Workspace {
         );
 
         delete_conversation_confirmation_dialog
+    }
+
+    fn build_remove_worktree_confirmation_dialog(
+        ctx: &mut ViewContext<Self>,
+    ) -> ViewHandle<RemoveWorktreeConfirmationDialog> {
+        let dialog = ctx.add_typed_action_view(RemoveWorktreeConfirmationDialog::new);
+        ctx.subscribe_to_view(&dialog, move |me, _, event, ctx| {
+            me.handle_remove_worktree_confirmation_dialog_event(event, ctx);
+        });
+        dialog
     }
 
     fn build_native_modal_view(ctx: &mut ViewContext<Self>) -> ViewHandle<NativeModal> {
@@ -2720,6 +2735,8 @@ impl Workspace {
         let rewind_confirmation_dialog = Self::build_rewind_confirmation_dialog(ctx);
         let delete_conversation_confirmation_dialog =
             Self::build_delete_conversation_confirmation_dialog(ctx);
+        let remove_worktree_confirmation_dialog =
+            Self::build_remove_worktree_confirmation_dialog(ctx);
         let command_search_view =
             ctx.add_typed_action_view(|ctx| CommandSearchView::new(ai_client.clone(), ctx));
         ctx.subscribe_to_view(&command_search_view, |me, _, event, ctx| {
@@ -3116,6 +3133,7 @@ impl Workspace {
             close_session_confirmation_dialog,
             rewind_confirmation_dialog,
             delete_conversation_confirmation_dialog,
+            remove_worktree_confirmation_dialog,
             resource_center_view,
             command_search_view,
             autoupdate_unable_to_update_banner_dismissed: false,
@@ -9723,6 +9741,220 @@ impl Workspace {
         }
     }
 
+    /// Computes which open tabs sit under the given worktree path, returning their
+    /// indices and a short display label (basename of the tab's terminal CWD).
+    fn tabs_under_worktree_path(
+        &self,
+        worktree_path: &std::path::Path,
+        ctx: &AppContext,
+    ) -> Vec<(usize, String)> {
+        let needle = worktree_path.canonicalize().unwrap_or_else(|_| worktree_path.to_path_buf());
+        let mut out = Vec::new();
+        for (tab_index, tab) in self.tabs.iter().enumerate() {
+            let cwds: Vec<(EntityId, Option<String>)> = tab
+                .pane_group
+                .read(ctx, |pg, ctx| {
+                    pg.terminal_view_working_directories(ctx).collect()
+                });
+            for (_, cwd) in cwds {
+                let Some(cwd) = cwd else { continue };
+                let cwd_path = std::path::PathBuf::from(&cwd);
+                let cwd_canon = cwd_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| cwd_path.clone());
+                let matches = cwd_canon == needle || cwd_canon.starts_with(&needle);
+                if matches {
+                    let label = cwd_path
+                        .file_name()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or(cwd);
+                    out.push((tab_index, label));
+                    break; // Only count this tab once.
+                }
+            }
+        }
+        out
+    }
+
+    /// Entry point for the worktree-remove flow triggered from the chip's trash icon.
+    /// Spawns an async task that checks dirty/unpushed status, then opens the confirm
+    /// dialog with the appropriate severity. Cancel/Confirm events are handled by
+    /// `handle_remove_worktree_confirmation_dialog_event`.
+    fn handle_remove_worktree_request(
+        &mut self,
+        path: std::path::PathBuf,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let worktree_name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        let tabs_to_close: Vec<String> = self
+            .tabs_under_worktree_path(&path, ctx)
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect();
+
+        #[cfg(feature = "local_fs")]
+        {
+            let path_for_status = path.clone();
+            ctx.spawn(
+                async move {
+                    use crate::util::git::run_git_command;
+                    let status_out = run_git_command(&path_for_status, &["status", "--porcelain"])
+                        .await
+                        .unwrap_or_default();
+                    let unpushed_out = run_git_command(
+                        &path_for_status,
+                        &["rev-list", "--count", "@{u}..HEAD"],
+                    )
+                    .await
+                    .unwrap_or_default();
+                    let mut dirty = WorktreeDirtyStatus::default();
+                    for line in status_out.lines() {
+                        if line.starts_with("??") {
+                            dirty.has_untracked_files = true;
+                        } else if !line.trim().is_empty() {
+                            dirty.has_uncommitted_changes = true;
+                        }
+                    }
+                    if let Ok(n) = unpushed_out.trim().parse::<u32>() {
+                        dirty.has_unpushed_commits = n > 0;
+                    }
+                    dirty
+                },
+                move |me, dirty_status, ctx| {
+                    me.show_remove_worktree_confirmation_dialog(
+                        RemoveWorktreeDialogSource {
+                            path: path.clone(),
+                            worktree_name: worktree_name.clone(),
+                            tabs_to_close: tabs_to_close.clone(),
+                            dirty_status,
+                        },
+                        ctx,
+                    );
+                },
+            );
+        }
+
+        #[cfg(not(feature = "local_fs"))]
+        {
+            self.show_remove_worktree_confirmation_dialog(
+                RemoveWorktreeDialogSource {
+                    path,
+                    worktree_name,
+                    tabs_to_close,
+                    dirty_status: WorktreeDirtyStatus::default(),
+                },
+                ctx,
+            );
+        }
+    }
+
+    fn show_remove_worktree_confirmation_dialog(
+        &mut self,
+        source: RemoveWorktreeDialogSource,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.remove_worktree_confirmation_dialog
+            .update(ctx, |view, _| {
+                view.set_source(source);
+            });
+        self.current_workspace_state
+            .is_remove_worktree_confirmation_dialog_open = true;
+        ctx.focus(&self.remove_worktree_confirmation_dialog);
+        ctx.notify();
+    }
+
+    fn handle_remove_worktree_confirmation_dialog_event(
+        &mut self,
+        event: &RemoveWorktreeConfirmationEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            RemoveWorktreeConfirmationEvent::Cancel => {
+                self.current_workspace_state
+                    .is_remove_worktree_confirmation_dialog_open = false;
+                ctx.notify();
+            }
+            RemoveWorktreeConfirmationEvent::Confirm { source } => {
+                self.current_workspace_state
+                    .is_remove_worktree_confirmation_dialog_open = false;
+                self.execute_remove_worktree(source.clone(), ctx);
+                ctx.notify();
+            }
+        }
+    }
+
+    /// Closes affected tabs synchronously (instant UI feedback), then spawns
+    /// `git worktree remove [--force] <path>`. On failure surfaces a toast — the
+    /// tabs stay closed because the user already confirmed the destructive intent.
+    fn execute_remove_worktree(
+        &mut self,
+        source: RemoveWorktreeDialogSource,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        #[cfg(feature = "local_fs")]
+        {
+            let path = source.path.clone();
+            let force = !source.dirty_status.is_clean();
+
+            // Hint the worktrees chip that its count is about to change so it renders
+            // a `…` instead of the stale number for the next ~3s. The next periodic
+            // chip refresh (every 5s) re-reads the porcelain and shows the real count.
+            crate::context_chips::display_chip::mark_worktree_chip_pending();
+
+            // 1) Close the affected tabs IMMEDIATELY — this is what dominates user-perceived
+            // latency. We snapshot indices before the close loop so iteration is stable.
+            let tabs_to_close: Vec<usize> = self
+                .tabs_under_worktree_path(&path, ctx)
+                .into_iter()
+                .map(|(idx, _)| idx)
+                .collect();
+            for idx in tabs_to_close.into_iter().rev() {
+                if idx < self.tabs.len() {
+                    self.close_tab(idx, true, true, ctx);
+                }
+            }
+
+            // 2) Spawn the git command in the background.
+            ctx.spawn(
+                async move {
+                    use crate::util::git::run_git_command;
+                    let mut args: Vec<&str> = vec!["worktree", "remove"];
+                    if force {
+                        args.push("--force");
+                    }
+                    let path_str = path.to_string_lossy().into_owned();
+                    args.push(path_str.as_str());
+                    let result = run_git_command(&path, &args).await;
+                    (path, result)
+                },
+                move |me, (removed_path, result), ctx| {
+                    if let Err(err) = result {
+                        log::error!(
+                            "git worktree remove failed for {}: {err}",
+                            removed_path.display()
+                        );
+                        me.toast_stack.update(ctx, |toast_stack, ctx| {
+                            let toast = DismissibleToast::error(format!(
+                                "Failed to remove worktree: {err}"
+                            ));
+                            toast_stack.add_persistent_toast(toast, ctx);
+                        });
+                    }
+                    ctx.notify();
+                },
+            );
+        }
+
+        #[cfg(not(feature = "local_fs"))]
+        {
+            let _ = source;
+            log::warn!("git worktree remove is not supported on this build");
+        }
+    }
+
     fn handle_delete_conversation_confirmation_dialog_event(
         &mut self,
         event: &DeleteConversationConfirmationEvent,
@@ -13452,6 +13684,9 @@ impl Workspace {
             }
             pane_group::Event::OpenDirectoryInNewTab { path } => {
                 self.open_directory_in_new_tab(path.clone(), ctx);
+            }
+            pane_group::Event::RequestRemoveWorktree { path } => {
+                self.handle_remove_worktree_request(path.clone(), ctx);
             }
             pane_group::Event::RunTabConfigSkill { path } => {
                 self.run_tab_config_skill(path, ctx);
@@ -23159,6 +23394,21 @@ impl View for Workspace {
         {
             stack.add_positioned_overlay_child(
                 ChildView::new(&self.delete_conversation_confirmation_dialog).finish(),
+                OffsetPositioning::offset_from_parent(
+                    Vector2F::zero(),
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::Center,
+                    ChildAnchor::Center,
+                ),
+            );
+        }
+
+        if self
+            .current_workspace_state
+            .is_remove_worktree_confirmation_dialog_open
+        {
+            stack.add_positioned_overlay_child(
+                ChildView::new(&self.remove_worktree_confirmation_dialog).finish(),
                 OffsetPositioning::offset_from_parent(
                     Vector2F::zero(),
                     ParentOffsetBounds::WindowByPosition,

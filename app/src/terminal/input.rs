@@ -1022,6 +1022,12 @@ pub enum Event {
     OpenDirectoryInNewTab {
         path: PathBuf,
     },
+    /// Request removal of a git worktree. Bubbles to the workspace, which runs the
+    /// status check, shows the confirm dialog, performs `git worktree remove`, and
+    /// closes any tabs whose CWD is under the removed path.
+    RequestRemoveWorktree {
+        path: PathBuf,
+    },
     TryHandlePassiveCodeDiff(CodeDiffAction),
     ToggleAIDocumentPane {
         document_id: AIDocumentId,
@@ -5219,6 +5225,9 @@ impl Input {
             }
             PromptDisplayEvent::OpenWorktreeInNewTab(path) => {
                 ctx.emit(Event::OpenDirectoryInNewTab { path: path.clone() });
+            }
+            PromptDisplayEvent::RequestRemoveWorktree(path) => {
+                ctx.emit(Event::RequestRemoveWorktree { path: path.clone() });
             }
         }
     }

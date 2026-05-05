@@ -97,6 +97,7 @@ pub enum PromptDisplayEvent {
         document_version: AIDocumentVersion,
     },
     OpenWorktreeInNewTab(std::path::PathBuf),
+    RequestRemoveWorktree(std::path::PathBuf),
 }
 
 impl PromptDisplay {
@@ -288,6 +289,10 @@ impl PromptDisplay {
                 }
                 PromptDisplayChipEvent::OpenWorktreeInNewTab(path) => {
                     ctx.emit(PromptDisplayEvent::OpenWorktreeInNewTab(path.clone()));
+                    ctx.notify();
+                }
+                PromptDisplayChipEvent::RequestRemoveWorktree(path) => {
+                    ctx.emit(PromptDisplayEvent::RequestRemoveWorktree(path.clone()));
                     ctx.notify();
                 }
             });

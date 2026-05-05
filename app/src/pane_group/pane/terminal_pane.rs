@@ -832,6 +832,9 @@ fn handle_terminal_view_event(
             Event::OpenDirectoryInNewTab { path } => {
                 ctx.emit(pane_group::Event::OpenDirectoryInNewTab { path: path.clone() });
             }
+            Event::RequestRemoveWorktree { path } => {
+                ctx.emit(pane_group::Event::RequestRemoveWorktree { path: path.clone() });
+            }
             Event::OpenCodeReviewPaneAndScrollToComment {
                 open_code_review,
                 comment,

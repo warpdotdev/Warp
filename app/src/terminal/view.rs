@@ -1668,6 +1668,10 @@ pub enum Event {
     OpenDirectoryInNewTab {
         path: PathBuf,
     },
+    /// Bubbles a git worktree removal request from the input layer up to the workspace.
+    RequestRemoveWorktree {
+        path: PathBuf,
+    },
     /// Event propagates terminal inputs up to the workspace,
     /// to be processed on the way back down through the view hierarchy.
     SyncInput(SyncEvent),
@@ -20170,6 +20174,9 @@ impl TerminalView {
             }
             InputEvent::OpenDirectoryInNewTab { path } => {
                 ctx.emit(Event::OpenDirectoryInNewTab { path: path.clone() });
+            }
+            InputEvent::RequestRemoveWorktree { path } => {
+                ctx.emit(Event::RequestRemoveWorktree { path: path.clone() });
             }
             InputEvent::ClearSelectedBlock => self.clear_selected_blocks(ctx),
             InputEvent::SelectRecentBlocks { count } => {

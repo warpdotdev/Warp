@@ -727,6 +727,11 @@ pub enum Event {
     OpenDirectoryInNewTab {
         path: PathBuf,
     },
+    /// Request to remove a git worktree at the given path. The workspace handles the
+    /// confirmation flow, removal command, and tab cleanup.
+    RequestRemoveWorktree {
+        path: PathBuf,
+    },
     InsertCodeReviewComments {
         repo_path: PathBuf,
         comments: Vec<PendingImportedReviewComment>,

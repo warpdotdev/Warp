@@ -121,6 +121,13 @@ const GIT_REFRESH_CONFIG: RefreshConfig =
         interval: Duration::from_secs(30),
     };
 
+/// Refresh settings for the worktrees chip — tighter than the git default so the
+/// count reflects worktree add/remove within ~5s instead of ~30s. Watcher integration
+/// (Fase 1.1) will eventually replace this poll.
+const WORKTREES_REFRESH_CONFIG: RefreshConfig = RefreshConfig::Periodically {
+    interval: Duration::from_secs(5),
+};
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChipResult {
     kind: ContextChipKind,
@@ -367,7 +374,7 @@ impl ContextChipKind {
                 "Git Worktrees",
                 builtins::shell_git_worktree_list(),
                 None,
-                GIT_REFRESH_CONFIG,
+                WORKTREES_REFRESH_CONFIG,
             )),
         }
     }

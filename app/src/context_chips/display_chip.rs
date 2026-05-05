@@ -37,8 +37,9 @@ use warpui::ui_components::components::{Coords, UiComponent};
 use warpui::{
     elements::{
         Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, Flex, Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor,
-        ParentElement, ParentOffsetBounds, Radius, Stack, Text, DEFAULT_UI_LINE_HEIGHT_RATIO,
+        CrossAxisAlignment, DispatchEventResult, EventHandler, Flex, Hoverable,
+        MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
+        Radius, Stack, Text, DEFAULT_UI_LINE_HEIGHT_RATIO,
     },
     fonts::{Cache, FamilyId, Properties, Weight},
     AppContext, Element, Entity, EntityId, Gradient, ModelHandle, SingletonEntity, TypedActionView,
@@ -473,11 +474,21 @@ impl GenericMenuItem for GitBranch {
 /// handler can route it to `open_directory_in_new_tab`. The current worktree is rendered with a
 /// "current" badge and is non-clickable (the click handler short-circuits when the action_data
 /// matches the chip's current worktree path).
+///
+/// Non-current items also render a hover-reactive trash icon to the right of the path. Clicking
+/// the trash icon dispatches `DisplayChipMenuAction::TrailingActionInvoked { action_data }` (with
+/// `StopPropagation` so the row's primary "open in new tab" handler does not also fire), which
+/// the chip's menu subscriber translates into a remove-worktree request.
 #[derive(Debug, Clone)]
 pub struct WorktreeMenuItem {
     pub display_name: String,
     pub path: PathBuf,
     pub is_current: bool,
+    /// True for the main (root) worktree — the one whose `.git` is a directory rather
+    /// than a file pointer. Root is never removable; its trash icon is hidden.
+    pub is_main: bool,
+    /// Hover state for the trailing trash icon, owned per-item so opacity reacts to mouse moves.
+    pub trash_mouse_state: MouseStateHandle,
 }
 
 impl GenericMenuItem for WorktreeMenuItem {
@@ -497,40 +508,193 @@ impl GenericMenuItem for WorktreeMenuItem {
         self.path.to_string_lossy().into_owned()
     }
 
-    fn right_side_element(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+    /// Two-line item layout:
+    ///   [green vertical bar | icon | name (bold) / path (subtle) column | trash icon (right)]
+    /// The green bar is only painted for the current worktree (otherwise an empty same-width
+    /// box keeps horizontal alignment consistent across rows).
+    fn custom_body(&self, app: &AppContext) -> Option<Box<dyn Element>> {
+        use warpui::elements::MainAxisAlignment;
+
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let color = theme.sub_text_color(theme.surface_2()).into_solid();
-        let font_family = appearance.ui_font_family();
+        let primary_text = theme.main_text_color(theme.surface_2()).into_solid();
+        let path_color = theme.sub_text_color(theme.surface_2()).into_solid();
+        let green = theme.ansi_fg_green();
+        let ui_font_family = appearance.ui_font_family();
         let font_size = appearance.ui_font_size();
-        let display_text = if self.is_current {
-            "(current)".to_string()
+        let line_height = appearance.line_height_ratio();
+
+        const VERTICAL_BAR_WIDTH: f32 = 3.;
+        const VERTICAL_BAR_HEIGHT: f32 = 28.;
+        const ICON_SIZE: f32 = 16.;
+        const ICON_GAP: f32 = 8.;
+
+        // Vertical bar — green when this is the current worktree, otherwise an
+        // invisible spacer so all rows align.
+        let vertical_bar: Box<dyn Element> = if self.is_current {
+            ConstrainedBox::new(
+                Container::new(Empty::new().finish())
+                    .with_background_color(Fill::Solid(green).into())
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(1.5)))
+                    .finish(),
+            )
+            .with_width(VERTICAL_BAR_WIDTH)
+            .with_height(VERTICAL_BAR_HEIGHT)
+            .finish()
         } else {
-            // Show the parent path (the directory containing the worktree) so two worktrees
-            // sharing a basename are distinguishable. Replace $HOME with ~ for compactness.
-            let parent = self
-                .path
-                .parent()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default();
-            if let Some(home) = dirs::home_dir() {
-                let home_str = home.display().to_string();
-                if let Some(rest) = parent.strip_prefix(&home_str) {
-                    format!("~{rest}")
-                } else {
-                    parent
-                }
-            } else {
-                parent
-            }
+            ConstrainedBox::new(Empty::new().finish())
+                .with_width(VERTICAL_BAR_WIDTH)
+                .with_height(VERTICAL_BAR_HEIGHT)
+                .finish()
         };
-        Some(
-            Text::new_inline(display_text, font_family, font_size)
-                .with_color(Fill::Solid(color).into())
-                .with_line_height_ratio(appearance.line_height_ratio())
+
+        // Icon (worktree).
+        let icon_element = ConstrainedBox::new(
+            Icon::GitWorktree
+                .to_warpui_icon(Fill::Solid(primary_text))
                 .finish(),
         )
+        .with_width(ICON_SIZE)
+        .with_height(ICON_SIZE)
+        .finish();
+
+        // Path display, with $HOME replaced by ~ for compactness.
+        let path_str = self.path.display().to_string();
+        let path_display = if let Some(home) = dirs::home_dir() {
+            let home_str = home.display().to_string();
+            if let Some(rest) = path_str.strip_prefix(&home_str) {
+                format!("~{rest}")
+            } else {
+                path_str.clone()
+            }
+        } else {
+            path_str.clone()
+        };
+
+        // Name (bold) and path (subtle) stacked vertically. Truncate from the end with
+        // ellipsis to mirror how Warp tabs handle long titles — keeps every row a
+        // single, predictable line height even on long worktree names like
+        // `GHICRM-campaign-ws-disparo-status-sync`.
+        let name_truncated = crate::util::truncation::truncate_from_end(&self.display_name, 32);
+        let path_truncated = crate::util::truncation::truncate_from_end(&path_display, 44);
+
+        let name_text = Text::new_inline(name_truncated, ui_font_family, font_size)
+            .with_color(Fill::Solid(primary_text).into())
+            .with_line_height_ratio(line_height)
+            .with_style(Properties::default().weight(Weight::Semibold))
+            .finish();
+        let path_text = Text::new_inline(path_truncated, ui_font_family, font_size - 1.)
+            .with_color(Fill::Solid(path_color).into())
+            .with_line_height_ratio(line_height)
+            .finish();
+
+        let name_path_column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
+            .with_child(name_text)
+            .with_child(path_text)
+            .finish();
+
+        // Trailing slot: "root" badge on the main worktree (not removable), or the
+        // hover-reactive trash icon on every other item. The badge sits in the same
+        // slot so the alignment of all rows stays consistent.
+        let trailing_slot: Box<dyn Element> = if self.is_main {
+            let badge_text = Text::new_inline("root", ui_font_family, font_size - 1.)
+                .with_color(Fill::Solid(green).into())
+                .with_line_height_ratio(line_height)
+                .with_style(Properties::default().weight(Weight::Semibold))
+                .finish();
+            Container::new(badge_text)
+                .with_horizontal_padding(6.)
+                .with_vertical_padding(2.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .with_border(Border::all(1.).with_border_fill(Fill::Solid(green)))
+                .finish()
+        } else {
+            let trash_state = self.trash_mouse_state.clone();
+            let action_data = self.path.to_string_lossy().into_owned();
+            let trash_visual = Hoverable::new(trash_state, move |state| {
+                let icon_color = if state.is_hovered() {
+                    Fill::Solid(primary_text)
+                } else {
+                    Fill::Solid(path_color)
+                };
+                ConstrainedBox::new(Icon::Trash.to_warpui_icon(icon_color).finish())
+                    .with_width(14.)
+                    .with_height(14.)
+                    .finish()
+            })
+            .with_cursor(Cursor::PointingHand)
+            .finish();
+
+            EventHandler::new(trash_visual)
+                .on_left_mouse_down(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(
+                        crate::context_chips::display_menu::DisplayChipMenuAction::TrailingActionInvoked {
+                            action_data: action_data.clone(),
+                        },
+                    );
+                    DispatchEventResult::StopPropagation
+                })
+                .finish()
+        };
+
+        let left_group = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(vertical_bar)
+            .with_child(
+                Container::new(icon_element)
+                    .with_margin_left(ICON_GAP)
+                    .with_margin_right(ICON_GAP)
+                    .finish(),
+            )
+            .with_child(name_path_column)
+            .finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_main_axis_size(warpui::elements::MainAxisSize::Max)
+            .with_child(left_group)
+            .with_child(trailing_slot)
+            .finish();
+
+        Some(row)
     }
+}
+
+/// Tracks the millisecond timestamp until which the worktrees chip should render
+/// its count as `…` instead of the parsed value. Set by the workspace when the user
+/// confirms a remove (or when other mutating worktree actions ship in Fase 2). Read
+/// by `git_worktrees_chip` during render. After the deadline elapses, the next chip
+/// refresh (every 5s with `WORKTREES_REFRESH_CONFIG`) naturally returns to the real
+/// count — we don't need an explicit timer to clear it.
+static WORKTREE_PENDING_UNTIL_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Long enough to outlive one full chip refresh (5s) plus the git command, so when the
+/// number reappears it's already the post-removal value — not a brief flash of the
+/// stale count followed by an update.
+const WORKTREE_PENDING_DURATION_MS: u64 = 6000;
+
+fn current_unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Mark a worktree mutation as in-flight so the chip count renders as `…` for the
+/// next ~3 seconds, hinting that the displayed number is about to update. Cheap and
+/// idempotent — multiple in-flight removes just refresh the deadline.
+pub fn mark_worktree_chip_pending() {
+    let until = current_unix_millis().saturating_add(WORKTREE_PENDING_DURATION_MS);
+    WORKTREE_PENDING_UNTIL_MS
+        .store(until, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn worktree_chip_pending() -> bool {
+    let until = WORKTREE_PENDING_UNTIL_MS.load(std::sync::atomic::Ordering::Relaxed);
+    current_unix_millis() < until
 }
 
 /// Footer entry for the worktrees chip menu. Phase 2 wires this to open the creation modal; in
@@ -663,6 +827,9 @@ impl DisplayChip {
                         ctx.emit(PromptDisplayChipEvent::ToggleMenu { open: false });
                         ctx.notify();
                     }
+                    PromptDisplayMenuEvent::TrailingActionInvoked { .. } => {
+                        // Branches menu has no trailing action; ignore.
+                    }
                 });
 
                 DisplayChipKind::GitBranch {
@@ -688,13 +855,33 @@ impl DisplayChip {
                         })
                 });
 
+                // Detect the main worktree (root) by checking whether `<path>/.git` is a
+                // directory (root) versus a file pointer (linked). Linked worktrees have
+                // `.git` as a small text file containing `gitdir: <path-to-main>/.git/worktrees/<name>`.
+                // The root's basename is used as a prefix on every linked worktree's display
+                // name so a list of basenames like `89bn`, `feature` becomes
+                // `GHICRM_89bn`, `GHICRM_feature` — disambiguates between repos and matches
+                // Warp's `~/.warp/worktrees/<repo>/<name>` path convention.
+                let root_name: Option<String> = worktrees
+                    .iter()
+                    .find(|wt| wt.path.join(".git").is_dir())
+                    .map(|wt| wt.name());
                 let menu_items: Vec<WorktreeMenuItem> = worktrees
                     .iter()
                     .enumerate()
-                    .map(|(idx, wt)| WorktreeMenuItem {
-                        display_name: wt.name(),
-                        path: wt.path.clone(),
-                        is_current: Some(idx) == current_index,
+                    .map(|(idx, wt)| {
+                        let is_main = wt.path.join(".git").is_dir();
+                        let display_name = match (&root_name, is_main) {
+                            (Some(root), false) => format!("{root}_{}", wt.name()),
+                            _ => wt.name(),
+                        };
+                        WorktreeMenuItem {
+                            display_name,
+                            path: wt.path.clone(),
+                            is_current: Some(idx) == current_index,
+                            is_main,
+                            trash_mouse_state: MouseStateHandle::default(),
+                        }
                     })
                     .collect();
 
@@ -739,6 +926,22 @@ impl DisplayChip {
                             worktree_item.path.clone(),
                         ));
                         me.close_git_worktrees_menu(ctx);
+                        ctx.notify();
+                    }
+                    PromptDisplayMenuEvent::TrailingActionInvoked { action_data } => {
+                        // The trash icon click on a worktree row. Resolve the path and emit
+                        // a remove request that the workspace handles (status check + confirm
+                        // dialog + git worktree remove + tab cleanup).
+                        //
+                        // Mark the chip as pending RIGHT NOW (not when the user confirms in the
+                        // dialog) so the count switches to a "refreshing" indicator the moment
+                        // they decide to remove. Snappier perceived latency than waiting for the
+                        // workspace handler to fire.
+                        mark_worktree_chip_pending();
+                        let path = std::path::PathBuf::from(action_data);
+                        ctx.emit(PromptDisplayChipEvent::RequestRemoveWorktree(path));
+                        me.close_git_worktrees_menu(ctx);
+                        ctx.emit(PromptDisplayChipEvent::ToggleMenu { open: false });
                         ctx.notify();
                     }
                     PromptDisplayMenuEvent::CloseMenu => {
@@ -860,6 +1063,9 @@ impl DisplayChip {
                         me.close_working_directory_menu(ctx);
                         ctx.emit(PromptDisplayChipEvent::ToggleMenu { open: false });
                         ctx.notify();
+                    }
+                    PromptDisplayMenuEvent::TrailingActionInvoked { .. } => {
+                        // Working directory menu has no trailing action; ignore.
                     }
                 });
 
@@ -1281,9 +1487,41 @@ impl DisplayChip {
             appearance.theme().ansi_fg_green()
         };
 
-        let chip_label = match current_index.and_then(|i| worktrees.get(i)) {
-            Some(current) => format!("{} · {}", current.name(), worktrees.len()),
-            None => format!("{} worktrees", worktrees.len()),
+        let pending = worktree_chip_pending();
+        // Show "alternatives" — total minus one. With a regular repo this excludes
+        // the root (since root isn't a switchable alternative); in a bare-repo setup
+        // it ends up excluding "the user's own" worktree, which is still the right
+        // intuitive number ("how many other worktrees can I jump to?").
+        let alternative_count = worktrees.len().saturating_sub(1);
+        // Use ⟳ (clockwise gapped circle arrow) as a "refreshing" marker around where
+        // the count would be. Static for now; a true frame-by-frame spinner is tracked
+        // as a polish follow-up.
+        let count_str = if pending {
+            "⟳".to_string()
+        } else {
+            alternative_count.to_string()
+        };
+        // Match the menu's `RootName_worktreename` convention so the chip label and
+        // menu items share the same disambiguating prefix. Root shows just its own name.
+        let root_name: Option<String> = worktrees
+            .iter()
+            .find(|wt| wt.path.join(".git").is_dir())
+            .map(|wt| wt.name());
+        let current_display_name = current_index.and_then(|i| worktrees.get(i)).map(|current| {
+            let is_main = current.path.join(".git").is_dir();
+            match (&root_name, is_main) {
+                (Some(root), false) => format!("{root}_{}", current.name()),
+                _ => current.name(),
+            }
+        });
+        let chip_label = match current_display_name {
+            Some(name) => format!(
+                "{} · {}",
+                crate::util::truncation::truncate_from_end(&name, 20),
+                count_str
+            ),
+            None if pending => "⟳ worktrees".to_string(),
+            None => format!("{} worktrees", alternative_count),
         };
 
         let is_interactive =
@@ -1845,6 +2083,11 @@ pub enum PromptDisplayChipEvent {
     },
     /// Open a git worktree in a brand-new tab, rooted at the worktree's path.
     OpenWorktreeInNewTab(PathBuf),
+    /// User clicked the trash icon on a worktree menu item. The workspace is responsible
+    /// for running the status check, showing a confirm dialog (with extra warning when
+    /// the worktree is dirty or has unpushed commits), running `git worktree remove`, and
+    /// closing any tabs whose CWD is under the removed path.
+    RequestRemoveWorktree(PathBuf),
 }
 
 impl TypedActionView for DisplayChip {
