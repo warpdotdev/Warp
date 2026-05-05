@@ -1,0 +1,2 @@
+DROP TABLE remote_codebase_index_user_state;
+DROP TABLE remote_codebase_index_cache;

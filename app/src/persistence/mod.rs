@@ -7,6 +7,7 @@ cfg_if::cfg_if! {
         mod cloud_objects;
         mod sqlite;
         pub mod commands;
+        pub mod remote_codebase_indexing;
     }
 }
 

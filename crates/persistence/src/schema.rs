@@ -341,6 +341,41 @@ diesel::table! {
 }
 
 diesel::table! {
+    remote_codebase_index_cache (id) {
+        id -> Integer,
+        repo_identity_key -> Text,
+        repo_path -> Text,
+        snapshot_version -> Integer,
+        snapshot_file_key -> Text,
+        root_hash -> Nullable<Text>,
+        embedding_config_json -> Nullable<Text>,
+        navigated_ts -> Nullable<Timestamp>,
+        modified_ts -> Nullable<Timestamp>,
+        queried_ts -> Nullable<Timestamp>,
+        last_indexed_ts -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    remote_codebase_index_user_state (id) {
+        id -> Integer,
+        identity_key -> Text,
+        repo_identity_key -> Text,
+        repo_path -> Text,
+        enablement_state -> Text,
+        index_status -> Text,
+        failure_reason -> Nullable<Text>,
+        backend_association_state -> Nullable<Text>,
+        last_ready_root_hash -> Nullable<Text>,
+        last_status_updated_at -> Timestamp,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     server_experiments (experiment) {
         experiment -> Text,
     }
@@ -526,5 +561,9 @@ diesel::allow_tables_to_appear_in_same_query!(
 );
 diesel::allow_tables_to_appear_in_same_query!(code_pane_tabs, code_panes,);
 diesel::allow_tables_to_appear_in_same_query!(object_metadata, object_permissions,);
+diesel::allow_tables_to_appear_in_same_query!(
+    remote_codebase_index_cache,
+    remote_codebase_index_user_state,
+);
 diesel::allow_tables_to_appear_in_same_query!(team_members, team_settings, teams,);
 diesel::allow_tables_to_appear_in_same_query!(workspace_language_server, workspace_metadata,);
