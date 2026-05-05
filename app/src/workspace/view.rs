@@ -1078,6 +1078,94 @@ pub struct Workspace {
     remove_tab_config_confirmation_dialog: ViewHandle<RemoveTabConfigConfirmationDialog>,
 }
 
+/// Returns the next zoom percentage from `ZoomLevel::VALUES` relative to
+/// `current_percent`, snapping to the nearest VALUES entry in the chosen
+/// direction even when `current_percent` itself is not a VALUES entry.
+/// Stays at the boundary if there is no further step in that direction.
+fn next_zoom_step(current_percent: u16, increase: bool) -> u16 {
+    use crate::window_settings::ZoomLevel;
+    if increase {
+        ZoomLevel::VALUES
+            .iter()
+            .find(|&&v| v > current_percent)
+            .copied()
+            .unwrap_or_else(|| {
+                *ZoomLevel::VALUES
+                    .last()
+                    .expect("ZoomLevel::VALUES is non-empty")
+            })
+    } else {
+        ZoomLevel::VALUES
+            .iter()
+            .rev()
+            .find(|&&v| v < current_percent)
+            .copied()
+            .unwrap_or_else(|| {
+                *ZoomLevel::VALUES
+                    .first()
+                    .expect("ZoomLevel::VALUES is non-empty")
+            })
+    }
+}
+
+#[cfg(test)]
+mod next_zoom_step_tests {
+    use super::next_zoom_step;
+    use crate::window_settings::ZoomLevel;
+
+    #[test]
+    fn step_up_from_in_values() {
+        assert_eq!(next_zoom_step(100, true), 110);
+        assert_eq!(next_zoom_step(110, true), 125);
+    }
+
+    #[test]
+    fn step_down_from_in_values() {
+        assert_eq!(next_zoom_step(100, false), 90);
+        assert_eq!(next_zoom_step(110, false), 100);
+    }
+
+    #[test]
+    fn step_up_from_non_values_snaps_to_next_higher() {
+        // 105 is between 100 and 110 in VALUES; up → 110.
+        assert_eq!(next_zoom_step(105, true), 110);
+        // 230 is between 225 and 250; up → 250.
+        assert_eq!(next_zoom_step(230, true), 250);
+    }
+
+    #[test]
+    fn step_down_from_non_values_snaps_to_next_lower() {
+        // 105 → down → 100.
+        assert_eq!(next_zoom_step(105, false), 100);
+        // 230 → down → 225.
+        assert_eq!(next_zoom_step(230, false), 225);
+    }
+
+    #[test]
+    fn step_up_at_max_stays_at_max() {
+        let max = *ZoomLevel::VALUES.last().unwrap();
+        assert_eq!(next_zoom_step(max, true), max);
+    }
+
+    #[test]
+    fn step_down_at_min_stays_at_min() {
+        let min = *ZoomLevel::VALUES.first().unwrap();
+        assert_eq!(next_zoom_step(min, false), min);
+    }
+
+    #[test]
+    fn step_up_above_max_stays_at_max() {
+        // current_percent above all VALUES: no entry > current → stays at max.
+        assert_eq!(next_zoom_step(500, true), *ZoomLevel::VALUES.last().unwrap());
+    }
+
+    #[test]
+    fn step_down_below_min_stays_at_min() {
+        // current_percent below all VALUES: no entry < current → stays at min.
+        assert_eq!(next_zoom_step(10, false), *ZoomLevel::VALUES.first().unwrap());
+    }
+}
+
 impl Workspace {
     pub fn is_tab_drag_preview(&self) -> bool {
         self.is_tab_drag_preview
@@ -16129,24 +16217,18 @@ impl Workspace {
         // titlebar height is recomputed explicitly because Cmd++/Cmd+- no
         // longer mutates `WindowSettings::zoom_level` (and therefore does not
         // fire `WindowSettingsChangedEvent::ZoomLevel`).
+        //
+        // The current effective zoom is not guaranteed to be one of the
+        // discrete `ZoomLevel::VALUES` entries — e.g. a caller could set the
+        // app-wide default to a value that does not appear in VALUES — so we
+        // snap to the nearest VALUES entry in the chosen direction rather
+        // than indexing into VALUES directly. This keeps Cmd++/Cmd+- usable
+        // from any in-range starting factor.
         let window_id = ctx.window_id();
         let current_factor = ctx.window_zoom_factor(window_id);
         let current_percent = (current_factor.as_f32() * 100.0).round() as u16;
-        let Some(current_index) = crate::window_settings::ZoomLevel::VALUES
-            .iter()
-            .position(|zoom| *zoom == current_percent)
-        else {
-            return;
-        };
-
-        let next_index = if increase {
-            (current_index + 1).min(crate::window_settings::ZoomLevel::VALUES.len() - 1)
-        } else {
-            current_index.saturating_sub(1)
-        };
-
-        let next_factor =
-            crate::window_settings::ZoomLevel::VALUES[next_index] as f32 / 100.0;
+        let next_percent = next_zoom_step(current_percent, increase);
+        let next_factor = next_percent as f32 / 100.0;
         ctx.set_window_zoom_factor(window_id, next_factor);
         self.update_titlebar_height(ctx);
     }
