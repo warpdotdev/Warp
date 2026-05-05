@@ -86,6 +86,7 @@ integration_tests! {
     // test_ssh_into_fish,
     test_ssh_into_sh,
     test_ssh_into_ash,
+    test_ssh_with_remote_shell_command_override,
 
     // Tests of custom prompt behavior.
     test_copy_prompt_from_block_honor_ps1_enabled,
