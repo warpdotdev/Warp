@@ -1,3 +1,4 @@
+use crate::ai::agent::conversation::ConversationStatus;
 use crate::context_chips::display_chip::GitLineChanges;
 use crate::pane_group::pane::IPaneType;
 use crate::pane_group::{PaneId, TerminalPaneId};
@@ -17,7 +18,8 @@ use super::{
     non_terminal_search_text_fragments, pane_ids_for_display_granularity,
     pane_search_text_fragments, preferred_agent_tab_titles, search_fragments_contain_query,
     select_summary_pane_kind_icons, should_keep_detail_sidecar_visible_for_mouse_position,
-    summary_overflow_count, summary_search_text_fragments, terminal_kind_badge_label,
+    summary_overflow_count, summary_pane_kind_to_status_variant, summary_search_text_fragments,
+    terminal_kind_badge_label,
     terminal_primary_line_data, terminal_pull_request_badge_label, terminal_search_text_fragments,
     terminal_title_fallback_font, uses_outer_group_container, visible_pane_ids_for_detail_target,
     vtab_diff_stats_text, AgentTabTextPreference, SummaryPaneKind, SummaryPaneKindIcons,
@@ -88,11 +90,15 @@ fn summary_pane_kind_icons_distinguish_agent_terminals_from_plain_terminals() {
                 SummaryPaneKind::CLIAgent {
                     agent: CLIAgent::Claude,
                     is_ambient: false,
+                    status: None,
                 },
             ),
             (
                 EntityId::from_usize(30),
-                SummaryPaneKind::OzAgent { is_ambient: false },
+                SummaryPaneKind::OzAgent {
+                    is_ambient: false,
+                    status: None,
+                },
             ),
         ]),
         Some(SummaryPaneKindIcons::Pair {
@@ -100,6 +106,7 @@ fn summary_pane_kind_icons_distinguish_agent_terminals_from_plain_terminals() {
             secondary: SummaryPaneKind::CLIAgent {
                 agent: CLIAgent::Claude,
                 is_ambient: false,
+                status: None,
             },
         })
     );
@@ -116,6 +123,7 @@ fn summary_pane_kind_icons_distinguish_ambient_claude_from_local_claude() {
                 SummaryPaneKind::CLIAgent {
                     agent: CLIAgent::Claude,
                     is_ambient: false,
+                    status: None,
                 },
             ),
             (
@@ -123,6 +131,7 @@ fn summary_pane_kind_icons_distinguish_ambient_claude_from_local_claude() {
                 SummaryPaneKind::CLIAgent {
                     agent: CLIAgent::Claude,
                     is_ambient: true,
+                    status: None,
                 },
             ),
         ]),
@@ -130,13 +139,135 @@ fn summary_pane_kind_icons_distinguish_ambient_claude_from_local_claude() {
             primary: SummaryPaneKind::CLIAgent {
                 agent: CLIAgent::Claude,
                 is_ambient: false,
+                status: None,
             },
             secondary: SummaryPaneKind::CLIAgent {
                 agent: CLIAgent::Claude,
                 is_ambient: true,
+                status: None,
             },
         })
     );
+}
+
+// Regression tests for #9868: agent status badges in vertical tabs summary view.
+
+#[test]
+fn summary_view_propagates_oz_agent_status_to_icon_variant() {
+    // The summary-icon path must surface the agent's status so that
+    // `render_icon_with_status` can paint the badge. Before #9868 the helper
+    // hardcoded `status: None`, so the badge never rendered.
+    let kind = SummaryPaneKind::OzAgent {
+        is_ambient: true,
+        status: Some(ConversationStatus::InProgress),
+    };
+    let variant =
+        summary_pane_kind_to_status_variant(&kind).expect("agent kinds produce a variant");
+    match variant {
+        crate::ui_components::icon_with_status::IconWithStatusVariant::OzAgent {
+            status,
+            is_ambient,
+        } => {
+            assert_eq!(status, Some(ConversationStatus::InProgress));
+            assert!(is_ambient);
+        }
+        _ => panic!("expected OzAgent variant"),
+    }
+}
+
+#[test]
+fn summary_view_propagates_cli_agent_status_to_icon_variant() {
+    let kind = SummaryPaneKind::CLIAgent {
+        agent: CLIAgent::Claude,
+        is_ambient: false,
+        status: Some(ConversationStatus::Error),
+    };
+    let variant =
+        summary_pane_kind_to_status_variant(&kind).expect("agent kinds produce a variant");
+    match variant {
+        crate::ui_components::icon_with_status::IconWithStatusVariant::CLIAgent {
+            agent,
+            status,
+            is_ambient,
+        } => {
+            assert_eq!(agent, CLIAgent::Claude);
+            assert_eq!(status, Some(ConversationStatus::Error));
+            assert!(!is_ambient);
+        }
+        _ => panic!("expected CLIAgent variant"),
+    }
+}
+
+#[test]
+fn summary_view_renders_status_for_non_ambient_agents() {
+    // Before #9868, only ambient agent kinds went through the status-aware
+    // render path; non-ambient agents fell through to a status-less inline
+    // render. Both paths must now surface a variant so the status badge can
+    // be drawn.
+    let local_oz = SummaryPaneKind::OzAgent {
+        is_ambient: false,
+        status: Some(ConversationStatus::Success),
+    };
+    let local_cli = SummaryPaneKind::CLIAgent {
+        agent: CLIAgent::Claude,
+        is_ambient: false,
+        status: Some(ConversationStatus::Cancelled),
+    };
+
+    assert!(
+        summary_pane_kind_to_status_variant(&local_oz).is_some(),
+        "non-ambient Oz agents must produce a status-aware variant"
+    );
+    assert!(
+        summary_pane_kind_to_status_variant(&local_cli).is_some(),
+        "non-ambient CLI agents must produce a status-aware variant"
+    );
+}
+
+#[test]
+fn summary_view_returns_none_for_non_agent_kinds() {
+    // Non-agent kinds keep their existing inline rendering — the status helper
+    // returns None so the caller falls back to `render_summary_pane_kind_icon_circle`'s
+    // inline branch.
+    assert!(summary_pane_kind_to_status_variant(&SummaryPaneKind::Terminal).is_none());
+    assert!(summary_pane_kind_to_status_variant(&code_summary_kind("main.rs")).is_none());
+    assert!(summary_pane_kind_to_status_variant(&SummaryPaneKind::Settings).is_none());
+}
+
+#[test]
+fn summary_pane_kind_icons_dedup_ignores_status() {
+    // Two Oz agents with different statuses still collapse to a single icon
+    // in the summary view: status is metadata, not identity, for dedup. The
+    // surviving entry preserves the first pane's status (creation-order
+    // sorted).
+    let icons = select_summary_pane_kind_icons([
+        (
+            EntityId::from_usize(10),
+            SummaryPaneKind::OzAgent {
+                is_ambient: false,
+                status: Some(ConversationStatus::InProgress),
+            },
+        ),
+        (
+            EntityId::from_usize(20),
+            SummaryPaneKind::OzAgent {
+                is_ambient: false,
+                status: Some(ConversationStatus::Success),
+            },
+        ),
+    ])
+    .expect("at least one kind");
+
+    match icons {
+        SummaryPaneKindIcons::Single(SummaryPaneKind::OzAgent {
+            is_ambient,
+            status,
+        }) => {
+            assert!(!is_ambient);
+            assert_eq!(status, Some(ConversationStatus::InProgress));
+        }
+        other => panic!("expected a single OzAgent kind, got {other:?}"),
+    }
 }
 
 #[test]
