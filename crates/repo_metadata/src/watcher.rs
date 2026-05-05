@@ -4,6 +4,7 @@ use std::{
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     pin::Pin,
+    sync::Arc,
 };
 
 #[cfg(feature = "local_fs")]
@@ -19,14 +20,39 @@ cfg_if::cfg_if! {
         use watcher::{BulkFilesystemWatcher, BulkFilesystemWatcherEvent};
         use crate::entry::{
             extract_worktree_git_dir, is_commit_related_git_file, is_git_internal_path,
-            is_index_lock_file, is_shared_git_ref,
+            is_index_lock_file, is_shared_git_ref, path_passes_filters,
         };
+        use ignore::gitignore::Gitignore;
         /// Duration between filesystem watch events in milliseconds
         const FILESYSTEM_WATCHER_DEBOUNCE_MILLI_SECS: u64 = 500;
     }
 }
 
 const MAX_CONCURRENT_TASKS: usize = 2;
+
+#[cfg(feature = "local_fs")]
+#[derive(Clone)]
+pub(crate) enum DirectoryWatchFilter {
+    RepositoryTree(Arc<Vec<Gitignore>>),
+    GitMetadata,
+}
+
+#[cfg(feature = "local_fs")]
+impl DirectoryWatchFilter {
+    fn into_watch_filter(self) -> notify_debouncer_full::notify::WatchFilter {
+        use crate::entry::should_ignore_git_path;
+        use notify_debouncer_full::notify::WatchFilter;
+
+        match self {
+            Self::RepositoryTree(gitignores) => WatchFilter::with_filter(Arc::new(move |path| {
+                path_passes_filters(path, gitignores.as_slice())
+            })),
+            Self::GitMetadata => WatchFilter::with_filter(Arc::new(move |watch_path| {
+                !should_ignore_git_path(watch_path)
+            })),
+        }
+    }
+}
 
 /// A global singleton model that records and watches directory changes.
 /// It is important to note that the directory here doesn't equal to a git repository. To
@@ -264,12 +290,12 @@ impl DirectoryWatcher {
     #[cfg(feature = "local_fs")]
     pub(crate) fn start_watching_directories(
         &mut self,
-        directory_paths: Vec<StandardizedPath>,
+        directory_paths: Vec<(StandardizedPath, DirectoryWatchFilter)>,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = Result<(), RepoMetadataError>> {
         let futures: Vec<_> = directory_paths
             .into_iter()
-            .map(|path| self.start_watching_directory(&path, ctx))
+            .map(|(path, filter)| self.start_watching_directory(&path, filter, ctx))
             .collect();
 
         async move {
@@ -279,6 +305,7 @@ impl DirectoryWatcher {
             Ok(())
         }
     }
+
     /// Starts watching a directory for filesystem changes.
     ///
     /// The returned future resolves once the directory is registered. Filesystem changes before
@@ -287,21 +314,20 @@ impl DirectoryWatcher {
     pub(crate) fn start_watching_directory(
         &mut self,
         directory_path: &StandardizedPath,
+        watch_filter: DirectoryWatchFilter,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = Result<(), RepoMetadataError>> {
         let local_path = directory_path.to_local_path();
         let registration_future = if let Some(ref watcher) = self.watcher {
             if let Some(local_path) = local_path.clone() {
                 watcher.update(ctx, |watcher, _ctx| {
-                    use crate::entry::should_ignore_git_path;
-                    use notify_debouncer_full::notify::{RecursiveMode, WatchFilter};
-                    use std::sync::Arc;
+                    use notify_debouncer_full::notify::RecursiveMode;
 
-                    let watch_filter = WatchFilter::with_filter(Arc::new(move |watch_path| {
-                        !should_ignore_git_path(watch_path)
-                    }));
-
-                    Some(watcher.register_path(&local_path, watch_filter, RecursiveMode::Recursive))
+                    Some(watcher.register_path(
+                        &local_path,
+                        watch_filter.into_watch_filter(),
+                        RecursiveMode::Recursive,
+                    ))
                 })
             } else {
                 log::warn!("Cannot watch non-local path: {directory_path}");
