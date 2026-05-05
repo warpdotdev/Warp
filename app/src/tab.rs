@@ -192,6 +192,7 @@ impl TabData {
 
         for section_items in [
             self.session_sharing_menu_items(index, ctx),
+            self.copy_metadata_menu_items(pane_name_target, ctx),
             self.modify_tab_menu_items(index, tabs_len, pane_name_target, ctx),
             self.close_tab_menu_items(index, tabs_len, ctx),
             Self::save_config_menu_items(index),
@@ -286,6 +287,65 @@ impl TabData {
         menu_items
     }
 
+    fn copy_metadata_menu_items(
+        &self,
+        pane_name_target: Option<PaneNameMenuTarget>,
+        ctx: &AppContext,
+    ) -> Vec<MenuItem<WorkspaceAction>> {
+        let pane_group = self.pane_group.as_ref(ctx);
+        let terminal_view = pane_name_target
+            .filter(|target| self.pane_group.id() == target.locator.pane_group_id)
+            .and_then(|target| pane_group.terminal_view_from_pane_id(target.locator.pane_id, ctx))
+            .or_else(|| pane_group.focused_session_view(ctx));
+        let mut menu_items = vec![];
+        let tab_title = Self::copyable_metadata_value(Some(pane_group.display_title(ctx)));
+
+        if let Some(terminal_view) = terminal_view {
+            let terminal_view = terminal_view.as_ref(ctx);
+            Self::push_copy_metadata_menu_item(
+                &mut menu_items,
+                "Copy branch",
+                Self::copyable_metadata_value(terminal_view.current_git_branch(ctx)),
+            );
+            Self::push_copy_metadata_menu_item(&mut menu_items, "Copy tab title", tab_title);
+            Self::push_copy_metadata_menu_item(
+                &mut menu_items,
+                "Copy Working Directory",
+                Self::copyable_metadata_value(
+                    terminal_view
+                        .pwd()
+                        .or_else(|| terminal_view.display_working_directory(ctx)),
+                ),
+            );
+            Self::push_copy_metadata_menu_item(
+                &mut menu_items,
+                "Copy PR link",
+                Self::copyable_metadata_value(terminal_view.current_pull_request_url(ctx)),
+            );
+        } else {
+            Self::push_copy_metadata_menu_item(&mut menu_items, "Copy tab title", tab_title);
+        }
+
+        menu_items
+    }
+
+    fn push_copy_metadata_menu_item(
+        menu_items: &mut Vec<MenuItem<WorkspaceAction>>,
+        label: &'static str,
+        value: Option<String>,
+    ) {
+        if let Some(value) = value {
+            menu_items.push(
+                MenuItemFields::new(label)
+                    .with_on_select_action(WorkspaceAction::CopyTextToClipboard(value))
+                    .into_item(),
+            );
+        }
+    }
+
+    fn copyable_metadata_value(value: Option<String>) -> Option<String> {
+        value.filter(|value| !value.trim().is_empty())
+    }
     fn modify_tab_menu_items(
         &self,
         index: usize,

@@ -1,6 +1,6 @@
 //! Integration tests for workspace-level behavior.
 
-use std::fs;
+use std::{fs, time::Duration};
 
 use pathfinder_geometry::{
     rect::RectF,
@@ -21,23 +21,26 @@ use warp::integration_testing::workspace::{
 use warp::{
     cmd_or_ctrl_shift,
     integration_testing::{
+        clipboard::assert_clipboard_contains_string,
         pane_group::assert_focused_pane_index,
         step::new_step_with_default_assertions,
         terminal::{
             assert_active_session_local_path, execute_command,
-            execute_command_for_single_terminal_in_tab, util::ExpectedExitStatus,
+            execute_command_for_single_terminal_in_tab,
+            util::{current_shell_starter_and_version, ExpectedExitStatus},
             wait_until_bootstrapped_pane, wait_until_bootstrapped_single_pane_for_tab,
         },
     },
     settings::PaneSettings,
-    workspace::NEW_TAB_BUTTON_POSITION_ID,
+    terminal::shell::ShellType,
+    workspace::{WorkspaceAction, NEW_TAB_BUTTON_POSITION_ID},
 };
 use warpui::{
     async_assert, async_assert_eq,
     event::{Event, ModifiersState},
-    integration::{AssertionOutcome, TestStep},
+    integration::{AssertionCallback, AssertionOutcome, TestStep},
     windowing::WindowManager,
-    SingletonEntity, WindowId,
+    SingletonEntity, TypedActionView, WindowId,
 };
 
 use crate::{util::skip_if_powershell_core_2303, Builder};
@@ -50,6 +53,40 @@ const DETACHED_WINDOW_KEY: &str = "detached window";
 
 fn tab_position_id(tab_index: usize) -> String {
     format!("tab_position_{tab_index}")
+}
+
+fn set_active_tab_name(name: &'static str) -> TestStep {
+    TestStep::new("Set active tab name").with_action(move |app, window_id, _| {
+        let workspace = workspace_view(app, window_id);
+        workspace.update(app, |workspace, ctx| {
+            workspace.handle_action(&WorkspaceAction::SetActiveTabName(name.to_string()), ctx);
+        });
+    })
+}
+
+fn assert_current_git_branch(expected_branch: &'static str) -> AssertionCallback {
+    Box::new(move |app, window_id| {
+        let terminal_view = terminal_view(app, window_id, 0, 0);
+        terminal_view.read(app, |terminal_view, ctx| {
+            async_assert_eq!(
+                terminal_view.current_git_branch(ctx),
+                Some(expected_branch.to_string())
+            )
+        })
+    })
+}
+
+fn assert_clipboard_contains_home() -> AssertionCallback {
+    Box::new(|app, _window_id| {
+        let clipboard = app.update(|ctx| ctx.clipboard().read());
+        let content = match clipboard.paths {
+            Some(paths) => paths.join(" "),
+            None => clipboard.plain_text,
+        };
+        let home = std::env::var("HOME").expect("HOME should be set for integration tests");
+
+        async_assert_eq!(content, home)
+    })
 }
 
 fn focus_other_window(other_window_key: &'static str, known_window_key: &'static str) -> TestStep {
@@ -208,6 +245,63 @@ pub fn test_active_session_follows_focus() -> Builder {
             new_step_with_default_assertions("Close the tab")
                 .with_keystrokes(&[cmd_or_ctrl_shift("w"), cmd_or_ctrl_shift("w")])
                 .add_assertion(assert_active_session_local_path("~/dir2")),
+        )
+}
+
+pub fn test_tab_context_menu_copies_metadata() -> Builder {
+    new_builder()
+        .set_should_run_test(|| {
+            let (starter, _) = current_shell_starter_and_version();
+            starter.shell_type() != ShellType::PowerShell
+        })
+        .use_tmp_filesystem_for_test_root_directory()
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(set_active_tab_name("Integration Metadata Tab"))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            0,
+            "git init -b main; git config user.email \"test@test.com\"; git config user.name \"Git TestUser\"".into(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            0,
+            "touch file".into(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(
+            new_step_with_default_assertions("Git branch metadata should be populated")
+                .set_timeout(Duration::from_secs(15))
+                .add_assertion(assert_current_git_branch("main")),
+        )
+        .with_step(
+            new_step_with_default_assertions("Open tab context menu for branch copy")
+                .with_right_click_on_saved_position(tab_position_id(0)),
+        )
+        .with_step(
+            new_step_with_default_assertions("Copy branch from tab context menu")
+                .with_click_on_saved_position("Copy branch")
+                .add_assertion(assert_clipboard_contains_string("main".to_string())),
+        )
+        .with_step(
+            new_step_with_default_assertions("Open tab context menu for title copy")
+                .with_right_click_on_saved_position(tab_position_id(0)),
+        )
+        .with_step(
+            new_step_with_default_assertions("Copy tab title from tab context menu")
+                .with_click_on_saved_position("Copy tab title")
+                .add_assertion(assert_clipboard_contains_string(
+                    "Integration Metadata Tab".to_string(),
+                )),
+        )
+        .with_step(
+            new_step_with_default_assertions("Open tab context menu for working directory copy")
+                .with_right_click_on_saved_position(tab_position_id(0)),
+        )
+        .with_step(
+            new_step_with_default_assertions("Copy working directory from tab context menu")
+                .with_click_on_saved_position("Copy Working Directory")
+                .add_assertion(assert_clipboard_contains_home()),
         )
 }
 
