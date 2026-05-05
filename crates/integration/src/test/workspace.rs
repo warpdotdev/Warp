@@ -1,6 +1,6 @@
 //! Integration tests for workspace-level behavior.
 
-use std::{fs, path::Path, time::Duration};
+use std::{fs, time::Duration};
 
 use pathfinder_geometry::{
     rect::RectF,
@@ -54,6 +54,7 @@ const TARGET_WINDOW_KEY: &str = "target window";
 const DETACHED_WINDOW_KEY: &str = "detached window";
 const METADATA_TAB_TITLE: &str = "Integration Metadata Tab";
 const METADATA_BRANCH: &str = "main";
+const METADATA_CLICKED_PANE_TITLE: &str = "Integration Metadata Clicked Pane";
 const METADATA_PANE_TITLE: &str = "Integration Metadata Pane";
 const METADATA_PANE_BRANCH: &str = "pane-branch";
 const METADATA_PANE_DIRECTORY: &str = "active-pane";
@@ -75,6 +76,31 @@ fn vertical_tab_pane_row_position_id(app: &mut warpui::App, window_id: WindowId)
         let pane_id = pane_group.focused_pane_id(ctx);
         format!("vertical_tabs:pane_row:{pane_group_id:?}:{pane_id}")
     })
+}
+
+fn vertical_tab_pane_row_position_id_for_pane_index(
+    app: &mut warpui::App,
+    window_id: WindowId,
+    pane_index: usize,
+) -> String {
+    let workspace = workspace_view(app, window_id);
+    let pane_group = workspace.read(app, |workspace, _ctx| {
+        workspace
+            .get_pane_group_view(0)
+            .expect("pane group should exist")
+            .clone()
+    });
+    let pane_group_id = pane_group.id();
+    pane_group.read(app, |pane_group, _ctx| {
+        let pane_id = pane_group
+            .pane_id_from_index(pane_index)
+            .expect("pane should exist at index");
+        format!("vertical_tabs:pane_row:{pane_group_id:?}:{pane_id}")
+    })
+}
+
+fn first_vertical_tab_pane_row_position_id(app: &mut warpui::App, window_id: WindowId) -> String {
+    vertical_tab_pane_row_position_id_for_pane_index(app, window_id, 0)
 }
 
 fn should_run_tab_context_menu_metadata_test() -> bool {
@@ -144,6 +170,10 @@ fn open_vertical_tab_context_menu(step_name: &'static str) -> TestStep {
     new_step_with_default_assertions(step_name)
         .with_right_click_on_saved_position_fn(vertical_tab_pane_row_position_id)
 }
+fn open_first_vertical_tab_pane_context_menu(step_name: &'static str) -> TestStep {
+    new_step_with_default_assertions(step_name)
+        .with_right_click_on_saved_position_fn(first_vertical_tab_pane_row_position_id)
+}
 
 fn add_tab_context_metadata_setup_steps(builder: Builder) -> Builder {
     builder
@@ -174,6 +204,7 @@ fn add_tab_context_metadata_setup_steps(builder: Builder) -> Builder {
 
 fn add_active_pane_context_metadata_setup_steps(builder: Builder) -> Builder {
     builder
+        .with_step(set_active_pane_name(METADATA_CLICKED_PANE_TITLE))
         .with_step(
             new_step_with_default_assertions("Create active split pane")
                 .with_keystrokes(&[cmd_or_ctrl_shift("d")]),
@@ -267,7 +298,7 @@ fn add_vertical_pane_context_metadata_copy_steps(
             new_step_with_default_assertions("Copy branch from pane context menu")
                 .with_click_on_saved_position("Copy branch")
                 .add_assertion(assert_clipboard_contains_string(
-                    METADATA_PANE_BRANCH.to_string(),
+                    METADATA_BRANCH.to_string(),
                 )),
         )
         .with_step(open_tab_context_menu(
@@ -277,7 +308,7 @@ fn add_vertical_pane_context_metadata_copy_steps(
             new_step_with_default_assertions("Copy pane title from pane context menu")
                 .with_click_on_saved_position("Copy pane title")
                 .add_assertion(assert_clipboard_contains_string(
-                    METADATA_PANE_TITLE.to_string(),
+                    METADATA_CLICKED_PANE_TITLE.to_string(),
                 )),
         )
         .with_step(open_tab_context_menu(
@@ -286,9 +317,7 @@ fn add_vertical_pane_context_metadata_copy_steps(
         .with_step(
             new_step_with_default_assertions("Copy working directory from pane context menu")
                 .with_click_on_saved_position("Copy working directory")
-                .add_assertion(assert_clipboard_contains_home_child(
-                    METADATA_PANE_DIRECTORY,
-                )),
+                .add_assertion(assert_clipboard_contains_home()),
         )
 }
 
@@ -328,20 +357,6 @@ fn assert_clipboard_contains_home() -> AssertionCallback {
         let home = std::env::var("HOME").expect("HOME should be set for integration tests");
 
         async_assert_eq!(content, home)
-    })
-}
-
-fn assert_clipboard_contains_home_child(child: &'static str) -> AssertionCallback {
-    Box::new(move |app, _window_id| {
-        let clipboard = app.update(|ctx| ctx.clipboard().read());
-        let content = match clipboard.paths {
-            Some(paths) => paths.join(" "),
-            None => clipboard.plain_text,
-        };
-        let home = std::env::var("HOME").expect("HOME should be set for integration tests");
-        let path = Path::new(&home).join(child).to_string_lossy().to_string();
-
-        async_assert_eq!(content, path)
     })
 }
 
@@ -520,7 +535,10 @@ pub fn test_vertical_pane_context_menu_copies_metadata() -> Builder {
         add_tab_context_metadata_setup_steps(new_builder())
             .with_step(enable_vertical_tabs(VerticalTabsDisplayGranularity::Panes)),
     );
-    add_vertical_pane_context_metadata_copy_steps(builder, open_vertical_tab_context_menu)
+    add_vertical_pane_context_metadata_copy_steps(
+        builder,
+        open_first_vertical_tab_pane_context_menu,
+    )
 }
 
 pub fn test_focus_panes_on_hover() -> Builder {

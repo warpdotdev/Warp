@@ -324,7 +324,14 @@ impl TabData {
             vertical_tabs_display_granularity,
             VerticalTabsDisplayGranularity::Panes
         ) {
-            let pane_id = pane_group.focused_pane_id(ctx);
+            let pane_id = pane_name_target
+                .filter(|target| self.pane_group.id() == target.locator.pane_group_id)
+                .and_then(|target| {
+                    pane_group
+                        .pane_by_id(target.locator.pane_id)
+                        .map(|_| target.locator.pane_id)
+                })
+                .unwrap_or_else(|| pane_group.focused_pane_id(ctx));
             (
                 "Copy pane title",
                 Self::copyable_pane_title(pane_group, pane_id, ctx),
