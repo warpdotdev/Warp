@@ -177,9 +177,20 @@ pub enum OrchestrationPillBarAction {
     OpenInNewTab(AIConversationId),
     /// Menu item: stop the in-progress agent task without removing the
     /// conversation from history.
+    ///
+    /// Currently unconstructed — the menu item is hidden because the
+    /// underlying behaviour isn't reliable yet (see
+    /// `open_menu_for`). The handler arm and the corresponding
+    /// `TerminalAction::StopAgentConversation` wiring stay in place
+    /// so re-adding the menu entry only requires uncommenting the
+    /// item.
+    #[allow(dead_code)]
     Stop(AIConversationId),
     /// Menu item: cancel any in-flight task and remove the conversation
     /// from local history (no server delete).
+    ///
+    /// Currently unconstructed — see the comment on `Stop` above.
+    #[allow(dead_code)]
     Kill(AIConversationId),
     /// Set or clear which pill the user is currently hovering. Dispatched
     /// from the pill body's `on_hover` handler after the configured
@@ -352,25 +363,17 @@ impl OrchestrationPillBar {
         let is_open_elsewhere =
             is_conversation_open_in_other_visible_view(conversation_id, self_terminal_view_id, ctx);
 
+        // Stop / Kill items are intentionally omitted for now — their
+        // wiring is still in place (see `OrchestrationPillBarAction::Stop`
+        // / `Kill` and the matching `TerminalAction` handlers) but the
+        // current behaviour isn't reliable enough to ship. Re-add the
+        // menu items here when that's fixed.
         let items = if is_open_elsewhere {
-            vec![
-                item(
-                    "Focus pane",
-                    Icon::ArrowSplit,
-                    OrchestrationPillBarAction::FocusOpenedConversation(conversation_id),
-                ),
-                MenuItem::Separator,
-                item(
-                    "Stop agent",
-                    Icon::Stop,
-                    OrchestrationPillBarAction::Stop(conversation_id),
-                ),
-                item(
-                    "Kill agent",
-                    Icon::Trash,
-                    OrchestrationPillBarAction::Kill(conversation_id),
-                ),
-            ]
+            vec![item(
+                "Focus pane",
+                Icon::ArrowSplit,
+                OrchestrationPillBarAction::FocusOpenedConversation(conversation_id),
+            )]
         } else {
             vec![
                 item(
@@ -382,17 +385,6 @@ impl OrchestrationPillBar {
                     "Open in new tab",
                     Icon::Plus,
                     OrchestrationPillBarAction::OpenInNewTab(conversation_id),
-                ),
-                MenuItem::Separator,
-                item(
-                    "Stop agent",
-                    Icon::Stop,
-                    OrchestrationPillBarAction::Stop(conversation_id),
-                ),
-                item(
-                    "Kill agent",
-                    Icon::Trash,
-                    OrchestrationPillBarAction::Kill(conversation_id),
                 ),
             ]
         };
