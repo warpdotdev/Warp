@@ -188,7 +188,6 @@ fn test_transform_non_breaking_spaces() {
     assert_eq!(test_parse_html(safari_html), expected_text);
 }
 
-// TODO: remove/update this test when we eventually support these HTML element types!
 #[test]
 fn test_unsupported_html_types() {
     assert_eq!(
@@ -203,21 +202,25 @@ fn test_unsupported_html_types() {
             ])
         ]
     );
+}
 
+#[test]
+fn test_parse_table() {
     assert_eq!(
         test_parse_html(
-            "<meta charset='utf-8'><table><thead><tr><th>Text 1</th><th>Text 2</th></tr></thead><tbody><tr><td>Test</td><td>Test</td></tr></tbody></table>"
+            r#"<meta charset='utf-8'><table><thead><tr><th align="left">Text 1</th><th style="text-align: right"><strong>Text 2</strong></th></tr></thead><tbody><tr><td>Test</td><td><em>Test</em></td></tr></tbody></table>"#
         ),
-        vec![
-            FormattedTextLine::Line(vec![
-                FormattedTextFragment::plain_text("Text 1"),
-                FormattedTextFragment::plain_text("Text 2")
-            ]),
-            FormattedTextLine::Line(vec![
-                FormattedTextFragment::plain_text("Test"),
-                FormattedTextFragment::plain_text("Test")
-            ])
-        ]
+        vec![FormattedTextLine::Table(FormattedTable {
+            headers: vec![
+                vec![FormattedTextFragment::plain_text("Text 1")],
+                vec![FormattedTextFragment::bold("Text 2")]
+            ],
+            alignments: vec![TableAlignment::Left, TableAlignment::Right],
+            rows: vec![vec![
+                vec![FormattedTextFragment::plain_text("Test")],
+                vec![FormattedTextFragment::italic("Test")]
+            ]]
+        })]
     );
 }
 

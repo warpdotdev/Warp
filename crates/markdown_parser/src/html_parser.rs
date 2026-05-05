@@ -12,9 +12,9 @@ use html5ever::{
 use markup5ever_rcdom::{Node, NodeData, RcDom};
 
 use crate::{
-    CodeBlockText, FormattedIndentTextInline, FormattedTaskList, FormattedText,
+    CodeBlockText, FormattedIndentTextInline, FormattedTable, FormattedTaskList, FormattedText,
     FormattedTextFragment, FormattedTextHeader, FormattedTextInline, FormattedTextLine,
-    FormattedTextStyles, Hyperlink, OrderedFormattedIndentTextInline,
+    FormattedTextStyles, Hyperlink, OrderedFormattedIndentTextInline, TableAlignment,
     markdown_parser::RUNNABLE_BLOCK_MARKDOWN_LANG, weight::CustomWeight,
 };
 
@@ -22,7 +22,7 @@ use crate::{
 // Note that we have "<b>" here because GDocs always include a top level <b> element to add additional
 // GDocs specific meta-data for its rich text content.
 const TOP_LEVEL_ELEMENT_TAGS_TO_SKIP: &[&str] = &[
-    "head", "body", "html", "meta", "table", "b", "div", "ul", "ol", "li", "input",
+    "head", "body", "html", "meta", "b", "div", "ul", "ol", "li", "input",
 ];
 const PHRASING_ELEMENT_TAGS: &[&str] = &[
     "span", "i", "code", "strong", "em", "br", "a", "s", "u", "ins",
@@ -335,6 +335,7 @@ pub fn parse_html(html: &str) -> Result<FormattedText> {
                     }),
                     "br" => FormattedTextLine::LineBreak,
                     "hr" => FormattedTextLine::HorizontalRule,
+                    "table" => FormattedTextLine::Table(parse_table(node.as_ref())),
                     _ => {
                         // Take into consideration the indent level when parsing the nodes.
                         let parsed_node = parse_pending_inline_nodes(
@@ -364,6 +365,105 @@ pub fn parse_html(html: &str) -> Result<FormattedText> {
     }
 
     Ok(FormattedText { lines: result })
+}
+fn parse_table(table: &Node) -> FormattedTable {
+    let mut row_nodes = Vec::new();
+    collect_table_rows(table, &mut row_nodes);
+
+    let rows = row_nodes
+        .iter()
+        .filter_map(|row| {
+            let cells = collect_table_cells(row)
+                .into_iter()
+                .map(|cell| parse_phrasing_content(&cell.children.borrow(), Styling::default()))
+                .collect::<Vec<_>>();
+
+            (!cells.is_empty()).then_some(cells)
+        })
+        .collect::<Vec<_>>();
+
+    let (headers, rows) = match rows.split_first() {
+        Some((headers, rows)) => (headers.clone(), rows.to_vec()),
+        None => (Vec::new(), Vec::new()),
+    };
+
+    let mut alignments = row_nodes
+        .first()
+        .map(|row| {
+            collect_table_cells(row)
+                .into_iter()
+                .map(|cell| parse_table_cell_alignment(&cell))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let mut table = FormattedTable {
+        headers,
+        alignments: std::mem::take(&mut alignments),
+        rows,
+    };
+    table.normalize_shape();
+    table
+}
+
+fn collect_table_rows(node: &Node, rows: &mut Vec<Rc<Node>>) {
+    for child in node.children.borrow().iter() {
+        if element_name(child) == Some("tr") {
+            rows.push(Rc::clone(child));
+            continue;
+        }
+
+        collect_table_rows(child.as_ref(), rows);
+    }
+}
+
+fn collect_table_cells(row: &Node) -> Vec<Rc<Node>> {
+    row.children
+        .borrow()
+        .iter()
+        .filter(|child| matches!(element_name(child), Some("td" | "th")))
+        .cloned()
+        .collect()
+}
+
+fn element_name(node: &Rc<Node>) -> Option<&str> {
+    match &node.data {
+        NodeData::Element { name, .. } => Some(name.local.as_ref()),
+        NodeData::Document
+        | NodeData::Doctype { .. }
+        | NodeData::Text { .. }
+        | NodeData::Comment { .. }
+        | NodeData::ProcessingInstruction { .. } => None,
+    }
+}
+
+fn parse_table_cell_alignment(cell: &Node) -> TableAlignment {
+    let NodeData::Element { attrs, .. } = &cell.data else {
+        return TableAlignment::Left;
+    };
+    let attrs = attrs.borrow();
+
+    if let Some(alignment) = get_attribute(&attrs, "align").and_then(alignment_from_html_value) {
+        return alignment;
+    }
+
+    get_attribute(&attrs, "style")
+        .map(parse_style_into_dict)
+        .and_then(|style| {
+            style
+                .get("text-align")
+                .and_then(|alignment| alignment_from_html_value(alignment))
+        })
+        .unwrap_or(TableAlignment::Left)
+}
+
+fn alignment_from_html_value(value: &str) -> Option<TableAlignment> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "left" | "start" => Some(TableAlignment::Left),
+        "center" => Some(TableAlignment::Center),
+        "right" | "end" => Some(TableAlignment::Right),
+        _ => None,
+    }
 }
 
 // Push all pending inline nodes into the result. Take into consideration the active indent level.

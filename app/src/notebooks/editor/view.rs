@@ -5,7 +5,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use markdown_parser::{parse_html, parse_markdown, FormattedText};
+use markdown_parser::{parse_html, parse_markdown, parse_markdown_with_gfm_tables, FormattedText};
 use pathfinder_geometry::vector::vec2f;
 use string_offset::CharOffset;
 use warp_editor::{
@@ -1965,6 +1965,11 @@ impl RichTextEditorView {
 
     fn paste_content(&mut self, content: ClipboardContent, ctx: &mut ViewContext<Self>) {
         let parsed_html = content.html.and_then(|text| parse_html(text.as_str()).ok());
+        let parse_markdown = if FeatureFlag::MarkdownTables.is_enabled() {
+            parse_markdown_with_gfm_tables
+        } else {
+            parse_markdown
+        };
 
         // If we failed to get the html string, try parsing plain text into markdown first.
         // If that failed as well, fall back to pasting plain text string.
