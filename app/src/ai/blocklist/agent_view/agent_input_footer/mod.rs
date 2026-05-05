@@ -228,11 +228,9 @@ pub struct AgentInputFooter {
     // Fast-forward (auto-approve) toggle button shown in the agent view footer.
     fast_forward_button: ViewHandle<ActionButton>,
 
-    // "Hand off to cloud" chip. Visibility is gated only on the
-    // `OzHandoff && HandoffLocalCloud` feature flags. Per-conversation
-    // eligibility is enforced by `Workspace::start_local_to_cloud_handoff`,
-    // which falls through to splitting a fresh cloud-mode pane when the
-    // active conversation isn't handoff-able.
+    // "Hand off to cloud" chip. Visibility is gated on native/local handoff
+    // availability. Per-conversation eligibility is enforced by
+    // `Workspace::start_local_to_cloud_handoff`.
     handoff_to_cloud_button: ViewHandle<ActionButton>,
 
     // CLI agent voice input state (self-contained, bypasses editor voice flow).
@@ -358,9 +356,7 @@ impl AgentInputFooter {
 
         // "Hand off to cloud" chip. On click dispatches the workspace action that
         // splits a new cloud-mode pane next to the local pane; that pane handles
-        // the rest of the handoff flow. The chip is always visible when the feature
-        // flags are on; per-conversation eligibility falls through to splitting a
-        // fresh cloud-mode pane in `Workspace::start_local_to_cloud_handoff`.
+        // the rest of the handoff flow when native/local handoff is available.
         let handoff_to_cloud_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", AgentInputButtonTheme)
                 .with_icon(Icon::UploadCloud)
@@ -1976,12 +1972,10 @@ impl AgentInputFooter {
                 .is_enabled()
                 .then(|| ChildView::new(&self.fast_forward_button).finish()),
             AgentToolbarItemKind::HandoffToCloud => {
-                if !FeatureFlag::OzHandoff.is_enabled()
-                    || !FeatureFlag::HandoffLocalCloud.is_enabled()
-                {
+                if !AgentToolbarItemKind::handoff_to_cloud_available() {
                     return None;
                 }
-                // Always render the chip when the feature flags are on.
+                // Render the chip when the native/local handoff surface is available.
                 // Per-conversation eligibility (synced server token, non-empty
                 // history) is enforced by `Workspace::start_local_to_cloud_handoff`,
                 // which falls through to splitting a fresh cloud-mode pane when
@@ -2451,9 +2445,11 @@ impl TypedActionView for AgentInputFooter {
                 });
             }
             AgentInputFooterAction::OpenHandoffPane => {
-                ctx.emit(AgentInputFooterEvent::OpenHandoffPane {
-                    initial_prompt: None,
-                });
+                if AgentToolbarItemKind::handoff_to_cloud_available() {
+                    ctx.emit(AgentInputFooterEvent::OpenHandoffPane {
+                        initial_prompt: None,
+                    });
+                }
             }
             AgentInputFooterAction::ShowContextMenu { position } => {
                 ctx.emit(AgentInputFooterEvent::ShowContextMenu {

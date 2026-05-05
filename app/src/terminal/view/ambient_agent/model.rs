@@ -9,8 +9,10 @@ use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::{conversation::AIConversationId, extract_user_query_mode};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent_sdk::driver::upload_snapshot_for_handoff;
 use crate::ai::ambient_agents::spawn::{spawn_task, submit_run_followup, AmbientAgentEvent};
 use crate::ai::ambient_agents::task::HarnessConfig;
@@ -19,6 +21,7 @@ use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{
     OUT_OF_CREDITS_TASK_FAILURE_MESSAGE, SERVER_OVERLOADED_TASK_FAILURE_MESSAGE,
 };
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::TouchedWorkspace;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
@@ -73,6 +76,7 @@ pub enum SessionStartupKind {
 /// the pane opens; flips to `Starting` when the user submits and the snapshot
 /// upload runs; flips to `Failed` if the upload fails so the user can retry by
 /// re-submitting from the same pane.
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum HandoffSubmissionState {
     #[default]
@@ -85,6 +89,7 @@ pub enum HandoffSubmissionState {
 /// fresh cloud-mode pane and consumed by `submit_handoff`. Its presence is the
 /// single source of truth for "this pane is in handoff mode" via
 /// `is_local_to_cloud_handoff()`.
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 #[derive(Debug, Clone)]
 pub(crate) struct PendingHandoff {
     /// Source conversation id (the local conversation's `server_conversation_token`).
@@ -175,6 +180,7 @@ pub struct AmbientAgentViewModel {
     pending_followup_prompt: Option<String>,
 
     /// See [`PendingHandoff`].
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pending_handoff: Option<PendingHandoff>,
 }
 
@@ -210,6 +216,7 @@ impl AmbientAgentViewModel {
             active_execution_session_id: None,
             last_ended_execution_session_id: None,
             pending_followup_prompt: None,
+            #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
             pending_handoff: None,
         }
     }
@@ -363,7 +370,14 @@ impl AmbientAgentViewModel {
     /// spawn, so post-spawn flows (queued-prompt rendering, V2-input suppression,
     /// submit interception) all observe the same source of truth.
     pub(crate) fn is_local_to_cloud_handoff(&self) -> bool {
-        self.pending_handoff.is_some()
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        {
+            self.pending_handoff.is_some()
+        }
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        {
+            false
+        }
     }
 
     /// True when this pane is a handoff pane AND the async
@@ -373,15 +387,23 @@ impl AmbientAgentViewModel {
     /// must leave the prompt and pending attachments alone instead of
     /// silently dropping them on the floor.
     pub(crate) fn is_handoff_ready_to_submit(&self) -> bool {
-        let Some(handoff) = self.pending_handoff.as_ref() else {
-            return false;
-        };
-        handoff.touched_workspace.is_some()
-            && !matches!(handoff.submission_state, HandoffSubmissionState::Starting)
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        {
+            let Some(handoff) = self.pending_handoff.as_ref() else {
+                return false;
+            };
+            handoff.touched_workspace.is_some()
+                && !matches!(handoff.submission_state, HandoffSubmissionState::Starting)
+        }
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        {
+            false
+        }
     }
 
     /// Seeds the handoff context onto this pane. Called by the workspace bootstrap
     /// after splitting in a fresh cloud-mode pane and entering agent view.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn set_pending_handoff(
         &mut self,
         pending: Option<PendingHandoff>,
@@ -393,6 +415,7 @@ impl AmbientAgentViewModel {
 
     /// Updates the touched workspace once async derivation completes.
     /// No-op when no handoff context is set.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn set_pending_handoff_workspace(
         &mut self,
         workspace: TouchedWorkspace,
@@ -407,6 +430,7 @@ impl AmbientAgentViewModel {
 
     /// Updates the submission state on the pending handoff. No-op when no handoff
     /// context is set.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn set_pending_handoff_submission_state(
         &mut self,
         state: HandoffSubmissionState,
@@ -1139,6 +1163,7 @@ impl AmbientAgentViewModel {
     /// set and routes it through the same `spawn_agent_with_request` path that
     /// regular cloud-mode runs use — so `WaitingForSession` → `SessionStarted`
     /// streaming reaches the same pane unchanged.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn submit_handoff(
         &mut self,
         prompt: String,
@@ -1219,6 +1244,16 @@ impl AmbientAgentViewModel {
                 }
             },
         );
+    }
+
+    #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+    pub(crate) fn submit_handoff(
+        &mut self,
+        prompt: String,
+        attachments: Vec<AttachmentInput>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.spawn_agent(prompt, attachments, ctx);
     }
 
     /// Cancels the ambient agent task if one is currently running.

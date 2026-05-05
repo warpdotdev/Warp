@@ -113,12 +113,15 @@ use crate::util::openable_file_type::FileTarget;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{resolve_file_target_with_editor_choice, EditorLayout};
 
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::agent_view::agent_input_footer::sort_environments_by_recency;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::{
     derive_touched_workspace, extract_paths_from_conversation, pick_handoff_overlap_env,
 };
 use crate::ai::blocklist::history_model::CloudConversationData;
 use crate::ai::blocklist::FORK_PREFIX;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::{plugin_manager_for, PluginModalKind};
@@ -318,6 +321,7 @@ use crate::terminal::session_settings::{
 };
 use crate::terminal::settings::{SpacingMode, TerminalSettings};
 use crate::terminal::shell::ShellType;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::terminal::view::ambient_agent::{HandoffSubmissionState, PendingHandoff};
 #[cfg(feature = "local_tty")]
 use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
@@ -12874,6 +12878,7 @@ impl Workspace {
     /// cloud-mode pane (no handoff context) so the chip is always-clickable per the
     /// existing posture — there's nothing meaningful to hand off in that state, but
     /// the user clearly wanted a cloud-mode pane.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn start_local_to_cloud_handoff(
         &mut self,
         initial_prompt: Option<String>,
@@ -20181,7 +20186,10 @@ impl TypedActionView for Workspace {
                 self.add_tab_for_code_file(path, None, ctx);
             }
             OpenLocalToCloudHandoffPane { initial_prompt } => {
+                #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
                 self.start_local_to_cloud_handoff(initial_prompt.clone(), ctx);
+                #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+                let _ = initial_prompt;
             }
             OpenNetworkLogPane => {
                 self.open_network_log_pane(ctx);

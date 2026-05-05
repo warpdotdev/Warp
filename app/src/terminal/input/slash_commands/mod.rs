@@ -876,6 +876,7 @@ impl Input {
                     ctx.dispatch_typed_action(&TerminalAction::ToggleUsageFooter);
                 }
             }
+            #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
             move_to_cloud if command.name == commands::MOVE_TO_CLOUD.name => {
                 if !FeatureFlag::OzHandoff.is_enabled()
                     || !FeatureFlag::HandoffLocalCloud.is_enabled()

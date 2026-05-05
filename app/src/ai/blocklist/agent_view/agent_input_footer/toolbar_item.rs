@@ -74,6 +74,11 @@ pub enum AgentToolbarItemKind {
 }
 
 impl AgentToolbarItemKind {
+    pub fn handoff_to_cloud_available() -> bool {
+        FeatureFlag::OzHandoff.is_enabled()
+            && FeatureFlag::HandoffLocalCloud.is_enabled()
+            && cfg!(all(feature = "local_fs", not(target_family = "wasm")))
+    }
     pub fn available_in(&self) -> ToolbarAvailability {
         match self {
             Self::ContextChip(_) | Self::VoiceInput | Self::FileAttach | Self::ShareSession => {
@@ -187,7 +192,7 @@ impl AgentToolbarItemKind {
         {
             items.push(Self::ShareSession);
         }
-        if FeatureFlag::OzHandoff.is_enabled() && FeatureFlag::HandoffLocalCloud.is_enabled() {
+        if Self::handoff_to_cloud_available() {
             items.push(Self::HandoffToCloud);
         }
         items.push(Self::VoiceInput);
@@ -216,7 +221,7 @@ impl AgentToolbarItemKind {
         {
             items.push(Self::ShareSession);
         }
-        if FeatureFlag::OzHandoff.is_enabled() && FeatureFlag::HandoffLocalCloud.is_enabled() {
+        if Self::handoff_to_cloud_available() {
             items.push(Self::HandoffToCloud);
         }
         items
