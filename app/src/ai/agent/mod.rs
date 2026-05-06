@@ -664,6 +664,28 @@ impl From<&AIApiError> for RenderableAIError {
         match value {
             AIApiError::QuotaLimit => Self::QuotaLimit,
             AIApiError::ServerOverloaded => Self::ServerOverloaded,
+            AIApiError::ErrorStatus(status, body) => {
+                let error_message = if body.is_empty() {
+                    format!("Request failed with status {} {}.", status.as_u16(), status.canonical_reason().unwrap_or("Unknown"))
+                } else {
+                    format!("Request failed with status {} {}: {}", status.as_u16(), status.canonical_reason().unwrap_or("Unknown"), body)
+                };
+                Self::Other {
+                    error_message,
+                    will_attempt_resume: false,
+                    waiting_for_network: false,
+                }
+            }
+            AIApiError::NoUserFacingContent => Self::Other {
+                error_message: "The request had no user-facing content to send to the endpoint.".to_string(),
+                will_attempt_resume: false,
+                waiting_for_network: false,
+            },
+            AIApiError::NoCustomEndpoint(model) => Self::Other {
+                error_message: format!("No custom endpoint found for model '{}'. Check your endpoint configuration.", model),
+                will_attempt_resume: false,
+                waiting_for_network: false,
+            },
             _ => Self::Other {
                 error_message: format!("Request failed with error: {value:?}"),
                 will_attempt_resume: false,

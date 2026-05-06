@@ -14,6 +14,76 @@ pub async fn generate_multi_agent_output(
     mut params: RequestParams,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
 ) -> Result<ResponseStream, ConvertToAPITypeError> {
+    #[cfg(not(target_family = "wasm"))]
+    if FeatureFlag::OpenAiCompatibleEndpoints.is_enabled() {
+        let custom_prefix = ai::openai_compatible::OpenAiCompatibleEndpoint::ID_PREFIX;
+        log::debug!(
+            "Routing check: model='{}', custom_prefix='{}', has_endpoint={}",
+            params.model,
+            custom_prefix,
+            params.openai_compatible_endpoint.is_some()
+        );
+        if params.model.as_str().starts_with(custom_prefix) {
+            if let Some(endpoint) = params.openai_compatible_endpoint.clone() {
+                log::info!("Routing to custom endpoint: {} ({})", endpoint.display_name, endpoint.base_url);
+                let request = crate::ai::openai_compatible_client::from_request_params(&params);
+
+                if !request.has_user_facing_content() {
+                    log::warn!(
+                        "Custom endpoint: skipping request with no user-facing content \
+                        (has_endpoint=true, input_count={})",
+                        params.input.len(),
+                    );
+                    let (tx, rx) = async_channel::unbounded();
+                    let _ = tx
+                        .send(Err(Arc::new(crate::server::server_api::AIApiError::NoUserFacingContent)))
+                        .await;
+                    return Ok(Box::pin(rx));
+                }
+
+                let client = server_api.http_client();
+                let result = crate::ai::openai_compatible_client::generate_openai_compatible_output(
+                    &client,
+                    &endpoint,
+                    request,
+                    cancellation_rx,
+                )
+                .await;
+
+                return match result {
+                    Ok(stream) => Ok(stream),
+                    Err(e) => {
+                        let ai_error = match &e {
+                            crate::ai::openai_compatible_client::OpenAiCompatibleError::ParseError(msg) => {
+                                crate::server::server_api::AIApiError::Other(
+                                    anyhow::anyhow!("Custom endpoint parse error: {}", msg),
+                                )
+                            }
+                        };
+                        let (tx, rx) = async_channel::unbounded();
+                        let _ = tx.send(Err(Arc::new(ai_error))).await;
+                        Ok(Box::pin(rx))
+                    }
+                };
+            } else {
+                log::error!(
+                    "Custom endpoint: model '{}' has custom prefix but no endpoint was resolved. \
+                     This request would fall through to the Warp server, which is incorrect.",
+                    params.model
+                );
+                let (tx, rx) = async_channel::unbounded();
+                let _ = tx
+                    .send(Err(Arc::new(
+                        crate::server::server_api::AIApiError::NoCustomEndpoint(
+                            params.model.to_string(),
+                        ),
+                    )))
+                    .await;
+                return Ok(Box::pin(rx));
+            }
+        }
+    }
+
     let supported_tools = params
         .supported_tools_override
         .take()

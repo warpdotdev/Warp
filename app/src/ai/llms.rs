@@ -16,6 +16,7 @@ use crate::{
     network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind},
     report_error,
     server::server_api::ServerApiProvider,
+    settings::AISettings,
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
 };
 
@@ -36,7 +37,9 @@ pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -
         LLMProvider::OpenAI => api_keys.is_some_and(|keys| keys.openai.is_some()),
         LLMProvider::Anthropic => api_keys.is_some_and(|keys| keys.anthropic.is_some()),
         LLMProvider::Google => api_keys.is_some_and(|keys| keys.google.is_some()),
-        _ => false,
+        LLMProvider::Openrouter => api_keys.is_some_and(|keys| keys.open_router.is_some()),
+        LLMProvider::OpenAiCompatible => true, // Custom endpoints always use their own auth
+        LLMProvider::AwsBedrock | LLMProvider::Xai | LLMProvider::Unknown => false,
     }
 }
 
@@ -106,6 +109,10 @@ pub enum LLMProvider {
     Anthropic,
     Google,
     Xai,
+    Openrouter,
+    AwsBedrock,
+    OpenAiCompatible,
+    #[serde(other)]
     Unknown,
 }
 
@@ -117,7 +124,24 @@ impl LLMProvider {
             LLMProvider::Anthropic => Some(Icon::ClaudeLogo),
             LLMProvider::Google => Some(Icon::GeminiLogo),
             LLMProvider::Xai => None,
+            LLMProvider::Openrouter => None,
+            LLMProvider::AwsBedrock => None,
+            LLMProvider::OpenAiCompatible => Some(Icon::Key),
             LLMProvider::Unknown => None,
+        }
+    }
+
+    /// Returns a human-readable name for the provider.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            LLMProvider::OpenAI => "OpenAI",
+            LLMProvider::Anthropic => "Anthropic",
+            LLMProvider::Google => "Google",
+            LLMProvider::Xai => "xAI",
+            LLMProvider::Openrouter => "OpenRouter",
+            LLMProvider::AwsBedrock => "AWS Bedrock",
+            LLMProvider::OpenAiCompatible => "OpenAI Compatible",
+            LLMProvider::Unknown => "Unknown",
         }
     }
 }
@@ -127,6 +151,7 @@ impl LLMProvider {
 pub enum LLMModelHost {
     DirectApi,
     AwsBedrock,
+    OpenAiCompatible,
     #[serde(other)]
     Unknown,
 }
@@ -313,6 +338,42 @@ impl LLMInfo {
             spec: None,
             provider: LLMProvider::Unknown,
             host_configs: HashMap::new(),
+            discount_percentage: None,
+            context_window: LLMContextWindow::default(),
+        }
+    }
+
+    /// Creates an LLMInfo entry from a custom OpenAI-compatible endpoint configuration.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn from_openai_compatible_endpoint(
+        endpoint: &ai::openai_compatible::OpenAiCompatibleEndpoint,
+        model_index: usize,
+    ) -> Self {
+        let model = &endpoint.models[model_index];
+        let model_display = model.display_name();
+        let provider_display = &endpoint.display_name;
+        let display_name = format!("{} {}", model_display, provider_display);
+        Self {
+            display_name,
+            base_model_name: model.model_id.clone(),
+            id: endpoint.llm_id_for_model(model_index),
+            reasoning_level: None,
+            usage_metadata: LLMUsageMetadata {
+                request_multiplier: 1,
+                credit_multiplier: None,
+            },
+            description: Some("Custom endpoint".to_string()),
+            disable_reason: None,
+            vision_supported: false,
+            spec: None,
+            provider: LLMProvider::OpenAiCompatible,
+            host_configs: HashMap::from([(
+                LLMModelHost::OpenAiCompatible,
+                RoutingHostConfig {
+                    enabled: true,
+                    model_routing_host: LLMModelHost::OpenAiCompatible,
+                },
+            )]),
             discount_percentage: None,
             context_window: LLMContextWindow::default(),
         }
@@ -592,22 +653,44 @@ impl LLMPreferences {
             },
         );
 
+        // Re-inject custom endpoint models when relevant AI settings change
+        #[cfg(not(target_family = "wasm"))]
+        ctx.subscribe_to_model(&AISettings::handle(ctx), |me, event, ctx| {
+            use crate::settings::AISettingsChangedEvent;
+            match event {
+                AISettingsChangedEvent::OpenAiCompatibleEnabled { .. }
+                | AISettingsChangedEvent::OpenAiCompatibleEndpointsSetting { .. }
+                | AISettingsChangedEvent::IsAnyAIEnabled { .. } => {
+                    me.inject_custom_endpoint_models(ctx);
+                }
+                _ => {}
+            }
+        });
+
         let base_llm_for_terminal_view = HashMap::new();
 
-        let me = Self {
-            models_by_feature,
-            last_update: None,
-            base_llm_for_terminal_view,
-        };
+    let me = Self {
+        models_by_feature,
+        last_update: None,
+        base_llm_for_terminal_view,
+    };
 
-        // In agent mode eval builds, eagerly kick off a fetch of the model list from the server
-        // so that it's available by the time test steps like `set_preferred_agent_mode_llm` run.
-        // In production, this is handled reactively (on auth complete, network online, etc.)
-        // to avoid duplicate requests at startup.
-        #[cfg(feature = "agent_mode_evals")]
-        me.refresh_available_models(ctx);
+    // Inject custom endpoint models at init from cached AI settings
+    #[cfg(not(target_family = "wasm"))]
+    let mut me = me;
+    #[cfg(not(target_family = "wasm"))]
+    me.inject_custom_endpoint_models(ctx);
+    #[cfg(target_family = "wasm")]
+    let me = me;
 
-        me
+    // In agent mode eval builds, eagerly kick off a fetch of the model list from the server
+    // so that it's available by the time test steps like `set_preferred_agent_mode_llm` run.
+    // In production, this is handled reactively (on auth complete, network online, etc.)
+    // to avoid duplicate requests at startup.
+    #[cfg(feature = "agent_mode_evals")]
+    me.refresh_available_models(ctx);
+
+    me
     }
 
     /// Returns the `LLMInfo` for the base LLM to be used for an Agent Mode request.
@@ -966,9 +1049,14 @@ impl LLMPreferences {
     fn on_server_update(&mut self, update: ModelsByFeature, ctx: &mut ModelContext<Self>) {
         let has_existing_persisted_config = get_cached_models(ctx).is_some();
 
-        let old = std::mem::replace(&mut self.models_by_feature, update);
+    let old = std::mem::replace(&mut self.models_by_feature, update);
 
-        match serde_json::to_string(&self.models_by_feature) {
+    // Inject custom endpoint models BEFORE the clearing loop below so that
+    // custom model selections are not incorrectly treated as "no longer supported".
+    #[cfg(not(target_family = "wasm"))]
+    self.inject_custom_endpoint_models(ctx);
+
+    match serde_json::to_string(&self.models_by_feature) {
             Ok(serialized_update) => {
                 if let Err(e) = ctx
                     .private_user_preferences()
@@ -994,10 +1082,53 @@ impl LLMPreferences {
                     if has_existing_persisted_config {
                         UpdatePopupVisibilityState::WaitingToBeShown
                     } else {
-                        UpdatePopupVisibilityState::Hidden
-                    },
-                )),
+                UpdatePopupVisibilityState::Hidden
+            }
+        )),
             });
+        }
+
+    ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+    }
+
+    /// Inject custom OpenAI-compatible endpoint models into the model lists.
+    /// Called when AI settings change (endpoints added/removed) and after server model updates.
+    #[cfg(not(target_family = "wasm"))]
+    fn inject_custom_endpoint_models(&mut self, ctx: &mut ModelContext<Self>) {
+        if !warp_core::features::FeatureFlag::OpenAiCompatibleEndpoints.is_enabled() {
+            return;
+        }
+
+        let ai_settings = AISettings::as_ref(ctx);
+        let enabled = *ai_settings.openai_compatible_enabled;
+        let endpoints = &ai_settings.openai_compatible_endpoints;
+
+        // Remove all existing custom endpoint models first
+        let prefix = ai::openai_compatible::OpenAiCompatibleEndpoint::ID_PREFIX;
+        self.models_by_feature.agent_mode.choices.retain(|m| !m.id.as_str().starts_with(prefix));
+        self.models_by_feature.coding.choices.retain(|m| !m.id.as_str().starts_with(prefix));
+        if let Some(ref mut cli_agent) = self.models_by_feature.cli_agent {
+            cli_agent.choices.retain(|m| !m.id.as_str().starts_with(prefix));
+        }
+        if let Some(ref mut computer_use) = self.models_by_feature.computer_use {
+            computer_use.choices.retain(|m| !m.id.as_str().starts_with(prefix));
+        }
+
+        // Inject enabled custom endpoint models
+        if enabled {
+            for endpoint in endpoints.iter() {
+                for model_index in 0..endpoint.models.len() {
+                    let info = LLMInfo::from_openai_compatible_endpoint(endpoint, model_index);
+                    self.models_by_feature.agent_mode.choices.push(info.clone());
+                    self.models_by_feature.coding.choices.push(info.clone());
+                    if let Some(ref mut cli_agent) = self.models_by_feature.cli_agent {
+                        cli_agent.choices.push(info.clone());
+                    }
+                    if let Some(ref mut computer_use) = self.models_by_feature.computer_use {
+                        computer_use.choices.push(info);
+                    }
+                }
+            }
         }
 
         ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);

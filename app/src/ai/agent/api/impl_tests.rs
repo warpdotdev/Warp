@@ -38,9 +38,13 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         research_agent_enabled: false,
         orchestration_enabled: false,
         supported_tools_override: None,
-        parent_agent_id: None,
-        agent_name: None,
-    }
+    parent_agent_id: None,
+    agent_name: None,
+    #[cfg(not(target_family = "wasm"))]
+    openai_compatible_endpoint: None,
+    #[cfg(not(target_family = "wasm"))]
+    root_task_id: String::new(),
+}
 }
 
 #[test]

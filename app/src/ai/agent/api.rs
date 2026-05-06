@@ -27,6 +27,8 @@ use crate::{
     ai::{blocklist::SessionContext, llms::LLMId},
     server::server_api::AIApiError,
 };
+#[cfg(not(target_family = "wasm"))]
+use warpui_extras::secure_storage::AppContextExt;
 
 use super::{AIAgentInput, MCPContext, MCPServer, RequestMetadata, Suggestions};
 use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput};
@@ -130,6 +132,12 @@ pub struct RequestParams {
     pub parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     pub agent_name: Option<String>,
+    /// If set, route this request to a custom OpenAI-compatible endpoint instead of Warp server.
+    #[cfg(not(target_family = "wasm"))]
+    pub openai_compatible_endpoint: Option<ai::openai_compatible::OpenAiCompatibleEndpoint>,
+    /// The root task ID for this request (used by custom endpoint streaming to target AddMessagesToTask).
+    #[cfg(not(target_family = "wasm"))]
+    pub root_task_id: String,
 }
 
 pub type Event = Result<warp_multi_agent_api::ResponseEvent, Arc<AIApiError>>;
@@ -301,6 +309,59 @@ impl RequestParams {
                 })
         };
 
+        // Resolve custom OpenAI-compatible endpoint if model ID uses custom: prefix
+        #[cfg(not(target_family = "wasm"))]
+        let openai_compatible_endpoint = {
+            let flag_enabled = warp_core::features::FeatureFlag::OpenAiCompatibleEndpoints.is_enabled();
+            let setting_enabled = *ai_settings.openai_compatible_enabled;
+            let model_id = request_input.model_id.as_str();
+            let prefix = ai::openai_compatible::OpenAiCompatibleEndpoint::ID_PREFIX;
+            let has_prefix = model_id.starts_with(prefix);
+            log::debug!(
+                "RequestParams resolve: model='{}', flag={}, setting={}, has_prefix={}",
+                model_id, flag_enabled, setting_enabled, has_prefix
+            );
+            if flag_enabled && setting_enabled && has_prefix {
+                let resolved = ai_settings.openai_compatible_endpoints.get_by_llm_id(model_id)
+                    .map(|(endpoint, model_index)| {
+                        let mut ep = endpoint.clone();
+                        ep.models = vec![ep.models.get(model_index).cloned().unwrap_or_else(|| ai::openai_compatible::EndpointModel {
+                            model_id: String::new(),
+                            alias: String::new(),
+                        })];
+                        if ep.api_key.is_none() && ep.has_api_key {
+                            let storage_key = ai::openai_compatible::OpenAiCompatibleEndpoint::secure_storage_key(&ep.id);
+                            match app.secure_storage().read_value(&storage_key) {
+                                Ok(key) if !key.is_empty() => ep.api_key = Some(key),
+                                Ok(_) => {}
+                                Err(e) => log::warn!("Failed to read custom endpoint API key from secure storage: {e:#}"),
+                            }
+                        }
+                        if let Some(ref key) = ep.api_key {
+                            let storage_key = ai::openai_compatible::OpenAiCompatibleEndpoint::secure_storage_key(&ep.id);
+                            if let Err(e) = app.secure_storage().write_value(&storage_key, key) {
+                                log::warn!("Failed to migrate custom endpoint API key to secure storage: {e:#}");
+                            }
+                            ep.has_api_key = true;
+                        }
+                        ep
+                    });
+                log::debug!("RequestParams resolved endpoint: {:?}", resolved.as_ref().map(|e| &e.display_name));
+                resolved
+            } else {
+                None
+            }
+        };
+
+        #[cfg(not(target_family = "wasm"))]
+        let root_task_id = conversation.tasks.first()
+            .map(|t| t.id.clone())
+            .unwrap_or_else(|| {
+                let mut sorted_keys: Vec<_> = request_input.input_messages.keys().map(|k| k.to_string()).collect();
+                sorted_keys.sort();
+                sorted_keys.into_iter().next().unwrap_or_default()
+            });
+
         Self {
             input: request_input.all_inputs().cloned().collect(),
             conversation_token: conversation.server_conversation_token,
@@ -332,6 +393,10 @@ impl RequestParams {
             supported_tools_override: request_input.supported_tools_override.clone(),
             parent_agent_id: None,
             agent_name: None,
+        #[cfg(not(target_family = "wasm"))]
+        openai_compatible_endpoint,
+        #[cfg(not(target_family = "wasm"))]
+        root_task_id,
         }
     }
 }

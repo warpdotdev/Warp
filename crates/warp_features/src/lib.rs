@@ -859,6 +859,10 @@ pub enum FeatureFlag {
     /// conversation into a fresh cloud agent run with the current workspace
     /// snapshot attached. Requires `OzHandoff` to also be enabled.
     HandoffLocalCloud,
+
+    /// When enabled, users can configure custom OpenAI-compatible API endpoints
+    /// (e.g. Ollama, vLLM, LM Studio) for direct client-side inference.
+    OpenAiCompatibleEndpoints,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -942,6 +946,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::CloudModeInputV2,
     FeatureFlag::HandoffLocalCloud,
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::OpenAiCompatibleEndpoints,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

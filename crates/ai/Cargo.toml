@@ -62,6 +62,8 @@ priority-queue = "2.3.1"
 repo_metadata.workspace = true
 uuid.workspace = true
 unicode-width.workspace = true
+schemars.workspace = true
+settings_value = { workspace = true, features = ["derive"] }
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

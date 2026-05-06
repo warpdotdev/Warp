@@ -29,8 +29,8 @@ use crate::settings::{
     AwsBedrockCredentialsEnabled, CanUseWarpCreditsWithByok, CodeSettings, CodebaseContextEnabled,
     FileBasedMcpEnabled, GitOperationsAutogenEnabled, IncludeAgentCommandsInHistory,
     IntelligentAutosuggestionsEnabled, MemoryEnabled, NLDInTerminalEnabled,
-    NaturalLanguageAutosuggestionsEnabled, OrchestrationEnabled, RuleSuggestionsEnabled,
-    SharedBlockTitleGenerationEnabled, ShouldRenderCLIAgentToolbar,
+    NaturalLanguageAutosuggestionsEnabled, OpenAiCompatibleEnabled, OrchestrationEnabled,
+    RuleSuggestionsEnabled, SharedBlockTitleGenerationEnabled, ShouldRenderCLIAgentToolbar,
     ShouldRenderUseAgentToolbarForUserCommands, ShouldShowOzUpdatesInZeroState, ShowAgentTips,
     ShowConversationHistory, ShowHintText, ThinkingDisplayMode, VoiceInputEnabled,
     WarpDriveContextEnabled,
@@ -1508,16 +1508,24 @@ impl AISettingsPageView {
                 {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
-                widgets.push(Box::new(CLIAgentWidget::default()));
-                widgets.push(Box::new(ApiKeysWidget::new(ctx)));
-                widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
-                widgets.push(Box::new(AgentAttributionWidget::default()));
-                widgets.push(Box::new(OtherAIWidget::default()));
-                if FeatureFlag::AgentModeComputerUse.is_enabled() {
-                    widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
-                }
+        widgets.push(Box::new(CLIAgentWidget::default()));
+        widgets.push(Box::new(ApiKeysWidget::new(ctx)));
+        widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let flag_enabled = FeatureFlag::OpenAiCompatibleEndpoints.is_enabled();
+            log::warn!("OpenAiCompatibleEndpoints flag enabled: {flag_enabled}");
+            if flag_enabled {
+                widgets.push(Box::new(OpenAiCompatibleWidget::new(ctx)));
             }
-            Some(AISubpage::WarpAgent) => {
+        }
+        widgets.push(Box::new(AgentAttributionWidget::default()));
+        widgets.push(Box::new(OtherAIWidget::default()));
+        if FeatureFlag::AgentModeComputerUse.is_enabled() {
+            widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
+        }
+    }
+    Some(AISubpage::WarpAgent) => {
                 // Oz page: global toggle + Active AI + Input + Other
                 widgets.push(Box::new(GlobalAIWidget::default()));
                 if ai_settings
@@ -1549,15 +1557,23 @@ impl AISettingsPageView {
                 if voice_supported {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
-                widgets.push(Box::new(ApiKeysWidget::new(ctx)));
-                widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
-                widgets.push(Box::new(AgentAttributionWidget::default()));
-                widgets.push(Box::new(OtherAIWidget::default()));
-                if FeatureFlag::AgentModeComputerUse.is_enabled() {
-                    widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
-                }
+            widgets.push(Box::new(ApiKeysWidget::new(ctx)));
+            widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let flag_enabled = FeatureFlag::OpenAiCompatibleEndpoints.is_enabled();
+            log::warn!("OpenAiCompatibleEndpoints flag enabled: {flag_enabled}");
+            if flag_enabled {
+                widgets.push(Box::new(OpenAiCompatibleWidget::new(ctx)));
             }
-            Some(AISubpage::Profiles) => {
+        }
+        widgets.push(Box::new(AgentAttributionWidget::default()));
+            widgets.push(Box::new(OtherAIWidget::default()));
+            if FeatureFlag::AgentModeComputerUse.is_enabled() {
+                widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
+            }
+        }
+        Some(AISubpage::Profiles) => {
                 if !FeatureFlag::UsageBasedPricing.is_enabled() {
                     widgets.push(Box::new(UsageWidget::default()));
                 }
@@ -2278,6 +2294,11 @@ pub enum AISettingsPageAction {
         pattern: String,
         agent: Option<CLIAgent>,
     },
+    ToggleOpenAiCompatibleEnabled,
+    AddOpenAiCompatibleEndpoint,
+    RemoveOpenAiCompatibleEndpoint(String),
+    AddModelToEndpoint(String),
+    RemoveModelFromEndpoint { endpoint_id: String, model_index: usize },
 }
 
 impl From<&AISettingsPageAction> for LoginGatedFeature {
@@ -3021,13 +3042,97 @@ impl TypedActionView for AISettingsPageView {
                 // `CloudPreferencesSyncer` as a `JsonPreference` GSO keyed
                 // `Global_AgentAttributionEnabled`; no bespoke server call needed.
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings
-                        .agent_attribution_enabled
-                        .toggle_and_save_value(ctx));
+            report_if_error!(settings
+                .agent_attribution_enabled
+                .toggle_and_save_value(ctx));
+        });
+        ctx.notify();
+    }
+        AISettingsPageAction::ToggleOpenAiCompatibleEnabled => {
+            AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings
+                    .openai_compatible_enabled
+                    .toggle_and_save_value(ctx));
+            });
+            let subpage = self.active_subpage;
+            self.page = Self::build_page(subpage, ctx);
+            ctx.notify();
+        }
+            AISettingsPageAction::AddOpenAiCompatibleEndpoint => {
+                #[cfg(not(target_family = "wasm"))]
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let mut endpoints = settings.openai_compatible_endpoints.value().clone();
+                    let id = endpoints.generate_unique_id();
+                    endpoints.0.push(::ai::openai_compatible::OpenAiCompatibleEndpoint {
+                        id: id.clone(),
+                        display_name: "New Endpoint".to_string(),
+                        base_url: "http://localhost:11434".to_string(),
+                        has_api_key: false,
+                        api_key: None,
+                        models: vec![::ai::openai_compatible::EndpointModel {
+                            model_id: "llama3".to_string(),
+                            alias: String::new(),
+                        }],
+                    });
+                    report_if_error!(settings.openai_compatible_endpoints.set_value(endpoints, ctx));
                 });
+                let subpage = self.active_subpage;
+                let old_page = std::mem::replace(&mut self.page, Self::build_page(subpage, ctx));
+                self.page.inherit_scroll_states_from(&old_page);
                 ctx.notify();
             }
-        }
+            AISettingsPageAction::RemoveOpenAiCompatibleEndpoint(id) => {
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    let endpoint_id = id.clone();
+                    ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                        manager.remove_custom_endpoint_api_key(&endpoint_id, ctx);
+                    });
+                    AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                        let mut endpoints = settings.openai_compatible_endpoints.value().clone();
+                        endpoints.0.retain(|e| e.id != *id);
+                        report_if_error!(settings.openai_compatible_endpoints.set_value(endpoints, ctx));
+                    });
+                }
+                let subpage = self.active_subpage;
+                let old_page = std::mem::replace(&mut self.page, Self::build_page(subpage, ctx));
+                self.page.inherit_scroll_states_from(&old_page);
+                ctx.notify();
+            }
+            AISettingsPageAction::AddModelToEndpoint(endpoint_id) => {
+                #[cfg(not(target_family = "wasm"))]
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let mut endpoints = settings.openai_compatible_endpoints.value().clone();
+                    if let Some(endpoint) = endpoints.0.iter_mut().find(|e| e.id == *endpoint_id) {
+                        endpoint.models.push(::ai::openai_compatible::EndpointModel {
+                            model_id: String::new(),
+                            alias: String::new(),
+                        });
+                    }
+                    report_if_error!(settings.openai_compatible_endpoints.set_value(endpoints, ctx));
+                });
+                let subpage = self.active_subpage;
+                let old_page = std::mem::replace(&mut self.page, Self::build_page(subpage, ctx));
+                self.page.inherit_scroll_states_from(&old_page);
+                ctx.notify();
+            }
+            AISettingsPageAction::RemoveModelFromEndpoint { endpoint_id, model_index } => {
+                #[cfg(not(target_family = "wasm"))]
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let mut endpoints = settings.openai_compatible_endpoints.value().clone();
+                    if let Some(endpoint) = endpoints.0.iter_mut().find(|e| e.id == *endpoint_id) {
+                        if endpoint.models.len() > 1 {
+                            endpoint.models.remove(*model_index);
+                        }
+                    }
+                    report_if_error!(settings.openai_compatible_endpoints.set_value(endpoints, ctx));
+                });
+                let subpage = self.active_subpage;
+                let old_page = std::mem::replace(&mut self.page, Self::build_page(subpage, ctx));
+                self.page.inherit_scroll_states_from(&old_page);
+                ctx.notify();
+            }
+}
     }
 }
 
@@ -6310,6 +6415,7 @@ struct ApiKeysWidget {
     openai_api_key_editor: ViewHandle<EditorView>,
     anthropic_api_key_editor: ViewHandle<EditorView>,
     google_api_key_editor: ViewHandle<EditorView>,
+    openrouter_api_key_editor: ViewHandle<EditorView>,
 
     can_use_warp_credits_with_byok: SwitchStateHandle,
     upgrade_highlight_index: HighlightedHyperlink,
@@ -6326,6 +6432,7 @@ impl ApiKeysWidget {
             openai: openai_key,
             anthropic: anthropic_key,
             google: google_key,
+            open_router: openrouter_key,
             ..
         } = ApiKeyManager::as_ref(ctx).keys().clone();
 
@@ -6413,11 +6520,18 @@ impl ApiKeysWidget {
             set_google_key,
             "AIzaSy..."
         );
+        create_api_key_editor!(
+            openrouter_api_key_editor,
+            openrouter_key,
+            set_open_router_key,
+            "sk-or-..."
+        );
 
         Self {
             openai_api_key_editor,
             anthropic_api_key_editor,
             google_api_key_editor,
+            openrouter_api_key_editor,
 
             can_use_warp_credits_with_byok: Default::default(),
             upgrade_highlight_index: Default::default(),
@@ -6504,6 +6618,13 @@ impl ApiKeysWidget {
             appearance,
             "Google API Key",
             self.google_api_key_editor.clone(),
+            is_enabled,
+            app,
+        ));
+        column.add_child(render_api_key_input(
+            appearance,
+            "OpenRouter API Key",
+            self.openrouter_api_key_editor.clone(),
             is_enabled,
             app,
         ));
@@ -6602,9 +6723,9 @@ impl ApiKeysWidget {
 impl SettingsWidget for ApiKeysWidget {
     type View = AISettingsPageView;
 
-    fn search_terms(&self) -> &str {
-        "api keys bring your own byo openai anthropic google claude gemini gpt"
-    }
+        fn search_terms(&self) -> &str {
+            "api keys bring your own byo openai anthropic google claude gemini gpt openrouter"
+        }
 
     fn render(
         &self,
@@ -7075,6 +7196,517 @@ impl SettingsWidget for AwsBedrockWidget {
                 .finish(),
             )
             .with_child(self.render_aws_bedrock_section(appearance, app, is_bedrock_available));
+
+        Container::new(column.finish())
+            .with_margin_bottom(HEADER_PADDING)
+            .finish()
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+struct OpenAiCompatibleWidget {
+    enabled_toggle: SwitchStateHandle,
+    base_url_editors: Vec<(String, ViewHandle<EditorView>)>,
+    api_key_editors: Vec<(String, ViewHandle<EditorView>)>,
+    display_name_editors: Vec<(String, ViewHandle<EditorView>)>,
+    model_id_editors: Vec<(String, usize, ViewHandle<EditorView>)>,
+    model_alias_editors: Vec<(String, usize, ViewHandle<EditorView>)>,
+    add_endpoint_button: ViewHandle<ActionButton>,
+    add_model_buttons: Vec<(String, ViewHandle<ActionButton>)>,
+    remove_endpoint_buttons: Vec<(String, ViewHandle<ActionButton>)>,
+    remove_model_buttons: Vec<(String, usize, ViewHandle<ActionButton>)>,
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl OpenAiCompatibleWidget {
+    fn new(ctx: &mut ViewContext<<Self as SettingsWidget>::View>) -> Self {
+        let (endpoint_data, is_any_ai_enabled, is_enabled) = {
+            let ai_settings = AISettings::as_ref(ctx);
+            let endpoints = &ai_settings.openai_compatible_endpoints;
+            let data: Vec<(String, String, bool, String, Vec<(String, String)>)> = endpoints
+                .iter()
+                .map(|e| {
+                    (
+                        e.id.clone(),
+                        e.base_url.clone(),
+                        e.has_api_key(),
+                        e.display_name.clone(),
+                        e.models.iter().map(|m| (m.model_id.clone(), m.alias.clone())).collect(),
+                    )
+                })
+                .collect();
+            (
+                data,
+                ai_settings.is_any_ai_enabled(ctx),
+                *ai_settings.openai_compatible_enabled,
+            )
+        };
+
+        let is_interactive = is_any_ai_enabled && is_enabled;
+
+        let mut base_url_editors = Vec::new();
+        let mut api_key_editors = Vec::new();
+        let mut display_name_editors = Vec::new();
+        let mut model_id_editors = Vec::new();
+        let mut model_alias_editors = Vec::new();
+        let mut remove_endpoint_buttons = Vec::new();
+        let mut add_model_buttons = Vec::new();
+        let mut remove_model_buttons = Vec::new();
+
+        for (id, base_url, has_api_key, display_name, models) in &endpoint_data {
+            let base_url_editor = Self::create_editor(base_url, "http://localhost:11434", id, "base_url", ctx);
+            let api_key_editor = Self::create_password_editor("", if *has_api_key { "Enter new key to replace" } else { "Enter API key" }, id, ctx);
+            let display_name_editor = Self::create_editor(display_name, "My Endpoint", id, "display_name", ctx);
+
+            AISettingsPageView::update_editor_interaction_state(base_url_editor.clone(), is_interactive, ctx);
+            AISettingsPageView::update_editor_interaction_state(api_key_editor.clone(), is_interactive, ctx);
+            AISettingsPageView::update_editor_interaction_state(display_name_editor.clone(), is_interactive, ctx);
+
+            for (model_idx, (model_id, alias)) in models.iter().enumerate() {
+                let model_id_editor = Self::create_model_editor(model_id, "model-name", id, model_idx, "model_id", ctx);
+                let alias_editor = Self::create_model_editor(alias, "My Model", id, model_idx, "alias", ctx);
+
+                AISettingsPageView::update_editor_interaction_state(model_id_editor.clone(), is_interactive, ctx);
+                AISettingsPageView::update_editor_interaction_state(alias_editor.clone(), is_interactive, ctx);
+
+                model_id_editors.push((id.clone(), model_idx, model_id_editor));
+                model_alias_editors.push((id.clone(), model_idx, alias_editor));
+
+                if models.len() > 1 {
+                    let remove_eid = id.clone();
+                    let remove_mi = model_idx;
+                    let remove_model_button = ctx.add_typed_action_view(move |_| {
+                        ActionButton::new("Remove Model", SecondaryTheme)
+                            .with_size(ButtonSize::Small)
+                            .on_click(move |ctx| {
+                                ctx.dispatch_typed_action(
+                                    AISettingsPageAction::RemoveModelFromEndpoint {
+                                        endpoint_id: remove_eid.clone(),
+                                        model_index: remove_mi,
+                                    },
+                                );
+                            })
+                    });
+                    remove_model_button.update(ctx, |button, ctx| {
+                        button.set_disabled(!is_interactive, ctx);
+                    });
+                    remove_model_buttons.push((id.clone(), model_idx, remove_model_button));
+                }
+            }
+
+            let add_eid = id.clone();
+            let add_model_button = ctx.add_typed_action_view(move |_| {
+                ActionButton::new("+ Add Model", SecondaryTheme)
+                    .with_size(ButtonSize::Small)
+                    .on_click(move |ctx| {
+                        ctx.dispatch_typed_action(
+                            AISettingsPageAction::AddModelToEndpoint(add_eid.clone()),
+                        );
+                    })
+            });
+            add_model_button.update(ctx, |button, ctx| {
+                button.set_disabled(!is_interactive, ctx);
+            });
+            add_model_buttons.push((id.clone(), add_model_button));
+
+            let remove_id = id.clone();
+            let remove_button = ctx.add_typed_action_view(move |_| {
+                ActionButton::new("Remove Endpoint", SecondaryTheme)
+                    .with_size(ButtonSize::Small)
+                    .on_click(move |ctx| {
+                        ctx.dispatch_typed_action(
+                            AISettingsPageAction::RemoveOpenAiCompatibleEndpoint(
+                                remove_id.clone(),
+                            ),
+                        );
+                    })
+            });
+            remove_button.update(ctx, |button, ctx| {
+                button.set_disabled(!is_interactive, ctx);
+            });
+
+            base_url_editors.push((id.clone(), base_url_editor));
+            api_key_editors.push((id.clone(), api_key_editor));
+            display_name_editors.push((id.clone(), display_name_editor));
+            remove_endpoint_buttons.push((id.clone(), remove_button));
+        }
+
+        let add_endpoint_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("+ Add Endpoint", SecondaryTheme)
+                .with_size(ButtonSize::Small)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::AddOpenAiCompatibleEndpoint);
+                })
+        });
+        add_endpoint_button.update(ctx, |button, ctx| {
+            button.set_disabled(!is_any_ai_enabled, ctx);
+        });
+
+        Self {
+            enabled_toggle: Default::default(),
+            base_url_editors,
+            api_key_editors,
+            display_name_editors,
+            model_id_editors,
+            model_alias_editors,
+            add_endpoint_button,
+            add_model_buttons,
+            remove_endpoint_buttons,
+            remove_model_buttons,
+        }
+    }
+
+    fn create_editor(
+        initial_value: &str,
+        placeholder: &str,
+        endpoint_id: &str,
+        field: &str,
+        ctx: &mut ViewContext<AISettingsPageView>,
+    ) -> ViewHandle<EditorView> {
+        let value = initial_value.to_string();
+        let editor = ctx.add_typed_action_view(move |ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            let options = SingleLineEditorOptions {
+                is_password: false,
+                text: TextOptions {
+                    font_size_override: Some(appearance.ui_font_size()),
+                    font_family_override: Some(appearance.monospace_font_family()),
+                    text_colors_override: Some(TextColors {
+                        default_color: appearance.theme().active_ui_text_color(),
+                        disabled_color: appearance.theme().disabled_ui_text_color(),
+                        hint_color: appearance.theme().disabled_ui_text_color(),
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text(placeholder, ctx);
+            editor.set_buffer_text(&value, ctx);
+            editor
+        });
+        Self::subscribe_field_editor(&editor, endpoint_id, field, ctx);
+        editor
+    }
+
+    fn create_password_editor(
+        initial_value: &str,
+        placeholder: &str,
+        endpoint_id: &str,
+        ctx: &mut ViewContext<AISettingsPageView>,
+    ) -> ViewHandle<EditorView> {
+        let value = initial_value.to_string();
+        let editor = ctx.add_typed_action_view(move |ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            let options = SingleLineEditorOptions {
+                is_password: true,
+                text: TextOptions {
+                    font_size_override: Some(appearance.ui_font_size()),
+                    font_family_override: Some(appearance.monospace_font_family()),
+                    text_colors_override: Some(TextColors {
+                        default_color: appearance.theme().active_ui_text_color(),
+                        disabled_color: appearance.theme().disabled_ui_text_color(),
+                        hint_color: appearance.theme().disabled_ui_text_color(),
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text(placeholder, ctx);
+            editor.set_buffer_text(&value, ctx);
+            editor
+        });
+        Self::subscribe_field_editor(&editor, endpoint_id, "api_key", ctx);
+        editor
+    }
+
+    fn create_model_editor(
+        initial_value: &str,
+        placeholder: &str,
+        endpoint_id: &str,
+        model_index: usize,
+        field: &str,
+        ctx: &mut ViewContext<AISettingsPageView>,
+    ) -> ViewHandle<EditorView> {
+        let value = initial_value.to_string();
+        let editor = ctx.add_typed_action_view(move |ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            let options = SingleLineEditorOptions {
+                is_password: false,
+                text: TextOptions {
+                    font_size_override: Some(appearance.ui_font_size()),
+                    font_family_override: Some(appearance.monospace_font_family()),
+                    text_colors_override: Some(TextColors {
+                        default_color: appearance.theme().active_ui_text_color(),
+                        disabled_color: appearance.theme().disabled_ui_text_color(),
+                        hint_color: appearance.theme().disabled_ui_text_color(),
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text(placeholder, ctx);
+            editor.set_buffer_text(&value, ctx);
+            editor
+        });
+        Self::subscribe_model_field_editor(&editor, endpoint_id, model_index, field, ctx);
+        editor
+    }
+
+    fn subscribe_field_editor(
+        editor: &ViewHandle<EditorView>,
+        endpoint_id: &str,
+        field: &str,
+        ctx: &mut ViewContext<AISettingsPageView>,
+    ) {
+        let id = endpoint_id.to_string();
+        let field = field.to_string();
+        let editor_clone = editor.clone();
+        ctx.subscribe_to_view(editor, move |_, _editor, event, ctx| {
+            if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                let buffer_text = editor_clone.as_ref(ctx).buffer_text(ctx);
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let mut endpoints = settings.openai_compatible_endpoints.value().clone();
+                    if let Some(endpoint) = endpoints.0.iter_mut().find(|e| e.id == id) {
+                        match field.as_str() {
+                            "display_name" => endpoint.display_name = buffer_text.clone(),
+                            "base_url" => endpoint.base_url = buffer_text.clone(),
+                            "api_key" => {
+                                if !buffer_text.is_empty() {
+                                    endpoint.has_api_key = true;
+                                    endpoint.api_key = Some(buffer_text.clone());
+                                    ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                                        manager.set_custom_endpoint_api_key(&endpoint.id, Some(buffer_text.clone()), ctx);
+                                    });
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    report_if_error!(settings.openai_compatible_endpoints.set_value(endpoints, ctx));
+                });
+                ctx.notify();
+            }
+        });
+    }
+
+    fn subscribe_model_field_editor(
+        editor: &ViewHandle<EditorView>,
+        endpoint_id: &str,
+        model_index: usize,
+        field: &str,
+        ctx: &mut ViewContext<AISettingsPageView>,
+    ) {
+        let id = endpoint_id.to_string();
+        let field = field.to_string();
+        let editor_clone = editor.clone();
+        ctx.subscribe_to_view(editor, move |_, _editor, event, ctx| {
+            if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                let buffer_text = editor_clone.as_ref(ctx).buffer_text(ctx);
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let mut endpoints = settings.openai_compatible_endpoints.value().clone();
+                    if let Some(endpoint) = endpoints.0.iter_mut().find(|e| e.id == id) {
+                        if let Some(model) = endpoint.models.get_mut(model_index) {
+                            match field.as_str() {
+                                "model_id" => model.model_id = buffer_text.clone(),
+                                "alias" => model.alias = buffer_text.clone(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    report_if_error!(settings.openai_compatible_endpoints.set_value(endpoints, ctx));
+                });
+                ctx.notify();
+            }
+        });
+    }
+
+    fn render_endpoint_card(
+        &self,
+        appearance: &Appearance,
+        endpoint: &::ai::openai_compatible::OpenAiCompatibleEndpoint,
+        is_enabled: bool,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let id = endpoint.id.clone();
+        let mut column = Flex::column().with_spacing(8.);
+
+        let padding = Some(Coords {
+            top: 10.,
+            bottom: 10.,
+            left: 16.,
+            right: 16.,
+        });
+        let editor_style = UiComponentStyles {
+            padding,
+            background: Some(appearance.theme().surface_2().into()),
+            ..Default::default()
+        };
+
+        let render_field = |label: String, editor: ViewHandle<EditorView>| -> Box<dyn Element> {
+            let label_el = Text::new_inline(label, appearance.ui_font_family(), CONTENT_FONT_SIZE)
+                .with_color(styles::header_font_color(is_enabled, app).into())
+                .finish();
+            let input = appearance
+                .ui_builder()
+                .text_input(editor)
+                .with_style(editor_style.clone())
+                .build()
+                .finish();
+            Flex::column()
+                .with_spacing(4.)
+                .with_child(label_el)
+                .with_child(input)
+                .finish()
+        };
+
+        if let Some((_, editor)) = self.display_name_editors.iter().find(|(eid, _)| eid == &id) {
+            column.add_child(render_field("Provider Name".to_string(), editor.clone()));
+        }
+        if let Some((_, editor)) = self.base_url_editors.iter().find(|(eid, _)| eid == &id) {
+            column.add_child(render_field("Base URL".to_string(), editor.clone()));
+        }
+        if let Some((_, editor)) = self.api_key_editors.iter().find(|(eid, _)| eid == &id) {
+            let api_key_field = render_field("API Key".to_string(), editor.clone());
+            let status_text = if endpoint.has_api_key() {
+                "API key is configured. Enter a new key to replace it."
+            } else {
+                "No API key configured. Enter your key to authenticate."
+            };
+            let status_color = if endpoint.has_api_key() {
+                appearance.theme().active_ui_text_color()
+            } else {
+                appearance.theme().disabled_ui_text_color()
+            };
+            let status_el = Text::new_inline(status_text.to_string(), appearance.ui_font_family(), CONTENT_FONT_SIZE - 1.)
+                .with_color(status_color.into())
+                .finish();
+            column.add_child(api_key_field);
+            column.add_child(status_el);
+        }
+
+        for (model_idx, _model) in endpoint.models.iter().enumerate() {
+            let model_label = if endpoint.models.len() > 1 {
+                format!("Model {} — Name", model_idx + 1)
+            } else {
+                "Model Name".to_string()
+            };
+            let alias_label = if endpoint.models.len() > 1 {
+                format!("Model {} — Alias", model_idx + 1)
+            } else {
+                "Model Alias".to_string()
+            };
+
+            if let Some((_, _, editor)) = self.model_id_editors.iter().find(|(eid, mi, _)| eid == &id && *mi == model_idx) {
+                column.add_child(render_field(model_label, editor.clone()));
+            }
+            if let Some((_, _, editor)) = self.model_alias_editors.iter().find(|(eid, mi, _)| eid == &id && *mi == model_idx) {
+                column.add_child(render_field(alias_label, editor.clone()));
+            }
+            if let Some((_, _, button)) = self.remove_model_buttons.iter().find(|(eid, mi, _)| eid == &id && *mi == model_idx) {
+                column.add_child(button.as_ref(app).render(app));
+            }
+        }
+
+        if let Some((_, button)) = self.add_model_buttons.iter().find(|(eid, _)| eid == &id) {
+            column.add_child(button.as_ref(app).render(app));
+        }
+
+        if let Some((_, button)) = self.remove_endpoint_buttons.iter().find(|(eid, _)| eid == &id) {
+            column.add_child(button.as_ref(app).render(app));
+        }
+
+        Container::new(column.finish())
+            .with_uniform_padding(12.)
+            .with_background(appearance.theme().surface_2())
+            .with_border(Border::all(1.).with_border_fill(appearance.theme().outline()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+            .finish()
+    }
+
+    fn render_section(
+        &self,
+        appearance: &Appearance,
+        app: &AppContext,
+        tooltip_states: &RefCell<HashMap<String, MouseStateHandle>>,
+    ) -> Box<dyn Element> {
+        let ai_settings = AISettings::as_ref(app);
+        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
+        let is_enabled = *ai_settings.openai_compatible_enabled;
+        let endpoints = &ai_settings.openai_compatible_endpoints;
+
+        let mut column = Flex::column().with_spacing(16.).with_child(
+            render_ai_setting_toggle::<OpenAiCompatibleEnabled>(
+                "Use custom OpenAI-compatible endpoints",
+                AISettingsPageAction::ToggleOpenAiCompatibleEnabled,
+                is_enabled,
+                is_any_ai_enabled,
+                self.enabled_toggle.clone(),
+                tooltip_states,
+                app,
+            ),
+).with_child(
+    render_ai_setting_description(
+        "Connect to any server that implements the OpenAI Chat Completions API (e.g. Ollama, vLLM, LM Studio). Endpoints are stored locally and never synced to the cloud.",
+        is_any_ai_enabled,
+        app,
+    ),
+);
+
+if is_enabled {
+    column.add_child(
+        render_ai_setting_description(
+            "Changes are saved automatically.",
+            is_any_ai_enabled,
+            app,
+        ),
+    );
+    for endpoint in endpoints.iter() {
+            column.add_child(self.render_endpoint_card(appearance, endpoint, is_any_ai_enabled, app));
+        }
+
+        column.add_child(self.add_endpoint_button.as_ref(app).render(app));
+    }
+
+        column.finish()
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl SettingsWidget for OpenAiCompatibleWidget {
+    type View = AISettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "openai compatible custom endpoint ollama vllm local model"
+    }
+
+    fn should_render(&self, _app: &AppContext) -> bool {
+        FeatureFlag::OpenAiCompatibleEndpoints.is_enabled()
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let ai_settings = AISettings::as_ref(app);
+        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
+
+        let column = Flex::column()
+            .with_child(render_separator(appearance))
+            .with_child(
+                build_sub_header(
+                    appearance,
+                    "Custom Endpoints",
+                    Some(styles::header_font_color(is_any_ai_enabled, app)),
+                )
+                .with_padding_bottom(HEADER_PADDING)
+                .finish(),
+            )
+            .with_child(self.render_section(appearance, app, &view.local_only_icon_tooltip_states));
 
         Container::new(column.finish())
             .with_margin_bottom(HEADER_PADDING)

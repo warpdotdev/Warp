@@ -68,6 +68,10 @@ pub struct ResponseStream {
     /// and `can_attempt_resume_on_error` is true.
     should_resume_conversation_after_stream_finished: bool,
 
+    /// Whether the stream contained a failed custom endpoint tool call that needs
+    /// an automatic follow-up so the model can retry with a valid tool.
+    has_failed_custom_tool_call: bool,
+
     /// Unique, internal id for the current request.
     ///
     /// This ensures that the model never emits events for a request that was already cancelled (or
@@ -112,6 +116,7 @@ impl ResponseStream {
             ai_identifiers,
             can_attempt_resume_on_error,
             should_resume_conversation_after_stream_finished: false,
+            has_failed_custom_tool_call: false,
             current_request_id: Some(request_id),
         }
     }
@@ -122,7 +127,7 @@ impl ResponseStream {
 
     /// Returns true if we should attempt to resume the conversation after the stream finishes.
     pub fn should_resume_conversation_after_stream_finished(&self) -> bool {
-        self.should_resume_conversation_after_stream_finished
+        self.should_resume_conversation_after_stream_finished || self.has_failed_custom_tool_call
     }
 
     /// Helper function to emit AgentModeError telemetry for error that is retryable (not user visible).
@@ -144,7 +149,7 @@ impl ResponseStream {
 
     fn retry(&mut self, ctx: &mut ModelContext<Self>) {
         self.retry_count += 1;
-        self.has_received_client_actions = false; // Reset for the new attempt
+        self.has_received_client_actions = false;
 
         let (cancellation_tx, cancellation_rx) = oneshot::channel();
         if let Some(old_cancellation_tx) = self.cancellation_tx.take() {
@@ -156,8 +161,18 @@ impl ResponseStream {
         self.current_request_id = Some(request_id);
         let params = self.params.clone();
         let server_api = ServerApiProvider::as_ref(ctx).get();
+
+        let backoff_secs = match self.retry_count {
+            1 => 1,
+            2 => 3,
+            _ => 5,
+        };
+
         let _ = ctx.spawn(
-            async move { generate_multi_agent_output(server_api, params, cancellation_rx).await },
+            async move {
+                tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
+                generate_multi_agent_output(server_api, params, cancellation_rx).await
+            },
             move |me, stream, ctx| {
                 me.handle_response_stream_result(request_id, stream, ctx);
             },
@@ -231,9 +246,36 @@ impl ResponseStream {
                                     init_event.request_id.clone(),
                                 ));
                         }
-                        warp_multi_agent_api::response_event::Type::ClientActions(_) => {
-                            // Mark that we've received client actions
-                            self.has_received_client_actions = true;
+                        warp_multi_agent_api::response_event::Type::ClientActions(client_actions) => {
+                            let has_content_bearing_actions = client_actions.actions.iter().any(|action| {
+                                !matches!(
+                                    action.action,
+                                    Some(warp_multi_agent_api::client_action::Action::CreateTask(_))
+                                )
+                            });
+                            if has_content_bearing_actions {
+                                self.has_received_client_actions = true;
+                            }
+                            let has_failed_custom_tool_call = client_actions.actions.iter().any(|action| {
+                                if let Some(warp_multi_agent_api::client_action::Action::AddMessagesToTask(add_msg)) = &action.action {
+                                    add_msg.messages.iter().any(|msg| {
+                                        matches!(
+                                            msg.message,
+                                            Some(warp_multi_agent_api::message::Message::ToolCallResult(
+                                                warp_multi_agent_api::message::ToolCallResult {
+                                                    result: Some(warp_multi_agent_api::message::tool_call_result::Result::Server(_)),
+                                                    ..
+                                                }
+                                            ))
+                                        )
+                                    })
+                                } else {
+                                    false
+                                }
+                            });
+                            if has_failed_custom_tool_call {
+                                self.has_failed_custom_tool_call = true;
+                            }
                         }
                         warp_multi_agent_api::response_event::Type::Finished(finished_event) => {
                             // Emit retry success telemetry on successful completion
@@ -299,9 +341,15 @@ impl ResponseStream {
                 // If we can't retry (because client actions were received) but the error is
                 // retryable and we're allowed to attempt a resume, signal that the controller
                 // should resume the conversation after the stream completes.
+                // Skip resume for custom endpoints: ResumeConversation doesn't carry
+                // action results, so the resume request would have no user-facing content
+                // and always fail with NoUserFacingContent.
+                let is_custom_endpoint = cfg!(not(target_family = "wasm"))
+                    && self.params.openai_compatible_endpoint.is_some();
                 let should_attempt_resume = self.has_received_client_actions
                     && is_retryable
-                    && self.can_attempt_resume_on_error;
+                    && self.can_attempt_resume_on_error
+                    && !is_custom_endpoint;
                 if should_attempt_resume {
                     self.should_resume_conversation_after_stream_finished = true;
                 }

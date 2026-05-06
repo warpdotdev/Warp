@@ -1600,6 +1600,24 @@ impl<V: warpui::View> PageType<V> {
         }
     }
 
+    pub fn inherit_scroll_states_from(&mut self, other: &Self) {
+        let (other_v, other_h) = other.get_scroll_states();
+        match self {
+            PageType::Monolith { vertical_scroll_state, horizontal_scroll_state, .. } => {
+                if let Some(v) = other_v { *vertical_scroll_state = Some(v); }
+                if let Some(h) = other_h { *horizontal_scroll_state = Some(h); }
+            }
+            PageType::Uncategorized { vertical_scroll_state, horizontal_scroll_state, .. } => {
+                if let Some(v) = other_v { *vertical_scroll_state = v; }
+                if let Some(h) = other_h { *horizontal_scroll_state = h; }
+            }
+            PageType::Categorized { vertical_scroll_state, horizontal_scroll_state, .. } => {
+                if let Some(v) = other_v { *vertical_scroll_state = v; }
+                if let Some(h) = other_h { *horizontal_scroll_state = h; }
+            }
+        }
+    }
+
     pub(super) fn render_page(&self, view: &V, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let page = match self.get_filtered() {

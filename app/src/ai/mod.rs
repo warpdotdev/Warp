@@ -27,6 +27,8 @@ pub(crate) mod get_relevant_files;
 pub mod harness_availability;
 pub(crate) mod harness_display;
 pub(crate) mod llms;
+#[cfg(not(target_family = "wasm"))]
+pub(crate) mod openai_compatible_client;
 pub mod onboarding;
 pub(crate) mod persisted_workspace;
 pub(crate) mod predict;

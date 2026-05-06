@@ -170,6 +170,15 @@ pub enum AIApiError {
     #[error("No context found on context search.")]
     NoContextFound,
 
+    #[error("Custom endpoint request has no user query or action results. \
+        This request was likely triggered by orchestration events that \
+        are not supported by custom endpoints.")]
+    NoUserFacingContent,
+
+    #[error("Model '{0}' requires a custom endpoint but no matching endpoint was found. \
+        Check that the endpoint is configured and enabled in AI settings.")]
+    NoCustomEndpoint(String),
+
     #[error("Failed with status code {0}: {1}")]
     ErrorStatus(http::StatusCode, String),
 
@@ -301,6 +310,8 @@ impl AIApiError {
                 }
                 true
             }
+            AIApiError::NoUserFacingContent | AIApiError::NoCustomEndpoint(_) => false,
+            AIApiError::Deserialization(_) => false,
             // By default, retry on error.
             _ => true,
         }
@@ -315,9 +326,11 @@ impl ErrorExt for AIApiError {
             AIApiError::Other(error) => error.is_actionable(),
             AIApiError::Stream { source, .. } => source.is_actionable(),
             AIApiError::ErrorStatus(_, _) => self.is_retryable(),
-            AIApiError::QuotaLimit | AIApiError::ServerOverloaded | AIApiError::NoContextFound => {
-                false
-            }
+            AIApiError::QuotaLimit
+            | AIApiError::ServerOverloaded
+            | AIApiError::NoContextFound
+            | AIApiError::NoUserFacingContent
+            | AIApiError::NoCustomEndpoint(_) => false
         }
     }
 }

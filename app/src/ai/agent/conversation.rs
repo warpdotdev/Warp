@@ -2221,10 +2221,16 @@ impl AIConversation {
                             });
                         }
                     }
-                } else {
-                    let root_task_id = self.task_store.root_task_id().clone();
-                    if let Some(mut root_task) = self.task_store.remove(&root_task_id) {
-                        let old_id = root_task.id().clone();
+            } else {
+                let root_task_id = self.task_store.root_task_id().clone();
+                if let Some(mut root_task) = self.task_store.remove(&root_task_id) {
+                    if root_task.source().is_some() {
+                        log::debug!(
+                                "CreateTask for root task that is already a server task; skipping upgrade"
+                            );
+                        self.task_store.set_root_task(root_task);
+                    } else {
+                        let old_id = root_task_id.clone();
                         root_task = root_task.into_server_created_task(
                             task,
                             None,
@@ -2237,9 +2243,7 @@ impl AIConversation {
                             terminal_view_id,
                         });
 
-                        for AddedExchange {
-                            ref mut task_id, ..
-                        } in self
+                        for AddedExchange { ref mut task_id, .. } in self
                             .added_exchanges_by_response
                             .get_mut(response_stream_id)
                             .ok_or(UpdateConversationError::NoPendingRequest)?
@@ -2249,8 +2253,9 @@ impl AIConversation {
                                 *task_id = root_task.id().clone();
                             }
                         }
-                        self.task_store.set_root_task(root_task);
+        self.task_store.set_root_task(root_task);
                     }
+                }
                 }
             }
             Action::UpdateTaskDescription(UpdateTaskDescription {

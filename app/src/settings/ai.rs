@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use indexmap::IndexMap;
 
 use crate::ai::request_usage_model::RequestLimitInfo;
+use ai::openai_compatible::OpenAiCompatibleEndpoints;
 use crate::auth::AuthStateProvider;
 use crate::report_if_error;
 use crate::terminal::CLIAgent;
@@ -1053,14 +1054,34 @@ define_settings_group!(AISettings, settings: [
     // Whether the AWS Bedrock login banner has been permanently dismissed.
     //
     // Not a user-visible setting - we model it as a setting so we can track state.
-    aws_bedrock_login_banner_dismissed: AwsBedrockLoginBannerDismissed {
+aws_bedrock_login_banner_dismissed: AwsBedrockLoginBannerDismissed {
+    type: bool,
+    default: false,
+    supported_platforms: SupportedPlatforms::DESKTOP,
+    sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+    private: true,
+}
+// Whether custom OpenAI-compatible endpoints are enabled.
+    openai_compatible_enabled: OpenAiCompatibleEnabled {
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: true,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agents.openai_compatible.enabled",
+        description: "Whether custom OpenAI-compatible API endpoints are enabled.",
     }
-    // Whether or not the user wants agent mode requests to use their saved rules.
+    // List of user-configured OpenAI-compatible API endpoints.
+    openai_compatible_endpoints: OpenAiCompatibleEndpointsSetting {
+        type: OpenAiCompatibleEndpoints,
+        default: OpenAiCompatibleEndpoints::default(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+    private: false,
+    toml_path: "agents.openai_compatible.endpoints",
+    description: "List of custom OpenAI-compatible API endpoints (e.g. Ollama, vLLM, LM Studio).",
+}
+// Whether or not the user wants agent mode requests to use their saved rules.
     memory_enabled: MemoryEnabled {
         type: bool,
         default: true,

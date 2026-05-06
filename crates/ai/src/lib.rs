@@ -8,8 +8,11 @@ pub mod diff_validation;
 pub mod document;
 pub mod gfm_table;
 pub mod index;
+pub mod openai_compatible;
 pub mod paths;
 pub mod project_context;
 pub mod skills;
 mod telemetry;
 pub mod workspace;
+
+pub use openai_compatible::{OpenAiCompatibleEndpoint, OpenAiCompatibleEndpoints};
