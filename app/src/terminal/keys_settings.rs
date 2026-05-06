@@ -189,12 +189,8 @@ impl KeysSettings {
         report_if_error!(self.quake_mode_settings.set_value(quake_mode_settings, ctx));
     }
 
-    pub fn global_hotkey_mode(&self, app: &AppContext) -> GlobalHotkeyMode {
+    pub fn global_hotkey_mode(&self, _app: &AppContext) -> GlobalHotkeyMode {
         let mut selected = GlobalHotkeyMode::Disabled;
-
-        if app.is_wayland() {
-            return selected;
-        }
 
         if *self.quake_mode_enabled && *self.activation_hotkey_enabled {
             log::error!("Both quake mode AND activation hotkey enabled. Either one or the other should be active.");

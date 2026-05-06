@@ -512,6 +512,14 @@ tink-hybrid = { git = "https://github.com/warpdotdev/tink-rust", branch = "warpd
 tikv-jemallocator = { git = "https://github.com/warpdotdev/jemallocator.git", rev = "2ee30bfdf7059223b54810e4ea6c666f0a379e0b" }
 tikv-jemalloc-sys = { git = "https://github.com/warpdotdev/jemallocator.git", rev = "2ee30bfdf7059223b54810e4ea6c666f0a379e0b" }
 
+# Pinned to the head of tauri-apps/global-hotkey#172 (`0-don/global-hotkey`
+# branch `unified-wayland`), which adds transparent Wayland support via the
+# XDG GlobalShortcuts portal while keeping the X11 backend unchanged.
+# Replace with a crates.io version once the upstream PR lands and a release
+# is cut (expected as global-hotkey 0.9). Removing this entry without an
+# upstream release will re-disable Wayland global hotkeys.
+global-hotkey = { git = "https://github.com/0-don/global-hotkey", rev = "83f5cf55a80111b29805eae453fd63b20b781a53" }
+
 [patch."https://github.com/warpdotdev/warp-proto-apis.git"]
 # Uncomment for local development of warp-proto-apis
 # warp_multi_agent_api = { path = "../warp-proto-apis/apis/multi_agent/v1/gen/rust" }

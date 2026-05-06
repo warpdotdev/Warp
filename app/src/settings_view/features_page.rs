@@ -5355,63 +5355,29 @@ impl SettingsWidget for GlobalHotkeyWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let mut column = Flex::column();
-        let ui_builder = appearance.ui_builder();
-        if app.is_wayland() {
-            column.add_child(render_body_item::<FeaturesPageAction>(
-                "Global hotkey:".to_owned(),
-                None,
-                // Fine not to show local only icon state for this, as it's not a supported setting.
-                LocalOnlyIconState::Hidden,
-                ToggleState::Disabled,
-                appearance,
-                Flex::row()
-                    .with_children([
-                        ui_builder
-                            .span("Not supported on Wayland. ")
-                            .build()
-                            .finish(),
-                        ui_builder
-                            .link(
-                                "See docs.".to_owned(),
-                                Some(
-                                    "https://docs.warp.dev/terminal/windows/global-hotkey"
-                                        .to_owned(),
-                                ),
-                                None,
-                                view.button_mouse_states.global_hotkey_link.clone(),
-                            )
-                            .soft_wrap(false)
-                            .build()
-                            .finish(),
-                    ])
-                    .finish(),
-                None,
-            ))
-        } else {
-            add_setting(
-                &mut column,
-                &KeysSettings::as_ref(app).activation_hotkey_enabled,
-                || {
-                    render_dropdown_item(
-                        appearance,
-                        "Global hotkey:",
-                        None,
-                        None,
-                        LocalOnlyIconState::for_setting(
-                            ActivationHotkeyEnabled::storage_key(),
-                            ActivationHotkeyEnabled::sync_to_cloud(),
-                            &mut view
-                                .button_mouse_states
-                                .local_only_icon_tooltip_states
-                                .borrow_mut(),
-                            app,
-                        ),
-                        None,
-                        &view.global_hotkey_dropdown,
-                    )
-                },
-            );
-        }
+        add_setting(
+            &mut column,
+            &KeysSettings::as_ref(app).activation_hotkey_enabled,
+            || {
+                render_dropdown_item(
+                    appearance,
+                    "Global hotkey:",
+                    None,
+                    None,
+                    LocalOnlyIconState::for_setting(
+                        ActivationHotkeyEnabled::storage_key(),
+                        ActivationHotkeyEnabled::sync_to_cloud(),
+                        &mut view
+                            .button_mouse_states
+                            .local_only_icon_tooltip_states
+                            .borrow_mut(),
+                        app,
+                    ),
+                    None,
+                    &view.global_hotkey_dropdown,
+                )
+            },
+        );
 
         let global_hotkey_mode =
             KeysSettings::handle(app).read(app, |settings, ctx| settings.global_hotkey_mode(ctx));

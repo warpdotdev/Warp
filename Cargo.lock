@@ -1121,6 +1121,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "ashpd"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33a3c86f3fd70c0ffa500ed189abfa90b5a52398a45d5dc372fcc38ebeb7a645"
+dependencies = [
+ "async-fs",
+ "async-net",
+ "enumflags2",
+ "futures-channel",
+ "futures-util",
+ "rand 0.9.4",
+ "serde",
+ "serde_repr",
+ "url",
+ "zbus",
+]
+
+[[package]]
 name = "assert-json-diff"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3007,7 +3025,7 @@ dependencies = [
 name = "computer_use"
 version = "0.0.0"
 dependencies = [
- "ashpd",
+ "ashpd 0.11.1",
  "async-trait",
  "cfg-if",
  "cfg_aliases 0.2.1",
@@ -5474,15 +5492,17 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "global-hotkey"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9247516746aa8e53411a0db9b62b0e24efbcf6a76e0ba73e5a91b512ddabed7"
+source = "git+https://github.com/0-don/global-hotkey?rev=83f5cf55a80111b29805eae453fd63b20b781a53#83f5cf55a80111b29805eae453fd63b20b781a53"
 dependencies = [
+ "ashpd 0.12.3",
  "crossbeam-channel",
+ "futures",
  "keyboard-types",
  "objc2 0.6.3",
  "objc2-app-kit 0.3.2",
  "once_cell",
  "thiserror 2.0.17",
+ "tokio",
  "windows-sys 0.59.0",
  "x11rb",
  "xkeysym",

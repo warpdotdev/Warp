@@ -1102,9 +1102,6 @@ impl AppContext {
     }
 
     pub fn unregister_global_shortcut(&mut self, shortcut: &Keystroke) {
-        if self.is_wayland() {
-            return;
-        }
         self.global_shortcuts.remove(shortcut);
         self.platform_delegate.unregister_global_shortcut(shortcut);
     }
@@ -1115,9 +1112,6 @@ impl AppContext {
         action: &'static str,
         arg: T,
     ) {
-        if self.is_wayland() {
-            return;
-        }
         // Note that for global hotkey we don't support registering the meta key so
         // we will treat meta key as alt.
         if shortcut.meta {
