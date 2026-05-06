@@ -611,6 +611,16 @@ lazy_static! {
         Duration::from_secs(1)
     };
 
+    /// The delay between receiving the RC file snippet for subshell bootstrap and writing the
+    /// subshell InitShell command to the PTY.
+    ///
+    /// This is necessary because some subshells may execute initialization commands (for example,
+    /// `poetry shell` executes a command that sources the project's python virtualenv), and we
+    /// want to submit the InitShell command _after_ those commands have finished execution.
+    ///
+    /// This is purely a heuristic and may be subject to change based on user reports.
+    static ref TRIGGER_RC_FILE_SUBSHELL_BOOTSTRAP_DELAY: Duration = Duration::from_millis(100);
+
     static ref DEFAULT_IGNORED_RULES_FOR_COMMAND_CORRECTIONS: [CommandCorrectionsRuleId; 1] = [
         CommandCorrectionsHistoryRule.id()
     ];
@@ -698,15 +708,6 @@ pub const ALIAS_EXPANSION_BANNER_SEEN_KEY: &str = "AliasExpansionBannerSeen";
 /// and triggering the warpification (subshell bootstrapping).
 /// Reached this number after experimenting with different values to find a reliable delay.
 const AUTO_WARPIFY_DELAY: u64 = 1000;
-
-fn rc_file_subshell_bootstrap_delay(shell_type: ShellType) -> Duration {
-    match shell_type {
-        // Fish often continues running prompt/config initialization work after emitting the RC file
-        // hook, so a slightly longer delay makes the follow-up InitSubshell command more reliable.
-        ShellType::Fish => Duration::from_secs(1),
-        ShellType::Bash | ShellType::Zsh | ShellType::PowerShell => Duration::from_millis(100),
-    }
-}
 
 /// Binding names to be customized if the user indicates they prefer
 /// Emacs-style keybindings instead of IDE-style keybindings.
@@ -11466,7 +11467,7 @@ impl TerminalView {
 
                 ctx.spawn(
                     async {
-                        warpui::r#async::Timer::after(rc_file_subshell_bootstrap_delay(shell_type))
+                        warpui::r#async::Timer::after(*TRIGGER_RC_FILE_SUBSHELL_BOOTSTRAP_DELAY)
                             .await
                     },
                     move |me, _, ctx| {
