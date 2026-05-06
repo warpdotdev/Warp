@@ -11,6 +11,7 @@ mod tests {
     };
     use crate::repositories::DetectedRepositories;
     use crate::watcher::DirectoryWatcher;
+    use crate::RepoMetadataError;
     use futures::channel::oneshot;
     use futures::executor::block_on;
     use ignore::gitignore::Gitignore;
@@ -18,6 +19,7 @@ mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::rc::Rc;
+    use std::task::Poll;
     use std::time::Duration;
     use virtual_fs::{Stub, VirtualFS};
     use warp_util::standardized_path::StandardizedPath;
@@ -34,6 +36,168 @@ mod tests {
                 emit_incremental_updates: false,
             }
         }
+    }
+
+    fn empty_repo_state(repo_path: &StandardizedPath) -> FileTreeState {
+        let root = Entry::Directory(DirectoryEntry {
+            path: repo_path.clone(),
+            children: Vec::new(),
+            ignored: false,
+            loaded: true,
+        });
+        FileTreeState::new(root, Vec::new(), None)
+    }
+
+    #[test]
+    fn repository_indexed_resolves_immediately_for_indexed_repo() {
+        VirtualFS::test("repository_indexed_ready", |dirs, mut vfs| {
+            vfs.mkdir("repo");
+            let repo_path =
+                StandardizedPath::from_local_canonicalized(&dirs.tests().join("repo")).unwrap();
+
+            App::test((), |mut app| async move {
+                let model_handle = app.add_model(|_| LocalRepoMetadataModel::new_for_test());
+                let wait = model_handle.update(&mut app, |model, _ctx| {
+                    model.repositories.insert(
+                        repo_path.clone(),
+                        IndexedRepoState::Indexed(empty_repo_state(&repo_path)),
+                    );
+                    model.repository_indexed(&repo_path)
+                });
+
+                wait.await;
+                let is_indexed = model_handle.read(&app, |model, _ctx| {
+                    matches!(
+                        model.repository_state(&repo_path),
+                        Some(IndexedRepoState::Indexed(_))
+                    )
+                });
+                assert!(is_indexed);
+            });
+        });
+    }
+
+    #[test]
+    fn repository_indexed_waits_for_pending_repo() {
+        VirtualFS::test("repository_indexed_pending", |dirs, mut vfs| {
+            vfs.mkdir("repo");
+            let repo_path =
+                StandardizedPath::from_local_canonicalized(&dirs.tests().join("repo")).unwrap();
+
+            App::test((), |mut app| async move {
+                let model_handle = app.add_model(|_| LocalRepoMetadataModel::new_for_test());
+                let wait = model_handle.update(&mut app, |model, _ctx| {
+                    model
+                        .repositories
+                        .insert(repo_path.clone(), IndexedRepoState::pending());
+                    model.repository_indexed(&repo_path)
+                });
+
+                futures::pin_mut!(wait);
+                assert!(matches!(futures::poll!(&mut wait), Poll::Pending));
+
+                model_handle.update(&mut app, |model, ctx| {
+                    model
+                        .add_repository_internal(
+                            repo_path.clone(),
+                            empty_repo_state(&repo_path),
+                            ctx,
+                        )
+                        .expect("repository should index");
+                });
+
+                wait.await;
+                let is_indexed = model_handle.read(&app, |model, _ctx| {
+                    matches!(
+                        model.repository_state(&repo_path),
+                        Some(IndexedRepoState::Indexed(_))
+                    )
+                });
+                assert!(is_indexed);
+            });
+        });
+    }
+
+    #[test]
+    fn repository_state_returns_failed_state() {
+        let repo_path = StandardizedPath::try_new("/failed_repo").unwrap();
+        let error = RepoMetadataError::RepoNotFound(repo_path.to_string());
+        let mut model = LocalRepoMetadataModel::new_for_test();
+        model
+            .repositories
+            .insert(repo_path.clone(), IndexedRepoState::Failed(error));
+        let result = model.repository_state(&repo_path);
+        assert!(matches!(
+            result,
+            Some(IndexedRepoState::Failed(RepoMetadataError::RepoNotFound(path)))
+                if path == &repo_path.to_string()
+        ));
+    }
+
+    #[test]
+    fn repository_indexed_waits_for_pending_repo_failure() {
+        let repo_path = StandardizedPath::try_new("/pending_failed_repo").unwrap();
+
+        App::test((), |mut app| async move {
+            let model_handle = app.add_model(|_| LocalRepoMetadataModel::new_for_test());
+            let wait = model_handle.update(&mut app, |model, _ctx| {
+                model
+                    .repositories
+                    .insert(repo_path.clone(), IndexedRepoState::pending());
+                model.repository_indexed(&repo_path)
+            });
+
+            futures::pin_mut!(wait);
+            assert!(matches!(futures::poll!(&mut wait), Poll::Pending));
+
+            model_handle.update(&mut app, |model, ctx| {
+                model.mark_repository_failed(
+                    repo_path.clone(),
+                    RepoMetadataError::RepoNotFound(repo_path.to_string()),
+                    ctx,
+                );
+            });
+
+            wait.await;
+            let is_failed = model_handle.read(&app, |model, _ctx| {
+                matches!(
+                    model.repository_state(&repo_path),
+                    Some(IndexedRepoState::Failed(RepoMetadataError::RepoNotFound(path)))
+                        if path == &repo_path.to_string()
+                )
+            });
+            assert!(is_failed);
+        });
+    }
+
+    #[test]
+    fn repository_indexed_waits_for_pending_repo_removal() {
+        let repo_path = StandardizedPath::try_new("/pending_removed_repo").unwrap();
+
+        App::test((), |mut app| async move {
+            let model_handle = app.add_model(|_| LocalRepoMetadataModel::new_for_test());
+            let wait = model_handle.update(&mut app, |model, _ctx| {
+                model
+                    .repositories
+                    .insert(repo_path.clone(), IndexedRepoState::pending());
+                model.repository_indexed(&repo_path)
+            });
+
+            futures::pin_mut!(wait);
+            assert!(matches!(futures::poll!(&mut wait), Poll::Pending));
+
+            model_handle.update(&mut app, |model, ctx| {
+                model
+                    .remove_repository(&repo_path, ctx)
+                    .expect("repository should be removed");
+            });
+
+            wait.await;
+            let result = model_handle.read(&app, |model, _ctx| {
+                model.repository_state(&repo_path).is_none()
+            });
+            assert!(result);
+        });
     }
 
     #[test]
