@@ -488,7 +488,7 @@ impl Settings {
             match res {
                 Ok(versions) => versions[&changelog_version].as_bool().unwrap_or(false),
                 Err(e) => {
-                    log::warn!("Error deserializing changlog user default {e}");
+                    log::warn!("Error deserializing changelog user default {e}");
                     false
                 }
             }

@@ -168,7 +168,6 @@ fn insert_pending_ai_block(
             view.ai_context_model.clone(),
             view.find_model.clone(),
             view.active_session.clone(),
-            view.ambient_agent_view_model.clone(),
             &view.cli_subagent_controller,
             &view.model_events_handle,
             view.agent_view_controller.clone(),

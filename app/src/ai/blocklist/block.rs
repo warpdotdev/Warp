@@ -46,7 +46,6 @@ use crate::code_review::comment_rendering::{CommentViewCard, HeaderClickHandler}
 use crate::terminal::model::BlockId;
 use crate::terminal::model_events::ModelEvent;
 use crate::terminal::model_events::ModelEventDispatcher;
-use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
 use crate::terminal::TerminalModel;
 use crate::view_components::action_button::{
     ActionButtonTheme, NakedTheme, PrimaryTheme, SecondaryTheme,
@@ -86,6 +85,9 @@ use crate::ai::blocklist::inline_action::ask_user_question_view::{
 };
 use crate::ai::blocklist::inline_action::aws_bedrock_credentials_error::{
     AwsBedrockCredentialsErrorEvent, AwsBedrockCredentialsErrorView,
+};
+use crate::ai::blocklist::inline_action::run_agents_card_view::{
+    self, RunAgentsCardView, RunAgentsCardViewEvent,
 };
 use crate::ai::blocklist::inline_action::search_codebase::{
     SearchCodebaseView, SearchCodebaseViewEvent,
@@ -181,7 +183,7 @@ use crate::terminal::{ShellLaunchData, TerminalView};
 use crate::view_components::DismissibleToast;
 use crate::workspace::{ForkAIConversationParams, ForkedConversationDestination, WorkspaceAction};
 use crate::{report_error, report_if_error, ToastStack};
-use ai::agent::action::{AskUserQuestionItem, InsertReviewComment};
+use ai::agent::action::{AskUserQuestionItem, InsertReviewComment, RunAgentsRequest};
 
 use crate::editor::InteractionState;
 use crate::server::telemetry::{AutonomySettingToggleSource, InteractionSource};
@@ -265,6 +267,7 @@ pub fn init(app: &mut AppContext) {
     ask_user_question_view::init(app);
     code_diff_view::init(app);
     requested_command::init(app);
+    run_agents_card_view::init(app);
     cli::init(app);
 }
 
@@ -426,13 +429,11 @@ pub(super) struct AIBlockStateHandles {
     /// Mouse state handle for AI document created block
     ai_document_handle: MouseStateHandle,
 
-    /// Mouse state handle for 'open skill' button
-    /// from an OpenSkill action banner
-    open_skill_button_handle: MouseStateHandle,
+    /// Mouse state handles for 'open skill' buttons from ReadSkill action banners.
+    open_skill_button_handles: HashMap<AIAgentActionId, MouseStateHandle>,
 
-    /// Mouse state handle for 'open skill' button
-    /// from a ReadFiles action banner
-    read_from_skill_button_handle: MouseStateHandle,
+    /// Mouse state handles for 'open skill' buttons from ReadFiles-style action banners.
+    read_from_skill_button_handles: HashMap<AIAgentActionId, MouseStateHandle>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -792,7 +793,6 @@ pub struct AIBlock {
     state_handles: AIBlockStateHandles,
     controller: ModelHandle<BlocklistAIController>,
     active_session: ModelHandle<ActiveSession>,
-    ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
     terminal_view_id: EntityId,
     window_id: warpui::WindowId,
 
@@ -936,6 +936,9 @@ pub struct AIBlock {
     imported_comments: HashMap<AIAgentActionId, ImportedCommentGroup>,
     has_imported_comments: bool,
 
+    /// Per-action `RunAgentsCardView`, lazily created.
+    run_agents_card_views: HashMap<AIAgentActionId, ViewHandle<RunAgentsCardView>>,
+
     /// Handle for the background link detection task, kept so we can abort a previous
     /// detection when a new one is spawned (e.g. on shell data change).
     link_detection_handle: Option<SpawnedFutureHandle>,
@@ -972,7 +975,6 @@ impl AIBlock {
         context_model: ModelHandle<BlocklistAIContextModel>,
         find_model: ModelHandle<TerminalFindModel>,
         active_session: ModelHandle<ActiveSession>,
-        ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
         cli_subagent_controller: &ModelHandle<CLISubagentController>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
         agent_view_controller: ModelHandle<AgentViewController>,
@@ -1327,7 +1329,6 @@ impl AIBlock {
             find_model,
             is_references_section_open: false,
             active_session,
-            ambient_agent_view_model,
             autonomy_setting_speedbump: Default::default(),
             suggested_rules: Default::default(),
             suggested_agent_mode_workflow: Default::default(),
@@ -1353,6 +1354,7 @@ impl AIBlock {
             aws_bedrock_credentials_error_view: None,
             imported_comments: Default::default(),
             has_imported_comments: false,
+            run_agents_card_views: Default::default(),
             link_detection_handle: None,
             #[cfg(feature = "local_fs")]
             resolved_code_block_paths: Default::default(),
@@ -1846,6 +1848,27 @@ impl AIBlock {
                     .orchestration_navigation_card_handles
                     .entry(action.id.clone())
                     .or_default();
+            }
+
+            if matches!(&action.action, AIAgentActionType::ReadSkill(_)) {
+                self.state_handles
+                    .open_skill_button_handles
+                    .entry(action.id.clone())
+                    .or_default();
+            }
+
+            if matches!(
+                &action.action,
+                AIAgentActionType::ReadFiles(_) | AIAgentActionType::SearchCodebase(..)
+            ) {
+                self.state_handles
+                    .read_from_skill_button_handles
+                    .entry(action.id.clone())
+                    .or_default();
+            }
+
+            if let AIAgentActionType::RunAgents(req) = &action.action {
+                self.ensure_run_agents_card_view(&action.id, req, ctx);
             }
 
             // Ensure a button component exists for UseComputer actions.
@@ -4441,6 +4464,14 @@ impl AIBlock {
         {
             ctx.focus(ask_user_question_view);
             did_focus_subview = true;
+        } else if let Some(card_view) =
+            pending_action_id.and_then(|id| self.run_agents_card_views.get(id))
+        {
+            // If there's a blocking RunAgents card, focus it so its
+            // own keybindings (`enter -> Accept`, `cmdorctrl-e ->
+            // ToggleEdit`, etc.) resolve.
+            ctx.focus(card_view);
+            did_focus_subview = true;
         } else if let Some(keyboard_navigable_buttons) = self.keyboard_navigable_buttons.as_ref() {
             // If there's buttons to take action on, focus those.
             ctx.focus(keyboard_navigable_buttons);
@@ -5821,9 +5852,34 @@ impl TypedActionView for AIBlock {
                 self.cancel_action(action_id, ctx);
             }
             AIBlockAction::ExecuteNextPendingAction => {
-                self.action_model.update(ctx, |action_model, ctx| {
-                    action_model.execute_next_action_for_user(self.conversation_id(), ctx)
-                });
+                // If the next pending action is a RunAgents tool call,
+                // delegate to the per-card view's Accept handler so
+                // Enter routes through the executor-backed dispatch
+                // path. (Focus normally goes to the card view via
+                // `focus_subview_if_necessary`, in which case the
+                // card's own keybinding fires; this handler covers
+                // the case where focus is still on AIBlock.)
+                let run_agents_id = self
+                    .action_model
+                    .as_ref(ctx)
+                    .get_pending_actions_for_conversation(&self.client_ids.conversation_id)
+                    .filter(|action| matches!(action.action, AIAgentActionType::RunAgents(_)))
+                    .last()
+                    .map(|action| action.id.clone());
+                if let Some(run_agents_id) = run_agents_id {
+                    if let Some(card_view) = self.run_agents_card_views.get(&run_agents_id).cloned()
+                    {
+                        card_view.update(ctx, |view, ctx_view| view.accept(ctx_view));
+                    } else {
+                        log::warn!(
+                            "ExecuteNextPendingAction: no RunAgentsCardView for {run_agents_id:?}"
+                        );
+                    }
+                } else {
+                    self.action_model.update(ctx, |action_model, ctx| {
+                        action_model.execute_next_action_for_user(self.conversation_id(), ctx)
+                    });
+                }
             }
             AIBlockAction::ExecuteRequestedAction { action_id } => {
                 self.action_model.update(ctx, |action_model, ctx| {
@@ -6189,10 +6245,12 @@ impl TypedActionView for AIBlock {
             } => {
                 // Resets the interaction states of ReadSkill and ReadFiles tool call banners before opening a new code pane
                 // Avoids an immediate re-hover (and stuck tooltip) while the new code pane is being created
-                for handle in [
-                    &self.state_handles.open_skill_button_handle,
-                    &self.state_handles.read_from_skill_button_handle,
-                ] {
+                for handle in self
+                    .state_handles
+                    .open_skill_button_handles
+                    .values()
+                    .chain(self.state_handles.read_from_skill_button_handles.values())
+                {
                     if let Ok(mut state) = handle.lock() {
                         state.reset_interaction_state();
                     }
@@ -6378,6 +6436,54 @@ impl TypedActionView for AIBlock {
     }
 }
 
+impl AIBlock {
+    /// Lazily create the per-action `RunAgentsCardView` so the
+    /// orchestrate confirmation card can render on its first frame.
+    /// Idempotent: re-running with an already-populated entry leaves
+    /// it unchanged. The view drives Accept dispatch through
+    /// [`BlocklistAIActionModel::execute_run_agents`] itself; only
+    /// `RejectRequested` flows back here so the existing
+    /// [`Self::cancel_action`] entry point handles cancellation.
+    fn ensure_run_agents_card_view(
+        &mut self,
+        action_id: &AIAgentActionId,
+        request: &RunAgentsRequest,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if let Some(existing_view) = self.run_agents_card_views.get(action_id) {
+            // The view was created on an earlier streaming chunk that may
+            // have carried a partial/empty request. Re-sync the edit state
+            // from the latest (potentially more complete) request so the
+            // card renders the correct agent count, summary, etc.
+            existing_view.update(ctx, |view, ctx| {
+                view.update_request(request, ctx);
+            });
+            return;
+        }
+        let action_id_clone = action_id.clone();
+        let request_clone = request.clone();
+        let action_model = self.action_model.clone();
+        let run_agents_executor = self.action_model.as_ref(ctx).run_agents_executor(ctx);
+        let block_model = self.model.clone();
+        let view = ctx.add_typed_action_view(move |ctx_view| {
+            RunAgentsCardView::new(
+                action_id_clone,
+                &request_clone,
+                action_model,
+                run_agents_executor,
+                block_model,
+                ctx_view,
+            )
+        });
+        let action_id_for_event = action_id.clone();
+        ctx.subscribe_to_view(&view, move |me, _, event, ctx| match event {
+            RunAgentsCardViewEvent::RejectRequested => {
+                me.cancel_action(&action_id_for_event, ctx);
+            }
+        });
+        self.run_agents_card_views.insert(action_id.clone(), view);
+    }
+}
 #[cfg(test)]
 #[path = "block_tests.rs"]
 mod tests;

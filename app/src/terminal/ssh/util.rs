@@ -100,12 +100,20 @@ impl InteractiveSshCommand {
         let tokens = parse_ssh_command_tokens(command)?;
         let mut host: Option<String> = None;
         let mut port: Option<String> = None;
+        let mut forces_tty = false;
+        let mut remote_command_tokens = Vec::new();
 
         let mut i = 1;
         while i < tokens.len() {
             match tokens[i].as_str() {
                 // -T or -W imply a non-interactive session.
                 "-T" | "-W" => return None,
+
+                // `-t` requests a TTY, which is required when a remote command launches
+                // an interactive shell that Warp can later bootstrap.
+                arg if is_forced_tty_option(arg) => {
+                    forces_tty = true;
+                }
 
                 "-p" => {
                     i += 1;
@@ -127,18 +135,50 @@ impl InteractiveSshCommand {
 
                 // Otherwise, it's a positional argument (e.g., hostname, command to run)
                 pos_arg => {
-                    // If we detect mutliple positional args, there's some type of unknown command formulation.
-                    if host.is_some() {
-                        return None;
+                    if host.is_none() {
+                        host = Some(pos_arg.to_string());
+                    } else {
+                        remote_command_tokens.push(pos_arg.to_string());
                     }
-                    host = Some(pos_arg.to_string());
                 }
             }
             i += 1;
         }
 
+        if !remote_command_tokens.is_empty()
+            && (!forces_tty || !is_supported_interactive_ssh_remote_command(&remote_command_tokens))
+        {
+            return None;
+        }
+
         Some(InteractiveSshCommand { host, port })
     }
+}
+
+/// Returns `true` when an SSH option requests a TTY for the remote session.
+fn is_forced_tty_option(arg: &str) -> bool {
+    matches!(arg, "-t" | "-tt" | "-ttt")
+}
+
+/// Returns `true` when the remote command launches a supported interactive shell.
+fn is_supported_interactive_ssh_remote_command(remote_command_tokens: &[String]) -> bool {
+    let remote_command = remote_command_tokens.join(" ");
+    let Ok(tokens) = shell_words::split(&remote_command) else {
+        return false;
+    };
+
+    match tokens.as_slice() {
+        [shell] => is_supported_remote_shell(shell),
+        [shell, login_flag] if is_supported_remote_shell(shell) => {
+            matches!(login_flag.as_str(), "-l" | "--login")
+        }
+        _ => false,
+    }
+}
+
+/// Returns `true` when Warp knows how to treat the shell as an interactive remote target.
+fn is_supported_remote_shell(shell: &str) -> bool {
+    matches!(shell, "bash" | "zsh" | "fish" | "sh" | "ash")
 }
 
 pub enum SshLikeCommand {
@@ -395,9 +435,24 @@ mod tests {
             parse_interactive_ssh_command("ssh -o IdentityFile=/etc/file -T user@host").is_none()
         );
 
-        // Commands with multiple positional arguments, implying non-interactive
+        // Commands with multiple positional arguments are only interactive when
+        // they explicitly request a TTY and launch a supported shell.
         assert!(parse_interactive_ssh_command("ssh user@host ls").is_none());
         assert!(parse_interactive_ssh_command("ssh user@host echo 'Hello, World!'").is_none());
+        assert!(
+            parse_interactive_ssh_command("ssh user@host -t 'fish --login'")
+                .unwrap()
+                .host
+                == Some("user@host".to_string())
+        );
+        assert!(
+            parse_interactive_ssh_command("ssh user@host -tt zsh --login")
+                .unwrap()
+                .host
+                == Some("user@host".to_string())
+        );
+        assert!(parse_interactive_ssh_command("ssh user@host fish --login").is_none());
+        assert!(parse_interactive_ssh_command("ssh user@host -t 'echo hello'").is_none());
 
         // Weird spacing and shell characters shouldn't matter
         assert!(

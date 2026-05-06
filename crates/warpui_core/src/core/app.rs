@@ -862,6 +862,16 @@ impl AppContext {
         self.window_bounds.insert(window_id, Some(bounds));
     }
 
+    /// Moves the OS window to `bounds` and immediately updates the local cache.
+    /// Unlike `update_window_bounds` (which only updates the cache when the
+    /// platform reports a move), this also commands the platform — so
+    /// `window_bounds()` returns the new rect on the same frame, without
+    /// waiting for a move-event callback.
+    pub fn set_and_cache_window_bounds(&mut self, window_id: WindowId, bounds: RectF) {
+        self.windows().set_window_bounds(window_id, bounds);
+        self.window_bounds.insert(window_id, Some(bounds));
+    }
+
     fn matches_any_window_bounds(&self, r: RectF) -> bool {
         self.window_bounds.values().any(|b| *b == Some(r))
     }

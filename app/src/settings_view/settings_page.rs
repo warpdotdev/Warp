@@ -1193,7 +1193,7 @@ fn render_alternating_color_list_item<SettingsPageAction: Action + Clone>(
     .with_uniform_padding(ALTERNATING_LIST_ITEM_PADDING)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
     // The bottom has a bit of extra padding b/c lines of text have more space above the text
-    // than below. This visually balances that to make it lok vertically centered.
+    // than below. This visually balances that to make it look vertically centered.
     .with_padding_bottom(ALTERNATING_LIST_ITEM_PADDING + 2.)
     .finish()
 }

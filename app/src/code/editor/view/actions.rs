@@ -845,7 +845,7 @@ impl TypedActionView for CodeEditorView {
                 match self.vim_mode(ctx) {
                     Some(VimMode::Visual(_)) => {
                         // In Vim Visual mode, if we get a ToggleComment request via the keyboard
-                        // shorcut (cmd+/), simulate `gc` to the VimModel so that we correctly
+                        // shortcut (cmd+/), simulate `gc` to the VimModel so that we correctly
                         // calculate the current visual selections, apply the toggle, and exit to
                         // normal mode.
                         self.vim_user_insert("gc", ctx);

@@ -263,6 +263,48 @@ impl OrchestrationPillBar {
     }
 }
 
+/// Renders a non-interactive agent pill using the same deterministic-color
+/// + initial-letter avatar as the live pill bar.
+pub fn render_static_agent_pill(name: &str, app: &AppContext) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let avatar_color = pill_avatar_color(name, theme);
+    let avatar_glyph = AvatarGlyph::Letter(pill_initial(name));
+    let avatar = render_avatar_disc(avatar_color, avatar_glyph, theme, appearance);
+    let label_text = Text::new(
+        name.to_string(),
+        appearance.ui_font_family(),
+        appearance.monospace_font_size() - 1.,
+    )
+    .with_color(internal_colors::text_main(theme, theme.background()))
+    .soft_wrap(false)
+    .with_clip(ClipConfig::ellipsis())
+    .finish();
+
+    let row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_size(MainAxisSize::Min)
+        .with_spacing(6.)
+        .with_child(avatar)
+        .with_child(
+            ConstrainedBox::new(label_text)
+                .with_max_width(PILL_LABEL_MAX_WIDTH)
+                .finish(),
+        )
+        .finish();
+
+    ConstrainedBox::new(
+        Container::new(row)
+            .with_padding_left(PILL_HORIZONTAL_PADDING_LEFT)
+            .with_padding_right(PILL_HORIZONTAL_PADDING_RIGHT)
+            .with_background_color(internal_colors::fg_overlay_2(theme).into())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_RADIUS)))
+            .finish(),
+    )
+    .with_height(PILL_HEIGHT)
+    .finish()
+}
+
 /// Returns the label to use for the orchestrator pill. Prefers the explicitly
 /// set agent name, falling back to "Orchestrator" so the pill is meaningful
 /// even before any naming has happened.

@@ -682,6 +682,7 @@ impl BlocklistAIHistoryModel {
                 }
             }
 
+            let new_status = conversation.status().clone();
             self.conversations_by_id
                 .insert(conversation_id, conversation);
 
@@ -690,7 +691,8 @@ impl BlocklistAIHistoryModel {
             ctx.emit(BlocklistAIHistoryEvent::UpdatedConversationStatus {
                 conversation_id,
                 terminal_view_id,
-                is_restored: true,
+                update: ConversationStatusUpdate::Restored,
+                new_status,
             });
         }
 
@@ -1090,10 +1092,9 @@ impl BlocklistAIHistoryModel {
             parent_agent_id: None,
             agent_name: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             run_id: None,
             autoexecute_override: Some(source_conversation.autoexecute_override().into()),
-            // The event cursor belongs to the source conversation's run; the
-            // forked conversation will establish its own cursor.
             last_event_sequence: None,
         };
         let forked_conversation_id = AIConversationId::new();
@@ -1245,10 +1246,9 @@ impl BlocklistAIHistoryModel {
             parent_agent_id: None,
             agent_name: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             run_id: None,
             autoexecute_override: Some(conversation.autoexecute_override().into()),
-            // The event cursor belongs to the source conversation's run; the
-            // forked conversation will establish its own cursor.
             last_event_sequence: None,
         };
 
@@ -2055,6 +2055,16 @@ fn agent_id_key(conversation: &AIConversation) -> Option<String> {
     conversation.orchestration_agent_id()
 }
 
+/// Whether an `UpdatedConversationStatus` event represents a restoration
+/// (the conversation was re-loaded into a terminal view; the underlying
+/// `ConversationStatus` did not change) or a real status set, in which case
+/// the previous status is included.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConversationStatusUpdate {
+    Restored,
+    Changed { prev_status: ConversationStatus },
+}
+
 #[derive(Clone, Debug)]
 pub enum BlocklistAIHistoryEvent {
     /// A new conversation was started.
@@ -2108,7 +2118,10 @@ pub enum BlocklistAIHistoryEvent {
     UpdatedConversationStatus {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,
-        is_restored: bool,
+        /// Distinguishes a restoration from a real status set.
+        update: ConversationStatusUpdate,
+        /// The conversation's status after this update.
+        new_status: ConversationStatus,
     },
 
     /// The active conversation was set to another conversation in the history.
@@ -2191,6 +2204,13 @@ pub enum BlocklistAIHistoryEvent {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,
     },
+
+    /// Links an executor-minted request to a freshly-created
+    /// conversation.
+    NewConversationRequestComplete {
+        request_id: crate::ai::blocklist::StartAgentRequestId,
+        conversation_id: AIConversationId,
+    },
 }
 
 impl BlocklistAIHistoryEvent {
@@ -2257,7 +2277,25 @@ impl BlocklistAIHistoryEvent {
             BlocklistAIHistoryEvent::UpdatedConversationMetadata {
                 terminal_view_id, ..
             } => *terminal_view_id,
+            // NewConversationRequestComplete is executor-scoped and has no
+            // terminal_view_id.
+            BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => None,
         }
+    }
+}
+
+impl BlocklistAIHistoryModel {
+    /// Emits [`BlocklistAIHistoryEvent::NewConversationRequestComplete`].
+    pub fn record_new_conversation_request_complete(
+        &mut self,
+        request_id: crate::ai::blocklist::StartAgentRequestId,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        ctx.emit(BlocklistAIHistoryEvent::NewConversationRequestComplete {
+            request_id,
+            conversation_id,
+        });
     }
 }
 

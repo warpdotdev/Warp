@@ -2257,7 +2257,7 @@ impl GlobalSearchView {
         self.render_zero_state(
             Icon::AlertTriangle,
             "Global search unavailable",
-            "Global search requries access to your local workspace. Open a new session or navigate to an active session to view.",
+            "Global search requires access to your local workspace. Open a new session or navigate to an active session to view.",
             app,
         )
     }

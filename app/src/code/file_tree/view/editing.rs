@@ -1,4 +1,4 @@
-//! Module for utlities related to editing items in the file tree.
+//! Module for utilities related to editing items in the file tree.
 
 #[cfg(test)]
 #[path = "editing_tests.rs"]

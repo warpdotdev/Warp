@@ -239,7 +239,7 @@ impl Ord for InviteLinkDomainRestriction {
     }
 }
 
-/// This enum is the rust represenation of `CustomerType` from the GraphQL Schema.
+/// This enum is the rust representation of `CustomerType` from the GraphQL Schema.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum CustomerType {
     #[default]

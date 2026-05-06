@@ -7,6 +7,7 @@ use crate::view_components::{Dropdown, SubmittableTextInput};
 use crate::Appearance;
 use crate::TemplatableMCPServerManager;
 use pathfinder_geometry::vector::vec2f;
+use thousands::Separable;
 use uuid::Uuid;
 use warp_core::features::FeatureFlag;
 use warpui::elements::Dismiss;
@@ -315,8 +316,8 @@ fn render_context_window_row(
     )
     .with_color(appearance.theme().active_ui_text_color().into())
     .finish();
-    let min_label_text = min.to_string();
-    let max_label_text = max.to_string();
+    let min_label_text = min.separate_with_commas();
+    let max_label_text = max.separate_with_commas();
     let desc = Text::new(
         "The base model's working memory — how many tokens of your conversation, code, and documents it can consider at once. Larger windows enable longer conversations and more coherent responses over bigger codebases, at the cost of higher latency and compute usage.".to_string(),
         appearance.ui_font_family(),

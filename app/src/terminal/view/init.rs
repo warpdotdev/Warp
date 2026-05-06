@@ -60,6 +60,7 @@ pub const INPUT_BOX_VISIBLE_KEY: &str = "InputVisible";
 pub const KEYBOARD_PROTOCOL_ENABLED_KEY: &str = "KeyboardProtocolEnabled";
 pub const CLI_AGENT_SESSION_ACTIVE_KEY: &str = "CLIAgentSessionActive";
 pub const ROOT_CLOUD_MODE_PANE_KEY: &str = "RootCloudModePane";
+pub const CAN_SHOW_CONVERSATION_DETAILS_KEY: &str = "CanShowConversationDetails";
 
 /// Some keybindings will do different things in different contexts. We break
 /// these into their own function to ensure we pay special attention to
@@ -160,16 +161,6 @@ pub fn init(app: &mut AppContext) {
         FixedBinding::new(
             "delete",
             TerminalAction::ControlSequence("\x1b[3~".as_bytes().to_vec()),
-            id!("Terminal") & !id!("IMEOpen"),
-        ),
-        FixedBinding::new(
-            "pageup",
-            TerminalAction::PageUp,
-            id!("Terminal") & !id!("IMEOpen"),
-        ),
-        FixedBinding::new(
-            "pagedown",
-            TerminalAction::PageDown,
             id!("Terminal") & !id!("IMEOpen"),
         ),
         // Resume conversation keybinding
@@ -648,6 +639,33 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(id!("Terminal") & id!("TerminalView_NonEmptyBlockList")),
     ]);
 
+    app.register_editable_bindings([
+        EditableBinding::new(
+            "terminal:scroll_up_one_page",
+            "Scroll terminal output up one page",
+            TerminalAction::PageUp,
+        )
+        .with_key_binding("pageup")
+        .with_context_predicate(
+            id!("Terminal")
+                & !id!("IMEOpen")
+                & id!("TerminalView_NonEmptyBlockList")
+                & !id!("EditorFocused"),
+        ),
+        EditableBinding::new(
+            "terminal:scroll_down_one_page",
+            "Scroll terminal output down one page",
+            TerminalAction::PageDown,
+        )
+        .with_key_binding("pagedown")
+        .with_context_predicate(
+            id!("Terminal")
+                & !id!("IMEOpen")
+                & id!("TerminalView_NonEmptyBlockList")
+                & !id!("EditorFocused"),
+        ),
+    ]);
+
     app.register_editable_bindings([EditableBinding::new(
         "terminal:scroll_to_top_of_selected_block",
         "Scroll to top of selected block",
@@ -1068,6 +1086,15 @@ pub fn init(app: &mut AppContext) {
     )
     .with_enabled(|| FeatureFlag::Projects.is_enabled())
     .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))]);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    app.register_editable_bindings([EditableBinding::new(
+        "terminal:toggle_conversation_details_panel",
+        "Toggle Conversation Details Panel",
+        TerminalAction::ToggleConversationDetailsPanel,
+    )
+    .with_group(bindings::BindingGroup::WarpAi.as_str())
+    .with_context_predicate(id!("Terminal") & id!(CAN_SHOW_CONVERSATION_DETAILS_KEY))]);
 
     // Register bindings for starting a new cloud agent conversation.
     {

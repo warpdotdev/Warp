@@ -24,6 +24,9 @@ use self::vertical_tabs::{
     render_detail_sidecar, render_settings_popup, VerticalTabsPanelState,
     VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
 };
+use crate::workspace::cross_window_tab_drag::{
+    AttachTarget, CrossWindowTabDrag, DragResult, DropResult, GhostState,
+};
 pub(crate) use onboarding::OnboardingTutorial;
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
@@ -392,16 +395,17 @@ use warp_core::semantic_selection::SemanticSelection;
 use warp_util::path::{user_friendly_path, LineAndColumnArg};
 use warpui::fonts::Weight;
 use warpui::modals::{AlertDialogWithCallbacks, AppModalCallback};
-use warpui::windowing::{StateEvent, WindowManager};
 
 use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::clipboard::ClipboardContent;
 #[cfg(target_family = "wasm")]
 use warpui::elements::Percentage;
 use warpui::elements::{
-    CacheOption, DispatchEventResult, DropTarget, EventHandler, Image, MouseInBehavior, Rect,
+    CacheOption, DispatchEventResult, DraggableState, DropTarget, EventHandler, Image,
+    MouseInBehavior, Rect,
 };
 use warpui::ui_components::button::{Button, ButtonVariant};
+use warpui::windowing::{StateEvent, WindowManager};
 use warpui::{elements::MouseStateHandle, fonts::Properties};
 
 use crate::{autoupdate, channel::ChannelState};
@@ -460,8 +464,8 @@ use crate::palette::PaletteMode;
 use crate::search::command_palette::view::{Event as CommandPaletteEvent, View as CommandPalette};
 use crate::server::telemetry::{NotificationsTurnedOnSource, PaletteSource, TabRenameEvent};
 use crate::tab::{
-    tab_position_id, NewSessionMenuItem, PaneNameMenuTarget, SelectedTabColor, TabBarState,
-    TabComponent, TabData, TabTelemetryAction, TAB_BAR_BORDER_HEIGHT,
+    tab_position_id, uses_vertical_tabs, NewSessionMenuItem, PaneNameMenuTarget, SelectedTabColor,
+    TabBarState, TabComponent, TabData, TabTelemetryAction, TAB_BAR_BORDER_HEIGHT,
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::ui_components::icons;
@@ -557,13 +561,13 @@ const RESOURCE_CENTER_WIDTH: f32 = 361.;
 const THEME_CHOOSER_RATIO: f32 = 3.5;
 
 /// Save position for the tab bar.
-const TAB_BAR_POSITION_ID: &str = "workspace_view:tab_bar";
+pub(crate) const TAB_BAR_POSITION_ID: &str = "workspace_view:tab_bar";
 
 /// Save position for the vertical tabs panel.
 /// HOA onboarding callouts anchor relative to this position, so whichever code
 /// path renders the vertical tabs panel must wrap it in a `SavePosition` with
 /// this id.
-const VERTICAL_TABS_PANEL_POSITION_ID: &str = "workspace_view:vertical_tabs_panel";
+pub(crate) const VERTICAL_TABS_PANEL_POSITION_ID: &str = "workspace_view:vertical_tabs_panel";
 
 /// The main content area in a workspace. This is directly below the tab bar.
 const TAB_CONTENT_POSITION_ID: &str = "workspace_view:tab_content";
@@ -860,7 +864,6 @@ struct ModalWithTab<V> {
     /// closes so we can clear the custom tab title.
     tab_pane_group_id: Option<EntityId>,
 }
-
 /// Context saved when the session config modal triggers `open_tab_config` and
 /// the tab config has params (worktree). The params modal opens asynchronously,
 /// so we store what we need to finish the tab replacement when it completes.
@@ -877,6 +880,11 @@ enum PendingSessionConfigTabConfigChipTutorial {
     },
 }
 
+/// Snapshot of a tab used to move it between workspaces or into a new window.
+/// Built by `Workspace::tab_transfer_info_at_index` and consumed by
+/// `insert_transferred_tab_at_index`. Captures the pane group handle, visual
+/// metadata, panel-open state, and `DraggableState` so an in-progress drag
+/// animation continues seamlessly after a handoff.
 pub struct TransferredTab {
     pub pane_group: ViewHandle<PaneGroup>,
     pub color: Option<AnsiColorIdentifier>,
@@ -885,13 +893,14 @@ pub struct TransferredTab {
     pub vertical_tabs_panel_open: bool,
     pub right_panel_open: bool,
     pub is_right_panel_maximized: bool,
+    pub draggable_state: DraggableState,
 }
 
 pub struct Workspace {
     window_id: WindowId,
-    tabs: Vec<TabData>,
+    pub(crate) tabs: Vec<TabData>,
     active_tab_index: usize,
-    hovered_tab_index: Option<TabBarHoverIndex>,
+    pub(crate) hovered_tab_index: Option<TabBarHoverIndex>,
     tab_bar_hover_state: MouseStateHandle,
     tab_fixed_width: Option<f32>,
     traffic_light_mouse_states: TrafficLightMouseStates,
@@ -925,7 +934,7 @@ pub struct Workspace {
     previous_theme: Option<ThemeKind>,
     reward_modal: ViewHandle<Modal<RewardView>>,
     reward_modal_pending: Option<RewardKind>,
-    current_workspace_state: WorkspaceState,
+    pub(crate) current_workspace_state: WorkspaceState,
     previous_workspace_state: Option<WorkspaceState>,
     welcome_tips_view_state: WelcomeTipsViewState,
     welcome_tips_view: ViewHandle<TipsView>,
@@ -1024,7 +1033,14 @@ pub struct Workspace {
     /// When true, this workspace was created to receive a transferred PaneGroup.
     /// The placeholder tab will be replaced when adopt_transferred_pane_group is called.
     pending_pane_group_transfer: bool,
-    is_drag_preview_workspace: bool,
+    /// When true, `on_window_closed` skips detaching panes, so pane groups
+    /// transferred to another window aren't torn down when this window closes
+    /// via `TerminationMode::ContentTransferred`.
+    suppress_detach_panes_on_window_close: bool,
+    /// True while this workspace is acting as the temporary preview window
+    /// for a multi-tab cross-window drag. Reduces chrome (e.g. hides traffic
+    /// lights). Cleared when the preview is promoted or hands off its tab.
+    is_tab_drag_preview: bool,
     /// Sidecar menu for submenu-parent items (Terminal, New worktree config) in the
     /// new-session dropdown. Shown as a positioned overlay next to the hovered
     /// parent item, following the model picker sidecar pattern.
@@ -1040,10 +1056,17 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    pub fn is_drag_preview_workspace(&self) -> bool {
-        self.is_drag_preview_workspace
+    pub fn is_tab_drag_preview(&self) -> bool {
+        self.is_tab_drag_preview
     }
 
+    pub(crate) fn set_is_tab_drag_preview(&mut self, value: bool) {
+        self.is_tab_drag_preview = value;
+    }
+
+    pub(crate) fn set_suppress_detach_panes_on_window_close(&mut self, value: bool) {
+        self.suppress_detach_panes_on_window_close = value;
+    }
     fn tab_rename_editor_font_size(ctx: &AppContext, appearance: &Appearance) -> f32 {
         if FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs {
             match *TabSettings::as_ref(ctx)
@@ -1226,7 +1249,6 @@ impl Workspace {
         });
         editor
     }
-
     fn tab_rename_editor(ctx: &mut ViewContext<Self>) -> ViewHandle<EditorView> {
         let editor = {
             ctx.add_typed_action_view(|ctx| {
@@ -2911,7 +2933,7 @@ impl Workspace {
                 // Update transcript details if task or conversation data is updated
                 AgentConversationsModelEvent::NewTasksReceived
                 | AgentConversationsModelEvent::TasksUpdated
-                | AgentConversationsModelEvent::ConversationUpdated
+                | AgentConversationsModelEvent::ConversationUpdated { .. }
                 | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. } => {
                     me.update_transcript_details_panel_data(ctx);
                 }
@@ -3154,7 +3176,8 @@ impl Workspace {
             hoa_onboarding_flow: None,
             hoa_vtabs_callout_pinned_position: None,
             pending_pane_group_transfer: false,
-            is_drag_preview_workspace: false,
+            suppress_detach_panes_on_window_close: false,
+            is_tab_drag_preview: false,
             new_session_sidecar_menu,
             show_new_session_sidecar: false,
             worktree_sidecar_active: false,
@@ -3659,10 +3682,10 @@ impl Workspace {
                 left_panel_open,
                 right_panel_open,
                 is_right_panel_maximized,
-                for_drag_preview,
+                is_tab_drag_preview,
                 ..
             } => {
-                self.is_drag_preview_workspace = for_drag_preview;
+                self.set_is_tab_drag_preview(is_tab_drag_preview);
                 self.add_tab_with_pane_layout(
                     Default::default(),
                     Arc::new(HashMap::new()),
@@ -3688,10 +3711,10 @@ impl Workspace {
                 tab_color,
                 custom_title,
                 left_panel_open,
-                for_drag_preview,
+                is_tab_drag_preview,
                 ..
             } => {
-                self.is_drag_preview_workspace = for_drag_preview;
+                self.set_is_tab_drag_preview(is_tab_drag_preview);
                 self.add_tab_with_pane_layout(
                     Default::default(),
                     Arc::new(HashMap::new()),
@@ -4769,32 +4792,6 @@ impl Workspace {
         self.tabs.get(index).and_then(|tab| tab.color())
     }
 
-    /// Get information needed for transferring a tab to another window.
-    /// Returns None if the index is invalid or if this is the last tab.
-    pub fn get_tab_transfer_info(&self, index: usize, ctx: &AppContext) -> Option<TransferredTab> {
-        if self.tabs.len() <= 1 {
-            return None;
-        }
-        let tab = self.tabs.get(index)?;
-        let pane_group = tab.pane_group.clone();
-        let color = tab.color();
-        let custom_title = pane_group.read(ctx, |pg, ctx| pg.custom_title(ctx));
-        let left_panel_open = pane_group.read(ctx, |pg, _| pg.left_panel_open);
-        let vertical_tabs_panel_open = self.vertical_tabs_panel_open;
-        let right_panel_open = pane_group.read(ctx, |pg, _| pg.right_panel_open);
-        let is_right_panel_maximized = pane_group.read(ctx, |pg, _| pg.is_right_panel_maximized);
-
-        Some(TransferredTab {
-            pane_group,
-            color,
-            custom_title,
-            left_panel_open,
-            vertical_tabs_panel_open,
-            right_panel_open,
-            is_right_panel_maximized,
-        })
-    }
-
     /// Finds the tab index containing a terminal viewing the given ambient agent conversation,
     /// returning None if the ambient conversation is not open in any tab.
     fn find_tab_with_ambient_agent_conversation(
@@ -4939,7 +4936,7 @@ impl Workspace {
 
     /// Change the active tab index. This must be used instead of setting `self.active_tab_index`
     /// directly, as it updates related state.
-    fn set_active_tab_index(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+    pub(crate) fn set_active_tab_index(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
         let index = if index >= self.tab_count() {
             log::warn!(
                 "Attempted to set active tab index {index} but only {} tabs exist, clamping",
@@ -5624,18 +5621,27 @@ impl Workspace {
             #[allow(unused_variables)]
             AIFactViewEvent::OpenFile(path) => {
                 #[cfg(feature = "local_fs")]
-                self.open_code(
-                    CodeSource::Link {
-                        path: path.clone(),
-                        range_start: None,
-                        range_end: None,
-                    },
-                    *EditorSettings::as_ref(ctx).open_file_layout.value(),
-                    None,  // no line/column specified
-                    false, // preview
-                    &[],
-                    ctx,
-                );
+                {
+                    let settings = EditorSettings::as_ref(ctx);
+                    let target = resolve_file_target_with_editor_choice(
+                        path,
+                        *settings.open_file_editor,
+                        *settings.prefer_markdown_viewer,
+                        *settings.open_file_layout,
+                        None,
+                    );
+                    self.open_file_with_target(
+                        path.clone(),
+                        target,
+                        None,
+                        CodeSource::Link {
+                            path: path.clone(),
+                            range_start: None,
+                            range_end: None,
+                        },
+                        ctx,
+                    );
+                }
             }
             AIFactViewEvent::InitializeProject(path) => {
                 let active_terminal_view = self
@@ -7982,10 +7988,6 @@ impl Workspace {
         context: Option<&CodeReviewPaneContext>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !*TabSettings::as_ref(ctx).show_code_review_button {
-            return;
-        }
-
         // If context is provided, use it directly. Otherwise, derive from active pane group.
         let context_data: Option<(
             Option<PathBuf>,
@@ -9823,9 +9825,35 @@ impl Workspace {
             .map(|window| window.fullscreen_state())
             .unwrap_or_default();
         let active_tab_index = self.active_tab_index();
+        let drag_model = CrossWindowTabDrag::as_ref(app);
+        // Use the placeholder-aware getter so we don't skip an unrelated
+        // tab at a stale `source_tab_index` after a put-back handoff has
+        // already removed the real placeholder.
+        let transferred_tab_index = if drag_model.is_active()
+            && drag_model.source_window_id() == Some(window_id)
+        {
+            if drag_model.has_dedicated_preview_window() {
+                // Multi-tab drag: skip the dedicated-preview placeholder.
+                drag_model.source_placeholder_tab_index()
+            } else if drag_model.source_was_single_tab() && drag_model.handed_off_target().is_some()
+            {
+                // Single-tab drag in InsertedInTarget phase: the source's
+                // only tab has been transferred to the target window's live
+                // view context.  Snapshotting it here would call
+                // `terminal_view.as_ref()` while that view is being updated
+                // in the target window, triggering a circular view reference
+                // panic.  Skip index 0 (the sole tab).
+                Some(0)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let tabs = self
             .tab_views()
             .enumerate()
+            .filter(|(tab_index, _)| Some(*tab_index) != transferred_tab_index)
             .map(|(tab_index, pane_group_view)| {
                 let resizable_data = ResizableData::handle(app);
                 let modal_sizes = resizable_data.as_ref(app).get_all_handles(window_id);
@@ -9860,7 +9888,8 @@ impl Workspace {
                     selected_color: self
                         .tabs
                         .get(tab_index)
-                        .map_or(SelectedTabColor::Unset, |tab| tab.selected_color),
+                        .map(|tab| tab.selected_color)
+                        .unwrap_or_default(),
                     left_panel,
                     right_panel,
                 }
@@ -10192,48 +10221,6 @@ impl Workspace {
             }
             _ => {}
         }
-
-        ctx.dispatch_global_action("workspace:save_app", ());
-        ctx.notify();
-    }
-
-    pub fn remove_tab_without_undo(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
-        self.remove_tab(index, false, false, ctx);
-    }
-    /// Adopts a transferred PaneGroup into the placeholder tab created during window transfer.
-    /// This replaces the placeholder tab's PaneGroup with the actual transferred one.
-    pub fn adopt_transferred_pane_group(
-        &mut self,
-        new_pane_group: ViewHandle<PaneGroup>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !self.pending_pane_group_transfer {
-            debug_assert!(
-                false,
-                "adopt_transferred_pane_group called without pending transfer"
-            );
-            return;
-        }
-
-        if self.tabs.is_empty() {
-            debug_assert!(false, "adopt_transferred_pane_group called with no tabs");
-            return;
-        }
-        let Some(placeholder_tab) = self.tabs.last_mut() else {
-            debug_assert!(
-                false,
-                "adopt_transferred_pane_group missing placeholder tab"
-            );
-            return;
-        };
-
-        let placeholder_pane_group =
-            std::mem::replace(&mut placeholder_tab.pane_group, new_pane_group);
-        let working_directories_model = self.working_directories_model.clone();
-        placeholder_pane_group.update(ctx, |pg, ctx| {
-            pg.detach_panes_for_close(&working_directories_model, ctx);
-        });
-        self.pending_pane_group_transfer = false;
 
         ctx.dispatch_global_action("workspace:save_app", ());
         ctx.notify();
@@ -11879,115 +11866,6 @@ impl Workspace {
         });
     }
 
-    /// Handle a tab being dragged
-    ///
-    /// Will determine if the dragged tab needs to be swapped with another tab in the list and
-    /// perform the swap, making sure to maintain the active tab if necessary
-    fn on_tab_drag(&mut self, current_index: usize, position: RectF, ctx: &mut ViewContext<Self>) {
-        let new_index = if FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(ctx).use_vertical_tabs
-        {
-            self.calculate_updated_tab_index_vertical(current_index, position, ctx)
-        } else {
-            self.calculate_updated_tab_index(current_index, position, ctx)
-        };
-
-        if new_index != current_index {
-            self.tabs.swap(new_index, current_index);
-
-            // Update the active tab index if it was impacted by the swap
-            if current_index == self.active_tab_index {
-                self.set_active_tab_index(new_index, ctx);
-            } else if new_index == self.active_tab_index {
-                self.set_active_tab_index(current_index, ctx);
-            }
-
-            ctx.notify();
-        }
-    }
-
-    /// Determines the appropriate index for a tab that is being dragged, based on its current
-    /// index and drag position
-    ///
-    /// We check if the midpoint of the dragged tab has crossed into the boundary of either
-    /// surrounding tab. For the tab immediately to the left, this means checking against the
-    /// rightmost boundary, while for the tab immediately to the right, we check against the
-    /// leftmost boundary.
-    ///
-    /// If the midpoint is not in either location, then we return the current index, as the tab has
-    /// not moved out of its position
-    fn calculate_updated_tab_index(
-        &self,
-        current_index: usize,
-        drag_position: RectF,
-        ctx: &mut ViewContext<Self>,
-    ) -> usize {
-        let midpoint_drag_x = (drag_position.min_x() + drag_position.max_x()) / 2.;
-
-        let maybe_left_tab = if current_index > 0 {
-            ctx.element_position_by_id(tab_position_id(current_index - 1))
-        } else {
-            None
-        };
-        if let Some(tab_position) = maybe_left_tab {
-            if midpoint_drag_x < tab_position.max_x() {
-                return current_index - 1;
-            }
-        }
-
-        let maybe_right_tab = if current_index < self.tabs.len() - 1 {
-            ctx.element_position_by_id(tab_position_id(current_index + 1))
-        } else {
-            None
-        };
-        if let Some(tab_position) = maybe_right_tab {
-            if midpoint_drag_x > tab_position.min_x() {
-                return current_index + 1;
-            }
-        }
-
-        current_index
-    }
-
-    /// Y-axis variant of `calculate_updated_tab_index` for vertical tab layout.
-    ///
-    /// Uses midpoint-of-neighbor thresholds rather than edge thresholds to prevent
-    /// oscillation when groups have different heights.
-    fn calculate_updated_tab_index_vertical(
-        &self,
-        current_index: usize,
-        drag_position: RectF,
-        ctx: &mut ViewContext<Self>,
-    ) -> usize {
-        let midpoint_drag_y = (drag_position.min_y() + drag_position.max_y()) / 2.;
-
-        let maybe_above_tab = if current_index > 0 {
-            ctx.element_position_by_id(tab_position_id(current_index - 1))
-        } else {
-            None
-        };
-        if let Some(tab_position) = maybe_above_tab {
-            let neighbor_midpoint_y = (tab_position.min_y() + tab_position.max_y()) / 2.;
-            if midpoint_drag_y < neighbor_midpoint_y {
-                return current_index - 1;
-            }
-        }
-
-        let maybe_below_tab = if current_index < self.tabs.len() - 1 {
-            ctx.element_position_by_id(tab_position_id(current_index + 1))
-        } else {
-            None
-        };
-        if let Some(tab_position) = maybe_below_tab {
-            let neighbor_midpoint_y = (tab_position.min_y() + tab_position.max_y()) / 2.;
-            if midpoint_drag_y > neighbor_midpoint_y {
-                return current_index + 1;
-            }
-        }
-
-        current_index
-    }
-
     // Move tab, given tab index, left or right
     fn move_tab(&mut self, index: usize, direction: TabMovement, ctx: &mut ViewContext<Self>) {
         let tabs_len = self.tabs.len();
@@ -12016,6 +11894,13 @@ impl Workspace {
 
     /// How to render the tab bar.
     fn tab_bar_mode(&self, app: &AppContext) -> ShowTabBar {
+        // Drag-preview windows always show the tab bar inline; the user
+        // is literally holding the tab they detached, so it must remain
+        // visible regardless of the user's hover/fullscreen settings.
+        if self.is_tab_drag_preview {
+            return ShowTabBar::Stacked;
+        }
+
         // Always show the tab bar during HoA onboarding so that callouts
         // pointing at tabs/inbox render correctly even when the user has
         // "show tab bar on hover" enabled.
@@ -12972,7 +12857,7 @@ impl Workspace {
         });
     }
 
-    fn handle_file_tree_event(
+    pub(crate) fn handle_file_tree_event(
         &mut self,
         pane_group: ViewHandle<PaneGroup>,
         event: &pane_group::Event,
@@ -16275,7 +16160,7 @@ impl Workspace {
             || self.changelog_model.as_ref(ctx).is_check_pending()
     }
 
-    fn focus_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
+    pub(crate) fn focus_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
         self.active_tab_pane_group().update(ctx, |tab, ctx| {
             tab.focus(ctx);
         })
@@ -16642,6 +16527,57 @@ impl Workspace {
         .finish()
     }
 
+    /// Renders the tab at `tab_index` using the same render code path the live
+    /// tab bar uses, so the floating chip during a cross-window tab drag
+    /// matches the source tab exactly. Dispatches to the vertical tab group
+    /// renderer when the source layout was vertical, and to `TabComponent`
+    /// (via `render_tab_in_tab_bar`) when it was horizontal. Constructed with
+    /// neutral `TabBarState` so the snapshot doesn't carry over local-drag or
+    /// rename state.
+    pub(crate) fn render_tab_for_drag_ghost(
+        &self,
+        tab_index: usize,
+        was_vertical: bool,
+        ctx: &AppContext,
+    ) -> Box<dyn Element> {
+        if tab_index >= self.tabs.len() {
+            return Empty::new().finish();
+        }
+        if was_vertical {
+            vertical_tabs::render_tab_group_for_drag_ghost(self, tab_index, ctx)
+        } else {
+            let tab = &self.tabs[tab_index];
+            let close_button_position = if FeatureFlag::TabCloseButtonOnLeft.is_enabled() {
+                TabSettings::as_ref(ctx).close_button_position
+            } else {
+                TabCloseButtonPosition::default()
+            };
+            let tab_bar_state = TabBarState {
+                tab_count: self.tabs.len(),
+                active_tab_index: Some(tab_index),
+                is_any_tab_renaming: false,
+                is_any_tab_dragging: false,
+                hover_fixed_width: None,
+            };
+            // `.for_drag_ghost()` makes the resulting element skip the
+            // outer `SavePosition`, `Draggable`, and `DropTarget` wrappers
+            // so the chip overlay doesn't pollute the target window's
+            // position cache (see `TabComponent::for_drag_ghost`).
+            TabComponent::new(
+                tab_index,
+                tab_bar_state,
+                tab,
+                self.tab_rename_editor.clone(),
+                close_button_position,
+                false,
+                ctx,
+            )
+            .for_drag_ghost()
+            .build()
+            .finish()
+        }
+    }
+
     fn render_agent_management_view_button(
         &self,
         appearance: &Appearance,
@@ -16963,6 +16899,31 @@ impl Workspace {
         .finish()
     }
 
+    /// Renders the insertion slot for a cross-window ghost drag in the
+    /// horizontal tab bar. Shows an empty space with `fg_overlay_1`
+    /// background — identical to same-window drag's origin slot.
+    fn render_ghost_tab_slot(&self, appearance: &Appearance, ctx: &AppContext) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let width = self.tab_fixed_width.or_else(|| {
+            self.tabs.first().and_then(|_| {
+                ctx.element_position_by_id_at_last_frame(self.window_id, tab_position_id(0))
+                    .map(|rect| rect.width())
+            })
+        });
+        let slot = Container::new(Empty::new().finish())
+            .with_background(internal_colors::fg_overlay_1(theme))
+            .finish();
+        let inner = if let Some(w) = width {
+            ConstrainedBox::new(slot).with_width(w).finish()
+        } else {
+            ConstrainedBox::new(slot)
+                .with_min_width(80.)
+                .with_max_width(200.)
+                .finish()
+        };
+        Shrinkable::new(1.0, inner).finish()
+    }
+
     fn render_title_bar_search_bar(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let text_color = theme.sub_text_color(theme.background());
@@ -17210,29 +17171,73 @@ impl Workspace {
                 Some(self.active_tab_index)
             };
 
+            let drag_model = CrossWindowTabDrag::as_ref(ctx);
             let tab_bar_state = TabBarState {
                 tab_count: self.tabs.len(),
                 active_tab_index,
                 is_any_tab_renaming: self.current_workspace_state.is_tab_being_renamed(),
-                is_any_tab_dragging: self.current_workspace_state.is_tab_being_dragged,
+                is_any_tab_dragging: self.current_workspace_state.is_tab_being_dragged
+                    || drag_model.is_active(),
                 hover_fixed_width,
             };
+            // Collapse the detached-placeholder slot to 0 width while it
+            // exists in this (source) window. After a put-back handoff the
+            // placeholder has been removed and the real tab re-inserted at a
+            // different index, so `source_placeholder_tab_index()` returns
+            // `None` and nothing is hidden — otherwise the stale
+            // `source_tab_index` would collapse an unrelated tab (e.g. the
+            // first tab shifting into that slot after a leftward put-back).
+            let transferred_tab_index = if drag_model.is_active()
+                && drag_model.source_window_id() == Some(self.window_id)
+            {
+                let has_dedicated_preview = drag_model.has_dedicated_preview_window();
+                let has_handoff = drag_model.handed_off_target().is_some();
+                if has_dedicated_preview || has_handoff {
+                    drag_model.source_placeholder_tab_index()
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            // Ghost state for cross-window drag hovering over this tab bar.
+            let ghost = drag_model.ghost_state_for_window(self.window_id);
 
             for i in 0..self.tabs.len() {
-                // If we are hovered between two tabs, show the drop hover indicator
-                if self.hovered_tab_index.as_ref().is_some_and(
-                    |hovered_index| match hovered_index {
-                        TabBarHoverIndex::BeforeTab(idx) => i == *idx,
-                        TabBarHoverIndex::OverTab(_) => false,
-                    },
-                ) {
+                // Insert ghost slot before tab `i` if the drag would land here.
+                if ghost.as_ref().is_some_and(|g| g.insertion_index == i) {
+                    tab_bar.add_child(self.render_ghost_tab_slot(appearance, ctx));
+                }
+                let is_transferred = transferred_tab_index == Some(i);
+                if !is_transferred
+                    && self
+                        .hovered_tab_index
+                        .as_ref()
+                        .is_some_and(|hovered_index| match hovered_index {
+                            TabBarHoverIndex::BeforeTab(idx) => i == *idx,
+                            TabBarHoverIndex::OverTab(_) => false,
+                        })
+                {
                     tab_bar.add_child(self.render_tab_hover_indicator(appearance));
                 }
-                tab_bar.add_child(self.render_tab_in_tab_bar(i, tab_bar_state, ctx));
+                if is_transferred {
+                    tab_bar.add_child(
+                        ConstrainedBox::new(self.render_tab_in_tab_bar(i, tab_bar_state, ctx))
+                            .with_width(0.)
+                            .finish(),
+                    );
+                } else {
+                    tab_bar.add_child(self.render_tab_in_tab_bar(i, tab_bar_state, ctx));
+                }
             }
 
-            // Fencepost problem - add the indicator at the end if needed
-            if self
+            // Fencepost: ghost slot or hover indicator after all tabs.
+            if ghost
+                .as_ref()
+                .is_some_and(|g| g.insertion_index == self.tabs.len())
+            {
+                tab_bar.add_child(self.render_ghost_tab_slot(appearance, ctx));
+            } else if self
                 .hovered_tab_index
                 .as_ref()
                 .is_some_and(|hovered_index| match hovered_index {
@@ -18285,6 +18290,18 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
+            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+                Self::add_panel_with_separator(
+                    &mut main_content,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::CodeReview,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
             }
         } else if !is_right_maximized {
             main_content = main_content.with_child(Shrinkable::new(1.0, terminal_content).finish());
@@ -18915,6 +18932,18 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
+            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+                Self::add_panel_with_separator(
+                    &mut panels_view,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::CodeReview,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
             }
         }
 
@@ -18974,7 +19003,7 @@ impl Workspace {
     }
 
     /// Renders a configurable panel for the given toolbar item, if it is open.
-    /// Returns `None` if the panel should not be rendered (item not available,
+    /// Returns `None` if the panel should not be rendered (item not supported,
     /// panel not open, or item is not a panel type).
     fn render_config_panel(
         &self,
@@ -18983,7 +19012,7 @@ impl Workspace {
         config: &HeaderToolbarChipSelection,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        if !item.is_available(app) || !item.is_panel() {
+        if !item.is_supported(app) || !item.is_panel() {
             return None;
         }
         match item {
@@ -19029,7 +19058,7 @@ impl Workspace {
         if !pane_group.right_panel_open || !pane_group.is_right_panel_maximized {
             return None;
         }
-        if !HeaderToolbarItemKind::CodeReview.is_available(app) {
+        if !HeaderToolbarItemKind::CodeReview.is_supported(app) {
             return None;
         }
         Some(Shrinkable::new(1.0, ChildView::new(&self.right_panel_view).finish()).finish())
@@ -20661,8 +20690,36 @@ impl TypedActionView for Workspace {
                 tab_position,
             } => self.on_tab_drag(*tab_index, *tab_position, ctx),
             DropTab => {
+                let is_cross_window = CrossWindowTabDrag::as_ref(ctx).is_active();
+                let handed_off_tab_index =
+                    CrossWindowTabDrag::as_ref(ctx)
+                        .handed_off_target()
+                        .map(|_| {
+                            CrossWindowTabDrag::as_ref(ctx)
+                                .transferred_tab_index()
+                                .unwrap_or(0)
+                        });
                 self.current_workspace_state.is_tab_being_dragged = false;
+                // Clear the per-tab `detached` flag set by `on_tab_drag` when
+                // the drag first left the tab bar. Skip the tab that has
+                // already been handed off to another window — its source-side
+                // cleanup runs below via `handle_drop_result`.
+                for (i, tab) in self.tabs.iter_mut().enumerate() {
+                    if handed_off_tab_index == Some(i) {
+                        continue;
+                    }
+                    tab.detached = false;
+                }
                 send_telemetry_from_ctx!(TelemetryEvent::DragAndDropTab, ctx);
+                if is_cross_window {
+                    let drop_result =
+                        CrossWindowTabDrag::handle(ctx).update(ctx, |drag, ctx| drag.on_drop(ctx));
+                    self.handle_drop_result(drop_result, ctx);
+                    // Don't clear any pending source-close here; that happens
+                    // from `Workspace::on_window_closed` once the source /
+                    // preview window actually closes. See the field doc on
+                    // `CrossWindowTabDrag::pending_source_window_closes`.
+                }
             }
             CopyAccessTokenToClipboard => {
                 // Blocking is ok here only because this action is only registered in dev and local
@@ -21716,9 +21773,6 @@ impl TypedActionView for Workspace {
                     ctx.notify();
                 }
             }
-            HandoffPendingTransfer { .. } => {}
-            ReverseHandoff { .. } => {}
-            FinalizeDropTab => {}
             SyncTrafficLights => {
                 self.sync_window_button_visibility(ctx);
             }
@@ -22124,7 +22178,44 @@ impl View for Workspace {
             );
         }
 
-        // Conditionally render tab bar menus.
+        if let Some(position) = self.show_header_toolbar_context_menu {
+            stack.add_positioned_overlay_child(
+                ChildView::new(&self.header_toolbar_context_menu).finish(),
+                OffsetPositioning::offset_from_parent(
+                    position,
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::TopLeft,
+                    ChildAnchor::TopLeft,
+                ),
+            );
+        }
+
+        match tab_bar_mode {
+            ShowTabBar::Stacked => (), // The tab bar was rendered in the content column.
+            ShowTabBar::Hidden => {
+                // Hide the tab bar, but include a hover area.
+                stack.add_positioned_child(
+                    self.render_tab_bar_hover_area(),
+                    OffsetPositioning::offset_from_parent(
+                        Vector2F::zero(),
+                        ParentOffsetBounds::WindowByPosition,
+                        ParentAnchor::TopLeft,
+                        ChildAnchor::TopLeft,
+                    ),
+                );
+            }
+        }
+
+        // If the tab bar is being shown in "stacked" mode, we want to render
+        // the traffic lights relative to the full workspace, so they appear
+        // in the top-right corner even if a right-side panel is open.
+        if tab_bar_mode == ShowTabBar::Stacked {
+            self.maybe_render_traffic_lights(&mut stack, app);
+        }
+
+        // Conditionally render tab bar menus. These must be added after the tab bar itself
+        // (whether stacked inside panels or as an overlay) so that tab bar button save
+        // positions are committed to the position cache before these menus read them.
         if tab_bar_mode.has_tab_bar() && self.show_tab_bar_overflow_menu {
             stack.add_positioned_overlay_child(
                 ChildView::new(&self.tab_bar_overflow_menu).finish(),
@@ -22189,18 +22280,6 @@ impl View for Workspace {
             }
         }
 
-        if let Some(position) = self.show_header_toolbar_context_menu {
-            stack.add_positioned_overlay_child(
-                ChildView::new(&self.header_toolbar_context_menu).finish(),
-                OffsetPositioning::offset_from_parent(
-                    position,
-                    ParentOffsetBounds::WindowByPosition,
-                    ParentAnchor::TopLeft,
-                    ChildAnchor::TopLeft,
-                ),
-            );
-        }
-
         // Render the new session dropdown menu. This is outside the tab bar visibility
         // gate because it can also be opened from the vertical tabs panel.
         if self.show_new_session_dropdown_menu.is_some() {
@@ -22209,15 +22288,27 @@ impl View for Workspace {
                 && self.vertical_tabs_panel_open;
 
             if is_vertical {
-                // Anchor the menu below the vertical-tabs + button.
+                // Anchor the menu below the vertical-tabs + button. The anchor
+                // side mirrors which side the tabs panel itself is on, so the
+                // menu always expands inward and stays inside the window.
+                let tabs_side =
+                    Self::tabs_panel_side(&TabSettings::as_ref(app).header_toolbar_chip_selection);
+                let (anchor, child_anchor) = match tabs_side {
+                    PanelPosition::Left => {
+                        (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft)
+                    }
+                    PanelPosition::Right => {
+                        (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight)
+                    }
+                };
                 stack.add_positioned_overlay_child(
                     ChildView::new(&self.new_session_dropdown_menu).finish(),
                     OffsetPositioning::offset_from_save_position_element(
                         vertical_tabs::VERTICAL_TABS_ADD_TAB_POSITION_ID,
                         vec2f(0., 4.),
                         PositionedElementOffsetBounds::WindowBySize,
-                        PositionedElementAnchor::BottomLeft,
-                        ChildAnchor::TopLeft,
+                        anchor,
+                        child_anchor,
                     ),
                 );
             } else {
@@ -22367,29 +22458,6 @@ impl View for Workspace {
                     );
                 }
             }
-        }
-
-        match tab_bar_mode {
-            ShowTabBar::Stacked => (), // The tab bar was rendered in the content column.
-            ShowTabBar::Hidden => {
-                // Hide the tab bar, but include a hover area.
-                stack.add_positioned_child(
-                    self.render_tab_bar_hover_area(),
-                    OffsetPositioning::offset_from_parent(
-                        Vector2F::zero(),
-                        ParentOffsetBounds::WindowByPosition,
-                        ParentAnchor::TopLeft,
-                        ChildAnchor::TopLeft,
-                    ),
-                );
-            }
-        }
-
-        // If the tab bar is being shown in "stacked" mode, we want to render
-        // the traffic lights relative to the full workspace, so they appear
-        // in the top-right corner even if a right-side panel is open.
-        if tab_bar_mode == ShowTabBar::Stacked {
-            self.maybe_render_traffic_lights(&mut stack, app);
         }
 
         if self.current_workspace_state.is_command_search_open {
@@ -22828,6 +22896,7 @@ impl View for Workspace {
             && self.should_show_ai_assistant_warm_welcome
             && !self.current_workspace_state.is_changelog_modal_open
             && !self.current_workspace_state.is_resource_center_open
+            && !self.current_workspace_state.is_ai_assistant_panel_open
             && tab_bar_mode.has_tab_bar()
         {
             stack.add_positioned_child(
@@ -22840,6 +22909,28 @@ impl View for Workspace {
                     ChildAnchor::TopRight,
                 ),
             );
+        }
+
+        // Cross-window ghost drag: floating chip that follows the cursor in the target window.
+        // Added last so it renders on top of all other content.
+        if FeatureFlag::DragTabsToWindows.is_enabled() {
+            if let Some(ghost) =
+                CrossWindowTabDrag::as_ref(app).ghost_state_for_window(self.window_id)
+            {
+                // Place the chip so its top-left is at cursor - cursor_offset_in_element.
+                // This makes the cursor appear at the same position inside the chip as
+                // it did in the original tab when the drag was initiated.
+                let chip_origin = ghost.cursor_in_window - ghost.cursor_offset_in_element;
+                stack.add_positioned_overlay_child(
+                    render_cross_window_ghost_chip(&ghost, appearance, app),
+                    OffsetPositioning::offset_from_parent(
+                        chip_origin,
+                        ParentOffsetBounds::Unbounded,
+                        ParentAnchor::TopLeft,
+                        ChildAnchor::TopLeft,
+                    ),
+                );
+            }
         }
 
         let window_corner_radius = app.windows().window_corner_radius();
@@ -23019,10 +23110,12 @@ impl View for Workspace {
 
     /// Update this workspace when it has been closed, but may still be restored.
     fn on_window_closed(&mut self, ctx: &mut ViewContext<Self>) {
-        for pane_group in self.tab_views() {
-            pane_group.update(ctx, |pane_group, ctx| {
-                pane_group.detach_panes(ctx);
-            });
+        if !self.suppress_detach_panes_on_window_close {
+            for pane_group in self.tab_views() {
+                pane_group.update(ctx, |pane_group, ctx| {
+                    pane_group.detach_panes(ctx);
+                });
+            }
         }
 
         let window_id = ctx.window_id();
@@ -23031,9 +23124,800 @@ impl View for Workspace {
             registry.unregister(window_id);
         });
 
+        // If this workspace's close was registered as part of a tab-drag
+        // handoff, clear the entry now that the workspace is gone from the
+        // registry. Safe no-op if this window wasn't registered. See
+        // `CrossWindowTabDrag::pending_source_window_closes` for the
+        // `terminal_panes.uuid` race this guards.
+        CrossWindowTabDrag::handle(ctx).update(ctx, |drag, _| {
+            drag.finish_pending_source_close(window_id);
+        });
+
         ActiveSession::handle(ctx).update(ctx, |active_session, _| {
             active_session.close_workspace(window_id);
         })
+    }
+}
+
+// ---- Tab drag: local reordering, cross-window initiation, drop handling ----
+impl Workspace {
+    /// Builds a `TransferredTab` snapshot for the tab at `index`, or `None`
+    /// if the index is out of bounds.
+    fn tab_transfer_info_at_index(&self, index: usize, ctx: &AppContext) -> Option<TransferredTab> {
+        let tab = self.tabs.get(index)?;
+        let pane_group = tab.pane_group.clone();
+        let color = tab.color();
+        let draggable_state = tab.draggable_state.clone();
+        let custom_title = pane_group.read(ctx, |pg, ctx| pg.custom_title(ctx));
+        let left_panel_open = pane_group.read(ctx, |pg, _| pg.left_panel_open);
+        let right_panel_open = pane_group.read(ctx, |pg, _| pg.right_panel_open);
+        let is_right_panel_maximized = pane_group.read(ctx, |pg, _| pg.is_right_panel_maximized);
+        let vertical_tabs_panel_open = self.vertical_tabs_panel_open;
+
+        Some(TransferredTab {
+            pane_group,
+            color,
+            custom_title,
+            left_panel_open,
+            right_panel_open,
+            is_right_panel_maximized,
+            draggable_state,
+            vertical_tabs_panel_open,
+        })
+    }
+
+    pub fn get_tab_transfer_info(&self, index: usize, ctx: &AppContext) -> Option<TransferredTab> {
+        if self.tabs.len() <= 1 {
+            return None;
+        }
+        self.tab_transfer_info_at_index(index, ctx)
+    }
+
+    pub fn get_tab_transfer_info_for_attach(
+        &self,
+        index: usize,
+        ctx: &AppContext,
+    ) -> Option<TransferredTab> {
+        self.tab_transfer_info_at_index(index, ctx)
+    }
+
+    /// Prepares this workspace for having a pane group transferred out by
+    /// suppressing pane-detach on close and unsubscribing from the view.
+    /// The suppress flag is **not** auto-restored; callers that keep the
+    /// window alive must clear it via
+    /// `set_suppress_detach_panes_on_window_close(false)`.
+    pub fn prepare_for_transferred_tab_attach(
+        &mut self,
+        pane_group: &ViewHandle<PaneGroup>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.set_suppress_detach_panes_on_window_close(true);
+        ctx.unsubscribe_to_view(pane_group);
+    }
+
+    /// Suppresses pane-detach and closes this window with
+    /// `ContentTransferred`. Called when the source window's last tab has
+    /// been transferred elsewhere.
+    pub(crate) fn close_window_for_content_transfer(&mut self, ctx: &mut ViewContext<Self>) {
+        self.set_suppress_detach_panes_on_window_close(true);
+        ctx.windows()
+            .close_window(ctx.window_id(), TerminationMode::ContentTransferred);
+    }
+
+    pub(crate) fn insert_transferred_tab_at_index(
+        &mut self,
+        transferred_tab: TransferredTab,
+        insertion_index: usize,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let TransferredTab {
+            pane_group,
+            color,
+            draggable_state,
+            ..
+        } = transferred_tab;
+        ctx.subscribe_to_view(&pane_group, move |me, pane_group, event, ctx| {
+            me.handle_file_tree_event(pane_group, event, ctx)
+        });
+
+        let index = insertion_index.min(self.tabs.len());
+        let mut tab_data = TabData::new(pane_group);
+        tab_data.selected_color = color.map_or(SelectedTabColor::Unset, SelectedTabColor::Color);
+        tab_data.draggable_state = draggable_state;
+        self.tabs.insert(index, tab_data);
+        self.activate_tab_internal(index, ctx);
+        ctx.notify();
+    }
+
+    /// Returns the tab-bar index where a dragged tab would be inserted for
+    /// the given cursor position. Skips tabs clipped by the overflow area
+    /// (width below `MIN_VISIBLE_TAB_WIDTH`), and picks between horizontal
+    /// and vertical layout by comparing the spread of tab centers on each
+    /// axis.
+    pub(crate) fn tab_insertion_index_for_cursor(
+        &self,
+        window_id: WindowId,
+        cursor_position_on_screen: Vector2F,
+        ctx: &AppContext,
+    ) -> usize {
+        const MIN_VISIBLE_TAB_WIDTH: f32 = 1.0;
+
+        let Some(window_bounds) = ctx.window_bounds(&window_id) else {
+            return self.tabs.len();
+        };
+
+        // Pre-compute the bounding rects of the tab bar / vertical tabs panel
+        // so we can defensively reject `tab_position_<index>` cache entries
+        // that don't lie within either of them. This guards
+        // `tab_insertion_index_for_cursor` against any future overlay /
+        // chip / preview that accidentally shares a SavePosition key with
+        // a real tab — see the `for_drag_ghost` flag on `TabComponent` and
+        // `vertical_tabs::render_tab_group_internal` for the original
+        // offender (the cross-window drag ghost chip).
+        let tab_bar_rects = tab_bar_rects_for_window(window_id, ctx);
+
+        let cursor_in_window = cursor_position_on_screen - window_bounds.origin();
+        let mut visible_tabs = Vec::new();
+        for index in 0..self.tabs.len() {
+            if let Some(tab_position) =
+                ctx.element_position_by_id_at_last_frame(window_id, tab_position_id(index))
+            {
+                if tab_position.width() <= MIN_VISIBLE_TAB_WIDTH {
+                    continue;
+                }
+                // If we have at least one tab-bar-equivalent rect, require
+                // that the candidate tab position be (mostly) inside one of
+                // them. Use the rect center as the membership test — a tab
+                // that's been rendered partway off-screen due to overflow
+                // is fine to keep, but a rect that has nothing to do with
+                // the tab bar (e.g. the floating chip that follows the
+                // cursor anywhere in the window) gets rejected.
+                if !tab_bar_rects.is_empty()
+                    && !tab_bar_rects
+                        .iter()
+                        .any(|tb| tb.contains_point(tab_position.center()))
+                {
+                    continue;
+                }
+                visible_tabs.push((index, tab_position));
+            }
+        }
+
+        if visible_tabs.is_empty() {
+            return self.tabs.len();
+        }
+
+        // Detect orientation from the axis with the larger spread between
+        // first and last tab centers (vertical panels stack along Y).
+        // With only one tab there is no spread to compare, so fall back to
+        // whether the vertical-tabs panel is open.
+        let is_vertical = if visible_tabs.len() >= 2 {
+            let first = visible_tabs[0].1.center();
+            let last = visible_tabs.last().expect("non-empty").1.center();
+            (last.y() - first.y()).abs() > (last.x() - first.x()).abs()
+        } else {
+            self.vertical_tabs_panel_open
+        };
+
+        if is_vertical {
+            for (index, tab_position) in &visible_tabs {
+                if cursor_in_window.y() < tab_position.center().y() {
+                    return *index;
+                }
+            }
+        } else {
+            for (index, tab_position) in &visible_tabs {
+                if cursor_in_window.x() < tab_position.center().x() {
+                    return *index;
+                }
+            }
+        }
+
+        visible_tabs
+            .last()
+            .map(|(index, _)| index + 1)
+            .unwrap_or(self.tabs.len())
+    }
+
+    pub fn remove_tab_without_undo(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        self.remove_tab(index, false, false, ctx);
+    }
+
+    /// Replaces the placeholder pane group (created by
+    /// `create_transferred_window`) with the real pane group transferred from
+    /// the source window, detaching and dropping the placeholder.
+    pub fn adopt_transferred_pane_group(
+        &mut self,
+        new_pane_group: ViewHandle<PaneGroup>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !self.pending_pane_group_transfer {
+            debug_assert!(
+                false,
+                "adopt_transferred_pane_group called without pending transfer"
+            );
+            return;
+        }
+
+        if self.tabs.is_empty() {
+            debug_assert!(false, "adopt_transferred_pane_group called with no tabs");
+            return;
+        }
+        let Some(placeholder_tab) = self.tabs.last_mut() else {
+            debug_assert!(
+                false,
+                "adopt_transferred_pane_group missing placeholder tab"
+            );
+            return;
+        };
+
+        // Swap the placeholder's pane group with the real one, then tear down
+        // the placeholder so its terminals are properly detached.
+        let placeholder_pane_group =
+            std::mem::replace(&mut placeholder_tab.pane_group, new_pane_group.clone());
+
+        // Re-route pane-group event subscriptions from the placeholder onto
+        // the transferred pane group. The workspace was subscribed to the
+        // placeholder in `add_tab_with_pane_layout` (via
+        // `NewWorkspaceSource::TransferredTab`), but after this swap the
+        // placeholder is dropped and any events we need to react to — most
+        // notably `PaneGroup::Event::Exited` fired by cmd-W — come from
+        // `new_pane_group` instead. Without this, `close_pane` emits
+        // `Exited` but `handle_file_tree_event` is never invoked, so the
+        // workspace never calls `close_tab` and cmd-W appears to do nothing.
+        ctx.unsubscribe_to_view(&placeholder_pane_group);
+        ctx.subscribe_to_view(&new_pane_group, move |me, pane_group, event, ctx| {
+            me.handle_file_tree_event(pane_group, event, ctx)
+        });
+
+        let working_directories_model = self.working_directories_model.clone();
+        placeholder_pane_group.update(ctx, |pg, ctx| {
+            pg.detach_panes_for_close(&working_directories_model, ctx);
+        });
+        self.pending_pane_group_transfer = false;
+        ctx.dispatch_global_action("workspace:save_app", ());
+        ctx.notify();
+    }
+
+    /// Transfers a dragged tab into the attach target's window by delegating
+    /// to the appropriate `CrossWindowTabDrag::execute_handoff_*` variant.
+    fn perform_handoff(&mut self, target: AttachTarget, ctx: &mut ViewContext<Self>) {
+        let caller_window_id = ctx.window_id();
+
+        let has_dedicated_preview = CrossWindowTabDrag::as_ref(ctx).has_dedicated_preview_window();
+        let source_tab_index = CrossWindowTabDrag::as_ref(ctx)
+            .transferred_tab_index()
+            .unwrap_or(0);
+        let source_was_single_tab = CrossWindowTabDrag::as_ref(ctx).source_was_single_tab();
+
+        log::info!(
+            "tab_drag: perform_handoff caller_wid={caller_window_id} target_wid={} insertion_index={} has_dedicated_preview={has_dedicated_preview} source_tab_index={source_tab_index} source_was_single_tab={source_was_single_tab}",
+            target.window_id,
+            target.insertion_index
+        );
+
+        // Put-back: multi-tab drag whose target is the original source. The
+        // pane group is transferred back from the preview into the caller
+        // and the preview window is closed.
+        if target.window_id == caller_window_id {
+            log::info!(
+                "tab_drag: perform_handoff branch=target==caller (put-back) caller_wid={caller_window_id}"
+            );
+            if !has_dedicated_preview {
+                log::warn!(
+                    "tab_drag: perform_handoff target==caller without dedicated preview -> reset_to_floating (no-op)"
+                );
+                CrossWindowTabDrag::handle(ctx).update(ctx, |drag, _| {
+                    drag.reset_to_floating();
+                });
+                return;
+            }
+
+            // A prior put-back already committed the tab back into the
+            // source. `source_tab_index` now points at an unrelated tab, so
+            // running `execute_handoff_back_to_caller` + `remove_tab` here
+            // would corrupt that bystander and leave the pane group attached
+            // to two windows. This is the Overlap A case from the TECH.md
+            // at `pei/tab-dragging/put-back-plus-new-window-overlap`.
+            // `on_drop` is supposed to filter these drops out before they
+            // reach `DropInto`; bail out defensively if something slips
+            // through.
+            if CrossWindowTabDrag::as_ref(ctx).source_placeholder_consumed() {
+                log::warn!(
+                    "tab_drag: perform_handoff target==caller called with source_placeholder_consumed=true -> reset_to_floating"
+                );
+                CrossWindowTabDrag::handle(ctx).update(ctx, |drag, _| {
+                    drag.reset_to_floating();
+                });
+                return;
+            }
+
+            let caller_draggable_state = self
+                .tabs
+                .get(source_tab_index)
+                .map(|tab| tab.draggable_state.clone());
+
+            let Some(caller_draggable_state) = caller_draggable_state else {
+                CrossWindowTabDrag::handle(ctx).update(ctx, |drag, _| {
+                    drag.reset_to_floating();
+                });
+                return;
+            };
+
+            let result = CrossWindowTabDrag::handle(ctx).update(ctx, |drag, ctx| {
+                drag.execute_handoff_back_to_caller(
+                    target,
+                    caller_draggable_state,
+                    caller_window_id,
+                    ctx,
+                )
+            });
+
+            if let Some(info) = result {
+                if let Some(tab) = self.tabs.get(source_tab_index) {
+                    ctx.unsubscribe_to_view(&tab.pane_group);
+                }
+                if source_was_single_tab {
+                    self.close_window_for_content_transfer(ctx);
+                } else {
+                    self.remove_tab_without_undo(source_tab_index, ctx);
+                }
+                // The source placeholder is now removed, so `source_tab_index`
+                // is stale. Mark it consumed so a later reverse_handoff +
+                // empty-space drop falls into `NoOp` instead of trying to
+                // remove a non-existent tab. See the field doc on
+                // `ActiveDrag::source_placeholder_consumed`.
+                CrossWindowTabDrag::handle(ctx).update(ctx, |drag, _| {
+                    drag.mark_source_placeholder_consumed();
+                });
+                self.insert_transferred_tab_at_index(
+                    info.transferred_tab,
+                    info.insertion_index,
+                    ctx,
+                );
+                self.current_workspace_state.is_tab_being_dragged = true;
+                self.focus_active_tab(ctx);
+            }
+            return;
+        }
+
+        if !has_dedicated_preview {
+            log::info!(
+                "tab_drag: perform_handoff branch=single_tab_source->other target_wid={} caller_wid={caller_window_id}",
+                target.window_id
+            );
+            let Some(mut transfer_info) =
+                self.get_tab_transfer_info_for_attach(source_tab_index, ctx)
+            else {
+                log::warn!(
+                    "tab_drag: perform_handoff single_tab could not get transfer info source_tab_index={source_tab_index} -> reset_to_floating"
+                );
+                CrossWindowTabDrag::handle(ctx).update(ctx, |drag, _| {
+                    drag.reset_to_floating();
+                });
+                return;
+            };
+            transfer_info.draggable_state = DraggableState::default();
+            self.prepare_for_transferred_tab_attach(&transfer_info.pane_group, ctx);
+            CrossWindowTabDrag::handle(ctx).update(ctx, |drag, ctx| {
+                drag.execute_handoff_single_tab_to_other(
+                    target,
+                    transfer_info,
+                    caller_window_id,
+                    ctx,
+                );
+            });
+            return;
+        }
+
+        log::info!(
+            "tab_drag: perform_handoff branch=multi_tab_source->other target_wid={} caller_wid={caller_window_id}",
+            target.window_id
+        );
+        CrossWindowTabDrag::handle(ctx).update(ctx, |drag, ctx| {
+            drag.execute_handoff_multi_tab_to_other(target, ctx);
+        });
+    }
+
+    /// Handles a tab drag event from the `Draggable` element. Dispatches to
+    /// one of three modes: forward to an in-progress cross-window drag,
+    /// initiate a new cross-window drag when the drag leaves the tab bar
+    /// (or from a single-tab window), or reorder within the current window.
+    pub(crate) fn on_tab_drag(
+        &mut self,
+        current_index: usize,
+        position: RectF,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        const DETACH_SENSITIVITY: f32 = 10.0;
+        // Only detach when the drag leaves every tab-bar presentation on its
+        // perpendicular axis. Windows with vertical tabs still render the
+        // horizontal bar, so checking only the horizontal rect would make
+        // vertical reorders (which move along Y) spuriously trip the detach.
+        let drag_center = position.center();
+        let rects = tab_bar_rects_for_window(ctx.window_id(), ctx);
+        let is_drag_outside_tab_bar = if rects.is_empty() {
+            // No rect laid out yet (first frame); fall back to the horizontal
+            // bar's hardcoded height.
+            let drag_y = position.min_y();
+            !(-DETACH_SENSITIVITY..=TAB_BAR_HEIGHT + DETACH_SENSITIVITY).contains(&drag_y)
+        } else {
+            rects.into_iter().all(|rect| {
+                let is_vertical = rect.height() > rect.width();
+                if is_vertical {
+                    drag_center.x() < rect.min_x() - DETACH_SENSITIVITY
+                        || drag_center.x() > rect.max_x() + DETACH_SENSITIVITY
+                } else {
+                    drag_center.y() < rect.min_y() - DETACH_SENSITIVITY
+                        || drag_center.y() > rect.max_y() + DETACH_SENSITIVITY
+                }
+            })
+        };
+
+        if CrossWindowTabDrag::as_ref(ctx).is_active() {
+            let window_id = ctx.window_id();
+            let drag_result = CrossWindowTabDrag::handle(ctx)
+                .update(ctx, |drag, ctx| drag.on_drag(window_id, position, ctx));
+            match drag_result {
+                DragResult::Handled => {}
+                DragResult::AdjustDraggable { adjustment } => {
+                    if let Some(tab) = self.tabs.get(current_index) {
+                        tab.draggable_state.adjust_mouse_position(adjustment);
+                    }
+                }
+                DragResult::HandoffNeeded { target } => {
+                    self.perform_handoff(target, ctx);
+                }
+            }
+            return;
+        }
+
+        if let Some(tab_data) = self.tabs.get(current_index) {
+            if tab_data.detached {
+                return;
+            }
+        }
+
+        let source_is_single_tab = self.tabs.len() == 1;
+        if (is_drag_outside_tab_bar || source_is_single_tab)
+            && FeatureFlag::DragTabsToWindows.is_enabled()
+        {
+            let source_was_single_tab = source_is_single_tab;
+            if !source_was_single_tab {
+                if let Some(tab_data) = self.tabs.get_mut(current_index) {
+                    tab_data.detached = true;
+                }
+            }
+
+            let window_bounds = match ctx.window_bounds(&ctx.window_id()) {
+                Some(bounds) => bounds,
+                None => return,
+            };
+            let source_window_origin = window_bounds.origin();
+            let drag_origin_in_window = vec2f(position.min_x(), position.min_y());
+            let drag_origin_on_screen = vec2f(
+                source_window_origin.x() + drag_origin_in_window.x(),
+                source_window_origin.y() + drag_origin_in_window.y(),
+            );
+            let last_known_target_tab_origin_in_window = ctx
+                .element_position_by_id(tab_position_id(0))
+                .map(|rect| vec2f(rect.min_x(), rect.min_y()))
+                .unwrap_or_else(|| vec2f(0.0, 0.0));
+            let window_position = drag_origin_on_screen - last_known_target_tab_origin_in_window;
+            let window_size = window_bounds.size();
+            let initial_drag_center_offset =
+                position.center() - vec2f(position.min_x(), position.min_y());
+            let source_window_id = ctx.window_id();
+
+            // Capture the source layout (vertical tabs panel vs horizontal
+            // tab bar) and the rendered tab's element size at drag-start.
+            // Both are frozen for the duration of the drag so the floating
+            // ghost chip mirrors what was on screen when the drag began,
+            // even if the user toggles their layout mid-drag.
+            let was_vertical_layout = uses_vertical_tabs(ctx);
+            let source_element_size = ctx
+                .element_position_by_id(tab_position_id(current_index))
+                .map(|rect| rect.size())
+                .unwrap_or_else(|| vec2f(120., 34.));
+
+            if source_was_single_tab {
+                let new_bounds = RectF::new(window_position, window_size);
+                ctx.set_and_cache_window_bounds(source_window_id, new_bounds);
+                ctx.windows().cancel_synthetic_drag(source_window_id);
+                if let Some(tab) = self.tabs.get(current_index) {
+                    tab.draggable_state.set_suppress_overlay_paint(true);
+                    tab.draggable_state
+                        .adjust_mouse_position(source_window_origin - window_position);
+                }
+
+                CrossWindowTabDrag::handle(ctx).update(ctx, |drag, _ctx| {
+                    drag.begin_single_tab_drag(
+                        source_window_id,
+                        initial_drag_center_offset,
+                        window_size,
+                        last_known_target_tab_origin_in_window,
+                        was_vertical_layout,
+                        source_element_size,
+                    );
+                });
+            } else {
+                let Some(transferred_tab) =
+                    self.get_tab_transfer_info_for_attach(current_index, ctx)
+                else {
+                    return;
+                };
+
+                let preview_window_id = crate::root_view::create_transferred_window(
+                    transferred_tab,
+                    source_window_id,
+                    window_size,
+                    window_position,
+                    true,
+                    ctx,
+                );
+                ctx.set_suppress_focus_for_window(Some(preview_window_id));
+
+                CrossWindowTabDrag::handle(ctx).update(ctx, |drag, _ctx| {
+                    drag.begin_multi_tab_drag(
+                        source_window_id,
+                        current_index,
+                        initial_drag_center_offset,
+                        window_size,
+                        last_known_target_tab_origin_in_window,
+                        preview_window_id,
+                        was_vertical_layout,
+                        source_element_size,
+                    );
+                });
+            }
+
+            if !source_was_single_tab && current_index == self.active_tab_index {
+                let adjacent = if current_index + 1 < self.tabs.len() {
+                    current_index + 1
+                } else {
+                    current_index.saturating_sub(1)
+                };
+                self.set_active_tab_index(adjacent, ctx);
+            }
+
+            ctx.notify();
+            return;
+        }
+
+        let new_index = if FeatureFlag::VerticalTabs.is_enabled()
+            && *TabSettings::as_ref(ctx).use_vertical_tabs
+        {
+            self.calculate_updated_tab_index_vertical(current_index, position, ctx)
+        } else {
+            self.calculate_updated_tab_index(current_index, position, ctx)
+        };
+
+        if new_index != current_index {
+            self.tabs.swap(new_index, current_index);
+
+            if current_index == self.active_tab_index {
+                self.set_active_tab_index(new_index, ctx);
+            } else if new_index == self.active_tab_index {
+                self.set_active_tab_index(current_index, ctx);
+            }
+
+            ctx.notify();
+        }
+    }
+
+    /// Performs the source-workspace cleanup indicated by `DropResult`.
+    /// Cross-workspace mutations (preview/target updates, focus) happen inside
+    /// `CrossWindowTabDrag::on_drop`; this method only touches `self`.
+    pub(crate) fn handle_drop_result(&mut self, result: DropResult, ctx: &mut ViewContext<Self>) {
+        match result {
+            DropResult::NoOp => {}
+            DropResult::FocusSelf => {
+                if let Some(tab) = self.tabs.first() {
+                    tab.draggable_state.set_suppress_overlay_paint(false);
+                }
+                self.focus_active_tab(ctx);
+            }
+            DropResult::CloseSourceWindow {
+                transferred_tab_index,
+            } => {
+                if let Some(tab) = self.tabs.get(transferred_tab_index) {
+                    ctx.unsubscribe_to_view(&tab.pane_group);
+                }
+                self.close_window_for_content_transfer(ctx);
+            }
+            DropResult::RemoveSourceTab {
+                transferred_tab_index,
+            } => {
+                if let Some(tab) = self.tabs.get(transferred_tab_index) {
+                    ctx.unsubscribe_to_view(&tab.pane_group);
+                }
+                self.remove_tab_without_undo(transferred_tab_index, ctx);
+            }
+            DropResult::RemoveSourceTabAndClosePreview {
+                transferred_tab_index,
+                preview_window_id,
+            } => {
+                if let Some(tab) = self.tabs.get(transferred_tab_index) {
+                    ctx.unsubscribe_to_view(&tab.pane_group);
+                }
+                self.remove_tab_without_undo(transferred_tab_index, ctx);
+                ctx.windows()
+                    .close_window(preview_window_id, TerminationMode::ContentTransferred);
+            }
+            DropResult::ClosePreviewOnly { preview_window_id } => {
+                // `Floating` drop after a prior put-back: the source already
+                // owns the tab, but the preview still carries a `TabData`
+                // pointing at the same pane group. Close the preview
+                // asynchronously; `finalize` has already registered the
+                // pending close so `is_active()` keeps persistence paused
+                // until `on_window_closed` fires.
+                ctx.windows()
+                    .close_window(preview_window_id, TerminationMode::ContentTransferred);
+            }
+            DropResult::DropInto { target } => {
+                // Drop landed on a tab bar that hadn't yet triggered a
+                // handoff in-flight. Commit the handoff now, then finalize
+                // to close the preview and clean up the source. Fixes the
+                // "empty ghost window" bug when the mouse is released back
+                // over the source (or any other) tab bar at drop time.
+                self.perform_handoff(target, ctx);
+                let final_result =
+                    CrossWindowTabDrag::handle(ctx).update(ctx, |drag, ctx| drag.finalize(ctx));
+                self.handle_drop_result(final_result, ctx);
+            }
+        }
+    }
+
+    /// Determines the appropriate index for a tab that is being dragged, based on its current
+    /// index and drag position
+    ///
+    /// We check if the midpoint of the dragged tab has crossed into the boundary of either
+    /// surrounding tab. For the tab immediately to the left, this means checking against the
+    /// rightmost boundary, while for the tab immediately to the right, we check against the
+    /// leftmost boundary.
+    ///
+    /// If the midpoint is not in either location, then we return the current index, as the tab has
+    /// not moved out of its position
+    fn calculate_updated_tab_index(
+        &self,
+        current_index: usize,
+        drag_position: RectF,
+        ctx: &mut ViewContext<Self>,
+    ) -> usize {
+        let midpoint_drag_x = (drag_position.min_x() + drag_position.max_x()) / 2.;
+
+        let maybe_left_tab = if current_index > 0 {
+            ctx.element_position_by_id(tab_position_id(current_index - 1))
+        } else {
+            None
+        };
+        if let Some(tab_position) = maybe_left_tab {
+            if midpoint_drag_x < tab_position.max_x() {
+                return current_index - 1;
+            }
+        }
+
+        let maybe_right_tab = if current_index < self.tabs.len() - 1 {
+            ctx.element_position_by_id(tab_position_id(current_index + 1))
+        } else {
+            None
+        };
+        if let Some(tab_position) = maybe_right_tab {
+            if midpoint_drag_x > tab_position.min_x() {
+                return current_index + 1;
+            }
+        }
+
+        current_index
+    }
+
+    /// Y-axis variant of `calculate_updated_tab_index` for vertical tab layout.
+    ///
+    /// Uses midpoint-of-neighbor thresholds rather than edge thresholds to prevent
+    /// oscillation when groups have different heights.
+    fn calculate_updated_tab_index_vertical(
+        &self,
+        current_index: usize,
+        drag_position: RectF,
+        ctx: &mut ViewContext<Self>,
+    ) -> usize {
+        let midpoint_drag_y = (drag_position.min_y() + drag_position.max_y()) / 2.;
+
+        let maybe_above_tab = if current_index > 0 {
+            ctx.element_position_by_id(tab_position_id(current_index - 1))
+        } else {
+            None
+        };
+        if let Some(tab_position) = maybe_above_tab {
+            let neighbor_midpoint_y = (tab_position.min_y() + tab_position.max_y()) / 2.;
+            if midpoint_drag_y < neighbor_midpoint_y {
+                return current_index - 1;
+            }
+        }
+
+        let maybe_below_tab = if current_index < self.tabs.len() - 1 {
+            ctx.element_position_by_id(tab_position_id(current_index + 1))
+        } else {
+            None
+        };
+        if let Some(tab_position) = maybe_below_tab {
+            let neighbor_midpoint_y = (tab_position.min_y() + tab_position.max_y()) / 2.;
+            if midpoint_drag_y > neighbor_midpoint_y {
+                return current_index + 1;
+            }
+        }
+
+        current_index
+    }
+}
+
+/// Returns every tab-bar-equivalent rect laid out in `window_id` (horizontal
+/// tab bar and/or vertical tabs panel). Both must be considered because a
+/// window with vertical tabs still renders the horizontal bar at the top.
+pub(crate) fn tab_bar_rects_for_window(window_id: WindowId, app: &AppContext) -> Vec<RectF> {
+    let mut rects = Vec::with_capacity(2);
+    if let Some(rect) = app.element_position_by_id_at_last_frame(window_id, TAB_BAR_POSITION_ID) {
+        rects.push(rect);
+    }
+    if let Some(rect) =
+        app.element_position_by_id_at_last_frame(window_id, VERTICAL_TABS_PANEL_POSITION_ID)
+    {
+        rects.push(rect);
+    }
+    rects
+}
+
+/// Renders the floating chip shown in the target window during a cross-window
+/// ghost drag. The chip's contents come from the same render code paths used
+/// by the source layout (`TabComponent` for horizontal, `render_tab_group`
+/// for vertical) by reading the dragged tab from the source/preview
+/// workspace, so the chip looks identical to the source tab. The chip is
+/// constrained to `ghost.source_element_size` (the source tab's rendered
+/// dimensions). Its top-left is placed at
+/// `cursor_in_window - cursor_offset_in_element` by the caller so the cursor
+/// sits at the same relative position inside the chip as it did in the
+/// original tab when the drag was initiated.
+fn render_cross_window_ghost_chip(
+    ghost: &GhostState,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    use warpui::elements::DropShadow;
+
+    let theme = appearance.theme();
+
+    // Render the dragged tab using the same code path the source layout
+    // uses. The dragged tab is always at index 0 in the preview workspace
+    // (single-tab drags use the source window itself as the preview, which
+    // by definition has only one tab; multi-tab drags move the dragged tab
+    // to a dedicated preview window's index 0).
+    let inner = WorkspaceRegistry::as_ref(app)
+        .get(ghost.preview_window_id, app)
+        .map(|ws| {
+            ws.as_ref(app)
+                .render_tab_for_drag_ghost(0, ghost.was_vertical_layout, app)
+        })
+        .unwrap_or_else(|| Empty::new().finish());
+
+    // Wrap in a container with the source tab's background fill + a drop
+    // shadow so the chip reads as a floating, detached element. The inner
+    // tab/group renderer already paints its own background where applicable;
+    // the drop shadow is applied at this outer layer.
+    let chip = Container::new(inner)
+        .with_background(internal_colors::fg_overlay_1(theme))
+        .with_drop_shadow(DropShadow::default())
+        .finish();
+
+    // Constrain to the source tab's rendered dimensions so the chip matches
+    // the size of the tab the user grabbed.
+    let size = ghost.source_element_size;
+    if size.x() > 0. && size.y() > 0. {
+        ConstrainedBox::new(chip)
+            .with_width(size.x())
+            .with_height(size.y())
+            .finish()
+    } else {
+        ConstrainedBox::new(chip).with_max_width(200.).finish()
     }
 }
 

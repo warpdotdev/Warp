@@ -48,7 +48,7 @@ use crate::{
             todos::AIAgentTodoList,
             AIAgentOutputMessage, AIAgentOutputMessageType, MessageToAIAgentOutputMessageError,
         },
-        blocklist::BlocklistAIHistoryEvent,
+        blocklist::{BlocklistAIHistoryEvent, ConversationStatusUpdate},
     },
     persistence::{
         model::{AgentConversationData, PersistedAutoexecuteMode},
@@ -355,6 +355,7 @@ impl AIConversation {
             parent_agent_id,
             agent_name,
             parent_conversation_id,
+            is_remote_child,
             run_id,
             autoexecute_override,
             last_event_sequence,
@@ -380,6 +381,7 @@ impl AIConversation {
             let parent_conversation_id = data
                 .parent_conversation_id
                 .and_then(|id| AIConversationId::try_from(id).ok());
+            let is_remote_child = data.is_remote_child;
             let run_id = data.run_id;
             let autoexecute_override = if FeatureFlag::RememberFastForwardState.is_enabled() {
                 data.autoexecute_override
@@ -399,6 +401,7 @@ impl AIConversation {
                 parent_agent_id,
                 agent_name,
                 parent_conversation_id,
+                is_remote_child,
                 run_id,
                 autoexecute_override,
                 last_event_sequence,
@@ -413,6 +416,7 @@ impl AIConversation {
                 None,
                 None,
                 None,
+                false,
                 None,
                 AIConversationAutoexecuteMode::default(),
                 None,
@@ -457,7 +461,7 @@ impl AIConversation {
             parent_agent_id,
             agent_name,
             parent_conversation_id,
-            is_remote_child: false,
+            is_remote_child,
             last_event_sequence,
         })
     }
@@ -669,11 +673,14 @@ impl AIConversation {
         } else {
             None
         };
+        let prev_status = self.status.clone();
+        let new_status = status.clone();
         self.status = status;
         ctx.emit(BlocklistAIHistoryEvent::UpdatedConversationStatus {
             conversation_id: self.id,
             terminal_view_id,
-            is_restored: false,
+            update: ConversationStatusUpdate::Changed { prev_status },
+            new_status,
         });
     }
 
@@ -809,7 +816,7 @@ impl AIConversation {
 
     /// Returns true if this conversation was spawned by a parent orchestrator agent.
     pub fn is_child_agent_conversation(&self) -> bool {
-        self.parent_conversation_id.is_some()
+        self.parent_conversation_id.is_some() || self.parent_agent_id.is_some()
     }
 
     /// True iff this conversation knows about a parent agent — either via a
@@ -2838,6 +2845,7 @@ impl AIConversation {
                 parent_agent_id: self.parent_agent_id.clone(),
                 agent_name: self.agent_name.clone(),
                 parent_conversation_id: self.parent_conversation_id.map(|id| id.to_string()),
+                is_remote_child: self.is_remote_child,
                 run_id: self.task_id.map(|id| id.to_string()),
                 autoexecute_override: Some(self.autoexecute_override.into()),
                 last_event_sequence: self.last_event_sequence,

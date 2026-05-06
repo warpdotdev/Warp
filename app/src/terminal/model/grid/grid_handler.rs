@@ -305,6 +305,18 @@ enum StorageRow {
     FlatStorage(usize),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Controls whether full-grid operations on a primary-screen grid preserve the old visible rows as
+/// scrollback or treat them as a mutable redraw surface.
+pub(in crate::terminal) enum FullGridClearBehavior {
+    /// Reset visible cells in place for full-grid clears and resizes, avoiding scrollback growth
+    /// during TUI-style redraws on the primary grid.
+    Clear,
+    /// Preserve normal primary-grid behavior where full-grid clears and resizes move visible rows
+    /// into scrollback.
+    Scroll,
+}
+
 /// An implementation of `ansi::Handler` that writes to a `Grid`.
 #[derive(Clone)]
 pub struct GridHandler {
@@ -343,6 +355,8 @@ pub struct GridHandler {
     /// `bottommost_visible_content_row` via backward scan. Set by the owning
     /// `BlockGrid` when `trim_trailing_blank_rows` is active.
     track_content_length: bool,
+
+    full_grid_clear_behavior: FullGridClearBehavior,
 }
 
 impl GridHandler {
@@ -391,6 +405,7 @@ impl GridHandler {
             marked_text: None,
             bottommost_visible_content_row: None,
             track_content_length: false,
+            full_grid_clear_behavior: FullGridClearBehavior::Scroll,
         }
     }
 
@@ -439,6 +454,10 @@ impl GridHandler {
             // back to the full max_cursor_point-based height.
             self.bottommost_visible_content_row = self.bottommost_visible_content_row_backward();
         }
+    }
+
+    pub(in crate::terminal) fn enable_full_grid_clear_behavior(&mut self) {
+        self.full_grid_clear_behavior = FullGridClearBehavior::Clear;
     }
 
     pub(crate) fn set_supports_emoji_presentation_selector(
@@ -517,6 +536,7 @@ impl GridHandler {
             marked_text: None,
             bottommost_visible_content_row: None,
             track_content_length: false,
+            full_grid_clear_behavior: FullGridClearBehavior::Scroll,
         };
 
         // Scan the full grid for secrets.  This is less performant than
@@ -1232,7 +1252,7 @@ impl GridHandler {
         let mut possible_paths = Vec::new();
 
         for prefix_chunk in prefix_chunks.into_iter().rev() {
-            // Preppend a new fragment to left.
+            // Prepend a new fragment to left.
             left = format!("{}{}", prefix_chunk.content, left);
             left_width += prefix_chunk.total_cell_width;
 

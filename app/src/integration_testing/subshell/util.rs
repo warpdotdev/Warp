@@ -22,3 +22,26 @@ pub fn ssh_command(shell: &str, should_use_ssh_wrapper: bool) -> String {
     ]
     .join(" ")
 }
+
+/// Produces the full ssh command to run with a remote shell override via `-t`.
+pub fn ssh_command_with_remote_shell_override(
+    login_user_shell: &str,
+    remote_shell_command: &str,
+    should_use_ssh_wrapper: bool,
+) -> String {
+    [
+        if should_use_ssh_wrapper {
+            "ssh"
+        } else {
+            "command ssh"
+        },
+        &user_host(login_user_shell),
+        "-t",
+        &format!("'{remote_shell_command}'"),
+        "-p 25784",
+        &format!("-o ProxyCommand=\"{PROXY_COMMAND}\""),
+        "-o StrictHostKeyChecking=no",
+        "-o UserKnownHostsFile=/dev/null",
+    ]
+    .join(" ")
+}
