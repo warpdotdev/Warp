@@ -24,8 +24,8 @@ use crate::Builder;
 
 use super::new_builder;
 
-/// Ensures that tab completions are hidden when the completions menu is opened
-/// but re-appear when the menu is closed.
+/// Ensures that pressing Tab with an active inline autosuggestion accepts the suggestion
+/// directly without opening the completions menu.
 pub fn test_autosuggestions_are_hidden_when_opening_tab_completions() -> Builder {
     FeatureFlag::RemoveAutosuggestionDuringTabCompletions.set_enabled(true);
 
@@ -59,30 +59,15 @@ pub fn test_autosuggestions_are_hidden_when_opening_tab_completions() -> Builder
                 ),
         )
         .with_step(
-            new_step_with_default_assertions("Open tab completions menu")
+            new_step_with_default_assertions("Press Tab to accept the autosuggestion")
                 .with_keystrokes(&["tab"])
                 .add_named_assertion(
-                    "Ensure tab completions menu is open",
-                    tab_completions_menu_is_open(0, true),
+                    "Ensure the autosuggestion text was inserted",
+                    input_contains_string(0, String::from("cd .")),
                 )
                 .add_named_assertion(
-                    "Ensure autosuggestion is closed",
-                    assert_autosuggestion_state(0, AutosuggestionState::Closed),
-                ),
-        )
-        .with_step(
-            new_step_with_default_assertions("Close tab completions menu")
-                .with_keystrokes(&["escape"])
-                .add_named_assertion(
-                    "Ensure tab completions menu is closed",
+                    "Ensure tab completions menu is NOT open",
                     tab_completions_menu_is_open(0, false),
-                )
-                .add_named_assertion(
-                    "Ensure autosuggestion is closed",
-                    assert_autosuggestion_state(
-                        0,
-                        AutosuggestionState::ActiveWithText(String::from(".")),
-                    ),
                 ),
         )
 }
