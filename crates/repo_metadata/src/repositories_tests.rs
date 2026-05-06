@@ -75,7 +75,135 @@ fn test_detect_possible_local_git_repo_not_a_git_repo() {
 }
 
 #[test]
-fn test_detect_possible_local_git_repo_nested_repo_created_after_parent_registration() {
+fn test_detect_possible_git_repo_registers_direct_child_repos() {
+    VirtualFS::test("detect_child_repos", |dirs, mut vfs| {
+        vfs.mkdir("workspace");
+        stub_git_repository(&mut vfs, "workspace/repo_1");
+        stub_git_repository(&mut vfs, "workspace/repo_2");
+
+        let workspace = dirs.tests().join("workspace");
+        let repo_1 = dirs.tests().join("workspace/repo_1");
+        let repo_2 = dirs.tests().join("workspace/repo_2");
+
+        App::test((), |mut app| async move {
+            let _watcher = app.add_singleton_model(DirectoryWatcher::new);
+            let repo_handle = app.add_model(|_| DetectedRepositories::default());
+
+            repo_handle
+                .update(&mut app, |repo, ctx| {
+                    std::mem::drop(repo.detect_possible_local_git_repo(
+                        &workspace.to_string_lossy(),
+                        RepoDetectionSource::TerminalNavigation,
+                        ctx,
+                    ));
+                    let future_id = repo.spawned_futures().last().unwrap();
+                    ctx.await_spawned_future(*future_id)
+                })
+                .await;
+
+            let repo_1_canonical = StandardizedPath::from_local_canonicalized(&repo_1).unwrap();
+            let repo_2_canonical = StandardizedPath::from_local_canonicalized(&repo_2).unwrap();
+            repo_handle.read(&app, |repo, _ctx| {
+                assert!(repo.repository_roots.contains(&LocalOrRemotePath::Local(
+                    repo_1_canonical.to_local_path().unwrap()
+                )));
+                assert!(repo.repository_roots.contains(&LocalOrRemotePath::Local(
+                    repo_2_canonical.to_local_path().unwrap()
+                )));
+            });
+        });
+    });
+}
+
+#[test]
+fn test_detect_possible_git_repo_discovers_child_repo_created_after_empty_scan() {
+    VirtualFS::test("detect_child_repo_after_empty_scan", |dirs, mut vfs| {
+        vfs.mkdir("workspace");
+
+        let workspace = dirs.tests().join("workspace");
+        let repo_created_later = dirs.tests().join("workspace/repo_created_later");
+
+        App::test((), |mut app| async move {
+            let _watcher = app.add_singleton_model(DirectoryWatcher::new);
+            let repo_handle = app.add_model(|_| DetectedRepositories::default());
+
+            repo_handle
+                .update(&mut app, |repo, ctx| {
+                    std::mem::drop(repo.detect_possible_local_git_repo(
+                        &workspace.to_string_lossy(),
+                        RepoDetectionSource::TerminalNavigation,
+                        ctx,
+                    ));
+                    let future_id = repo.spawned_futures().last().unwrap();
+                    ctx.await_spawned_future(*future_id)
+                })
+                .await;
+
+            repo_handle.read(&app, |repo, _ctx| {
+                assert!(
+                    repo.repository_roots.is_empty(),
+                    "empty workspace scan should not register repositories"
+                );
+            });
+
+            stub_git_repository(&mut vfs, "workspace/repo_created_later");
+
+            repo_handle
+                .update(&mut app, |repo, ctx| {
+                    std::mem::drop(repo.detect_possible_local_git_repo(
+                        &workspace.to_string_lossy(),
+                        RepoDetectionSource::TerminalNavigation,
+                        ctx,
+                    ));
+                    let future_id = repo.spawned_futures().last().unwrap();
+                    ctx.await_spawned_future(*future_id)
+                })
+                .await;
+
+            let repo_canonical =
+                StandardizedPath::from_local_canonicalized(&repo_created_later).unwrap();
+            repo_handle.read(&app, |repo, _ctx| {
+                assert!(
+                    repo.repository_roots.contains(&LocalOrRemotePath::Local(
+                        repo_canonical.to_local_path().unwrap()
+                    )),
+                    "subsequent parent scan should discover newly-created child repos"
+                );
+            });
+        });
+    });
+}
+
+#[test]
+fn test_get_descendant_roots_for_path_omits_deleted_repos() {
+    VirtualFS::test("descendant_roots_omit_deleted_repos", |dirs, mut vfs| {
+        vfs.mkdir("workspace/repo_1");
+        vfs.mkdir("workspace/repo_2");
+
+        let workspace = dirs.tests().join("workspace");
+        let repo_1 = dirs.tests().join("workspace/repo_1");
+        let repo_2 = dirs.tests().join("workspace/repo_2");
+        let repo_1_canonical = StandardizedPath::from_local_canonicalized(&repo_1).unwrap();
+        let repo_2_canonical = StandardizedPath::from_local_canonicalized(&repo_2).unwrap();
+
+        let mut repos = DetectedRepositories::default();
+        repos.repository_roots.insert(LocalOrRemotePath::Local(
+            repo_1_canonical.to_local_path().unwrap(),
+        ));
+        repos.repository_roots.insert(LocalOrRemotePath::Local(
+            repo_2_canonical.to_local_path().unwrap(),
+        ));
+
+        fs::remove_dir_all(&repo_2).expect("remove repo_2");
+
+        let descendant_roots = repos.get_descendant_roots_for_path(&workspace);
+
+        assert_eq!(descendant_roots, vec![repo_1]);
+    });
+}
+
+#[test]
+fn test_detect_possible_git_repo_nested_repo_created_after_parent_registration() {
     VirtualFS::test("detect_nested_repo", |dirs, mut vfs| {
         // Create a parent git repository structure
         stub_git_repository(&mut vfs, "parent_repo");

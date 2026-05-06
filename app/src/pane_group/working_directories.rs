@@ -180,6 +180,10 @@ impl WorkingDirectoriesModel {
         Self::default()
     }
 
+    fn root_path_is_available(path: &Path) -> bool {
+        path.exists()
+    }
+
     /// Get the unique directories for a specific pane group in insertion order (oldest first).
     fn least_recent_directories_for_pane_group(
         &self,
@@ -216,7 +220,13 @@ impl WorkingDirectoriesModel {
         pane_group_id: EntityId,
     ) -> Option<impl Iterator<Item = PathBuf> + '_> {
         self.least_recent_repositories_for_pane_group(pane_group_id)
-            .map(|repos| repos.iter().rev().cloned())
+            .map(|repos| {
+                repos
+                    .iter()
+                    .rev()
+                    .filter(|repo| Self::root_path_is_available(repo))
+                    .cloned()
+            })
     }
 
     /// Get the terminal view ID associated with a specific root path in a pane group.
@@ -535,34 +545,47 @@ impl WorkingDirectoriesModel {
             .get(&pane_group_id)
             .into_iter()
             .flat_map(|dirs| dirs.iter())
-            .filter_map(|dir| self.get_repo_root_for_path(dir, ctx))
+            .flat_map(|dir| {
+                self.get_repo_root_for_path(dir, ctx)
+                    .map(|repo_root| vec![repo_root])
+                    .unwrap_or_else(|| self.get_descendant_repo_roots_for_path(dir, ctx))
+            })
             .collect();
         let mut new_roots: HashSet<PathBuf> = HashSet::from_iter(new_repo_roots.iter().cloned());
         new_roots.extend(new_root_paths.iter().cloned());
 
         // Build mapping from directories to their terminal IDs
-        let mut new_root_to_terminal: HashMap<PathBuf, EntityId> = terminal_cwds
-            .iter()
-            .filter_map(|(terminal_id, cwd)| root_for_raw_path(cwd).map(|p| (p, *terminal_id)))
-            .collect();
-        new_root_to_terminal.retain(|cwd, _terminal_id| new_roots.contains(cwd));
+        let mut new_root_to_terminal: HashMap<PathBuf, EntityId> = HashMap::new();
+        for (terminal_id, cwd) in &terminal_cwds {
+            let Some(root_path) = root_for_raw_path(cwd) else {
+                continue;
+            };
+            new_root_to_terminal.insert(root_path.clone(), *terminal_id);
 
-        // Second pass: if we have a focused terminal, ensure its repo maps to it
-        // This ensures the dropdown selects the correct repo when a pane is focused or CD'd
-        let mut focused_repo: Option<PathBuf> = None;
-        if let Some(focused_id) = focused_terminal_id {
-            let mut repos_to_insert = Vec::new();
-            for (dir, terminal_id) in &new_root_to_terminal {
-                if *terminal_id == focused_id {
-                    if let Some(repo_root) = self.get_repo_root_for_path(dir, ctx) {
-                        repos_to_insert.push((repo_root.clone(), focused_id));
-                        focused_repo = Some(repo_root);
-                    }
+            if self.get_repo_root_for_path(&root_path, ctx).is_none() {
+                for repo_root in self.get_descendant_repo_roots_for_path(&root_path, ctx) {
+                    new_root_to_terminal
+                        .entry(repo_root)
+                        .or_insert(*terminal_id);
                 }
             }
-            for (repo_root, focused_id) in repos_to_insert {
-                new_root_to_terminal.insert(repo_root, focused_id);
-            }
+        }
+        new_root_to_terminal.retain(|cwd, _terminal_id| new_roots.contains(cwd));
+
+        // Derive focus only from the focused terminal's actual cwd. A non-repo
+        // parent may map multiple descendant repos to the same terminal for Code
+        // Review fallback routing, but those fallback mappings should not decide
+        // which repository is focused.
+        let focused_repo = focused_terminal_id.and_then(|focused_id| {
+            terminal_cwds
+                .iter()
+                .find(|(terminal_id, _cwd)| *terminal_id == focused_id)
+                .and_then(|(_, cwd)| root_for_raw_path(cwd))
+                .and_then(|root_path| self.get_repo_root_for_path(&root_path, ctx))
+        });
+        if let (Some(focused_id), Some(focused_repo)) = (focused_terminal_id, focused_repo.as_ref())
+        {
+            new_root_to_terminal.insert(focused_repo.clone(), focused_id);
         }
 
         // Get or create the IndexSet for repository roots
@@ -617,6 +640,11 @@ impl WorkingDirectoriesModel {
         DetectedRepositories::as_ref(ctx)
             .get_root_for_path(&LocalOrRemotePath::Local(path.to_path_buf()))
             .and_then(|r| PathBuf::try_from(r).ok())
+    }
+
+    /// Get detected repository roots below a non-repository workspace path.
+    fn get_descendant_repo_roots_for_path(&self, path: &Path, ctx: &AppContext) -> Vec<PathBuf> {
+        DetectedRepositories::as_ref(ctx).get_descendant_roots_for_path(path)
     }
 
     /// Emit a DirectoriesChanged event with the current state for a specific pane group.

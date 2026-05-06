@@ -40,6 +40,7 @@ pub enum DetectedRepositoriesEvent {
 #[derive(Default)]
 pub struct DetectedRepositories {
     repository_roots: HashSet<LocalOrRemotePath>,
+    child_repo_scan_roots_in_flight: HashSet<StandardizedPath>,
     #[cfg(test)]
     /// List of spawned background tasks, for testing.
     spawned_futures: Vec<FutureId>,
@@ -122,61 +123,46 @@ impl DetectedRepositories {
             }
 
             let local_path_for_search = path.to_local_path();
+            let child_repo_scan_root = matches!(source, RepoDetectionSource::TerminalNavigation)
+                .then(|| path.clone())
+                .filter(|path| self.child_repo_scan_roots_in_flight.insert(path.clone()));
+            let should_detect_child_repos = child_repo_scan_root.is_some();
             let (tx, rx) = oneshot::channel::<Option<PathBuf>>();
             let spawned_handle = ctx.spawn(
                 async move {
                     if let Some(local_path) = local_path_for_search {
-                        find_git_repo(&local_path).await
+                        let containing_repo = find_git_repo(&local_path).await;
+                        let child_repos = if should_detect_child_repos && containing_repo.is_none()
+                        {
+                            find_child_git_repos(&local_path).await
+                        } else {
+                            Vec::new()
+                        };
+                        GitRepoDetectionResult {
+                            containing_repo,
+                            child_repos,
+                        }
                     } else {
-                        None
+                        GitRepoDetectionResult {
+                            containing_repo: None,
+                            child_repos: Vec::new(),
+                        }
                     }
                 },
                 move |me, res, ctx| {
-                    if let Some(info) = res {
-                        if let Some(repo_root_path) = info
-                            .working_tree_path
-                            .as_ref()
-                            .and_then(|path| StandardizedPath::from_local_canonicalized(path).ok())
-                        {
-                            if let Some(local_path) = repo_root_path.to_local_path() {
-                                me.repository_roots
-                                    .insert(LocalOrRemotePath::Local(local_path));
-                            }
-
-                            let external_git_dir = StandardizedPath::from_local_canonicalized(
-                                info.git_dir_path.as_path(),
-                            )
-                            .ok()
-                            // Only treat as external if it's outside the working tree.
-                            .filter(|p| !p.starts_with(&repo_root_path));
-
-                            if let Some(repository) =
-                                DirectoryWatcher::handle(ctx).update(ctx, |watcher, ctx| {
-                                    watcher
-                                        .add_directory_with_git_dir(
-                                            repo_root_path,
-                                            external_git_dir,
-                                            ctx,
-                                        )
-                                        .ok()
-                                })
-                            {
-                                let repo_path = repository.as_ref(ctx).root_dir().to_local_path();
-                                ctx.emit(DetectedRepositoriesEvent::DetectedGitRepo {
-                                    repository,
-                                    source,
-                                });
-                                let _ = tx.send(repo_path);
-                            } else {
-                                let _ = tx.send(None);
-                            }
-                        } else {
-                            // No working tree path; do not treat git_dir_path as a repository path.
-                            let _ = tx.send(None);
-                        }
-                    } else {
-                        let _ = tx.send(None);
+                    if let Some(path) = child_repo_scan_root {
+                        me.child_repo_scan_roots_in_flight.remove(&path);
                     }
+
+                    let containing_repo_path = res
+                        .containing_repo
+                        .and_then(|info| me.register_git_repo_info(info, source, ctx));
+
+                    for child_repo in res.child_repos {
+                        me.register_git_repo_info(child_repo, source, ctx);
+                    }
+
+                    let _ = tx.send(containing_repo_path);
                 },
             );
 
@@ -225,6 +211,30 @@ impl DetectedRepositories {
         }
     }
 
+    /// Given a local path, return repository roots already detected below that path.
+    ///
+    /// This is used for directory-style workspaces where the active terminal is
+    /// in a non-git parent directory that directly contains multiple repositories.
+    /// Detection is still explicit and cached: this method does not scan the
+    /// filesystem.
+    pub fn get_descendant_roots_for_path(&self, path: &Path) -> Vec<PathBuf> {
+        let Ok(std_path) = StandardizedPath::from_local_canonicalized(path) else {
+            return Vec::new();
+        };
+
+        let mut roots = self
+            .repository_roots
+            .iter()
+            .filter_map(LocalOrRemotePath::to_local_path)
+            .filter_map(|repo| StandardizedPath::from_local_canonicalized(repo).ok())
+            .filter(|repo| repo != &std_path && repo.starts_with(&std_path))
+            .filter_map(|repo| repo.to_local_path())
+            .filter(|repo| repo.exists())
+            .collect::<Vec<_>>();
+        roots.sort();
+        roots
+    }
+
     /// Find the local repository that contains the given path, if any.
     fn find_local_repository_root(&self, path: &StandardizedPath) -> Option<LocalOrRemotePath> {
         for ancestor in path.ancestors() {
@@ -264,6 +274,40 @@ impl DetectedRepositories {
             LocalOrRemotePath::Remote(remote) => remote.host_id != *host_id,
         });
     }
+
+    #[cfg(feature = "local_fs")]
+    fn register_git_repo_info(
+        &mut self,
+        info: GitRepoInfo,
+        source: RepoDetectionSource,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<PathBuf> {
+        let repo_root_path = info
+            .working_tree_path
+            .as_ref()
+            .and_then(|path| StandardizedPath::from_local_canonicalized(path).ok())?;
+
+        if let Some(local_path) = repo_root_path.to_local_path() {
+            self.repository_roots
+                .insert(LocalOrRemotePath::Local(local_path));
+        }
+
+        let external_git_dir =
+            StandardizedPath::from_local_canonicalized(info.git_dir_path.as_path())
+                .ok()
+                // Only treat as external if it's outside the working tree.
+                .filter(|p| !p.starts_with(&repo_root_path));
+
+        let repository = DirectoryWatcher::handle(ctx).update(ctx, |watcher, ctx| {
+            watcher
+                .add_directory_with_git_dir(repo_root_path, external_git_dir, ctx)
+                .ok()
+        })?;
+
+        let repo_path = repository.as_ref(ctx).root_dir().to_local_path();
+        ctx.emit(DetectedRepositoriesEvent::DetectedGitRepo { repository, source });
+        repo_path
+    }
 }
 
 impl Entity for DetectedRepositories {
@@ -295,6 +339,12 @@ struct GitRepoInfo {
     git_dir_path: PathBuf,
 }
 
+#[cfg(feature = "local_fs")]
+struct GitRepoDetectionResult {
+    containing_repo: Option<GitRepoInfo>,
+    child_repos: Vec<GitRepoInfo>,
+}
+
 /// Finds the Git repository containing the given path, if any.
 ///
 /// Supports:
@@ -313,56 +363,103 @@ async fn find_git_repo(path: &Path) -> Option<GitRepoInfo> {
             return None;
         }
 
-        // First, check if the current directory is a bare git repository.
-        if let Some(dir_name) = current.file_name().and_then(|s| s.to_str()) {
-            if dir_name.ends_with(".git") && is_valid_git_dir(&current).await {
-                return Some(GitRepoInfo {
-                    working_tree_path: None,
-                    git_dir_path: current.clone(),
-                });
-            }
-        }
-
-        // Check for a .git directory.
-        let dot_git_path = current.join(".git");
-        if let Ok(dot_git_type) = async_fs::symlink_metadata(&dot_git_path)
-            .await
-            .map(|m| m.file_type())
-        {
-            if dot_git_type.is_dir() {
-                // A standard repository with a .git directory.
-                if is_valid_git_dir(&dot_git_path).await {
-                    return Some(GitRepoInfo {
-                        working_tree_path: Some(current.clone()),
-                        git_dir_path: dot_git_path,
-                    });
-                }
-            } else if dot_git_type.is_file() {
-                // A potential gitfile, used by worktrees and submodules.
-                if let Ok(contents) = async_fs::read_to_string(&dot_git_path).await {
-                    // Typical format: "gitdir: <path>\n"
-                    if let Some(rest) = contents.trim().strip_prefix("gitdir:") {
-                        let gitdir_path = PathBuf::from(rest.trim());
-                        let resolved_gitdir = if gitdir_path.is_absolute() {
-                            gitdir_path
-                        } else {
-                            current.join(gitdir_path)
-                        };
-                        if is_valid_git_dir(&resolved_gitdir).await {
-                            return Some(GitRepoInfo {
-                                working_tree_path: Some(current.clone()),
-                                git_dir_path: resolved_gitdir,
-                            });
-                        }
-                    }
-                }
-            }
+        if let Some(info) = find_git_repo_at_path(&current).await {
+            return Some(info);
         }
 
         if !current.pop() {
             return None;
         }
     }
+}
+
+/// Finds a Git repository whose working tree is exactly `path`.
+#[cfg(feature = "local_fs")]
+async fn find_git_repo_at_path(path: &Path) -> Option<GitRepoInfo> {
+    // First, check if the current directory is a bare git repository.
+    if let Some(dir_name) = path.file_name().and_then(|s| s.to_str()) {
+        if dir_name.ends_with(".git") && is_valid_git_dir(path).await {
+            return Some(GitRepoInfo {
+                working_tree_path: None,
+                git_dir_path: path.to_path_buf(),
+            });
+        }
+    }
+
+    // Check for a .git directory.
+    let dot_git_path = path.join(".git");
+    if let Ok(dot_git_type) = async_fs::symlink_metadata(&dot_git_path)
+        .await
+        .map(|m| m.file_type())
+    {
+        if dot_git_type.is_dir() {
+            // A standard repository with a .git directory.
+            if is_valid_git_dir(&dot_git_path).await {
+                return Some(GitRepoInfo {
+                    working_tree_path: Some(path.to_path_buf()),
+                    git_dir_path: dot_git_path,
+                });
+            }
+        } else if dot_git_type.is_file() {
+            // A potential gitfile, used by worktrees and submodules.
+            if let Ok(contents) = async_fs::read_to_string(&dot_git_path).await {
+                // Typical format: "gitdir: <path>\n"
+                if let Some(rest) = contents.trim().strip_prefix("gitdir:") {
+                    let gitdir_path = PathBuf::from(rest.trim());
+                    let resolved_gitdir = if gitdir_path.is_absolute() {
+                        gitdir_path
+                    } else {
+                        path.join(gitdir_path)
+                    };
+                    if is_valid_git_dir(&resolved_gitdir).await {
+                        return Some(GitRepoInfo {
+                            working_tree_path: Some(path.to_path_buf()),
+                            git_dir_path: resolved_gitdir,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Finds git repositories in the direct children of `path`.
+#[cfg(feature = "local_fs")]
+async fn find_child_git_repos(path: &Path) -> Vec<GitRepoInfo> {
+    use futures::TryStreamExt;
+
+    let Ok(mut entries) = async_fs::read_dir(path).await else {
+        return Vec::new();
+    };
+
+    let mut child_dirs = Vec::new();
+    while let Ok(Some(entry)) = entries.try_next().await {
+        let child_path = entry.path();
+        let Ok(file_type) = entry.file_type().await else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        if child_path.file_name().and_then(|name| name.to_str()) == Some(".git") {
+            continue;
+        }
+        child_dirs.push(child_path);
+    }
+
+    child_dirs.sort();
+
+    let mut repos = Vec::new();
+    for child_dir in child_dirs {
+        if let Some(info) = find_git_repo_at_path(&child_dir).await {
+            if info.working_tree_path.as_deref() == Some(child_dir.as_path()) {
+                repos.push(info);
+            }
+        }
+    }
+    repos
 }
 
 /// Checks whether the given directory is a valid Git directory by verifying it contains a HEAD file.

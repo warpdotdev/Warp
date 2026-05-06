@@ -11707,7 +11707,11 @@ impl TerminalView {
                                 let old_repo_path = me.current_repo_path.clone();
                                 me.current_repo_path = repo_path_opt.clone();
 
-                                if old_repo_path != me.current_repo_path {
+                                // Notify the pane group when detection changes, or when a local
+                                // non-repo directory finishes scanning. The latter lets Code
+                                // Review initialize from detected child repositories.
+                                if old_repo_path != me.current_repo_path || repo_path_opt.is_none()
+                                {
                                     ctx.emit(Event::Pane(PaneEvent::RepoChanged));
                                 }
 
