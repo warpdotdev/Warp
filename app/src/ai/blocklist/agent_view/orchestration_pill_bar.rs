@@ -851,10 +851,32 @@ impl View for OrchestrationPillBar {
         // the hover details card under that pill instead. The two overlays
         // are mutually exclusive by design: opening the menu clears
         // `hovered_pill` (see `open_menu_for`).
+        //
+        // Defensive: only render the hover card if the cursor is still
+        // genuinely over the pill. The `SetHoveredPill(None)` action that
+        // the pill's `on_hover` callback dispatches when the cursor leaves
+        // can be missed in edge cases (window-focus changes, layout drops
+        // mid-hover, the cursor exiting the app entirely, or a re-entry
+        // into a stale Hoverable that suppresses the synthetic
+        // hover-out), leaving `hovered_pill` stuck on a stale id and the
+        // card visible until something else triggers a re-render. Reading
+        // `MouseState::is_mouse_over_element` directly at render time
+        // makes the overlay strictly track the cursor: as soon as the
+        // pointer moves off the pill, the next render hides the card,
+        // regardless of whether the typed-action callback fired.
         let overlay = if let Some(target_id) = self.menu_open_for {
             Some(MenuOrCard::Menu(target_id))
         } else {
             self.hovered_pill.and_then(|id| {
+                let mouse_states = self.mouse_states.borrow();
+                let still_over_pill = mouse_states
+                    .get(&id)
+                    .and_then(|handle| handle.lock().ok().map(|s| s.is_mouse_over_element()))
+                    .unwrap_or(false);
+                drop(mouse_states);
+                if !still_over_pill {
+                    return None;
+                }
                 render_hover_card(id, self.agent_view_controller.as_ref(app), app)
                     .map(|card| MenuOrCard::Card { id, card })
             })
