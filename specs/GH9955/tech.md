@@ -156,6 +156,12 @@ pub enum LoadFailureReason {
     HighlightQueryInvalid(String),  // syntactically wrong vs grammar
     IndentQueryInvalid(String),
     SymbolsQueryInvalid(String),
+    /// V1 only: user-local grammars are discovered and validated
+    /// but not loaded as parsers — WASM integration is gated
+    /// behind the arborium / tree-sitter version question (G1).
+    /// The follow-up PR removes this variant and enables the
+    /// WASM path.
+    UserLocalWasmNotYetSupported,
 }
 
 pub enum LoadWarning {
@@ -190,11 +196,27 @@ For each grammar directory:
    - `rust_crate`: look up via the compile-time `bundled_parsers.rs`
      map. On miss: return `LoadResult::Failed { reason:
      ParserCrateNotFound }`.
-   - `wasm`: `tree_sitter::WasmStore::load_language(&wasm_bytes)`.
-     On instantiate failure: return `LoadResult::Failed { reason:
-     WasmInstantiate }`. On ABI mismatch with the host's
-     `tree_sitter::TREE_SITTER_LANGUAGE_VERSION`: return
-     `LoadResult::Failed { reason: WasmAbiMismatch }`.
+   - `wasm` (bundled source): `tree_sitter::WasmStore::load_language(&wasm_bytes)`
+     once G1 is enabled. **In V1, bundled WASM is also gated**
+     until G1 lands; a bundled `wasm` parser returns
+     `LoadResult::Failed { reason: UserLocalWasmNotYetSupported }`
+     in V1 (the variant name is shared across both bundled-WASM
+     and user-local-WASM since both depend on the same gate).
+     V1 ships only the `rust_crate` parser path.
+   - `wasm` (user-local source): **always** returns
+     `LoadResult::Failed { reason: UserLocalWasmNotYetSupported }`
+     in V1, regardless of whether `WasmStore::load_language` would
+     succeed. The loader does NOT call `WasmStore::load_language`
+     for user-local sources in V1 — the gate prevents WASM
+     instantiation entirely until G1 enables it.
+
+   When G1 is enabled (follow-up PR): the gate is removed, both
+   bundled-WASM and user-local-WASM call
+   `tree_sitter::WasmStore::load_language(&wasm_bytes)`. On
+   instantiate failure: `LoadResult::Failed { reason:
+   WasmInstantiate }`. On ABI mismatch with the host's
+   `tree_sitter::TREE_SITTER_LANGUAGE_VERSION`:
+   `LoadResult::Failed { reason: WasmAbiMismatch }`.
 4. **`highlights.scm` (optional file):**
 
    > **Correction (re-review #10129):** the previous draft said
@@ -409,9 +431,10 @@ contents of `.scm` files, the WASM binary, or absolute paths.
 
 ### Integration test (`crates/languages/src/integration_test.rs` — new)
 
-- IT1: Create a temp dir with a fixture grammar (a real
-  tree-sitter-toml grammar shrunk to a minimal subset), point
-  `WARP_USER_GRAMMAR_DIR` env var at it, call
+**V1 integration tests (bundled-only):**
+
+- IT1: Create a temp dir with a bundled-fixture grammar that uses
+  `rust_crate` (not WASM), point the discovery path at it, call
   `discover_grammars()`. Assert the language returns as
   `LoadResult::Loaded(...)` and
   `language_by_filename(Path::new("test.example"))` returns it.
@@ -420,11 +443,22 @@ contents of `.scm` files, the WASM binary, or absolute paths.
   `LoadResult::Failed { reason: SchemaParse(_) }`.
 - IT3: Call `loaded_languages()` after discovery and assert the 32
   hardcoded languages are present alongside the test fixture.
-- IT4 (new): Drop a fixture WASM grammar with the same
-  `internal_name` as a hardcoded language; verify the user-local
-  one is dropped, a warn fires with basename only, and the
-  hardcoded language continues to handle that name.
-- IT5 (new): Feed a 16MiB buffer through a user-local grammar;
+- IT4 (V1): Drop a fixture grammar at
+  `WARP_USER_GRAMMAR_DIR/<lang>/` with `language.toml` and
+  `grammar.wasm`. Assert the result is
+  `LoadResult::Failed { reason: UserLocalWasmNotYetSupported }`,
+  the `internal_name` is extracted from the TOML, the entry
+  surfaces in `loaded_languages()`, and **`WasmStore::load_language`
+  is not called** (verified via a test-only counter on the WASM
+  loading path).
+
+**V1.5 / G1 integration tests (deferred to follow-up PR):**
+
+- IT4.future: Drop a fixture WASM grammar with the same
+  `internal_name` as a hardcoded language; verify user-local is
+  dropped, a warn fires with basename only, and the hardcoded
+  language continues to handle that name.
+- IT5.future: Feed a 16MiB buffer through a user-local grammar;
   verify the input-size cap kicks in and the buffer falls back to
   plain rendering with a one-time info log.
 

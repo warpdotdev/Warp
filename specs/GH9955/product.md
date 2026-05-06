@@ -171,13 +171,22 @@ discovered at compile time via the existing `RustEmbed` mechanism.
 A new language directory is the only required Rust change; no
 hand-written match arms.
 
-**User-local:** A `~/.warp/grammars/<lang>/` (or
-`$XDG_CONFIG_HOME/warp/grammars/<lang>/`) directory is discovered at
-startup. User-local grammars are loaded after bundled grammars and
-do not override them by default (preventing a malicious
-user-grammar from masquerading as Rust). A user-local grammar
-whose `language.toml` declares a name that collides with a bundled
-language is logged at `warn` level and ignored.
+**User-local (V1 = detect-only, V1.5 = load):** A
+`~/.warp/grammars/<lang>/` (or `$XDG_CONFIG_HOME/warp/grammars/<lang>/`)
+directory is **discovered** at startup but in V1 always surfaces as
+`LoadResult::Failed { reason: UserLocalWasmNotYetSupported }` per
+the goal section's G1 deferral. Discovery, schema-validation,
+collision-detection, and Settings-page surfacing all run in V1
+exactly as designed; the only thing V1 omits is the actual WASM
+parser instantiation. The follow-up PR (G1 enable) flips the gate
+in `loader.rs` and the rest of the pipeline already works.
+
+When user-local loading IS enabled (V1.5+): user-local grammars
+load after bundled grammars and do not override them by default
+(preventing a malicious user-grammar from masquerading as Rust).
+A user-local grammar whose `language.toml` declares a name that
+collides with a bundled language is logged at `warn` level
+(basename only) and ignored.
 
 ### B3 — Schema-driven file association
 
