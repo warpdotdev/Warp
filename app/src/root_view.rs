@@ -1798,7 +1798,21 @@ impl RootView {
             ctx.focus(onboarding_view);
         }
 
+        // For users who bypass onboarding (already logged in, or onboarding flags not active),
+        // start autoupdate polling immediately. For new users in onboarding, this is a no-op;
+        // polling will be started once onboarding completes.
+        root_view.start_autoupdate_polling(ctx);
+
         root_view
+    }
+
+    /// Starts the autoupdate polling loop, but only if we are already in the `Terminal` state
+    /// (i.e. onboarding has completed or was not shown). Safe to call unconditionally — it is
+    /// a no-op when still in a pre-terminal state.
+    fn start_autoupdate_polling(&self, ctx: &mut ViewContext<Self>) {
+        if matches!(self.auth_onboarding_state, AuthOnboardingState::Terminal(_)) {
+            AutoupdateState::handle(ctx).update(ctx, |state, ctx| state.start_polling(ctx));
+        }
     }
 
     /// Used for integration tests.
@@ -2112,6 +2126,7 @@ impl RootView {
                 self.auth_onboarding_state = AuthOnboardingState::Terminal(workspace);
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
                 self.start_pending_tutorial(ctx);
+                self.start_autoupdate_polling(ctx);
                 self.focus(ctx);
                 ctx.notify();
             }
@@ -2246,6 +2261,7 @@ impl RootView {
                 self.auth_onboarding_state = AuthOnboardingState::Terminal(workspace);
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
                 self.start_pending_tutorial(ctx);
+                self.start_autoupdate_polling(ctx);
                 ctx.notify();
             }
             AgentOnboardingEvent::OnboardingSkipped => {
@@ -2267,6 +2283,7 @@ impl RootView {
                 let workspace = target.to_workspace(ctx);
                 self.auth_onboarding_state = AuthOnboardingState::Terminal(workspace);
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
+                self.start_autoupdate_polling(ctx);
                 ctx.notify();
             }
             AgentOnboardingEvent::UpgradeRequested => {
@@ -2958,6 +2975,7 @@ impl RootView {
                         .complete_auth_and_create_workspace(ctx);
                 }
 
+                self.start_autoupdate_polling(ctx);
                 self.focus(ctx);
             }
             AuthManagerEvent::AuthFailed(err) => match err {
@@ -3009,6 +3027,7 @@ impl RootView {
                     ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
                     self.start_pending_tutorial(ctx);
                 }
+                self.start_autoupdate_polling(ctx);
                 self.focus(ctx);
             }
             AuthManagerEvent::LoginOverrideDetected(interrupted_auth_payload) => {
