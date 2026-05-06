@@ -3683,14 +3683,19 @@ impl Workspace {
 
                 self.activate_tab_internal(active_tab_index, ctx);
 
-                // Restore the per-window zoom override (only present in
-                // snapshots written while `appearance.window.zoom_per_window`
-                // was enabled). `None` means the window had no override and
-                // should follow the app-wide default after restart.
+                // Restore the per-window zoom override only when
+                // `appearance.window.zoom_per_window` is currently enabled.
+                // If the user has the setting off at restart, the override
+                // stays in the snapshot row but is dormant — re-enabling
+                // the setting on a subsequent launch is an explicit opt-in
+                // and will pick the value back up. `None` means the window
+                // had no override at save time.
                 if let Some(zoom_override) = window_snapshot.zoom_factor_override {
-                    let window_id = self.window_id;
-                    ctx.set_window_zoom_factor(window_id, zoom_override);
-                    self.update_titlebar_height(ctx);
+                    if *WindowSettings::as_ref(ctx).zoom_per_window {
+                        let window_id = self.window_id;
+                        ctx.set_window_zoom_factor(window_id, zoom_override);
+                        self.update_titlebar_height(ctx);
+                    }
                 }
 
                 self.check_and_trigger_onboarding(ctx);
@@ -15568,6 +15573,18 @@ impl Workspace {
             }
             WindowSettingsChangedEvent::ZoomLevel { .. } => {
                 self.update_titlebar_height(ctx);
+            }
+            WindowSettingsChangedEvent::ZoomPerWindow { .. } => {
+                // When the user disables `zoom_per_window`, the
+                // "across-all-windows" semantics demand that this window
+                // stop honouring any leftover per-window override and fall
+                // back to the app-wide default. Clearing the override here
+                // also drops it from the next persistence snapshot.
+                if !*WindowSettings::as_ref(ctx).zoom_per_window {
+                    let window_id = ctx.window_id();
+                    ctx.reset_window_zoom_factor(window_id);
+                    self.update_titlebar_height(ctx);
+                }
             }
             _ => {}
         }
