@@ -79,7 +79,10 @@ use uuid::Uuid;
 use warp_core::features::FeatureFlag;
 use watcher::HomeDirectoryWatcher;
 
-use super::child_agent::{create_hidden_child_agent_conversation, HiddenChildAgentTaskContext};
+use super::child_agent::{
+    create_hidden_child_agent_conversation, HiddenChildAgentConversationRequest,
+    HiddenChildAgentTaskContext,
+};
 use super::*;
 use crate::terminal::resizable_data::ResizableData;
 use ai::{
@@ -479,14 +482,17 @@ fn test_hidden_child_creation_applies_ambient_task_id_to_controller() {
 
             let child = create_hidden_child_agent_conversation(
                 panes,
-                parent_pane_id,
-                "Agent 1".to_string(),
-                parent_conversation_id,
-                HashMap::new(),
-                Some(HiddenChildAgentTaskContext {
-                    task_id,
-                    working_dir: None,
-                }),
+                HiddenChildAgentConversationRequest {
+                    parent_pane_id,
+                    name: "Agent 1".to_string(),
+                    parent_conversation_id,
+                    orchestration_harness: None,
+                    env_vars: HashMap::new(),
+                    task_context: Some(HiddenChildAgentTaskContext {
+                        task_id,
+                        working_dir: None,
+                    }),
+                },
                 ctx,
             )
             .expect("fresh hidden child conversation should be created");

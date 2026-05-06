@@ -81,6 +81,7 @@ pub fn convert_conversation_data_to_ai_conversation(
             artifacts_json: None,
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
@@ -97,6 +98,7 @@ pub fn convert_conversation_data_to_ai_conversation(
             artifacts_json: serde_json::to_string(&metadata.artifacts).ok(),
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
             // TODO: Populate run_id from server metadata once it is exposed
