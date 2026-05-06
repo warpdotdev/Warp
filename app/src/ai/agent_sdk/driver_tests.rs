@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    ffi::OsString,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, ffi::OsString, sync::Arc, time::Duration};
 
 use futures::channel::oneshot;
 use warp_cli::agent::Harness;

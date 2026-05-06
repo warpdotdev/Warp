@@ -256,6 +256,12 @@ pub struct AgentDriver {
     /// - Secrets are passed to MCP servers during spawning.
     secrets: Arc<HashMap<String, ManagedSecretValue>>,
 
+    /// Env vars passed to the terminal session, including resolved secrets, cloud
+    /// provider vars, task vars, and sandbox flags. Shared with
+    /// `prepare_environment_config` so harnesses can look up resolved secret
+    /// values without re-deriving precedence.
+    resolved_env_vars: Arc<HashMap<OsString, OsString>>,
+
     output_format: OutputFormat,
 
     // The associated task ID for this agent run, if any.
@@ -554,10 +560,12 @@ impl AgentDriver {
             env_vars.insert(OsString::from("IS_SANDBOX"), OsString::from("1"));
         }
 
+        let resolved_env_vars = Arc::new(env_vars);
+
         let terminal_driver = terminal::TerminalDriver::create(
             terminal::TerminalDriverOptions {
                 working_dir: working_dir.clone(),
-                env_vars,
+                env_vars: HashMap::clone(&resolved_env_vars),
                 should_share,
                 task_id,
                 conversation_restoration,
@@ -600,6 +608,7 @@ impl AgentDriver {
             terminal_driver,
             working_dir,
             secrets: Arc::new(secrets),
+            resolved_env_vars,
             output_format: OutputFormat::default(),
             task_id,
             harness: None,
@@ -1514,11 +1523,17 @@ impl AgentDriver {
         };
 
         // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
-        let secrets = foreground
-            .spawn(|me, _| Arc::clone(&me.secrets))
+        // Pass the terminal env vars (which include the resolved secrets) so harnesses
+        // can look up auth keys without re-deriving precedence.
+        let resolved_env_vars = foreground
+            .spawn(|me, _| Arc::clone(&me.resolved_env_vars))
             .await
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
-        harness.prepare_environment_config(&working_dir, system_prompt.as_deref(), &secrets)?;
+        harness.prepare_environment_config(
+            &working_dir,
+            system_prompt.as_deref(),
+            &resolved_env_vars,
+        )?;
         let resume = foreground
             .spawn(|me, _| me.resume_payload.take())
             .await
@@ -2308,6 +2323,9 @@ impl AgentDriver {
 }
 
 /// Build the env-var map for the agent terminal session from managed secrets.
+///
+/// Invariant: the server resolves at most one typed auth secret per harness, so
+/// env-var collisions between typed secrets cannot occur in practice.
 ///
 /// Precedence order:
 /// 1. Worker-injected process env (already non-empty in `std::env`). Never overridden.

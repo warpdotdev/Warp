@@ -583,75 +583,27 @@ fn prepare_claude_config_none_suffix_preserves_existing_responses() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_suffix_from_raw_value_secret() {
+fn resolve_suffix_from_resolved_env_vars() {
     std::env::remove_var(ANTHROPIC_API_KEY_ENV);
     let key = "sk-ant-api03-abcdefghij1234567890ABCDEFGHIJ1234567890abcdefghij1234567890QLWn-dUnuwQ-hIhDiAAA";
-    let secrets = HashMap::from([(
-        "ANTHROPIC_API_KEY".to_string(),
-        ManagedSecretValue::raw_value(key),
-    )]);
-    let suffix = resolve_anthropic_api_key_suffix(&secrets);
+    let resolved = HashMap::from([(OsString::from("ANTHROPIC_API_KEY"), OsString::from(key))]);
+    let suffix = resolve_anthropic_api_key_suffix(&resolved);
     assert_eq!(suffix.as_deref(), Some("QLWn-dUnuwQ-hIhDiAAA"));
-}
-
-#[test]
-#[serial_test::serial]
-fn resolve_suffix_from_anthropic_api_key_secret() {
-    std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-    let key = "sk-ant-api03-abcdefghij1234567890ABCDEFGHIJ1234567890abcdefghij1234567890QLWn-dUnuwQ-hIhDiAAA";
-    let secrets = HashMap::from([(
-        "ANTHROPIC_API_KEY".to_string(),
-        ManagedSecretValue::anthropic_api_key(key),
-    )]);
-    let suffix = resolve_anthropic_api_key_suffix(&secrets);
-    assert_eq!(suffix.as_deref(), Some("QLWn-dUnuwQ-hIhDiAAA"));
-}
-
-#[test]
-#[serial_test::serial]
-fn resolve_suffix_from_anthropic_api_key_with_different_secret_name() {
-    std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-    let key = "sk-ant-api03-abcdefghij1234567890ABCDEFGHIJ1234567890abcdefghij1234567890QLWn-dUnuwQ-hIhDiAAA";
-    // Secret name doesn't match the env var, but the AnthropicApiKey variant
-    // should still be found by iterating all secrets.
-    let secrets = HashMap::from([(
-        "my-anthropic-key".to_string(),
-        ManagedSecretValue::anthropic_api_key(key),
-    )]);
-    let suffix = resolve_anthropic_api_key_suffix(&secrets);
-    assert_eq!(suffix.as_deref(), Some("QLWn-dUnuwQ-hIhDiAAA"));
-}
-
-#[test]
-#[serial_test::serial]
-fn resolve_suffix_prefers_anthropic_api_key_variant_over_raw_value() {
-    std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-    let anthropic_key = "sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-anthropic-suffix";
-    let raw_key = "sk-ant-api03-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB-raw-suffix";
-    let secrets = HashMap::from([
-        (
-            "my-anthropic-key".to_string(),
-            ManagedSecretValue::anthropic_api_key(anthropic_key),
-        ),
-        (
-            "ANTHROPIC_API_KEY".to_string(),
-            ManagedSecretValue::raw_value(raw_key),
-        ),
-    ]);
-    let suffix = resolve_anthropic_api_key_suffix(&secrets);
-    // AnthropicApiKey variant should be preferred over RawValue.
-    assert_eq!(suffix.as_deref(), Some("AAA-anthropic-suffix"));
 }
 
 #[test]
 #[serial_test::serial]
 fn resolve_suffix_returns_none_for_short_key() {
     std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-    let secrets = HashMap::from([(
-        "ANTHROPIC_API_KEY".to_string(),
-        ManagedSecretValue::raw_value("short"),
-    )]);
-    assert_eq!(resolve_anthropic_api_key_suffix(&secrets), None);
+    let resolved = HashMap::from([(OsString::from("ANTHROPIC_API_KEY"), OsString::from("short"))]);
+    assert_eq!(resolve_anthropic_api_key_suffix(&resolved), None);
+}
+
+#[test]
+#[serial_test::serial]
+fn resolve_suffix_returns_none_when_empty() {
+    std::env::remove_var(ANTHROPIC_API_KEY_ENV);
+    assert_eq!(resolve_anthropic_api_key_suffix(&HashMap::new()), None);
 }
 
 #[test]
@@ -736,69 +688,20 @@ fn prepare_local_wake_command_rehydrates_transcript_with_self_managed_listener()
 
 #[test]
 #[serial_test::serial]
-fn resolve_suffix_returns_none_for_short_anthropic_api_key() {
-    std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-    let secrets = HashMap::from([(
-        "ANTHROPIC_API_KEY".to_string(),
-        ManagedSecretValue::anthropic_api_key("short"),
-    )]);
-    assert_eq!(resolve_anthropic_api_key_suffix(&secrets), None);
-}
-
-// ── Suffix resolver precedence tests ────────────────────────────────────
-
-#[test]
-#[serial_test::serial]
 fn suffix_uses_worker_injected_env_when_present() {
-    // Key must be >= 20 chars. Last 20: "WWWW-worker--suffix!"
     let worker_key = "sk-ant-api03-WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW-worker-suffix!";
-    let typed_key = "sk-ant-api03-TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT-typed-suffix!";
     std::env::set_var(ANTHROPIC_API_KEY_ENV, worker_key);
-    let secrets = HashMap::from([(
-        "my-auth".to_string(),
-        ManagedSecretValue::anthropic_api_key(typed_key),
+    // Even when the resolved map has a different value, the worker env wins.
+    let resolved = HashMap::from([(
+        OsString::from("ANTHROPIC_API_KEY"),
+        OsString::from(
+            "sk-ant-api03-RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR-resolved-val!",
+        ),
     )]);
-    let suffix = resolve_anthropic_api_key_suffix(&secrets);
+    let suffix = resolve_anthropic_api_key_suffix(&resolved);
     let expected = &worker_key[worker_key.len() - 20..];
-    // Worker-injected process env wins over the typed secret.
     assert_eq!(suffix.as_deref(), Some(expected));
     std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-}
-
-#[test]
-#[serial_test::serial]
-fn suffix_uses_typed_secret_when_no_worker_env() {
-    std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-    let typed_key = "sk-ant-api03-TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT-typed-suffix!";
-    let raw_key = "sk-ant-api03-RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR-rawvl-suffix!";
-    let secrets = HashMap::from([
-        (
-            "my-auth".to_string(),
-            ManagedSecretValue::anthropic_api_key(typed_key),
-        ),
-        (
-            "ANTHROPIC_API_KEY".to_string(),
-            ManagedSecretValue::raw_value(raw_key),
-        ),
-    ]);
-    let suffix = resolve_anthropic_api_key_suffix(&secrets);
-    let expected = &typed_key[typed_key.len() - 20..];
-    // Typed secret wins over RawValue when no worker env is present.
-    assert_eq!(suffix.as_deref(), Some(expected));
-}
-
-#[test]
-#[serial_test::serial]
-fn suffix_uses_raw_value_when_no_worker_env_or_typed() {
-    std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-    let raw_key = "sk-ant-api03-RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR-rawvl-suffix!";
-    let secrets = HashMap::from([(
-        "ANTHROPIC_API_KEY".to_string(),
-        ManagedSecretValue::raw_value(raw_key),
-    )]);
-    let suffix = resolve_anthropic_api_key_suffix(&secrets);
-    let expected = &raw_key[raw_key.len() - 20..];
-    assert_eq!(suffix.as_deref(), Some(expected));
 }
 
 #[test]
