@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     future::Future,
     path::{Path, PathBuf},
     sync::mpsc::{self, channel},
@@ -257,26 +257,32 @@ impl DebounceEventHandler for WatcherEventHandler {
 fn deduplicate_and_merge_raw_notifier_events(
     raw_fs_events: &[DebouncedEvent],
 ) -> Result<BulkFilesystemWatcherEvent> {
+    deduplicate_and_merge_notifier_events(raw_fs_events.iter().map(|event| &event.event))
+}
+
+fn deduplicate_and_merge_notifier_events<'a>(
+    raw_fs_events: impl IntoIterator<Item = &'a notify::Event>,
+) -> Result<BulkFilesystemWatcherEvent> {
     let mut update = BulkFilesystemWatcherEvent::default();
 
     let mut created: HashSet<PathBuf> = HashSet::new();
     let mut modified: HashSet<PathBuf> = HashSet::new();
 
-    let mut rename_from = None;
+    let mut rename_from = VecDeque::new();
     for fs_event in raw_fs_events {
-        match fs_event.event.kind {
+        match fs_event.kind {
             // Create and modify should always be preserved.
-            EventKind::Create(_) => created.extend(fs_event.event.paths.clone()),
+            EventKind::Create(_) => created.extend(fs_event.paths.clone()),
             // On Windows, ReadDirectoryChangesW emits ModifyKind::Any instead of
             // ModifyKind::Data for file content changes. Handle both variants.
             EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Any) => {
-                modified.extend(fs_event.event.paths.clone())
+                modified.extend(fs_event.paths.clone())
             }
 
             // If a path is created and then removed, we should not keep this path in the update event.
             // If a path is modified / moved and then removed, we should only keep the remove event.
             EventKind::Remove(_) => {
-                for path in &fs_event.event.paths {
+                for path in &fs_event.paths {
                     if created.remove(path) {
                         continue;
                     }
@@ -302,10 +308,10 @@ fn deduplicate_and_merge_raw_notifier_events(
             // for now based on the current state of the file system.
             EventKind::Modify(ModifyKind::Name(RenameMode::Any)) => {
                 let is_rename = matches!(
-                    fs_event.event.kind,
+                    fs_event.kind,
                     EventKind::Modify(ModifyKind::Name(RenameMode::Any))
                 );
-                for path in &fs_event.event.paths {
+                for path in &fs_event.paths {
                     // Decides whether this is a rename to or rename from based on the current state of the file system.
                     // This is not ideal since when we receive the event, the state of the file system could have changed.
                     // E.g. rename A -> B, B -> C, if we receives the first event after B is already renamed to C, this will
@@ -335,15 +341,15 @@ fn deduplicate_and_merge_raw_notifier_events(
             // If a path is renamed, we should check if it has been renamed in this update before and squash
             // any sequential renames.
             EventKind::Modify(ModifyKind::Name(rename_mode)) => 'rename: {
-                let paths = &fs_event.event.paths;
+                let paths = &fs_event.paths;
 
                 let (from, to) = match rename_mode {
                     RenameMode::From if !paths.is_empty() => {
-                        rename_from = Some(paths.first().expect("Checked above").clone());
+                        rename_from.push_back(paths.first().expect("Checked above").clone());
                         break 'rename;
                     }
-                    RenameMode::To if !paths.is_empty() && rename_from.is_some() => (
-                        rename_from.take().expect("Checked above"),
+                    RenameMode::To if !paths.is_empty() && !rename_from.is_empty() => (
+                        rename_from.pop_front().expect("Checked above"),
                         paths.first().expect("Checked above").clone(),
                     ),
                     RenameMode::Both if paths.len() > 1 => (
@@ -375,4 +381,41 @@ fn deduplicate_and_merge_raw_notifier_events(
     }
 
     Ok(update)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use notify_debouncer_full::notify::{event::ModifyKind, event::RenameMode, Event, EventKind};
+
+    use super::*;
+
+    fn rename_event(mode: RenameMode, path: &str) -> Event {
+        Event::new(EventKind::Modify(ModifyKind::Name(mode))).add_path(PathBuf::from(path))
+    }
+
+    #[test]
+    fn pairs_batched_rename_from_and_to_events_in_order() {
+        let events = vec![
+            rename_event(RenameMode::From, "/repo/file1.txt"),
+            rename_event(RenameMode::From, "/repo/file2.txt"),
+            rename_event(RenameMode::To, "/repo/subdir/file1.txt"),
+            rename_event(RenameMode::To, "/repo/subdir/file2.txt"),
+        ];
+
+        let update = deduplicate_and_merge_notifier_events(&events).unwrap();
+
+        assert_eq!(
+            update.moved.get(&PathBuf::from("/repo/subdir/file1.txt")),
+            Some(&PathBuf::from("/repo/file1.txt"))
+        );
+        assert_eq!(
+            update.moved.get(&PathBuf::from("/repo/subdir/file2.txt")),
+            Some(&PathBuf::from("/repo/file2.txt"))
+        );
+        assert!(update.added.is_empty());
+        assert!(update.modified.is_empty());
+        assert!(update.deleted.is_empty());
+    }
 }
