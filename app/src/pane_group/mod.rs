@@ -4002,6 +4002,42 @@ impl PaneGroup {
         new_pane_id
     }
 
+    /// Splits the currently focused pane in `direction`. Used by the local
+    /// control API (`wp split …`) to mirror the behavior of the keyboard
+    /// shortcut without going through the input/event system.
+    pub(crate) fn local_api_split_active_pane(
+        &mut self,
+        direction: Direction,
+        ctx: &mut ViewContext<Self>,
+    ) -> TerminalPaneId {
+        let base_pane_id = self.focused_pane_id(ctx);
+        self.insert_terminal_pane(direction, base_pane_id, None, ctx)
+    }
+
+    /// Returns terminal pane ids in this pane group as their stable
+    /// `TerminalPaneId`s, one per terminal pane.
+    pub(crate) fn local_api_terminal_pane_ids(&self) -> Vec<TerminalPaneId> {
+        self.terminal_pane_ids()
+            .filter_map(|p| p.as_terminal_pane_id())
+            .collect()
+    }
+
+    /// Closes a terminal pane identified by `pane_id`. Returns an error when
+    /// no terminal pane with that id exists in this group, so callers from
+    /// the local control API can surface a stale-id failure instead of
+    /// silently reporting success.
+    pub(crate) fn local_api_close_pane(
+        &mut self,
+        pane_id: TerminalPaneId,
+        ctx: &mut ViewContext<Self>,
+    ) -> Result<(), &'static str> {
+        if self.terminal_view_from_pane_id(pane_id, ctx).is_none() {
+            return Err("pane not found");
+        }
+        self.close_pane(pane_id.into(), ctx);
+        Ok(())
+    }
+
     /// Used when splitting panes.
     fn insert_terminal_pane(
         &mut self,

@@ -113,6 +113,19 @@ impl TerminalPaneId {
     pub fn dummy_terminal_pane_id() -> Self {
         Self(EntityId::new())
     }
+
+    /// Stable string serialization used by the local control API (`wp` CLI).
+    /// Round-trips with [`Self::parse_local_api`].
+    pub(crate) fn to_local_api_string(self) -> String {
+        self.0.to_string()
+    }
+
+    /// Inverse of [`Self::to_local_api_string`].
+    pub(crate) fn parse_local_api(s: &str) -> Option<Self> {
+        s.parse::<usize>()
+            .ok()
+            .map(|n| Self(EntityId::from_usize(n)))
+    }
 }
 
 /// An internal representation of a pane ID. Specifically, we don't want to allow

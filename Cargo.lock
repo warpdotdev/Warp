@@ -14511,6 +14511,7 @@ dependencies = [
  "warp_graphql",
  "warp_isolation_platform",
  "warp_js",
+ "warp_local_api",
  "warp_logging",
  "warp_managed_secrets",
  "warp_multi_agent_api",
@@ -14840,6 +14841,16 @@ dependencies = [
  "serde",
  "thiserror 2.0.17",
  "uuid",
+]
+
+[[package]]
+name = "warp_local_api"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dirs 6.0.0",
+ "ipc",
+ "serde",
 ]
 
 [[package]]
@@ -16478,6 +16489,18 @@ checksum = "896174c6a4779d4d7d4523dd27aef7d46609eda2497e370f6c998325c6bf6971"
 dependencies = [
  "lazy_static",
  "regex",
+]
+
+[[package]]
+name = "wp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures",
+ "ipc",
+ "warp_local_api",
+ "warpui",
 ]
 
 [[package]]
