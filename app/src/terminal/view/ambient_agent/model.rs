@@ -21,7 +21,7 @@ use crate::ai::ambient_agents::{
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::TouchedWorkspace;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::blocklist::handoff::CloudLaunchAttachments;
+use crate::ai::blocklist::handoff::HandoffLaunchAttachments;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
@@ -103,10 +103,12 @@ pub(crate) enum SnapshotUploadStatus {
 
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 impl SnapshotUploadStatus {
-    /// True when the upload has settled successfully (uploaded or skipped).
-    /// Pending and Failed both block submit.
+    /// True when the upload has resolved to a final state. `Pending` blocks
+    /// submit; all other variants (including `Failed`) allow it to proceed.
+    /// On `Failed`, `initial_snapshot_token()` returns `None` so the cloud
+    /// run starts without a local file snapshot.
     fn is_settled(&self) -> bool {
-        matches!(self, Self::Uploaded(_) | Self::SkippedEmptyWorkspace)
+        !matches!(self, Self::Pending)
     }
 
     /// Returns the initial snapshot token to send on spawn, if any.
@@ -148,7 +150,7 @@ pub(crate) struct PendingHandoff {
 #[derive(Debug, Clone)]
 pub(crate) struct PendingCloudLaunch {
     pub(crate) prompt: String,
-    pub(crate) attachments: CloudLaunchAttachments,
+    pub(crate) attachments: HandoffLaunchAttachments,
 }
 
 /// Status of the ambient agent run.
@@ -553,28 +555,7 @@ impl AmbientAgentViewModel {
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    pub(crate) fn pending_handoff_touched_workspace(&self) -> Option<TouchedWorkspace> {
-        self.pending_handoff
-            .as_ref()
-            .and_then(|handoff| handoff.touched_workspace.clone())
-    }
-
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    pub(crate) fn has_pending_handoff_snapshot_failure(&self) -> bool {
-        self.pending_handoff.as_ref().is_some_and(|handoff| {
-            matches!(handoff.snapshot_upload, SnapshotUploadStatus::Failed(_))
-        })
-    }
-
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn pending_handoff_has_explicit_environment(&self) -> bool {
-        self.has_handoff_explicit_environment_lock()
-    }
-
-    /// True when the handoff owns an explicit environment that must not be
-    /// overwritten by default-selection or overlap logic.
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn has_handoff_explicit_environment_lock(&self) -> bool {
         self.pending_handoff
             .as_ref()
             .is_some_and(|handoff| handoff.explicit_environment_id.is_some())
@@ -597,35 +578,20 @@ impl AmbientAgentViewModel {
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
     }
 
-    /// Records a snapshot upload failure on the pending handoff.
+    /// Records a snapshot upload failure on the pending handoff. The run will
+    /// proceed without a local file snapshot (the cloud agent still has the
+    /// forked conversation context).
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn record_handoff_snapshot_upload_failed(
         &mut self,
         error_message: String,
         ctx: &mut ModelContext<Self>,
-    ) -> Option<PendingCloudLaunch> {
-        let launch_to_restore = if let Some(handoff) = self.pending_handoff.as_mut() {
-            handoff.snapshot_upload = SnapshotUploadStatus::Failed(error_message.clone());
-            let launch = handoff.auto_submit.take();
-            if launch.is_some() {
-                handoff.submission_state = HandoffSubmissionState::Idle;
-            }
-            launch
-        } else {
-            None
-        };
-
-        if launch_to_restore.is_some() {
-            self.status = Status::Composing;
-            self.request = None;
-            self.stop_progress_timer();
-        }
-        ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
-        if launch_to_restore.is_some() {
-            ctx.emit(AmbientAgentViewModelEvent::EnteredComposingState);
-        }
+    ) {
+        self.set_pending_handoff_snapshot_upload(
+            SnapshotUploadStatus::Failed(error_message.clone()),
+            ctx,
+        );
         ctx.emit(AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { error_message });
-        launch_to_restore
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]

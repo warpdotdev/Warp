@@ -29,7 +29,7 @@ use crate::ai::agent_management::telemetry::AgentManagementTelemetryEvent;
 use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
-use crate::ai::blocklist::handoff::CloudLaunchRequest;
+use crate::ai::blocklist::handoff::HandoffLaunchRequest;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
@@ -892,13 +892,12 @@ impl Input {
                 if let Some(prompt) = prompt {
                     // `/move-to-cloud query` auto-submits, same as `& query`.
                     let attachments = self.collect_cloud_launch_attachments(ctx);
-                    let request = CloudLaunchRequest::auto_submit(
+                    let request = HandoffLaunchRequest::auto_submit(
                         prompt,
                         attachments,
                         None,
-                        crate::ai::blocklist::handoff::CloudLaunchEntrypoint::SlashCommand,
                     );
-                    self.track_cloud_launch_request(request.id(), ctx);
+                    self.track_handoff_launch_request(request.id(), ctx);
                     ctx.dispatch_typed_action_deferred(
                         WorkspaceAction::OpenLocalToCloudHandoffPane { request },
                     );

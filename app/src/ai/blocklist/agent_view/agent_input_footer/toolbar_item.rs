@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ai::blocklist::handoff::is_local_to_cloud_handoff_available;
+use crate::ai::blocklist::is_local_to_cloud_handoff_available;
 use crate::context_chips::{agent_footer_available_chips, available_chips, ContextChipKind};
 use crate::features::FeatureFlag;
 use crate::terminal::shared_session::SharedSessionStatus;

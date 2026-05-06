@@ -1,8 +1,20 @@
-//! Tracks `&` compose UI state before a cloud pane/model exists.
+//! Tracks the `&` prefix mode drafting state in the local input while the user
+//! writes a cloud handoff prompt, before a cloud pane/model exists.
 
-use crate::ai::blocklist::handoff::CloudLaunchRequestId;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use crate::server::ids::SyncId;
 use warpui::{Entity, ModelContext};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HandoffLaunchRequestId(u64);
+
+impl HandoffLaunchRequestId {
+    pub(crate) fn new() -> Self {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+        Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
 
 #[derive(Clone)]
 pub enum HandoffComposeStateEvent {
@@ -11,13 +23,14 @@ pub enum HandoffComposeStateEvent {
     RequestChanged,
 }
 
-/// Transient state owned by the local input while composing a cloud handoff.
+/// Transient state owned by the local input while drafting a cloud handoff
+/// prompt (the `&` prefix mode), before a cloud pane exists.
 #[derive(Default)]
 pub struct HandoffComposeState {
     active: bool,
     selected_environment_id: Option<SyncId>,
     has_explicit_environment_selection: bool,
-    active_request_id: Option<CloudLaunchRequestId>,
+    active_request_id: Option<HandoffLaunchRequestId>,
 }
 
 impl HandoffComposeState {
@@ -87,16 +100,16 @@ impl HandoffComposeState {
 
     pub(crate) fn set_active_request_id(
         &mut self,
-        request_id: CloudLaunchRequestId,
+        request_id: HandoffLaunchRequestId,
         ctx: &mut ModelContext<Self>,
     ) {
         self.active_request_id = Some(request_id);
         ctx.emit(HandoffComposeStateEvent::RequestChanged);
     }
 
-    pub(crate) fn claim_request(
+    pub(crate) fn take_request(
         &mut self,
-        request_id: CloudLaunchRequestId,
+        request_id: HandoffLaunchRequestId,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
         if self.active_request_id != Some(request_id) {

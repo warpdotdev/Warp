@@ -14,7 +14,7 @@ fn attachment() -> AttachmentInput {
 fn pending_launch() -> PendingCloudLaunch {
     PendingCloudLaunch {
         prompt: "fix tests".to_owned(),
-        attachments: CloudLaunchAttachments {
+        attachments: HandoffLaunchAttachments {
             request_attachments: vec![attachment()],
             display_attachments: vec![],
         },
@@ -107,33 +107,24 @@ fn maybe_auto_submit_handoff_waits_for_workspace_and_snapshot_then_consumes_laun
 }
 
 #[test]
-fn record_handoff_snapshot_upload_failed_restores_queued_launch_state() {
+fn snapshot_failure_is_treated_as_settled_for_auto_submit() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let model = add_model(&mut app);
 
         model.update(&mut app, |model, ctx| {
             model.set_pending_handoff(Some(pending_handoff()), ctx);
-            assert!(model.queue_handoff_auto_submit(ctx));
+            model.set_pending_handoff_workspace(TouchedWorkspace::default(), ctx);
+            model.set_pending_handoff_snapshot_upload(
+                SnapshotUploadStatus::Failed("upload failed".to_owned()),
+                ctx,
+            );
 
             let launch = model
-                .record_handoff_snapshot_upload_failed("upload failed".to_owned(), ctx)
-                .expect("queued launch should be returned for input restoration");
-
+                .maybe_auto_submit_handoff(ctx)
+                .expect("Failed snapshot should be treated as settled");
             assert_eq!(launch.prompt, "fix tests");
-            assert!(matches!(model.status(), Status::Composing));
-            assert!(model.request().is_none());
-
-            let handoff = model
-                .pending_handoff
-                .as_ref()
-                .expect("handoff should remain");
-            assert_eq!(handoff.submission_state, HandoffSubmissionState::Idle);
-            assert!(handoff.auto_submit.is_none());
-            assert!(matches!(
-                handoff.snapshot_upload,
-                SnapshotUploadStatus::Failed(ref error) if error == "upload failed"
-            ));
+            assert!(model.maybe_auto_submit_handoff(ctx).is_none());
         });
     });
 }

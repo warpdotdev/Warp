@@ -274,7 +274,7 @@ use crate::terminal::shared_session::SharedSessionActionSource;
 
 use crate::ai::blocklist::agent_view::editor::{AgentToolbarEditorEvent, AgentToolbarEditorModal};
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::blocklist::handoff::CloudLaunchRequest;
+use crate::ai::blocklist::handoff::HandoffLaunchRequest;
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -13061,24 +13061,24 @@ impl Workspace {
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn claim_cloud_launch_request(
+    fn take_handoff_launch_request(
         source_view: &ViewHandle<TerminalView>,
-        request: &CloudLaunchRequest,
+        request: &HandoffLaunchRequest,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         source_view.update(ctx, |view, ctx| {
             let input = view.input().clone();
             input.update(ctx, |input, ctx| {
-                input.claim_cloud_launch_request(request.id(), ctx)
+                input.take_handoff_launch_request(request.id(), ctx)
             })
         })
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn pending_cloud_launch_for_request(
-        request: &CloudLaunchRequest,
+        request: &HandoffLaunchRequest,
     ) -> Option<PendingCloudLaunch> {
-        let prompt = request.prompt()?.to_owned();
+        let prompt = request.initial_prompt.as_ref()?.to_owned();
         if prompt.trim().is_empty() {
             return None;
         }
@@ -13091,7 +13091,7 @@ impl Workspace {
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn apply_explicit_cloud_launch_environment(
         model_handle: &ModelHandle<AmbientAgentViewModel>,
-        request: &CloudLaunchRequest,
+        request: &HandoffLaunchRequest,
         ctx: &mut ViewContext<Self>,
     ) {
         let Some(environment_id) = request.explicit_environment_id else {
@@ -13135,20 +13135,12 @@ impl Workspace {
         });
     }
 
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn queue_handoff_auto_submit(
-        model_handle: &ModelHandle<AmbientAgentViewModel>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        model_handle.update(ctx, |model, ctx| model.queue_handoff_auto_submit(ctx));
-    }
-
     /// Opens a cloud pane without forking when there is no local conversation to hand off.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn start_fresh_cloud_launch(
         &mut self,
         source_view: ViewHandle<TerminalView>,
-        request: CloudLaunchRequest,
+        request: HandoffLaunchRequest,
         ctx: &mut ViewContext<Self>,
     ) {
         // Push a cloud-mode pane for the fresh launch.
@@ -13162,7 +13154,7 @@ impl Workspace {
 
         Self::apply_explicit_cloud_launch_environment(&model_handle, &request, ctx);
         Self::show_handoff_success_toast(ctx);
-        if !Self::claim_cloud_launch_request(&source_view, &request, ctx) {
+        if !Self::take_handoff_launch_request(&source_view, &request, ctx) {
             log::warn!("Failed to claim cloud launch request after opening fresh cloud pane");
         }
 
@@ -13182,7 +13174,7 @@ impl Workspace {
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn start_local_to_cloud_handoff(
         &mut self,
-        request: CloudLaunchRequest,
+        request: HandoffLaunchRequest,
         ctx: &mut ViewContext<Self>,
     ) {
         if !FeatureFlag::OzHandoff.is_enabled() || !FeatureFlag::HandoffLocalCloud.is_enabled() {
@@ -13254,7 +13246,7 @@ impl Workspace {
         source_view: ViewHandle<TerminalView>,
         source_conversation: AIConversation,
         forked_conversation_id: String,
-        request: CloudLaunchRequest,
+        request: HandoffLaunchRequest,
         ctx: &mut ViewContext<Self>,
     ) {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
@@ -13335,10 +13327,12 @@ impl Workspace {
         });
 
         Self::show_handoff_success_toast(ctx);
-        if !Self::claim_cloud_launch_request(&source_view, &request, ctx) {
+        if !Self::take_handoff_launch_request(&source_view, &request, ctx) {
             log::warn!("Failed to claim cloud launch request after opening handoff pane");
         }
-        Self::queue_handoff_auto_submit(&model_handle, ctx);
+        model_handle.update(ctx, |model, ctx| {
+            model.queue_handoff_auto_submit(ctx);
+        });
 
         let async_pane_view = new_pane_view.clone();
         let async_model_handle = model_handle.clone();
@@ -13362,9 +13356,9 @@ impl Workspace {
                 (workspace, upload_result)
             },
             move |_workspace, (derived_workspace, upload_result), ctx| {
-                let launch_to_restore = async_model_handle.update(ctx, |model, model_ctx| {
+                async_model_handle.update(ctx, |model, model_ctx| {
                     if !model.is_local_to_cloud_handoff() {
-                        return None;
+                        return;
                     }
                     if !model.pending_handoff_has_explicit_environment() {
                         let mut envs = CloudAmbientAgentEnvironment::get_all(model_ctx);
@@ -13382,30 +13376,22 @@ impl Workspace {
                                 SnapshotUploadStatus::Uploaded(initial_snapshot_token),
                                 model_ctx,
                             );
-                            None
                         }
                         Ok(None) => {
                             model.set_pending_handoff_snapshot_upload(
                                 SnapshotUploadStatus::SkippedEmptyWorkspace,
                                 model_ctx,
                             );
-                            None
                         }
                         Err(err) => {
                             log::warn!("Handoff snapshot upload failed: {err:#}");
-                            model.record_handoff_snapshot_upload_failed(format!("{err}"), model_ctx)
+                            model.record_handoff_snapshot_upload_failed(
+                                format!("{err}"),
+                                model_ctx,
+                            );
                         }
                     }
                 });
-                if let Some(launch) = launch_to_restore {
-                    // Restore auto-submit text if snapshot upload failed and submission was cancelled.
-                    async_pane_view.update(ctx, |terminal_view, ctx| {
-                        let input = terminal_view.input().clone();
-                        input.update(ctx, |input, ctx| {
-                            input.restore_pending_cloud_launch_draft(launch, ctx)
-                        });
-                    });
-                }
                 Self::maybe_auto_submit_handoff(&async_pane_view, &async_model_handle, ctx);
             },
         );

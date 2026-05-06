@@ -6,8 +6,8 @@ pub mod toolbar_item;
 use crate::{
     ai::{
         blocklist::{
-            handoff::is_local_to_cloud_handoff_available,
             history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel},
+            is_local_to_cloud_handoff_available,
             prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
             usage::icon_for_context_window_usage,
             BlocklistAIInputModel,
@@ -249,7 +249,7 @@ pub struct AgentInputFooter {
 
 impl AgentInputFooter {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
+    pub fn new(
         menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
         terminal_view_id: EntityId,
         ai_input_model: ModelHandle<BlocklistAIInputModel>,
@@ -636,6 +636,7 @@ impl AgentInputFooter {
                         )
                     })
                 });
+
         let handoff_environment_selector = ctx.add_typed_action_view(|ctx| {
             EnvironmentSelector::new(
                 menu_positioning_provider.clone(),
@@ -684,7 +685,9 @@ impl AgentInputFooter {
             |me, handoff_compose_state, _, ctx| {
                 if !handoff_compose_state.as_ref(ctx).is_active() {
                     me.handoff_environment_selector
-                        .update(ctx, |selector, ctx| selector.close_menu(ctx));
+                        .update(ctx, |selector, ctx| {
+                            selector.set_menu_visibility(false, ctx)
+                        });
                 }
                 ctx.notify();
             },

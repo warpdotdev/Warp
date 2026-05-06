@@ -37,7 +37,7 @@ use crate::{
 
 use super::{AgentInputButtonTheme, AmbientAgentViewModel};
 
-/// Normalizes ambient-agent and handoff compose state behind one selector API.
+/// Normalizes ambient-agent and handoff environment selection state behind one API.
 #[derive(Clone)]
 pub(crate) enum EnvironmentSelectorTarget {
     CloudPane(ModelHandle<AmbientAgentViewModel>),
@@ -81,10 +81,10 @@ impl EnvironmentSelectorTarget {
             Self::CloudPane(model) => {
                 // During local-to-cloud handoff with an explicit env, skip
                 // default selection so the user's `&` choice is preserved.
-                let is_locked = model.as_ref(ctx).pending_handoff_has_explicit_environment();
-                if is_locked {
+                if model.as_ref(ctx).pending_handoff_has_explicit_environment() {
                     return;
                 }
+
                 model.update(ctx, |model, ctx| {
                     model.set_environment_id(Some(environment_id), ctx);
                 });
@@ -333,10 +333,6 @@ impl EnvironmentSelector {
         self.set_menu_visibility(true, ctx);
     }
 
-    pub fn close_menu(&mut self, ctx: &mut ViewContext<Self>) {
-        self.set_menu_visibility(false, ctx);
-    }
-
     fn is_configuring(&self, ctx: &AppContext) -> bool {
         self.target.is_configuring(ctx)
     }
@@ -357,7 +353,7 @@ impl EnvironmentSelector {
         });
     }
 
-    fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
+    pub(super) fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
         if self.is_menu_open == is_open {
             return;
         }
