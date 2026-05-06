@@ -617,7 +617,6 @@ impl AIAgentOutput {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum RenderableAIError {
     QuotaLimit {
-        /// An optional server-provided message for enterprise denial scenarios.
         #[serde(default)]
         user_display_message: Option<String>,
     },

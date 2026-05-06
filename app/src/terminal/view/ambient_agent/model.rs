@@ -1287,9 +1287,7 @@ impl AmbientAgentViewModel {
                 } => {
                     let error_message = user_display_message
                         .clone()
-                        .unwrap_or_else(|| {
-                            OUT_OF_CREDITS_TASK_FAILURE_MESSAGE.to_string()
-                        });
+                        .unwrap_or_else(|| OUT_OF_CREDITS_TASK_FAILURE_MESSAGE.to_string());
                     self.handle_spawn_error(error_message, ctx);
                     ctx.emit(AmbientAgentViewModelEvent::ShowAICreditModal);
                     return;

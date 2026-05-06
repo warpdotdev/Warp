@@ -254,10 +254,7 @@ impl AIApiError {
     }
 
     /// Returns the appropriate error for a 429 response by checking the X-Warp-Error-Code header.
-    fn error_for_429(
-        headers: &::http::HeaderMap,
-        user_display_message: Option<String>,
-    ) -> Self {
+    fn error_for_429(headers: &::http::HeaderMap, user_display_message: Option<String>) -> Self {
         if headers
             .get(WARP_ERROR_CODE_HEADER)
             .and_then(|v| v.to_str().ok())
@@ -284,9 +281,7 @@ impl AIApiError {
                     .text()
                     .await
                     .ok()
-                    .and_then(|body| {
-                        serde_json::from_str::<OutOfCreditsResponse>(&body).ok()
-                    })
+                    .and_then(|body| serde_json::from_str::<OutOfCreditsResponse>(&body).ok())
                     .and_then(|r| r.user_display_message);
                 Self::error_for_429(&headers, user_display_message)
             }
