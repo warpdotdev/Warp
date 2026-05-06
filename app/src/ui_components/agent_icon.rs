@@ -105,28 +105,11 @@ pub(crate) fn agent_conversation_entry_icon_variant(
     let is_ambient = matches!(entry.provenance, AgentConversationProvenance::AmbientRun)
         || entry.backing.has_ambient_run
         || entry.identity.ambient_agent_task_id.is_some();
-    Some(match entry.provenance {
-        AgentConversationProvenance::AmbientRun => agent_icon_variant_for_run(
-            entry.display.harness.unwrap_or(Harness::Oz),
-            status,
-            is_ambient,
-        ),
-        AgentConversationProvenance::LocalInteractive
-        | AgentConversationProvenance::CloudSyncedConversation => {
-            if is_ambient {
-                agent_icon_variant_for_run(
-                    entry.display.harness.unwrap_or(Harness::Oz),
-                    status,
-                    is_ambient,
-                )
-            } else {
-                IconWithStatusVariant::OzAgent {
-                    status: Some(status),
-                    is_ambient,
-                }
-            }
-        }
-    })
+    Some(agent_icon_variant_for_run(
+        entry.display.harness.unwrap_or(Harness::Oz),
+        status,
+        is_ambient,
+    ))
 }
 
 /// Primitive inputs to the terminal-view waterfall, gathered once from the live

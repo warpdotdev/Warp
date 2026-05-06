@@ -253,6 +253,9 @@ enum LinkPreference {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AgentRunDisplayStatus {
+    /// Raw task-service lifecycle states. `from_task` only returns `TaskInProgress` while the
+    /// task still has an active execution, or when there is no shadowed local conversation to
+    /// provide a more granular status.
     TaskQueued,
     TaskPending,
     TaskClaimed,
@@ -260,13 +263,19 @@ pub enum AgentRunDisplayStatus {
     TaskSucceeded,
     TaskFailed,
     TaskError,
-    TaskBlocked { blocked_action: String },
+    TaskBlocked {
+        blocked_action: String,
+    },
     TaskCancelled,
     TaskUnknown,
+    /// Conversation-derived lifecycle states, used for interactive conversations and for
+    /// in-progress ambient tasks after they can be resolved to their shadowed local conversation.
     ConversationInProgress,
     ConversationSucceeded,
     ConversationError,
-    ConversationBlocked { blocked_action: String },
+    ConversationBlocked {
+        blocked_action: String,
+    },
     ConversationCancelled,
 }
 
