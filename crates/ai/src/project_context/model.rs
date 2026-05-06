@@ -25,7 +25,7 @@ pub struct ProjectRule {
     pub content: String,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct RuleAtPath {
     parent_path: PathBuf,
     warp_md: Option<ProjectRule>,
@@ -69,7 +69,7 @@ fn matches_rules_pattern(file_name_str: &str) -> bool {
     false
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct ProjectRules {
     rules: Vec<RuleAtPath>,
 }
@@ -170,6 +170,11 @@ impl ProjectRules {
 pub struct ProjectContextModel {
     /// Mapping from directory path to list of rule files found in that directory
     path_to_rules: HashMap<PathBuf, ProjectRules>,
+    /// Queued repository updates for paths that have an in-flight processing task.
+    /// The presence of a key indicates an active async task for that path;
+    /// the Vec holds updates that arrived while that task was running.
+    #[cfg(feature = "local_fs")]
+    pending_updates: HashMap<PathBuf, Vec<RepositoryUpdate>>,
 }
 
 #[derive(Default, Debug)]
@@ -345,24 +350,82 @@ impl ProjectContextModel {
                     return;
                 }
 
-                let existing_rules = me.path_to_rules.remove(&path_clone);
-                let repo_path = path_clone.clone();
-                if let Some(rules) = existing_rules {
-                    let repo_path_for_closure = repo_path.clone();
-                    ctx.spawn(
-                        async move {
-                            Self::process_repository_updates(update, rules, repo_path).await
-                        },
-                        move |me, (rules, rule_delta), ctx| {
-                            ctx.emit(ProjectContextModelEvent::KnownRulesChanged(rule_delta));
-
-                            me.path_to_rules.insert(repo_path_for_closure, rules);
-                            ctx.emit(ProjectContextModelEvent::PathIndexed);
-                        },
-                    );
+                // If there's already an in-flight task for this path, queue the update
+                // instead of spawning a concurrent task that could overwrite results.
+                if let Some(queued) = me.pending_updates.get_mut(&path_clone) {
+                    queued.push(update);
+                    return;
                 }
+
+                let Some(rules) = me.path_to_rules.get(&path_clone).cloned() else {
+                    return;
+                };
+
+                // Mark this path as having an in-flight task (empty queue).
+                me.pending_updates.insert(path_clone.clone(), Vec::new());
+
+                let repo_path = path_clone.clone();
+                let repo_path_for_closure = repo_path.clone();
+                ctx.spawn(
+                    async move {
+                        Self::process_repository_updates(update, rules, repo_path).await
+                    },
+                    move |me, (rules, rule_delta), ctx| {
+                        ctx.emit(ProjectContextModelEvent::KnownRulesChanged(rule_delta));
+                        me.path_to_rules.insert(repo_path_for_closure.clone(), rules);
+                        me.drain_pending_updates(&repo_path_for_closure, ctx);
+                        ctx.emit(ProjectContextModelEvent::PathIndexed);
+                    },
+                );
             },
             |_, _| {},
+        );
+    }
+
+    /// Processes any queued updates for a path after the previous async task completes.
+    /// Each batch runs sequentially against the latest rules, preventing stale-snapshot races.
+    #[cfg(feature = "local_fs")]
+    fn drain_pending_updates(&mut self, path: &Path, ctx: &mut ModelContext<Self>) {
+        let path_buf = path.to_path_buf();
+        let Some(queued) = self.pending_updates.get_mut(&path_buf) else {
+            return;
+        };
+
+        if queued.is_empty() {
+            self.pending_updates.remove(&path_buf);
+            return;
+        }
+
+        let updates = std::mem::take(queued);
+        let Some(rules) = self.path_to_rules.get(&path_buf).cloned() else {
+            self.pending_updates.remove(&path_buf);
+            return;
+        };
+
+        let repo_path = path_buf.clone();
+        let repo_path_for_closure = path_buf;
+        ctx.spawn(
+            async move {
+                let mut current_rules = rules;
+                let mut combined_delta = RulesDelta::default();
+                for update in updates {
+                    let (updated_rules, delta) =
+                        Self::process_repository_updates(update, current_rules, repo_path.clone())
+                            .await;
+                    current_rules = updated_rules;
+                    combined_delta
+                        .discovered_rules
+                        .extend(delta.discovered_rules);
+                    combined_delta.deleted_rules.extend(delta.deleted_rules);
+                }
+                (current_rules, combined_delta)
+            },
+            move |me, (rules, rule_delta), ctx| {
+                ctx.emit(ProjectContextModelEvent::KnownRulesChanged(rule_delta));
+                me.path_to_rules.insert(repo_path_for_closure.clone(), rules);
+                me.drain_pending_updates(&repo_path_for_closure, ctx);
+                ctx.emit(ProjectContextModelEvent::PathIndexed);
+            },
         );
     }
 
