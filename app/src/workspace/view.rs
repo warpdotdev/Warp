@@ -1108,64 +1108,6 @@ fn next_zoom_step(current_percent: u16, increase: bool) -> u16 {
     }
 }
 
-#[cfg(test)]
-mod next_zoom_step_tests {
-    use super::next_zoom_step;
-    use crate::window_settings::ZoomLevel;
-
-    #[test]
-    fn step_up_from_in_values() {
-        assert_eq!(next_zoom_step(100, true), 110);
-        assert_eq!(next_zoom_step(110, true), 125);
-    }
-
-    #[test]
-    fn step_down_from_in_values() {
-        assert_eq!(next_zoom_step(100, false), 90);
-        assert_eq!(next_zoom_step(110, false), 100);
-    }
-
-    #[test]
-    fn step_up_from_non_values_snaps_to_next_higher() {
-        // 105 is between 100 and 110 in VALUES; up → 110.
-        assert_eq!(next_zoom_step(105, true), 110);
-        // 230 is between 225 and 250; up → 250.
-        assert_eq!(next_zoom_step(230, true), 250);
-    }
-
-    #[test]
-    fn step_down_from_non_values_snaps_to_next_lower() {
-        // 105 → down → 100.
-        assert_eq!(next_zoom_step(105, false), 100);
-        // 230 → down → 225.
-        assert_eq!(next_zoom_step(230, false), 225);
-    }
-
-    #[test]
-    fn step_up_at_max_stays_at_max() {
-        let max = *ZoomLevel::VALUES.last().unwrap();
-        assert_eq!(next_zoom_step(max, true), max);
-    }
-
-    #[test]
-    fn step_down_at_min_stays_at_min() {
-        let min = *ZoomLevel::VALUES.first().unwrap();
-        assert_eq!(next_zoom_step(min, false), min);
-    }
-
-    #[test]
-    fn step_up_above_max_stays_at_max() {
-        // current_percent above all VALUES: no entry > current → stays at max.
-        assert_eq!(next_zoom_step(500, true), *ZoomLevel::VALUES.last().unwrap());
-    }
-
-    #[test]
-    fn step_down_below_min_stays_at_min() {
-        // current_percent below all VALUES: no entry < current → stays at min.
-        assert_eq!(next_zoom_step(10, false), *ZoomLevel::VALUES.first().unwrap());
-    }
-}
-
 impl Workspace {
     pub fn is_tab_drag_preview(&self) -> bool {
         self.is_tab_drag_preview

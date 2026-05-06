@@ -28,12 +28,8 @@ fn test_per_window_zoom_factor_invariants() {
     App::test((), |mut app| async move {
         let app = &mut app;
 
-        let (window_a, _) = app.add_window(WindowStyle::NotStealFocus, |_| {
-            ZoomTestView::default()
-        });
-        let (window_b, _) = app.add_window(WindowStyle::NotStealFocus, |_| {
-            ZoomTestView::default()
-        });
+        let (window_a, _) = app.add_window(WindowStyle::NotStealFocus, |_| ZoomTestView::default());
+        let (window_b, _) = app.add_window(WindowStyle::NotStealFocus, |_| ZoomTestView::default());
 
         // Invariant 1: no override → effective is the app-wide default (1.0).
         app.read(|ctx| {
@@ -86,9 +82,8 @@ fn test_set_window_zoom_factor_clamps_to_values_range() {
     App::test((), |mut app| async move {
         let app = &mut app;
 
-        let (window_id, _) = app.add_window(WindowStyle::NotStealFocus, |_| {
-            ZoomTestView::default()
-        });
+        let (window_id, _) =
+            app.add_window(WindowStyle::NotStealFocus, |_| ZoomTestView::default());
 
         // Below the minimum: clamped up to 0.5.
         app.update(|ctx| ctx.set_window_zoom_factor(window_id, 0.1));
