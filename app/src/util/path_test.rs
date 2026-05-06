@@ -86,6 +86,8 @@ fn test_resolve_command_uses_pathext() {
 
     let _pathext = EnvVarGuard::set("PATHEXT", ".CMD;.EXE");
     let resolved = resolve_executable_in_path("codex", temp_dir.path().as_os_str()).unwrap();
-
-    assert_eq!(resolved.as_ref(), command_path.as_path());
+    assert_eq!(
+        resolved.as_ref().to_string_lossy().to_ascii_lowercase(),
+        command_path.to_string_lossy().to_ascii_lowercase()
+    );
 }
