@@ -797,7 +797,7 @@ impl LeftPanelView {
                 .finish()
         } else {
             ui_builder
-                .tool_tip("Close panel".to_string())
+                .tool_tip(crate::i18n::tr_static(app, "Close panel").to_string())
                 .build()
                 .finish()
         };

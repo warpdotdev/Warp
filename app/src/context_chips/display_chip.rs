@@ -1009,6 +1009,8 @@ impl DisplayChip {
             !self.is_shared_session_viewer && !self.is_cli_agent_session_active(app);
         let is_in_agent_view = self.is_in_agent_view;
         let chip_text = self.text.clone();
+        let change_git_branch_tooltip =
+            crate::i18n::tr_static(app, "Change git branch").to_string();
         let hover = Hoverable::new(self.mouse_state.clone(), move |state| {
             let hovered = state.is_hovered() && is_interactive;
             let mut config =
@@ -1023,7 +1025,7 @@ impl DisplayChip {
             if state.is_hovered() && is_interactive && !menu_open {
                 let tool_tip = appearance
                     .ui_builder()
-                    .tool_tip("Change git branch".to_string())
+                    .tool_tip(change_git_branch_tooltip.clone())
                     .build()
                     .finish();
                 stack.add_positioned_overlay_child(tool_tip, udi_tooltip_positioning());
@@ -1076,6 +1078,8 @@ impl DisplayChip {
             github_pr_display_text_from_url(&self.text).unwrap_or_else(|| self.text.clone());
         let url = self.text.clone();
         let is_in_agent_view = self.is_in_agent_view;
+        let view_pull_request_tooltip =
+            crate::i18n::tr_static(app, "View pull request").to_string();
 
         let hover = Hoverable::new(self.mouse_state.clone(), move |state| {
             let mut config =
@@ -1090,7 +1094,7 @@ impl DisplayChip {
             if state.is_hovered() {
                 let tool_tip = appearance
                     .ui_builder()
-                    .tool_tip("View pull request".to_string())
+                    .tool_tip(view_pull_request_tooltip.clone())
                     .build()
                     .finish();
                 stack.add_positioned_overlay_child(tool_tip, udi_tooltip_positioning());
@@ -1238,6 +1242,10 @@ impl DisplayChip {
         // agent session or CLI agent session.
         let is_cli_agent_active = self.is_cli_agent_session_active(app);
         let allow_show_menu = show_menu && !is_in_active_ambient_agent && !is_cli_agent_active;
+        let change_working_directory_tooltip =
+            crate::i18n::tr_static(app, "Change working directory").to_string();
+        let working_directory_tooltip =
+            crate::i18n::tr_static(app, "Working directory").to_string();
 
         let button = if allow_show_menu {
             let chip_text = self.text.clone();
@@ -1263,7 +1271,7 @@ impl DisplayChip {
                 if state.is_hovered() {
                     let tool_tip = appearance
                         .ui_builder()
-                        .tool_tip("Change working directory".to_string())
+                        .tool_tip(change_working_directory_tooltip.clone())
                         .build()
                         .finish();
 
@@ -1310,7 +1318,7 @@ impl DisplayChip {
                 if state.is_hovered() && !is_cli_agent_active {
                     let tool_tip = appearance
                         .ui_builder()
-                        .tool_tip("Working directory".to_string())
+                        .tool_tip(working_directory_tooltip.clone())
                         .build()
                         .finish();
 

@@ -1744,12 +1744,13 @@ impl TerminalView {
         &self,
         model: &TerminalModel,
         is_share_session_disabled: bool,
+        app: &AppContext,
     ) -> Vec<MenuItem<TerminalAction>> {
         let mut items = Vec::new();
 
         if !model.shared_session_status().is_sharer_or_viewer() {
             items.push(
-                MenuItemFields::new("Share session...")
+                MenuItemFields::new(crate::i18n::tr_static(app, "Share session..."))
                     .with_on_select_action(TerminalAction::ContextMenu(
                         ContextMenuAction::OpenShareSessionModal,
                     ))
@@ -1758,7 +1759,7 @@ impl TerminalView {
             );
         } else if model.shared_session_status().is_active_sharer() {
             items.push(
-                MenuItemFields::new("Stop sharing")
+                MenuItemFields::new(crate::i18n::tr_static(app, "Stop sharing"))
                     .with_on_select_action(TerminalAction::ContextMenu(
                         ContextMenuAction::StopSharing,
                     ))
@@ -1768,7 +1769,7 @@ impl TerminalView {
 
         if model.shared_session_status().is_sharer_or_viewer() {
             items.push(
-                MenuItemFields::new("Copy session sharing link")
+                MenuItemFields::new(crate::i18n::tr_static(app, "Copy session sharing link"))
                     .with_on_select_action(TerminalAction::CopySharedSessionLink {
                         source: SharedSessionActionSource::RightClickMenu,
                     })
@@ -1878,11 +1879,12 @@ impl TerminalView {
         &self,
         button_handle: MouseStateHandle,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         appearance
             .ui_builder()
             .button(ButtonVariant::Basic, button_handle)
-            .with_text_label("Request edit access".into())
+            .with_text_label(crate::i18n::tr_static(app, "Request edit access").into())
             .build()
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(TerminalAction::RequestSharedSessionRole(Role::Executor));
