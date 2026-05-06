@@ -13,6 +13,7 @@ use std::pin::pin;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use warp_terminal::model::escape_sequences::{BRACKETED_PASTE_END, BRACKETED_PASTE_START};
 use warpui::{
     notification::UserNotification, platform::WindowStyle, Presenter, WindowInvalidation,
@@ -79,6 +80,22 @@ fn has_pending_user_query_block(view: &TerminalView) -> bool {
     view.rich_content_views.iter().any(|rich_content| {
         rich_content.view_id() == view_id && rich_content.is_pending_user_query()
     })
+}
+
+#[test]
+fn rc_file_subshell_bootstrap_delay_waits_longer_for_fish() {
+    assert_eq!(
+        rc_file_subshell_bootstrap_delay(ShellType::Fish),
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        rc_file_subshell_bootstrap_delay(ShellType::Bash),
+        Duration::from_millis(100)
+    );
+    assert_eq!(
+        rc_file_subshell_bootstrap_delay(ShellType::Zsh),
+        Duration::from_millis(100)
+    );
 }
 
 fn exchange_with_inputs(inputs: Vec<AIAgentInput>) -> AIAgentExchange {
