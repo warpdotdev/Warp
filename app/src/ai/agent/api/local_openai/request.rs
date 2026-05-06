@@ -3,14 +3,19 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::anyhow;
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use prost::Message as _;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 use warp_multi_agent_api as api;
 
 use crate::ai::agent::api::{convert_to::convert_input, user_inputs_from_messages};
-use crate::ai::agent::{AIAgentContext, AIAgentInput, MCPContext, MCPServer};
+use crate::ai::agent::{
+    AIAgentActionResult, AIAgentActionResultType, AIAgentContext, AIAgentInput, AnyFileContent,
+    AskUserQuestionAnswerItem, AskUserQuestionResult, FileContext, MCPContext, MCPServer,
+    ReadFilesResult, ReadShellCommandOutputResult, ReadSkillResult, RequestCommandOutputResult,
+    SearchCodebaseResult, WriteToLongRunningShellCommandResult,
+};
 use crate::server::server_api::ServerApi;
 
 use super::tool_schemas::built_in_tool_schema;
@@ -19,7 +24,7 @@ use super::types::{
     ResponsesRequestBody,
 };
 use super::{
-    build_local_openai_system_prompt, conversation_state_store, ProviderError, RequestParams,
+    ProviderError, RequestParams, build_local_openai_system_prompt, conversation_state_store,
 };
 use crate::ai::agent::api::r#impl::get_supported_tools;
 
@@ -447,7 +452,9 @@ pub(super) fn assistant_output_item_with_annotations(text: &str, annotations: Ve
 }
 
 /// Converts persisted Warp citations back into replayable Responses output-text annotations.
-pub(super) fn output_text_annotations_from_api_citations(citations: &[api::Citation]) -> Vec<Value> {
+pub(super) fn output_text_annotations_from_api_citations(
+    citations: &[api::Citation],
+) -> Vec<Value> {
     citations
         .iter()
         .filter_map(|citation| {
@@ -551,6 +558,289 @@ fn function_call_output_item(call_id: String, output: String) -> Value {
         "call_id": call_id,
         "output": output,
     })
+}
+
+fn serialize_tool_result_output(result: &AIAgentActionResult) -> String {
+    match &result.result {
+        AIAgentActionResultType::RequestCommandOutput(command_result) => {
+            serialize_request_command_output_result(command_result).to_string()
+        }
+        AIAgentActionResultType::WriteToLongRunningShellCommand(command_result) => {
+            serialize_write_to_long_running_shell_command_result(command_result).to_string()
+        }
+        AIAgentActionResultType::ReadShellCommandOutput(command_result) => {
+            serialize_read_shell_command_output_result(command_result).to_string()
+        }
+        AIAgentActionResultType::ReadFiles(read_files_result) => {
+            serialize_read_files_result(read_files_result).to_string()
+        }
+        AIAgentActionResultType::SearchCodebase(search_result) => {
+            serialize_search_codebase_result(search_result).to_string()
+        }
+        AIAgentActionResultType::ReadSkill(read_skill_result) => {
+            serialize_read_skill_result(read_skill_result).to_string()
+        }
+        AIAgentActionResultType::AskUserQuestion(ask_result) => {
+            serialize_ask_user_question_result(ask_result).to_string()
+        }
+        _ => result.to_string(),
+    }
+}
+
+fn serialize_request_command_output_result(result: &RequestCommandOutputResult) -> Value {
+    match result {
+        RequestCommandOutputResult::Completed {
+            block_id,
+            command,
+            output,
+            exit_code,
+        } => json!({
+            "status": "completed",
+            "command": command,
+            "command_id": block_id.to_string(),
+            "output": output,
+            "exit_code": exit_code.value(),
+        }),
+        RequestCommandOutputResult::LongRunningCommandSnapshot {
+            block_id,
+            command,
+            grid_contents,
+            cursor,
+            is_alt_screen_active,
+        } => json!({
+            "status": "long_running",
+            "command": command,
+            "command_id": block_id.to_string(),
+            "output": grid_contents,
+            "cursor": cursor,
+            "is_alt_screen_active": is_alt_screen_active,
+            "is_preempted": false,
+        }),
+        RequestCommandOutputResult::CancelledBeforeExecution => json!({
+            "status": "cancelled",
+        }),
+        RequestCommandOutputResult::Denylisted { command } => json!({
+            "status": "permission_denied",
+            "command": command,
+            "reason": "denylisted_command",
+        }),
+    }
+}
+
+fn serialize_write_to_long_running_shell_command_result(
+    result: &WriteToLongRunningShellCommandResult,
+) -> Value {
+    match result {
+        WriteToLongRunningShellCommandResult::Snapshot {
+            block_id,
+            grid_contents,
+            cursor,
+            is_alt_screen_active,
+            is_preempted,
+        } => json!({
+            "status": "long_running",
+            "command_id": block_id.to_string(),
+            "output": grid_contents,
+            "cursor": cursor,
+            "is_alt_screen_active": is_alt_screen_active,
+            "is_preempted": is_preempted,
+        }),
+        WriteToLongRunningShellCommandResult::CommandFinished {
+            block_id,
+            output,
+            exit_code,
+        } => json!({
+            "status": "completed",
+            "command_id": block_id.to_string(),
+            "output": output,
+            "exit_code": exit_code.value(),
+        }),
+        WriteToLongRunningShellCommandResult::Cancelled => json!({
+            "status": "cancelled",
+        }),
+        WriteToLongRunningShellCommandResult::Error(_) => json!({
+            "status": "error",
+            "error_type": "command_not_found",
+        }),
+    }
+}
+
+fn serialize_read_shell_command_output_result(result: &ReadShellCommandOutputResult) -> Value {
+    match result {
+        ReadShellCommandOutputResult::CommandFinished {
+            command,
+            block_id,
+            output,
+            exit_code,
+        } => json!({
+            "status": "completed",
+            "command": command,
+            "command_id": block_id.to_string(),
+            "output": output,
+            "exit_code": exit_code.value(),
+        }),
+        ReadShellCommandOutputResult::LongRunningCommandSnapshot {
+            command,
+            block_id,
+            grid_contents,
+            cursor,
+            is_alt_screen_active,
+            is_preempted,
+        } => json!({
+            "status": "long_running",
+            "command": command,
+            "command_id": block_id.to_string(),
+            "output": grid_contents,
+            "cursor": cursor,
+            "is_alt_screen_active": is_alt_screen_active,
+            "is_preempted": is_preempted,
+        }),
+        ReadShellCommandOutputResult::Cancelled => json!({
+            "status": "cancelled",
+        }),
+        ReadShellCommandOutputResult::Error(_) => json!({
+            "status": "error",
+            "error_type": "command_not_found",
+        }),
+    }
+}
+
+fn serialize_read_files_result(result: &ReadFilesResult) -> Value {
+    match result {
+        ReadFilesResult::Success { files } => json!({
+            "status": "success",
+            "files": files.iter().map(serialize_file_context).collect::<Vec<_>>(),
+        }),
+        ReadFilesResult::Error(message) => json!({
+            "status": "error",
+            "message": message,
+        }),
+        ReadFilesResult::Cancelled => json!({
+            "status": "cancelled",
+        }),
+    }
+}
+
+fn serialize_search_codebase_result(result: &SearchCodebaseResult) -> Value {
+    match result {
+        SearchCodebaseResult::Success { files } => json!({
+            "status": "success",
+            "files": files.iter().map(serialize_file_context).collect::<Vec<_>>(),
+        }),
+        SearchCodebaseResult::Failed { reason, message } => json!({
+            "status": "error",
+            "reason": format!("{reason:?}"),
+            "message": message,
+        }),
+        SearchCodebaseResult::Cancelled => json!({
+            "status": "cancelled",
+        }),
+    }
+}
+
+fn serialize_read_skill_result(result: &ReadSkillResult) -> Value {
+    match result {
+        ReadSkillResult::Success { content } => json!({
+            "status": "success",
+            "skill": serialize_file_context(content),
+        }),
+        ReadSkillResult::Error(message) => json!({
+            "status": "error",
+            "message": message,
+        }),
+        ReadSkillResult::Cancelled => json!({
+            "status": "cancelled",
+        }),
+    }
+}
+
+fn serialize_file_context(file: &FileContext) -> Value {
+    let mut value = serde_json::Map::new();
+    value.insert("file_path".to_string(), Value::String(file.file_name.clone()));
+    if let Some(line_range) = &file.line_range {
+        value.insert(
+            "line_range".to_string(),
+            serialize_file_context_line_range(line_range),
+        );
+    }
+
+    match &file.content {
+        AnyFileContent::StringContent(content) => {
+            value.insert("content_type".to_string(), Value::String("text".to_string()));
+            value.insert("content".to_string(), Value::String(content.clone()));
+        }
+        AnyFileContent::BinaryContent(content) => {
+            value.insert(
+                "content_type".to_string(),
+                Value::String("binary".to_string()),
+            );
+            value.insert(
+                "content".to_string(),
+                Value::String("<binary>".to_string()),
+            );
+            value.insert(
+                "size_bytes".to_string(),
+                Value::Number((content.len() as u64).into()),
+            );
+        }
+    }
+
+    Value::Object(value)
+}
+
+fn serialize_file_context_line_range(line_range: &std::ops::Range<usize>) -> Value {
+    json!({
+        "start": line_range.start,
+        "end": line_range.end,
+    })
+}
+
+fn serialize_ask_user_question_result(result: &AskUserQuestionResult) -> Value {
+    match result {
+        AskUserQuestionResult::Success { answers } => json!({
+            "status": "success",
+            "answers": answers
+                .iter()
+                .map(serialize_ask_user_question_answer_item)
+                .collect::<Vec<_>>(),
+        }),
+        AskUserQuestionResult::Error(message) => json!({
+            "status": "error",
+            "message": message,
+        }),
+        AskUserQuestionResult::Cancelled => json!({
+            "status": "cancelled",
+        }),
+        AskUserQuestionResult::SkippedByAutoApprove { question_ids } => json!({
+            "status": "skipped_by_auto_approve",
+            "question_ids": question_ids,
+            "answers": question_ids
+                .iter()
+                .map(|question_id| json!({
+                    "question_id": question_id,
+                    "skipped": true,
+                }))
+                .collect::<Vec<_>>(),
+        }),
+    }
+}
+
+fn serialize_ask_user_question_answer_item(answer: &AskUserQuestionAnswerItem) -> Value {
+    match answer {
+        AskUserQuestionAnswerItem::Answered {
+            question_id,
+            selected_options,
+            other_text,
+        } => json!({
+            "question_id": question_id,
+            "selected_options": selected_options,
+            "other_text": other_text,
+        }),
+        AskUserQuestionAnswerItem::Skipped { question_id } => json!({
+            "question_id": question_id,
+            "skipped": true,
+        }),
+    }
 }
 
 /// Builds the list of tool definitions exposed to the local Responses model.
@@ -848,15 +1138,15 @@ fn tool_call_history_item_from_api(
 /// Converts a persisted web-search status message back into a replayable Responses output item.
 fn web_search_history_item_from_api(web_search: &api::message::WebSearch) -> Option<Value> {
     match web_search.status.as_ref()?.r#type.as_ref()? {
-        api::message::web_search::status::Type::Searching(searching) => Some(
-            web_search_call_history_item(
+        api::message::web_search::status::Type::Searching(searching) => {
+            Some(web_search_call_history_item(
                 (!searching.query.is_empty()).then_some(searching.query.as_str()),
                 "searching",
                 &[],
-            ),
-        ),
-        api::message::web_search::status::Type::Success(success) => Some(
-            web_search_call_history_item(
+            ))
+        }
+        api::message::web_search::status::Type::Success(success) => {
+            Some(web_search_call_history_item(
                 (!success.query.is_empty()).then_some(success.query.as_str()),
                 "completed",
                 &success
@@ -864,13 +1154,11 @@ fn web_search_history_item_from_api(web_search: &api::message::WebSearch) -> Opt
                     .iter()
                     .map(|page| (page.url.clone(), page.title.clone()))
                     .collect::<Vec<_>>(),
-            ),
-        ),
-        api::message::web_search::status::Type::Error(_) => Some(web_search_call_history_item(
-            None,
-            "failed",
-            &[],
-        )),
+            ))
+        }
+        api::message::web_search::status::Type::Error(_) => {
+            Some(web_search_call_history_item(None, "failed", &[]))
+        }
     }
 }
 
@@ -883,10 +1171,15 @@ fn serialize_api_tool_call(
             "run_shell_command".to_string(),
             json!({
                 "command": command.command,
+                "mode": "wait",
                 "is_read_only": command.is_read_only,
                 "uses_pager": command.uses_pager,
                 "is_risky": command.is_risky,
                 "risk_category": risk_category_name(command.risk_category),
+                "wait_params": {
+                    "reason": "",
+                    "do_not_summarize_output": false,
+                },
             }),
         )),
         api::message::tool_call::Tool::ReadFiles(read_files) => Some((
@@ -915,11 +1208,14 @@ fn serialize_api_tool_call(
             "file_glob".to_string(),
             json!({
                 "patterns": glob.patterns,
-                "path": glob.path,
+                "search_dir": glob.path,
+                "max_matches": 0,
+                "max_depth": 0,
+                "min_depth": 0,
             }),
         )),
         api::message::tool_call::Tool::FileGlobV2(glob) => Some((
-            "file_glob_v2".to_string(),
+            "file_glob".to_string(),
             json!({
                 "patterns": glob.patterns,
                 "search_dir": glob.search_dir,
@@ -1000,6 +1296,10 @@ fn serialize_api_tool_call(
         api::message::tool_call::Tool::OpenCodeReview(_) => {
             Some(("open_code_review".to_string(), json!({})))
         }
+        api::message::tool_call::Tool::InsertReviewComments(insert_review_comments) => Some((
+            "insert_review_comments".to_string(),
+            serialize_insert_review_comments(insert_review_comments),
+        )),
         api::message::tool_call::Tool::InitProject(_) => {
             Some(("init_project".to_string(), json!({})))
         }
@@ -1012,6 +1312,10 @@ fn serialize_api_tool_call(
         api::message::tool_call::Tool::ReadSkill(read_skill) => {
             Some(("read_skill".to_string(), serialize_read_skill(read_skill)))
         }
+        api::message::tool_call::Tool::AskUserQuestion(ask_user_question) => Some((
+            "ask_user_question".to_string(),
+            serialize_ask_user_question(ask_user_question),
+        )),
         _ => None,
     };
 
@@ -1021,8 +1325,8 @@ fn serialize_api_tool_call(
 /// Converts a read-files request into the JSON argument format expected by the local backend.
 fn serialize_read_file(file: &api::message::tool_call::read_files::File) -> Value {
     json!({
-        "name": file.name,
-        "line_ranges": file.line_ranges.iter().map(serialize_line_range).collect::<Vec<_>>(),
+        "path": file.name,
+        "ranges": file.line_ranges.iter().map(serialize_line_range_string).collect::<Vec<_>>(),
     })
 }
 
@@ -1032,6 +1336,11 @@ fn serialize_line_range(range: &api::FileContentLineRange) -> Value {
         "start": range.start,
         "end": range.end,
     })
+}
+
+/// Converts a single file line range into the official string range format.
+fn serialize_line_range_string(range: &api::FileContentLineRange) -> String {
+    format!("{}-{}", range.start, range.end)
 }
 
 /// Converts a file diff entry into the local JSON format.
@@ -1147,6 +1456,131 @@ fn serialize_suggest_prompt(suggest_prompt: &api::message::tool_call::SuggestPro
     Value::Object(payload)
 }
 
+/// Converts insert-review-comments into the official JSON argument format.
+fn serialize_insert_review_comments(
+    insert_review_comments: &api::message::tool_call::InsertReviewComments,
+) -> Value {
+    json!({
+        "local_repository_path": insert_review_comments.repo_path,
+        "base_branch": insert_review_comments.base_branch,
+        "comments": insert_review_comments.comments.iter().map(serialize_insert_review_comment).collect::<Vec<_>>(),
+    })
+}
+
+/// Converts a single insert-review-comment into the official JSON argument format.
+fn serialize_insert_review_comment(
+    comment: &api::message::tool_call::insert_review_comments::Comment,
+) -> Value {
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "comment_id".to_string(),
+        Value::String(comment.comment_id.clone()),
+    );
+    payload.insert("author".to_string(), Value::String(comment.author.clone()));
+    payload.insert(
+        "last_modified_timestamp".to_string(),
+        Value::String(comment.last_modified_timestamp.clone()),
+    );
+    payload.insert(
+        "comment_body".to_string(),
+        Value::String(comment.comment_body.clone()),
+    );
+    payload.insert(
+        "html_url".to_string(),
+        Value::String(comment.html_url.clone()),
+    );
+
+    if !comment.parent_comment_id.is_empty() {
+        payload.insert(
+            "reply_metadata".to_string(),
+            json!({
+                "parent_comment_id": comment.parent_comment_id,
+            }),
+        );
+    } else if let Some(location) = comment.location.as_ref() {
+        payload.insert(
+            "location_metadata".to_string(),
+            serialize_insert_review_comment_location(location),
+        );
+    }
+
+    Value::Object(payload)
+}
+
+/// Converts a comment location into the official JSON argument format.
+fn serialize_insert_review_comment_location(
+    location: &api::message::tool_call::insert_review_comments::CommentLocation,
+) -> Value {
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "filepath".to_string(),
+        Value::String(location.file_path.clone()),
+    );
+
+    if let Some(line) = location.line.as_ref() {
+        payload.insert(
+            "diff_hunk".to_string(),
+            Value::String(line.diff_hunk.clone()),
+        );
+        if let Some(range) = line.range.as_ref() {
+            payload.insert("start_line".to_string(), Value::Number(range.start.into()));
+            payload.insert("end_line".to_string(), Value::Number(range.end.into()));
+        }
+        if let Some(side) = review_comment_side_name(line.side) {
+            payload.insert("side".to_string(), Value::String(side.to_string()));
+        }
+    }
+
+    Value::Object(payload)
+}
+
+/// Converts ask-user-question into the official JSON argument format.
+fn serialize_ask_user_question(ask_user_question: &api::AskUserQuestion) -> Value {
+    json!({
+        "questions": ask_user_question.questions.iter().map(serialize_ask_user_question_item).collect::<Vec<_>>(),
+    })
+}
+
+/// Converts a single ask-user-question item into the official JSON argument format.
+fn serialize_ask_user_question_item(question: &api::ask_user_question::Question) -> Value {
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "question".to_string(),
+        Value::String(question.question.clone()),
+    );
+    if let Some(api::ask_user_question::question::QuestionType::MultipleChoice(mc)) =
+        question.question_type.as_ref()
+    {
+        payload.insert(
+            "options".to_string(),
+            Value::Array(
+                mc.options
+                    .iter()
+                    .map(|option| Value::String(option.label.clone()))
+                    .collect(),
+            ),
+        );
+        payload.insert(
+            "type".to_string(),
+            Value::String(
+                if mc.is_multiselect {
+                    "multi_select"
+                } else {
+                    "single_select"
+                }
+                .to_string(),
+            ),
+        );
+        if !mc.is_multiselect && mc.recommended_option_index >= 0 {
+            payload.insert(
+                "recommended_option_index".to_string(),
+                Value::Number(mc.recommended_option_index.into()),
+            );
+        }
+    }
+    Value::Object(payload)
+}
+
 /// Converts a read-skill tool call into the local JSON argument format.
 fn serialize_read_skill(read_skill: &api::message::tool_call::ReadSkill) -> Value {
     let mut payload = serde_json::Map::new();
@@ -1214,6 +1648,14 @@ fn risk_category_name(risk_category: i32) -> Option<&'static str> {
         api::RiskCategory::NontrivialLocalChange => Some("nontrivial_local_change"),
         api::RiskCategory::ExternalChange => Some("external_change"),
         api::RiskCategory::Risky => Some("risky"),
+    }
+}
+
+/// Returns the official diff-side string for a persisted review comment side.
+fn review_comment_side_name(side: i32) -> Option<&'static str> {
+    match api::message::tool_call::insert_review_comments::CommentSide::try_from(side).ok()? {
+        api::message::tool_call::insert_review_comments::CommentSide::New => Some("RIGHT"),
+        api::message::tool_call::insert_review_comments::CommentSide::Old => Some("LEFT"),
     }
 }
 

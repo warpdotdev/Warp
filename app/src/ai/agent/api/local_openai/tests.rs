@@ -1,7 +1,13 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use ai::agent::action_result::{AIAgentActionResultType, ReadFilesResult};
+use ai::agent::action_result::{
+    AIAgentActionResultType, AnyFileContent, AskUserQuestionAnswerItem, AskUserQuestionResult,
+    FileContext, ReadFilesResult, ReadShellCommandOutputResult, ReadSkillResult,
+    RequestCommandOutputResult, SearchCodebaseResult, WriteToLongRunningShellCommandResult,
+};
+use warp_core::command::ExitCode;
+use warp_terminal::model::BlockId;
 use warp_multi_agent_api as api;
 
 use super::request::{
@@ -14,7 +20,7 @@ use super::stream::{
     handle_responses_stream_message, handle_streamed_output_item_done,
     update_agent_output_text_event,
 };
-use super::tool_calls::parse_read_file;
+use super::tool_calls::{parse_read_file, parse_tool_call};
 use super::types::{
     ResponsesApiResponse, ResponsesContentItem, ResponsesFunctionCallArgumentsDoneEvent,
     ResponsesOutputItem, ResponsesOutputTextAnnotation, ResponsesReasoningSummaryPart,
@@ -22,13 +28,13 @@ use super::types::{
     StreamingTextMessageState,
 };
 use super::*;
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::task::TaskId;
 use crate::ai::agent::AIAgentActionResult;
 use crate::ai::agent::AIAgentContext;
 use crate::ai::agent::AIAgentInput;
 use crate::ai::agent::MCPContext;
 use crate::ai::agent::MCPServer;
+use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent::task::TaskId;
 use crate::ai::blocklist::SessionContext;
 use crate::ai::llms::{LLMId, LLMProvider};
 
@@ -377,9 +383,9 @@ fn built_in_tool_schemas_include_property_descriptions() {
     );
 }
 
-/// Verifies that the run_shell_command schema exposes proto-backed risk fields.
+/// Verifies that the run_shell_command schema exposes the current execution-mode fields.
 #[test]
-fn run_shell_command_schema_includes_proto_risk_fields() {
+fn run_shell_command_schema_includes_execution_mode_fields() {
     let payload = build_tools_payload(&request_params_for_local_backend_tests());
     let run_shell_schema = payload
         .iter()
@@ -390,7 +396,8 @@ fn run_shell_command_schema_includes_proto_risk_fields() {
         serde_json::json!(false)
     );
     assert!(run_shell_schema["parameters"]["properties"]["uses_pager"].is_object());
-    assert!(run_shell_schema["parameters"]["properties"]["risk_category"].is_object());
+    assert!(run_shell_schema["parameters"]["properties"]["mode"].is_object());
+    assert!(run_shell_schema["parameters"]["properties"]["wait_params"].is_object());
 }
 
 /// Verifies that local Responses requests opt into parallel tool calls without storing provider-side state.
@@ -529,9 +536,11 @@ fn prepare_local_responses_request_includes_web_search_tool_when_enabled() {
         .as_array()
         .expect("tools should serialize as an array");
 
-    assert!(tools
-        .iter()
-        .any(|tool| tool["type"] == serde_json::json!("web_search")));
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool["type"] == serde_json::json!("web_search"))
+    );
     assert_eq!(
         request_body["include"],
         serde_json::json!([
@@ -851,8 +860,10 @@ fn finalize_stream_state_backfills_web_search_and_webpage_citations() {
             _ => None,
         })
         .expect("expected a web-search message");
-    let Some(api::message::web_search::status::Type::Success(success)) =
-        web_search.status.as_ref().and_then(|status| status.r#type.as_ref())
+    let Some(api::message::web_search::status::Type::Success(success)) = web_search
+        .status
+        .as_ref()
+        .and_then(|status| status.r#type.as_ref())
     else {
         panic!("expected a completed web-search status");
     };
@@ -919,8 +930,10 @@ fn streamed_output_item_done_emits_completed_web_search_message() {
             _ => None,
         })
         .expect("expected a web-search message");
-    let Some(api::message::web_search::status::Type::Success(success)) =
-        web_search.status.as_ref().and_then(|status| status.r#type.as_ref())
+    let Some(api::message::web_search::status::Type::Success(success)) = web_search
+        .status
+        .as_ref()
+        .and_then(|status| status.r#type.as_ref())
     else {
         panic!("expected a completed web-search status");
     };
@@ -972,7 +985,9 @@ fn streamed_web_search_searching_event_updates_to_success_on_output_item_done() 
     .expect("web-search output_item.done should parse");
     assert_eq!(done_result.events.len(), 1);
 
-    let done_event = done_result.events[0].as_ref().expect("done event should be ok");
+    let done_event = done_result.events[0]
+        .as_ref()
+        .expect("done event should be ok");
     let Some(api::response_event::Type::ClientActions(done_actions)) = &done_event.r#type else {
         panic!("expected client actions");
     };
@@ -996,8 +1011,10 @@ fn streamed_web_search_searching_event_updates_to_success_on_output_item_done() 
     let Some(api::message::Message::WebSearch(web_search)) = merged.message else {
         panic!("expected web-search message");
     };
-    let Some(api::message::web_search::status::Type::Success(success)) =
-        web_search.status.as_ref().and_then(|status| status.r#type.as_ref())
+    let Some(api::message::web_search::status::Type::Success(success)) = web_search
+        .status
+        .as_ref()
+        .and_then(|status| status.r#type.as_ref())
     else {
         panic!("expected a completed web-search status");
     };
@@ -1022,8 +1039,11 @@ fn streamed_output_item_done_updates_streamed_text_with_citations() {
         &mut accumulator,
     )
     .expect("text delta should parse");
-    let initial_event = delta_result.events[0].as_ref().expect("delta event should be ok");
-    let Some(api::response_event::Type::ClientActions(initial_actions)) = &initial_event.r#type else {
+    let initial_event = delta_result.events[0]
+        .as_ref()
+        .expect("delta event should be ok");
+    let Some(api::response_event::Type::ClientActions(initial_actions)) = &initial_event.r#type
+    else {
         panic!("expected client actions");
     };
     let Some(api::client_action::Action::AddMessagesToTask(initial_add)) =
@@ -1044,7 +1064,9 @@ fn streamed_output_item_done_updates_streamed_text_with_citations() {
     .expect("assistant output_item.done should parse");
     assert_eq!(done_result.events.len(), 1);
 
-    let done_event = done_result.events[0].as_ref().expect("done event should be ok");
+    let done_event = done_result.events[0]
+        .as_ref()
+        .expect("done event should be ok");
     let Some(api::response_event::Type::ClientActions(done_actions)) = &done_event.r#type else {
         panic!("expected client actions");
     };
@@ -1537,14 +1559,12 @@ fn tools_with_optional_fields_disable_strict_mode() {
     assert_eq!(read_documents_schema["strict"], false);
 }
 
-/// Verifies that read_files parsing accepts the proto-shaped line_ranges field.
+/// Verifies that read_files parsing accepts the current string-range field shape.
 #[test]
-fn parse_read_file_supports_line_ranges() {
+fn parse_read_file_supports_string_ranges() {
     let parsed = parse_read_file(&serde_json::json!({
-        "name": "README.md",
-        "line_ranges": [
-            { "start": 1, "end": 5 }
-        ]
+        "path": "README.md",
+        "ranges": ["1-5"]
     }))
     .expect("read_files payload should parse");
 
@@ -1552,6 +1572,63 @@ fn parse_read_file_supports_line_ranges() {
     assert_eq!(parsed.line_ranges.len(), 1);
     assert_eq!(parsed.line_ranges[0].start, 1);
     assert_eq!(parsed.line_ranges[0].end, 5);
+}
+
+/// Verifies that official ask-user-question payloads are accepted by the local parser.
+#[test]
+fn parse_tool_call_supports_ask_user_question() {
+    let tool_call = parse_tool_call(
+        "ask_user_question",
+        serde_json::json!({
+            "questions": [{
+                "question": "Which option should we prefer?",
+                "options": ["First", "Second"],
+                "recommended_option_index": 0,
+                "type": "single_select"
+            }]
+        }),
+    )
+    .expect("ask_user_question should parse");
+
+    let api::message::tool_call::Tool::AskUserQuestion(ask_user_question) = tool_call else {
+        panic!("expected ask_user_question tool call");
+    };
+    assert_eq!(ask_user_question.questions.len(), 1);
+    assert_eq!(ask_user_question.questions[0].question_id, "q1");
+}
+
+/// Verifies that insert-review-comments payloads are accepted by the local parser.
+#[test]
+fn parse_tool_call_supports_insert_review_comments() {
+    let tool_call = parse_tool_call(
+        "insert_review_comments",
+        serde_json::json!({
+            "local_repository_path": "F:/repo",
+            "base_branch": "main",
+            "comments": [{
+                "comment_id": "c1",
+                "author": "reviewer",
+                "last_modified_timestamp": "2026-01-01T00:00:00Z",
+                "comment_body": "Please fix this.",
+                "html_url": "https://example.com/comment",
+                "location_metadata": {
+                    "filepath": "src/lib.rs",
+                    "diff_hunk": "@@ -1,1 +1,1 @@",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "side": "RIGHT"
+                }
+            }]
+        }),
+    )
+    .expect("insert_review_comments should parse");
+
+    let api::message::tool_call::Tool::InsertReviewComments(insert_review_comments) = tool_call
+    else {
+        panic!("expected insert_review_comments tool call");
+    };
+    assert_eq!(insert_review_comments.repo_path, "F:/repo");
+    assert_eq!(insert_review_comments.comments.len(), 1);
 }
 
 /// Verifies that the local backend upgrades the optimistic task on the first turn.
@@ -1601,6 +1678,254 @@ fn convert_inputs_to_response_items_supports_user_query_and_action_result() {
     assert_eq!(items.len(), 2);
     assert_eq!(items[0]["role"], "user");
     assert_eq!(items[1]["type"], "function_call_output");
+}
+
+/// Verifies ask_user_question tool results keep structured answers in function_call_output.
+#[test]
+fn convert_inputs_to_response_items_serializes_ask_user_question_answers() {
+    let inputs = vec![AIAgentInput::ActionResult {
+        result: AIAgentActionResult {
+            id: "call_ask".to_string().into(),
+            task_id: TaskId::new("task".to_string()),
+            result: AIAgentActionResultType::AskUserQuestion(AskUserQuestionResult::Success {
+                answers: vec![
+                    AskUserQuestionAnswerItem::Answered {
+                        question_id: "q1".to_string(),
+                        selected_options: vec!["回答一个具体问题".to_string()],
+                        other_text: String::new(),
+                    },
+                    AskUserQuestionAnswerItem::Skipped {
+                        question_id: "q2".to_string(),
+                    },
+                ],
+            }),
+        },
+        context: std::sync::Arc::new([]),
+    }];
+
+    let items = convert_inputs_to_response_items(&inputs).expect("inputs should convert");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["type"], "function_call_output");
+    assert_eq!(items[0]["call_id"], "call_ask");
+
+    let output = items[0]["output"]
+        .as_str()
+        .expect("ask_user_question output should be a string");
+    let output: serde_json::Value =
+        serde_json::from_str(output).expect("ask_user_question output should be valid json");
+    assert_eq!(output["status"], "success");
+    assert_eq!(output["answers"][0]["question_id"], "q1");
+    assert_eq!(output["answers"][0]["selected_options"][0], "回答一个具体问题");
+    assert_eq!(output["answers"][0]["other_text"], "");
+    assert_eq!(output["answers"][1]["question_id"], "q2");
+    assert_eq!(output["answers"][1]["skipped"], true);
+}
+
+/// Verifies shell-related tool results retain structured fields in function_call_output.
+#[test]
+fn convert_inputs_to_response_items_serializes_shell_tool_results() {
+    let inputs = vec![
+        AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "call_run".to_string().into(),
+                task_id: TaskId::new("task".to_string()),
+                result: AIAgentActionResultType::RequestCommandOutput(
+                    RequestCommandOutputResult::Completed {
+                        block_id: BlockId::from("cmd-1".to_string()),
+                        command: "rg TODO .".to_string(),
+                        output: "src/main.rs:12: TODO".to_string(),
+                        exit_code: ExitCode::from(0),
+                    },
+                ),
+            },
+            context: std::sync::Arc::new([]),
+        },
+        AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "call_write".to_string().into(),
+                task_id: TaskId::new("task".to_string()),
+                result: AIAgentActionResultType::WriteToLongRunningShellCommand(
+                    WriteToLongRunningShellCommandResult::Snapshot {
+                        block_id: BlockId::from("cmd-2".to_string()),
+                        grid_contents: "dev server ready".to_string(),
+                        cursor: ">".to_string(),
+                        is_alt_screen_active: false,
+                        is_preempted: true,
+                    },
+                ),
+            },
+            context: std::sync::Arc::new([]),
+        },
+        AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "call_read_output".to_string().into(),
+                task_id: TaskId::new("task".to_string()),
+                result: AIAgentActionResultType::ReadShellCommandOutput(
+                    ReadShellCommandOutputResult::LongRunningCommandSnapshot {
+                        command: "npm run dev".to_string(),
+                        block_id: BlockId::from("cmd-3".to_string()),
+                        grid_contents: "listening on 3000".to_string(),
+                        cursor: "_".to_string(),
+                        is_alt_screen_active: true,
+                        is_preempted: false,
+                    },
+                ),
+            },
+            context: std::sync::Arc::new([]),
+        },
+    ];
+
+    let items = convert_inputs_to_response_items(&inputs).expect("inputs should convert");
+    assert_eq!(items.len(), 3);
+
+    let run_output: serde_json::Value = serde_json::from_str(
+        items[0]["output"]
+            .as_str()
+            .expect("run_shell_command output should be a string"),
+    )
+    .expect("run_shell_command output should be valid json");
+    assert_eq!(run_output["status"], "completed");
+    assert_eq!(run_output["command"], "rg TODO .");
+    assert_eq!(run_output["command_id"], "cmd-1");
+    assert_eq!(run_output["output"], "src/main.rs:12: TODO");
+    assert_eq!(run_output["exit_code"], 0);
+
+    let write_output: serde_json::Value = serde_json::from_str(
+        items[1]["output"]
+            .as_str()
+            .expect("write_to_long_running_shell_command output should be a string"),
+    )
+    .expect("write_to_long_running_shell_command output should be valid json");
+    assert_eq!(write_output["status"], "long_running");
+    assert_eq!(write_output["command_id"], "cmd-2");
+    assert_eq!(write_output["output"], "dev server ready");
+    assert_eq!(write_output["cursor"], ">");
+    assert_eq!(write_output["is_preempted"], true);
+
+    let read_output: serde_json::Value = serde_json::from_str(
+        items[2]["output"]
+            .as_str()
+            .expect("read_shell_command_output output should be a string"),
+    )
+    .expect("read_shell_command_output output should be valid json");
+    assert_eq!(read_output["status"], "long_running");
+    assert_eq!(read_output["command"], "npm run dev");
+    assert_eq!(read_output["command_id"], "cmd-3");
+    assert_eq!(read_output["output"], "listening on 3000");
+    assert_eq!(read_output["cursor"], "_");
+    assert_eq!(read_output["is_alt_screen_active"], true);
+}
+
+/// Verifies file-oriented tool results keep structured content in function_call_output.
+#[test]
+fn convert_inputs_to_response_items_serializes_file_and_search_results() {
+    let inputs = vec![
+        AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "call_read_files".to_string().into(),
+                task_id: TaskId::new("task".to_string()),
+                result: AIAgentActionResultType::ReadFiles(ReadFilesResult::Success {
+                    files: vec![
+                        FileContext::new(
+                            "src/lib.rs".to_string(),
+                            AnyFileContent::StringContent("fn main() {}\n".to_string()),
+                            Some(1..2),
+                            None,
+                        ),
+                        FileContext::new(
+                            "assets/logo.png".to_string(),
+                            AnyFileContent::BinaryContent(vec![1, 2, 3, 4]),
+                            None,
+                            None,
+                        ),
+                    ],
+                }),
+            },
+            context: std::sync::Arc::new([]),
+        },
+        AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "call_search".to_string().into(),
+                task_id: TaskId::new("task".to_string()),
+                result: AIAgentActionResultType::SearchCodebase(SearchCodebaseResult::Success {
+                    files: vec![FileContext::new(
+                        "src/search.rs".to_string(),
+                        AnyFileContent::StringContent("pub fn search() {}\n".to_string()),
+                        None,
+                        None,
+                    )],
+                }),
+            },
+            context: std::sync::Arc::new([]),
+        },
+    ];
+
+    let items = convert_inputs_to_response_items(&inputs).expect("inputs should convert");
+    assert_eq!(items.len(), 2);
+
+    let read_files_output: serde_json::Value = serde_json::from_str(
+        items[0]["output"]
+            .as_str()
+            .expect("read_files output should be a string"),
+    )
+    .expect("read_files output should be valid json");
+    assert_eq!(read_files_output["status"], "success");
+    assert_eq!(read_files_output["files"][0]["file_path"], "src/lib.rs");
+    assert_eq!(read_files_output["files"][0]["line_range"]["start"], 1);
+    assert_eq!(read_files_output["files"][0]["line_range"]["end"], 2);
+    assert_eq!(read_files_output["files"][0]["content_type"], "text");
+    assert_eq!(read_files_output["files"][0]["content"], "fn main() {}\n");
+    assert_eq!(read_files_output["files"][1]["file_path"], "assets/logo.png");
+    assert_eq!(read_files_output["files"][1]["content_type"], "binary");
+    assert_eq!(read_files_output["files"][1]["content"], "<binary>");
+    assert_eq!(read_files_output["files"][1]["size_bytes"], 4);
+
+    let search_output: serde_json::Value = serde_json::from_str(
+        items[1]["output"]
+            .as_str()
+            .expect("search_codebase output should be a string"),
+    )
+    .expect("search_codebase output should be valid json");
+    assert_eq!(search_output["status"], "success");
+    assert_eq!(search_output["files"][0]["file_path"], "src/search.rs");
+    assert_eq!(search_output["files"][0]["content"], "pub fn search() {}\n");
+}
+
+/// Verifies read_skill results return the skill path and content in function_call_output.
+#[test]
+fn convert_inputs_to_response_items_serializes_read_skill_results() {
+    let inputs = vec![AIAgentInput::ActionResult {
+        result: AIAgentActionResult {
+            id: "call_skill".to_string().into(),
+            task_id: TaskId::new("task".to_string()),
+            result: AIAgentActionResultType::ReadSkill(ReadSkillResult::Success {
+                content: FileContext::new(
+                    "skills/test/SKILL.md".to_string(),
+                    AnyFileContent::StringContent("# Test Skill\nFollow the instructions.\n".to_string()),
+                    None,
+                    None,
+                ),
+            }),
+        },
+        context: std::sync::Arc::new([]),
+    }];
+
+    let items = convert_inputs_to_response_items(&inputs).expect("inputs should convert");
+    assert_eq!(items.len(), 1);
+
+    let output: serde_json::Value = serde_json::from_str(
+        items[0]["output"]
+            .as_str()
+            .expect("read_skill output should be a string"),
+    )
+    .expect("read_skill output should be valid json");
+    assert_eq!(output["status"], "success");
+    assert_eq!(output["skill"]["file_path"], "skills/test/SKILL.md");
+    assert_eq!(output["skill"]["content_type"], "text");
+    assert_eq!(
+        output["skill"]["content"],
+        "# Test Skill\nFollow the instructions.\n"
+    );
 }
 
 /// Verifies that local request inputs are mirrored into persisted task messages for restore.
@@ -1741,10 +2066,12 @@ fn task_history_response_items_restore_prior_messages() {
                         r#type: Some(api::message::web_search::status::Type::Success(
                             api::message::web_search::status::Success {
                                 query: "prior question".to_string(),
-                                pages: vec![api::message::web_search::status::success::SearchedPage {
-                                    url: "https://example.com/prior-answer".to_string(),
-                                    title: "Prior Answer".to_string(),
-                                }],
+                                pages: vec![
+                                    api::message::web_search::status::success::SearchedPage {
+                                        url: "https://example.com/prior-answer".to_string(),
+                                        title: "Prior Answer".to_string(),
+                                    },
+                                ],
                             },
                         )),
                     }),

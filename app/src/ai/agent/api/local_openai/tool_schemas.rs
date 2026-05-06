@@ -1,6 +1,6 @@
 //! OpenAI function schema registry for Warp's built-in local backend tools.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use warp_multi_agent_api as api;
 
 /// Returns the OpenAI function schema for a built-in Warp tool, if one is exposed locally.
@@ -8,100 +8,102 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
     match tool_type {
         api::ToolType::RunShellCommand => Some(function_schema(
             "run_shell_command",
-            "Run a shell command in the user's workspace.",
-            object_schema(
-                vec![
-                    (
-                        "command",
-                        string_schema(
-                            "The exact shell command to execute in the current workspace.",
-                        ),
+            "Execute a shell command on user's machine.\n\nTwo modes of execution are available:\n- 'wait': The command runs to completion. Use this for short-lived, non-interactive commands where you only need the final output.\n- 'interact': The command is executed and control is handed off to a subagent that can monitor or interact with it in real time. Use this for long-running or interactive processes such as REPLs, dev servers, or TUIs.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "command": string_schema(
+                        "A shell command to execute.\n\nAny parameters should be enclosed in double braces, e.g. {{param_name}}. Take into account the user's shell type - for example, do not request unix commands if the user is running Powershell (pwsh) on Windows."
                     ),
-                    (
-                        "is_read_only",
-                        boolean_schema(
-                            "Whether the command is expected to be read-only and avoid filesystem changes.",
-                        ),
+                    "mode": enum_schema(
+                        "Determines the execution \"mode\" for the command. Must be oneof [\"wait\", \"interact\"].",
+                        ["wait", "interact"],
                     ),
-                    (
-                        "uses_pager",
-                        boolean_schema(
-                            "Whether the command is expected to launch a pager-like interface.",
-                        ),
+                    "is_read_only": boolean_schema(
+                        "Whether the shell command is fully read-only and does not produce side-effects. If you are unsure, return false."
                     ),
-                    (
-                        "is_risky",
-                        boolean_schema(
-                            "Whether the agent believes the command is risky and should be user-approved.",
-                        ),
+                    "uses_pager": boolean_schema(
+                        "Whether the shell command might use a pager. You MUST set this to true for commands like git log, git diff, less, man.\nMAKE SURE you set uses_pager to true if a command might cause pagination. Otherwise, the command will break. If you are unsure, return true."
                     ),
-                    (
-                        "wait_until_complete",
-                        boolean_schema(
-                            "Whether Warp should wait for the command to finish before returning a result.",
-                        ),
+                    "is_risky": boolean_schema(
+                        "Whether the shell command could produce dangerous or unwanted side effects. If you are unsure, return true."
                     ),
-                    (
-                        "risk_category",
-                        enum_schema(
-                            "A finer-grained risk classification that clients should prefer over the deprecated read-only and risky booleans.",
-                            [
-                                "unspecified",
-                                "read_only",
-                                "trivial_local_change",
-                                "nontrivial_local_change",
-                                "external_change",
-                                "risky",
-                            ],
-                        ),
+                    "interact_task": string_schema(
+                        "Specify only when mode is \"interact\". The task instructions to be given to the subagent."
                     ),
-                ],
-                ["command"],
-            ),
+                    "wait_params": object_schema(
+                        vec![
+                            (
+                                "reason",
+                                string_schema(
+                                    "Explain WHY you're running the command and WHAT specific information you need from the output. Use no more than one sentence."
+                                ),
+                            ),
+                            (
+                                "do_not_summarize_output",
+                                boolean_schema(
+                                    "Whether to disable condensation of large command output. If unsure, use false."
+                                ),
+                            ),
+                            (
+                                "expected_duration_seconds",
+                                number_schema(
+                                    "How long you expect the command to take to complete in seconds. Optional but recommended."
+                                ),
+                            ),
+                        ],
+                        ["reason", "do_not_summarize_output"],
+                    ),
+                    "citations": json!({
+                        "type": "object",
+                        "description": "A list of citations for the command. These MUST be populated if the command was derived from external context OR any of the user's rules. These MUST be formatted in JSON.",
+                        "properties": {
+                            "documents": {
+                                "type": "array",
+                                "items": object_schema(
+                                    vec![
+                                        ("document_type", string_schema("The citation document type.")),
+                                        ("document_id", string_schema("The citation document identifier.")),
+                                    ],
+                                    ["document_type", "document_id"],
+                                ),
+                            }
+                        },
+                        "additionalProperties": false
+                    }),
+                },
+                "required": ["command", "is_read_only", "uses_pager", "is_risky", "mode"],
+                "additionalProperties": false,
+            }),
             false,
         )),
         api::ToolType::ReadFiles => Some(function_schema(
             "read_files",
-            "Read one or more files from the workspace.",
-            object_schema(
-                vec![(
-                    "files",
-                    array_schema(
-                        "The files and optional line ranges to read.",
-                        object_schema(
-                            vec![
-                                (
-                                    "name",
-                                    string_schema(
-                                        "The absolute or workspace-relative path of the file to read.",
-                                    ),
-                                ),
-                                (
-                                    "line_ranges",
-                                    array_schema(
-                                        "Optional 1-based line ranges to read. If omitted, Warp reads the entire file.",
-                                        object_schema(
-                                            vec![
-                                                (
-                                                    "start",
-                                                    integer_schema("The inclusive 1-based starting line number."),
-                                                ),
-                                                (
-                                                    "end",
-                                                    integer_schema("The inclusive 1-based ending line number."),
-                                                ),
-                                            ],
-                                            ["start", "end"],
-                                        ),
-                                    ),
-                                ),
-                            ],
-                            ["name"],
-                        ),
-                    ),
-                )],
-                ["files"],
-            ),
+            "Reads the contents of specified files from the local filesystem. You can access any file directly by using this tool.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "description": "A list of files to read.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": string_schema("Absolute path to the file."),
+                                "ranges": {
+                                    "type": "array",
+                                    "description": "Optional list of specific, non-overlapping line ranges to be retrieved. Each range should be formatted as a string \"start-end\". Omit to retrieve the entire file.",
+                                    "items": { "type": "string" }
+                                }
+                            },
+                            "required": ["path"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["files"],
+                "additionalProperties": false
+            }),
             false,
         )),
         api::ToolType::SearchCodebase => Some(function_schema(
@@ -111,7 +113,9 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                 vec![
                     (
                         "query",
-                        string_schema("The semantic search query to run against the indexed codebase."),
+                        string_schema(
+                            "The semantic search query to run against the indexed codebase.",
+                        ),
                     ),
                     (
                         "path_filters",
@@ -133,20 +137,22 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
         )),
         api::ToolType::Grep => Some(function_schema(
             "grep",
-            "Run grep-like text searches in the workspace.",
+            "A powerful and fast search tool that operates like grep.",
             object_schema(
                 vec![
                     (
                         "queries",
                         array_schema(
-                            "One or more literal or regex-like search terms to run.",
-                            string_schema("A search query to match in file contents."),
+                            "A list of search terms or patterns to look for within files. The search will match any of the provided queries. Each query in the list is interpreted as an Extended Regular Expression (ERE).",
+                            string_schema(
+                                "A search query or ERE pattern to match in file contents.",
+                            ),
                         ),
                     ),
                     (
                         "path",
                         string_schema(
-                            "The directory path within the workspace where the grep search should run.",
+                            "The absolute path to the directory to search in.\n\nThe path must be a directory, not a file. Directories are searched recursively.",
                         ),
                     ),
                 ],
@@ -154,60 +160,26 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
             ),
             true,
         )),
-        api::ToolType::FileGlob => Some(function_schema(
+        api::ToolType::FileGlob => None,
+        api::ToolType::FileGlob | api::ToolType::FileGlobV2 => Some(function_schema(
             "file_glob",
-            "Find files by glob pattern.",
-            object_schema(
-                vec![
-                    (
-                        "patterns",
-                        array_schema(
-                            "One or more glob patterns to evaluate.",
-                            string_schema("A glob pattern such as src/**/*.rs."),
-                        ),
-                    ),
-                    (
-                        "path",
-                        string_schema(
-                            "Optional directory path that scopes the glob search.",
-                        ),
-                    ),
-                ],
-                ["patterns"],
-            ),
-            false,
-        )),
-        api::ToolType::FileGlobV2 => Some(function_schema(
-            "file_glob_v2",
-            "Find files by glob pattern with directory controls.",
-            object_schema(
-                vec![
-                    (
-                        "patterns",
-                        array_schema(
-                            "One or more glob patterns to evaluate.",
-                            string_schema("A glob pattern such as src/**/*.rs."),
-                        ),
-                    ),
-                    (
-                        "search_dir",
-                        string_schema("Optional directory path where the glob search should begin."),
-                    ),
-                    (
-                        "max_matches",
-                        integer_schema("Optional maximum number of matching files to return."),
-                    ),
-                    (
-                        "max_depth",
-                        integer_schema("Optional maximum directory traversal depth."),
-                    ),
-                    (
-                        "min_depth",
-                        integer_schema("Optional minimum directory traversal depth."),
-                    ),
-                ],
-                ["patterns"],
-            ),
+            "Usage:\n- Use this tool when you need to find files by name patterns rather than content.\n- Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\".\n- Does not match directories (like `find -type f`).",
+            json!({
+                "type": "object",
+                "properties": {
+                    "patterns": {
+                        "type": "array",
+                        "description": "The regex patterns to match files against. Multiple patterns can be provided to match different file types. Only basic *, ?, [ ] patterns are supported.",
+                        "items": { "type": "string" }
+                    },
+                    "search_dir": string_schema("The absolute path to the directory to search in.\n\nThe path must be a directory, not a file. Directories are searched recursively. If not provided, the current working directory will be used."),
+                    "max_matches": integer_schema("The maximum number of matches to list. If 0, the default is unlimited."),
+                    "max_depth": integer_schema("The maximum depth to search. If 0, the default is unlimited."),
+                    "min_depth": integer_schema("The minimum depth to search. If 0, the default is no minimum."),
+                },
+                "required": ["patterns", "search_dir", "max_matches", "max_depth", "min_depth"],
+                "additionalProperties": false
+            }),
             false,
         )),
         api::ToolType::ApplyFileDiffs => Some(function_schema(
@@ -225,18 +197,12 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                             "Search-and-replace edits to apply to existing files.",
                             object_schema(
                                 vec![
-                                    (
-                                        "file_path",
-                                        string_schema("The file to update."),
-                                    ),
+                                    ("file_path", string_schema("The file to update.")),
                                     (
                                         "search",
                                         string_schema("The exact text to find in the file."),
                                     ),
-                                    (
-                                        "replace",
-                                        string_schema("The replacement text to write."),
-                                    ),
+                                    ("replace", string_schema("The replacement text to write.")),
                                 ],
                                 ["file_path", "search", "replace"],
                             ),
@@ -252,10 +218,7 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                                         "file_path",
                                         string_schema("The path of the new file to create."),
                                     ),
-                                    (
-                                        "content",
-                                        string_schema("The full file contents to write."),
-                                    ),
+                                    ("content", string_schema("The full file contents to write.")),
                                 ],
                                 ["file_path", "content"],
                             ),
@@ -280,13 +243,12 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                             "Structured V4A patch updates for advanced file edits and moves.",
                             object_schema(
                                 vec![
-                                    (
-                                        "file_path",
-                                        string_schema("The file to update."),
-                                    ),
+                                    ("file_path", string_schema("The file to update.")),
                                     (
                                         "move_to",
-                                        string_schema("Optional new destination path if the file should be moved."),
+                                        string_schema(
+                                            "Optional new destination path if the file should be moved.",
+                                        ),
                                     ),
                                     (
                                         "hunks",
@@ -303,19 +265,27 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                                                     ),
                                                     (
                                                         "pre_context",
-                                                        string_schema("Context immediately before the changed block."),
+                                                        string_schema(
+                                                            "Context immediately before the changed block.",
+                                                        ),
                                                     ),
                                                     (
                                                         "old",
-                                                        string_schema("The original text being replaced."),
+                                                        string_schema(
+                                                            "The original text being replaced.",
+                                                        ),
                                                     ),
                                                     (
                                                         "new",
-                                                        string_schema("The new text that should replace the original."),
+                                                        string_schema(
+                                                            "The new text that should replace the original.",
+                                                        ),
                                                     ),
                                                     (
                                                         "post_context",
-                                                        string_schema("Context immediately after the changed block."),
+                                                        string_schema(
+                                                            "Context immediately after the changed block.",
+                                                        ),
                                                     ),
                                                 ],
                                                 [],
@@ -337,13 +307,12 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
             "Read a resource exposed by an MCP server.",
             object_schema(
                 vec![
-                    (
-                        "uri",
-                        string_schema("The MCP resource URI to read."),
-                    ),
+                    ("uri", string_schema("The MCP resource URI to read.")),
                     (
                         "server_id",
-                        string_schema("Optional MCP server identifier when multiple servers are active."),
+                        string_schema(
+                            "Optional MCP server identifier when multiple servers are active.",
+                        ),
                     ),
                 ],
                 ["uri"],
@@ -357,7 +326,9 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                 vec![
                     (
                         "command_id",
-                        string_schema("The long-running command identifier previously returned by Warp."),
+                        string_schema(
+                            "The long-running command identifier previously returned by Warp.",
+                        ),
                     ),
                     (
                         "input",
@@ -386,11 +357,15 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                     ),
                     (
                         "delay_seconds",
-                        integer_schema("Optional delay in whole seconds before Warp returns command output."),
+                        integer_schema(
+                            "Optional delay in whole seconds before Warp returns command output.",
+                        ),
                     ),
                     (
                         "on_completion",
-                        boolean_schema("If true, wait until the command completes before returning output."),
+                        boolean_schema(
+                            "If true, wait until the command completes before returning output.",
+                        ),
                     ),
                 ],
                 ["command_id"],
@@ -403,7 +378,9 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
             object_schema(
                 vec![(
                     "message_id",
-                    string_schema("The message that should become the split point for a new conversation."),
+                    string_schema(
+                        "The message that should become the split point for a new conversation.",
+                    ),
                 )],
                 ["message_id"],
             ),
@@ -429,8 +406,18 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                                         "Optional 1-based line ranges to read. If omitted, Warp reads the entire document.",
                                         object_schema(
                                             vec![
-                                                ("start", integer_schema("The inclusive 1-based starting line number.")),
-                                                ("end", integer_schema("The inclusive 1-based ending line number.")),
+                                                (
+                                                    "start",
+                                                    integer_schema(
+                                                        "The inclusive 1-based starting line number.",
+                                                    ),
+                                                ),
+                                                (
+                                                    "end",
+                                                    integer_schema(
+                                                        "The inclusive 1-based ending line number.",
+                                                    ),
+                                                ),
                                             ],
                                             ["start", "end"],
                                         ),
@@ -455,8 +442,14 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                         "Search-and-replace edits to apply to existing documents.",
                         object_schema(
                             vec![
-                                ("document_id", string_schema("The document identifier to update.")),
-                                ("search", string_schema("The exact text to find in the document.")),
+                                (
+                                    "document_id",
+                                    string_schema("The document identifier to update."),
+                                ),
+                                (
+                                    "search",
+                                    string_schema("The exact text to find in the document."),
+                                ),
                                 ("replace", string_schema("The replacement text to write.")),
                             ],
                             ["document_id", "search", "replace"],
@@ -477,8 +470,16 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                         "The documents to create.",
                         object_schema(
                             vec![
-                                ("content", string_schema("The full contents of the new document.")),
-                                ("title", string_schema("An optional human-readable title for the new document.")),
+                                (
+                                    "content",
+                                    string_schema("The full contents of the new document."),
+                                ),
+                                (
+                                    "title",
+                                    string_schema(
+                                        "An optional human-readable title for the new document.",
+                                    ),
+                                ),
                             ],
                             ["content"],
                         ),
@@ -506,7 +507,9 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                     ),
                     (
                         "description",
-                        string_schema("The descriptive text shown for an inline query banner suggestion."),
+                        string_schema(
+                            "The descriptive text shown for an inline query banner suggestion.",
+                        ),
                     ),
                     (
                         "query",
@@ -522,7 +525,9 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                     ),
                     (
                         "is_trigger_irrelevant",
-                        boolean_schema("Whether the original trigger is unrelated to the suggestion itself."),
+                        boolean_schema(
+                            "Whether the original trigger is unrelated to the suggestion itself.",
+                        ),
                     ),
                 ],
                 ["display_mode"],
@@ -534,6 +539,36 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
             "Trigger the client to open the code review pane.",
             object_schema(vec![], []),
             true,
+        )),
+        api::ToolType::InsertReviewComments => Some(function_schema(
+            "insert_review_comments",
+            "Send code review comments to the user so that they can be displayed in the appropriate UI.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "local_repository_path": string_schema("The absolute path of the repository on the user's machine."),
+                    "base_branch": string_schema("The name of the base branch the PR is targeting (e.g. \"main\", \"develop\")."),
+                    "comments": {
+                        "type": "array",
+                        "description": "A list of code review comments to display to the user.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "comment_id": string_schema("Unique identifier for the review comment."),
+                                "author": string_schema("The author of the comment."),
+                                "last_modified_timestamp": string_schema("Timestamp when the comment was last modified."),
+                                "comment_body": string_schema("The content of the review comment."),
+                                "html_url": string_schema("The URL to view this comment in GitHub's web UI."),
+                            },
+                            "required": ["comment_id", "author", "last_modified_timestamp", "comment_body", "html_url"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["local_repository_path", "base_branch", "comments"],
+                "additionalProperties": false
+            }),
+            false,
         )),
         api::ToolType::InitProject => Some(function_schema(
             "init_project",
@@ -547,7 +582,9 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
             object_schema(
                 vec![(
                     "conversation_id",
-                    string_schema("Optional conversation identifier to fetch. Leave empty to target the current conversation."),
+                    string_schema(
+                        "Optional conversation identifier to fetch. Leave empty to target the current conversation.",
+                    ),
                 )],
                 [],
             ),
@@ -555,7 +592,7 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
         )),
         api::ToolType::ReadSkill => Some(function_schema(
             "read_skill",
-            "Read a skill from disk or from the bundled client skills.",
+            "Read a skill by identifier to get its content and instructions.\n\nYou only need to provide one of bundled_skill_id and skill_path.",
             object_schema(
                 vec![
                     (
@@ -566,13 +603,43 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
                         "bundled_skill_id",
                         string_schema("The identifier of a skill bundled with the client."),
                     ),
-                    (
-                        "name",
-                        string_schema("The human-readable name of the skill."),
-                    ),
                 ],
                 [],
             ),
+            false,
+        )),
+        api::ToolType::AskUserQuestion => Some(function_schema(
+            "ask_user_question",
+            "Ask the user one or more clarifying questions.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "questions": {
+                        "type": "array",
+                        "description": "A single clarifying question to present to the user.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "question": string_schema("The question text to present to the user."),
+                                "options": {
+                                    "type": "array",
+                                    "description": "The list of selectable options. Must contain at least 2 options. Do NOT include an \"Other\" option.",
+                                    "items": { "type": "string" }
+                                },
+                                "recommended_option_index": integer_schema("Zero-based index into options identifying the recommended choice. Only valid for single_select questions; do not set for multi_select. Omit if no recommendation."),
+                                "type": enum_schema(
+                                    "Whether the user picks exactly one option (\"single_select\") or may pick several (\"multi_select\").",
+                                    ["single_select", "multi_select"],
+                                ),
+                            },
+                            "required": ["question", "options", "type"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["questions"],
+                "additionalProperties": false
+            }),
             false,
         )),
         // MCP tools are exposed through their own rich per-server schemas instead of this generic shell.
@@ -628,6 +695,14 @@ fn boolean_schema(description: &str) -> Value {
 fn integer_schema(description: &str) -> Value {
     json!({
         "type": "integer",
+        "description": description,
+    })
+}
+
+/// Builds a JSON Schema number field with a description.
+fn number_schema(description: &str) -> Value {
+    json!({
+        "type": "number",
         "description": description,
     })
 }

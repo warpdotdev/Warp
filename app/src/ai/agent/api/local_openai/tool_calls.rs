@@ -45,6 +45,10 @@ pub(super) fn parse_tool_call(
                 wait_until_complete_value: arguments
                     .get("wait_until_complete")
                     .and_then(Value::as_bool)
+                    .or_else(|| {
+                        optional_string(&arguments, "mode")
+                            .map(|mode| mode == "wait")
+                    })
                     .map(
                         api::message::tool_call::run_shell_command::WaitUntilCompleteValue::WaitUntilComplete,
                     ),
@@ -73,16 +77,12 @@ pub(super) fn parse_tool_call(
             queries: required_string_array(&arguments, "queries")?,
             path: required_string(&arguments, "path")?,
         })),
-        "file_glob" => Ok(api::message::tool_call::Tool::FileGlob(
-            api::message::tool_call::FileGlob {
-                patterns: required_string_array(&arguments, "patterns")?,
-                path: optional_string(&arguments, "path").unwrap_or_default(),
-            },
-        )),
-        "file_glob_v2" => Ok(api::message::tool_call::Tool::FileGlobV2(
+        "file_glob" | "file_glob_v2" => Ok(api::message::tool_call::Tool::FileGlobV2(
             api::message::tool_call::FileGlobV2 {
                 patterns: required_string_array(&arguments, "patterns")?,
-                search_dir: optional_string(&arguments, "search_dir").unwrap_or_default(),
+                search_dir: optional_string(&arguments, "search_dir")
+                    .or_else(|| optional_string(&arguments, "path"))
+                    .unwrap_or_default(),
                 max_matches: optional_i32(&arguments, "max_matches").unwrap_or_default(),
                 max_depth: optional_i32(&arguments, "max_depth").unwrap_or_default(),
                 min_depth: optional_i32(&arguments, "min_depth").unwrap_or_default(),
@@ -158,6 +158,11 @@ pub(super) fn parse_tool_call(
         "open_code_review" => Ok(api::message::tool_call::Tool::OpenCodeReview(
             api::message::tool_call::OpenCodeReview {},
         )),
+        "insert_review_comments" => Ok(
+            api::message::tool_call::Tool::InsertReviewComments(
+                parse_insert_review_comments(arguments)?,
+            ),
+        ),
         "init_project" => Ok(api::message::tool_call::Tool::InitProject(
             api::message::tool_call::InitProject {},
         )),
@@ -169,6 +174,9 @@ pub(super) fn parse_tool_call(
         "read_skill" => Ok(api::message::tool_call::Tool::ReadSkill(
             parse_read_skill(arguments)?,
         )),
+        "ask_user_question" => Ok(api::message::tool_call::Tool::AskUserQuestion(
+            parse_ask_user_question(arguments)?,
+        )),
         unsupported => Err(anyhow!("Unsupported local OpenAI tool call: {unsupported}")),
     }
 }
@@ -177,7 +185,9 @@ pub(super) fn parse_tool_call(
 pub(super) fn parse_read_file(
     value: &Value,
 ) -> anyhow::Result<api::message::tool_call::read_files::File> {
-    let name = required_string(value, "name")?;
+    let name = optional_string(value, "path")
+        .or_else(|| optional_string(value, "name"))
+        .ok_or_else(|| anyhow!("Missing required string field: path"))?;
     let line_ranges = parse_line_ranges(value, "line_ranges")?;
 
     Ok(api::message::tool_call::read_files::File { name, line_ranges })
@@ -263,6 +273,86 @@ fn parse_apply_file_diffs(
     })
 }
 
+/// Parses the official insert-review-comments payload.
+fn parse_insert_review_comments(
+    arguments: Value,
+) -> anyhow::Result<api::message::tool_call::InsertReviewComments> {
+    let comments = required_array(&arguments, "comments")?
+        .iter()
+        .map(parse_insert_review_comment)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(api::message::tool_call::InsertReviewComments {
+        repo_path: required_string(&arguments, "local_repository_path")?,
+        comments,
+        base_branch: required_string(&arguments, "base_branch")?,
+    })
+}
+
+/// Parses a single official review comment payload.
+fn parse_insert_review_comment(
+    value: &Value,
+) -> anyhow::Result<api::message::tool_call::insert_review_comments::Comment> {
+    let parent_comment_id = value
+        .get("reply_metadata")
+        .and_then(|reply| reply.get("parent_comment_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
+    let location = value
+        .get("location_metadata")
+        .map(parse_insert_review_comment_location)
+        .transpose()?;
+
+    Ok(api::message::tool_call::insert_review_comments::Comment {
+        comment_id: required_string(value, "comment_id")?,
+        author: required_string(value, "author")?,
+        last_modified_timestamp: required_string(value, "last_modified_timestamp")?,
+        comment_body: required_string(value, "comment_body")?,
+        parent_comment_id,
+        location,
+        html_url: required_string(value, "html_url")?,
+    })
+}
+
+/// Parses official location metadata into Warp's review comment location proto.
+fn parse_insert_review_comment_location(
+    value: &Value,
+) -> anyhow::Result<api::message::tool_call::insert_review_comments::CommentLocation> {
+    let line = match (
+        optional_string(value, "diff_hunk"),
+        optional_u32(value, "start_line"),
+        optional_u32(value, "end_line"),
+    ) {
+        (Some(diff_hunk), Some(start), Some(end)) => Some(
+            api::message::tool_call::insert_review_comments::CommentLineRange {
+                diff_hunk,
+                range: Some(api::FileContentLineRange { start, end }),
+                side: parse_review_comment_side(optional_string(value, "side").as_deref()).into(),
+            },
+        ),
+        _ => None,
+    };
+
+    Ok(
+        api::message::tool_call::insert_review_comments::CommentLocation {
+            file_path: required_string(value, "filepath")?,
+            line,
+        },
+    )
+}
+
+/// Parses the official diff-side string into Warp's enum.
+fn parse_review_comment_side(
+    value: Option<&str>,
+) -> api::message::tool_call::insert_review_comments::CommentSide {
+    match value {
+        Some("LEFT") => api::message::tool_call::insert_review_comments::CommentSide::Old,
+        _ => api::message::tool_call::insert_review_comments::CommentSide::New,
+    }
+}
+
 /// Parses a single V4A file update definition for `apply_file_diffs`.
 fn parse_v4a_update(
     value: &Value,
@@ -303,6 +393,28 @@ fn parse_line_ranges(value: &Value, key: &str) -> anyhow::Result<Vec<api::FileCo
             .collect();
     }
 
+    if let Some(ranges) = optional_array(value, "ranges") {
+        return ranges
+            .iter()
+            .map(|value| {
+                let range = value
+                    .as_str()
+                    .ok_or_else(|| anyhow!("Range entries must be strings"))?;
+                let (start, end) = range
+                    .split_once('-')
+                    .ok_or_else(|| anyhow!("Range entries must use start-end format"))?;
+                Ok(api::FileContentLineRange {
+                    start: start
+                        .parse()
+                        .map_err(|_| anyhow!("Invalid range start: {start}"))?,
+                    end: end
+                        .parse()
+                        .map_err(|_| anyhow!("Invalid range end: {end}"))?,
+                })
+            })
+            .collect();
+    }
+
     // Backwards-compatible fallback for the earlier start_line/end_line shape.
     if let (Some(start), Some(end)) = (
         optional_u32(value, "start_line"),
@@ -329,7 +441,7 @@ fn parse_write_mode(
         _ => {
             return Err(anyhow!(
                 "Unsupported write_to_long_running_shell_command mode: {mode}"
-            ))
+            ));
         }
     };
 
@@ -388,7 +500,7 @@ fn parse_suggest_prompt(
         _ => {
             return Err(anyhow!(
                 "Unsupported suggest_prompt display_mode: {display_mode}"
-            ))
+            ));
         }
     };
 
@@ -398,6 +510,58 @@ fn parse_suggest_prompt(
             .get("is_trigger_irrelevant")
             .and_then(Value::as_bool)
             .unwrap_or(false),
+    })
+}
+
+/// Parses the ask-user-question tool call.
+fn parse_ask_user_question(arguments: Value) -> anyhow::Result<api::AskUserQuestion> {
+    let questions = required_array(&arguments, "questions")?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| parse_ask_user_question_item(value, index))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(api::AskUserQuestion { questions })
+}
+
+/// Parses a single ask-user-question item.
+fn parse_ask_user_question_item(
+    value: &Value,
+    index: usize,
+) -> anyhow::Result<api::ask_user_question::Question> {
+    let options = required_string_array(value, "options")?
+        .into_iter()
+        .map(|label| api::ask_user_question::Option { label })
+        .collect::<Vec<_>>();
+    let question_type = match required_string(value, "type")?.as_str() {
+        "single_select" => Some(
+            api::ask_user_question::question::QuestionType::MultipleChoice(
+                api::ask_user_question::MultipleChoice {
+                    options,
+                    recommended_option_index: optional_i32(value, "recommended_option_index")
+                        .unwrap_or(-1),
+                    is_multiselect: false,
+                    supports_other: false,
+                },
+            ),
+        ),
+        "multi_select" => Some(
+            api::ask_user_question::question::QuestionType::MultipleChoice(
+                api::ask_user_question::MultipleChoice {
+                    options,
+                    recommended_option_index: -1,
+                    is_multiselect: true,
+                    supports_other: false,
+                },
+            ),
+        ),
+        other => return Err(anyhow!("Unsupported ask_user_question type: {other}")),
+    };
+
+    Ok(api::ask_user_question::Question {
+        question_id: format!("q{}", index + 1),
+        question: required_string(value, "question")?,
+        question_type,
     })
 }
 

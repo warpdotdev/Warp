@@ -130,9 +130,12 @@ pub(super) fn handle_responses_stream_message(
         }
         "response.web_search_call.searching" => {
             let search_event: ResponsesWebSearchCallEvent = serde_json::from_value(payload)?;
-            let Some(event) =
-                handle_streamed_web_search_searching(task_id, request_id, accumulator, search_event)
-            else {
+            let Some(event) = handle_streamed_web_search_searching(
+                task_id,
+                request_id,
+                accumulator,
+                search_event,
+            ) else {
                 return Ok(StreamMessageResult::default());
             };
 
@@ -721,7 +724,12 @@ fn history_items_from_accumulator(
     let mut items = accumulator
         .replayable_history_item_keys_in_order
         .iter()
-        .filter_map(|key| accumulator.replayable_history_items_by_key.get(key).cloned())
+        .filter_map(|key| {
+            accumulator
+                .replayable_history_items_by_key
+                .get(key)
+                .cloned()
+        })
         .collect::<Vec<_>>();
 
     for key in &accumulator.reasoning_history_item_keys_in_order {
@@ -731,10 +739,11 @@ fn history_items_from_accumulator(
         let replayable_key = key
             .strip_prefix("reasoning_history:")
             .map(|suffix| format!("reasoning:{suffix}"));
-        if replayable_key
-            .as_ref()
-            .is_some_and(|replayable_key| accumulator.replayable_history_items_by_key.contains_key(replayable_key))
-        {
+        if replayable_key.as_ref().is_some_and(|replayable_key| {
+            accumulator
+                .replayable_history_items_by_key
+                .contains_key(replayable_key)
+        }) {
             continue;
         }
         items.push(reasoning_item.clone());
@@ -888,12 +897,7 @@ fn build_backfill_messages(
                 let text = assistant_message_text(item);
                 let citations = citations_from_output_item(item);
                 if !text.is_empty() {
-                    messages.push(agent_output_message(
-                        task_id,
-                        request_id,
-                        text,
-                        citations,
-                    ));
+                    messages.push(agent_output_message(task_id, request_id, text, citations));
                 }
             }
             "reasoning" => {
@@ -942,9 +946,12 @@ fn build_backfill_messages(
                 {
                     continue;
                 }
-                if let Some(message) =
-                    web_search_message_from_output_item(task_id, request_id, item, &citation_titles_by_url)
-                {
+                if let Some(message) = web_search_message_from_output_item(
+                    task_id,
+                    request_id,
+                    item,
+                    &citation_titles_by_url,
+                ) {
                     messages.push(message);
                 }
             }
@@ -1011,33 +1018,33 @@ fn handle_streamed_assistant_output_item_done(
     let citations = citations_from_output_item(item);
     let had_existing_state = accumulator.text_messages_by_item_id.contains_key(item_id);
 
-    let message_id = if let Some(existing_state) = accumulator.text_messages_by_item_id.get_mut(item_id)
-    {
-        if !full_text.is_empty() {
-            existing_state.text = full_text.clone();
-        }
-        existing_state.message_id.clone()
-    } else {
-        if full_text.is_empty() {
-            return Ok(None);
-        }
-        let message_id = Uuid::new_v4().to_string();
-        accumulator.text_messages_by_item_id.insert(
-            item_id.clone(),
-            StreamingTextMessageState {
-                message_id: message_id.clone(),
-                text: full_text.clone(),
-            },
-        );
-        if !accumulator
-            .emitted_text_item_ids
-            .iter()
-            .any(|existing_id| existing_id == item_id)
-        {
-            accumulator.emitted_text_item_ids.push(item_id.clone());
-        }
-        message_id
-    };
+    let message_id =
+        if let Some(existing_state) = accumulator.text_messages_by_item_id.get_mut(item_id) {
+            if !full_text.is_empty() {
+                existing_state.text = full_text.clone();
+            }
+            existing_state.message_id.clone()
+        } else {
+            if full_text.is_empty() {
+                return Ok(None);
+            }
+            let message_id = Uuid::new_v4().to_string();
+            accumulator.text_messages_by_item_id.insert(
+                item_id.clone(),
+                StreamingTextMessageState {
+                    message_id: message_id.clone(),
+                    text: full_text.clone(),
+                },
+            );
+            if !accumulator
+                .emitted_text_item_ids
+                .iter()
+                .any(|existing_id| existing_id == item_id)
+            {
+                accumulator.emitted_text_item_ids.push(item_id.clone());
+            }
+            message_id
+        };
 
     if !accumulator
         .finalized_text_item_ids
@@ -1047,11 +1054,7 @@ fn handle_streamed_assistant_output_item_done(
         accumulator.finalized_text_item_ids.push(item_id.clone());
     }
     if let Some(history_item) = assistant_history_item_from_output_item(item) {
-        record_replayable_history_item(
-            accumulator,
-            format!("message:{item_id}"),
-            history_item,
-        );
+        record_replayable_history_item(accumulator, format!("message:{item_id}"), history_item);
     }
 
     if had_existing_state {
@@ -1113,7 +1116,9 @@ fn handle_streamed_web_search_output_item_done(
             .iter()
             .any(|existing_id| existing_id == item_id)
         {
-            accumulator.emitted_web_search_item_ids.push(item_id.clone());
+            accumulator
+                .emitted_web_search_item_ids
+                .push(item_id.clone());
         }
         return Some(update_web_search_status_event(
             task_id,
@@ -1135,16 +1140,15 @@ fn handle_streamed_web_search_output_item_done(
         .iter()
         .any(|existing_id| existing_id == item_id)
     {
-        accumulator.emitted_web_search_item_ids.push(item_id.clone());
+        accumulator
+            .emitted_web_search_item_ids
+            .push(item_id.clone());
     }
 
     Some(add_messages_event(
         task_id,
         vec![web_search_message_with_id(
-            message_id,
-            task_id,
-            request_id,
-            status,
+            message_id, task_id, request_id, status,
         )],
     ))
 }
@@ -1290,30 +1294,27 @@ fn web_search_status_from_output_item(
             (!query.is_empty()).then_some(query),
         )),
         Some("failed") => Some(api::message::web_search::status::Type::Error(())),
-        Some("completed") | Some(_) | None => Some(api::message::web_search::status::Type::Success(
-            api::message::web_search::status::Success {
-                query,
-                pages: pages
-                    .into_iter()
-                    .map(|(url, title)| api::message::web_search::status::success::SearchedPage {
-                        url,
-                        title,
-                    })
-                    .collect(),
-            },
-        )),
+        Some("completed") | Some(_) | None => {
+            Some(api::message::web_search::status::Type::Success(
+                api::message::web_search::status::Success {
+                    query,
+                    pages: pages
+                        .into_iter()
+                        .map(|(url, title)| {
+                            api::message::web_search::status::success::SearchedPage { url, title }
+                        })
+                        .collect(),
+                },
+            ))
+        }
     }
 }
 
 /// Builds Warp's searching status payload for a web search.
-fn web_search_searching_status(
-    query: Option<String>,
-) -> api::message::web_search::status::Type {
-    api::message::web_search::status::Type::Searching(
-        api::message::web_search::status::Searching {
-            query: query.unwrap_or_default(),
-        },
-    )
+fn web_search_searching_status(query: Option<String>) -> api::message::web_search::status::Type {
+    api::message::web_search::status::Type::Searching(api::message::web_search::status::Searching {
+        query: query.unwrap_or_default(),
+    })
 }
 
 /// Collects the searched pages associated with a completed web-search call.
@@ -1337,7 +1338,10 @@ fn web_search_pages_from_item(
             }
             pages.push((
                 url.clone(),
-                citation_titles_by_url.get(&url).cloned().unwrap_or_default(),
+                citation_titles_by_url
+                    .get(&url)
+                    .cloned()
+                    .unwrap_or_default(),
             ));
         }
     }
@@ -1362,10 +1366,12 @@ fn output_text_annotation_as_web_page(
         return None;
     }
 
-    let url = annotation
-        .url
-        .clone()
-        .or_else(|| annotation.url_citation.as_ref().and_then(|nested| nested.url.clone()))?;
+    let url = annotation.url.clone().or_else(|| {
+        annotation
+            .url_citation
+            .as_ref()
+            .and_then(|nested| nested.url.clone())
+    })?;
     let title = annotation
         .title
         .clone()
@@ -1381,10 +1387,15 @@ fn output_text_annotation_as_web_page(
 }
 
 /// Converts a Responses output-text annotation back into a replayable raw annotation payload.
-fn output_text_annotation_history_value(annotation: &ResponsesOutputTextAnnotation) -> Option<Value> {
+fn output_text_annotation_history_value(
+    annotation: &ResponsesOutputTextAnnotation,
+) -> Option<Value> {
     let (url, title) = output_text_annotation_as_web_page(annotation)?;
     let mut value = serde_json::Map::new();
-    value.insert("type".to_string(), Value::String("url_citation".to_string()));
+    value.insert(
+        "type".to_string(),
+        Value::String("url_citation".to_string()),
+    );
     value.insert("url".to_string(), Value::String(url));
     if !title.is_empty() {
         value.insert("title".to_string(), Value::String(title));
@@ -1432,12 +1443,17 @@ fn record_replayable_history_item(
     key: String,
     item: Value,
 ) {
-    if !accumulator.replayable_history_items_by_key.contains_key(&key) {
+    if !accumulator
+        .replayable_history_items_by_key
+        .contains_key(&key)
+    {
         accumulator
             .replayable_history_item_keys_in_order
             .push(key.clone());
     }
-    accumulator.replayable_history_items_by_key.insert(key, item);
+    accumulator
+        .replayable_history_items_by_key
+        .insert(key, item);
 }
 
 /// Records a replayable reasoning history item from streaming metadata so stateless follow-ups keep encrypted context.
