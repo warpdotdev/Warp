@@ -319,14 +319,26 @@ impl TerminalManager {
     /// Connects a deferred terminal manager to a shared session.
     /// This can only be called on a TerminalManager created with `new_deferred`.
     /// Returns `true` if the connection was initiated, `false` if already connected.
-    pub fn connect_to_session(&mut self, session_id: SessionId, ctx: &mut AppContext) -> bool {
+    ///
+    /// `append_followup_scrollback` controls whether the initial join uses
+    /// `AppendFollowupScrollback` mode instead of `ReplaceFromSessionScrollback`.
+    /// Local-to-cloud handoff panes set this to `true` so the pre-populated
+    /// forked conversation is not replaced by the cloud session's replay
+    /// scrollback.
+    pub fn connect_to_session(
+        &mut self,
+        session_id: SessionId,
+        append_followup_scrollback: bool,
+        ctx: &mut AppContext,
+    ) -> bool {
+        let load_mode = if append_followup_scrollback {
+            SharedSessionInitialLoadMode::AppendFollowupScrollback
+        } else {
+            SharedSessionInitialLoadMode::ReplaceFromSessionScrollback
+        };
         match self.network_state {
             NetworkState::Idle => {
-                self.connect_session(
-                    session_id,
-                    SharedSessionInitialLoadMode::ReplaceFromSessionScrollback,
-                    ctx,
-                );
+                self.connect_session(session_id, load_mode, ctx);
                 true
             }
             NetworkState::Connecting => {
@@ -992,6 +1004,7 @@ impl TerminalManager {
                         && is_cloud_agent_pre_first_exchange(
                             view.ambient_agent_view_model(),
                             view.agent_view_controller(),
+                            &view.model,
                             ctx,
                         )
                     {
@@ -1302,12 +1315,15 @@ impl TerminalManager {
         };
         // During cloud startup (pre-first-exchange), keep local input mode stable
         // and ignore remote shell/ai mode toggles from session-sharing context sync.
-        let is_pre_first_exchange = FeatureFlag::CloudModeSetupV2.is_enabled()
-            && is_cloud_agent_pre_first_exchange(
-                view.as_ref(ctx).ambient_agent_view_model(),
-                view.as_ref(ctx).agent_view_controller(),
+        let is_pre_first_exchange = FeatureFlag::CloudModeSetupV2.is_enabled() && {
+            let view_ref = view.as_ref(ctx);
+            is_cloud_agent_pre_first_exchange(
+                view_ref.ambient_agent_view_model(),
+                view_ref.agent_view_controller(),
+                &view_ref.model,
                 ctx,
-            );
+            )
+        };
         let suppress_input_mode_update =
             view.as_ref(ctx).is_shared_ambient_agent_session() || is_pre_first_exchange;
         if suppress_input_mode_update {

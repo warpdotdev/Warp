@@ -435,6 +435,19 @@ fn convert_input_to_user_input(
                 ),
             )
         }
+        AIAgentInput::OrchestrationConfigUpdate {
+            plan_id,
+            config,
+            status,
+        } => Ok(
+            api::request::input::user_inputs::user_input::Input::OrchestrationConfigUpdate(
+                api::OrchestrationConfigUpdate {
+                    plan_id,
+                    config: Some(config.to_proto()),
+                    status: status.to_proto(),
+                },
+            ),
+        ),
         AIAgentInput::ResumeConversation { .. } => Err(ConvertToAPITypeError::Ignore),
         AIAgentInput::InitProjectRules { .. } => Err(ConvertToAPITypeError::Ignore),
         AIAgentInput::CodeReview { .. } => Err(ConvertToAPITypeError::Ignore),

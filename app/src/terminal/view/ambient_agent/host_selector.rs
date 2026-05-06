@@ -298,6 +298,7 @@ impl View for HostSelector {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct NakedHeaderButtonTheme;
 
 impl ActionButtonTheme for NakedHeaderButtonTheme {

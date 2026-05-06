@@ -19,21 +19,28 @@ pub use host_selector::{
     Host, HostSelector, HostSelectorAction, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loading_screen};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+pub(crate) use model::PendingHandoff;
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+pub use model::{HandoffSubmissionState, SnapshotUploadStatus};
 pub use model_selector::{ModelSelector, ModelSelectorAction, ModelSelectorEvent};
 pub use progress::{render_progress, ProgressProps, ProgressStep, ProgressStepState};
 pub use progress_ui_state::AmbientAgentProgressUIState;
 pub use tips::{get_cloud_mode_tips, CloudModeTip};
+
+use parking_lot::FairMutex;
+use std::sync::Arc;
 use warp_core::features::FeatureFlag;
+use warpui::geometry::vector::Vector2F;
+use warpui::{AppContext, ModelHandle, ViewHandle, WindowId};
 
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewState};
-use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::pane_group::TerminalViewResources;
 use crate::terminal::shared_session;
 use crate::terminal::TerminalManager;
+use crate::terminal::TerminalModel;
 use crate::terminal::TerminalView;
-use warpui::geometry::vector::Vector2F;
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 
 /// Creates a cloud mode terminal view and manager for ambient agent sessions.
 ///
@@ -72,6 +79,7 @@ pub fn create_cloud_mode_view(
         log::warn!("Cloud mode view was created without an ambient agent view model");
         return (terminal_view, terminal_manager);
     };
+    let view_model_for_subscription = view_model.clone();
     terminal_manager.update(ctx, |_, ctx| {
         ctx.subscribe_to_model(&view_model, move |manager, event, ctx| {
             let Some(manager) = manager
@@ -82,7 +90,14 @@ pub fn create_cloud_mode_view(
             };
             match event {
                 AmbientAgentViewModelEvent::SessionReady { session_id } => {
-                    manager.connect_to_session(*session_id, ctx);
+                    // Local-to-cloud handoff panes pre-populate the forked
+                    // conversation on chip click. Use append-mode scrollback
+                    // + replay suppression so the cloud agent's replay doesn't
+                    // duplicate the blocks we already have.
+                    let append_followup_scrollback = view_model_for_subscription
+                        .as_ref(ctx)
+                        .is_local_to_cloud_handoff();
+                    manager.connect_to_session(*session_id, append_followup_scrollback, ctx);
                 }
                 AmbientAgentViewModelEvent::FollowupSessionReady { session_id } => {
                     manager.attach_followup_session(*session_id, ctx);
@@ -101,6 +116,8 @@ pub fn create_cloud_mode_view(
                 | AmbientAgentViewModelEvent::HarnessSelected
                 | AmbientAgentViewModelEvent::HostSelected
                 | AmbientAgentViewModelEvent::HarnessCommandStarted
+                | AmbientAgentViewModelEvent::PendingHandoffChanged
+                | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
                 | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => {}
             }
         });
@@ -109,12 +126,13 @@ pub fn create_cloud_mode_view(
     (terminal_view, terminal_manager)
 }
 
-/// Returns `true` when a cloud agent shared session is ready but no agent exchange has been
-/// received yet. In this state, we hide the interactive input and render a loading footer
-/// instead.
+/// Returns `true` when a cloud agent shared session is in any pre-first-exchange phase —
+/// either still spawning (loading screen) or running setup commands before the first
+/// agent turn. In this state, we hide the interactive input and render a loading footer.
 pub fn is_cloud_agent_pre_first_exchange(
     ambient_agent_view_model: Option<&ModelHandle<AmbientAgentViewModel>>,
     agent_view_controller: &ModelHandle<AgentViewController>,
+    terminal_model: &Arc<FairMutex<TerminalModel>>,
     app: &AppContext,
 ) -> bool {
     if !(FeatureFlag::CloudMode.is_enabled() && FeatureFlag::AgentView.is_enabled()) {
@@ -125,38 +143,43 @@ pub fn is_cloud_agent_pre_first_exchange(
         return false;
     };
 
-    if !matches!(
-        ambient_agent_view_model.as_ref(app).status(),
-        Status::AgentRunning
-    ) {
+    let view_model = ambient_agent_view_model.as_ref(app);
+
+    let is_in_pre_first_exchange_status = matches!(
+        view_model.status(),
+        Status::WaitingForSession { .. } | Status::AgentRunning
+    );
+    if !is_in_pre_first_exchange_status {
         return false;
     }
 
     let agent_view_state = agent_view_controller.as_ref(app).agent_view_state().clone();
-    let AgentViewState::Active {
-        conversation_id,
-        origin,
-        ..
-    } = agent_view_state
-    else {
+    let AgentViewState::Active { origin, .. } = agent_view_state else {
         return false;
     };
 
-    if !origin.is_cloud_agent() {
+    // Handoff panes enter agent view with `RestoreExistingConversation` because they restore the
+    // forked conversation, not `CloudAgent`. The `is_local_to_cloud_handoff` flag is the
+    // authoritative "this is a cloud agent pane" signal for that path, so accept either.
+    if !origin.is_cloud_agent() && !view_model.is_local_to_cloud_handoff() {
         return false;
     }
 
     // For non-oz harness runs, there is no Oz `AppendedExchange` to key off of, so we also
     // exit the pre-first-exchange phase when the harness CLI (e.g. `claude`, `gemini`) has
     // been detected. See `mark_harness_command_started`.
-    if ambient_agent_view_model
-        .as_ref(app)
-        .harness_command_started()
-    {
+    if view_model.harness_command_started() {
         return false;
     }
 
-    BlocklistAIHistoryModel::as_ref(app)
-        .conversation(&conversation_id)
-        .is_some_and(|conversation| conversation.exchange_count() == 0)
+    // Loading phase (`WaitingForSession`): no setup commands have started yet, but we're
+    // still pre-first-exchange. Skip the block-list flag check.
+    if matches!(view_model.status(), Status::WaitingForSession { .. }) {
+        return true;
+    }
+
+    terminal_model
+        .lock()
+        .block_list()
+        .is_executing_oz_environment_startup_commands()
 }

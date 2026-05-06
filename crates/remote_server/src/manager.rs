@@ -8,6 +8,8 @@ use std::time::Duration;
 use crate::auth::RemoteServerAuthContext;
 #[cfg(not(target_family = "wasm"))]
 use crate::client::ClientEvent;
+#[cfg(not(target_family = "wasm"))]
+use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::setup::PreinstallCheckResult;
 #[cfg(not(target_family = "wasm"))]
@@ -482,16 +484,16 @@ impl RemoteServerManager {
             ctx.background_executor()
                 .spawn(async move {
                     // Run platform detection, binary check, and old-binary
-                    // check concurrently. The old-binary check lets the
-                    // controller distinguish fresh install (no prior
-                    // versioned binary) from update (prior versioned
-                    // binary present), so it can skip the install prompt
-                    // in the update case.
-                    let (platform_result, check_result, old_binary_result) = futures::join!(
-                        transport.detect_platform(),
-                        transport.check_binary(),
-                        transport.check_has_old_binary(),
-                    );
+                    // check sequentially so that each step reuses the
+                    // same SSH ControlMaster connection instead of
+                    // opening parallel channels. The old-binary check
+                    // lets the controller distinguish fresh install (no
+                    // prior versioned binary) from update (prior
+                    // versioned binary present), so it can skip the
+                    // install prompt in the update case.
+                    let platform_result = transport.detect_platform().await;
+                    let check_result = transport.check_binary().await;
+                    let old_binary_result = transport.check_has_old_binary().await;
                     let platform = match platform_result {
                         Ok(p) => Some(p),
                         Err(e) => {
@@ -820,7 +822,14 @@ impl RemoteServerManager {
         // Phase 2: Initialize handshake.
         let auth_token = auth_context.get_auth_token().await;
         let resp = client
-            .initialize(auth_token.as_deref())
+            .initialize(
+                auth_token.as_deref(),
+                InitializeParams {
+                    user_id: auth_context.user_id().to_owned(),
+                    user_email: auth_context.user_email().to_owned(),
+                    crash_reporting_enabled: auth_context.crash_reporting_enabled(),
+                },
+            )
             .await
             .map_err(|e| ConnectAndHandshakeError::Initialize(anyhow::anyhow!("{e:#}")))?;
 
@@ -956,6 +965,14 @@ impl RemoteServerManager {
             Some(RemoteSessionState::Connected { client, .. }) => Some(client),
             _ => None,
         }
+    }
+
+    /// Returns an iterator over all currently connected clients.
+    pub fn all_connected_clients(&self) -> impl Iterator<Item = &Arc<RemoteServerClient>> {
+        self.sessions.values().filter_map(|state| match state {
+            RemoteSessionState::Connected { client, .. } => Some(client),
+            _ => None,
+        })
     }
 
     /// Rotates the daemon-wide auth credential on each connected remote host.

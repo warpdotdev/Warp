@@ -1067,6 +1067,7 @@ impl TerminalView {
                 &params.cli_subagent_controller,
                 &params.model_events_handle,
                 self.agent_view_controller.clone(),
+                self.ambient_agent_view_model.clone(),
                 self.view_handle.clone(),
                 params.terminal_view_id,
                 ctx,

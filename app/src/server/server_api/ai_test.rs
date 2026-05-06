@@ -5,10 +5,11 @@ use futures::executor::block_on;
 use super::super::auth::CLOUD_AGENT_ID_HEADER;
 use super::super::ServerApi;
 use super::{
-    build_list_agent_runs_url, build_run_followup_url, AgentMessageHeader, AgentRunEvent,
-    AgentSource, AmbientAgentTaskState, Artifact, ArtifactDownloadResponse, ArtifactType,
-    ExecutionLocation, ListRunsResponse, ReadAgentMessageResponse, RunFollowupRequest, RunSortBy,
-    RunSortOrder, TaskListFilter,
+    build_fork_conversation_url, build_list_agent_runs_url, build_run_followup_url,
+    AgentMessageHeader, AgentRunEvent, AgentSource, AmbientAgentTaskState, Artifact,
+    ArtifactDownloadResponse, ArtifactType, ExecutionLocation, ForkConversationResponse,
+    ListRunsResponse, ReadAgentMessageResponse, RunFollowupRequest, RunSortBy, RunSortOrder,
+    TaskListFilter,
 };
 use crate::notebooks::NotebookId;
 
@@ -1020,5 +1021,33 @@ fn serialize_run_followup_request() {
         serde_json::json!({
             "message": "continue from here",
         })
+    );
+}
+
+#[test]
+fn build_fork_conversation_url_routes_to_conversation_fork() {
+    assert_eq!(
+        build_fork_conversation_url("550e8400-e29b-41d4-a716-446655440000"),
+        "agent/conversations/550e8400-e29b-41d4-a716-446655440000/fork"
+    );
+}
+
+#[test]
+fn build_fork_conversation_url_escapes_path_param() {
+    assert_eq!(
+        build_fork_conversation_url("conversation/with spaces"),
+        "agent/conversations/conversation%2Fwith%20spaces/fork"
+    );
+}
+
+#[test]
+fn deserialize_fork_conversation_response() {
+    let response: ForkConversationResponse = serde_json::from_value(serde_json::json!({
+        "forked_conversation_id": "abcdef01-2345-6789-abcd-ef0123456789",
+    }))
+    .unwrap();
+    assert_eq!(
+        response.forked_conversation_id,
+        "abcdef01-2345-6789-abcd-ef0123456789"
     );
 }

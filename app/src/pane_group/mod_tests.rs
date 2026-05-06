@@ -16,6 +16,7 @@ use crate::{
         },
         document::ai_document_model::AIDocumentModel,
         execution_profiles::profiles::AIExecutionProfilesModel,
+        harness_availability::HarnessAvailabilityModel,
         llms::LLMPreferences,
         mcp::{
             templatable_manager::TemplatableMCPServerManager, FileBasedMCPManager, FileMCPWatcher,
@@ -154,6 +155,7 @@ fn initialize_app(app: &mut App) {
     });
     app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(LLMPreferences::new);
+    app.add_singleton_model(HarnessAvailabilityModel::new);
     #[cfg(feature = "voice_input")]
     app.add_singleton_model(voice_input::VoiceInput::new);
     #[cfg(feature = "local_fs")]

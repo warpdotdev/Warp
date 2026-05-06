@@ -14217,6 +14217,60 @@ fn test_insert_at_offsets() {
     });
 }
 
+/// Regression test for WARP-CLIENT-DEV-NYY: panic "Invalid edit range 4042..3982".
+///
+/// Root cause: `fuzzy_match_v4a_diffs` produces `DiffDelta`s with overlapping
+/// `replacement_line_range` values when multiple V4A hunks target the same
+/// region of a file (confirmed by the companion test
+/// `test_v4a_maa_crash_d71bf84b_no_overlapping_deltas` in the `ai` crate).
+///
+/// `CodeEditorModel::apply_diffs` converts those line ranges to char offsets
+/// and passes them to `insert_at_offsets`, which feeds them into
+/// `apply_core_edit_actions` without validating.  The invalid range reaches
+/// `Buffer::edit`, which panics on the `debug_assert!`.
+///
+/// This test passes the exact Sentry crash values (`4042..3982`) to
+/// `insert_at_offsets` to confirm the editor does not defend against bad
+/// input from the diff layer.
+#[test]
+fn test_insert_at_offsets_overlapping_ranges_skipped() {
+    App::test((), |mut app| async move {
+        let buffer = app.add_model(|_| Buffer::new(Box::new(|_, _| IndentBehavior::Ignore)));
+        let selection = app.add_model(|_| BufferSelectionModel::new(buffer.clone()));
+
+        buffer.update(&mut app, |buffer, ctx| {
+            // Populate the buffer with enough content.
+            let content = (0..200)
+                .map(|i| format!("line_{:03}_content_padding", i))
+                .collect::<Vec<_>>()
+                .join("\n");
+            buffer.edit_internal_first_selection(
+                CharOffset::from(1)..CharOffset::from(1),
+                &content,
+                Default::default(),
+                selection.clone(),
+                ctx,
+            );
+
+            let original_text = buffer.text().into_string();
+
+            // Pass a range with start > end (the exact Sentry crash values).
+            // After the fix in apply_core_edit_actions, the inverted range
+            // should be skipped gracefully instead of panicking.
+            let edits = Vec1::try_from_vec(vec![(
+                "replacement\n".to_string(),
+                CharOffset::from(4042)..CharOffset::from(3982),
+            )])
+            .unwrap();
+
+            buffer.insert_at_offsets(&edits, selection.clone(), ctx);
+
+            // Buffer should be unchanged — the invalid edit was skipped.
+            assert_eq!(buffer.text().into_string(), original_text);
+        });
+    });
+}
+
 #[test]
 fn test_from_plain_text() {
     App::test((), |mut app| async move {

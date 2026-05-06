@@ -35,6 +35,7 @@ use crate::ai::blocklist::block::status_bar::BlocklistAIStatusBar;
 use crate::ai::blocklist::{ai_indicator_height, BlocklistAIActionModel, SlashCommandRequest};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::predict::prompt_suggestions::{
     has_pending_code_or_unit_test_prompt_suggestion,
     is_accept_prompt_suggestion_bound_to_ctrl_enter,
@@ -331,7 +332,7 @@ use super::{
         UniversalDeveloperInputButtonBar, UniversalDeveloperInputButtonBarEvent,
     },
     view::{
-        ambient_agent::AmbientAgentViewModel,
+        ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent},
         inline_banner::{
             PromptSuggestionBannerState, ZeroStatePromptSuggestionTriggeredFrom,
             ZeroStatePromptSuggestionType,
@@ -2154,7 +2155,7 @@ impl Input {
         });
 
         if let Some(ambient_agent_view_model) = ambient_agent_view_model.as_ref() {
-            ctx.subscribe_to_model(ambient_agent_view_model, |me, handle, _, ctx| {
+            ctx.subscribe_to_model(ambient_agent_view_model, |me, handle, event, ctx| {
                 let is_ambient = handle.as_ref(ctx).is_ambient_agent();
                 me.editor.update(ctx, |editor, ctx| {
                     if let Some(ai_context_menu) = editor.ai_context_menu() {
@@ -2163,7 +2164,36 @@ impl Input {
                         });
                     }
                 });
-                if handle.as_ref(ctx).should_show_status_footer() {
+                // Surface async snapshot upload failures as a toast.
+                if let AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { error_message } =
+                    event
+                {
+                    let window_id = ctx.window_id();
+                    let toast_message = format!("Failed to prepare cloud handoff: {error_message}");
+                    ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                        ts.add_ephemeral_toast(
+                            DismissibleToast::error(toast_message),
+                            window_id,
+                            ctx,
+                        );
+                    });
+                }
+                // Re-render on status-footer transitions and on status-affecting events that
+                // decide whether the input is in its composing shape.
+                let should_notify = handle.as_ref(ctx).should_show_status_footer()
+                    || matches!(
+                        event,
+                        AmbientAgentViewModelEvent::EnteredSetupState
+                            | AmbientAgentViewModelEvent::EnteredComposingState
+                            | AmbientAgentViewModelEvent::DispatchedAgent
+                            | AmbientAgentViewModelEvent::SessionReady { .. }
+                            | AmbientAgentViewModelEvent::Failed { .. }
+                            | AmbientAgentViewModelEvent::Cancelled
+                            | AmbientAgentViewModelEvent::NeedsGithubAuth
+                            | AmbientAgentViewModelEvent::HarnessSelected
+                            | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
+                    );
+                if should_notify {
                     ctx.notify();
                 }
             });
@@ -2417,6 +2447,13 @@ impl Input {
                 #[cfg(not(target_family = "wasm"))]
                 AgentInputFooterEvent::OpenPluginInstructionsPane(agent, kind) => {
                     ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
+                }
+                AgentInputFooterEvent::OpenHandoffPane { initial_prompt } => {
+                    ctx.dispatch_typed_action(
+                        &crate::workspace::WorkspaceAction::OpenLocalToCloudHandoffPane {
+                            initial_prompt: initial_prompt.clone(),
+                        },
+                    );
                 }
             }
         });
@@ -12061,6 +12098,24 @@ impl Input {
                         .is_configuring_ambient_agent()
                 })
             {
+                if FeatureFlag::AgentHarness.is_enabled() {
+                    let availability = HarnessAvailabilityModel::as_ref(ctx);
+                    if !availability.has_any_enabled_harness() {
+                        let window_id = ctx.window_id();
+                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                            ts.add_ephemeral_toast(
+                                DismissibleToast::error(
+                                    "No agent harnesses are available. Contact your team admin."
+                                        .to_string(),
+                                ),
+                                window_id,
+                                ctx,
+                            );
+                        });
+                        return;
+                    }
+                }
+
                 let prompt = command.trim().to_owned();
                 if prompt.is_empty() {
                     return;
@@ -12133,6 +12188,32 @@ impl Input {
                     vec![]
                 };
 
+                // For local-to-cloud handoff panes, gate the buffer clear on the
+                // async `derive_touched_workspace` derivation having completed and
+                // no orchestrator already being in flight. If we cleared early and
+                // then bailed inside `submit_handoff`, the user's prompt and
+                // pending attachments would be silently dropped. Surface a toast
+                // so the user gets some feedback instead of seeing the submit do
+                // nothing — the prompt and attachments are intentionally left
+                // intact so the next submit picks them back up.
+                if let Some(ambient_agent_view_model) = self.ambient_agent_view_model() {
+                    let model = ambient_agent_view_model.as_ref(ctx);
+                    if model.is_local_to_cloud_handoff() && !model.is_handoff_ready_to_submit() {
+                        let window_id = ctx.window_id();
+                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                            ts.add_ephemeral_toast(
+                                DismissibleToast::default(
+                                    "Preparing handoff — try again in a moment.".to_owned(),
+                                )
+                                .with_object_id("local-to-cloud-handoff-not-ready".to_owned()),
+                                window_id,
+                                ctx,
+                            );
+                        });
+                        return;
+                    }
+                }
+
                 // Clear the buffer and pending attachments after collecting them.
                 self.editor.update(ctx, |editor, ctx| {
                     editor.clear_buffer(ctx);
@@ -12143,7 +12224,11 @@ impl Input {
 
                 if let Some(ambient_agent_view_model) = self.ambient_agent_view_model() {
                     ambient_agent_view_model.update(ctx, |state, ctx| {
-                        state.spawn_agent(prompt, attachments, ctx);
+                        if state.is_local_to_cloud_handoff() {
+                            state.submit_handoff(prompt, attachments, ctx);
+                        } else {
+                            state.spawn_agent(prompt, attachments, ctx);
+                        }
                     });
                 }
                 return;

@@ -876,6 +876,21 @@ impl Input {
                     ctx.dispatch_typed_action(&TerminalAction::ToggleUsageFooter);
                 }
             }
+            #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+            move_to_cloud if command.name == commands::MOVE_TO_CLOUD.name => {
+                if !FeatureFlag::OzHandoff.is_enabled()
+                    || !FeatureFlag::HandoffLocalCloud.is_enabled()
+                {
+                    return false;
+                }
+                // The workspace handler falls through to splitting a fresh cloud-mode
+                // pane when there's nothing to hand off, so we don't need to gate on
+                // `selected_conversation_id` here — the slash command always opens
+                // the new pane.
+                ctx.dispatch_typed_action(&WorkspaceAction::OpenLocalToCloudHandoffPane {
+                    initial_prompt: argument.cloned().filter(|s| !s.is_empty()),
+                });
+            }
             fork if command.name == commands::FORK.name => {
                 let Some(conversation_id) = self
                     .ai_context_model

@@ -549,13 +549,15 @@ impl FileTreeView {
                 if !root_paths.is_empty() {
                     let id = RepositoryIdentifier::Local(std_path.clone());
                     if let Some(state) = RepoMetadataModel::as_ref(ctx).get_repository(&id, ctx) {
-                        for root_path in root_paths {
-                            if let Some(root_dir) = self.root_directories.get_mut(&root_path) {
+                        for root_path in &root_paths {
+                            if let Some(root_dir) = self.root_directories.get_mut(root_path) {
                                 root_dir.entry = state.entry.clone();
                             }
                         }
 
-                        self.rebuild_flattened_items();
+                        for root_path in &root_paths {
+                            self.rebuild_flattened_items_for_root(root_path);
+                        }
                         self.apply_pending_focus_target();
                         ctx.notify();
                     }
@@ -600,7 +602,11 @@ impl FileTreeView {
                     if let Some(root_dir) = self.root_directories.get_mut(&repo_path) {
                         root_dir.entry = state.entry.clone();
                     }
-                    self.rebuild_flattened_items();
+                    // Only rebuild the affected remote root instead of all roots.
+                    // Remote servers stream frequent incremental updates; a full
+                    // rebuild would cause unrelated local roots to re-render on
+                    // every remote filesystem change, leading to visible flicker.
+                    self.rebuild_flattened_items_for_root(&repo_path);
                     ctx.notify();
                 }
             }
@@ -610,7 +616,10 @@ impl FileTreeView {
                 let repo_path = &remote_id.path;
                 self.displayed_directories.retain(|p| p != repo_path);
                 self.root_directories.remove(repo_path);
-                self.rebuild_flattened_items();
+                // The removed root is already gone from root_directories, so
+                // this is effectively a no-op rebuild that avoids touching
+                // the remaining roots' flattened items.
+                self.rebuild_flattened_items_for_root(repo_path);
                 ctx.notify();
             }
             RepoMetadataEvent::FileTreeUpdated { .. }
@@ -1594,32 +1603,53 @@ impl FileTreeView {
         });
     }
 
+    /// Rebuilds the flattened items list for a single root directory only,
+    /// leaving all other roots untouched. Use this when only one root's
+    /// backing data has changed (e.g. a metadata update) to avoid
+    /// unnecessarily re-flattening — and re-rendering — unrelated roots.
+    fn rebuild_flattened_items_for_root(&mut self, target_root: &StandardizedPath) {
+        self.rebuild_flatten_items_impl(None, None, Some(target_root));
+    }
+
     /// Rebuilds the flattened items list from the current entry tree, optionally removing an item.
     fn rebuild_flattened_items(&mut self) {
-        self.rebuild_flatten_items_and_select_path(None, None);
+        self.rebuild_flatten_items_impl(None, None, None);
     }
 
     fn rebuild_flattened_items_without(&mut self, path_to_remove: &StandardizedPath) -> bool {
-        self.rebuild_flatten_items_and_select_path(None, Some(path_to_remove))
+        self.rebuild_flatten_items_impl(None, Some(path_to_remove), None)
     }
 
-    /// Rebuilds the flattened items list from the current entry tree
-    /// If `id_to_select` is `Some`, the item identified by that FileTreeIdentifier will be selected.
-    /// If `path_to_remove` is `Some`, the item identified by `path_to_remove` will be removed
-    /// upon rebuilding.
+    /// Core implementation for rebuilding the flattened items list.
+    ///
+    /// When `target_root` is `Some`, only that root is re-flattened; all
+    /// other roots keep their existing items. When `None`, every displayed
+    /// root is rebuilt.
+    ///
+    /// If `id_to_select` is `Some`, the item identified by that
+    /// `FileTreeIdentifier` will be selected. If `path_to_remove` is
+    /// `Some`, the item at that path will be excluded from the result.
+    ///
     /// Returns `true` if an item was removed.
-    fn rebuild_flatten_items_and_select_path(
+    fn rebuild_flatten_items_impl(
         &mut self,
         id_to_select: Option<&FileTreeIdentifier>,
         path_to_remove: Option<&StandardizedPath>,
+        target_root: Option<&StandardizedPath>,
     ) -> bool {
         let mut any_item_removed = false;
 
         // Clone the ID to preserve so we don't hold a borrow on self.selected_item
         let id_to_preserve = id_to_select.cloned().or_else(|| self.selected_item.clone());
 
-        // Process all displayed directories
+        // Process displayed directories, optionally filtering to a single root.
         for root_path in self.displayed_directories.clone() {
+            if let Some(target) = target_root {
+                if root_path != *target {
+                    continue;
+                }
+            }
+
             let Some(root_dir) = self.root_directories.get(&root_path) else {
                 continue;
             };

@@ -27,6 +27,7 @@ use crate::code_review::comments::{
 };
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::server::server_api::AIApiError;
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 use ai::skills::ParsedSkill;
 use chrono::{DateTime, Local, TimeDelta};
 use comment::ReviewComment;
@@ -2500,6 +2501,15 @@ pub enum AIAgentInput {
         suggestion: PassiveSuggestionResultType,
         context: Arc<[AIAgentContext]>,
     },
+
+    /// Piggybacked orchestration config update from the plan card.
+    /// Sent on the next outbound request after the user edits the
+    /// config block or toggles approval.
+    OrchestrationConfigUpdate {
+        plan_id: String,
+        config: OrchestrationConfig,
+        status: OrchestrationConfigStatus,
+    },
 }
 
 /// Data for a single message received by an agent from another agent.
@@ -2593,6 +2603,7 @@ impl Display for AIAgentInput {
                 write!(f, "EventsFromAgents({} events)", events.len())
             }
             Self::PassiveSuggestionResult { .. } => write!(f, "PassiveSuggestionResult"),
+            Self::OrchestrationConfigUpdate { .. } => write!(f, "OrchestrationConfigUpdate"),
         }
     }
 }
@@ -2650,7 +2661,8 @@ impl AIAgentInput {
             | Self::StartFromAmbientRunPrompt { .. }
             | Self::MessagesReceivedFromAgents { .. }
             | Self::EventsFromAgents { .. }
-            | Self::PassiveSuggestionResult { .. } => None,
+            | Self::PassiveSuggestionResult { .. }
+            | Self::OrchestrationConfigUpdate { .. } => None,
         }
     }
 
@@ -2747,7 +2759,8 @@ impl AIAgentInput {
             | Self::PassiveSuggestionResult { context, .. } => Some(context),
             Self::SummarizeConversation { .. }
             | Self::MessagesReceivedFromAgents { .. }
-            | Self::EventsFromAgents { .. } => None,
+            | Self::EventsFromAgents { .. }
+            | Self::OrchestrationConfigUpdate { .. } => None,
         }
     }
 
@@ -2778,7 +2791,8 @@ impl AIAgentInput {
             | Self::StartFromAmbientRunPrompt { .. }
             | Self::MessagesReceivedFromAgents { .. }
             | Self::EventsFromAgents { .. }
-            | Self::PassiveSuggestionResult { .. } => None,
+            | Self::PassiveSuggestionResult { .. }
+            | Self::OrchestrationConfigUpdate { .. } => None,
         }
     }
 
