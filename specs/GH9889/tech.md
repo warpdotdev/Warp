@@ -164,10 +164,19 @@ gated to visible in-progress exchanges**.
 - Two tick frequencies: 1Hz for progress labels, 30s for relative
   labels. Use a single underlying timer firing at 1Hz and
   internally rate-limit the 30s consumers.
-- Stops ticking when the agent view loses visibility
-  (existing `is_visible` hook on the view; verify by grepping
-  the agent_view mod).
-- Resumes on visibility regain.
+- Stops ticking when the agent view loses visibility.
+
+  > **Correction (re-review #10128):** the previous draft cited
+  > "the existing `is_visible` hook" without identifying it. The
+  > concrete lifecycle source is the `ViewHandle`'s lifecycle
+  > callbacks: `BlockListViewModel::is_panel_visible(app)` /
+  > `terminal_view().is_active(app)` (the same checks the agent
+  > view's existing 1Hz status refresh uses). The
+  > `TimestampTickService` registers a `view_visibility_changed`
+  > observer at construction and pauses/resumes the underlying
+  > 1Hz timer in response. There is no new lifecycle API; we reuse
+  > what the agent view already polls.
+- Resumes on visibility regain via the same observer.
 
 Why not per-widget timers:
 - A long conversation can have 50+ visible exchanges. 50 separate
@@ -337,9 +346,33 @@ invariants ever drift.
 
 ## Cancellation handling (B8)
 
-The `ExchangeTimes` struct exposes `cancelled_at: Option<DateTime<Local>>`.
-`DurationLabel` checks `cancelled_at` before `completed_at`; if
-present, renders "cancelled at HH:MM • Xs" instead of "HH:MM • Xs".
+> **Correction (re-review #10128):** the previous draft had two
+> separate slots — `TimestampLabel` (showing `completed_at`) and
+> `DurationLabel` (showing the duration, swapped to "cancelled at
+> HH:MM • Xs" when cancelled). That double-displays the
+> completion time once the cancellation slot also renders the time.
+> Resolved by routing the entire response-bubble metadata through
+> a single composite renderer.
+
+The `ExchangeTimes` struct exposes
+`cancelled_at: Option<DateTime<Local>>`. The response bubble
+renders **one** of three mutually-exclusive shapes per the
+exchange state:
+
+- **In progress** (`completed_at: None`, `cancelled_at: None`):
+  `ProgressDurationLabel` only. No timestamp slot.
+- **Cancelled** (`cancelled_at: Some(t)`): a single composite
+  label "cancelled at HH:MM • Xs". `TimestampLabel` is NOT
+  rendered separately — the composite owns both the time and
+  the duration so they cannot duplicate.
+- **Finished** (`completed_at: Some(t)`, `cancelled_at: None`):
+  `TimestampLabel` shows the completion time; `DurationLabel`
+  shows the duration. Two slots, no overlap with the cancelled
+  shape.
+
+This makes the three shapes structurally distinct rather than
+"swap a string in one slot and hope the other slot is hidden,"
+removing the duplication path.
 
 ## Test plan
 
@@ -390,8 +423,12 @@ Tests use a fixed `now` (e.g. 2026-05-05 15:47:23) and exercise both
   build (snapshot test).
 - IT6: Restore a yaml conversation with messages dated yesterday;
   exchanges show "Mon 3:47 PM" not "just now."
-- IT7: An exchange with stripped timestamps shows "—" and emits a
-  single `log::warn!`.
+- IT7: An exchange with `output_status = Finished` and
+  `finish_time: None` (forced via test fixture, since the model's
+  recompute paths normally synthesize `Local::now()`) renders "—"
+  in the duration slot and emits a single `log::warn!`. This is
+  the defensive-guard path from B7; it does NOT fire on normal
+  restored conversations whose timestamps were synthesized.
 - IT8: After 5 minutes (advance the clock in test), a "just now"
   exchange auto-promotes to "5m ago" without user action.
 
@@ -430,7 +467,9 @@ prompt/response rendering this spec targets.
 - Per-token / per-tool-call timestamps.
 - Cumulative agent CPU time / credits per exchange (overlaps
   #10000, #10052).
-- Time-zone selection and 24h vs 12h preference.
+- Time-zone selection (use `Local`). Note: 24h vs 12h preference is IN
+  scope per B2 and the formatter section — read from OS at startup,
+  no user-facing setting in V1.
 - Exporting timestamps to the conversation yaml view.
 - CLI agent (third-party) conversation timestamps — same
   `AIAgentExchange` model could be reused but the CLI agent surface
