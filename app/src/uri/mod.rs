@@ -38,6 +38,7 @@ use url::Url;
 use warpui::notification::UserNotification;
 use warpui::{platform::TerminationMode, SingletonEntity as _, TypedActionView};
 
+use warp_util::path::LineAndColumnArg;
 use warpui::{AppContext, EntityId, ViewHandle, WindowId};
 
 use self::docker::open_docker_container;
@@ -666,16 +667,60 @@ fn parse_tab_path(url: &Url) -> Option<PathBuf> {
     Some(PathBuf::from(shellexpand::tilde(&raw).into_owned()))
 }
 
+fn parse_positive_usize_query_param(url: &Url, name: &str) -> Result<Option<usize>> {
+    let Some(raw) = url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v) else {
+        return Ok(None);
+    };
+
+    let value = raw.parse::<usize>()?;
+    ensure!(value > 0, "`{name}` must be greater than 0");
+    Ok(Some(value))
+}
+
+fn parse_open_file_url(url: &Url) -> Result<(PathBuf, Option<LineAndColumnArg>)> {
+    let raw_path = url
+        .query_pairs()
+        .find(|(k, _)| k == "path")
+        .map(|(_, v)| v)
+        .ok_or_else(|| anyhow!("missing path for open_file action"))?;
+    let path = PathBuf::from(raw_path.into_owned());
+    ensure!(
+        path.is_absolute(),
+        "`path` must be absolute for open_file action"
+    );
+
+    let line = parse_positive_usize_query_param(url, "line")?;
+    let column = parse_positive_usize_query_param(url, "column")?;
+    ensure!(
+        line.is_some() || column.is_none(),
+        "`column` requires `line` for open_file action"
+    );
+
+    Ok((
+        path,
+        line.map(|line_num| LineAndColumnArg {
+            line_num,
+            column_num: column,
+        }),
+    ))
+}
+
 #[derive(Debug)]
 enum Action {
     NewTab,
     NewWindow,
+    OpenFile {
+        path: PathBuf,
+        line_col: Option<LineAndColumnArg>,
+    },
     Docker,
     OpenRepo,
     CloudAgentSetup,
     NewCloudAgentConversation,
     NewAgentConversation,
-    CreateEnvironment { repos: Vec<String> },
+    CreateEnvironment {
+        repos: Vec<String>,
+    },
     FocusCloudMode,
 }
 
@@ -684,6 +729,10 @@ impl Action {
         match url.path() {
             "/new_tab" => Ok(Self::NewTab),
             "/new_window" => Ok(Self::NewWindow),
+            "/open_file" => {
+                let (path, line_col) = parse_open_file_url(url)?;
+                Ok(Self::OpenFile { path, line_col })
+            }
             "/docker/open_subshell" => Ok(Self::Docker),
             "/open-repo" => Ok(Self::OpenRepo),
             "/cloud_agent_setup" => Ok(Self::CloudAgentSetup),
@@ -719,7 +768,16 @@ impl Action {
                     log::warn!("Could not parse path to open a new tab/window");
                     return;
                 };
-                open_file(window_id, path, ctx);
+                open_file(window_id, path, None, OpenFileOrigin::PathAction, ctx);
+            }
+            Self::OpenFile { path, line_col } => {
+                open_file(
+                    primary_window_id,
+                    path.clone(),
+                    *line_col,
+                    OpenFileOrigin::OpenFileUri,
+                    ctx,
+                );
             }
             Action::Docker => {
                 if let Err(err) = open_docker_container(url, ctx) {
@@ -917,6 +975,7 @@ impl Action {
         use WindowBehaviorHint as W;
         match self {
             Self::Docker
+            | Self::OpenFile { .. }
             | Self::CreateEnvironment { .. }
             | Self::OpenRepo
             | Self::CloudAgentSetup
@@ -956,7 +1015,7 @@ pub fn handle_incoming_uri(url: &Url, ctx: &mut AppContext) {
     #[cfg(feature = "local_tty")]
     if url.scheme() == "file" {
         if let Ok(path) = url.to_file_path() {
-            open_file(primary_window_id, path, ctx);
+            open_file(primary_window_id, path, None, OpenFileOrigin::FileUrl, ctx);
         }
         return;
     }
@@ -1018,6 +1077,13 @@ enum OpenFileAction {
     ExecuteInSession,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenFileOrigin {
+    FileUrl,
+    PathAction,
+    OpenFileUri,
+}
+
 /// Pure routing decision for `open_file`. Extracted so it can be unit-tested without
 /// standing up a full `AppContext`.
 fn classify_open_file_action(path: &Path) -> OpenFileAction {
@@ -1039,18 +1105,33 @@ fn classify_open_file_action(path: &Path) -> OpenFileAction {
     OpenFileAction::ExecuteInSession
 }
 
-/// Handle an incoming `file://` URL.
+fn should_handle_open_file_action(action: OpenFileAction, origin: OpenFileOrigin) -> bool {
+    origin != OpenFileOrigin::OpenFileUri || action != OpenFileAction::ExecuteInSession
+}
+
+/// Handle an incoming file path from a URI.
 /// * Markdown files are opened as notebook panes.
 /// * For directories, open a new session at the directory path.
 /// * For other files, open a new session at the parent directory path, then possibly execute the
 ///   file.
-fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
+fn open_file(
+    window_id: Option<WindowId>,
+    path: PathBuf,
+    line_col: Option<LineAndColumnArg>,
+    origin: OpenFileOrigin,
+    ctx: &mut AppContext,
+) {
     let primary_window_and_view = window_id.and_then(|window_id| {
         ctx.root_view_id(window_id)
             .map(|view_id| (window_id, view_id))
     });
 
     let action = classify_open_file_action(&path);
+    if !should_handle_open_file_action(action, origin) {
+        log::warn!("open_file URI cannot execute files or open sessions");
+        return;
+    }
+
     if action == OpenFileAction::Notebook {
         if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
             ctx.dispatch_action(
@@ -1094,8 +1175,16 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
             if let Some(workspaces) = ctx.views_of_type::<Workspace>(window_id) {
                 if let Some(workspace) = workspaces.into_iter().next() {
                     workspace.update(ctx, |workspace, ctx| {
-                        let source = CodeSource::Finder { path: path.clone() };
-                        workspace.open_file_with_target(path, target, None, source, ctx);
+                        let source = if origin == OpenFileOrigin::OpenFileUri {
+                            CodeSource::Link {
+                                path: path.clone(),
+                                range_start: line_col,
+                                range_end: None,
+                            }
+                        } else {
+                            CodeSource::Finder { path: path.clone() }
+                        };
+                        workspace.open_file_with_target(path, target, line_col, source, ctx);
                     });
                 }
             }
