@@ -163,6 +163,21 @@ remove_existing_common_skill_dirs() {
     rm -rf "${dest_skills_dir}/$(basename "${skill_dir}")"
   done < <(find "${source_skills_dir}" -mindepth 1 -maxdepth 1 -type d | sort)
 }
+install_common_skills_from_source() {
+  local source_dir="$1"
+  local dest_dir="$2"
+
+  if [[ "${dest_dir}" = "${HOME}" ]]; then
+    HOME="${dest_dir}" npx --yes skills@latest add "${source_dir}" --skill '*' --agent warp --copy --global -y
+    return
+  fi
+
+  mkdir -p "${dest_dir}"
+  (
+    cd "${dest_dir}"
+    npx --yes skills@latest add "${source_dir}" --skill '*' --agent warp --copy -y
+  )
+}
 
 write_stamp() {
   local dest_dir="$1"
@@ -262,10 +277,9 @@ if [[ "${FORCE}" -ne 1 && "${IF_NEEDED}" -eq 1 && "${STAMP_REPO}" = "${COMMON_SK
 fi
 
 SOURCE_CLONE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/common-skills-source.XXXXXX")"
-SKILLS_CLONE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/common-skills.XXXXXX")"
 
 cleanup() {
-  rm -rf "${SOURCE_CLONE_DIR}" "${SKILLS_CLONE_DIR}"
+  rm -rf "${SOURCE_CLONE_DIR}"
 }
 trap cleanup EXIT
 
@@ -274,6 +288,5 @@ ACTUAL_REF="$(actual_source_ref "${SOURCE_DIR}")"
 
 echo "Installing common agent skills from ${COMMON_SKILLS_REPO_URL} at ${ACTUAL_REF}."
 remove_existing_common_skill_dirs "${SOURCE_DIR}" "${DEST_DIR}"
-WARP_COMMON_SKILLS_REPO_URL="${SOURCE_DIR}" \
-  bash "${SOURCE_DIR}/scripts/install.sh" --clone-dir "${SKILLS_CLONE_DIR}" --dest-dir "${DEST_DIR}"
+install_common_skills_from_source "${SOURCE_DIR}" "${DEST_DIR}"
 write_stamp "${DEST_DIR}" "${COMMON_SKILLS_REPO_URL}" "${ACTUAL_REF}"
