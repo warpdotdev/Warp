@@ -35,6 +35,13 @@ targets auto-save behavior.
      `Off`, `AfterDelay`, `OnFocusChange`, `AfterDelayAndFocusChange`.
    - Add a new setting field under `CodeSettings` at TOML path
      `code.editor.auto_save.mode`.
+   - Serialize values as `off`, `after_delay`, `on_focus_change`,
+     `after_delay_and_focus_change` to match product wording.
+   - Set settings metadata explicitly:
+     - `supported_platforms`: all desktop platforms currently supported by
+       Warp settings.
+     - `sync_to_cloud`: enabled (normal synced code setting behavior).
+     - `private`: false (non-secret preference).
    - Keep default at `Off`.
 
 2. Add auto-save UI in `app/src/settings_view/code_page.rs`.
@@ -62,11 +69,18 @@ targets auto-save behavior.
      autosave trigger time.
    - Immediately before writing to disk, verify expected version still matches
      current model state; if mismatched, abort save as conflict/no-op.
+   - On abort, preserve dirty/conflict state and emit an explicit save-skipped
+     (conflict) outcome so existing conflict UX remains authoritative and no
+     success path is observed.
    - Keep manual save behavior unchanged unless maintainers prefer this same
      guard to apply uniformly.
 
 5. Differentiate manual vs automatic save origin.
    - Add save-origin metadata to local editor save completion events.
+   - Add a per-save request correlation ID (`save_request_id`) generated at
+     initiation and carried through the save pipeline and completion callback.
+   - Match completions by `save_request_id` (not only file/version) so
+     overlapping manual + autosave operations cannot cross-classify origin.
    - Track save origin through local save initiation and global buffer save
      completion callbacks.
    - Preserve existing behavior for manual saves.
@@ -112,9 +126,14 @@ Map to `product.md` behavior invariants:
   - Unit test: autosave no-ops when version conflict exists at trigger time.
   - Unit test: autosave aborts when version changes between trigger and final
     write (debounce/async race window).
+  - Unit test: aborted final-write guard preserves dirty/conflict state and
+    returns save-skipped/conflict outcome (no success event).
 
-- (10, 11) Toast behavior:
-  - Code view test(s): manual save shows success toast; auto-save path does not.
+- (5, 6, 10, 11) Save-origin correlation + toast behavior:
+  - Unit test: overlapping manual and autosave requests on same file are
+    correlated by `save_request_id` and produce correct origin classification.
+  - Code view test(s): success toast suppression applies only to correlated
+    autosave completions, while manual save completions still toast.
 
 - (12, 13) Formatting + error behavior:
   - Unit/integration test: autosave path does not call format-and-save hooks.
