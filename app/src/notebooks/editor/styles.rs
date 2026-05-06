@@ -1,5 +1,5 @@
 use warp_core::ui::appearance::Appearance;
-use warp_editor::render::model::{BlockSpacing, IndentableBlockSpacing, RichTextStyles};
+use warp_editor::render::model::{BlockSpacing, IndentableBlockSpacing, PlaceholderVisibility, RichTextStyles};
 use warpui::elements::{Margin, Padding};
 use warpui::text_layout::DEFAULT_TOP_BOTTOM_RATIO;
 use crate::notebooks::editor::{NOTEBOOK_BASELINE_RATIO, NOTEBOOK_LINE_HEIGHT_RATIO};
@@ -33,7 +33,8 @@ impl RichTextStylesExt for RichTextStyles {
         );
         styles.minimum_paragraph_height = None;
         styles.cursor_width = 3.;
-        styles.show_placeholder_text_on_empty_block = true;
+        styles.placeholder_visibility = PlaceholderVisibility::WhenBufferEmpty;
+        styles.placeholder_text = Some("Leave a comment".into());
         // Only compact text block spacings; keep the default code block spacing.
         styles.block_spacings.text = compact_text_spacing;
         styles.block_spacings.header = compact_text_spacing;

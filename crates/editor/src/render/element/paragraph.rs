@@ -52,8 +52,13 @@ impl RenderableBlock for RenderableParagraph {
     ) {
         self.placeholder
             .layout(&self.viewport_item, model, ctx, app, |_| {
+                let text = model
+                    .styles()
+                    .placeholder_text
+                    .as_deref()
+                    .unwrap_or_else(|| paragraph_placeholder_text(model.selections().len() == 1));
                 placeholder::Options {
-                    text: paragraph_placeholder_text(model.selections().len() == 1),
+                    text,
                     block_style: BufferBlockStyle::PlainText,
                 }
             });

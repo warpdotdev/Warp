@@ -205,6 +205,17 @@ pub struct RenderLayoutOptions {
     pub render_mermaid_diagrams: bool,
 }
 
+/// Controls when placeholder text is shown in empty blocks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaceholderVisibility {
+    /// Show placeholder text in empty blocks (the default for notebooks).
+    Enabled,
+    /// Never show placeholder text.
+    Disabled,
+    /// Only show placeholder text when the entire buffer is empty (single empty block).
+    WhenBufferEmpty,
+}
+
 #[derive(Debug)]
 pub enum StyleUpdateAction {
     Relayout,
@@ -497,8 +508,10 @@ pub struct RichTextStyles {
     /// is only applied for some blocks like trailing cursor, text
     /// and headers.
     pub minimum_paragraph_height: Option<Pixels>,
-    /// Whether to show placeholder text on empty blocks.
-    pub show_placeholder_text_on_empty_block: bool,
+    /// Controls when placeholder text is shown in empty blocks.
+    pub placeholder_visibility: PlaceholderVisibility,
+    /// Custom placeholder text. When `None`, the default notebook placeholder is used.
+    pub placeholder_text: Option<String>,
     /// Width of the cursor
     pub cursor_width: f32,
     /// Whether to highlight detected URLs.

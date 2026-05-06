@@ -76,10 +76,18 @@ impl BlockPlaceholder {
                 .is_some_and(|cursor| block.contains_content(cursor))
         });
 
-        if !model.styles().show_placeholder_text_on_empty_block
-            || (!self.show_always && !contains_cursor)
-        {
-            // If the cursor isn't in this block, don't lay out the placeholder.
+        use crate::render::model::PlaceholderVisibility;
+        let visibility = model.styles().placeholder_visibility;
+        let should_show = match visibility {
+            PlaceholderVisibility::Disabled => false,
+            PlaceholderVisibility::Enabled => self.show_always || contains_cursor,
+            PlaceholderVisibility::WhenBufferEmpty => {
+                // Show only when every block in the buffer is empty.
+                let all_empty = model.content().block_items().all(BlockItem::is_empty);
+                (self.show_always || contains_cursor) && all_empty
+            }
+        };
+        if !should_show {
             return;
         }
 

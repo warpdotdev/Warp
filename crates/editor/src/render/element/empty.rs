@@ -6,6 +6,7 @@ use crate::{
         model::{BlockItem, RenderState, viewport::ViewportItem},
     },
 };
+use warpui::geometry::vector::vec2f;
 
 use super::{
     RenderContext, RenderableBlock,
@@ -42,8 +43,13 @@ impl RenderableBlock for Empty {
     ) {
         self.placeholder
             .layout(&self.viewport_item, model, ctx, app, |_| {
+                let text = model
+                    .styles()
+                    .placeholder_text
+                    .as_deref()
+                    .unwrap_or_else(|| paragraph_placeholder_text(model.selections().len() == 1));
                 placeholder::Options {
-                    text: paragraph_placeholder_text(model.selections().len() == 1),
+                    text,
                     block_style: BufferBlockStyle::PlainText,
                 }
             });
@@ -66,10 +72,11 @@ impl RenderableBlock for Empty {
                 block_width: None,
                 font_size: Some(base.font_size),
             };
+            let cursor_size = vec2f(model.styles().cursor_width, cursor.item.size().y());
             ctx.draw_and_save_cursor(
                 ctx.cursor_type,
                 cursor.content_origin(),
-                cursor.item.size(),
+                cursor_size,
                 cursor_data,
                 model.styles(),
             );

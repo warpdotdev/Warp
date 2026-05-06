@@ -59,7 +59,7 @@ use warp_editor::{
         },
         model::{
             AutoScrollMode, BlockSpacing, Decoration, ExpansionType, LineCount, ParagraphStyles,
-            RichTextStyles, CODE_EDITOR_HIDDEN_SECTION_EXPANSION_LINES,
+            PlaceholderVisibility, RichTextStyles, CODE_EDITOR_HIDDEN_SECTION_EXPANSION_LINES,
         },
     },
     search::{SearchEvent, Searcher, MATCH_FILL, SELECTED_MATCH_FILL},
@@ -80,8 +80,8 @@ use warpui::{
     prelude::RectF,
     text::point::Point,
     units::Pixels,
-    AppContext, BlurContext, CursorInfo, Element, Entity, FocusContext, ModelHandle,
-    SingletonEntity, View, ViewContext, ViewHandle, WeakViewHandle, WindowId,
+    AppContext, BlurContext, Element, Entity, FocusContext, ModelHandle, SingletonEntity, View,
+    ViewContext, ViewHandle, WeakViewHandle, WindowId,
 };
 
 mod actions;
@@ -2019,7 +2019,7 @@ impl CodeEditorView {
                         }
                     }
 
-                    // If the character is opening autocomplete symbol, we want to autocomplete it with a closing symbol.
+                    // If the character is opening autcomplete symbol, we want to autocomplete it with a closing symbol.
                     if let Some(close) = AUTOCOMPLETE_SYMBOLS.get(&first_char) {
                         self.model.update(ctx, |model, ctx| {
                             model.autocomplete_symbol(first_char, *close, ctx);
@@ -2335,18 +2335,6 @@ impl View for CodeEditorView {
         }
     }
 
-    fn active_cursor_position(&self, ctx: &ViewContext<Self>) -> Option<CursorInfo> {
-        let render_state = self.model.as_ref(ctx).render_state().as_ref(ctx);
-        let cursor_id = render_state.saved_positions().cursor_id();
-        let font_size = render_state.styles().base_text.font_size;
-
-        ctx.element_position_by_id(cursor_id.as_str())
-            .map(|position| CursorInfo {
-                position,
-                font_size,
-            })
-    }
-
     fn on_blur(&mut self, blur_ctx: &BlurContext, ctx: &mut ViewContext<Self>) {
         if blur_ctx.is_self_blurred() {
             ctx.notify();
@@ -2392,7 +2380,7 @@ pub fn code_text_styles(
         margin: Margin::uniform(0.).with_left(1.),
         padding: Padding::uniform(0.),
     };
-    styling.show_placeholder_text_on_empty_block = false;
+    styling.placeholder_visibility = PlaceholderVisibility::Disabled;
     styling.minimum_paragraph_height = None;
     styling.cursor_width = 2.;
     // URLs are not clickable in code editors, so we should not highlight them.

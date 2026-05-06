@@ -18,8 +18,8 @@ use warpui::{
 
 use super::{
     BlockItem, BrokenLinkStyle, CheckBoxStyle, DEFAULT_BLOCK_SPACINGS, HorizontalRuleStyle,
-    InlineCodeStyle, OffsetMap, PARAGRAPH_MIN_HEIGHT, Paragraph, ParagraphStyles, RichTextStyles,
-    TEXT_SPACING, TableStyle,
+    InlineCodeStyle, OffsetMap, PARAGRAPH_MIN_HEIGHT, Paragraph, ParagraphStyles,
+    PlaceholderVisibility, RichTextStyles, TEXT_SPACING, TableStyle,
 };
 
 pub const TEST_BASELINE_OFFSET: f32 = 0.7;
@@ -198,7 +198,8 @@ pub const TEST_STYLES: RichTextStyles = RichTextStyles {
         icon_color: WHITE,
     },
     block_spacings: DEFAULT_BLOCK_SPACINGS,
-    show_placeholder_text_on_empty_block: false,
+    placeholder_visibility: PlaceholderVisibility::Disabled,
+    placeholder_text: None,
     minimum_paragraph_height: Some(PARAGRAPH_MIN_HEIGHT),
     cursor_width: 1.,
     highlight_urls: true,

@@ -302,8 +302,10 @@ impl<'a, 'b> RenderContext<'a, 'b> {
         let cursor_origin = match cursor_display_type {
             CursorDisplayType::Bar => {
                 // Center the cursor on its origin. This reduces the amount of overlap with glyphs,
-                // especially for wider cursors.
-                self.content_to_screen(content_position) - vec2f(size.x() / 2., 0.)
+                // especially for wider cursors. Clamp to the viewport left edge so the cursor
+                // isn't clipped when at the start of the content area.
+                let centered = self.content_to_screen(content_position) - vec2f(size.x() / 2., 0.);
+                vec2f(centered.x().max(self.bounds.min_x()), centered.y())
             }
             CursorDisplayType::Block => self.content_to_screen(content_position),
             CursorDisplayType::Underline => {
