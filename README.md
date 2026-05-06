@@ -1,6 +1,10 @@
 <a href="https://www.warp.dev">
     <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://github.com/user-attachments/assets/9976b2da-2edd-4604-a36c-8fd53719c6d4" />
 </a>
+<p align="center">
+  <img height="20" alt="Built with Warp" src="./images/Built-With-Warp-Export@2x.png" />
+  <img height="20" alt="Powered by Oz" src="./images/Powered-By-Oz-Export@2x.png" />
+</p>
 
 <p align="center">
   <a href="https://www.warp.dev">Website</a>
