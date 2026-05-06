@@ -1,0 +1,162 @@
+{
+  "settings.code.adds_an_ide_style_project_explorer_file_tree_to_the_left_side_tools_panel": {
+    "en": "Adds an IDE-style project explorer / file tree to the left side tools panel.",
+    "zh": "向左侧工具面板添加 IDE 风格的项目资源管理器/文件树。"
+  },
+  "settings.code.adds_global_file_search_to_the_left_side_tools_panel": {
+    "en": "Adds global file search to the left side tools panel.",
+    "zh": "向左侧工具面板添加全局文件搜索。"
+  },
+  "settings.code.auto_open_code_review_panel": {
+    "en": "Auto open code review panel",
+    "zh": "自动打开代码审查面板"
+  },
+  "settings.code.available": {
+    "en": "Available",
+    "zh": "可用"
+  },
+  "settings.code.available_for_download": {
+    "en": "Available for download",
+    "zh": "可下载"
+  },
+  "settings.code.busy": {
+    "en": "Busy",
+    "zh": "繁忙"
+  },
+  "settings.code.checking": {
+    "en": "Checking...",
+    "zh": "检查中…"
+  },
+  "settings.code.codebase_indexing": {
+    "en": "Codebase indexing",
+    "zh": "代码库索引"
+  },
+  "settings.code.codebase_too_large": {
+    "en": "Codebase too large",
+    "zh": "代码库过大"
+  },
+  "settings.code.failed": {
+    "en": "Failed",
+    "zh": "失败"
+  },
+  "settings.code.global_file_search": {
+    "en": "Global file search",
+    "zh": "全局文件搜索"
+  },
+  "settings.code.indexing": {
+    "en": "INDEXING",
+    "zh": "索引中"
+  },
+  "settings.code.index_new_folder": {
+    "en": "Index new folder",
+    "zh": "新建索引文件夹"
+  },
+  "settings.code.index_new_folders_by_default": {
+    "en": "Index new folders by default",
+    "zh": "默认索引新文件夹"
+  },
+  "settings.code.initialization_settings": {
+    "en": "Initialization Settings",
+    "zh": "初始化设置"
+  },
+  "settings.code.initialized_indexed_folders": {
+    "en": "Initialized / indexed folders",
+    "zh": "已初始化/已索引文件夹"
+  },
+  "settings.code.installed": {
+    "en": "Installed",
+    "zh": "已安装"
+  },
+  "settings.code.installing": {
+    "en": "Installing...",
+    "zh": "安装中…"
+  },
+  "settings.code.lsp_servers": {
+    "en": "LSP SERVERS",
+    "zh": "LSP 服务器"
+  },
+  "settings.code.no_folders_have_been_initialized_yet": {
+    "en": "No folders have been initialized yet.",
+    "zh": "尚未初始化任何文件夹。"
+  },
+  "settings.code.no_index_built": {
+    "en": "No index built",
+    "zh": "未构建索引"
+  },
+  "settings.code.no_index_created": {
+    "en": "No index created",
+    "zh": "未创建索引"
+  },
+  "settings.code.not_running": {
+    "en": "Not running",
+    "zh": "未运行"
+  },
+  "settings.code.open_project_rules": {
+    "en": "Open project rules",
+    "zh": "打开项目规则"
+  },
+  "settings.code.project_explorer": {
+    "en": "Project explorer",
+    "zh": "项目资源管理器"
+  },
+  "settings.code.restart_server": {
+    "en": "Restart server",
+    "zh": "重启服务器"
+  },
+  "settings.code.show_a_button_in_the_top_right_of_the_window_to_toggle_the_code_review_panel": {
+    "en": "Show a button in the top right of the window to toggle the code review panel.",
+    "zh": "在窗口右上角显示切换代码审查面板的按钮。"
+  },
+  "settings.code.show_code_review_button": {
+    "en": "Show code review button",
+    "zh": "显示代码审查按钮"
+  },
+  "settings.code.show_diff_stats_on_code_review_button": {
+    "en": "Show diff stats on code review button",
+    "zh": "在审查按钮上显示差异统计"
+  },
+  "settings.code.show_lines_added_and_removed_counts_on_the_code_review_button": {
+    "en": "Show lines added and removed counts on the code review button.",
+    "zh": "在审查按钮上显示添加和删除的行数。"
+  },
+  "settings.code.stopped": {
+    "en": "Stopped",
+    "zh": "已停止"
+  },
+  "settings.code.synced": {
+    "en": "Synced",
+    "zh": "已同步"
+  },
+  "settings.code.syncing": {
+    "en": "Syncing...",
+    "zh": "同步中…"
+  },
+  "settings.code.team_admins_have_disabled_codebase_indexing": {
+    "en": "Team admins have disabled codebase indexing.",
+    "zh": "团队管理员已禁用代码库索引。"
+  },
+  "settings.code.team_admins_have_enabled_codebase_indexing": {
+    "en": "Team admins have enabled codebase indexing.",
+    "zh": "团队管理员已启用代码库索引。"
+  },
+  "settings.code.to_exclude_specific_files_or_directories_from_indexing_add_them_to_the_warpindexingignore_file_in_your_repository_directory_these_files_will_still_be_accessible_to_ai_features_but_they_won_t_be_included_in_codebase_embeddings": {
+    "en": "To exclude specific files or directories from indexing, add them to the .warpindexingignore file in your repository directory. These files will still be accessible to AI features, but they won't be included in codebase embeddings.",
+    "zh": "要从索引中排除特定文件或目录，请将其添加到仓库目录的 .warpindexingignore 文件中。这些文件仍可被 AI 功能访问，但不会包含在代码库嵌入中。"
+  },
+  "settings.code.view_logs": {
+    "en": "View logs",
+    "zh": "查看日志"
+  },
+  "settings.code.warp_can_automatically_index_code_repositories_as_you_navigate_them_helping_agents_quickly_understand_context_and_provide_solutions_code_is_never_stored_on_the_server_if_a_codebase_is_unable_to_be_indexed_warp_can_still_navigate_your_codebase_and_gain_insights_via_grep_and_find_tool_calling": {
+    "en": "Warp can automatically index code repositories as you navigate them, helping agents quickly understand context and provide solutions. Code is never stored on the server. If a codebase is unable to be indexed, Warp can still navigate your codebase and gain insights via grep and find tool calling.",
+    "zh": "Warp 可以在您浏览代码库时自动索引，帮助代理快速理解上下文并提供解决方案。代码不会存储在服务器上。即使无法索引，Warp 也可通过 grep 和 find 工具调用浏览代码库。"
+  },
+  "settings.code.when_set_to_true_warp_will_automatically_index_code_repositories_as_you_navigate_them_helping_agents_quickly_understand_context_and_provide_targeted_solutions": {
+    "en": "When set to true, Warp will automatically index code repositories as you navigate them - helping agents quickly understand context and provide targeted solutions.",
+    "zh": "设为 true 后，Warp 将在您浏览代码库时自动索引，帮助代理快速理解上下文并提供针对性解决方案。"
+  },
+  "settings.code.when_this_setting_is_on_the_code_review_panel_will_open_on_the_first_accepted_diff_of_a_conversation": {
+    "en": "When this setting is on, the code review panel will open on the first accepted diff of a conversation",
+    "zh": "开启此设置后，代码审查面板将在对话的第一个已接受差异时自动打开"
+  }
+}

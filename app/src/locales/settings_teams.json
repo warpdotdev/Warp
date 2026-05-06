@@ -1,0 +1,42 @@
+{
+  "settings.teams.as_an_admin_you_can_choose_whether_to_enable_or_disable_the_ability_for_team_members_to_invite_others_by_invitation_link": {
+    "en": "As an admin, you can choose whether to enable or disable the ability for team members to invite others by invitation link.",
+    "zh": "作为管理员，您可以选择是否允许团队成员通过邀请链接邀请他人。"
+  },
+  "settings.teams.create": {
+    "en": "Create",
+    "zh": "创建"
+  },
+  "settings.teams.create_a_team": {
+    "en": "Create a team",
+    "zh": "创建团队"
+  },
+  "settings.teams.email_invitations_are_valid_for_7_days": {
+    "en": "Email invitations are valid for 7 days.",
+    "zh": "邮件邀请有效期为 7 天。"
+  },
+  "settings.teams.invite": {
+    "en": "Invite",
+    "zh": "邀请"
+  },
+  "settings.teams.set": {
+    "en": "Set",
+    "zh": "设置"
+  },
+  "settings.teams.team_name": {
+    "en": "Team name",
+    "zh": "团队名称"
+  },
+  "settings.teams.teams": {
+    "en": "Teams",
+    "zh": "团队"
+  },
+  "settings.teams.when_you_create_a_team_you_can_collaborate_on_agent_driven_development_by_sharing_cloud_agent_runs_environments_automations_and_artifacts_you_can_also_create_a_shared_knowledge_store_for_teammates_and_agents_alike": {
+    "en": "When you create a team, you can collaborate on agent-driven development by sharing cloud agent runs, environments, automations, and artifacts. You can also create a shared knowledge store for teammates and agents alike.",
+    "zh": "创建团队后，您可以通过共享云代理运行、环境、自动化和成果进行协作开发，并为团队成员和代理创建共享知识库。"
+  },
+  "settings.teams.you_are_offline": {
+    "en": "You are offline.",
+    "zh": "您已离线。"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "settings.account.check_for_updates": {
+    "en": "Check for updates",
+    "zh": "检查更新"
+  },
+  "settings.account.refer_a_friend": {
+    "en": "Refer a friend",
+    "zh": "邀请朋友"
+  },
+  "settings.account.settings_sync": {
+    "en": "Settings sync",
+    "zh": "设置同步"
+  },
+  "settings.account.sign_up": {
+    "en": "Sign up",
+    "zh": "注册"
+  },
+  "settings.account.up_to_date": {
+    "en": "Up to date",
+    "zh": "已是最新"
+  },
+  "settings.account.version": {
+    "en": "Version",
+    "zh": "版本"
+  }
+}

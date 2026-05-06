@@ -1,0 +1,38 @@
+{
+  "settings.privacy.enterprise": {
+    "en": "Enterprise",
+    "zh": "企业"
+  },
+  "settings.privacy.help_improve_warp": {
+    "en": "Help improve Warp",
+    "zh": "帮助改进 Warp"
+  },
+  "settings.privacy.manage_your_data": {
+    "en": "Manage your data",
+    "zh": "管理您的数据"
+  },
+  "settings.privacy.network_log_console": {
+    "en": "Network log console",
+    "zh": "网络日志控制台"
+  },
+  "settings.privacy.personal": {
+    "en": "Personal",
+    "zh": "个人"
+  },
+  "settings.privacy.privacy_policy": {
+    "en": "Privacy policy",
+    "zh": "隐私政策"
+  },
+  "settings.privacy.secret_redaction": {
+    "en": "Secret redaction",
+    "zh": "隐私信息遮蔽"
+  },
+  "settings.privacy.send_crash_reports": {
+    "en": "Send crash reports",
+    "zh": "发送崩溃报告"
+  },
+  "settings.privacy.store_ai_conversations_in_the_cloud": {
+    "en": "Store AI conversations in the cloud",
+    "zh": "在云端存储 AI 对话"
+  }
+}

@@ -1,3 +1,5 @@
+use crate::t;
+use crate::tr;
 use self::telemetry::SettingsTelemetryEvent;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::server::telemetry::MCPServerCollectionPaneEntrypoint;
@@ -15,7 +17,7 @@ use crate::{
         pane::view, BackingView, Direction, PaneConfiguration, PaneEvent, SplitPaneState,
     },
     server::server_api::ServerApiProvider,
-    settings::{AISettings, BlockVisibilitySettings, SettingsFileError},
+    settings::{AISettings, BlockVisibilitySettings, LanguageSettings, SettingsFileError},
     settings_view::mcp_servers_page::MCPServersSettingsPageEvent,
     terminal::{model::blockgrid::BlockGrid, SizeInfo},
     ui_components::icons,
@@ -77,6 +79,7 @@ mod about_page;
 mod admin_actions;
 mod agent_assisted_environment_modal;
 mod ai_page;
+mod language_page;
 mod appearance_page;
 mod billing_and_usage;
 mod billing_and_usage_page;
@@ -222,6 +225,7 @@ pub enum SettingsSection {
     // ── Cloud platform umbrella subpages ──
     CloudEnvironments,
     OzCloudAPIKeys,
+    Language,
 }
 
 use crate::util::bindings::custom_tag_to_keystroke;
@@ -244,6 +248,7 @@ impl Display for SettingsSection {
             SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
             SettingsSection::CloudEnvironments => write!(f, "Environments"),
             SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
+            SettingsSection::Language => write!(f, "Language"),
             _ => write!(f, "{self:?}"),
         }
     }
@@ -313,6 +318,37 @@ impl SettingsSection {
     pub fn cloud_platform_subpages() -> &'static [Self] {
         &[Self::CloudEnvironments, Self::OzCloudAPIKeys]
     }
+
+    /// Returns the localized display name for this section.
+    /// Uses JSON-based translation via `tr!`; falls back to English if key missing.
+    pub fn localized_name(self, app: &warpui::AppContext) -> String {
+        match self {
+            Self::Account => tr!("settings.account", app).to_string(),
+            Self::Appearance => tr!("settings.appearance", app).to_string(),
+            Self::Language => tr!("settings.language", app).to_string(),
+            Self::Features => tr!("settings.features", app).to_string(),
+            Self::Keybindings => tr!("settings.keyboard_shortcuts", app).to_string(),
+            Self::Privacy => tr!("settings.privacy", app).to_string(),
+            Self::Teams => tr!("settings.teams", app).to_string(),
+            Self::About => tr!("settings.about", app).to_string(),
+            Self::WarpDrive => tr!("settings.warp_drive", app).to_string(),
+            Self::Warpify => tr!("settings.warpify", app).to_string(),
+            Self::Referrals => tr!("settings.referrals", app).to_string(),
+            Self::SharedBlocks => tr!("settings.shared_blocks", app).to_string(),
+            Self::BillingAndUsage => tr!("settings.billing_and_usage", app).to_string(),
+            Self::MCPServers => tr!("settings.mcp_servers", app).to_string(),
+            Self::WarpAgent => tr!("settings.warp_agent", app).to_string(),
+            Self::AgentProfiles => tr!("settings.profiles", app).to_string(),
+            Self::AgentMCPServers => tr!("settings.mcp_servers", app).to_string(),
+            Self::Knowledge => tr!("settings.knowledge", app).to_string(),
+            Self::ThirdPartyCLIAgents => tr!("settings.third_party_cli_agents", app).to_string(),
+            Self::CodeIndexing => tr!("settings.indexing_and_projects", app).to_string(),
+            Self::EditorAndCodeReview => tr!("settings.editor_and_code_review", app).to_string(),
+            Self::CloudEnvironments => tr!("settings.environments", app).to_string(),
+            Self::OzCloudAPIKeys => tr!("settings.oz_cloud_api_keys", app).to_string(),
+            _ => self.to_string(),
+        }
+    }
 }
 
 impl FromStr for SettingsSection {
@@ -345,6 +381,7 @@ impl FromStr for SettingsSection {
             "Editor and Code Review" | "EditorAndCodeReview" => Ok(Self::EditorAndCodeReview),
             "CloudEnvironments" => Ok(Self::CloudEnvironments),
             "Oz Cloud API Keys" | "OzCloudAPIKeys" => Ok(Self::OzCloudAPIKeys),
+            "Language" => Ok(Self::Language),
             _ => Err(()),
         }
     }
@@ -970,6 +1007,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::BillingAndUsage(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::Language(handle) => $ctx.update_view(handle, $update),
         }
     };
 }
@@ -1123,6 +1161,9 @@ impl SettingsView {
             me.handle_platform_page_event(event, ctx);
         });
 
+        // Language page
+        let language_page_handle = ctx.add_typed_action_view(language_page::LanguageSettingsPageView::new);
+
         // MCP Servers page
         let mcp_servers_page_handle = ctx.add_typed_action_view(MCPServersSettingsPageView::new);
         ctx.subscribe_to_view(&mcp_servers_page_handle, |me, _, event, ctx| {
@@ -1148,6 +1189,15 @@ impl SettingsView {
 
         ctx.subscribe_to_view(&search_editor, Self::handle_search_editor_event);
 
+        // Update search placeholder text when language changes.
+        let search_editor_for_lang = search_editor.clone();
+        ctx.subscribe_to_model(&LanguageSettings::handle(ctx), move |_me, _event, _model_ctx, ctx| {
+            let placeholder = t!(ctx, "Search", "搜索");
+            search_editor_for_lang.update(ctx, |editor, ctx| {
+                editor.set_placeholder_text(placeholder, ctx);
+            });
+        });
+
         let context_menu = ctx.add_typed_action_view(|_| {
             Menu::new()
                 .prevent_interaction_with_other_elements()
@@ -1164,6 +1214,7 @@ impl SettingsView {
             SettingsPage::new(code_page_handle),
             SettingsPage::new(teams_page_handle),
             SettingsPage::new(appearance_page_handle),
+            SettingsPage::new(language_page_handle),
             SettingsPage::new(features_page_handle),
             SettingsPage::new(keybindings_handle),
             SettingsPage::new(platform_page_handle),
@@ -1205,6 +1256,7 @@ impl SettingsView {
             )),
             SettingsNavItem::Page(SettingsSection::Teams),
             SettingsNavItem::Page(SettingsSection::Appearance),
+            SettingsNavItem::Page(SettingsSection::Language),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Warpify),
@@ -1962,6 +2014,7 @@ impl SettingsView {
             SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::Language(v) => v.as_ref(app).should_render(app),
         }
     }
 
@@ -2298,7 +2351,7 @@ impl View for SettingsView {
                     {
                         let page_active = section == self.current_settings_page;
                         buttons.add_child(
-                            page.render_page_button(appearance, *match_data, page_active)
+                            page.render_page_button(appearance, *match_data, page_active, app)
                                 .on_click(move |ctx, _, _| {
                                     ctx.dispatch_typed_action(SettingsAction::SelectAndRefresh(
                                         section,
@@ -2331,7 +2384,7 @@ impl View for SettingsView {
                     // across the full clickable area, not just the text.
                     buttons.add_child(
                         umbrella
-                            .render_umbrella_row(appearance)
+                            .render_umbrella_row(appearance, app)
                             .on_click(move |ctx, _, _| {
                                 ctx.dispatch_typed_action(SettingsAction::ToggleUmbrella(
                                     nav_index,
@@ -2363,7 +2416,7 @@ impl View for SettingsView {
 
                             let is_active = subpage_section == self.current_settings_page;
                             if let Some(hoverable) = umbrella
-                                .render_subpage_button(sub_idx, appearance, match_data, is_active)
+                                .render_subpage_button(sub_idx, appearance, match_data, is_active, app)
                             {
                                 buttons.add_child(
                                     hoverable
@@ -2652,9 +2705,9 @@ impl BackingView for SettingsView {
     fn render_header_content(
         &self,
         _ctx: &view::HeaderRenderContext<'_>,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> view::HeaderContent {
-        view::HeaderContent::simple("Settings")
+        view::HeaderContent::simple(tr!("settings.settings", app))
     }
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {

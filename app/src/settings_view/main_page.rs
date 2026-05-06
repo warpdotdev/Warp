@@ -1,3 +1,4 @@
+use crate::t;
 use super::{
     flags,
     settings_page::{
@@ -319,6 +320,7 @@ impl AccountWidget {
         &self,
         auth_state: &AuthState,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let button_styles = UiComponentStyles {
             font_size: Some(14.),
@@ -340,7 +342,7 @@ impl AccountWidget {
                 self.ui_state_handles.anonymous_user_sign_up_button.clone(),
             )
             .with_style(button_styles)
-            .with_text_label("Sign up".to_owned())
+            .with_text_label(t!(app, "Sign up", "注册").to_owned())
             .build()
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(MainPageAction::SignupAnonymousUser);
@@ -618,7 +620,7 @@ impl SettingsWidget for AccountWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let account_info = if view.auth_state.is_anonymous_or_logged_out() {
-            self.render_anonymous_account_info(view.auth_state.as_ref(), appearance)
+            self.render_anonymous_account_info(view.auth_state.as_ref(), appearance, app)
         } else {
             let profile_image_source = view.auth_state.user_photo_url().map(|url| {
                 asset_cache::url_source_with_persistence(url, &warp_core::paths::cache_dir())
@@ -654,7 +656,7 @@ impl SettingsWidget for DividerWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         Container::new(
             Container::new(Empty::new().finish())
@@ -703,7 +705,7 @@ impl SettingsWidget for SettingsSyncWidget {
         };
 
         Container::new(render_body_item::<MainPageAction>(
-            "Settings sync".to_string(),
+            t!(app, "Settings sync", "设置同步").to_string(),
             Some(label_info),
             // Cloud prefs are always synced, so no need to show the local-only icon.
             LocalOnlyIconState::Hidden,
@@ -778,7 +780,7 @@ impl SettingsWidget for EarnRewardsWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         Container::new(
             self.render_row(
@@ -787,7 +789,7 @@ impl SettingsWidget for EarnRewardsWidget {
                 appearance
                     .ui_builder()
                     .link(
-                        "Refer a friend".into(),
+                        t!(app, "Refer a friend", "邀请朋友").into(),
                         None,
                         Some(Box::new(move |ctx| {
                             ctx.dispatch_typed_action(WorkspaceAction::ShowReferralSettingsPage);
@@ -837,11 +839,11 @@ impl VersionInfoWidget {
                 match autoupdate::get_update_state(app) {
                     AutoupdateStage::NoUpdateAvailable => (
                         Some(StatusContent {
-                            text: "Up to date",
+                            text: t!(app, "Up to date", "已是最新"),
                             color: faded_text_color,
                         }),
                         Some(CallToActionContent {
-                            text: "Check for updates",
+                            text: t!(app, "Check for updates", "检查更新"),
                             action: MainPageAction::CheckForUpdate,
                         }),
                     ),
@@ -920,7 +922,7 @@ impl VersionInfoWidget {
                     1.0,
                     Align::new(
                         Text::new_inline(
-                            "Version".to_string(),
+                            t!(app, "Version", "版本").to_string(),
                             appearance.ui_font_family(),
                             REGULAR_TEXT_FONT_SIZE,
                         )
@@ -1079,7 +1081,7 @@ impl SettingsWidget for LogoutWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         Container::new(
             Align::new(self.render_logout_button(appearance))

@@ -1,3 +1,4 @@
+use crate::t;
 use crate::ai::mcp::templatable::GalleryData;
 use crate::ai::mcp::MCPServerUpdate;
 use crate::modal::Modal;
@@ -75,7 +76,7 @@ use warpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
-const DESCRIPTION_TEXT: &str = "Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers. You can also find team servers that have been shared with you here. ";
+const DESCRIPTION_TEXT: &str = ""; // translated at render time
 
 #[derive(Debug, Clone)]
 pub enum MCPServersListPageViewEvent {
@@ -101,8 +102,8 @@ pub enum MCPServersListPageViewAction {
     ToggleFileBasedMcp,
 }
 
-const EMPTY_STATE_TEXT: &str = "Once you add a MCP server, it will be shown here.";
-const NO_SEARCH_RESULTS_TEXT: &str = "No search results found";
+// (translated inline) // translated at render time
+// (translated inline) // translated at render time
 
 pub struct MCPServersListPageView {
     server_cards: HashMap<ServerCardItemId, ViewHandle<ServerCardView>>,
@@ -227,7 +228,7 @@ impl MCPServersListPageView {
 
         search_editor.update(ctx, |editor, ctx| {
             editor.clear_buffer_and_reset_undo_stack(ctx);
-            editor.set_placeholder_text("Search MCP Servers", ctx);
+            editor.set_placeholder_text(t!(ctx, "Search MCP Servers", "搜索 MCP 服务器"), ctx);
         });
         let search_bar = ctx.add_typed_action_view(|_| SearchBar::new(search_editor.clone()));
 
@@ -373,7 +374,7 @@ impl MCPServersListPageView {
             template
                 .description
                 .clone()
-                .or_else(|| Some("Available to install".to_string())),
+                .or_else(|| Some(t!(ctx, "Available to install", "可安装").to_string())),
             None, // Templates can never have tools
             None, // Templates cannot have an error
             title_chip_text.into_iter().collect(),
@@ -1109,7 +1110,7 @@ impl MCPServersListPageView {
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
 
         let label = render_body_item_label::<MCPServersListPageViewAction>(
-            "Auto-spawn servers from third-party agents".to_string(),
+            t!(app, "Auto-spawn servers from third-party agents", "从第三方代理自动启动服务器").to_string(),
             None,
             None,
             LocalOnlyIconState::Hidden,
@@ -1138,23 +1139,19 @@ impl MCPServersListPageView {
 
         let toggle_row = build_toggle_element(label, switch, appearance, None);
 
-        static FILE_BASED_MCP_DESCRIPTION_FRAGMENTS: std::sync::LazyLock<
-            Vec<FormattedTextFragment>,
-        > = std::sync::LazyLock::new(|| {
-            vec![
+        let file_based_mcp_description_fragments = vec![
                 FormattedTextFragment::plain_text(
-                    "Automatically detect and spawn MCP servers from globally-scoped third-party AI agent configuration files (e.g. in your home directory). Servers detected inside a repository are never spawned automatically and must be enabled individually in the \"Detected from\" sections below. ",
+                    t!(app, "Automatically detect and spawn MCP servers from globally-scoped third-party AI agent configuration files (e.g. in your home directory). Servers detected inside a repository are never spawned automatically and must be enabled individually in the \"Detected from\" sections below. ", "自动检测并启动全局范围第三方 AI 代理配置文件（如主目录）中的 MCP 服务器。仓库内检测到的服务器不会自动启动，需在下方\"检测来源\"部分单独启用。"),
                 ),
                 FormattedTextFragment::hyperlink(
-                    "See supported providers.",
+                    t!(app, "See supported providers.", "查看支持的服务商。"),
                     "https://docs.warp.dev/agent-platform/capabilities/mcp#file-based-mcp-servers",
                 ),
-            ]
-        });
+            ];
 
         let description = FormattedTextElement::new(
             FormattedText::new([FormattedTextLine::Line(
-                (*FILE_BASED_MCP_DESCRIPTION_FRAGMENTS).clone(),
+                file_based_mcp_description_fragments.clone(),
             )]),
             style::CONTENT_FONT_SIZE,
             appearance.ui_font_family(),
@@ -1184,7 +1181,7 @@ impl MCPServersListPageView {
         let description_fragments = vec![
             FormattedTextFragment::plain_text(DESCRIPTION_TEXT),
             FormattedTextFragment::hyperlink(
-                "Learn more.",
+                t!(app, "Learn more.", "了解更多。"),
                 "https://docs.warp.dev/agent-platform/capabilities/mcp",
             ),
         ];
@@ -1261,14 +1258,14 @@ impl MCPServersListPageView {
                 && filtered_gallery_cards.is_empty()
                 && filtered_file_based_cards.is_empty()
             {
-                page.add_child(Self::render_no_search_results(appearance));
+                page.add_child(Self::render_no_search_results(appearance, app));
             } else {
                 let (owned_server_cards, mut shared_server_cards) =
                     Self::separate_server_cards_by_installed(&filtered_server_cards, app);
 
                 if !owned_server_cards.is_empty() {
                     page.add_child(self.render_server_cards_section(
-                        "My MCPs",
+                        t!(app, "My MCPs", "我的 MCP"),
                         &owned_server_cards,
                         appearance,
                         app,
@@ -1281,7 +1278,7 @@ impl MCPServersListPageView {
                         .map(|team| team.name.clone());
                     let shared_by_text = match team_name {
                         Some(name) => format!("Shared by Warp and {name}"),
-                        None => "Shared by Warp and from other devices".to_string(),
+                        None => t!(app, "Shared by Warp and from other devices", "由 Warp 和其他设备共享").to_string(),
                     };
 
                     page.add_child(self.render_server_cards_section(
@@ -1292,7 +1289,7 @@ impl MCPServersListPageView {
                     ));
                 } else if !filtered_gallery_cards.is_empty() {
                     page.add_child(self.render_server_cards_section(
-                        "Shared from Warp",
+                        t!(app, "Shared from Warp", "来自 Warp 的共享"),
                         &filtered_gallery_cards,
                         appearance,
                         app,
@@ -1486,7 +1483,7 @@ impl MCPServersListPageView {
             .finish()
     }
 
-    fn render_empty_state(&self, appearance: &Appearance, _app: &AppContext) -> Box<dyn Element> {
+    fn render_empty_state(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         Container::new(
             ConstrainedBox::new(
                 Align::new(
@@ -1497,7 +1494,7 @@ impl MCPServersListPageView {
                         .with_child(
                             appearance
                                 .ui_builder()
-                                .wrappable_text(EMPTY_STATE_TEXT, true)
+                                .wrappable_text(t!(app, "Once you add a MCP server, it will be shown here.", "添加 MCP 服务器后，它将显示在此处。"), true)
                                 .with_style(style::description_text(appearance))
                                 .build()
                                 .finish(),
@@ -1517,7 +1514,7 @@ impl MCPServersListPageView {
         .finish()
     }
 
-    fn render_no_search_results(appearance: &Appearance) -> Box<dyn Element> {
+    fn render_no_search_results(appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         Container::new(
             ConstrainedBox::new(
                 Align::new(
@@ -1528,7 +1525,7 @@ impl MCPServersListPageView {
                         .with_child(
                             appearance
                                 .ui_builder()
-                                .wrappable_text(NO_SEARCH_RESULTS_TEXT, true)
+                                .wrappable_text(t!(app, "No search results found", "未找到搜索结果"), true)
                                 .with_style(style::description_text(appearance))
                                 .build()
                                 .finish(),
@@ -1638,7 +1635,7 @@ impl MCPServersListPageView {
                     .templatable_mcp_server()
                     .description
                     .clone()
-                    .or_else(|| Some("Detected from config file".to_string())),
+                    .or_else(|| Some(t!(ctx, "Detected from config file", "从配置文件检测到").to_string())),
                 None, // tools only available when running
                 None, // no error when not yet started
                 title_chips,
@@ -1773,7 +1770,7 @@ impl MCPServersListPageView {
                 if is_shared {
                     match creator {
                         Some(creator) => Some(TitleChip::text(format!("Shared by: {creator}"))),
-                        None => Some(TitleChip::text("Shared by a team member")),
+                        None => Some(TitleChip::text(t!(ctx, "Shared by a team member", "由团队成员共享"))),
                     }
                 } else if matches!(item_id, ServerCardItemId::TemplatableMCP(_)) {
                     Some(TitleChip::text("From another device"))

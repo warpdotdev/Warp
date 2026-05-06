@@ -12,6 +12,7 @@ use super::{
     SettingsAction,
 };
 use super::{SettingActionPairContexts, SettingActionPairDescriptions, ToggleSettingActionPair};
+use crate::t;
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::channel::{Channel, ChannelState};
 use crate::context_chips::prompt::PromptEvent;
@@ -814,6 +815,7 @@ impl AppearanceSettingsPageView {
                                 *FontSettings::as_ref(ctx).enforce_minimum_contrast;
                             let name = Self::enforce_minimum_contrast_dropdown_item_label(
                                 enforce_minimum_contrast,
+                                ctx,
                             );
                             dropdown.set_selected_by_name(name, ctx);
                         });
@@ -823,7 +825,7 @@ impl AppearanceSettingsPageView {
                     me.thin_strokes_dropdown.update(ctx, |dropdown, ctx| {
                         let thin_strokes = *FontSettings::as_ref(ctx).use_thin_strokes;
                         dropdown.set_selected_by_name(
-                            Self::thin_strokes_dropdown_item_label(thin_strokes),
+                            Self::thin_strokes_dropdown_item_label(thin_strokes, ctx),
                             ctx,
                         );
                     });
@@ -847,7 +849,7 @@ impl AppearanceSettingsPageView {
             me.input_mode_dropdown.update(ctx, |dropdown, ctx| {
                 let input_mode = *InputModeSettings::as_ref(ctx).input_mode;
                 dropdown
-                    .set_selected_by_name(Self::input_mode_dropdown_item_label(input_mode), ctx);
+                    .set_selected_by_name(Self::input_mode_dropdown_item_label(input_mode, ctx), ctx);
                 ctx.notify();
             });
             ctx.notify()
@@ -864,7 +866,7 @@ impl AppearanceSettingsPageView {
         ctx.subscribe_to_model(&AppIconSettings::handle(ctx), |me, _, _, ctx| {
             me.app_icon_dropdown.update(ctx, |dropdown, ctx| {
                 let app_icon = *AppIconSettings::as_ref(ctx).app_icon;
-                dropdown.set_selected_by_name(Self::app_icon_dropdown_item_label(app_icon), ctx);
+                dropdown.set_selected_by_name(Self::app_icon_dropdown_item_label(app_icon, ctx), ctx);
                 ctx.notify();
             });
             ctx.notify()
@@ -1058,7 +1060,7 @@ impl AppearanceSettingsPageView {
                     .into_iter()
                     .map(|val| {
                         DropdownItem::new(
-                            Self::thin_strokes_dropdown_item_label(val),
+                            Self::thin_strokes_dropdown_item_label(val, ctx),
                             AppearancePageAction::SetThinStrokes(val),
                         )
                     })
@@ -1094,7 +1096,7 @@ impl AppearanceSettingsPageView {
                     .into_iter()
                     .map(|val| {
                         DropdownItem::new(
-                            Self::input_mode_dropdown_item_label(val),
+                            Self::input_mode_dropdown_item_label(val, ctx),
                             AppearancePageAction::SetInputMode {
                                 new_mode: val,
                                 from_binding: false,
@@ -1129,7 +1131,7 @@ impl AppearanceSettingsPageView {
                     .into_iter()
                     .map(|val| {
                         DropdownItem::new(
-                            Self::app_icon_dropdown_item_label(val),
+                            Self::app_icon_dropdown_item_label(val, ctx),
                             AppearancePageAction::SetAppIcon(val),
                         )
                     })
@@ -1159,7 +1161,7 @@ impl AppearanceSettingsPageView {
             dropdown.add_items(
                 values.into_iter().map(|val| {
                     DropdownItem::new(
-                        Self::enforce_minimum_contrast_dropdown_item_label(val),
+                        Self::enforce_minimum_contrast_dropdown_item_label(val, ctx),
                         AppearancePageAction::SetEnforceMinimumContrast(val),
                     )
                 }).collect(),
@@ -1516,15 +1518,15 @@ impl AppearanceSettingsPageView {
         initial_dropdown_item
     }
 
-    fn input_mode_dropdown_item_label(val: InputMode) -> &'static str {
+    fn input_mode_dropdown_item_label(val: InputMode, app: &AppContext) -> &'static str {
         match val {
-            InputMode::PinnedToBottom => "Pin to the bottom (Warp mode)",
-            InputMode::PinnedToTop => "Pin to the top (Reverse mode)",
-            InputMode::Waterfall => "Start at the top (Classic mode)",
+            InputMode::PinnedToBottom => t!(app, "Pin to the bottom (Warp mode)", "固定到底部（Warp 模式）"),
+            InputMode::PinnedToTop => t!(app, "Pin to the top (Reverse mode)", "固定到顶部（反转模式）"),
+            InputMode::Waterfall => t!(app, "Start at the top (Classic mode)", "从顶部开始（经典模式）"),
         }
     }
 
-    fn app_icon_dropdown_item_label(val: AppIcon) -> &'static str {
+    fn app_icon_dropdown_item_label(val: AppIcon, _app: &AppContext) -> &'static str {
         match val {
             AppIcon::Aurora => "Aurora",
             AppIcon::Default => "Default",
@@ -1546,39 +1548,41 @@ impl AppearanceSettingsPageView {
         }
     }
 
-    fn thin_strokes_dropdown_item_label(val: ThinStrokes) -> &'static str {
+    fn thin_strokes_dropdown_item_label(val: ThinStrokes, app: &AppContext) -> &'static str {
         match val {
-            ThinStrokes::Never => "Never",
-            ThinStrokes::OnLowDpiDisplays => "On low-DPI displays",
-            ThinStrokes::OnHighDpiDisplays => "On high-DPI displays",
-            ThinStrokes::Always => "Always",
+            ThinStrokes::Never => t!(app, "Never", "从不"),
+            ThinStrokes::OnLowDpiDisplays => t!(app, "On low-DPI displays", "低 DPI 屏幕"),
+            ThinStrokes::OnHighDpiDisplays => t!(app, "On high-DPI displays", "高 DPI 屏幕"),
+            ThinStrokes::Always => t!(app, "Always", "始终"),
         }
     }
 
-    fn enforce_minimum_contrast_dropdown_item_label(val: EnforceMinimumContrast) -> &'static str {
+    fn enforce_minimum_contrast_dropdown_item_label(val: EnforceMinimumContrast, app: &AppContext) -> &'static str {
         match val {
-            EnforceMinimumContrast::Always => "Always",
-            EnforceMinimumContrast::OnlyNamedColors => "Only for named colors",
-            EnforceMinimumContrast::Never => "Never",
+            EnforceMinimumContrast::Always => t!(app, "Always", "始终"),
+            EnforceMinimumContrast::OnlyNamedColors => t!(app, "Only for named colors", "仅命名颜色"),
+            EnforceMinimumContrast::Never => t!(app, "Never", "从不"),
         }
     }
 
     fn workspace_decoration_visibility_dropdown_item_label(
         value: WorkspaceDecorationVisibility,
+        app: &AppContext,
     ) -> &'static str {
         match value {
-            WorkspaceDecorationVisibility::AlwaysShow => "Always",
-            WorkspaceDecorationVisibility::HideFullscreen => "When windowed",
-            WorkspaceDecorationVisibility::OnHover => "Only on hover",
+            WorkspaceDecorationVisibility::AlwaysShow => t!(app, "Always", "始终"),
+            WorkspaceDecorationVisibility::HideFullscreen => t!(app, "When windowed", "窗口模式时"),
+            WorkspaceDecorationVisibility::OnHover => t!(app, "Only on hover", "悬停时"),
         }
     }
 
     fn tab_close_button_position_dropdown_item_label(
         value: TabCloseButtonPosition,
+        app: &AppContext,
     ) -> &'static str {
         match value {
-            TabCloseButtonPosition::Right => "Right",
-            TabCloseButtonPosition::Left => "Left",
+            TabCloseButtonPosition::Right => t!(app, "Right", "右"),
+            TabCloseButtonPosition::Left => t!(app, "Left", "左"),
         }
     }
 
@@ -2194,7 +2198,7 @@ impl AppearanceSettingsPageView {
         InputModeSettings::handle(ctx).update(ctx, |input_mode, ctx| {
             report_if_error!(input_mode.input_mode.set_value(new_mode, ctx));
         });
-        let item_name = Self::input_mode_dropdown_item_label(new_mode);
+        let item_name = Self::input_mode_dropdown_item_label(new_mode, ctx);
 
         if from_binding {
             // If this update is from a command palette action, we need to update the dropdown
@@ -2400,7 +2404,7 @@ impl AppearanceSettingsPageView {
             });
 
             dropdown.set_items(values.into_iter().map(|value| {
-                DropdownItem::new(Self::workspace_decoration_visibility_dropdown_item_label(value), AppearancePageAction::SetWorkspaceDecorationVisibility(value))
+                DropdownItem::new(Self::workspace_decoration_visibility_dropdown_item_label(value, ctx), AppearancePageAction::SetWorkspaceDecorationVisibility(value))
             }).collect(), ctx);
             dropdown.set_selected_by_index(selected_index, ctx);
 
@@ -2426,7 +2430,7 @@ impl AppearanceSettingsPageView {
             });
 
             dropdown.set_items(values.into_iter().map(|value| {
-                DropdownItem::new(Self::tab_close_button_position_dropdown_item_label(value), AppearancePageAction::SetTabCloseButtonPosition(value))
+                DropdownItem::new(Self::tab_close_button_position_dropdown_item_label(value, ctx), AppearancePageAction::SetTabCloseButtonPosition(value))
             }).collect(), ctx);
             dropdown.set_selected_by_index(selected_index, ctx);
 
@@ -2482,7 +2486,7 @@ impl AppearanceSettingsPageView {
     ) {
         if let TabSettingsChangedEvent::WorkspaceDecorationVisibility { .. } = event {
             let value = TabSettings::as_ref(ctx).workspace_decoration_visibility;
-            let name = Self::workspace_decoration_visibility_dropdown_item_label(value);
+            let name = Self::workspace_decoration_visibility_dropdown_item_label(value, ctx);
             self.workspace_decorations_dropdown
                 .update(ctx, |dropdown, ctx| {
                     dropdown.set_selected_by_name(name, ctx);
@@ -2597,13 +2601,13 @@ impl SettingsWidget for CreateCustomThemeWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         Align::new(
             appearance
                 .ui_builder()
                 .link(
-                    "Create your own custom theme".to_string(),
+                    t!(app, "Create your own custom theme", "创建自定义主题").to_string(),
                     Some("https://docs.warp.dev/terminal/appearance/custom-themes".to_string()),
                     None,
                     self.mouse_state.clone(),
@@ -2638,9 +2642,9 @@ impl ThemeSelectWidget {
     ) -> Box<dyn Element> {
         let theme: WarpTheme = WarpConfig::as_ref(app).theme_config().theme(&theme_kind);
         let mode_ui_label = match theme_chooser_mode {
-            ThemeChooserMode::SystemLight => "Light",
-            ThemeChooserMode::SystemDark => "Dark",
-            ThemeChooserMode::SystemAgnostic => "Current theme",
+            ThemeChooserMode::SystemLight => t!(app, "Light", "浅色"),
+            ThemeChooserMode::SystemDark => t!(app, "Dark", "深色"),
+            ThemeChooserMode::SystemAgnostic => t!(app, "Current theme", "当前主题"),
         };
 
         ConstrainedBox::new(
@@ -2759,7 +2763,7 @@ impl SettingsWidget for ThemeSelectWidget {
         Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_child(render_body_item::<AppearancePageAction>(
-                "Sync with OS".into(),
+                t!(app, "Sync with OS", "与系统同步").into(),
                 None,
                 LocalOnlyIconState::for_setting(
                     UseSystemTheme::storage_key(),
@@ -2787,7 +2791,7 @@ impl SettingsWidget for ThemeSelectWidget {
                 appearance
                     .ui_builder()
                     .span(
-                        "Automatically switch between light and dark themes when your system does."
+                        t!(app, "Automatically switch between light and dark themes when your system does.", "随系统自动切换深色/浅色主题。")
                             .to_string(),
                     )
                     .with_style(
@@ -2819,7 +2823,7 @@ impl SettingsWidget for CustomAppIconWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         #[allow(unused_mut)]
         let show_bundle_warning = {
@@ -2843,8 +2847,8 @@ impl SettingsWidget for CustomAppIconWidget {
 
         let dropdown = render_dropdown_item(
             appearance,
-            "Customize your app icon",
-            show_bundle_warning.then_some("Changing the app icon requires the app to be bundled."),
+            t!(app, "Customize your app icon", "自定义应用图标"),
+            show_bundle_warning.then_some(t!(app, "Changing the app icon requires the app to be bundled.", "更改应用图标需要打包的应用程序。")),
             None,
             LocalOnlyIconState::Hidden,
             None,
@@ -2855,8 +2859,8 @@ impl SettingsWidget for CustomAppIconWidget {
         {
             use crate::appearance::AppearanceManager;
 
-            let app_icon_at_startup = AppearanceManager::as_ref(_app).app_icon_at_startup();
-            let current_icon = *AppIconSettings::as_ref(_app).app_icon;
+            let app_icon_at_startup = AppearanceManager::as_ref(app).app_icon_at_startup();
+            let current_icon = *AppIconSettings::as_ref(app).app_icon;
             if current_icon == AppIcon::Default
                 && ChannelState::channel() != Channel::Local
                 && app_icon_at_startup != AppIcon::Default
@@ -2868,7 +2872,7 @@ impl SettingsWidget for CustomAppIconWidget {
                         appearance
                             .ui_builder()
                             .wrappable_text(
-                                "You may need to restart Warp for MacOS to apply the preferred icon style.",
+                                t!(app, "You may need to restart Warp for MacOS to apply the preferred icon style.", "可能需要重启 Warp 以使 macOS 应用新图标样式。"),
                                 true,
                             )
                             .with_style(UiComponentStyles {
@@ -2913,7 +2917,7 @@ impl SettingsWidget for CustomWindowSizeWidget {
         let row_border_color: Option<Fill> =
             (!view.valid_new_window_rows).then(|| themes::theme::Fill::error().into());
         let mut column = Flex::column().with_child(render_body_item::<AppearancePageAction>(
-            "Open new windows with custom size".into(),
+            t!(app, "Open new windows with custom size", "以自定义大小打开新窗口").into(),
             None,
             LocalOnlyIconState::for_setting(
                 OpenWindowsAtCustomSize::storage_key(),
@@ -2937,7 +2941,7 @@ impl SettingsWidget for CustomWindowSizeWidget {
         if *window_settings.open_windows_at_custom_size.value() {
             column.add_child(
                 Container::new(render_body_item::<AppearancePageAction>(
-                    "Columns".into(),
+                    t!(app, "Columns", "列数").into(),
                     None,
                     // We show the local-only icon for this with the toggle, not the individual inputs.
                     LocalOnlyIconState::Hidden,
@@ -2973,7 +2977,7 @@ impl SettingsWidget for CustomWindowSizeWidget {
             );
             column.add_child(
                 Container::new(render_body_item::<AppearancePageAction>(
-                    "Rows".into(),
+                    t!(app, "Rows", "行数").into(),
                     None,
                     // We show the local-only icon for this with the toggle, not the individual inputs.
                     LocalOnlyIconState::Hidden,
@@ -3038,7 +3042,7 @@ impl SettingsWidget for WindowOpacityWidget {
             return Flex::column()
                 .with_child(
                     Container::new(render_body_item_label::<AppearancePageAction>(
-                        "Window Opacity:".to_owned(),
+                        t!(app, "Window Opacity:", "窗口不透明度：").to_owned(),
                         None,
                         None,
                         LocalOnlyIconState::Hidden,
@@ -3050,7 +3054,7 @@ impl SettingsWidget for WindowOpacityWidget {
                 .with_child(
                     Container::new(
                         FormattedTextElement::from_str(
-                            "Transparency is not supported with your graphics drivers.",
+                            t!(app, "Transparency is not supported with your graphics drivers.", "您的图形驱动不支持透明效果。"),
                             appearance.ui_font_family(),
                             appearance.ui_font_size(),
                         )
@@ -3102,7 +3106,7 @@ impl SettingsWidget for WindowOpacityWidget {
             // supporting alpha.
             if !window.supports_transparency() && window.graphics_backend() != GraphicsBackend::Gl {
                 let mut message = Cow::Borrowed(
-                    "The selected graphics settings may not support rendering transparent windows.",
+                    t!(app, "The selected graphics settings may not support rendering transparent windows.", "当前图形设置可能不支持透明窗口。"),
                 );
                 let gpu_settings = GPUSettings::as_ref(app);
                 if (gpu_settings
@@ -3227,7 +3231,7 @@ impl SettingsWidget for WindowBlurTextureWidget {
         let window_settings = WindowSettings::as_ref(app);
         let use_blur_texture = *window_settings.background_blur_texture;
         let mut col = Flex::column().with_child(render_body_item::<AppearancePageAction>(
-            "Use Window Blur (Acrylic texture)".to_string(),
+            t!(app, "Use Window Blur (Acrylic texture)", "使用窗口模糊效果").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 BackgroundBlurTexture::storage_key(),
@@ -3253,7 +3257,7 @@ impl SettingsWidget for WindowBlurTextureWidget {
                 col.add_child(
                     Container::new(
                         FormattedTextElement::from_str(
-                            "The selected hardware may not support rendering transparent windows.",
+                            t!(app, "The selected hardware may not support rendering transparent windows.", "当前硬件可能不支持透明窗口。"),
                             appearance.ui_font_family(),
                             appearance.ui_font_size(),
                         )
@@ -3367,7 +3371,7 @@ impl SettingsWidget for InputTypeWidget {
             .finish();
 
         render_body_item::<AppearancePageAction>(
-            "Input type".into(),
+            t!(app, "Input type", "输入类型").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -3396,7 +3400,7 @@ impl SettingsWidget for InputModeWidget {
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
-            "Input position",
+            t!(app, "Input position", "输入位置"),
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -3518,7 +3522,7 @@ impl SettingsWidget for DimInactivePanesWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         render_body_item::<AppearancePageAction>(
-            "Dim inactive panes".into(),
+            t!(app, "Dim inactive panes", "淡化非活动面板").into(),
             None,
             LocalOnlyIconState::for_setting(
                 ShouldDimInactivePanes::storage_key(),
@@ -3561,7 +3565,7 @@ impl SettingsWidget for FocusFollowsMouseWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         render_body_item::<AppearancePageAction>(
-            "Focus follows mouse".into(),
+            t!(app, "Focus follows mouse", "鼠标跟随焦点").into(),
             None,
             LocalOnlyIconState::for_setting(
                 FocusPaneOnHover::storage_key(),
@@ -3609,7 +3613,7 @@ impl SettingsWidget for CompactModeWidget {
         );
 
         render_body_item::<AppearancePageAction>(
-            "Compact mode".into(),
+            t!(app, "Compact mode", "紧凑模式").into(),
             None,
             LocalOnlyIconState::for_setting(
                 Spacing::storage_key(),
@@ -3656,7 +3660,7 @@ impl SettingsWidget for JumpToBottomOfBlockWidget {
             .show_jump_to_bottom_of_block_button
             .value();
         render_body_item::<AppearancePageAction>(
-            "Show Jump to Bottom of Block button".into(),
+            t!(app, "Show Jump to Bottom of Block button", "显示跳到块底部按钮").into(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowJumpToBottomOfBlockButton::storage_key(),
@@ -3703,7 +3707,7 @@ impl SettingsWidget for ShowBlockDividersWidget {
         let block_list_settings = BlockListSettings::as_ref(app);
         let enabled = block_list_settings.show_block_dividers.value();
         render_body_item::<AppearancePageAction>(
-            "Show block dividers".into(),
+            t!(app, "Show block dividers", "显示块分隔线").into(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowBlockDividers::storage_key(),
@@ -3785,7 +3789,7 @@ impl SettingsWidget for AIFontWidget {
         ai_font_row.add_child(
             appearance
                 .ui_builder()
-                .span("Match terminal".to_string())
+                .span(t!(app, "Match terminal", "与终端匹配").to_string())
                 .build()
                 .with_margin_left(2.)
                 .with_margin_right(16.)
@@ -3808,12 +3812,13 @@ impl TerminalFontWidget {
         view: &AppearanceSettingsPageView,
         appearance: &Appearance,
         row: &mut Flex,
+        app: &AppContext,
     ) {
         let mut line_height = Flex::column();
         line_height.add_child(
             appearance
                 .ui_builder()
-                .label("Line height".to_string())
+                .label(t!(app, "Line height", "行高").to_string())
                 .with_style(UiComponentStyles {
                     margin: Some(Coords {
                         left: 12.,
@@ -3880,7 +3885,7 @@ impl TerminalFontWidget {
                     font_size: Some(appearance.ui_font_size() * 0.8),
                     ..Default::default()
                 })
-                .with_text_label("Reset to default".to_string());
+                .with_text_label(t!(app, "Reset to default", "恢复默认").to_string());
 
             button
                 .build()
@@ -3954,7 +3959,7 @@ impl SettingsWidget for TerminalFontWidget {
                             1.,
                             appearance
                                 .ui_builder()
-                                .span("View all available system fonts".to_string())
+                                .span(t!(app, "View all available system fonts", "查看所有系统字体").to_string())
                                 .build()
                                 .with_margin_left(2.)
                                 .finish(),
@@ -3975,7 +3980,7 @@ impl SettingsWidget for TerminalFontWidget {
         font_weight.add_child(
             appearance
                 .ui_builder()
-                .label("Font weight".to_string())
+                .label(t!(app, "Font weight", "字体粗细").to_string())
                 .with_style(UiComponentStyles {
                     font_size: Some(CONTENT_FONT_SIZE),
                     ..Default::default()
@@ -3998,7 +4003,7 @@ impl SettingsWidget for TerminalFontWidget {
         font_size.add_child(
             appearance
                 .ui_builder()
-                .label("Font size (px)".to_string())
+                .label(t!(app, "Font size (px)", "字体大小（px）").to_string())
                 .with_style(UiComponentStyles {
                     margin: Some(Coords {
                         left: 2.,
@@ -4049,7 +4054,7 @@ impl SettingsWidget for TerminalFontWidget {
                 .finish(),
         );
 
-        self.render_line_height_editor(view, appearance, &mut terminal_font_row);
+        self.render_line_height_editor(view, appearance, &mut terminal_font_row, app);
         terminal_font_row.finish()
     }
 }
@@ -4082,7 +4087,7 @@ impl SettingsWidget for NotebookFontSizeWidget {
                         Align::new(
                             appearance
                                 .ui_builder()
-                                .span("Notebook font size".to_string())
+                                .span(t!(app, "Notebook font size", "笔记本字体大小").to_string())
                                 .build()
                                 .with_margin_right(16.)
                                 .finish(),
@@ -4108,7 +4113,7 @@ impl SettingsWidget for NotebookFontSizeWidget {
                 .with_child(
                     appearance
                         .ui_builder()
-                        .span("Match terminal".to_string())
+                        .span(t!(app, "Match terminal", "与终端匹配").to_string())
                         .build()
                         .with_margin_left(2.)
                         .with_margin_right(16.)
@@ -4166,7 +4171,7 @@ impl SettingsWidget for ThinStrokesWidget {
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
-            "Use thin strokes",
+            t!(app, "Use thin strokes", "使用细描边"),
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -4199,7 +4204,7 @@ impl SettingsWidget for MinimumContrastWidget {
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
-            "Enforce minimum contrast",
+            t!(app, "Enforce minimum contrast", "强制最低对比度"),
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -4237,12 +4242,12 @@ impl SettingsWidget for LigaturesWidget {
         let ligature_rendering_enabled = ligature_rendering.value();
 
         render_body_item::<AppearancePageAction>(
-            "Show ligatures in terminal".into(),
+            t!(app, "Show ligatures in terminal", "在终端中显示连字").into(),
             Some(AdditionalInfo {
                 mouse_state: self.info_mouse_state.clone(),
                 on_click_action: None,
                 secondary_text: None,
-                tooltip_override_text: Some("Ligatures may reduce performance".to_string()),
+                tooltip_override_text: Some(t!(app, "Ligatures may reduce performance", "连字可能会降低性能").to_string()),
             }),
             LocalOnlyIconState::for_setting(
                 LigatureRenderingEnabled::storage_key(),
@@ -4302,7 +4307,7 @@ impl SettingsWidget for CursorTypeWidget {
         let cursor_display_types: Vec<CursorDisplayType> = all::<CursorDisplayType>().collect();
 
         render_body_item::<AppearancePageAction>(
-            "Cursor type".into(),
+            t!(app, "Cursor type", "光标类型").into(),
             None,
             LocalOnlyIconState::for_setting(
                 CursorBlinkEnabled::storage_key(),
@@ -4317,7 +4322,7 @@ impl SettingsWidget for CursorTypeWidget {
                     .with_child(
                         appearance
                             .ui_builder()
-                            .span("Cursor type is disabled in Vim mode".to_string())
+                            .span(t!(app, "Cursor type is disabled in Vim mode", "Vim 模式下光标类型不可用").to_string())
                             .build()
                             .finish(),
                     )
@@ -4371,7 +4376,7 @@ impl SettingsWidget for BlinkingCursorWidget {
         let settings = AppEditorSettings::as_ref(app);
         let cursor_blink = &settings.cursor_blink;
         render_body_item::<AppearancePageAction>(
-            "Blinking cursor".into(),
+            t!(app, "Blinking cursor", "光标闪烁").into(),
             None,
             LocalOnlyIconState::for_setting(
                 CursorBlinkEnabled::storage_key(),
@@ -4413,7 +4418,7 @@ impl SettingsWidget for TabCloseButtonPositionWidget {
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
-            "Tab close button position",
+            t!(app, "Tab close button position", "标签关闭按钮位置"),
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -4449,7 +4454,7 @@ impl SettingsWidget for TabIndicatorWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Show tab indicators".into(),
+            t!(app, "Show tab indicators", "显示标签页指示器").into(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowIndicatorsButton::storage_key(),
@@ -4494,7 +4499,7 @@ impl SettingsWidget for CodeReviewButtonWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Show code review button".into(),
+            t!(app, "Show code review button", "显示代码审查按钮").into(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowCodeReviewButton::storage_key(),
@@ -4539,7 +4544,7 @@ impl SettingsWidget for PreserveActiveTabColorWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Preserve active tab color for new tabs".into(),
+            t!(app, "Preserve active tab color for new tabs", "新标签页继承活动标签颜色").into(),
             None,
             LocalOnlyIconState::for_setting(
                 PreserveActiveTabColor::storage_key(),
@@ -4584,7 +4589,7 @@ impl SettingsWidget for VerticalTabsWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Use vertical tab layout".into(),
+            t!(app, "Use vertical tab layout", "使用垂直标签布局").into(),
             None,
             LocalOnlyIconState::for_setting(
                 UseVerticalTabs::storage_key(),
@@ -4629,7 +4634,7 @@ impl SettingsWidget for ShowVerticalTabPanelInRestoredWindowsWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Show vertical tabs panel in restored windows".into(),
+            t!(app, "Show vertical tabs panel in restored windows", "恢复窗口时显示垂直标签面板").into(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowVerticalTabPanelInRestoredWindows::storage_key(),
@@ -4679,7 +4684,7 @@ impl SettingsWidget for UseLatestUserPromptAsConversationTitleInTabNamesWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Use latest user prompt as conversation title in tab names".into(),
+            t!(app, "Use latest user prompt as conversation title in tab names", "用最近输入作为标签页标题").into(),
             None,
             LocalOnlyIconState::for_setting(
                 UseLatestUserPromptAsConversationTitleInTabNames::storage_key(),
@@ -4725,10 +4730,10 @@ impl SettingsWidget for EditToolbarWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let label = render_body_item_label::<AppearancePageAction>(
-            "Header toolbar layout".to_string(),
+            t!(app, "Header toolbar layout", "标题栏布局").to_string(),
             None,
             None,
             LocalOnlyIconState::Hidden,
@@ -4835,7 +4840,7 @@ impl SettingsWidget for DirectoryTabColorsWidget {
             .with_spacing(4.)
             .with_child(
                 Text::new(
-                    "Directory tab colors",
+                    t!(app, "Directory tab colors", "目录标签颜色"),
                     appearance.ui_font_family(),
                     appearance.ui_font_size(),
                 )
@@ -4845,7 +4850,7 @@ impl SettingsWidget for DirectoryTabColorsWidget {
             )
             .with_child(
                 Text::new(
-                    "Automatically color tabs based on the directory or repo you're working in.",
+                    t!(app, "Automatically color tabs based on the directory or repo you're working in.", "根据当前目录或仓库自动设置标签颜色。"),
                     appearance.ui_font_family(),
                     appearance.ui_font_size(),
                 )
@@ -4982,7 +4987,7 @@ impl SettingsWidget for ZenModeWidget {
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
-            "Show the tab bar",
+            t!(app, "Show the tab bar", "显示标签栏"),
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -5019,7 +5024,7 @@ impl SettingsWidget for AltScreenPaddingWidget {
         let terminal_settings = &TerminalSettings::as_ref(app);
         let theme = appearance.theme();
         let mut column = Flex::column().with_child(render_body_item::<AppearancePageAction>(
-            "Use custom padding in alt-screen".into(),
+            t!(app, "Use custom padding in alt-screen", "在替代屏幕中使用自定义边距").into(),
             Some(AdditionalInfo {
                 mouse_state: self.additional_info_mouse_state.clone(),
                 on_click_action: Some(AppearancePageAction::OpenUrl(
@@ -5138,7 +5143,7 @@ impl SettingsWidget for ZoomLevelWidget {
 
         render_dropdown_item(
             appearance,
-            "Zoom",
+            t!(app, "Zoom", "缩放"),
             Some("Adjusts the default zoom level across all windows"),
             Some(reset_button),
             LocalOnlyIconState::for_setting(

@@ -1,0 +1,14 @@
+{
+  "settings.warp_drive.sign_up": {
+    "en": "Sign up",
+    "zh": "注册"
+  },
+  "settings.warp_drive.to_use_warp_drive_please_create_an_account": {
+    "en": "To use Warp Drive, please create an account.",
+    "zh": "请先创建账户以使用 Warp Drive。"
+  },
+  "settings.warp_drive.warp_drive": {
+    "en": "Warp Drive",
+    "zh": "Warp Drive"
+  }
+}

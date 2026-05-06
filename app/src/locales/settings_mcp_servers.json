@@ -1,0 +1,50 @@
+{
+  "settings.mcp_servers.auto_spawn_servers_from_third_party_agents": {
+    "en": "Auto-spawn servers from third-party agents",
+    "zh": "从第三方代理自动启动服务器"
+  },
+  "settings.mcp_servers.available_to_install": {
+    "en": "Available to install",
+    "zh": "可安装"
+  },
+  "settings.mcp_servers.detected_from_config_file": {
+    "en": "Detected from config file",
+    "zh": "从配置文件检测到"
+  },
+  "settings.mcp_servers.learn_more": {
+    "en": "Learn more.",
+    "zh": "了解更多。"
+  },
+  "settings.mcp_servers.my_mcps": {
+    "en": "My MCPs",
+    "zh": "我的 MCP"
+  },
+  "settings.mcp_servers.no_search_results_found": {
+    "en": "No search results found",
+    "zh": "未找到搜索结果"
+  },
+  "settings.mcp_servers.once_you_add_a_mcp_server_it_will_be_shown_here": {
+    "en": "Once you add a MCP server, it will be shown here.",
+    "zh": "添加 MCP 服务器后，它将显示在此处。"
+  },
+  "settings.mcp_servers.search_mcp_servers": {
+    "en": "Search MCP Servers",
+    "zh": "搜索 MCP 服务器"
+  },
+  "settings.mcp_servers.see_supported_providers": {
+    "en": "See supported providers.",
+    "zh": "查看支持的服务商。"
+  },
+  "settings.mcp_servers.shared_by_warp_and_from_other_devices": {
+    "en": "Shared by Warp and from other devices",
+    "zh": "由 Warp 和其他设备共享"
+  },
+  "settings.mcp_servers.shared_by_a_team_member": {
+    "en": "Shared by a team member",
+    "zh": "由团队成员共享"
+  },
+  "settings.mcp_servers.shared_from_warp": {
+    "en": "Shared from Warp",
+    "zh": "来自 Warp 的共享"
+  }
+}

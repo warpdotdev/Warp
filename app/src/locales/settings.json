@@ -1,0 +1,210 @@
+{
+  "settings.about": {
+    "en": "About",
+    "zh": "关于"
+  },
+  "settings.account": {
+    "en": "Account",
+    "zh": "账户"
+  },
+  "settings.agents": {
+    "en": "Agents",
+    "zh": "代理"
+  },
+  "settings.appearance": {
+    "en": "Appearance",
+    "zh": "外观"
+  },
+  "settings.billing_and_usage": {
+    "en": "Billing and usage",
+    "zh": "账单与用量"
+  },
+  "settings.blocks": {
+    "en": "Blocks",
+    "zh": "块"
+  },
+  "settings.cloud_platform": {
+    "en": "Cloud platform",
+    "zh": "云平台"
+  },
+  "settings.code": {
+    "en": "Code",
+    "zh": "代码"
+  },
+  "settings.code_editor_and_review": {
+    "en": "Code Editor and Review",
+    "zh": "代码编辑与审查"
+  },
+  "settings.codebase_indexing": {
+    "en": "Codebase Indexing",
+    "zh": "代码库索引"
+  },
+  "settings.cursor": {
+    "en": "Cursor",
+    "zh": "光标"
+  },
+  "settings.editor_and_code_review": {
+    "en": "Editor and Code Review",
+    "zh": "编辑器与代码审查"
+  },
+  "settings.environments": {
+    "en": "Environments",
+    "zh": "环境"
+  },
+  "settings.features": {
+    "en": "Features",
+    "zh": "功能"
+  },
+  "settings.full_screen_apps": {
+    "en": "Full-screen Apps",
+    "zh": "全屏应用"
+  },
+  "settings.general": {
+    "en": "General",
+    "zh": "通用"
+  },
+  "settings.icon": {
+    "en": "Icon",
+    "zh": "图标"
+  },
+  "settings.indexing_and_projects": {
+    "en": "Indexing and projects",
+    "zh": "索引与项目"
+  },
+  "settings.input": {
+    "en": "Input",
+    "zh": "输入"
+  },
+  "settings.invite_a_friend_to_warp": {
+    "en": "Invite a friend to Warp",
+    "zh": "邀请朋友使用 Warp"
+  },
+  "settings.keyboard_shortcuts": {
+    "en": "Keyboard shortcuts",
+    "zh": "键盘快捷键"
+  },
+  "settings.keys": {
+    "en": "Keys",
+    "zh": "按键"
+  },
+  "settings.knowledge": {
+    "en": "Knowledge",
+    "zh": "知识库"
+  },
+  "settings.language": {
+    "en": "Language",
+    "zh": "界面语言"
+  },
+  "settings.mcp_servers": {
+    "en": "MCP servers",
+    "zh": "MCP 服务器"
+  },
+  "settings.notifications": {
+    "en": "Notifications",
+    "zh": "通知"
+  },
+  "settings.oz_cloud_api_keys": {
+    "en": "Oz Cloud API Keys",
+    "zh": "Oz Cloud API 密钥"
+  },
+  "settings.panes": {
+    "en": "Panes",
+    "zh": "面板"
+  },
+  "settings.privacy": {
+    "en": "Privacy",
+    "zh": "隐私"
+  },
+  "settings.profiles": {
+    "en": "Profiles",
+    "zh": "配置文件"
+  },
+  "settings.referrals": {
+    "en": "Referrals",
+    "zh": "推荐"
+  },
+  "settings.ssh": {
+    "en": "SSH",
+    "zh": "SSH"
+  },
+  "settings.search": {
+    "en": "Search",
+    "zh": "搜索"
+  },
+  "settings.session": {
+    "en": "Session",
+    "zh": "会话"
+  },
+  "settings.settings": {
+    "en": "Settings",
+    "zh": "设置"
+  },
+  "settings.shared_blocks": {
+    "en": "Shared blocks",
+    "zh": "共享块"
+  },
+  "settings.subshells": {
+    "en": "Subshells",
+    "zh": "子 Shell"
+  },
+  "settings.system": {
+    "en": "System",
+    "zh": "系统"
+  },
+  "settings.tabs": {
+    "en": "Tabs",
+    "zh": "标签页"
+  },
+  "settings.teams": {
+    "en": "Teams",
+    "zh": "团队"
+  },
+  "settings.terminal": {
+    "en": "Terminal",
+    "zh": "终端"
+  },
+  "settings.terminal_input": {
+    "en": "Terminal Input",
+    "zh": "终端输入"
+  },
+  "settings.text": {
+    "en": "Text",
+    "zh": "文字"
+  },
+  "settings.text_editing": {
+    "en": "Text Editing",
+    "zh": "文本编辑"
+  },
+  "settings.themes": {
+    "en": "Themes",
+    "zh": "主题"
+  },
+  "settings.third_party_cli_agents": {
+    "en": "Third party CLI agents",
+    "zh": "第三方 CLI 代理"
+  },
+  "settings.ui_display_language": {
+    "en": "UI display language",
+    "zh": "选择 Warp 界面的显示语言"
+  },
+  "settings.warp_agent": {
+    "en": "Warp Agent",
+    "zh": "Warp Agent"
+  },
+  "settings.warp_drive": {
+    "en": "Warp Drive",
+    "zh": "Warp Drive"
+  },
+  "settings.warpify": {
+    "en": "Warpify",
+    "zh": "Warpify"
+  },
+  "settings.window": {
+    "en": "Window",
+    "zh": "窗口"
+  },
+  "settings.workflows": {
+    "en": "Workflows",
+    "zh": "工作流"
+  }
+}

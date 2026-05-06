@@ -9,6 +9,7 @@ use crate::send_telemetry_from_app_ctx;
 use crate::terminal::cli_agent_sessions::listener::agent_supports_rich_status;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::view::TerminalViewState;
+use crate::{i18n, settings::LanguageSettings};
 use crate::terminal::CLIAgent;
 use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
 use crate::ui_components::icon_with_status::{render_icon_with_status, IconWithStatusVariant};
@@ -1623,7 +1624,12 @@ fn render_groups(
         } else {
             return Container::new(
                 Text::new_inline(
-                    "No tabs match your search.",
+                    {
+                        use settings::Setting as _;
+                        use warpui::SingletonEntity as _;
+                        let lang = i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value());
+                        i18n::translate("menu.workspace.no_tabs_match", lang)
+                    },
                     appearance.ui_font_family(),
                     12.,
                 )
@@ -2570,6 +2576,22 @@ impl TypedPane<'_> {
             TypedPane::AIDocument => "Plan",
             TypedPane::ExecutionProfileEditor => "Execution Profile",
             TypedPane::Other => "Other",
+        }
+    }
+
+    fn localized_kind_label(&self, app: &AppContext) -> &'static str {
+        use settings::Setting as _;
+        use warpui::SingletonEntity as _;
+        let lang = i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value());
+        match self {
+            TypedPane::Terminal(_) => i18n::translate("menu.workspace.pane_terminal", lang),
+            TypedPane::Code(_) => i18n::translate("menu.workspace.pane_code", lang),
+            TypedPane::Notebook { .. } => i18n::translate("menu.workspace.pane_notebook", lang),
+            TypedPane::Workflow { .. } => i18n::translate("menu.workspace.pane_workflow", lang),
+            TypedPane::Settings => i18n::translate("menu.workspace.pane_settings", lang),
+            TypedPane::EnvVarCollection => i18n::translate("menu.workspace.pane_env_vars", lang),
+            TypedPane::EnvironmentManagement => i18n::translate("menu.workspace.pane_environments", lang),
+            _ => self.kind_label(),
         }
     }
 
@@ -5604,7 +5626,7 @@ fn render_warp_drive_object_detail_section(
         appearance,
     ));
     section.add_child(render_detail_badge(
-        props.typed.kind_label(),
+        props.typed.localized_kind_label(app),
         Some(render_detail_kind_badge_icon(props, appearance, app)),
         None,
         text_colors.disabled,

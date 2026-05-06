@@ -470,6 +470,7 @@ use crate::tab::{
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::ui_components::icons;
 use crate::TelemetryEvent;
+use crate::{i18n, settings::LanguageSettings};
 use autoupdate::AutoupdateStage;
 #[cfg(target_os = "macos")]
 use command::blocking::Command;
@@ -1234,8 +1235,23 @@ impl Workspace {
             EditorView::single_line(options, ctx)
         });
         editor.update(ctx, |editor, ctx| {
-            editor.set_placeholder_text("Search tabs...", ctx);
+            let lang = i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value());
+            editor.set_placeholder_text(i18n::translate("menu.workspace.search_tabs", lang), ctx);
         });
+        // Update placeholder when language changes
+        let editor_for_lang = editor.clone();
+        ctx.subscribe_to_model(
+            &LanguageSettings::handle(ctx),
+            move |_me, _event, _model_ctx, ctx| {
+                let lang = i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value());
+                editor_for_lang.update(ctx, |editor, ctx| {
+                    editor.set_placeholder_text(
+                        i18n::translate("menu.workspace.search_tabs", lang),
+                        ctx,
+                    );
+                });
+            },
+        );
         ctx.subscribe_to_view(&editor, |me, editor_view, event, ctx| match event {
             EditorEvent::Edited(_) => {
                 me.vertical_tabs_panel.search_query = editor_view.as_ref(ctx).buffer_text(ctx);
@@ -6583,7 +6599,7 @@ impl Workspace {
                             .into_item(),
                     ),
                     AutoupdateStage::UnableToUpdateToNewVersion { .. } => menu_items.push(
-                        MenuItemFields::new("Update Warp manually")
+                        MenuItemFields::new(i18n::translate("menu.user.update_warp", i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value())))
                             .with_on_select_action(WorkspaceAction::DownloadNewVersion)
                             .into_item(),
                     ),
@@ -7198,7 +7214,7 @@ impl Workspace {
         self.add_tab_with_pane_layout(
             panes_layout,
             Arc::new(HashMap::new()),
-            Some("Settings".to_owned()),
+            Some(i18n::translate("menu.workspace.settings_tooltip", i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value())).to_owned()),
             ctx,
         );
     }
@@ -8321,7 +8337,7 @@ impl Workspace {
                     ) =>
                 {
                     items.push(
-                        MenuItemFields::new("Update Warp manually")
+                        MenuItemFields::new(i18n::translate("menu.user.update_warp", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                             .with_on_select_action(WorkspaceAction::DownloadNewVersion)
                             .with_override_text_color(appearance.theme().ansi_fg_red())
                             .into_item(),
@@ -8332,33 +8348,33 @@ impl Workspace {
         }
 
         items.extend([
-            MenuItemFields::new("What's new")
+            MenuItemFields::new(i18n::translate("menu.user.whats_new", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                 .with_on_select_action(WorkspaceAction::ViewLatestChangelog)
                 .into_item(),
-            MenuItemFields::new("Settings")
+            MenuItemFields::new(i18n::translate("menu.user.settings", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                 .with_on_select_action(WorkspaceAction::ShowSettings)
                 .into_item(),
-            MenuItemFields::new("Keyboard shortcuts")
+            MenuItemFields::new(i18n::translate("menu.user.keyboard_shortcuts", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                 .with_on_select_action(WorkspaceAction::ToggleKeybindingsPage)
                 .into_item(),
             MenuItem::Separator,
-            MenuItemFields::new("Documentation")
+            MenuItemFields::new(i18n::translate("menu.user.documentation", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                 .with_on_select_action(WorkspaceAction::ViewUserDocs)
                 .into_item(),
-            MenuItemFields::new("Feedback")
+            MenuItemFields::new(i18n::translate("menu.user.feedback", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                 .with_on_select_action(WorkspaceAction::SendFeedback)
                 .into_item(),
         ]);
 
         #[cfg(not(target_family = "wasm"))]
         items.push(
-            MenuItemFields::new("View Warp logs")
+            MenuItemFields::new(i18n::translate("menu.user.view_warp_logs", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                 .with_on_select_action(WorkspaceAction::ViewLogs)
                 .into_item(),
         );
 
         items.extend([
-            MenuItemFields::new("Slack")
+            MenuItemFields::new(i18n::translate("menu.user.slack", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                 .with_on_select_action(WorkspaceAction::JoinSlack)
                 .into_item(),
             MenuItem::Separator,
@@ -8366,7 +8382,7 @@ impl Workspace {
 
         if self.auth_state.is_anonymous_or_logged_out() {
             items.push(
-                MenuItemFields::new("Sign up")
+                MenuItemFields::new(i18n::translate("menu.user.sign_up", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                     .with_on_select_action(WorkspaceAction::SignupAnonymousUser)
                     .into_item(),
             );
@@ -8380,7 +8396,7 @@ impl Workspace {
 
         if is_on_paid_plan {
             items.push(
-                MenuItemFields::new("Billing and usage")
+                MenuItemFields::new(i18n::translate("menu.user.billing", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                     .with_on_select_action(WorkspaceAction::ShowSettingsPage(
                         SettingsSection::BillingAndUsage,
                     ))
@@ -8388,21 +8404,21 @@ impl Workspace {
             );
         } else {
             items.push(
-                MenuItemFields::new("Upgrade")
+                MenuItemFields::new(i18n::translate("menu.user.upgrade", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                     .with_on_select_action(WorkspaceAction::ShowUpgrade)
                     .into_item(),
             );
         }
 
         items.push(
-            MenuItemFields::new("Invite a friend")
+            MenuItemFields::new(i18n::translate("menu.user.invite_a_friend", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                 .with_on_select_action(WorkspaceAction::ShowReferralSettingsPage)
                 .into_item(),
         );
 
         if !self.auth_state.is_anonymous_or_logged_out() {
             items.push(
-                MenuItemFields::new("Log out")
+                MenuItemFields::new(i18n::translate("menu.user.log_out", i18n::lang_code(*LanguageSettings::as_ref(app).ui_language.value())))
                     .with_on_select_action(WorkspaceAction::LogOut)
                     .into_item(),
             );
@@ -16919,7 +16935,7 @@ impl Workspace {
         Shrinkable::new(1.0, inner).finish()
     }
 
-    fn render_title_bar_search_bar(&self, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_title_bar_search_bar(&self, appearance: &Appearance, ctx: &AppContext) -> Box<dyn Element> {
         let theme = appearance.theme();
         let text_color = theme.sub_text_color(theme.background());
 
@@ -16941,7 +16957,7 @@ impl Workspace {
                         Shrinkable::new(
                             1.,
                             Text::new_inline(
-                                "Search sessions, agents, files...",
+                                i18n::translate("menu.workspace.search_global", i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value())),
                                 appearance.ui_font_family(),
                                 14.,
                             )
@@ -17130,7 +17146,7 @@ impl Workspace {
                         1.,
                         Clipped::new(
                             Container::new(
-                                Align::new(self.render_title_bar_search_bar(appearance)).finish(),
+                                Align::new(self.render_title_bar_search_bar(appearance, ctx)).finish(),
                             )
                             .with_padding_left(TITLE_BAR_SEARCH_BAR_SLOT_PADDING)
                             .with_padding_right(TITLE_BAR_SEARCH_BAR_SLOT_PADDING)
@@ -17344,7 +17360,7 @@ impl Workspace {
                 WorkspaceAction::ToggleNotificationMailbox {
                     select_first: false,
                 },
-                "Notifications".to_string(),
+                i18n::translate("menu.workspace.notifications", i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value())).to_string(),
                 keybinding_name_to_display_string(TOGGLE_NOTIFICATION_MAILBOX_BINDING_NAME, ctx),
                 is_inbox_active,
                 false,
@@ -17460,7 +17476,7 @@ impl Workspace {
             }
 
             target.add_child(
-                Container::new(self.render_settings_button(appearance))
+                Container::new(self.render_settings_button(appearance, ctx))
                     .with_margin_left(TAB_BAR_PADDING_LEFT)
                     .finish(),
             );
@@ -17621,10 +17637,10 @@ impl Workspace {
         const BUTTON_WIDTH: f32 = 24. + SIDE_MENU_WIDTH;
         const BUTTON_LEFT_MARGIN: f32 = 4.;
 
-        let new_tab_tool_tip_label_text = "New Tab".to_string();
+        let new_tab_tool_tip_label_text = i18n::translate("menu.workspace.new_tab", i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value())).to_string();
         let new_tab_tool_tip_sublabel_text =
             keybinding_name_to_display_string(NEW_TAB_BINDING_NAME, ctx);
-        let tab_configs_tool_tip_label_text = "Tab configs".to_string();
+        let tab_configs_tool_tip_label_text = i18n::translate("menu.workspace.tab_configs", i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value())).to_string();
         let tab_configs_tool_tip_sublabel_text =
             keybinding_name_to_display_string(TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME, ctx);
         let appearance = Appearance::as_ref(ctx);
@@ -17865,7 +17881,7 @@ impl Workspace {
                 icons::Icon::Lightbulb,
                 &self.mouse_states.resource_center_icon,
                 WorkspaceAction::ToggleResourceCenter,
-                "Warp Essentials".to_string(),
+                i18n::translate("menu.workspace.warp_essentials", i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value())).to_string(),
                 self.cached_keybindings[TOGGLE_RESOURCE_CENTER_KEYBINDING_NAME].clone(),
                 false,
                 false,
@@ -17900,14 +17916,14 @@ impl Workspace {
         Align::new(button).finish()
     }
 
-    fn render_settings_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_settings_button(&self, appearance: &Appearance, ctx: &AppContext) -> Box<dyn Element> {
         Align::new(
             self.render_tab_bar_icon_button(
                 appearance,
                 icons::Icon::Gear,
                 &self.mouse_states.settings_icon,
                 WorkspaceAction::ShowSettings,
-                "Settings".to_string(),
+                i18n::translate("menu.workspace.settings_tooltip", i18n::lang_code(*LanguageSettings::as_ref(ctx).ui_language.value())).to_string(),
                 self.cached_keybindings[SHOW_SETTINGS_KEYBINDING_NAME].clone(),
                 false,
                 false,

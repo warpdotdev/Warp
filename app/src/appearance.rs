@@ -22,8 +22,8 @@ use macos_app_icon::*;
 
 use crate::{
     settings::{
-        active_theme_kind, FontSettings, FontSettingsChangedEvent, MonospaceFontSize, Settings,
-        ThemeSettings,
+        active_theme_kind, FontSettings, FontSettingsChangedEvent, LanguageSettings,
+        MonospaceFontSize, Settings, ThemeSettings,
     },
     themes::theme::{ThemeKind, WarpTheme},
     ASSETS,
@@ -50,6 +50,10 @@ impl AppearanceManager {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         ctx.subscribe_to_model(&ThemeSettings::handle(ctx), move |me, _event, ctx| {
             me.refresh_theme_state(ctx);
+        });
+
+        ctx.subscribe_to_model(&LanguageSettings::handle(ctx), move |_me, _event, ctx| {
+            Appearance::handle(ctx).update(ctx, |_, ctx| ctx.notify());
         });
 
         #[cfg(target_os = "macos")]

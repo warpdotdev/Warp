@@ -1,0 +1,1158 @@
+{
+  "settings.keybindings.accept_autosuggestion": {
+    "en": "Accept Autosuggestion",
+    "zh": "接受自动建议"
+  },
+  "settings.keybindings.accept_prompt_suggestion": {
+    "en": "Accept Prompt Suggestion",
+    "zh": "接受提示建议"
+  },
+  "settings.keybindings.activate_next_pane": {
+    "en": "Activate Next Pane",
+    "zh": "激活下一面板"
+  },
+  "settings.keybindings.activate_next_tab": {
+    "en": "Activate Next Tab",
+    "zh": "激活下一标签页"
+  },
+  "settings.keybindings.activate_previous_pane": {
+    "en": "Activate Previous Pane",
+    "zh": "激活上一面板"
+  },
+  "settings.keybindings.activate_previous_tab": {
+    "en": "Activate Previous Tab",
+    "zh": "激活上一标签页"
+  },
+  "settings.keybindings.add_current_folder_as_project": {
+    "en": "Add Current Folder As Project",
+    "zh": "将当前文件夹添加为项目"
+  },
+  "settings.keybindings.add_cursor_above": {
+    "en": "Add Cursor Above",
+    "zh": "在上方添加光标"
+  },
+  "settings.keybindings.add_cursor_below": {
+    "en": "Add Cursor Below",
+    "zh": "在下方添加光标"
+  },
+  "settings.keybindings.add_repository": {
+    "en": "Add Repository",
+    "zh": "添加仓库"
+  },
+  "settings.keybindings.add_selection_for_next_occurrence": {
+    "en": "Add Selection For Next Occurrence",
+    "zh": "选中下一个相同内容"
+  },
+  "settings.keybindings.add_your_own_custom_keybindings_to_existing_actions_below": {
+    "en": "Add your own custom keybindings to existing actions below.",
+    "zh": "在下方为现有操作添加自定义键盘绑定。"
+  },
+  "settings.keybindings.alternate_terminal_paste": {
+    "en": "Alternate Terminal Paste",
+    "zh": "备用终端粘贴"
+  },
+  "settings.keybindings.ask_warp_ai": {
+    "en": "Ask Warp Ai",
+    "zh": "询问 Warp AI"
+  },
+  "settings.keybindings.ask_warp_ai_about_last_block": {
+    "en": "Ask Warp Ai About Last Block",
+    "zh": "询问 Warp AI 关于最后一个块"
+  },
+  "settings.keybindings.ask_warp_ai_about_selection": {
+    "en": "Ask Warp Ai About Selection",
+    "zh": "询问 Warp AI 关于所选内容"
+  },
+  "settings.keybindings.attach_selected_block_as_agent_context": {
+    "en": "Attach Selected Block As Agent Context",
+    "zh": "将所选块附加为代理上下文"
+  },
+  "settings.keybindings.attach_selected_text_as_agent_context": {
+    "en": "Attach Selected Text As Agent Context",
+    "zh": "将所选文本附加为代理上下文"
+  },
+  "settings.keybindings.backward_tabulation_within_an_executing_command": {
+    "en": "Backward Tabulation Within An Executing Command",
+    "zh": "在执行命令中反向制表"
+  },
+  "settings.keybindings.bookmark_selected_block": {
+    "en": "Bookmark Selected Block",
+    "zh": "为所选块添加书签"
+  },
+  "settings.keybindings.check_for_updates": {
+    "en": "Check For Updates",
+    "zh": "检查更新"
+  },
+  "settings.keybindings.clear_and_reset_ai_context_menu_query": {
+    "en": "Clear And Reset Ai Context Menu Query",
+    "zh": "清除并重置 AI 上下文菜单查询"
+  },
+  "settings.keybindings.clear_blocks": {
+    "en": "Clear Blocks",
+    "zh": "清除块"
+  },
+  "settings.keybindings.clear_command_editor": {
+    "en": "Clear Command Editor",
+    "zh": "清除命令编辑器"
+  },
+  "settings.keybindings.clear_screen": {
+    "en": "Clear Screen",
+    "zh": "清屏"
+  },
+  "settings.keybindings.clear_selected_lines": {
+    "en": "Clear Selected Lines",
+    "zh": "清除所选行"
+  },
+  "settings.keybindings.close": {
+    "en": "Close",
+    "zh": "关闭"
+  },
+  "settings.keybindings.close_all_tabs": {
+    "en": "Close All Tabs",
+    "zh": "关闭所有标签页"
+  },
+  "settings.keybindings.close_current_session": {
+    "en": "Close Current Session",
+    "zh": "关闭当前会话"
+  },
+  "settings.keybindings.close_focused_panel": {
+    "en": "Close Focused Panel",
+    "zh": "关闭聚焦面板"
+  },
+  "settings.keybindings.close_other_tabs": {
+    "en": "Close Other Tabs",
+    "zh": "关闭其他标签页"
+  },
+  "settings.keybindings.close_saved_tabs": {
+    "en": "Close Saved Tabs",
+    "zh": "关闭已保存标签页"
+  },
+  "settings.keybindings.close_tabs_to_the_right": {
+    "en": "Close Tabs To The Right",
+    "zh": "关闭右侧标签页"
+  },
+  "settings.keybindings.close_the_current_tab": {
+    "en": "Close The Current Tab",
+    "zh": "关闭当前标签页"
+  },
+  "settings.keybindings.close_window": {
+    "en": "Close Window",
+    "zh": "关闭窗口"
+  },
+  "settings.keybindings.command": {
+    "en": "Command",
+    "zh": "命令"
+  },
+  "settings.keybindings.command_search": {
+    "en": "Command Search",
+    "zh": "命令搜索"
+  },
+  "settings.keybindings.configure_keyboard_shortcuts": {
+    "en": "Configure keyboard shortcuts",
+    "zh": "配置键盘快捷键"
+  },
+  "settings.keybindings.copy": {
+    "en": "Copy",
+    "zh": "复制"
+  },
+  "settings.keybindings.copy_access_token_to_clipboard": {
+    "en": "Copy Access Token To Clipboard",
+    "zh": "复制访问令牌到剪贴板"
+  },
+  "settings.keybindings.copy_and_clear_selected_lines": {
+    "en": "Copy And Clear Selected Lines",
+    "zh": "复制并清除所选行"
+  },
+  "settings.keybindings.copy_command": {
+    "en": "Copy Command",
+    "zh": "复制命令"
+  },
+  "settings.keybindings.copy_command_and_output": {
+    "en": "Copy Command And Output",
+    "zh": "复制命令和输出"
+  },
+  "settings.keybindings.copy_command_output": {
+    "en": "Copy Command Output",
+    "zh": "复制命令输出"
+  },
+  "settings.keybindings.copy_git_branch": {
+    "en": "Copy Git Branch",
+    "zh": "复制 Git 分支"
+  },
+  "settings.keybindings.copy_rich_text_buffer": {
+    "en": "Copy Rich-Text Buffer",
+    "zh": "复制富文本缓冲区"
+  },
+  "settings.keybindings.copy_rich_text_selection": {
+    "en": "Copy Rich-Text Selection",
+    "zh": "复制富文本选区"
+  },
+  "settings.keybindings.create_new_project": {
+    "en": "Create New Project",
+    "zh": "创建新项目"
+  },
+  "settings.keybindings.create_new_tab": {
+    "en": "Create New Tab",
+    "zh": "创建新标签页"
+  },
+  "settings.keybindings.create_new_window": {
+    "en": "Create New Window",
+    "zh": "创建新窗口"
+  },
+  "settings.keybindings.create_or_edit_link": {
+    "en": "Create Or Edit Link",
+    "zh": "创建或编辑链接"
+  },
+  "settings.keybindings.cursor_at_buffer_end": {
+    "en": "Cursor At Buffer End",
+    "zh": "光标移至缓冲区末尾"
+  },
+  "settings.keybindings.cursor_at_buffer_start": {
+    "en": "Cursor At Buffer Start",
+    "zh": "光标移至缓冲区开头"
+  },
+  "settings.keybindings.cut_all_left": {
+    "en": "Cut All Left",
+    "zh": "剪切光标左侧全部"
+  },
+  "settings.keybindings.cut_all_right": {
+    "en": "Cut All Right",
+    "zh": "剪切光标右侧全部"
+  },
+  "settings.keybindings.cut_word_left": {
+    "en": "Cut Word Left",
+    "zh": "剪切左侧单词"
+  },
+  "settings.keybindings.cut_word_right": {
+    "en": "Cut Word Right",
+    "zh": "剪切右侧单词"
+  },
+  "settings.keybindings.de_select_shell_commands": {
+    "en": "De-Select Shell Commands",
+    "zh": "取消选中 Shell 命令"
+  },
+  "settings.keybindings.decrease_font_size": {
+    "en": "Decrease Font Size",
+    "zh": "减小字体大小"
+  },
+  "settings.keybindings.decrease_notebook_font_size": {
+    "en": "Decrease Notebook Font Size",
+    "zh": "减小笔记本字体"
+  },
+  "settings.keybindings.decrease_zoom_level": {
+    "en": "Decrease Zoom Level",
+    "zh": "降低缩放级别"
+  },
+  "settings.keybindings.delete": {
+    "en": "Delete",
+    "zh": "删除"
+  },
+  "settings.keybindings.delete_all_left": {
+    "en": "Delete All Left",
+    "zh": "删除左侧全部"
+  },
+  "settings.keybindings.delete_all_right": {
+    "en": "Delete All Right",
+    "zh": "删除右侧全部"
+  },
+  "settings.keybindings.delete_to_line_end_within_an_executing_command": {
+    "en": "Delete To Line End Within An Executing Command",
+    "zh": "删除至行尾（执行中命令）"
+  },
+  "settings.keybindings.delete_to_line_start_within_an_executing_command": {
+    "en": "Delete To Line Start Within An Executing Command",
+    "zh": "删除至行首（执行中命令）"
+  },
+  "settings.keybindings.delete_word_left": {
+    "en": "Delete Word Left",
+    "zh": "删除左侧单词"
+  },
+  "settings.keybindings.delete_word_left_within_an_executing_command": {
+    "en": "Delete Word Left Within An Executing Command",
+    "zh": "删除左侧单词（执行中命令）"
+  },
+  "settings.keybindings.delete_word_right": {
+    "en": "Delete Word Right",
+    "zh": "删除右侧单词"
+  },
+  "settings.keybindings.edit_prompt": {
+    "en": "Edit Prompt",
+    "zh": "编辑提示"
+  },
+  "settings.keybindings.exit_vim_insert_mode": {
+    "en": "Exit Vim Insert Mode",
+    "zh": "退出 Vim 插入模式"
+  },
+  "settings.keybindings.expand_selected_blocks_above": {
+    "en": "Expand Selected Blocks Above",
+    "zh": "向上展开所选块"
+  },
+  "settings.keybindings.expand_selected_blocks_below": {
+    "en": "Expand Selected Blocks Below",
+    "zh": "向下展开所选块"
+  },
+  "settings.keybindings.export_all_warp_drive_objects": {
+    "en": "Export All Warp Drive Objects",
+    "zh": "导出所有 Warp Drive 对象"
+  },
+  "settings.keybindings.find_in_code_editor": {
+    "en": "Find In Code Editor",
+    "zh": "在代码编辑器中查找"
+  },
+  "settings.keybindings.find_in_notebook": {
+    "en": "Find In Notebook",
+    "zh": "在笔记本中查找"
+  },
+  "settings.keybindings.find_in_terminal": {
+    "en": "Find In Terminal",
+    "zh": "在终端中查找"
+  },
+  "settings.keybindings.find_the_next_occurrence_of_your_search_query": {
+    "en": "Find The Next Occurrence Of Your Search Query",
+    "zh": "查找搜索词的下一处"
+  },
+  "settings.keybindings.find_the_previous_occurrence_of_your_search_query": {
+    "en": "Find The Previous Occurrence Of Your Search Query",
+    "zh": "查找搜索词的上一处"
+  },
+  "settings.keybindings.find_within_selected_block": {
+    "en": "Find Within Selected Block",
+    "zh": "在所选块内查找"
+  },
+  "settings.keybindings.focus_next_match": {
+    "en": "Focus Next Match",
+    "zh": "聚焦下一匹配"
+  },
+  "settings.keybindings.focus_previous_match": {
+    "en": "Focus Previous Match",
+    "zh": "聚焦上一匹配"
+  },
+  "settings.keybindings.focus_terminal_input": {
+    "en": "Focus Terminal Input",
+    "zh": "聚焦终端输入"
+  },
+  "settings.keybindings.focus_terminal_input_from_file": {
+    "en": "Focus Terminal Input From File",
+    "zh": "从文件聚焦终端输入"
+  },
+  "settings.keybindings.focus_terminal_input_from_notebook": {
+    "en": "Focus Terminal Input From Notebook",
+    "zh": "从笔记本聚焦终端输入"
+  },
+  "settings.keybindings.focus_terminal_input_from_warp_ai": {
+    "en": "Focus Terminal Input From Warp Ai",
+    "zh": "从 Warp AI 聚焦终端输入"
+  },
+  "settings.keybindings.fold": {
+    "en": "Fold",
+    "zh": "折叠"
+  },
+  "settings.keybindings.fold_selected_ranges": {
+    "en": "Fold Selected Ranges",
+    "zh": "折叠所选范围"
+  },
+  "settings.keybindings.go_to_line": {
+    "en": "Go To Line",
+    "zh": "跳转到行"
+  },
+  "settings.keybindings.history_search": {
+    "en": "History Search",
+    "zh": "历史搜索"
+  },
+  "settings.keybindings.home": {
+    "en": "Home",
+    "zh": "行首"
+  },
+  "settings.keybindings.import_external_settings": {
+    "en": "Import External Settings",
+    "zh": "导入外部设置"
+  },
+  "settings.keybindings.import_to_personal_drive": {
+    "en": "Import To Personal Drive",
+    "zh": "导入到个人 Drive"
+  },
+  "settings.keybindings.import_to_team_drive": {
+    "en": "Import To Team Drive",
+    "zh": "导入到团队 Drive"
+  },
+  "settings.keybindings.increase_font_size": {
+    "en": "Increase Font Size",
+    "zh": "增大字体大小"
+  },
+  "settings.keybindings.increase_notebook_font_size": {
+    "en": "Increase Notebook Font Size",
+    "zh": "增大笔记本字体"
+  },
+  "settings.keybindings.increase_zoom_level": {
+    "en": "Increase Zoom Level",
+    "zh": "提高缩放级别"
+  },
+  "settings.keybindings.initiate_project_for_warp": {
+    "en": "Initiate Project For Warp",
+    "zh": "为 Warp 初始化项目"
+  },
+  "settings.keybindings.insert_command_correction": {
+    "en": "Insert Command Correction",
+    "zh": "插入命令更正"
+  },
+  "settings.keybindings.insert_last_word_of_previous_command": {
+    "en": "Insert Last Word Of Previous Command",
+    "zh": "插入上一命令的最后一个词"
+  },
+  "settings.keybindings.insert_newline": {
+    "en": "Insert Newline",
+    "zh": "插入换行"
+  },
+  "settings.keybindings.insert_non_expanding_space": {
+    "en": "Insert Non-Expanding Space",
+    "zh": "插入不扩展空格"
+  },
+  "settings.keybindings.inspect_command": {
+    "en": "Inspect Command",
+    "zh": "检查命令"
+  },
+  "settings.keybindings.install_oz_cli_command": {
+    "en": "Install Oz Cli Command",
+    "zh": "安装 Oz CLI 命令"
+  },
+  "settings.keybindings.install_update_and_relaunch": {
+    "en": "Install Update And Relaunch",
+    "zh": "安装更新并重启"
+  },
+  "settings.keybindings.invite_people": {
+    "en": "Invite People...",
+    "zh": "邀请成员…"
+  },
+  "settings.keybindings.join_our_slack_community_opens_external_link": {
+    "en": "Join Our Slack Community (Opens External Link)",
+    "zh": "加入 Slack 社区（外部链接）"
+  },
+  "settings.keybindings.jump_to_latest_agent_task": {
+    "en": "Jump To Latest Agent Task",
+    "zh": "跳转到最新代理任务"
+  },
+  "settings.keybindings.launch_configuration_palette": {
+    "en": "Launch Configuration Palette",
+    "zh": "启动配置面板"
+  },
+  "settings.keybindings.load_agent_mode_conversation_from_debug_link_in_clipboard": {
+    "en": "Load Agent Mode Conversation (From Debug Link In Clipboard)",
+    "zh": "从剪贴板调试链接加载代理对话"
+  },
+  "settings.keybindings.log_out": {
+    "en": "Log Out",
+    "zh": "退出登录"
+  },
+  "settings.keybindings.move_backward_one_subword": {
+    "en": "Move Backward One Subword",
+    "zh": "向后移动一个子词"
+  },
+  "settings.keybindings.move_backward_one_word": {
+    "en": "Move Backward One Word",
+    "zh": "向后移动一个单词"
+  },
+  "settings.keybindings.move_cursor_down": {
+    "en": "Move Cursor Down",
+    "zh": "光标下移"
+  },
+  "settings.keybindings.move_cursor_end_within_an_executing_command": {
+    "en": "Move Cursor End Within An Executing Command",
+    "zh": "光标移至行尾（执行中命令）"
+  },
+  "settings.keybindings.move_cursor_home_within_an_executing_command": {
+    "en": "Move Cursor Home Within An Executing Command",
+    "zh": "光标移至行首（执行中命令）"
+  },
+  "settings.keybindings.move_cursor_left": {
+    "en": "Move Cursor Left",
+    "zh": "光标左移"
+  },
+  "settings.keybindings.move_cursor_one_word_to_the_left_within_an_executing_command": {
+    "en": "Move Cursor One Word To The Left Within An Executing Command",
+    "zh": "光标左移一词（执行中命令）"
+  },
+  "settings.keybindings.move_cursor_one_word_to_the_right_within_an_executing_command": {
+    "en": "Move Cursor One Word To The Right Within An Executing Command",
+    "zh": "光标右移一词（执行中命令）"
+  },
+  "settings.keybindings.move_cursor_right": {
+    "en": "Move Cursor Right",
+    "zh": "光标右移"
+  },
+  "settings.keybindings.move_cursor_to_the_bottom": {
+    "en": "Move Cursor To The Bottom",
+    "zh": "光标移至底部"
+  },
+  "settings.keybindings.move_cursor_to_the_top": {
+    "en": "Move Cursor To The Top",
+    "zh": "光标移至顶部"
+  },
+  "settings.keybindings.move_cursor_up": {
+    "en": "Move Cursor Up",
+    "zh": "光标上移"
+  },
+  "settings.keybindings.move_forward_one_subword": {
+    "en": "Move Forward One Subword",
+    "zh": "向前移动一个子词"
+  },
+  "settings.keybindings.move_forward_one_word": {
+    "en": "Move Forward One Word",
+    "zh": "向前移动一个单词"
+  },
+  "settings.keybindings.move_tab_left": {
+    "en": "Move Tab Left",
+    "zh": "标签页左移"
+  },
+  "settings.keybindings.move_tab_right": {
+    "en": "Move Tab Right",
+    "zh": "标签页右移"
+  },
+  "settings.keybindings.move_to_end_of_line": {
+    "en": "Move To End Of Line",
+    "zh": "移至行尾"
+  },
+  "settings.keybindings.move_to_end_of_paragraph": {
+    "en": "Move To End Of Paragraph",
+    "zh": "移至段落末尾"
+  },
+  "settings.keybindings.move_to_line_end": {
+    "en": "Move To Line End",
+    "zh": "移至行尾"
+  },
+  "settings.keybindings.move_to_line_start": {
+    "en": "Move To Line Start",
+    "zh": "移至行首"
+  },
+  "settings.keybindings.move_to_start_of_line": {
+    "en": "Move To Start Of Line",
+    "zh": "移至行首"
+  },
+  "settings.keybindings.move_to_the_end_of_the_buffer": {
+    "en": "Move To The End Of The Buffer",
+    "zh": "移至缓冲区末尾"
+  },
+  "settings.keybindings.move_to_the_end_of_the_paragraph": {
+    "en": "Move To The End Of The Paragraph",
+    "zh": "移至段落末尾"
+  },
+  "settings.keybindings.move_to_the_start_of_the_buffer": {
+    "en": "Move To The Start Of The Buffer",
+    "zh": "移至缓冲区开头"
+  },
+  "settings.keybindings.move_to_the_start_of_the_paragraph": {
+    "en": "Move To The Start Of The Paragraph",
+    "zh": "移至段落开头"
+  },
+  "settings.keybindings.new_agent_tab": {
+    "en": "New Agent Tab",
+    "zh": "新建代理标签页"
+  },
+  "settings.keybindings.new_cloud_agent_tab": {
+    "en": "New Cloud Agent Tab",
+    "zh": "新建云代理标签页"
+  },
+  "settings.keybindings.new_file": {
+    "en": "New File",
+    "zh": "新建文件"
+  },
+  "settings.keybindings.new_personal_environment_variables": {
+    "en": "New Personal Environment Variables",
+    "zh": "新建个人环境变量"
+  },
+  "settings.keybindings.new_team_environment_variables": {
+    "en": "New Team Environment Variables",
+    "zh": "新建团队环境变量"
+  },
+  "settings.keybindings.new_terminal_tab": {
+    "en": "New Terminal Tab",
+    "zh": "新建终端标签页"
+  },
+  "settings.keybindings.open_ai_command_suggestions": {
+    "en": "Open Ai Command Suggestions",
+    "zh": "打开 AI 命令建议"
+  },
+  "settings.keybindings.open_ai_rules": {
+    "en": "Open Ai Rules",
+    "zh": "打开 AI 规则"
+  },
+  "settings.keybindings.open_block_context_menu": {
+    "en": "Open Block Context Menu",
+    "zh": "打开块上下文菜单"
+  },
+  "settings.keybindings.open_global_search": {
+    "en": "Open Global Search",
+    "zh": "打开全局搜索"
+  },
+  "settings.keybindings.open_keybindings_editor": {
+    "en": "Open Keybindings Editor",
+    "zh": "打开快捷键编辑器"
+  },
+  "settings.keybindings.open_left_panel": {
+    "en": "Open Left Panel",
+    "zh": "打开左侧面板"
+  },
+  "settings.keybindings.open_mcp_servers": {
+    "en": "Open Mcp Servers",
+    "zh": "打开 MCP 服务器"
+  },
+  "settings.keybindings.open_repository": {
+    "en": "Open Repository",
+    "zh": "打开仓库"
+  },
+  "settings.keybindings.open_settings": {
+    "en": "Open Settings",
+    "zh": "打开设置"
+  },
+  "settings.keybindings.open_settings_file": {
+    "en": "Open Settings File",
+    "zh": "打开设置文件"
+  },
+  "settings.keybindings.open_settings_about": {
+    "en": "Open Settings: About",
+    "zh": "打开设置：关于"
+  },
+  "settings.keybindings.open_settings_account": {
+    "en": "Open Settings: Account",
+    "zh": "打开设置：账户"
+  },
+  "settings.keybindings.open_settings_ai": {
+    "en": "Open Settings: Ai",
+    "zh": "打开设置：AI"
+  },
+  "settings.keybindings.open_settings_appearance": {
+    "en": "Open Settings: Appearance",
+    "zh": "打开设置：外观"
+  },
+  "settings.keybindings.open_settings_billing_and_usage": {
+    "en": "Open Settings: Billing And Usage",
+    "zh": "打开设置：账单与用量"
+  },
+  "settings.keybindings.open_settings_code": {
+    "en": "Open Settings: Code",
+    "zh": "打开设置：代码"
+  },
+  "settings.keybindings.open_settings_environments": {
+    "en": "Open Settings: Environments",
+    "zh": "打开设置：环境"
+  },
+  "settings.keybindings.open_settings_features": {
+    "en": "Open Settings: Features",
+    "zh": "打开设置：功能"
+  },
+  "settings.keybindings.open_settings_keyboard_shortcuts": {
+    "en": "Open Settings: Keyboard Shortcuts",
+    "zh": "打开设置：键盘快捷键"
+  },
+  "settings.keybindings.open_settings_mcp_servers": {
+    "en": "Open Settings: Mcp Servers",
+    "zh": "打开设置：MCP 服务器"
+  },
+  "settings.keybindings.open_settings_privacy": {
+    "en": "Open Settings: Privacy",
+    "zh": "打开设置：隐私"
+  },
+  "settings.keybindings.open_settings_referrals": {
+    "en": "Open Settings: Referrals",
+    "zh": "打开设置：推荐"
+  },
+  "settings.keybindings.open_settings_shared_blocks": {
+    "en": "Open Settings: Shared Blocks",
+    "zh": "打开设置：共享块"
+  },
+  "settings.keybindings.open_settings_teams": {
+    "en": "Open Settings: Teams",
+    "zh": "打开设置：团队"
+  },
+  "settings.keybindings.open_settings_warpify": {
+    "en": "Open Settings: Warpify",
+    "zh": "打开设置：Warpify"
+  },
+  "settings.keybindings.open_theme_picker": {
+    "en": "Open Theme Picker",
+    "zh": "打开主题选择器"
+  },
+  "settings.keybindings.paste": {
+    "en": "Paste",
+    "zh": "粘贴"
+  },
+  "settings.keybindings.quit_warp": {
+    "en": "Quit Warp",
+    "zh": "退出 Warp"
+  },
+  "settings.keybindings.reinput_selected_commands": {
+    "en": "Reinput Selected Commands",
+    "zh": "重新输入所选命令"
+  },
+  "settings.keybindings.reinput_selected_commands_as_root": {
+    "en": "Reinput Selected Commands As Root",
+    "zh": "以 root 身份重新输入所选命令"
+  },
+  "settings.keybindings.reload_file": {
+    "en": "Reload File",
+    "zh": "重新加载文件"
+  },
+  "settings.keybindings.remove_the_previous_character": {
+    "en": "Remove The Previous Character",
+    "zh": "删除前一个字符"
+  },
+  "settings.keybindings.rename_the_current_tab": {
+    "en": "Rename The Current Tab",
+    "zh": "重命名当前标签页"
+  },
+  "settings.keybindings.reopen_closed_session": {
+    "en": "Reopen Closed Session",
+    "zh": "重新打开已关闭会话"
+  },
+  "settings.keybindings.reset_font_size_to_default": {
+    "en": "Reset Font Size To Default",
+    "zh": "重置字体大小为默认值"
+  },
+  "settings.keybindings.reset_notebook_font_size": {
+    "en": "Reset Notebook Font Size",
+    "zh": "重置笔记本字体大小"
+  },
+  "settings.keybindings.reset_zoom_level_to_default": {
+    "en": "Reset Zoom Level To Default",
+    "zh": "重置缩放级别为默认值"
+  },
+  "settings.keybindings.resize_pane_move_divider_down": {
+    "en": "Resize Pane > Move Divider Down",
+    "zh": "调整面板 > 分隔线下移"
+  },
+  "settings.keybindings.resize_pane_move_divider_left": {
+    "en": "Resize Pane > Move Divider Left",
+    "zh": "调整面板 > 分隔线左移"
+  },
+  "settings.keybindings.resize_pane_move_divider_right": {
+    "en": "Resize Pane > Move Divider Right",
+    "zh": "调整面板 > 分隔线右移"
+  },
+  "settings.keybindings.resize_pane_move_divider_up": {
+    "en": "Resize Pane > Move Divider Up",
+    "zh": "调整面板 > 分隔线上移"
+  },
+  "settings.keybindings.restart_warp_ai": {
+    "en": "Restart Warp Ai",
+    "zh": "重启 Warp AI"
+  },
+  "settings.keybindings.run_selected_commands": {
+    "en": "Run Selected Commands",
+    "zh": "运行所选命令"
+  },
+  "settings.keybindings.save_all_unsaved_files_in_code_review": {
+    "en": "Save All Unsaved Files In Code Review",
+    "zh": "保存代码审查中所有未保存文件"
+  },
+  "settings.keybindings.save_file_as": {
+    "en": "Save File As",
+    "zh": "另存为"
+  },
+  "settings.keybindings.save_new_launch_configuration": {
+    "en": "Save New Launch Configuration",
+    "zh": "保存新启动配置"
+  },
+  "settings.keybindings.save_workflow": {
+    "en": "Save Workflow",
+    "zh": "保存工作流"
+  },
+  "settings.keybindings.scroll_terminal_output_down_one_line": {
+    "en": "Scroll Terminal Output Down One Line",
+    "zh": "终端输出下滚一行"
+  },
+  "settings.keybindings.scroll_terminal_output_up_one_line": {
+    "en": "Scroll Terminal Output Up One Line",
+    "zh": "终端输出上滚一行"
+  },
+  "settings.keybindings.scroll_to_bottom_of_selected_block": {
+    "en": "Scroll To Bottom Of Selected Block",
+    "zh": "滚动至所选块底部"
+  },
+  "settings.keybindings.scroll_to_top_of_selected_block": {
+    "en": "Scroll To Top Of Selected Block",
+    "zh": "滚动至所选块顶部"
+  },
+  "settings.keybindings.search_warp_drive": {
+    "en": "Search Warp Drive",
+    "zh": "搜索 Warp Drive"
+  },
+  "settings.keybindings.select_all": {
+    "en": "Select All",
+    "zh": "全选"
+  },
+  "settings.keybindings.select_all_blocks": {
+    "en": "Select All Blocks",
+    "zh": "选中所有块"
+  },
+  "settings.keybindings.select_and_move_to_the_bottom": {
+    "en": "Select And Move To The Bottom",
+    "zh": "选中并移至底部"
+  },
+  "settings.keybindings.select_and_move_to_the_top": {
+    "en": "Select And Move To The Top",
+    "zh": "选中并移至顶部"
+  },
+  "settings.keybindings.select_down": {
+    "en": "Select Down",
+    "zh": "向下选择"
+  },
+  "settings.keybindings.select_next_command": {
+    "en": "Select Next Command",
+    "zh": "选择下一个命令"
+  },
+  "settings.keybindings.select_one_character_to_the_left": {
+    "en": "Select One Character To The Left",
+    "zh": "向左选择一个字符"
+  },
+  "settings.keybindings.select_one_character_to_the_right": {
+    "en": "Select One Character To The Right",
+    "zh": "向右选择一个字符"
+  },
+  "settings.keybindings.select_one_subword_to_the_left": {
+    "en": "Select One Subword To The Left",
+    "zh": "向左选择一个子词"
+  },
+  "settings.keybindings.select_one_subword_to_the_right": {
+    "en": "Select One Subword To The Right",
+    "zh": "向右选择一个子词"
+  },
+  "settings.keybindings.select_one_word_to_the_left": {
+    "en": "Select One Word To The Left",
+    "zh": "向左选择一个单词"
+  },
+  "settings.keybindings.select_one_word_to_the_right": {
+    "en": "Select One Word To The Right",
+    "zh": "向右选择一个单词"
+  },
+  "settings.keybindings.select_previous_command": {
+    "en": "Select Previous Command",
+    "zh": "选择上一个命令"
+  },
+  "settings.keybindings.select_shell_command_at_cursor": {
+    "en": "Select Shell Command At Cursor",
+    "zh": "选中光标处 Shell 命令"
+  },
+  "settings.keybindings.select_the_closest_bookmark_down": {
+    "en": "Select The Closest Bookmark Down",
+    "zh": "选中向下最近书签"
+  },
+  "settings.keybindings.select_the_closest_bookmark_up": {
+    "en": "Select The Closest Bookmark Up",
+    "zh": "选中向上最近书签"
+  },
+  "settings.keybindings.select_to_end_of_line": {
+    "en": "Select To End Of Line",
+    "zh": "选中至行尾"
+  },
+  "settings.keybindings.select_to_end_of_paragraph": {
+    "en": "Select To End Of Paragraph",
+    "zh": "选中至段落末尾"
+  },
+  "settings.keybindings.select_to_line_end": {
+    "en": "Select To Line End",
+    "zh": "选中至行尾"
+  },
+  "settings.keybindings.select_to_line_start": {
+    "en": "Select To Line Start",
+    "zh": "选中至行首"
+  },
+  "settings.keybindings.select_to_start_of_line": {
+    "en": "Select To Start Of Line",
+    "zh": "选中至行首"
+  },
+  "settings.keybindings.select_to_start_of_paragraph": {
+    "en": "Select To Start Of Paragraph",
+    "zh": "选中至段落开头"
+  },
+  "settings.keybindings.select_up": {
+    "en": "Select Up",
+    "zh": "向上选择"
+  },
+  "settings.keybindings.send_feedback_opens_external_link": {
+    "en": "Send Feedback (Opens External Link)",
+    "zh": "发送反馈（外部链接）"
+  },
+  "settings.keybindings.setup_guide": {
+    "en": "Setup Guide",
+    "zh": "设置指南"
+  },
+  "settings.keybindings.share_current_session": {
+    "en": "Share Current Session",
+    "zh": "共享当前会话"
+  },
+  "settings.keybindings.share_pane": {
+    "en": "Share Pane",
+    "zh": "共享面板"
+  },
+  "settings.keybindings.share_selected_block": {
+    "en": "Share Selected Block",
+    "zh": "共享所选块"
+  },
+  "settings.keybindings.show_find_bar_in_code_review": {
+    "en": "Show Find Bar In Code Review",
+    "zh": "在代码审查中显示查找栏"
+  },
+  "settings.keybindings.show_warp_network_log": {
+    "en": "Show Warp Network Log",
+    "zh": "显示 Warp 网络日志"
+  },
+  "settings.keybindings.split_pane_down": {
+    "en": "Split Pane Down",
+    "zh": "向下分割面板"
+  },
+  "settings.keybindings.split_pane_left": {
+    "en": "Split Pane Left",
+    "zh": "向左分割面板"
+  },
+  "settings.keybindings.split_pane_right": {
+    "en": "Split Pane Right",
+    "zh": "向右分割面板"
+  },
+  "settings.keybindings.split_pane_up": {
+    "en": "Split Pane Up",
+    "zh": "向上分割面板"
+  },
+  "settings.keybindings.stop_sharing_current_session": {
+    "en": "Stop Sharing Current Session",
+    "zh": "停止共享当前会话"
+  },
+  "settings.keybindings.stop_synchronizing_any_panes": {
+    "en": "Stop Synchronizing Any Panes",
+    "zh": "停止同步所有面板"
+  },
+  "settings.keybindings.switch_focus_to_left_panel": {
+    "en": "Switch Focus To Left Panel",
+    "zh": "切换焦点至左侧面板"
+  },
+  "settings.keybindings.switch_focus_to_right_panel": {
+    "en": "Switch Focus To Right Panel",
+    "zh": "切换焦点至右侧面板"
+  },
+  "settings.keybindings.switch_panes_down": {
+    "en": "Switch Panes Down",
+    "zh": "切换到下方面板"
+  },
+  "settings.keybindings.switch_panes_left": {
+    "en": "Switch Panes Left",
+    "zh": "切换到左侧面板"
+  },
+  "settings.keybindings.switch_panes_right": {
+    "en": "Switch Panes Right",
+    "zh": "切换到右侧面板"
+  },
+  "settings.keybindings.switch_panes_up": {
+    "en": "Switch Panes Up",
+    "zh": "切换到上方面板"
+  },
+  "settings.keybindings.switch_to_1st_tab": {
+    "en": "Switch To 1St Tab",
+    "zh": "切换到第 1 个标签页"
+  },
+  "settings.keybindings.switch_to_2nd_tab": {
+    "en": "Switch To 2Nd Tab",
+    "zh": "切换到第 2 个标签页"
+  },
+  "settings.keybindings.switch_to_3rd_tab": {
+    "en": "Switch To 3Rd Tab",
+    "zh": "切换到第 3 个标签页"
+  },
+  "settings.keybindings.switch_to_4th_tab": {
+    "en": "Switch To 4Th Tab",
+    "zh": "切换到第 4 个标签页"
+  },
+  "settings.keybindings.switch_to_5th_tab": {
+    "en": "Switch To 5Th Tab",
+    "zh": "切换到第 5 个标签页"
+  },
+  "settings.keybindings.switch_to_6th_tab": {
+    "en": "Switch To 6Th Tab",
+    "zh": "切换到第 6 个标签页"
+  },
+  "settings.keybindings.switch_to_7th_tab": {
+    "en": "Switch To 7Th Tab",
+    "zh": "切换到第 7 个标签页"
+  },
+  "settings.keybindings.switch_to_8th_tab": {
+    "en": "Switch To 8Th Tab",
+    "zh": "切换到第 8 个标签页"
+  },
+  "settings.keybindings.switch_to_last_tab": {
+    "en": "Switch To Last Tab",
+    "zh": "切换到最后标签页"
+  },
+  "settings.keybindings.switch_to_next_tab": {
+    "en": "Switch To Next Tab",
+    "zh": "切换到下一标签页"
+  },
+  "settings.keybindings.switch_to_previous_tab": {
+    "en": "Switch To Previous Tab",
+    "zh": "切换到上一标签页"
+  },
+  "settings.keybindings.terminal_session": {
+    "en": "Terminal Session",
+    "zh": "终端会话"
+  },
+  "settings.keybindings.this_shortcut_conflicts_with_other_keybinds": {
+    "en": "This shortcut conflicts with other keybinds",
+    "zh": "该快捷键与其他绑定冲突"
+  },
+  "settings.keybindings.toggle_agent_conversation_list_view": {
+    "en": "Toggle Agent Conversation List View",
+    "zh": "切换代理对话列表视图"
+  },
+  "settings.keybindings.toggle_case_sensitive_search": {
+    "en": "Toggle Case-Sensitive Search",
+    "zh": "切换大小写敏感搜索"
+  },
+  "settings.keybindings.toggle_code_review": {
+    "en": "Toggle Code Review",
+    "zh": "切换代码审查"
+  },
+  "settings.keybindings.toggle_command_palette": {
+    "en": "Toggle Command Palette",
+    "zh": "切换命令面板"
+  },
+  "settings.keybindings.toggle_comment": {
+    "en": "Toggle Comment",
+    "zh": "切换注释"
+  },
+  "settings.keybindings.toggle_files_palette": {
+    "en": "Toggle Files Palette",
+    "zh": "切换文件面板"
+  },
+  "settings.keybindings.toggle_fullscreen": {
+    "en": "Toggle Fullscreen",
+    "zh": "切换全屏"
+  },
+  "settings.keybindings.toggle_inline_code_styling": {
+    "en": "Toggle Inline Code Styling",
+    "zh": "切换行内代码样式"
+  },
+  "settings.keybindings.toggle_keyboard_shortcuts": {
+    "en": "Toggle Keyboard Shortcuts",
+    "zh": "切换键盘快捷键"
+  },
+  "settings.keybindings.toggle_maximize_active_pane": {
+    "en": "Toggle Maximize Active Pane",
+    "zh": "切换最大化活动面板"
+  },
+  "settings.keybindings.toggle_maximize_code_review_panel": {
+    "en": "Toggle Maximize Code Review Panel",
+    "zh": "切换最大化代码审查面板"
+  },
+  "settings.keybindings.toggle_mouse_reporting": {
+    "en": "Toggle Mouse Reporting",
+    "zh": "切换鼠标报告"
+  },
+  "settings.keybindings.toggle_navigation_palette": {
+    "en": "Toggle Navigation Palette",
+    "zh": "切换导航面板"
+  },
+  "settings.keybindings.toggle_project_explorer": {
+    "en": "Toggle Project Explorer",
+    "zh": "切换项目资源管理器"
+  },
+  "settings.keybindings.toggle_pty_recording_for_session": {
+    "en": "Toggle Pty Recording For Session",
+    "zh": "切换会话 PTY 录制"
+  },
+  "settings.keybindings.toggle_regular_expression_search": {
+    "en": "Toggle Regular Expression Search",
+    "zh": "切换正则表达式搜索"
+  },
+  "settings.keybindings.toggle_resource_center": {
+    "en": "Toggle Resource Center",
+    "zh": "切换资源中心"
+  },
+  "settings.keybindings.toggle_rich_text_debug_mode": {
+    "en": "Toggle Rich-Text Debug Mode",
+    "zh": "切换富文本调试模式"
+  },
+  "settings.keybindings.toggle_sticky_command_header": {
+    "en": "Toggle Sticky Command Header",
+    "zh": "切换固定命令标题"
+  },
+  "settings.keybindings.toggle_sticky_command_header_in_active_pane": {
+    "en": "Toggle Sticky Command Header In Active Pane",
+    "zh": "切换活动面板固定命令标题"
+  },
+  "settings.keybindings.toggle_strikethrough_styling": {
+    "en": "Toggle Strikethrough Styling",
+    "zh": "切换删除线样式"
+  },
+  "settings.keybindings.toggle_synchronizing_all_panes_in_all_tabs": {
+    "en": "Toggle Synchronizing All Panes In All Tabs",
+    "zh": "切换所有标签页同步"
+  },
+  "settings.keybindings.toggle_synchronizing_all_panes_in_current_tab": {
+    "en": "Toggle Synchronizing All Panes In Current Tab",
+    "zh": "切换当前标签页面板同步"
+  },
+  "settings.keybindings.toggle_team_workflows_modal": {
+    "en": "Toggle Team Workflows Modal",
+    "zh": "切换团队工作流模态框"
+  },
+  "settings.keybindings.toggle_the_agent_management_view": {
+    "en": "Toggle The Agent Management View",
+    "zh": "切换代理管理视图"
+  },
+  "settings.keybindings.toggle_underline_styling": {
+    "en": "Toggle Underline Styling",
+    "zh": "切换下划线样式"
+  },
+  "settings.keybindings.toggle_vertical_tabs_panel": {
+    "en": "Toggle Vertical Tabs Panel",
+    "zh": "切换垂直标签面板"
+  },
+  "settings.keybindings.toggle_warp_ai": {
+    "en": "Toggle Warp Ai",
+    "zh": "切换 Warp AI"
+  },
+  "settings.keybindings.toggle_warp_drive": {
+    "en": "Toggle Warp Drive",
+    "zh": "切换 Warp Drive"
+  },
+  "settings.keybindings.trigger_auto_detection": {
+    "en": "Trigger Auto Detection",
+    "zh": "触发自动检测"
+  },
+  "settings.keybindings.turn_notifications_off": {
+    "en": "Turn Notifications Off",
+    "zh": "关闭通知"
+  },
+  "settings.keybindings.turn_notifications_on": {
+    "en": "Turn Notifications On",
+    "zh": "开启通知"
+  },
+  "settings.keybindings.unfold": {
+    "en": "Unfold",
+    "zh": "展开"
+  },
+  "settings.keybindings.uninstall_oz_cli_command": {
+    "en": "Uninstall Oz Cli Command",
+    "zh": "卸载 Oz CLI 命令"
+  },
+  "settings.keybindings.view_latest_changelog": {
+    "en": "View Latest Changelog",
+    "zh": "查看最新更新日志"
+  },
+  "settings.keybindings.view_warp_logs": {
+    "en": "View Warp Logs",
+    "zh": "查看 Warp 日志"
+  },
+  "settings.keybindings.warpify_ssh_session": {
+    "en": "Warpify Ssh Session",
+    "zh": "Warpify SSH 会话"
+  },
+  "settings.keybindings.warpify_subshell": {
+    "en": "Warpify Subshell",
+    "zh": "Warpify 子 Shell"
+  },
+  "settings.keybindings.workflows": {
+    "en": "Workflows",
+    "zh": "工作流"
+  },
+  "settings.keybindings.to_reference_these_keybindings_in_a_side_pane_at_anytime": {
+    "en": "to reference these keybindings in a side pane at anytime.",
+    "zh": "随时在侧边栏中查阅这些键盘绑定。"
+  }
+}

@@ -1,3 +1,4 @@
+use crate::t;
 use super::admin_actions::AdminActions;
 use super::settings_page::{render_customer_type_badge, MatchData, PageType, SettingsWidget};
 use super::transfer_ownership_confirmation_modal::{
@@ -85,9 +86,9 @@ use warpui::{
 
 const TEAM_MEMBERS_HEADER_POSITION_ID: &str = "team_settings:team_members_header";
 // Styling for team create page
-const TEAM_NAME_EDITOR_PLACEHOLDER_TEXT: &str = "Team name";
+// (translated inline) // translated at render time
 const CREATE_TEAM_BUTTON_LEFT_PADDING: f32 = 10.;
-const CREATE_TEAM_DESCRIPTION: &str = "When you create a team, you can collaborate on agent-driven development by sharing cloud agent runs, environments, automations, and artifacts. You can also create a shared knowledge store for teammates and agents alike.";
+// (translated inline) // translated at render time
 
 // Styling for team management page
 const LEAVE_TEAM_BUTTON_LABEL: &str = "Leave team";
@@ -113,11 +114,11 @@ const INVITE_LINK_PREFIX: &str = "/team/";
 const INVALID_DOMAINS_INSTRUCTIONS: &str =
     "Some of the provided domains are invalid, or have already been added.";
 
-const INVITE_LINK_TOGGLE_INSTRUCTIONS: &str = "As an admin, you can choose whether to enable or disable the ability for team members to invite others by invitation link.";
+// (translated inline) // translated at render time
 const INVITE_LINK_DOMAIN_RESTRICTIONS_INSTRUCTIONS: &str =
-    "Only allow users with emails at specific domains to join your team through the invite link.";
+    ""; // translated at render time
 
-const INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS: &str = "Email invitations are valid for 7 days.";
+// (translated inline) // translated at render time
 const INVALID_EMAILS_INSTRUCTIONS: &str =
     "Some of the provided email addresses are invalid, already invited, or members of the team.";
 
@@ -675,7 +676,7 @@ impl TeamsPageView {
         let font_size = appearance.ui_font_size();
         let create_team_editor = Self::editor(
             |me, event, ctx| me.handle_editor_event(event, ctx),
-            TEAM_NAME_EDITOR_PLACEHOLDER_TEXT,
+            t!(ctx, "Team name", "团队名称"),
             font_size,
             ctx,
         );
@@ -2302,6 +2303,7 @@ impl TeamsWidget {
                 view,
                 appearance,
                 chip_editor_style,
+                app,
             ));
         }
 
@@ -2313,6 +2315,7 @@ impl TeamsWidget {
             chip_editor_style,
             workspace_size_policy,
             has_admin_permissions,
+            app,
         ));
 
         invitation_section.finish()
@@ -2325,6 +2328,7 @@ impl TeamsWidget {
         view: &TeamsPageView,
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
@@ -2362,7 +2366,7 @@ impl TeamsWidget {
         if has_admin_permissions {
             section.add_child(
                 Container::new(self.render_sub_text(
-                    INVITE_LINK_TOGGLE_INSTRUCTIONS.into(),
+                    t!(app, "As an admin, you can choose whether to enable or disable the ability for team members to invite others by invitation link.", "作为管理员，您可以选择是否允许团队成员通过邀请链接邀请他人。").into(),
                     appearance,
                     Some(Coords::uniform(0.).right(48.)),
                 ))
@@ -2411,6 +2415,7 @@ impl TeamsWidget {
                     view,
                     appearance,
                     chip_editor_style,
+                    app,
                 ));
             }
         }
@@ -2426,6 +2431,7 @@ impl TeamsWidget {
         chip_editor_style: UiComponentStyles,
         policy: WorkspaceSizePolicy,
         has_admin_permissions: bool,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
@@ -2450,7 +2456,7 @@ impl TeamsWidget {
                     // Instruction text for invite by email expiry
                     section.add_child(
                         Container::new(self.render_sub_text(
-                            INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS.into(),
+                            t!(app, "Email invitations are valid for 7 days.", "邮件邀请有效期为 7 天。").into(),
                             appearance,
                             Some(Coords::uniform(0.).right(48.)),
                         ))
@@ -2475,7 +2481,7 @@ impl TeamsWidget {
                                 .finish(),
                             )
                             .with_child(
-                                self.render_send_email_invites_button(team.uid, view, appearance),
+                                self.render_send_email_invites_button(team.uid, view, appearance, app),
                             )
                             .finish(),
                     );
@@ -2759,6 +2765,7 @@ impl TeamsWidget {
         view: &TeamsPageView,
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
@@ -2797,7 +2804,7 @@ impl TeamsWidget {
                             )
                             .finish(),
                         )
-                        .with_child(self.render_approve_domains_button(team.uid, view, appearance))
+                        .with_child(self.render_approve_domains_button(team.uid, view, appearance, app))
                         .finish(),
                 )
                 .with_padding_top(TEXT_FIELD_TOP_PADDING)
@@ -2864,6 +2871,7 @@ impl TeamsWidget {
         team_uid: ServerId,
         view: &TeamsPageView,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         // Only render enabled button with action if domain list is valid.
         let (action, variant) = if view.approve_domains_block_editor_state.is_valid {
@@ -2875,7 +2883,7 @@ impl TeamsWidget {
             (None, ButtonVariant::Basic)
         };
         Container::new(self.render_button(
-            APPROVE_DOMAINS_BUTTON_LABEL,
+            t!(app, "Set", "设置"),
             variant,
             self.mouse_state_handles.approve_domains_button.clone(),
             action,
@@ -2891,6 +2899,7 @@ impl TeamsWidget {
         team_uid: ServerId,
         view: &TeamsPageView,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         // Only render enabled button with action if email list is valid.
         let (action, variant) = if view.email_invites_block_editor_state.is_valid {
@@ -2902,7 +2911,7 @@ impl TeamsWidget {
             (None, ButtonVariant::Basic)
         };
         Container::new(self.render_button(
-            SEND_EMAIL_INVITES_BUTTON_LABEL,
+            t!(app, "Invite", "邀请"),
             variant,
             self.mouse_state_handles.send_email_invites_button.clone(),
             action,
@@ -3653,13 +3662,13 @@ impl TeamsWidget {
         let mut page = Flex::column();
 
         // Title, subtitle, and description
-        page.add_child(render_sub_header(appearance, "Teams".to_string(), None));
+        page.add_child(render_sub_header(appearance, t!(app, "Teams", "团队").to_string(), None));
         page.add_child(
-            self.render_sub_header_with_subtext_color(appearance, "Create a team".to_string()),
+            self.render_sub_header_with_subtext_color(appearance, t!(app, "Create a team", "创建团队").to_string()),
         );
         page.add_child(
             Container::new(
-                self.render_description(CREATE_TEAM_DESCRIPTION.to_string(), appearance),
+                self.render_description(t!(app, "When you create a team, you can collaborate on agent-driven development by sharing cloud agent runs, environments, automations, and artifacts. You can also create a shared knowledge store for teammates and agents alike.", "创建团队后，您可以通过共享云代理运行、环境、自动化和成果进行协作开发，并为团队成员和代理创建共享知识库。").to_string(), appearance),
             )
             .with_padding_top(6.)
             .finish(),
@@ -3930,7 +3939,7 @@ impl TeamsWidget {
                 ButtonVariant::Accent,
                 self.mouse_state_handles.create_team_button.clone(),
             )
-            .with_centered_text_label(CREATE_TEAM_BUTTON_LABEL.to_owned())
+            .with_centered_text_label(t!(app, "Create", "创建").to_owned())
             .with_style(UiComponentStyles {
                 font_color: Some(
                     appearance
@@ -4054,7 +4063,7 @@ impl SettingsWidget for TeamsWidget {
         } else {
             appearance
                 .ui_builder()
-                .span(OFFLINE_TEXT.to_string())
+                .span(t!(app, "You are offline.", "您已离线。").to_string())
                 .build()
                 .finish()
         };

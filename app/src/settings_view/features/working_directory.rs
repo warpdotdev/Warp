@@ -173,9 +173,7 @@ impl View for WorkingDirectoryView {
                     [Container::new(items)
                         .with_margin_top(4.)
                         .with_margin_bottom(2.)
-                        .finish()],
-                    appearance,
-                ))
+                        .finish()], appearance, app))
                 .with_margin_top(8.)
                 .finish(),
             );

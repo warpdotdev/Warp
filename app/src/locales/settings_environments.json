@@ -1,0 +1,50 @@
+{
+  "settings.environments.authorize": {
+    "en": "Authorize",
+    "zh": "授权"
+  },
+  "settings.environments.environments_define_where_your_ambient_agents_run_set_one_up_in_minutes_via_github_recommended_warp_assisted_setup_or_manual_configuration": {
+    "en": "Environments define where your ambient agents run. Set one up in minutes via GitHub (recommended), Warp-assisted setup, or manual configuration.",
+    "zh": "环境定义了环境代理的运行位置。通过 GitHub（推荐）、Warp 辅助设置或手动配置，几分钟内完成设置。"
+  },
+  "settings.environments.get_started": {
+    "en": "Get started",
+    "zh": "开始使用"
+  },
+  "settings.environments.launch_agent": {
+    "en": "Launch agent",
+    "zh": "启动代理"
+  },
+  "settings.environments.loading": {
+    "en": "Loading...",
+    "zh": "加载中…"
+  },
+  "settings.environments.no_environments_match_your_search": {
+    "en": "No environments match your search.",
+    "zh": "没有匹配的环境。"
+  },
+  "settings.environments.personal": {
+    "en": "Personal",
+    "zh": "个人"
+  },
+  "settings.environments.quick_setup": {
+    "en": "Quick setup",
+    "zh": "快速设置"
+  },
+  "settings.environments.retry": {
+    "en": "Retry",
+    "zh": "重试"
+  },
+  "settings.environments.shared_by_warp_and_your_team": {
+    "en": "Shared by Warp and your team",
+    "zh": "由 Warp 和您的团队共享"
+  },
+  "settings.environments.suggested": {
+    "en": "Suggested",
+    "zh": "推荐"
+  },
+  "settings.environments.use_the_agent": {
+    "en": "Use the agent",
+    "zh": "使用代理"
+  }
+}

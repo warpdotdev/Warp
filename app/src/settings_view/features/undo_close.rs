@@ -203,6 +203,7 @@ impl View for UndoCloseView {
             column.add_child(render_group(
                 [self.render_grace_period_editor(appearance)],
                 appearance,
+                app,
             ));
         }
 

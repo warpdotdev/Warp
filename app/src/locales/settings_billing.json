@@ -1,0 +1,26 @@
+{
+  "settings.billing.auto_reload": {
+    "en": "Auto reload",
+    "zh": "自动续费"
+  },
+  "settings.billing.buy_more": {
+    "en": "Buy more",
+    "zh": "购买更多"
+  },
+  "settings.billing.new_agent": {
+    "en": "New agent",
+    "zh": "新建代理"
+  },
+  "settings.billing.overview": {
+    "en": "Overview",
+    "zh": "概览"
+  },
+  "settings.billing.sign_up": {
+    "en": "Sign up",
+    "zh": "注册"
+  },
+  "settings.billing.usage_history": {
+    "en": "Usage History",
+    "zh": "使用历史"
+  }
+}

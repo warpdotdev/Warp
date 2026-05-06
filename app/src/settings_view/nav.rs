@@ -1,4 +1,6 @@
 use crate::appearance::Appearance;
+use crate::t;
+use crate::tr;
 use crate::ui_components::icons::Icon;
 use pathfinder_geometry::vector::vec2f;
 use warpui::{
@@ -7,6 +9,7 @@ use warpui::{
         button::{ButtonVariant, TextAndIcon, TextAndIconAlignment},
         components::{Coords, UiComponent, UiComponentStyles},
     },
+    AppContext,
 };
 
 use super::{
@@ -59,7 +62,7 @@ impl SettingsUmbrella {
     /// Returns a `Hoverable` so the entire row shares a single hover/click
     /// target — i.e. the hover styling and pointing-hand cursor apply to the
     /// whole clickable area rather than just the text.
-    pub fn render_umbrella_row(&self, appearance: &Appearance) -> Hoverable {
+    pub fn render_umbrella_row(&self, appearance: &Appearance, app: &AppContext) -> Hoverable {
         let chevron_icon = if self.expanded {
             Icon::ChevronUp
         } else {
@@ -70,6 +73,8 @@ impl SettingsUmbrella {
         // rendered, so this just seeds a sensible default.
         let text_color = appearance.theme().nonactive_ui_text_color();
 
+        let label = self.localized_label(app);
+
         // Use a single full-width text button with a text+icon label so the
         // text label aligns with other top-level settings items and the
         // chevron sits flush-right — while the whole button area receives the
@@ -79,7 +84,7 @@ impl SettingsUmbrella {
             .button(ButtonVariant::Text, self.button_state_handle.clone())
             .with_text_and_icon_label(TextAndIcon::new(
                 TextAndIconAlignment::TextFirst,
-                self.label.to_string(),
+                label,
                 chevron_icon.to_warpui_icon(text_color),
                 MainAxisSize::Max,
                 MainAxisAlignment::SpaceBetween,
@@ -101,11 +106,12 @@ impl SettingsUmbrella {
         appearance: &Appearance,
         match_data: MatchData,
         is_active: bool,
+        app: &AppContext,
     ) -> Option<Hoverable> {
         let section = self.subpages.get(index)?;
         let mouse_state = self.subpage_button_states.get(index)?.clone();
 
-        let label = section.to_string() + &match_data.to_string();
+        let label = section.localized_name(app) + &match_data.to_string();
 
         let hoverable = appearance
             .ui_builder()
@@ -128,6 +134,15 @@ impl SettingsUmbrella {
             .build();
 
         Some(hoverable)
+    }
+
+    fn localized_label(&self, app: &AppContext) -> String {
+        match self.label {
+            "Agents" => tr!("settings.agents", app).to_string(),
+            "Code" => tr!("settings.code", app).to_string(),
+            "Cloud platform" => tr!("settings.cloud_platform", app).to_string(),
+            other => other.to_string(),
+        }
     }
 }
 

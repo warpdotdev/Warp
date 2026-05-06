@@ -1,3 +1,4 @@
+use crate::t;
 #[cfg(feature = "local_fs")]
 use super::features::external_editor::ExternalEditorView;
 use super::{
@@ -80,14 +81,14 @@ const SUB_SECTION_MARGIN: f32 = 8.;
 const STATUS_ICON_SIZE: f32 = 16.;
 const LSP_STATUS_INDICATOR_SIZE: f32 = 8.;
 const CODE_FEATURE_NAME: &str = "Code";
-const INITIALIZATION_SETTINGS_HEADER: &str = "Initialization Settings";
-const CODEBASE_INDEXING_LABEL: &str = "Codebase indexing";
-const CODEBASE_INDEX_DESCRIPTION: &str = "Warp can automatically index code repositories as you navigate them, helping agents quickly understand context and provide solutions. Code is never stored on the server. If a codebase is unable to be indexed, Warp can still navigate your codebase and gain insights via grep and find tool calling.";
-const WARP_INDEXING_IGNORE_DESCRIPTION: &str = "To exclude specific files or directories from indexing, add them to the .warpindexingignore file in your repository directory. These files will still be accessible to AI features, but they won't be included in codebase embeddings.";
-const AUTO_INDEX_FEATURE_NAME: &str = "Index new folders by default";
-const AUTO_INDEX_DESCRIPTION: &str = "When set to true, Warp will automatically index code repositories as you navigate them - helping agents quickly understand context and provide targeted solutions.";
-const INDEXING_DISABLED_ADMIN_TEXT: &str = "Team admins have disabled codebase indexing.";
-const INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT: &str = "Team admins have enabled codebase indexing.";
+const INITIALIZATION_SETTINGS_HEADER_EN: &str = "Initialization Settings";
+const CODEBASE_INDEXING_LABEL_EN: &str = "Codebase indexing";
+const CODEBASE_INDEX_DESCRIPTION_EN: &str = "Warp can automatically index code repositories as you navigate them, helping agents quickly understand context and provide solutions. Code is never stored on the server. If a codebase is unable to be indexed, Warp can still navigate your codebase and gain insights via grep and find tool calling.";
+const WARP_INDEXING_IGNORE_DESCRIPTION_EN: &str = "To exclude specific files or directories from indexing, add them to the .warpindexingignore file in your repository directory. These files will still be accessible to AI features, but they won't be included in codebase embeddings.";
+const AUTO_INDEX_FEATURE_NAME_EN: &str = "Index new folders by default";
+const AUTO_INDEX_DESCRIPTION_EN: &str = "When set to true, Warp will automatically index code repositories as you navigate them - helping agents quickly understand context and provide targeted solutions.";
+const INDEXING_DISABLED_ADMIN_TEXT_EN: &str = "Team admins have disabled codebase indexing.";
+const INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT_EN: &str = "Team admins have enabled codebase indexing.";
 const INDEXING_DISABLED_GLOBAL_AI_TEXT: &str =
     "AI Features must be enabled to use codebase indexing.";
 const CODEBASE_INDEX_LIMIT_REACHED: &str = "You have reached the maximum number of codebase indices for your plan. Delete existing indices to auto-index new codebases.";
@@ -148,7 +149,7 @@ pub struct CodeSettingsPageView {
     lsp_row_mouse_states: Vec<LspServerRowMouseStates>,
     open_project_rules_mouse_states: Vec<MouseStateHandle>,
     /// Tracks installation status for suggested LSP servers so the UI can decide
-    /// whether to show "Available for download" vs "Installed" and whether the
+    /// whether to show t!(app, "Available for download", "可下载") vs t!(app, "Installed", "已安装") and whether the
     /// "+" button should trigger install or just enable.
     suggested_server_statuses: HashMap<(PathBuf, LSPServerType), LspRepoStatus>,
     #[cfg(feature = "local_fs")]
@@ -258,15 +259,16 @@ impl CodeSettingsPageView {
         });
 
         // Re-render when project rules are added or removed so the
-        // "Open project rules" button visibility stays up to date.
+        // t!(app, "Open project rules", "打开项目规则") button visibility stays up to date.
         ctx.subscribe_to_model(&ProjectContextModel::handle(ctx), |_me, _, event, ctx| {
             if matches!(event, ProjectContextModelEvent::KnownRulesChanged(_)) {
                 ctx.notify();
             }
         });
 
+        let add_folder_label = t!(ctx, "Index new folder", "新建索引文件夹");
         let manual_add_directory_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Index new folder", SecondaryTheme)
+            ActionButton::new(add_folder_label, SecondaryTheme)
                 .with_icon(Icon::FindAll)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(CodeSettingsPageAction::ManualAddDirectory);
@@ -352,8 +354,9 @@ impl CodeSettingsPageView {
             // Rebuild the page with the relevant widgets for the selected subpage,
             // or the full categorized page when subpage is None.
             if let Some(subpage) = subpage {
+                let add_folder_label = t!(ctx, "Index new folder", "新建索引文件夹");
                 let manual_add_directory_button = ctx.add_typed_action_view(|_| {
-                    ActionButton::new("Index new folder", SecondaryTheme)
+                    ActionButton::new(add_folder_label, SecondaryTheme)
                         .with_icon(Icon::FindAll)
                         .on_click(|ctx| {
                             ctx.dispatch_typed_action(CodeSettingsPageAction::ManualAddDirectory);
@@ -401,8 +404,9 @@ impl CodeSettingsPageView {
     /// Used for the default/legacy view and when resetting to all-widgets mode for search.
     fn build_full_page(ctx: &mut ViewContext<Self>) -> PageType<Self> {
         if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
+            let add_folder_label = t!(ctx, "Index new folder", "新建索引文件夹");
             let manual_add_directory_button = ctx.add_typed_action_view(|_| {
-                ActionButton::new("Index new folder", SecondaryTheme)
+                ActionButton::new(add_folder_label, SecondaryTheme)
                     .with_icon(Icon::FindAll)
                     .on_click(|ctx| {
                         ctx.dispatch_typed_action(CodeSettingsPageAction::ManualAddDirectory);
@@ -439,8 +443,9 @@ impl CodeSettingsPageView {
             ];
             PageType::new_categorized(categories, None)
         } else {
+            let add_folder_label = t!(ctx, "Index new folder", "新建索引文件夹");
             let manual_add_directory_button = ctx.add_typed_action_view(|_| {
-                ActionButton::new("Index new folder", SecondaryTheme)
+                ActionButton::new(add_folder_label, SecondaryTheme)
                     .with_icon(Icon::FindAll)
                     .on_click(|ctx| {
                         ctx.dispatch_typed_action(CodeSettingsPageAction::ManualAddDirectory);
@@ -867,7 +872,7 @@ impl SettingsWidget for CodePageWidget {
 
         // Initialization Settings section
         content.add_child(render_separator(appearance));
-        content.add_child(self.render_initialization_settings_header(appearance));
+        content.add_child(self.render_initialization_settings_header(appearance, app));
         content.add_child(self.render_codebase_indexing_toggle_row(
             global_ai_enabled,
             appearance,
@@ -875,12 +880,12 @@ impl SettingsWidget for CodePageWidget {
         ));
         content.add_child(self.render_settings_subtext(
             global_ai_enabled,
-            CODEBASE_INDEX_DESCRIPTION,
+            t!(app, "Warp can automatically index code repositories as you navigate them, helping agents quickly understand context and provide solutions. Code is never stored on the server. If a codebase is unable to be indexed, Warp can still navigate your codebase and gain insights via grep and find tool calling.", "Warp 可以在您浏览代码库时自动索引，帮助代理快速理解上下文并提供解决方案。代码不会存储在服务器上。即使无法索引，Warp 也可通过 grep 和 find 工具调用浏览代码库。"),
             appearance,
         ));
         content.add_child(self.render_settings_subtext(
             global_ai_enabled,
-            WARP_INDEXING_IGNORE_DESCRIPTION,
+            t!(app, "To exclude specific files or directories from indexing, add them to the .warpindexingignore file in your repository directory. These files will still be accessible to AI features, but they won't be included in codebase embeddings.", "要从索引中排除特定文件或目录，请将其添加到仓库目录的 .warpindexingignore 文件中。这些文件仍可被 AI 功能访问，但不会包含在代码库嵌入中。"),
             appearance,
         ));
 
@@ -922,11 +927,12 @@ impl CodePageWidget {
             UserWorkspaces::as_ref(app).is_codebase_context_enabled(app);
 
         let mut rows = vec![
-            self.render_autoindex_row(auto_indexing_enabled, appearance),
+            self.render_autoindex_row(auto_indexing_enabled,
+                appearance, app),
             // Use subtext styling for description (gray color per Figma)
             self.render_settings_subtext(
                 codebase_indexing_enabled,
-                AUTO_INDEX_DESCRIPTION,
+                t!(app, "When set to true, Warp will automatically index code repositories as you navigate them - helping agents quickly understand context and provide targeted solutions.", "设为 true 后，Warp 将在您浏览代码库时自动索引，帮助代理快速理解上下文并提供针对性解决方案。"),
                 appearance,
             ),
         ];
@@ -952,6 +958,7 @@ impl CodePageWidget {
         &self,
         auto_indexing_enabled: bool,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         let theme = appearance.theme();
@@ -962,7 +969,7 @@ impl CodePageWidget {
                 .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                 .with_child(
                     ui_builder
-                        .span(AUTO_INDEX_FEATURE_NAME)
+                        .span(t!(app, "Index new folders by default", "默认索引新文件夹"))
                         .with_style(UiComponentStyles {
                             font_size: Some(16.0),
                             font_weight: Some(Weight::Semibold),
@@ -1038,13 +1045,13 @@ impl CodePageWidget {
     }
 
     /// Renders the "Initialization Settings" section header.
-    fn render_initialization_settings_header(&self, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_initialization_settings_header(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         let theme = appearance.theme();
 
         Container::new(
             ui_builder
-                .span(INITIALIZATION_SETTINGS_HEADER)
+                .span(t!(app, "Initialization Settings", "初始化设置"))
                 .with_style(UiComponentStyles {
                     font_size: Some(18.0),
                     font_weight: Some(Weight::Semibold),
@@ -1071,7 +1078,7 @@ impl CodePageWidget {
         let admin_setting = UserWorkspaces::as_ref(app).team_allows_codebase_context();
 
         let label = ui_builder
-            .span(CODEBASE_INDEXING_LABEL)
+            .span(t!(app, "Codebase indexing", "代码库索引"))
             .with_style(UiComponentStyles {
                 font_size: Some(16.0),
                 font_weight: Some(Weight::Semibold),
@@ -1086,8 +1093,8 @@ impl CodePageWidget {
             .check(UserWorkspaces::as_ref(app).is_codebase_context_enabled(app));
 
         let disabled_tooltip_text = match admin_setting {
-            AdminEnablementSetting::Enable => Some(INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT),
-            AdminEnablementSetting::Disable => Some(INDEXING_DISABLED_ADMIN_TEXT),
+            AdminEnablementSetting::Enable => Some(t!(app, "Team admins have enabled codebase indexing.", "团队管理员已启用代码库索引。")),
+            AdminEnablementSetting::Disable => Some(t!(app, "Team admins have disabled codebase indexing.", "团队管理员已禁用代码库索引。")),
             AdminEnablementSetting::RespectUserSetting if !global_ai_enabled => {
                 Some(INDEXING_DISABLED_GLOBAL_AI_TEXT)
             }
@@ -1158,7 +1165,7 @@ impl CodePageWidget {
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_child(
                         ui_builder
-                            .span("Initialized / indexed folders")
+                            .span(t!(app, "Initialized / indexed folders", "已初始化/已索引文件夹"))
                             .with_style(UiComponentStyles {
                                 font_size: Some(16.0),
                                 font_weight: Some(Weight::Semibold),
@@ -1185,7 +1192,7 @@ impl CodePageWidget {
                 Container::new(
                     appearance
                         .ui_builder()
-                        .paragraph("No folders have been initialized yet.")
+                        .paragraph(t!(app, "No folders have been initialized yet.", "尚未初始化任何文件夹。"))
                         .build()
                         .finish(),
                 )
@@ -1288,7 +1295,7 @@ impl CodePageWidget {
 
         let mut workspace_content = Flex::column().with_spacing(MAIN_SECTION_MARGIN);
 
-        // Workspace path header with "Open project rules" button
+        // Workspace path header with t!(app, "Open project rules", "打开项目规则") button
         let home_dir =
             dirs::home_dir().and_then(|home_dir| home_dir.to_str().map(|s| s.to_owned()));
         let user_friendly = user_friendly_path(
@@ -1323,7 +1330,7 @@ impl CodePageWidget {
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
         header_row.add_child(Expanded::new(1., workspace_header_label).finish());
 
-        // Only show "Open project rules" button if rules exist for this workspace
+        // Only show t!(app, "Open project rules", "打开项目规则") button if rules exist for this workspace
         if !workspace_rule_paths.is_empty() {
             let open_rules_button = ui_builder
                 .button(ButtonVariant::Secondary, open_rules_mouse)
@@ -1344,7 +1351,7 @@ impl CodePageWidget {
                 .with_text_and_icon_label(
                     warpui::ui_components::button::TextAndIcon::new(
                         warpui::ui_components::button::TextAndIconAlignment::IconFirst,
-                        "Open project rules",
+                        t!(app, "Open project rules", "打开项目规则"),
                         warpui::elements::Icon::new(
                             "bundled/svg/file-code-02.svg",
                             theme.foreground(),
@@ -1375,6 +1382,7 @@ impl CodePageWidget {
             resync_mouse,
             delete_mouse,
             appearance,
+            app,
         ));
 
         // LSP Servers section (if any servers known)
@@ -1406,6 +1414,7 @@ impl CodePageWidget {
         resync_mouse: MouseStateHandle,
         delete_mouse: MouseStateHandle,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         let theme = appearance.theme();
@@ -1415,7 +1424,7 @@ impl CodePageWidget {
         // "INDEXING" label on its own row
         column.add_child(
             ui_builder
-                .span("INDEXING")
+                .span(t!(app, "INDEXING", "索引中"))
                 .with_style(UiComponentStyles {
                     font_size: Some(11.0),
                     font_weight: Some(Weight::Semibold),
@@ -1434,6 +1443,7 @@ impl CodePageWidget {
                 resync_mouse,
                 delete_mouse,
                 appearance,
+                app,
             );
 
             column.add_child(
@@ -1468,7 +1478,7 @@ impl CodePageWidget {
                     )
                     .with_child(
                         ui_builder
-                            .label("No index created")
+                            .label(t!(app, "No index created", "未创建索引"))
                             .with_style(UiComponentStyles {
                                 font_color: Some(status_color),
                                 font_size: Some(12.),
@@ -1492,6 +1502,7 @@ impl CodePageWidget {
         manual_resync_mouse_state: MouseStateHandle,
         delete_mouse_state: MouseStateHandle,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> (Box<dyn Element>, Box<dyn Element>) {
         let theme = appearance.theme();
         let ui_builder = appearance.ui_builder();
@@ -1511,20 +1522,20 @@ impl CodePageWidget {
                     completed_nodes,
                     total_nodes,
                 }) => Cow::from(format!("Syncing - {completed_nodes} / {total_nodes}")),
-                None => Cow::from("Syncing..."),
+                None => Cow::from(t!(app, "Syncing...", "同步中…")),
             };
             (progress_text, theme.disabled_ui_text_color().into_solid())
         } else if let Some(completed_successfully) = index_state.last_sync_successful() {
             should_render_retry = true;
             let (text, color, status_icon) = if completed_successfully {
-                ("Synced", theme.ansi_fg_green(), Icon::Check)
+                (t!(app, "Synced", "已同步"), theme.ansi_fg_green(), Icon::Check)
             } else if let Some(CodebaseIndexFinishedStatus::Failed(
                 CodebaseIndexingError::ExceededMaxFileLimit
                 | CodebaseIndexingError::MaxDepthExceeded,
             )) = index_state.last_sync_result()
             {
                 (
-                    "Codebase too large",
+                    t!(app, "Codebase too large", "代码库过大"),
                     theme.ui_warning_color(),
                     Icon::AlertTriangle,
                 )
@@ -1535,7 +1546,7 @@ impl CodePageWidget {
                     Icon::ClockRefresh,
                 )
             } else {
-                ("Failed", theme.ui_error_color(), Icon::AlertTriangle)
+                (t!(app, "Failed", "失败"), theme.ui_error_color(), Icon::AlertTriangle)
             };
 
             label_row.add_child(
@@ -1554,7 +1565,7 @@ impl CodePageWidget {
         } else {
             log::warn!("No index state for codebase");
             (
-                Cow::from("No index built"),
+                Cow::from(t!(app, "No index built", "未构建索引")),
                 theme.nonactive_ui_text_color().into_solid(),
             )
         };
@@ -1639,7 +1650,7 @@ impl CodePageWidget {
         // "LSP SERVERS" label
         content.add_child(
             ui_builder
-                .span("LSP SERVERS")
+                .span(t!(app, "LSP SERVERS", "LSP 服务器"))
                 .with_style(UiComponentStyles {
                     font_size: Some(11.0),
                     font_weight: Some(Weight::Semibold),
@@ -1667,6 +1678,7 @@ impl CodePageWidget {
                     repo_status,
                     mouse_states,
                     appearance,
+                    app,
                 ));
             } else {
                 let is_enabled = *enablement_state == EnablementState::Yes;
@@ -1701,6 +1713,7 @@ impl CodePageWidget {
         repo_status: Option<LspRepoStatus>,
         mouse_states: LspServerRowMouseStates,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let ui_builder = appearance.ui_builder();
@@ -1752,10 +1765,10 @@ impl CodePageWidget {
         );
 
         let (description, is_installing) = match &repo_status {
-            Some(LspRepoStatus::DisabledAndInstalled { .. }) => ("Installed", false),
-            Some(LspRepoStatus::Installing { .. }) => ("Installing...", true),
-            Some(LspRepoStatus::CheckingForInstallation) => ("Checking...", true),
-            _ => ("Available for download", false),
+            Some(LspRepoStatus::DisabledAndInstalled { .. }) => (t!(app, "Installed", "已安装"), false),
+            Some(LspRepoStatus::Installing { .. }) => (t!(app, "Installing...", "安装中…"), true),
+            Some(LspRepoStatus::CheckingForInstallation) => (t!(app, "Checking...", "检查中…"), true),
+            _ => (t!(app, "Available for download", "可下载"), false),
         };
 
         name_desc_column.add_child(
@@ -1937,7 +1950,7 @@ impl CodePageWidget {
                         background: Some(theme.surface_3().into()),
                         ..Default::default()
                     })
-                    .with_text_label("Restart server".to_owned())
+                    .with_text_label(t!(app, "Restart server", "重启服务器").to_owned())
                     .build()
                     .with_cursor(Cursor::PointingHand)
                     .on_click(move |ctx, _, _| {
@@ -1968,7 +1981,7 @@ impl CodePageWidget {
                         font_size: Some(12.),
                         ..Default::default()
                     })
-                    .with_text_label("View logs".to_owned())
+                    .with_text_label(t!(app, "View logs", "查看日志").to_owned())
                     .build()
                     .with_cursor(Cursor::PointingHand)
                     .on_click(move |ctx, _, _| {
@@ -2024,13 +2037,13 @@ impl CodePageWidget {
                         AnsiColorIdentifier::Green
                             .to_ansi_color(&theme.terminal_colors().normal)
                             .into(),
-                        "Available",
+                        t!(app, "Available", "可用"),
                     ),
                     LspState::Starting | LspState::Available { .. } => (
                         AnsiColorIdentifier::Yellow
                             .to_ansi_color(&theme.terminal_colors().normal)
                             .into(),
-                        "Busy",
+                        t!(app, "Busy", "繁忙"),
                     ),
                     LspState::Failed { .. } => (
                         AnsiColorIdentifier::Red
@@ -2039,11 +2052,11 @@ impl CodePageWidget {
                         "Failed",
                     ),
                     LspState::Stopped { .. } | LspState::Stopping { .. } => {
-                        (theme.disabled_ui_text_color().into_solid(), "Stopped")
+                        (theme.disabled_ui_text_color().into_solid(), t!(app, "Stopped", "已停止"))
                     }
                 }
             }
-            None => (theme.disabled_ui_text_color().into_solid(), "Not running"),
+            None => (theme.disabled_ui_text_color().into_solid(), t!(app, "Not running", "未运行")),
         }
     }
 }
@@ -2064,7 +2077,7 @@ impl SettingsWidget for CodeSubpageHeaderWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         build_sub_header(appearance, self.title, None)
             .with_padding_bottom(HEADER_PADDING)
@@ -2102,8 +2115,8 @@ impl SettingsWidget for CodebaseIndexingCategorizedWidget {
             .check(codebase_context_enabled);
 
         let disabled_tooltip_text = match admin_setting {
-            AdminEnablementSetting::Enable => Some(INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT),
-            AdminEnablementSetting::Disable => Some(INDEXING_DISABLED_ADMIN_TEXT),
+            AdminEnablementSetting::Enable => Some(t!(app, "Team admins have enabled codebase indexing.", "团队管理员已启用代码库索引。")),
+            AdminEnablementSetting::Disable => Some(t!(app, "Team admins have disabled codebase indexing.", "团队管理员已禁用代码库索引。")),
             AdminEnablementSetting::RespectUserSetting if !global_ai_enabled => {
                 Some(INDEXING_DISABLED_GLOBAL_AI_TEXT)
             }
@@ -2129,13 +2142,13 @@ impl SettingsWidget for CodebaseIndexingCategorizedWidget {
         };
 
         content.add_child(render_body_item::<CodeSettingsPageAction>(
-            CODEBASE_INDEXING_LABEL.into(),
+            t!(app, "Codebase indexing", "代码库索引").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             toggle_element,
-            Some(CODEBASE_INDEX_DESCRIPTION.into()),
+            Some(t!(app, "Warp can automatically index code repositories as you navigate them, helping agents quickly understand context and provide solutions. Code is never stored on the server. If a codebase is unable to be indexed, Warp can still navigate your codebase and gain insights via grep and find tool calling.", "Warp 可以在您浏览代码库时自动索引，帮助代理快速理解上下文并提供解决方案。代码不会存储在服务器上。即使无法索引，Warp 也可通过 grep 和 find 工具调用浏览代码库。").into()),
         ));
 
         // Auto-indexing toggle (only shown when codebase indexing is enabled)
@@ -2143,7 +2156,7 @@ impl SettingsWidget for CodebaseIndexingCategorizedWidget {
             let auto_indexing_enabled = *CodeSettings::as_ref(app).auto_indexing_enabled;
 
             content.add_child(render_body_item::<CodeSettingsPageAction>(
-                AUTO_INDEX_FEATURE_NAME.into(),
+                t!(app, "Index new folders by default", "默认索引新文件夹").into(),
                 None,
                 LocalOnlyIconState::Hidden,
                 ToggleState::Enabled,
@@ -2156,7 +2169,7 @@ impl SettingsWidget for CodebaseIndexingCategorizedWidget {
                         ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleAutoIndexing);
                     })
                     .finish(),
-                Some(AUTO_INDEX_DESCRIPTION.into()),
+                Some(t!(app, "When set to true, Warp will automatically index code repositories as you navigate them - helping agents quickly understand context and provide targeted solutions.", "设为 true 后，Warp 将在您浏览代码库时自动索引，帮助代理快速理解上下文并提供针对性解决方案。").into()),
             ));
 
             if !CodebaseIndexManager::as_ref(app).can_create_new_indices() {
@@ -2207,7 +2220,7 @@ impl SettingsWidget for ExternalEditorCodeWidget {
         &self,
         view: &Self::View,
         _appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         if let Some(editor_view) = &view.external_editor_view {
             ChildView::new(editor_view).finish()
@@ -2237,7 +2250,7 @@ impl SettingsWidget for AutoOpenCodeReviewPaneCodeWidget {
     ) -> Box<dyn Element> {
         let general_settings = GeneralSettings::as_ref(app);
         render_body_item::<CodeSettingsPageAction>(
-            "Auto open code review panel".into(),
+            t!(app, "Auto open code review panel", "自动打开代码审查面板").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2251,7 +2264,7 @@ impl SettingsWidget for AutoOpenCodeReviewPaneCodeWidget {
                     ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleAutoOpenCodeReviewPane);
                 })
                 .finish(),
-            Some("When this setting is on, the code review panel will open on the first accepted diff of a conversation".into()),
+            Some(t!(app, "When this setting is on, the code review panel will open on the first accepted diff of a conversation", "开启此设置后，代码审查面板将在对话的第一个已接受差异时自动打开").into()),
         )
     }
 }
@@ -2314,7 +2327,7 @@ impl SettingsWidget for CodeReviewPanelToggleWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<CodeSettingsPageAction>(
-            "Show code review button".into(),
+            t!(app, "Show code review button", "显示代码审查按钮").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2329,7 +2342,7 @@ impl SettingsWidget for CodeReviewPanelToggleWidget {
                 })
                 .finish(),
             Some(
-                "Show a button in the top right of the window to toggle the code review panel."
+                t!(app, "Show a button in the top right of the window to toggle the code review panel.", "在窗口右上角显示切换代码审查面板的按钮。")
                     .into(),
             ),
         )
@@ -2357,7 +2370,7 @@ impl SettingsWidget for CodeReviewDiffStatsToggleWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<CodeSettingsPageAction>(
-            "Show diff stats on code review button".into(),
+            t!(app, "Show diff stats on code review button", "在审查按钮上显示差异统计").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2373,7 +2386,7 @@ impl SettingsWidget for CodeReviewDiffStatsToggleWidget {
                     );
                 })
                 .finish(),
-            Some("Show lines added and removed counts on the code review button.".into()),
+            Some(t!(app, "Show lines added and removed counts on the code review button.", "在审查按钮上显示添加和删除的行数。").into()),
         )
     }
 }
@@ -2399,7 +2412,7 @@ impl SettingsWidget for ProjectExplorerToggleWidget {
         let code_settings = CodeSettings::as_ref(app);
 
         render_body_item::<CodeSettingsPageAction>(
-            "Project explorer".into(),
+            t!(app, "Project explorer", "项目资源管理器").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2414,7 +2427,7 @@ impl SettingsWidget for ProjectExplorerToggleWidget {
                 })
                 .finish(),
             Some(
-                "Adds an IDE-style project explorer / file tree to the left side tools panel."
+                t!(app, "Adds an IDE-style project explorer / file tree to the left side tools panel.", "向左侧工具面板添加 IDE 风格的项目资源管理器/文件树。")
                     .into(),
             ),
         )
@@ -2442,7 +2455,7 @@ impl SettingsWidget for GlobalSearchToggleWidget {
         let code_settings = CodeSettings::as_ref(app);
 
         render_body_item::<CodeSettingsPageAction>(
-            "Global file search".into(),
+            t!(app, "Global file search", "全局文件搜索").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2456,7 +2469,7 @@ impl SettingsWidget for GlobalSearchToggleWidget {
                     ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleGlobalSearch);
                 })
                 .finish(),
-            Some("Adds global file search to the left side tools panel.".into()),
+            Some(t!(app, "Adds global file search to the left side tools panel.", "向左侧工具面板添加全局文件搜索。").into()),
         )
     }
 }

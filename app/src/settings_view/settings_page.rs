@@ -14,6 +14,7 @@ use super::{
     environments_page::EnvironmentsPageView,
     features_page::FeaturesPageView,
     keybindings::KeybindingsView,
+    language_page::LanguageSettingsPageView,
     main_page::MainSettingsPageView,
     mcp_servers_page::MCPServersSettingsPageView,
     privacy_page::PrivacyPageView,
@@ -122,6 +123,7 @@ pub enum SettingsPageViewHandle {
     BillingAndUsage(ViewHandle<BillingAndUsagePageView>),
     MCPServers(ViewHandle<MCPServersSettingsPageView>),
     WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
+    Language(ViewHandle<LanguageSettingsPageView>),
 }
 
 impl SettingsPageViewHandle {
@@ -145,6 +147,7 @@ impl SettingsPageViewHandle {
             BillingAndUsage(view_handle) => ChildView::new(view_handle).finish(),
             MCPServers(view_handle) => ChildView::new(view_handle).finish(),
             WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
+            Language(view_handle) => ChildView::new(view_handle).finish(),
         }
     }
 }
@@ -173,6 +176,7 @@ impl SettingsPage {
         appearance: &Appearance,
         match_data: MatchData,
         clicked: bool,
+        app: &AppContext,
     ) -> Hoverable {
         appearance
             .ui_builder()
@@ -184,7 +188,7 @@ impl SettingsPage {
                 },
                 self.button_state_handle.clone(),
             )
-            .with_text_label(self.section.to_string() + &match_data.to_string())
+            .with_text_label(self.section.localized_name(app) + &match_data.to_string())
             .with_style(
                 UiComponentStyles::default()
                     .set_border_width(0.)
@@ -732,6 +736,53 @@ pub fn render_body_item_label_internal<T: Clone + Action>(
             .finish()
     } else {
         label
+    }
+}
+
+fn translate_page_title<'a>(title: &'a str, app: &AppContext) -> &'a str {
+    use crate::t;
+    match title {
+        "Account" => t!(app, "Account", "账户"),
+        "Privacy" => t!(app, "Privacy", "隐私"),
+        "MCP Servers" => t!(app, "MCP Servers", "MCP 服务器"),
+        "Invite a friend to Warp" => t!(app, "Invite a friend to Warp", "邀请朋友使用 Warp"),
+        other => other,
+    }
+}
+
+fn translate_category_title<'a>(title: &'a str, app: &AppContext) -> &'a str {
+    use crate::t;
+    match title {
+        // Appearance page categories
+        "Themes" => t!(app, "Themes", "主题"),
+        "Icon" => t!(app, "Icon", "图标"),
+        "Window" => t!(app, "Window", "窗口"),
+        "Input" => t!(app, "Input", "输入"),
+        "Panes" => t!(app, "Panes", "面板"),
+        "Blocks" => t!(app, "Blocks", "块"),
+        "Text" => t!(app, "Text", "文字"),
+        "Cursor" => t!(app, "Cursor", "光标"),
+        "Tabs" => t!(app, "Tabs", "标签页"),
+        "Full-screen Apps" => t!(app, "Full-screen Apps", "全屏应用"),
+        // Features page categories
+        "General" => t!(app, "General", "通用"),
+        "Session" => t!(app, "Session", "会话"),
+        "Keys" => t!(app, "Keys", "按键"),
+        "Text Editing" => t!(app, "Text Editing", "文本编辑"),
+        "Terminal Input" => t!(app, "Terminal Input", "终端输入"),
+        "Terminal" => t!(app, "Terminal", "终端"),
+        "Notifications" => t!(app, "Notifications", "通知"),
+        "Workflows" => t!(app, "Workflows", "工作流"),
+        "System" => t!(app, "System", "系统"),
+        // Code page categories
+        "Codebase Indexing" => t!(app, "Codebase Indexing", "代码库索引"),
+        "Code Editor and Review" => t!(app, "Code Editor and Review", "代码编辑与审查"),
+        // Billing page
+        "Billing and usage" => t!(app, "Billing and usage", "账单与用量"),
+        // Warpify page
+        "Subshells" => t!(app, "Subshells", "子 Shell"),
+        "SSH" => t!(app, "SSH", "SSH"),
+        other => other,
     }
 }
 
@@ -1609,7 +1660,7 @@ impl<V: warpui::View> PageType<V> {
                     if widget.should_render(app) {
                         if let Some(title) = title {
                             let col = Flex::column()
-                                .with_child(render_page_title(title, HEADER_FONT_SIZE, appearance))
+                                .with_child(render_page_title(translate_page_title(title, app), HEADER_FONT_SIZE, appearance))
                                 .with_child(widget.render_widget(view, false, appearance, app));
                             page = col.finish();
                         } else {
@@ -1627,7 +1678,7 @@ impl<V: warpui::View> PageType<V> {
             } => {
                 let mut page = Flex::column();
                 if let Some(title) = title {
-                    page.add_child(render_page_title(title, HEADER_FONT_SIZE, appearance));
+                    page.add_child(render_page_title(translate_page_title(title, app), HEADER_FONT_SIZE, appearance));
                 }
                 for widget in widgets {
                     let highlighted =
@@ -1646,19 +1697,20 @@ impl<V: warpui::View> PageType<V> {
             } => {
                 let mut page = Flex::column();
                 if let Some(title) = title {
-                    page.add_child(render_page_title(title, HEADER_FONT_SIZE, appearance));
+                    page.add_child(render_page_title(translate_page_title(title, app), HEADER_FONT_SIZE, appearance));
                 }
                 let num_categories = categories.len();
                 for (i, category) in categories.into_iter().enumerate() {
                     if !category.title.is_empty() {
+                        let cat_title = translate_category_title(category.title, app);
                         if let Some(subtitle) = category.subtitle {
                             page.add_child(render_sub_header_with_description(
                                 appearance,
-                                category.title,
+                                cat_title,
                                 subtitle,
                             ));
                         } else {
-                            page.add_child(render_sub_header(appearance, category.title, None));
+                            page.add_child(render_sub_header(appearance, cat_title, None));
                         }
                     }
                     for widget in &category.widgets {

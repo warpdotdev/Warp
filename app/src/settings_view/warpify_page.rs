@@ -1,3 +1,5 @@
+use crate::tr;
+use crate::t;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -122,7 +124,7 @@ impl WarpifyPageView {
         let add_added_commands_editor = ctx.add_typed_action_view(|ctx| {
             let mut input =
                 SubmittableTextInput::new(ctx).validate_on_edit(|regex| Regex::new(regex).is_ok());
-            input.set_placeholder_text("command (supports regex)", ctx);
+            input.set_placeholder_text(tr!("settings.warpify.command_placeholder", ctx), ctx);
             input
         });
 
@@ -133,7 +135,7 @@ impl WarpifyPageView {
 
         let add_denylisted_commands_editor = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text("command (supports regex)", ctx);
+            input.set_placeholder_text(tr!("settings.warpify.command_placeholder", ctx), ctx);
             input
         });
 
@@ -174,8 +176,8 @@ impl WarpifyPageView {
     fn build_page(ctx: &mut ViewContext<Self>) -> PageType<Self> {
         let mut categories = vec![
             Category::new("", vec![Box::new(TitleWidget::default())]),
-            Category::new("Subshells", vec![Box::new(SubshellsWidget::default())])
-                .with_subtitle("Subshells supported: bash, zsh, and fish."),
+            Category::new(t!(ctx, "Subshells", "子 Shell"), vec![Box::new(SubshellsWidget::default())])
+                .with_subtitle(tr!("settings.warpify.subshells_supported", ctx)),
         ];
 
         let warpify_settings = WarpifySettings::as_ref(ctx);
@@ -530,14 +532,14 @@ struct TitleWidget {
 }
 
 impl TitleWidget {
-    fn render_top_of_page(&self, appearance: &Appearance, _app: &AppContext) -> Box<dyn Element> {
+    fn render_top_of_page(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
+        use crate::tr;
         let warpify_description = vec![
             FormattedTextFragment::plain_text(
-                "Configure whether Warp attempts to “Warpify” (add support for blocks, \
-                    input modes, etc) certain shells. ",
+                tr!("settings.warpify.description", app),
             ),
             FormattedTextFragment::hyperlink(
-                "Learn more",
+                tr!("settings.warpify.learn_more", app),
                 "https://docs.warp.dev/terminal/warpify/subshells",
             ),
         ];
@@ -598,7 +600,7 @@ impl SubshellsWidget {
 
         column.add_child(
             view.build_input_list(
-                "Added commands",
+                tr!("settings.warpify.added_commands", app),
                 &warpify_settings.added_subshell_commands,
                 &view.remove_added_command_button_states,
                 WarpifyPageAction::RemoveAddedCommand,
@@ -610,7 +612,7 @@ impl SubshellsWidget {
 
         column.add_child(
             view.build_input_list(
-                "Denylisted commands",
+                tr!("settings.warpify.denylisted_commands", app),
                 &warpify_settings.subshell_command_denylist,
                 &view.remove_denylisted_command_button_states,
                 WarpifyPageAction::RemoveDenylistedCommand,
@@ -683,7 +685,7 @@ impl SettingsWidget for SSHWidget {
             &WarpifySettings::as_ref(app).enable_ssh_warpification,
             move || {
                 render_body_item::<WarpifyPageAction>(
-                    "Warpify SSH Sessions".into(),
+                    t!(app, "Warpify SSH Sessions", "Warpify SSH 会话").into(),
                     None,
                     LocalOnlyIconState::for_setting(
                         EnableSshWarpification::storage_key(),
@@ -718,7 +720,7 @@ impl SettingsWidget for SSHWidget {
                 move || {
                     Container::new(render_dropdown_item(
                         appearance,
-                        "Install SSH extension",
+                        t!(app, "Install SSH extension", "安装 SSH 扩展"),
                         Some(SSH_EXTENSION_INSTALL_MODE_DESCRIPTION),
                         None,
                         LocalOnlyIconState::for_setting(
@@ -743,7 +745,7 @@ impl SettingsWidget for SSHWidget {
                 let mut column = Flex::column();
 
                 column.add_child(render_body_item::<WarpifyPageAction>(
-                    "Use Tmux Warpification".into(),
+                    t!(app, "Use Tmux Warpification", "使用 Tmux Warpify").into(),
                     Some(AdditionalInfo {
                         mouse_state: self.additional_info_mouse_state.clone(),
                         on_click_action: Some(WarpifyPageAction::OpenUrl(

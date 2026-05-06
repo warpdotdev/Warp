@@ -1,3 +1,4 @@
+use crate::t;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::aws_credentials::refresh_aws_credentials;
 use crate::ai::blocklist::agent_view::agent_input_footer::editor::{
@@ -179,7 +180,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
 
     ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
         vec![ToggleSettingActionPair::new(
-            "Active AI",
+            t!(app, "Active AI", "主动 AI"),
             builder(SettingsAction::AI(AISettingsPageAction::ToggleActiveAI)),
             &(context.clone() & id!(flags::IS_ANY_AI_ENABLED)),
             flags::IS_ACTIVE_AI_ENABLED,
@@ -220,7 +221,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     );
     ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
         vec![ToggleSettingActionPair::new(
-            "Next Command",
+            t!(app, "Next Command", "下一条命令"),
             builder(SettingsAction::AI(
                 AISettingsPageAction::ToggleIntelligentAutosuggestions,
             )),
@@ -258,7 +259,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     );
     ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
         vec![ToggleSettingActionPair::custom(
-            SettingActionPairDescriptions::new("Show agent tips", "Hide agent tips"),
+            SettingActionPairDescriptions::new(t!(app, "Show agent tips", "显示代理提示"), t!(app, "Hide agent tips", "隐藏代理提示")),
             builder(SettingsAction::AI(
                 AISettingsPageAction::ToggleShowAgentTips,
             )),
@@ -275,8 +276,8 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
         vec![ToggleSettingActionPair::custom(
             SettingActionPairDescriptions::new(
-                "Show Oz changelog in new agent conversation view",
-                "Hide Oz changelog in new agent conversation view",
+                t!(app, "Show Oz changelog in new agent conversation view", "在新对话视图中显示 Oz 更新日志"),
+                t!(app, "Hide Oz changelog in new agent conversation view", "隐藏 Oz 更新日志"),
             ),
             builder(SettingsAction::AI(
                 AISettingsPageAction::ToggleShowOzUpdatesInZeroState,
@@ -361,8 +362,8 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
         vec![ToggleSettingActionPair::custom(
             SettingActionPairDescriptions::new(
-                "Show \"Use Agent\" footer",
-                "Hide \"Use Agent\" footer",
+                t!(app, "Show \"Use Agent\" footer", "显示\"使用代理\"底部栏"),
+                t!(app, "Hide \"Use Agent\" footer", "隐藏\"使用代理\"底部栏"),
             ),
             builder(SettingsAction::AI(
                 AISettingsPageAction::ToggleUseAgentToolbar,
@@ -648,7 +649,7 @@ impl AISettingsPageView {
             };
             let mut editor = EditorView::new(options, ctx);
 
-            editor.set_placeholder_text("Commands, comma separated", ctx);
+            editor.set_placeholder_text(t!(ctx, "Commands, comma separated", "命令，以逗号分隔"), ctx);
 
             let current_value = AISettings::as_ref(ctx)
                 .autodetection_command_denylist
@@ -1012,15 +1013,15 @@ impl AISettingsPageView {
             dropdown.set_items(
                 vec![
                     DropdownItem::new(
-                        "Agent decides",
+                        t!(ctx, "Agent decides", "由代理决定"),
                         AISettingsPageAction::SetApplyCodeDiffs(ActionPermission::AgentDecides),
                     ),
                     DropdownItem::new(
-                        "Always allow",
+                        t!(ctx, "Always allow", "始终允许"),
                         AISettingsPageAction::SetApplyCodeDiffs(ActionPermission::AlwaysAllow),
                     ),
                     DropdownItem::new(
-                        "Always ask",
+                        t!(ctx, "Always ask", "始终询问"),
                         AISettingsPageAction::SetApplyCodeDiffs(ActionPermission::AlwaysAsk),
                     ),
                 ],
@@ -1042,15 +1043,15 @@ impl AISettingsPageView {
             dropdown.set_items(
                 vec![
                     DropdownItem::new(
-                        "Agent decides",
+                        t!(ctx, "Agent decides", "由代理决定"),
                         AISettingsPageAction::SetReadFiles(ActionPermission::AgentDecides),
                     ),
                     DropdownItem::new(
-                        "Always allow",
+                        t!(ctx, "Always allow", "始终允许"),
                         AISettingsPageAction::SetReadFiles(ActionPermission::AlwaysAllow),
                     ),
                     DropdownItem::new(
-                        "Always ask",
+                        t!(ctx, "Always ask", "始终询问"),
                         AISettingsPageAction::SetReadFiles(ActionPermission::AlwaysAsk),
                     ),
                 ],
@@ -1072,15 +1073,15 @@ impl AISettingsPageView {
             dropdown.set_items(
                 vec![
                     DropdownItem::new(
-                        "Agent decides",
+                        t!(ctx, "Agent decides", "由代理决定"),
                         AISettingsPageAction::SetExecuteCommands(ActionPermission::AgentDecides),
                     ),
                     DropdownItem::new(
-                        "Always allow",
+                        t!(ctx, "Always allow", "始终允许"),
                         AISettingsPageAction::SetExecuteCommands(ActionPermission::AlwaysAllow),
                     ),
                     DropdownItem::new(
-                        "Always ask",
+                        t!(ctx, "Always ask", "始终询问"),
                         AISettingsPageAction::SetExecuteCommands(ActionPermission::AlwaysAsk),
                     ),
                 ],
@@ -1102,15 +1103,15 @@ impl AISettingsPageView {
             dropdown.set_items(
                 vec![
                     DropdownItem::new(
-                        "Always allow",
+                        t!(ctx, "Always allow", "始终允许"),
                         AISettingsPageAction::SetWriteToPty(WriteToPtyPermission::AlwaysAllow),
                     ),
                     DropdownItem::new(
-                        "Always ask",
+                        t!(ctx, "Always ask", "始终询问"),
                         AISettingsPageAction::SetWriteToPty(WriteToPtyPermission::AlwaysAsk),
                     ),
                     DropdownItem::new(
-                        "Ask on first write",
+                        t!(ctx, "Ask on first write", "首次写入时询问"),
                         AISettingsPageAction::SetWriteToPty(WriteToPtyPermission::AskOnFirstWrite),
                     ),
                 ],
@@ -1132,15 +1133,15 @@ impl AISettingsPageView {
             dropdown.set_items(
                 vec![
                     DropdownItem::new(
-                        "Agent decides",
+                        t!(ctx, "Agent decides", "由代理决定"),
                         AISettingsPageAction::SetMCPPermissions(ActionPermission::AgentDecides),
                     ),
                     DropdownItem::new(
-                        "Always allow",
+                        t!(ctx, "Always allow", "始终允许"),
                         AISettingsPageAction::SetMCPPermissions(ActionPermission::AlwaysAllow),
                     ),
                     DropdownItem::new(
-                        "Always ask",
+                        t!(ctx, "Always ask", "始终询问"),
                         AISettingsPageAction::SetMCPPermissions(ActionPermission::AlwaysAsk),
                     ),
                 ],
@@ -1159,7 +1160,7 @@ impl AISettingsPageView {
             let mut dropdown = FilterableDropdown::new(ctx);
             dropdown.set_top_bar_max_width(AI_SETTINGS_DROPDOWN_WIDTH);
             dropdown.set_menu_width(AI_SETTINGS_DROPDOWN_WIDTH, ctx);
-            dropdown.set_menu_header_to_static("Select MCP servers");
+            dropdown.set_menu_header_to_static(t!(ctx, "Select MCP servers", "选择 MCP 服务器"));
             dropdown
         });
         Self::refresh_mcp_allowlist_dropdown(&mcp_allowlist_dropdown, ctx);
@@ -1173,7 +1174,7 @@ impl AISettingsPageView {
             let mut dropdown = FilterableDropdown::new(ctx);
             dropdown.set_top_bar_max_width(AI_SETTINGS_DROPDOWN_WIDTH);
             dropdown.set_menu_width(AI_SETTINGS_DROPDOWN_WIDTH, ctx);
-            dropdown.set_menu_header_to_static("Select MCP servers");
+            dropdown.set_menu_header_to_static(t!(ctx, "Select MCP servers", "选择 MCP 服务器"));
             dropdown
         });
         Self::refresh_mcp_denylist_dropdown(&mcp_denylist_dropdown, ctx);
@@ -1336,8 +1337,9 @@ impl AISettingsPageView {
 
         let profile_views = Self::create_profile_views(ctx);
 
+        let add_profile_label = t!(ctx, "Add Profile", "添加配置文件");
         let add_profile_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Add Profile", SecondaryTheme)
+            ActionButton::new(add_profile_label, SecondaryTheme)
                 .with_icon(Icon::Plus)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
@@ -1365,11 +1367,11 @@ impl AISettingsPageView {
 
             let items = vec![
                 DropdownItem::new(
-                    "New Tab",
+                    t!(ctx, "New Tab", "新标签页"),
                     AISettingsPageAction::SetConversationLayout(OpenConversationPreference::NewTab),
                 ),
                 DropdownItem::new(
-                    "Split Pane",
+                    t!(ctx, "Split Pane", "分屏"),
                     AISettingsPageAction::SetConversationLayout(
                         OpenConversationPreference::SplitPane,
                     ),
@@ -1380,9 +1382,9 @@ impl AISettingsPageView {
             let current = *crate::util::file::external_editor::EditorSettings::as_ref(ctx)
                 .open_conversation_layout_preference;
             match current {
-                OpenConversationPreference::NewTab => dropdown.set_selected_by_name("New Tab", ctx),
+                OpenConversationPreference::NewTab => dropdown.set_selected_by_name(t!(ctx, "New Tab", "新标签页"), ctx),
                 OpenConversationPreference::SplitPane => {
-                    dropdown.set_selected_by_name("Split Pane", ctx)
+                    dropdown.set_selected_by_name(t!(ctx, "Split Pane", "分屏"), ctx)
                 }
             };
             dropdown
@@ -1809,11 +1811,11 @@ impl AISettingsPageView {
             menu.set_items(
                 vec![
                     DropdownItem::new(
-                        "Read only",
+                        t!(ctx, "Read only", "只读"),
                         AISettingsPageAction::SetAutonomyReadonlyCommandsSetting,
                     ),
                     DropdownItem::new(
-                        "Supervised",
+                        t!(ctx, "Supervised", "监督模式"),
                         AISettingsPageAction::SetAutonomySupervisedSetting,
                     ),
                 ],
@@ -1992,10 +1994,10 @@ impl AISettingsPageView {
                 AgentModeCodingPermissionsType::iter()
                     .map(|t| {
                         let display = match t {
-                            AgentModeCodingPermissionsType::AlwaysAskBeforeReading => "Always ask",
-                            AgentModeCodingPermissionsType::AlwaysAllowReading => "Always allow",
+                            AgentModeCodingPermissionsType::AlwaysAskBeforeReading => t!(ctx, "Always ask", "始终询问"),
+                            AgentModeCodingPermissionsType::AlwaysAllowReading => t!(ctx, "Always allow", "始终允许"),
                             AgentModeCodingPermissionsType::AllowReadingSpecificFiles => {
-                                "Allow in specific directories"
+                                t!(ctx, "Allow in specific directories", "允许访问指定目录")
                             }
                         };
                         DropdownItem::new(display, AISettingsPageAction::SetCodingPermission(t))
@@ -3163,11 +3165,12 @@ fn render_ai_setting_description_with_font_size(
 fn render_toolbar_layout_editor(
     editor: &ViewHandle<AgentToolbarInlineEditor>,
     appearance: &Appearance,
+    app: &AppContext,
 ) -> Box<dyn Element> {
     let label = Container::new(
         appearance
             .ui_builder()
-            .span("Toolbar layout".to_string())
+            .span(t!(app, "Toolbar layout", "工具栏布局").to_string())
             .with_style(UiComponentStyles {
                 font_size: Some(CONTENT_FONT_SIZE),
                 ..Default::default()
@@ -3274,7 +3277,7 @@ impl SettingsWidget for GlobalAIWidget {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(
                 Text::new_inline(
-                    "Warp Agent",
+                    t!(app, "Warp Agent", "Warp 代理"),
                     appearance.ui_font_family(),
                     PRIMARY_HEADER_FONT_SIZE,
                 )
@@ -3287,7 +3290,7 @@ impl SettingsWidget for GlobalAIWidget {
             row.add_child(
                 ConstrainedBox::new(
                     Container::new(
-                        Text::new("Your organization disallows AI when the active pane contains content from a remote session", appearance.ui_font_family(), 12.)
+                        Text::new(t!(app, "Your organization disallows AI when the active pane contains content from a remote session", "当前面板包含远程会话内容时，组织禁止使用 AI。"), appearance.ui_font_family(), 12.)
                             .with_color(appearance.theme().ui_warning_color())
                             .finish()
                     )
@@ -3308,7 +3311,7 @@ impl SettingsWidget for GlobalAIWidget {
                     .with_child(
                         Container::new(
                             Text::new_inline(
-                                "To use AI features, please create an account.",
+                                t!(app, "To use AI features, please create an account.", "请先创建账户以使用 AI 功能。"),
                                 appearance.ui_font_family(),
                                 14.,
                             )
@@ -3339,7 +3342,7 @@ impl SettingsWidget for GlobalAIWidget {
                                     }),
                                     ..Default::default()
                                 })
-                                .with_text_label("Sign up".to_owned())
+                                .with_text_label(t!(app, "Sign up", "注册").to_owned())
                                 .build()
                                 .on_click(move |ctx, _, _| {
                                     ctx.dispatch_typed_action(
@@ -3389,6 +3392,7 @@ impl UsageWidget {
         is_unlimited: bool,
         workspace_is_delinquent_due_to_payment_issue: bool,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn warpui::Element> {
         let mut row = Flex::row();
         if used >= limit || workspace_is_delinquent_due_to_payment_issue {
@@ -3405,9 +3409,9 @@ impl UsageWidget {
         }
 
         let request_count_label = if workspace_is_delinquent_due_to_payment_issue {
-            "Restricted due to billing issue".to_string()
+            t!(app, "Restricted due to billing issue", "因账单问题受限").to_string()
         } else if is_unlimited {
-            "Unlimited".to_string()
+            t!(app, "Unlimited", "无限制").to_string()
         } else {
             format!("{used}/{limit}")
         };
@@ -3454,6 +3458,7 @@ impl UsageWidget {
         is_unlimited: bool,
         workspace_is_delinquent_due_to_payment_issue: bool,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn warpui::Element> {
         let request_usage_details = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::End)
@@ -3463,6 +3468,7 @@ impl UsageWidget {
                 is_unlimited,
                 workspace_is_delinquent_due_to_payment_issue,
                 appearance,
+                app,
             ));
 
         let request_usage_description = FormattedTextElement::from_str(
@@ -3554,7 +3560,7 @@ impl SettingsWidget for UsageWidget {
                 .with_child(
                     build_sub_header(
                         appearance,
-                        "Usage",
+                        t!(app, "Usage", "用量"),
                         Some(styles::header_font_color(true, app)),
                     )
                     .finish(),
@@ -3579,18 +3585,20 @@ impl SettingsWidget for UsageWidget {
         .finish();
 
         let request_limit_description = format!(
-            "This is the {} limit of AI credits for your account.",
-            ai_request_usage_model.refresh_duration_to_string()
+            "{}",
+            t!(app, "This is the {} limit of AI credits for your account.", "这是您账户 AI 积分的 {} 限额。")
+                .replace("{}", &ai_request_usage_model.refresh_duration_to_string())
         );
 
         let request_usage_row = self.render_ai_usage_limit_row(
-            "Credits",
+            t!(app, "Credits", "积分"),
             request_limit_description,
             ai_request_usage_model.requests_used(),
             ai_request_usage_model.request_limit(),
             ai_request_usage_model.is_unlimited(),
             workspace_is_delinquent_due_to_payment_issue,
             appearance,
+            app,
         );
 
         let auth_state = AuthStateProvider::as_ref(app).get();
@@ -3603,19 +3611,19 @@ impl SettingsWidget for UsageWidget {
                 let upgrade_url = UserWorkspaces::upgrade_link_for_team(team.uid);
                 if has_admin_permissions {
                     vec![
-                        FormattedTextFragment::hyperlink("Upgrade", upgrade_url),
+                        FormattedTextFragment::hyperlink(t!(app, "Upgrade", "升级"), upgrade_url),
                         FormattedTextFragment::plain_text(" to get more AI usage."),
                     ]
                 } else {
                     // The /upgrade page says to contact their administrator.
                     vec![
-                        FormattedTextFragment::hyperlink("Compare plans", upgrade_url),
+                        FormattedTextFragment::hyperlink(t!(app, "Compare plans", "比较方案"), upgrade_url),
                         FormattedTextFragment::plain_text(" for more AI usage."),
                     ]
                 }
             } else {
                 vec![
-                    FormattedTextFragment::hyperlink("Contact support", "mailto:support@warp.dev"),
+                    FormattedTextFragment::hyperlink(t!(app, "Contact support", "联系支持"), "mailto:support@warp.dev"),
                     FormattedTextFragment::plain_text(" for more AI usage."),
                 ]
             }
@@ -3623,7 +3631,7 @@ impl SettingsWidget for UsageWidget {
             let user_id = auth_state.user_id().unwrap_or_default();
             let upgrade_url = UserWorkspaces::upgrade_link(user_id);
             vec![
-                FormattedTextFragment::hyperlink("Upgrade", upgrade_url),
+                FormattedTextFragment::hyperlink(t!(app, "Upgrade", "升级"), upgrade_url),
                 FormattedTextFragment::plain_text(" to get more AI usage."),
             ]
         };
@@ -3740,7 +3748,7 @@ impl ActiveAIWidget {
         Flex::column()
             .with_child(
                 render_ai_setting_toggle::<IntelligentAutosuggestionsEnabled>(
-                    "Next Command",
+                    t!(app, "Next Command", "下一条命令"),
                     AISettingsPageAction::ToggleIntelligentAutosuggestions,
                     *ai_settings.intelligent_autosuggestions_enabled_internal,
                     is_toggleable,
@@ -3750,7 +3758,7 @@ impl ActiveAIWidget {
                 ),
             )
             .with_child(render_ai_setting_description(
-                NEXT_COMMAND_DESCRIPTION,
+                t!(app, "Let AI suggest the next command to run based on your command history, outputs, and common workflows.", "让 AI 根据命令历史、输出及常用工作流建议下一条命令。"),
                 is_toggleable,
                 app,
             ))
@@ -3767,7 +3775,7 @@ impl ActiveAIWidget {
         Flex::column()
             .with_child(
                 render_ai_setting_toggle::<AgentModeQuerySuggestionsEnabled>(
-                    "Prompt Suggestions",
+                    t!(app, "Prompt Suggestions", "提示建议"),
                     AISettingsPageAction::TogglePromptSuggestions,
                     *ai_settings.prompt_suggestions_enabled_internal,
                     is_toggleable,
@@ -3777,7 +3785,7 @@ impl ActiveAIWidget {
                 ),
             )
             .with_child(render_ai_setting_description(
-                PROMPT_SUGGESTIONS_DESCRIPTION,
+                t!(app, "Let AI suggest natural language prompts, as inline banners in the input, based on recent commands and their outputs.", "让 AI 根据近期命令及输出，以内嵌横幅形式建议自然语言提示。"),
                 is_toggleable,
                 app,
             ))
@@ -3794,7 +3802,7 @@ impl ActiveAIWidget {
         Flex::column()
             .with_child(
                 render_ai_setting_toggle::<AgentModeQuerySuggestionsEnabled>(
-                    "Suggested Code Banners",
+                    t!(app, "Suggested Code Banners", "代码建议横幅"),
                     AISettingsPageAction::ToggleCodeSuggestions,
                     *ai_settings.code_suggestions_enabled_internal,
                     is_toggleable,
@@ -3804,7 +3812,7 @@ impl ActiveAIWidget {
                 ),
             )
             .with_child(render_ai_setting_description(
-                SUGGESTED_CODE_BANNERS_DESCRIPTION,
+                t!(app, "Let AI suggest code diffs and queries as inline banners in the blocklist, based on recent commands and their outputs.", "让 AI 根据近期命令及输出，以内嵌横幅形式建议代码差异和查询。"),
                 is_toggleable,
                 app,
             ))
@@ -3822,7 +3830,7 @@ impl ActiveAIWidget {
             .with_child(render_ai_setting_toggle::<
                 NaturalLanguageAutosuggestionsEnabled,
             >(
-                "Natural Language Autosuggestions",
+                t!(app, "Natural Language Autosuggestions", "自然语言自动建议"),
                 AISettingsPageAction::ToggleNaturalLanguageAutosuggestions,
                 *ai_settings.natural_language_autosuggestions_enabled_internal,
                 is_toggleable,
@@ -3831,7 +3839,7 @@ impl ActiveAIWidget {
                 app,
             ))
             .with_child(render_ai_setting_description(
-                NATURAL_LANGUAGE_AUTOSUGGESTIONS,
+                t!(app, "Let AI suggest natural language autosuggestions, based on recent commands and their outputs.", "让 AI 根据近期命令及输出提供自然语言自动建议。"),
                 is_toggleable,
                 app,
             ))
@@ -3848,7 +3856,7 @@ impl ActiveAIWidget {
         Flex::column()
             .with_child(
                 render_ai_setting_toggle::<SharedBlockTitleGenerationEnabled>(
-                    "Shared Block Title Generation",
+                    t!(app, "Shared Block Title Generation", "共享块标题生成"),
                     AISettingsPageAction::ToggleSharedTitleGeneration,
                     *ai_settings.shared_block_title_generation_enabled_internal,
                     is_toggleable,
@@ -3858,7 +3866,7 @@ impl ActiveAIWidget {
                 ),
             )
             .with_child(render_ai_setting_description(
-                SHARED_BLOCK_TITLE_GENERATION_DESCRIPTION,
+                t!(app, "Let AI generate a title for your shared block based on the command and output.", "让 AI 根据命令及输出为共享块自动生成标题。"),
                 is_toggleable,
                 app,
             ))
@@ -3874,7 +3882,7 @@ impl ActiveAIWidget {
         let is_toggleable = ai_settings.is_active_ai_enabled(app);
         Flex::column()
             .with_child(render_ai_setting_toggle::<GitOperationsAutogenEnabled>(
-                "Commit & Pull Request Generation",
+                t!(app, "Commit & Pull Request Generation", "提交与 PR 生成"),
                 AISettingsPageAction::ToggleGitOperationsAutogen,
                 *ai_settings.git_operations_autogen_enabled_internal,
                 is_toggleable,
@@ -3883,7 +3891,7 @@ impl ActiveAIWidget {
                 app,
             ))
             .with_child(render_ai_setting_description(
-                GIT_OPERATIONS_AUTOGEN_DESCRIPTION,
+                t!(app, "Let AI generate commit messages and pull request titles and descriptions.", "让 AI 自动生成提交消息及 PR 标题和描述。"),
                 is_toggleable,
                 app,
             ))
@@ -3925,7 +3933,7 @@ impl SettingsWidget for ActiveAIWidget {
                         .with_child(
                             build_sub_header(
                                 appearance,
-                                "Active AI",
+                                t!(app, "Active AI", "主动 AI"),
                                 Some(styles::header_font_color(is_any_ai_enabled, app)),
                             )
                             .finish(),
@@ -4016,14 +4024,14 @@ impl SettingsWidget for AgentsWidget {
             agents_header.add_child(
                 build_sub_header(
                     appearance,
-                    "Agents",
+                    t!(app, "Agents", "代理"),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)
                 .finish(),
             );
             agents_header.add_child(render_ai_setting_description(
-                "Set the boundaries for how your Agent operates. Choose what it can access, how much autonomy it has, and when it must ask for your approval. You can also fine-tune behavior around natural language input, codebase awareness, and more.",
+                t!(app, "Set the boundaries for how your Agent operates. Choose what it can access, how much autonomy it has, and when it must ask for your approval. You can also fine-tune behavior around natural language input, codebase awareness, and more.", "设置代理的操作边界：访问权限、自主程度以及需要确认的时机。也可微调自然语言输入和代码库感知等行为。"),
                 ai_settings.is_any_ai_enabled(app),
                 app,
             ));
@@ -4062,7 +4070,7 @@ impl AgentsWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "Profiles",
+                    t!(app, "Profiles", "配置文件"),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .finish(),
@@ -4070,7 +4078,7 @@ impl AgentsWidget {
             .with_child(
                 Container::new(
                     render_ai_setting_description(
-                        "Profiles let you define how your Agent operates — from the actions it can take and when it needs approval, to the models it uses for tasks like coding and planning. You can also scope them to individual projects.",
+                        t!(app, "Profiles let you define how your Agent operates — from the actions it can take and when it needs approval, to the models it uses for tasks like coding and planning. You can also scope them to individual projects.", "配置文件让您定义代理的运作方式：包括可执行的操作、何时需要审批，以及用于编码和规划等任务的模型。还可以将其限定到特定项目。"),
                         is_any_ai_enabled,
                         app,
                     )
@@ -4120,7 +4128,7 @@ impl AgentsWidget {
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
         let model_subheader = Container::new(render_custom_size_header(
             appearance,
-            "Models",
+            t!(app, "Models", "模型"),
             14.0,
             Some(styles::header_font_color(is_any_ai_enabled, app)),
         ))
@@ -4168,7 +4176,7 @@ impl AgentsWidget {
         let max = cw.max;
 
         let label = Container::new(render_body_item_label::<AISettingsPageAction>(
-            "Context window (tokens)".to_string(),
+            t!(app, "Context window (tokens)", "上下文窗口（Token 数）").to_string(),
             None,
             None,
             LocalOnlyIconState::Hidden,
@@ -4277,7 +4285,7 @@ impl AgentsWidget {
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
         let permissions_subheader = Container::new(render_custom_size_header(
             appearance,
-            "Permissions",
+            t!(app, "Permissions", "权限"),
             14.0,
             Some(styles::header_font_color(is_any_ai_enabled, app)),
         ))
@@ -4287,7 +4295,7 @@ impl AgentsWidget {
         let code_diff_setting =
             BlocklistAIPermissions::as_ref(app).get_apply_code_diffs_setting(app, None);
         let code_diffs = self.render_execution_profile_dropdown(
-            "Apply code diffs",
+            t!(app, "Apply code diffs", "应用代码差异"),
             Icon::Code2,
             code_diff_setting.description(),
             &view.apply_code_diffs_dropdown_menu,
@@ -4300,7 +4308,7 @@ impl AgentsWidget {
             BlocklistAIPermissions::as_ref(app).get_read_files_setting(app, None);
         let mut read_files_flex = Flex::column().with_main_axis_size(MainAxisSize::Min);
         read_files_flex.add_child(self.render_execution_profile_dropdown(
-            "Read files",
+            t!(app, "Read files", "读取文件"),
             Icon::Notebook,
             read_files_setting.description(),
             &view.read_files_dropdown_menu,
@@ -4330,7 +4338,7 @@ impl AgentsWidget {
             BlocklistAIPermissions::as_ref(app).get_execute_commands_setting(app, None);
         let mut execute_commands_flex = Flex::column().with_main_axis_size(MainAxisSize::Min);
         execute_commands_flex.add_child(self.render_execution_profile_dropdown(
-            "Execute commands",
+            t!(app, "Execute commands", "执行命令"),
             Icon::Terminal,
             execute_commands_setting.description(),
             &view.execute_commands_dropdown_menu,
@@ -4379,7 +4387,7 @@ impl AgentsWidget {
         {
             widget_children.push(
                 Container::new(render_settings_info_banner(
-                    "Some of your permissions are managed by your workspace.",
+                    t!(app, "Some of your permissions are managed by your workspace.", "部分权限由您的工作区管理。"),
                     None,
                     appearance,
                 ))
@@ -4393,7 +4401,7 @@ impl AgentsWidget {
         let write_to_pty_setting =
             BlocklistAIPermissions::as_ref(app).get_write_to_pty_setting(app, None);
         let write_to_pty = self.render_execution_profile_dropdown(
-            "Interact with running commands",
+            t!(app, "Interact with running commands", "与运行中的命令交互"),
             Icon::Workflow,
             write_to_pty_setting.description(),
             &view.write_to_pty_autonomy_dropdown_menu,
@@ -4529,8 +4537,8 @@ impl AgentsWidget {
             appearance,
         );
         render_ai_list(
-            "Command denylist",
-            "Regular expressions to match commands that the Warp Agent should always ask permission to execute.",
+            t!(app, "Command denylist", "命令黑名单"),
+            t!(app, "Regular expressions to match commands that the Warp Agent should always ask permission to execute.", "匹配代理始终需要询问权限才能执行的命令的正则表达式。"),
             list,
             view,
             ai_settings,
@@ -4564,8 +4572,8 @@ impl AgentsWidget {
         );
 
         render_ai_list(
-            "Command allowlist",
-            "Regular expressions to match commands that can be automatically executed by the Warp Agent.",
+            t!(app, "Command allowlist", "命令白名单"),
+            t!(app, "Regular expressions to match commands that can be automatically executed by the Warp Agent.", "匹配代理可自动执行的命令的正则表达式。"),
             list,
             view,
             ai_settings,
@@ -4602,8 +4610,8 @@ impl AgentsWidget {
         );
 
         render_ai_list(
-            "Directory allowlist",
-            "Give the agent file access to certain directories.",
+            t!(app, "Directory allowlist", "目录白名单"),
+            t!(app, "Give the agent file access to certain directories.", "授予代理对指定目录的文件访问权限。"),
             list,
             view,
             ai_settings,
@@ -4645,7 +4653,7 @@ impl AgentsWidget {
                             .finish(),
                         appearance
                             .ui_builder()
-                            .span("Show model picker in prompt".to_string())
+                            .span(t!(app, "Show model picker in prompt", "在提示中显示模型选择器").to_string())
                             .with_style(UiComponentStyles {
                                 font_color: Some(
                                     theme.sub_text_color(theme.surface_2()).into_solid(),
@@ -4665,9 +4673,9 @@ impl AgentsWidget {
 
         render_dropdown_item(
             appearance,
-            "Base model",
+            t!(app, "Base model", "基础模型"),
             Some(
-                "This model serves as the primary engine behind the Warp Agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization.",
+                t!(app, "This model serves as the primary engine behind the Warp Agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization.", "此模型是 Warp 代理的主引擎，支撑大多数交互，并在需要时调用其他模型完成规划或代码生成等任务。Warp 可能根据模型可用性或辅助任务自动切换模型。"),
             ),
             Some(show_in_prompt_checkbox),
             LocalOnlyIconState::Hidden,
@@ -4687,7 +4695,7 @@ impl AgentsWidget {
     ) -> Box<dyn Element> {
         let code_settings = CodeSettings::as_ref(app);
         let toggle = render_ai_setting_toggle::<CodebaseContextEnabled>(
-            "Codebase Context",
+            t!(app, "Codebase Context", "代码库上下文"),
             AISettingsPageAction::ToggleCodebaseContext,
             *code_settings.codebase_context_enabled,
             ai_settings.is_any_ai_enabled(app),
@@ -4698,10 +4706,10 @@ impl AgentsWidget {
 
         let codebase_context_description = vec![
             FormattedTextFragment::plain_text(
-                "Allow the Warp Agent to generate an outline of your codebase that can be used for context. No code is ever stored on our servers. ",
+                t!(app, "Allow the Warp Agent to generate an outline of your codebase that can be used for context. No code is ever stored on our servers. ", "允许代理生成代码库概览用于上下文分析。代码不会存储在服务器上。"),
             ),
             FormattedTextFragment::hyperlink(
-                "Learn more",
+                t!(app, "Learn more", "了解更多"),
                 "https://docs.warp.dev/agent-platform/capabilities/codebase-context",
             ),
         ];
@@ -4754,7 +4762,7 @@ impl AgentsWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let header = Container::new(render_body_item_label_with_icon::<AISettingsPageAction>(
-            "Call MCP servers".into(),
+            t!(app, "Call MCP servers", "调用 MCP 服务器").into(),
             Icon::Dataflow,
             Some(styles::header_font_color(
                 ai_settings.is_any_ai_enabled(app),
@@ -4771,10 +4779,10 @@ impl AgentsWidget {
         let subtext = {
             let subtext_fragments = vec![
                 FormattedTextFragment::plain_text(
-                    "You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Warp Agent has when interacting with them. ",
+                    t!(app, "You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Warp Agent has when interacting with them. ", "尚未添加 MCP 服务器。添加后，您可以控制代理与其交互时的自主程度。"),
                 ),
                 FormattedTextFragment::hyperlink_action(
-                    "Add a server",
+                    t!(app, "Add a server", "添加服务器"),
                     AISettingsPageAction::OpenMCPServerCollection,
                 ),
                 FormattedTextFragment::plain_text(" or "),
@@ -4837,7 +4845,7 @@ impl AgentsWidget {
             BlocklistAIPermissions::as_ref(app).get_mcp_permissions_setting(app, None);
 
         let permission_setting = self.render_execution_profile_dropdown(
-            "Call MCP servers",
+            t!(app, "Call MCP servers", "调用 MCP 服务器"),
             Icon::Dataflow,
             current_mcp_setting.description(),
             &view.mcp_permissions_dropdown_menu,
@@ -4851,8 +4859,8 @@ impl AgentsWidget {
             || current_mcp_setting == ActionPermission::AgentDecides
         {
             let allowlist = self.render_mcp_list(
-                "MCP allowlist",
-                "Allow the Warp Agent to call these MCP servers.",
+                t!(app, "MCP allowlist", "MCP 白名单"),
+                t!(app, "Allow the Warp Agent to call these MCP servers.", "允许代理调用这些 MCP 服务器。"),
                 &view.mcp_allowlist_dropdown,
                 BlocklistAIPermissions::as_ref(app).get_mcp_allowlist(app, None),
                 view.mcp_allowlist_mouse_state_handles.clone(),
@@ -4868,8 +4876,8 @@ impl AgentsWidget {
             || current_mcp_setting == ActionPermission::AgentDecides
         {
             let denylist = self.render_mcp_list(
-                "MCP denylist",
-                "The Warp Agent will always ask for permission before calling any MCP servers on this list.",
+                t!(app, "MCP denylist", "MCP 黑名单"),
+                t!(app, "The Warp Agent will always ask for permission before calling any MCP servers on this list.", "代理调用此列表中的 MCP 服务器前始终会请求许可。"),
                 &view.mcp_denylist_dropdown,
                 BlocklistAIPermissions::as_ref(app).get_mcp_denylist(app, None),
                 view.mcp_denylist_mouse_state_handles.clone(),
@@ -4979,7 +4987,7 @@ impl SettingsWidget for AIInputWidget {
 
         let input_header = build_sub_header(
             appearance,
-            "Input",
+            t!(app, "Input", "输入"),
             Some(styles::header_font_color(is_any_ai_enabled, app)),
         )
         .with_padding_bottom(HEADER_PADDING)
@@ -4996,7 +5004,7 @@ impl SettingsWidget for AIInputWidget {
         );
 
         let show_input_hint_text = render_ai_setting_toggle::<ShowHintText>(
-            "Show input hint text",
+            t!(app, "Show input hint text", "显示输入提示文本"),
             AISettingsPageAction::ToggleShowInputHintText,
             *InputSettings::as_ref(app).show_hint_text,
             is_any_ai_enabled,
@@ -5014,7 +5022,7 @@ impl SettingsWidget for AIInputWidget {
 
         if FeatureFlag::AgentTips.is_enabled() {
             let agent_tips_toggle = render_ai_setting_toggle::<ShowAgentTips>(
-                "Show agent tips",
+                t!(app, "Show agent tips", "显示代理提示"),
                 AISettingsPageAction::ToggleShowAgentTips,
                 *InputSettings::as_ref(app).show_agent_tips,
                 is_any_ai_enabled,
@@ -5026,7 +5034,7 @@ impl SettingsWidget for AIInputWidget {
         }
 
         widget_children.push(render_ai_setting_toggle::<IncludeAgentCommandsInHistory>(
-            "Include agent-executed commands in history",
+            t!(app, "Include agent-executed commands in history", "在历史记录中包含代理执行的命令"),
             AISettingsPageAction::ToggleIncludeAgentCommandsInHistory,
             *ai_settings.include_agent_commands_in_history,
             is_any_ai_enabled,
@@ -5072,20 +5080,17 @@ impl AIInputWidget {
         let mut section = Flex::column();
 
         if FeatureFlag::AgentView.is_enabled() {
-            static AUTODETECTION_DESCRIPTION_FRAGMENTS: LazyLock<Vec<FormattedTextFragment>> =
-                LazyLock::new(|| {
-                    vec![
-                        FormattedTextFragment::plain_text("Encountered an incorrect detection? "),
+            let autodetection_description_fragments = vec![
+                        FormattedTextFragment::plain_text(t!(app, "Encountered an incorrect detection? ", "检测结果有误？")),
                         FormattedTextFragment::hyperlink(
-                            "Let us know",
+                            t!(app, "Let us know", "告知我们"),
                             "https://warpdotdev.typeform.com/to/offrTIpq",
                         ),
-                    ]
-                });
+                    ];
 
             section.add_children([
                 render_ai_setting_toggle::<NLDInTerminalEnabled>(
-                    "Autodetect agent prompts in terminal input",
+                    t!(app, "Autodetect agent prompts in terminal input", "自动检测终端输入中的代理提示"),
                     AISettingsPageAction::ToggleNLDInTerminal,
                     ai_settings.is_nld_in_terminal_enabled(app),
                     is_toggleable,
@@ -5094,7 +5099,7 @@ impl AIInputWidget {
                     app,
                 ),
                 render_ai_setting_toggle::<AIAutoDetectionEnabled>(
-                    "Autodetect terminal commands in agent input",
+                    t!(app, "Autodetect terminal commands in agent input", "自动检测代理输入中的终端命令"),
                     AISettingsPageAction::ToggleAIInputAutoDetection,
                     is_nld_enabled,
                     is_toggleable,
@@ -5105,7 +5110,7 @@ impl AIInputWidget {
                 Container::new(
                     FormattedTextElement::new(
                         FormattedText::new([FormattedTextLine::Line(
-                            (*AUTODETECTION_DESCRIPTION_FRAGMENTS).clone(),
+                            autodetection_description_fragments.clone(),
                         )]),
                         CONTENT_FONT_SIZE,
                         appearance.ui_font_family(),
@@ -5125,26 +5130,22 @@ impl AIInputWidget {
                 .finish(),
             ])
         } else {
-            static NATURAL_LANGUAGE_DETECTION_DESCRIPTION_FRAGMENTS: LazyLock<
-                Vec<FormattedTextFragment>,
-            > = LazyLock::new(|| {
-                vec![
+            let natural_language_detection_description_fragments = vec![
                     FormattedTextFragment::plain_text(
-                        "Enabling natural language detection will detect when natural language is written in the terminal input, and then automatically switch to Agent Mode for AI queries.",
+                        t!(app, "Enabling natural language detection will detect when natural language is written in the terminal input, and then automatically switch to Agent Mode for AI queries.", "启用自然语言检测后，将自动识别终端输入中的自然语言并切换至代理模式进行 AI 查询。"),
                     ),
                     FormattedTextFragment::plain_text(
-                        " Encountered an incorrect input detection? ",
+                        t!(app, " Encountered an incorrect input detection? ", " 检测结果有误？"),
                     ),
                     FormattedTextFragment::hyperlink(
-                        "Let us know",
+                        t!(app, "Let us know", "告知我们"),
                         "https://warpdotdev.typeform.com/to/offrTIpq",
                     ),
-                ]
-            });
+                ];
 
             section.add_children([
                 render_ai_setting_toggle::<AIAutoDetectionEnabled>(
-                    "Natural language detection",
+                    t!(app, "Natural language detection", "自然语言检测"),
                     AISettingsPageAction::ToggleAIInputAutoDetection,
                     is_nld_enabled,
                     is_toggleable,
@@ -5155,7 +5156,7 @@ impl AIInputWidget {
                 Container::new(
                     FormattedTextElement::new(
                         FormattedText::new([FormattedTextLine::Line(
-                            (*NATURAL_LANGUAGE_DETECTION_DESCRIPTION_FRAGMENTS).clone(),
+                            natural_language_detection_description_fragments.clone(),
                         )]),
                         CONTENT_FONT_SIZE,
                         appearance.ui_font_family(),
@@ -5178,13 +5179,13 @@ impl AIInputWidget {
 
         section
             .with_child(render_ai_setting_label::<AICommandDenylist>(
-                "Natural language denylist".to_owned(),
+                t!(app, "Natural language denylist", "自然语言黑名单").to_owned(),
                 is_toggleable,
                 &view.local_only_icon_tooltip_states,
                 app,
             ))
             .with_child(render_ai_setting_description(
-                "Commands listed here will never trigger natural language detection.",
+                t!(app, "Commands listed here will never trigger natural language detection.", "此处列出的命令不会触发自然语言检测。"),
                 is_toggleable,
                 app,
             ))
@@ -5233,7 +5234,7 @@ impl SettingsWidget for MCPServersWidget {
 
         let header = build_sub_header(
             appearance,
-            "MCP Servers",
+            t!(app, "MCP Servers", "MCP 服务器"),
             Some(styles::header_font_color(is_any_ai_enabled, app)),
         )
         .with_padding_bottom(HEADER_PADDING)
@@ -5245,7 +5246,7 @@ impl SettingsWidget for MCPServersWidget {
             MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. ",
             ),
             FormattedTextFragment::hyperlink(
-                "Learn more",
+                t!(app, "Learn more", "了解更多"),
                 "https://docs.warp.dev/agent-platform/capabilities/mcp",
             ),
         ];
@@ -5274,7 +5275,7 @@ impl SettingsWidget for MCPServersWidget {
             Some(
                 Flex::column()
                     .with_child(render_ai_setting_toggle::<FileBasedMcpEnabled>(
-                        "Auto-spawn servers from third-party agents",
+                        t!(app, "Auto-spawn servers from third-party agents", "从第三方代理自动启动服务器"),
                         AISettingsPageAction::ToggleFileBasedMcp,
                         *ai_settings.file_based_mcp_enabled,
                         is_any_ai_enabled,
@@ -5283,23 +5284,19 @@ impl SettingsWidget for MCPServersWidget {
                         app,
                     ))
                     .with_child({
-                        static FILE_BASED_MCP_DESCRIPTION_FRAGMENTS: LazyLock<
-                            Vec<FormattedTextFragment>,
-                        > = LazyLock::new(|| {
-                            vec![
+                        let file_based_mcp_description_fragments = vec![
                                 FormattedTextFragment::plain_text(
-                                    "Automatically detect and spawn MCP servers from globally-scoped third-party AI agent configuration files (e.g. in your home directory). Servers detected inside a repository are never spawned automatically and must be enabled individually from the MCP settings page. ",
+                                    t!(app, "Automatically detect and spawn MCP servers from globally-scoped third-party AI agent configuration files (e.g. in your home directory). Servers detected inside a repository are never spawned automatically and must be enabled individually from the MCP settings page. ", "自动检测并启动全局范围第三方 AI 代理配置文件（如主目录）中的 MCP 服务器。仓库内检测到的服务器不会自动启动，需在 MCP 设置页单独启用。"),
                                 ),
                                 FormattedTextFragment::hyperlink(
-                                    "See supported providers.",
+                                    t!(app, "See supported providers.", "查看支持的服务商。"),
                                     "https://docs.warp.dev/agent-platform/capabilities/mcp#file-based-mcp-servers",
                                 ),
-                            ]
-                        });
+                            ];
                         Container::new(
                             FormattedTextElement::new(
                                 FormattedText::new([FormattedTextLine::Line(
-                                    (*FILE_BASED_MCP_DESCRIPTION_FRAGMENTS).clone(),
+                                    file_based_mcp_description_fragments.clone(),
                                 )]),
                                 CONTENT_FONT_SIZE,
                                 appearance.ui_font_family(),
@@ -5325,7 +5322,7 @@ impl SettingsWidget for MCPServersWidget {
         };
 
         let button = render_full_pane_width_ai_button(
-            "Manage MCP servers",
+            t!(app, "Manage MCP servers", "管理 MCP 服务器"),
             is_any_ai_enabled,
             self.manage_mcp_servers_button.clone(),
             AISettingsPageAction::OpenMCPServerCollection,
@@ -5373,10 +5370,10 @@ impl AIFactWidget {
 
         let rules_description = vec![
             FormattedTextFragment::plain_text(
-                "Rules help the Warp Agent follow your conventions, whether for codebases or specific workflows. ",
+                t!(app, "Rules help the Warp Agent follow your conventions, whether for codebases or specific workflows. ", "规则帮助代理遵循您的开发规范，无论是代码库还是特定工作流。"),
             ),
             FormattedTextFragment::hyperlink(
-                "Learn more",
+                t!(app, "Learn more", "了解更多"),
                 "https://docs.warp.dev/agent-platform/capabilities/rules",
             ),
         ];
@@ -5413,7 +5410,7 @@ impl AIFactWidget {
         app: &warpui::AppContext,
     ) -> Box<dyn Element> {
         let toggle = render_ai_setting_toggle::<RuleSuggestionsEnabled>(
-            "Suggested Rules",
+            t!(app, "Suggested Rules", "建议规则"),
             AISettingsPageAction::ToggleRuleSuggestions,
             *ai_settings.rule_suggestions_enabled_internal,
             ai_settings.is_any_ai_enabled(app),
@@ -5423,7 +5420,7 @@ impl AIFactWidget {
         );
 
         let description = render_ai_setting_description(
-            "Let AI suggest rules to save based on your interactions.",
+            t!(app, "Let AI suggest rules to save based on your interactions.", "让 AI 根据您的交互建议要保存的规则。"),
             ai_settings.is_any_ai_enabled(app),
             app,
         );
@@ -5441,7 +5438,7 @@ impl AIFactWidget {
         app: &warpui::AppContext,
     ) -> Box<dyn Element> {
         let toggle = render_ai_setting_toggle::<WarpDriveContextEnabled>(
-            "Warp Drive as agent context",
+            t!(app, "Warp Drive as agent context", "将 Warp Drive 作为代理上下文"),
             AISettingsPageAction::ToggleWarpDriveContext,
             *ai_settings.warp_drive_context_enabled,
             ai_settings.is_any_ai_enabled(app),
@@ -5451,7 +5448,7 @@ impl AIFactWidget {
         );
 
         let description = render_ai_setting_description(
-            "The Warp Agent can leverage your Warp Drive Contents to tailor responses to your personal and team developer workflows and environments. This includes any Workflows, Notebooks, and Environment Variables.",
+            t!(app, "The Warp Agent can leverage your Warp Drive Contents to tailor responses to your personal and team developer workflows and environments. This includes any Workflows, Notebooks, and Environment Variables.", "代理可利用 Warp Drive 内容（工作流、笔记本、环境变量）定制响应以匹配个人和团队开发环境。"),
             ai_settings.is_any_ai_enabled(app),
             app,
         );
@@ -5485,14 +5482,14 @@ impl SettingsWidget for AIFactWidget {
 
         let header = build_sub_header(
             appearance,
-            "Knowledge",
+            t!(app, "Knowledge", "知识库"),
             Some(styles::header_font_color(is_any_ai_enabled, app)),
         )
         .with_margin_bottom(HEADER_PADDING)
         .finish();
 
         let button = render_full_pane_width_ai_button(
-            "Manage rules",
+            t!(app, "Manage rules", "管理规则"),
             is_any_ai_enabled,
             self.manage_rules_button.clone(),
             AISettingsPageAction::OpenAIFactCollection,
@@ -5530,7 +5527,7 @@ impl VoiceWidget {
         let ai_settings = AISettings::as_ref(app);
         let is_toggleable = ai_settings.is_any_ai_enabled(app);
         let mut column = Flex::column().with_child(render_ai_setting_toggle::<VoiceInputEnabled>(
-            "Voice Input",
+            t!(app, "Voice Input", "语音输入"),
             AISettingsPageAction::ToggleVoiceInput,
             *ai_settings.voice_input_enabled_internal,
             is_toggleable,
@@ -5573,8 +5570,8 @@ impl VoiceWidget {
         if ai_settings.is_voice_input_enabled(app) {
             column.add_child(render_dropdown_item(
                 appearance,
-                "Key for Activating Voice Input",
-                Some("Press and hold to activate."),
+                t!(app, "Key for Activating Voice Input", "激活语音输入的按键"),
+                Some(t!(app, "Press and hold to activate.", "按住以激活。")),
                 None,
                 LocalOnlyIconState::for_setting(
                     VoiceInputToggleKey::storage_key(),
@@ -5688,7 +5685,7 @@ impl SettingsWidget for OtherAIWidget {
         if FeatureFlag::AgentView.is_enabled() {
             let mut agent_view_column = Flex::column()
                 .with_child(render_ai_setting_toggle::<ShouldShowOzUpdatesInZeroState>(
-                    "Show Oz changelog in new conversation view",
+                    t!(app, "Show Oz changelog in new conversation view", "在新对话中显示 Oz 更新日志"),
                     AISettingsPageAction::ToggleShowOzUpdatesInZeroState,
                     *ai_settings.should_show_oz_updates_in_zero_state,
                     is_toggleable,
@@ -5697,7 +5694,7 @@ impl SettingsWidget for OtherAIWidget {
                     app,
                 ))
                 .with_child(render_ai_setting_toggle::<ShouldRenderUseAgentToolbarForUserCommands>(
-                    "Show \"Use Agent\" footer",
+                    t!(app, "Show \"Use Agent\" footer", "显示\"使用代理\"底部栏"),
                     AISettingsPageAction::ToggleUseAgentToolbar,
                     *ai_settings.should_render_use_agent_footer_for_user_commands,
                     is_toggleable,
@@ -5706,7 +5703,7 @@ impl SettingsWidget for OtherAIWidget {
                     app,
                 ))
                 .with_child(render_ai_setting_description(
-                    "Shows hint to use the \"Full Terminal Use\"-enabled agent in long running commands.",
+                    t!(app, "Shows hint to use the \"Full Terminal Use\"-enabled agent in long running commands.", "在长时运行命令中显示使用启用了\"完整终端\"代理的提示。"),
                     is_toggleable,
                     app,
                 ));
@@ -5715,6 +5712,7 @@ impl SettingsWidget for OtherAIWidget {
                 agent_view_column.add_child(render_toolbar_layout_editor(
                     &view.agent_toolbar_inline_editor,
                     appearance,
+                    app,
                 ));
             }
 
@@ -5722,7 +5720,7 @@ impl SettingsWidget for OtherAIWidget {
         }
 
         column.add_child(render_ai_setting_toggle::<ShowConversationHistory>(
-            "Show conversation history in tools panel",
+            t!(app, "Show conversation history in tools panel", "在工具面板中显示对话历史"),
             AISettingsPageAction::ToggleShowConversationHistory,
             *ai_settings.show_conversation_history,
             is_toggleable,
@@ -5733,8 +5731,8 @@ impl SettingsWidget for OtherAIWidget {
 
         column.add_child(render_dropdown_item(
             appearance,
-            "Agent thinking display",
-            Some("Controls how reasoning/thinking traces are displayed."),
+            t!(app, "Agent thinking display", "代理思考过程显示"),
+            Some(t!(app, "Controls how reasoning/thinking traces are displayed.", "控制推理/思考轨迹的显示方式。")),
             None,
             LocalOnlyIconState::for_setting(
                 ThinkingDisplayMode::storage_key(),
@@ -5754,7 +5752,7 @@ impl SettingsWidget for OtherAIWidget {
 
             column.add_child(render_dropdown_item(
                 appearance,
-                "Preferred layout when opening existing agent conversations",
+                t!(app, "Preferred layout when opening existing agent conversations", "打开现有代理对话时的首选布局"),
                 None,
                 None,
                 LocalOnlyIconState::for_setting(
@@ -5805,7 +5803,7 @@ impl SettingsWidget for CLIAgentWidget {
         // global AI toggle, because these settings control third-party coding
         // agents (Claude Code, Codex, Gemini CLI) rather than Warp's own AI.
         let cli_agent_footer_toggle = render_ai_setting_toggle::<ShouldRenderCLIAgentToolbar>(
-            "Show coding agent toolbar",
+            t!(app, "Show coding agent toolbar", "显示代码代理工具栏"),
             AISettingsPageAction::ToggleCLIAgentToolbar,
             *ai_settings.should_render_cli_agent_footer,
             true,
@@ -5841,7 +5839,7 @@ impl SettingsWidget for CLIAgentWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "Third party CLI agents",
+                    t!(app, "Third party CLI agents", "第三方 CLI 代理"),
                     Some(styles::header_font_color(true, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)
@@ -5866,14 +5864,14 @@ impl SettingsWidget for CLIAgentWidget {
             if FeatureFlag::CLIAgentRichInput.is_enabled() {
                 // Setting 1: Auto show/hide rich input based on agent status
                 let auto_show_toggle_label = render_body_item_label::<AISettingsPageAction>(
-                    "Auto show/hide Rich Input based on agent status".into(),
+                    t!(app, "Auto show/hide Rich Input based on agent status", "根据代理状态自动显示/隐藏富输入框").into(),
                     Some(styles::header_font_color(true, app)),
                     Some(AdditionalInfo {
                         mouse_state: self.auto_toggle_rich_input_info_tooltip.clone(),
                         on_click_action: None,
                         secondary_text: None,
                         tooltip_override_text: Some(
-                            "Requires the Warp plugin for your coding agent".to_owned(),
+                            t!(app, "Requires the Warp plugin for your coding agent", "需要为代码代理安装 Warp 插件").to_owned(),
                         ),
                     }),
                     LocalOnlyIconState::for_setting(
@@ -5900,7 +5898,7 @@ impl SettingsWidget for CLIAgentWidget {
 
                 column.add_child(
                     render_ai_setting_toggle::<AutoOpenRichInputOnCLIAgentStart>(
-                        "Auto open Rich Input when a coding agent session starts",
+                        t!(app, "Auto open Rich Input when a coding agent session starts", "代码代理会话启动时自动打开富输入框"),
                         AISettingsPageAction::ToggleAutoOpenRichInputOnCLIAgentStart,
                         *ai_settings.auto_open_rich_input_on_cli_agent_start,
                         true,
@@ -5912,7 +5910,7 @@ impl SettingsWidget for CLIAgentWidget {
 
                 // Setting 2: Auto dismiss rich input after prompt submission
                 column.add_child(render_ai_setting_toggle::<AutoDismissRichInputAfterSubmit>(
-                    "Auto dismiss Rich Input after prompt submission",
+                    t!(app, "Auto dismiss Rich Input after prompt submission", "提交提示后自动关闭富输入框"),
                     AISettingsPageAction::ToggleAutoDismissRichInputAfterSubmit,
                     *ai_settings.auto_dismiss_rich_input_after_submit,
                     true,
@@ -5928,7 +5926,7 @@ impl SettingsWidget for CLIAgentWidget {
                 list_column.add_child(
                     appearance
                         .ui_builder()
-                        .span("Commands that enable the toolbar".to_string())
+                        .span(t!(app, "Commands that enable the toolbar", "启用工具栏的命令").to_string())
                         .with_style(UiComponentStyles {
                             font_size: Some(CONTENT_FONT_SIZE),
                             ..Default::default()
@@ -6020,7 +6018,7 @@ impl SettingsWidget for CLIAgentWidget {
             let command_list_description = appearance
                 .ui_builder()
                 .paragraph(
-                    "Add regex patterns to show the coding agent toolbar for matching commands.",
+                    t!(app, "Add regex patterns to show the coding agent toolbar for matching commands.", "添加正则表达式以在匹配命令时显示代码代理工具栏。"),
                 )
                 .with_style(UiComponentStyles {
                     font_size: Some(appearance.ui_font_size()),
@@ -6043,6 +6041,7 @@ impl SettingsWidget for CLIAgentWidget {
                 column.add_child(render_toolbar_layout_editor(
                     &view.cli_agent_toolbar_inline_editor,
                     appearance,
+                    app,
                 ));
             }
         }
@@ -6147,7 +6146,7 @@ impl SettingsWidget for AgentAttributionWidget {
 
         let toggle_row = build_toggle_element(
             render_body_item_label::<AISettingsPageAction>(
-                "Enable agent attribution".to_string(),
+                t!(app, "Enable agent attribution", "启用代理归因").to_string(),
                 Some(styles::header_font_color(!state.is_disabled, app)),
                 None,
                 LocalOnlyIconState::Hidden,
@@ -6164,7 +6163,7 @@ impl SettingsWidget for AgentAttributionWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "Agent Attribution",
+                    t!(app, "Agent Attribution", "代理归因"),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)
@@ -6172,7 +6171,7 @@ impl SettingsWidget for AgentAttributionWidget {
             )
             .with_child(toggle_row)
             .with_child(render_ai_setting_description(
-                "Oz can add attribution to commit messages and pull requests it creates",
+                t!(app, "Oz can add attribution to commit messages and pull requests it creates", "Oz 可在其创建的提交消息和 PR 中添加归因信息"),
                 !state.is_disabled,
                 app,
             ))
@@ -6251,7 +6250,7 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
 
         let toggle_row = build_toggle_element(
             render_body_item_label::<AISettingsPageAction>(
-                "Computer use in Cloud Agents".to_string(),
+                t!(app, "Computer use in Cloud Agents", "云代理中的计算机使用").to_string(),
                 Some(styles::header_font_color(!is_disabled, app)),
                 None,
                 LocalOnlyIconState::Hidden,
@@ -6268,7 +6267,7 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "Experimental",
+                    t!(app, "Experimental", "实验性"),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)
@@ -6276,7 +6275,7 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
             )
             .with_child(toggle_row)
             .with_child(render_ai_setting_description(
-                "Enable computer use in cloud agent conversations started from the Warp app.",
+                t!(app, "Enable computer use in cloud agent conversations started from the Warp app.", "在 Warp 应用发起的云代理对话中启用计算机使用。"),
                 !is_disabled,
                 app,
             ));
@@ -6284,7 +6283,7 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
         if FeatureFlag::Orchestration.is_enabled() {
             let ai_settings = AISettings::as_ref(app);
             column.add_child(render_ai_setting_toggle::<OrchestrationEnabled>(
-                "Orchestration",
+                t!(app, "Orchestration", "编排"),
                 AISettingsPageAction::ToggleOrchestration,
                 *ai_settings.orchestration_enabled,
                 is_any_ai_enabled,
@@ -6293,7 +6292,7 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
                 app,
             ));
             column.add_child(render_ai_setting_description(
-                "Enable multi-agent orchestration, allowing the agent to spawn and coordinate parallel sub-agents.",
+                t!(app, "Enable multi-agent orchestration, allowing the agent to spawn and coordinate parallel sub-agents.", "启用多代理编排，允许代理生成并协调并行子代理。"),
                 is_any_ai_enabled,
                 app,
             ));
@@ -6436,7 +6435,7 @@ impl ApiKeysWidget {
             .with_child(
                 Container::new(
                     render_ai_setting_description(
-                        "Use your own API keys from model providers for the Warp Agent to use. API keys are stored locally and never synced to the cloud. Using auto models or models from providers you have not provided API keys for will consume Warp credits.",
+                        t!(app, "Use your own API keys from model providers for the Warp Agent to use. API keys are stored locally and never synced to the cloud. Using auto models or models from providers you have not provided API keys for will consume Warp credits.", "使用来自模型提供商的自有 API 密钥。密钥仅本地存储，不同步至云端。使用自动模型或未提供密钥的提供商模型将消耗 Warp 积分。"),
                         is_enabled,
                         app,
                     ))
@@ -6485,21 +6484,21 @@ impl ApiKeysWidget {
 
         column.add_child(render_api_key_input(
             appearance,
-            "OpenAI API Key",
+            t!(app, "OpenAI API Key", "OpenAI API 密钥"),
             self.openai_api_key_editor.clone(),
             is_enabled,
             app,
         ));
         column.add_child(render_api_key_input(
             appearance,
-            "Anthropic API Key",
+            t!(app, "Anthropic API Key", "Anthropic API 密钥"),
             self.anthropic_api_key_editor.clone(),
             is_enabled,
             app,
         ));
         column.add_child(render_api_key_input(
             appearance,
-            "Google API Key",
+            t!(app, "Google API Key", "Google API 密钥"),
             self.google_api_key_editor.clone(),
             is_enabled,
             app,
@@ -6574,7 +6573,7 @@ impl ApiKeysWidget {
         let ai_settings = AISettings::as_ref(app);
 
         let toggle = render_ai_setting_toggle::<CanUseWarpCreditsWithByok>(
-            "Warp credit fallback",
+            t!(app, "Warp credit fallback", "Warp 积分回退"),
             AISettingsPageAction::ToggleCanUseWarpCreditsWithByok,
             *ai_settings.can_use_warp_credits_with_byok,
             ai_settings.is_any_ai_enabled(app),
@@ -6584,7 +6583,7 @@ impl ApiKeysWidget {
         );
 
         let description = render_ai_setting_description(
-            "When enabled, agent requests may be routed to one of Warp's provided models in the event of an error. Warp will prioritize using your API keys over your Warp credits.",
+            t!(app, "When enabled, agent requests may be routed to one of Warp's provided models in the event of an error. Warp will prioritize using your API keys over your Warp credits.", "启用后，代理请求在出错时将路由到 Warp 提供的模型。Warp 优先使用您的 API 密钥而非 Warp 积分。"),
             ai_settings.is_any_ai_enabled(app),
             app,
         );
@@ -6618,7 +6617,7 @@ impl SettingsWidget for ApiKeysWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "API Keys",
+                    t!(app, "API Keys", "API 密钥"),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)
@@ -6752,8 +6751,9 @@ impl AwsBedrockWidget {
             }
         });
 
+        let refresh_label = t!(ctx, "Refresh", "刷新");
         let refresh_credentials_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Refresh", SecondaryTheme)
+            ActionButton::new(refresh_label, SecondaryTheme)
                 .with_icon(Icon::RefreshCw04)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
@@ -6865,7 +6865,7 @@ impl AwsBedrockWidget {
         let mut column = Flex::column().with_spacing(16.).with_child(
             Flex::column()
                 .with_child(render_ai_setting_toggle::<AwsBedrockCredentialsEnabled>(
-                    "Use AWS Bedrock credentials",
+                    t!(app, "Use AWS Bedrock credentials", "使用 AWS Bedrock 凭证"),
                     AISettingsPageAction::ToggleAwsBedrockCredentialsEnabled,
                     are_credentials_enabled,
                     is_toggleable,
@@ -6997,14 +6997,14 @@ impl AwsBedrockWidget {
         );
         column.add_child(render_input(
             appearance,
-            "Login Command",
+            t!(app, "Login Command", "登录命令"),
             self.aws_auth_refresh_command_editor.clone(),
             is_usage_enabled,
             app,
         ));
         column.add_child(render_input(
             appearance,
-            "AWS Profile",
+            t!(app, "AWS Profile", "AWS 配置文件"),
             self.aws_auth_refresh_profile_editor.clone(),
             is_usage_enabled,
             app,
@@ -7013,7 +7013,7 @@ impl AwsBedrockWidget {
         let auto_login_enabled = *AISettings::as_ref(app).aws_bedrock_auto_login.value();
 
         let toggle = render_ai_setting_toggle::<AwsBedrockAutoLogin>(
-            "Automatically run login command",
+            t!(app, "Automatically run login command", "自动运行登录命令"),
             AISettingsPageAction::ToggleAwsBedrockAutoLogin,
             auto_login_enabled,
             is_usage_enabled,
@@ -7022,7 +7022,7 @@ impl AwsBedrockWidget {
             app,
         );
         let description = render_ai_setting_description(
-            "When enabled, the login command will run automatically when AWS Bedrock credentials expire.",
+            t!(app, "When enabled, the login command will run automatically when AWS Bedrock credentials expire.", "启用后，AWS Bedrock 凭证过期时将自动运行登录命令。"),
             is_usage_enabled,
             app,
         );
@@ -7065,7 +7065,7 @@ impl SettingsWidget for AwsBedrockWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "AWS Bedrock",
+                    t!(app, "AWS Bedrock", "AWS Bedrock"),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)

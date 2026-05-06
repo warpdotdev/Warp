@@ -1,3 +1,4 @@
+use crate::t;
 use super::{
     agent_assisted_environment_modal::{
         AgentAssistedEnvironmentModal, AgentAssistedEnvironmentModalEvent,
@@ -81,8 +82,8 @@ use {
     warp_graphql::queries::user_github_info::UserGithubInfoResult,
 };
 
-const PAGE_TITLE_TEXT: &str = "Environments";
-const PAGE_DESCRIPTION_TEXT: &str = "Environments define where your ambient agents run. Set one up in minutes via GitHub (recommended), Warp-assisted setup, or manual configuration.";
+const PAGE_TITLE_TEXT: &str = "Environments"; // translated via translate_page_title
+const PAGE_DESCRIPTION_TEXT: &str = ""; // translated at render time
 const CARD_BORDER_WIDTH: f32 = 1.;
 const CARD_PADDING: f32 = 16.;
 const CARD_SPACING: f32 = 12.;
@@ -1082,7 +1083,7 @@ impl EnvironmentsPageWidget {
 
         let description = appearance
             .ui_builder()
-            .paragraph(PAGE_DESCRIPTION_TEXT)
+            .paragraph(t!(app, "Environments define where your ambient agents run. Set one up in minutes via GitHub (recommended), Warp-assisted setup, or manual configuration.", "环境定义了环境代理的运行位置。通过 GitHub（推荐）、Warp 辅助设置或手动配置，几分钟内完成设置。"))
             .with_style(UiComponentStyles {
                 font_color: Some(appearance.theme().nonactive_ui_text_color().into()),
                 font_size: Some(CONTENT_FONT_SIZE),
@@ -1129,7 +1130,7 @@ impl EnvironmentsPageWidget {
             page.add_child(toolbar_row);
 
             if environments.is_empty() {
-                page.add_child(Self::render_no_matches_state(appearance));
+                page.add_child(Self::render_no_matches_state(appearance, app));
             } else {
                 let mut personal_environments = Vec::new();
                 let mut team_environments = Vec::new();
@@ -1282,11 +1283,11 @@ impl EnvironmentsPageWidget {
         .finish()
     }
 
-    fn render_no_matches_state(appearance: &Appearance) -> Box<dyn Element> {
+    fn render_no_matches_state(appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let theme = appearance.theme();
         Container::new(
             Text::new(
-                "No environments match your search.",
+                t!(app, "No environments match your search.", "没有匹配的环境。"),
                 appearance.ui_font_family(),
                 appearance.ui_font_size(),
             )
@@ -1312,12 +1313,12 @@ impl EnvironmentsPageWidget {
         const HEADER_TO_LIST_SPACING: f32 = 8.;
 
         let header = match list_scope {
-            EnvironmentListScope::Personal => Self::render_overline_header("Personal", appearance),
+            EnvironmentListScope::Personal => Self::render_overline_header(t!(app, "Personal", "个人"), appearance),
             EnvironmentListScope::Team => {
                 let shared_by_text = UserWorkspaces::as_ref(app)
                     .current_team()
                     .map(|team| format!("Shared by Warp and {}", team.name))
-                    .unwrap_or_else(|| "Shared by Warp and your team".to_string());
+                    .unwrap_or_else(|| t!(app, "Shared by Warp and your team", "由 Warp 和您的团队共享").to_string());
                 Self::render_overline_header(&shared_by_text, appearance)
             }
         };
@@ -1401,13 +1402,13 @@ impl EnvironmentsPageWidget {
         };
 
         let (github_button_label, github_button_enabled) = if dropdown_state.is_loading {
-            ("Loading...", false)
+            (t!(app, "Loading...", "加载中…"), false)
         } else if dropdown_state.load_error_message.is_some() {
-            ("Retry", true)
+            (t!(app, "Retry", "重试"), true)
         } else if dropdown_state.auth_url.is_some() {
-            ("Authorize", true)
+            (t!(app, "Authorize", "授权"), true)
         } else {
-            ("Get started", true)
+            (t!(app, "Get started", "开始使用"), true)
         };
 
         let github_button = Self::render_empty_state_button(
@@ -1429,7 +1430,7 @@ impl EnvironmentsPageWidget {
 
         let local_repos_button = Self::render_empty_state_button(
             appearance,
-            "Launch agent",
+            t!(app, "Launch agent", "启动代理"),
             ButtonVariant::Secondary,
             view.empty_state_local_repos_button_mouse_state.clone(),
             true,
@@ -1437,7 +1438,7 @@ impl EnvironmentsPageWidget {
         );
         let local_repos_button_compact = Self::render_empty_state_button(
             appearance,
-            "Launch agent",
+            t!(app, "Launch agent", "启动代理"),
             ButtonVariant::Secondary,
             view.empty_state_local_repos_button_mouse_state.clone(),
             true,
@@ -1448,8 +1449,8 @@ impl EnvironmentsPageWidget {
             appearance,
             EmptyStateRowConfig {
                 icon: Icon::Github,
-                title: "Quick setup",
-                badge: Some("Suggested"),
+                title: t!(app, "Quick setup", "快速设置"),
+                badge: Some(t!(app, "Suggested", "推荐")),
                 subtitle:
                     "Select the GitHub repositories you’d like to work with and we’ll suggest a base image and config",
                 action_button: github_button,
@@ -1462,7 +1463,7 @@ impl EnvironmentsPageWidget {
             appearance,
             EmptyStateRowConfig {
                 icon: Icon::Terminal,
-                title: "Use the agent",
+                title: t!(app, "Use the agent", "使用代理"),
                 badge: None,
                 subtitle:
                     "Choose a locally set up project and we’ll help you set up an environment based on it",

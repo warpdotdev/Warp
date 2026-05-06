@@ -1,3 +1,4 @@
+use crate::t;
 use chrono::Local;
 use itertools::Itertools;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
@@ -101,8 +102,8 @@ const AUTO_RELOAD_DELINQUENT_WARNING_STRING: &str =
 const RESTRICTED_BILLING_USAGE_WARNING_STRING: &str =
     "Auto reload is disabled due to recent failed reload. Please update your payment method and try again.";
 
-const OVERVIEW_TAB_TEXT: &str = "Overview";
-const USAGE_HISTORY_TAB_TEXT: &str = "Usage History";
+const OVERVIEW_TAB_TEXT: &str = "Overview"; // translated at render time
+const USAGE_HISTORY_TAB_TEXT: &str = "Usage History"; // translated at render time
 
 const ENTERPRISE_USAGE_CALLOUT_HEADER: &str = "Usage reporting is currently limited";
 const ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_PREFIX: &str =
@@ -154,10 +155,11 @@ impl BillingUsageTab {
         }
     }
 
-    pub fn label(&self) -> &str {
+    pub fn label<'a>(&self, app: &'a AppContext) -> &'a str {
+        use crate::t;
         match self {
-            BillingUsageTab::Overview => OVERVIEW_TAB_TEXT,
-            BillingUsageTab::UsageHistory => USAGE_HISTORY_TAB_TEXT,
+            BillingUsageTab::Overview => t!(app, "Overview", "概览"),
+            BillingUsageTab::UsageHistory => t!(app, "Usage History", "使用历史"),
         }
     }
 }
@@ -1167,7 +1169,7 @@ impl UsageWidget {
                     ButtonVariant::Secondary,
                     self.ambient_trial_new_agent_button.clone(),
                 )
-                .with_text_label("New agent".to_string())
+                .with_text_label(t!(app, "New agent", "新建代理").to_string())
                 .with_style(UiComponentStyles {
                     font_color: Some(bg),
                     background: Some(fg.into()),
@@ -1204,7 +1206,7 @@ impl UsageWidget {
                     ButtonVariant::Secondary,
                     self.ambient_trial_buy_more_button.clone(),
                 )
-                .with_text_label("Buy more".to_string())
+                .with_text_label(t!(app, "Buy more", "购买更多").to_string())
                 .with_style(UiComponentStyles {
                     background: Some(bg.into()),
                     font_size: Some(14.),
@@ -1941,7 +1943,7 @@ impl UsageWidget {
         };
 
         let auto_reload_switch = Container::new(render_body_item::<BillingAndUsagePageAction>(
-            "Auto reload".into(),
+            t!(app, "Auto reload", "自动续费").into(),
             None,
             Default::default(),
             Default::default(),
@@ -2484,18 +2486,18 @@ impl SettingsWidget for UsageWidget {
 
         let tabs = vec![
             SettingsTab::new(
-                BillingUsageTab::Overview.label(),
+                BillingUsageTab::Overview.label(app),
                 self.overview_tab_mouse_state.clone(),
             ),
             SettingsTab::new(
-                BillingUsageTab::UsageHistory.label(),
+                BillingUsageTab::UsageHistory.label(app),
                 self.usage_history_tab_mouse_state.clone(),
             ),
         ];
 
         let tab_selector = tab_selector::render_tab_selector(
             tabs,
-            view.selected_tab.label(),
+            view.selected_tab.label(app),
             // On click, set clicked tab as selected
             |label, ctx| {
                 ctx.dispatch_typed_action(BillingAndUsagePageAction::SelectTab(
@@ -3373,6 +3375,7 @@ impl PlanWidget {
         &self,
         auth_state: &AuthState,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let button_styles = UiComponentStyles {
             font_size: Some(14.),
@@ -3394,7 +3397,7 @@ impl PlanWidget {
                 self.ui_state_handles.anonymous_user_sign_up_button.clone(),
             )
             .with_style(button_styles)
-            .with_text_label("Sign up".to_owned())
+            .with_text_label(t!(app, "Sign up", "注册").to_owned())
             .build()
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(BillingAndUsagePageAction::SignupAnonymousUser);
@@ -3675,7 +3678,7 @@ impl SettingsWidget for PlanWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let account_info = if view.auth_state.is_anonymous_or_logged_out() {
-            self.render_anonymous_account_info(view.auth_state.as_ref(), appearance)
+            self.render_anonymous_account_info(view.auth_state.as_ref(), appearance, app)
         } else {
             self.render_account_info(view.auth_state.as_ref(), app, appearance)
         };

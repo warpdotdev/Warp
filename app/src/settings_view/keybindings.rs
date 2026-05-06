@@ -1,3 +1,4 @@
+use crate::t;
 use std::collections::HashMap;
 
 use super::{
@@ -209,6 +210,301 @@ impl From<(Option<Vec<usize>>, &CommandBinding)> for KeybindingRow {
     }
 }
 
+
+fn translate_command_name<'a>(name: &'a str, app: &AppContext) -> &'a str {
+    use crate::t;
+    match name {
+        // Navigation
+        "Accept Autosuggestion" => t!(app, "Accept Autosuggestion", "接受自动建议"),
+        "Accept Prompt Suggestion" => t!(app, "Accept Prompt Suggestion", "接受提示建议"),
+        "Activate Next Pane" => t!(app, "Activate Next Pane", "激活下一面板"),
+        "Activate Next Tab" => t!(app, "Activate Next Tab", "激活下一标签页"),
+        "Activate Previous Pane" => t!(app, "Activate Previous Pane", "激活上一面板"),
+        "Activate Previous Tab" => t!(app, "Activate Previous Tab", "激活上一标签页"),
+        "Add Cursor Above" => t!(app, "Add Cursor Above", "在上方添加光标"),
+        "Add Cursor Below" => t!(app, "Add Cursor Below", "在下方添加光标"),
+        "Add Repository" => t!(app, "Add Repository", "添加仓库"),
+        "Add Selection For Next Occurrence" => t!(app, "Add Selection For Next Occurrence", "选中下一个相同内容"),
+        "Alternate Terminal Paste" => t!(app, "Alternate Terminal Paste", "备用终端粘贴"),
+        "Ask Warp Ai" => t!(app, "Ask Warp Ai", "询问 Warp AI"),
+        "Ask Warp Ai About Selection" => t!(app, "Ask Warp Ai About Selection", "询问 Warp AI 关于所选内容"),
+        "Ask Warp Ai About Last Block" => t!(app, "Ask Warp Ai About Last Block", "询问 Warp AI 关于最后一个块"),
+        "Attach Selected Block As Agent Context" => t!(app, "Attach Selected Block As Agent Context", "将所选块附加为代理上下文"),
+        "Attach Selected Text As Agent Context" => t!(app, "Attach Selected Text As Agent Context", "将所选文本附加为代理上下文"),
+        "Backward Tabulation Within An Executing Command" => t!(app, "Backward Tabulation Within An Executing Command", "在执行命令中反向制表"),
+        "Bookmark Selected Block" => t!(app, "Bookmark Selected Block", "为所选块添加书签"),
+        "Check For Updates" => t!(app, "Check For Updates", "检查更新"),
+        "Clear Blocks" => t!(app, "Clear Blocks", "清除块"),
+        "Clear And Reset Ai Context Menu Query" => t!(app, "Clear And Reset Ai Context Menu Query", "清除并重置 AI 上下文菜单查询"),
+        "Clear Command Editor" => t!(app, "Clear Command Editor", "清除命令编辑器"),
+        "Clear Screen" => t!(app, "Clear Screen", "清屏"),
+        "Clear Selected Lines" => t!(app, "Clear Selected Lines", "清除所选行"),
+        "Close" => t!(app, "Close", "关闭"),
+        "Close Current Session" => t!(app, "Close Current Session", "关闭当前会话"),
+        "Close All Tabs" => t!(app, "Close All Tabs", "关闭所有标签页"),
+        "Close Other Tabs" => t!(app, "Close Other Tabs", "关闭其他标签页"),
+        "Close Saved Tabs" => t!(app, "Close Saved Tabs", "关闭已保存标签页"),
+        "Close The Current Tab" => t!(app, "Close The Current Tab", "关闭当前标签页"),
+        "Close Tabs To The Right" => t!(app, "Close Tabs To The Right", "关闭右侧标签页"),
+        "Close Focused Panel" => t!(app, "Close Focused Panel", "关闭聚焦面板"),
+        "Close Window" => t!(app, "Close Window", "关闭窗口"),
+        "Command Search" => t!(app, "Command Search", "命令搜索"),
+        "Copy" => t!(app, "Copy", "复制"),
+        "Copy Access Token To Clipboard" => t!(app, "Copy Access Token To Clipboard", "复制访问令牌到剪贴板"),
+        "Copy And Clear Selected Lines" => t!(app, "Copy And Clear Selected Lines", "复制并清除所选行"),
+        "Copy Command" => t!(app, "Copy Command", "复制命令"),
+        "Copy Command And Output" => t!(app, "Copy Command And Output", "复制命令和输出"),
+        "Copy Command Output" => t!(app, "Copy Command Output", "复制命令输出"),
+        "Copy Git Branch" => t!(app, "Copy Git Branch", "复制 Git 分支"),
+        "Copy Rich-Text Buffer" => t!(app, "Copy Rich-Text Buffer", "复制富文本缓冲区"),
+        "Copy Rich-Text Selection" => t!(app, "Copy Rich-Text Selection", "复制富文本选区"),
+        "Create New Project" => t!(app, "Create New Project", "创建新项目"),
+        "Create New Tab" => t!(app, "Create New Tab", "创建新标签页"),
+        "Create New Window" => t!(app, "Create New Window", "创建新窗口"),
+        "Create Or Edit Link" => t!(app, "Create Or Edit Link", "创建或编辑链接"),
+        "Cursor At Buffer End" => t!(app, "Cursor At Buffer End", "光标移至缓冲区末尾"),
+        "Cursor At Buffer Start" => t!(app, "Cursor At Buffer Start", "光标移至缓冲区开头"),
+        "Cut All Left" => t!(app, "Cut All Left", "剪切光标左侧全部"),
+        "Cut All Right" => t!(app, "Cut All Right", "剪切光标右侧全部"),
+        "Cut Word Left" => t!(app, "Cut Word Left", "剪切左侧单词"),
+        "Cut Word Right" => t!(app, "Cut Word Right", "剪切右侧单词"),
+        "De-Select Shell Commands" => t!(app, "De-Select Shell Commands", "取消选中 Shell 命令"),
+        "Decrease Font Size" => t!(app, "Decrease Font Size", "减小字体大小"),
+        "Decrease Notebook Font Size" => t!(app, "Decrease Notebook Font Size", "减小笔记本字体"),
+        "Decrease Zoom Level" => t!(app, "Decrease Zoom Level", "降低缩放级别"),
+        "Delete" => t!(app, "Delete", "删除"),
+        "Delete All Left" => t!(app, "Delete All Left", "删除左侧全部"),
+        "Delete All Right" => t!(app, "Delete All Right", "删除右侧全部"),
+        "Delete To Line End Within An Executing Command" => t!(app, "Delete To Line End Within An Executing Command", "删除至行尾（执行中命令）"),
+        "Delete To Line Start Within An Executing Command" => t!(app, "Delete To Line Start Within An Executing Command", "删除至行首（执行中命令）"),
+        "Delete Word Left" => t!(app, "Delete Word Left", "删除左侧单词"),
+        "Delete Word Left Within An Executing Command" => t!(app, "Delete Word Left Within An Executing Command", "删除左侧单词（执行中命令）"),
+        "Delete Word Right" => t!(app, "Delete Word Right", "删除右侧单词"),
+        "Edit Prompt" => t!(app, "Edit Prompt", "编辑提示"),
+        "Exit Vim Insert Mode" => t!(app, "Exit Vim Insert Mode", "退出 Vim 插入模式"),
+        "Expand Selected Blocks Above" => t!(app, "Expand Selected Blocks Above", "向上展开所选块"),
+        "Expand Selected Blocks Below" => t!(app, "Expand Selected Blocks Below", "向下展开所选块"),
+        "Export All Warp Drive Objects" => t!(app, "Export All Warp Drive Objects", "导出所有 Warp Drive 对象"),
+        "Find In Notebook" => t!(app, "Find In Notebook", "在笔记本中查找"),
+        "Find In Terminal" => t!(app, "Find In Terminal", "在终端中查找"),
+        "Find In Code Editor" => t!(app, "Find In Code Editor", "在代码编辑器中查找"),
+        "Find The Next Occurrence Of Your Search Query" => t!(app, "Find The Next Occurrence Of Your Search Query", "查找搜索词的下一处"),
+        "Find The Previous Occurrence Of Your Search Query" => t!(app, "Find The Previous Occurrence Of Your Search Query", "查找搜索词的上一处"),
+        "Find Within Selected Block" => t!(app, "Find Within Selected Block", "在所选块内查找"),
+        "Focus Terminal Input From Warp Ai" => t!(app, "Focus Terminal Input From Warp Ai", "从 Warp AI 聚焦终端输入"),
+        "Focus Terminal Input From File" => t!(app, "Focus Terminal Input From File", "从文件聚焦终端输入"),
+        "Focus Terminal Input From Notebook" => t!(app, "Focus Terminal Input From Notebook", "从笔记本聚焦终端输入"),
+        "Focus Next Match" => t!(app, "Focus Next Match", "聚焦下一匹配"),
+        "Focus Previous Match" => t!(app, "Focus Previous Match", "聚焦上一匹配"),
+        "Focus Terminal Input" => t!(app, "Focus Terminal Input", "聚焦终端输入"),
+        "Fold" => t!(app, "Fold", "折叠"),
+        "Fold Selected Ranges" => t!(app, "Fold Selected Ranges", "折叠所选范围"),
+        "Go To Line" => t!(app, "Go To Line", "跳转到行"),
+        "History Search" => t!(app, "History Search", "历史搜索"),
+        "Home" => t!(app, "Home", "行首"),
+        "Import External Settings" => t!(app, "Import External Settings", "导入外部设置"),
+        "Import To Personal Drive" => t!(app, "Import To Personal Drive", "导入到个人 Drive"),
+        "Import To Team Drive" => t!(app, "Import To Team Drive", "导入到团队 Drive"),
+        "Increase Font Size" => t!(app, "Increase Font Size", "增大字体大小"),
+        "Increase Notebook Font Size" => t!(app, "Increase Notebook Font Size", "增大笔记本字体"),
+        "Increase Zoom Level" => t!(app, "Increase Zoom Level", "提高缩放级别"),
+        "Insert Command Correction" => t!(app, "Insert Command Correction", "插入命令更正"),
+        "Insert Last Word Of Previous Command" => t!(app, "Insert Last Word Of Previous Command", "插入上一命令的最后一个词"),
+        "Insert Newline" => t!(app, "Insert Newline", "插入换行"),
+        "Insert Non-Expanding Space" => t!(app, "Insert Non-Expanding Space", "插入不扩展空格"),
+        "Inspect Command" => t!(app, "Inspect Command", "检查命令"),
+        "Install Oz Cli Command" => t!(app, "Install Oz Cli Command", "安装 Oz CLI 命令"),
+        "Install Update And Relaunch" => t!(app, "Install Update And Relaunch", "安装更新并重启"),
+        "Invite People..." => t!(app, "Invite People...", "邀请成员…"),
+        "Join Our Slack Community (Opens External Link)" => t!(app, "Join Our Slack Community (Opens External Link)", "加入 Slack 社区（外部链接）"),
+        "Jump To Latest Agent Task" => t!(app, "Jump To Latest Agent Task", "跳转到最新代理任务"),
+        "Launch Configuration Palette" => t!(app, "Launch Configuration Palette", "启动配置面板"),
+        "Log Out" => t!(app, "Log Out", "退出登录"),
+        "Move Backward One Subword" => t!(app, "Move Backward One Subword", "向后移动一个子词"),
+        "Move Backward One Word" => t!(app, "Move Backward One Word", "向后移动一个单词"),
+        "Move Forward One Subword" => t!(app, "Move Forward One Subword", "向前移动一个子词"),
+        "Move Forward One Word" => t!(app, "Move Forward One Word", "向前移动一个单词"),
+        "Move Cursor Down" => t!(app, "Move Cursor Down", "光标下移"),
+        "Move Cursor Left" => t!(app, "Move Cursor Left", "光标左移"),
+        "Move Cursor Right" => t!(app, "Move Cursor Right", "光标右移"),
+        "Move Cursor Up" => t!(app, "Move Cursor Up", "光标上移"),
+        "Move Cursor To The Bottom" => t!(app, "Move Cursor To The Bottom", "光标移至底部"),
+        "Move Cursor To The Top" => t!(app, "Move Cursor To The Top", "光标移至顶部"),
+        "Move Cursor End Within An Executing Command" => t!(app, "Move Cursor End Within An Executing Command", "光标移至行尾（执行中命令）"),
+        "Move Cursor Home Within An Executing Command" => t!(app, "Move Cursor Home Within An Executing Command", "光标移至行首（执行中命令）"),
+        "Move Cursor One Word To The Left Within An Executing Command" => t!(app, "Move Cursor One Word To The Left Within An Executing Command", "光标左移一词（执行中命令）"),
+        "Move Cursor One Word To The Right Within An Executing Command" => t!(app, "Move Cursor One Word To The Right Within An Executing Command", "光标右移一词（执行中命令）"),
+        "Move Tab Left" => t!(app, "Move Tab Left", "标签页左移"),
+        "Move Tab Right" => t!(app, "Move Tab Right", "标签页右移"),
+        "Move To End Of Line" => t!(app, "Move To End Of Line", "移至行尾"),
+        "Move To End Of Paragraph" => t!(app, "Move To End Of Paragraph", "移至段落末尾"),
+        "Move To Line End" => t!(app, "Move To Line End", "移至行尾"),
+        "Move To Line Start" => t!(app, "Move To Line Start", "移至行首"),
+        "Move To Start Of Line" => t!(app, "Move To Start Of Line", "移至行首"),
+        "Move To The End Of The Buffer" => t!(app, "Move To The End Of The Buffer", "移至缓冲区末尾"),
+        "Move To The End Of The Paragraph" => t!(app, "Move To The End Of The Paragraph", "移至段落末尾"),
+        "Move To The Start Of The Buffer" => t!(app, "Move To The Start Of The Buffer", "移至缓冲区开头"),
+        "Move To The Start Of The Paragraph" => t!(app, "Move To The Start Of The Paragraph", "移至段落开头"),
+        "New Agent Tab" => t!(app, "New Agent Tab", "新建代理标签页"),
+        "New Cloud Agent Tab" => t!(app, "New Cloud Agent Tab", "新建云代理标签页"),
+        "New File" => t!(app, "New File", "新建文件"),
+        "New Personal Environment Variables" => t!(app, "New Personal Environment Variables", "新建个人环境变量"),
+        "New Team Environment Variables" => t!(app, "New Team Environment Variables", "新建团队环境变量"),
+        "New Terminal Tab" => t!(app, "New Terminal Tab", "新建终端标签页"),
+        "Open Ai Command Suggestions" => t!(app, "Open Ai Command Suggestions", "打开 AI 命令建议"),
+        "Open Block Context Menu" => t!(app, "Open Block Context Menu", "打开块上下文菜单"),
+        "Open Keybindings Editor" => t!(app, "Open Keybindings Editor", "打开快捷键编辑器"),
+        "Open Left Panel" => t!(app, "Open Left Panel", "打开左侧面板"),
+        "Open Repository" => t!(app, "Open Repository", "打开仓库"),
+        "Open Settings File" => t!(app, "Open Settings File", "打开设置文件"),
+        "Open Settings: Account" => t!(app, "Open Settings: Account", "打开设置：账户"),
+        "Open Settings: Features" => t!(app, "Open Settings: Features", "打开设置：功能"),
+        "Open Theme Picker" => t!(app, "Open Theme Picker", "打开主题选择器"),
+        "Paste" => t!(app, "Paste", "粘贴"),
+        "Quit Warp" => t!(app, "Quit Warp", "退出 Warp"),
+        "Reinput Selected Commands" => t!(app, "Reinput Selected Commands", "重新输入所选命令"),
+        "Reinput Selected Commands As Root" => t!(app, "Reinput Selected Commands As Root", "以 root 身份重新输入所选命令"),
+        "Reload File" => t!(app, "Reload File", "重新加载文件"),
+        "Remove The Previous Character" => t!(app, "Remove The Previous Character", "删除前一个字符"),
+        "Rename The Current Tab" => t!(app, "Rename The Current Tab", "重命名当前标签页"),
+        "Reopen Closed Session" => t!(app, "Reopen Closed Session", "重新打开已关闭会话"),
+        "Reset Font Size To Default" => t!(app, "Reset Font Size To Default", "重置字体大小为默认值"),
+        "Reset Notebook Font Size" => t!(app, "Reset Notebook Font Size", "重置笔记本字体大小"),
+        "Reset Zoom Level To Default" => t!(app, "Reset Zoom Level To Default", "重置缩放级别为默认值"),
+        "Resize Pane > Move Divider Down" => t!(app, "Resize Pane > Move Divider Down", "调整面板 > 分隔线下移"),
+        "Resize Pane > Move Divider Left" => t!(app, "Resize Pane > Move Divider Left", "调整面板 > 分隔线左移"),
+        "Resize Pane > Move Divider Right" => t!(app, "Resize Pane > Move Divider Right", "调整面板 > 分隔线右移"),
+        "Resize Pane > Move Divider Up" => t!(app, "Resize Pane > Move Divider Up", "调整面板 > 分隔线上移"),
+        "Restart Warp Ai" => t!(app, "Restart Warp Ai", "重启 Warp AI"),
+        "Run Selected Commands" => t!(app, "Run Selected Commands", "运行所选命令"),
+        "Save All Unsaved Files In Code Review" => t!(app, "Save All Unsaved Files In Code Review", "保存代码审查中所有未保存文件"),
+        "Save File As" => t!(app, "Save File As", "另存为"),
+        "Save New Launch Configuration" => t!(app, "Save New Launch Configuration", "保存新启动配置"),
+        "Save Workflow" => t!(app, "Save Workflow", "保存工作流"),
+        "Scroll Terminal Output Down One Line" => t!(app, "Scroll Terminal Output Down One Line", "终端输出下滚一行"),
+        "Scroll Terminal Output Up One Line" => t!(app, "Scroll Terminal Output Up One Line", "终端输出上滚一行"),
+        "Scroll To Bottom Of Selected Block" => t!(app, "Scroll To Bottom Of Selected Block", "滚动至所选块底部"),
+        "Scroll To Top Of Selected Block" => t!(app, "Scroll To Top Of Selected Block", "滚动至所选块顶部"),
+        "Search Warp Drive" => t!(app, "Search Warp Drive", "搜索 Warp Drive"),
+        "Select All" => t!(app, "Select All", "全选"),
+        "Select All Blocks" => t!(app, "Select All Blocks", "选中所有块"),
+        "Select And Move To The Bottom" => t!(app, "Select And Move To The Bottom", "选中并移至底部"),
+        "Select And Move To The Top" => t!(app, "Select And Move To The Top", "选中并移至顶部"),
+        "Select Down" => t!(app, "Select Down", "向下选择"),
+        "Select Next Command" => t!(app, "Select Next Command", "选择下一个命令"),
+        "Select One Character To The Left" => t!(app, "Select One Character To The Left", "向左选择一个字符"),
+        "Select One Character To The Right" => t!(app, "Select One Character To The Right", "向右选择一个字符"),
+        "Select One Subword To The Left" => t!(app, "Select One Subword To The Left", "向左选择一个子词"),
+        "Select One Subword To The Right" => t!(app, "Select One Subword To The Right", "向右选择一个子词"),
+        "Select One Word To The Left" => t!(app, "Select One Word To The Left", "向左选择一个单词"),
+        "Select One Word To The Right" => t!(app, "Select One Word To The Right", "向右选择一个单词"),
+        "Select Previous Command" => t!(app, "Select Previous Command", "选择上一个命令"),
+        "Select Shell Command At Cursor" => t!(app, "Select Shell Command At Cursor", "选中光标处 Shell 命令"),
+        "Select The Closest Bookmark Down" => t!(app, "Select The Closest Bookmark Down", "选中向下最近书签"),
+        "Select The Closest Bookmark Up" => t!(app, "Select The Closest Bookmark Up", "选中向上最近书签"),
+        "Select To End Of Line" => t!(app, "Select To End Of Line", "选中至行尾"),
+        "Select To End Of Paragraph" => t!(app, "Select To End Of Paragraph", "选中至段落末尾"),
+        "Select To Line End" => t!(app, "Select To Line End", "选中至行尾"),
+        "Select To Line Start" => t!(app, "Select To Line Start", "选中至行首"),
+        "Select To Start Of Line" => t!(app, "Select To Start Of Line", "选中至行首"),
+        "Select To Start Of Paragraph" => t!(app, "Select To Start Of Paragraph", "选中至段落开头"),
+        "Select Up" => t!(app, "Select Up", "向上选择"),
+        "Send Feedback (Opens External Link)" => t!(app, "Send Feedback (Opens External Link)", "发送反馈（外部链接）"),
+        "Setup Guide" => t!(app, "Setup Guide", "设置指南"),
+        "Share Current Session" => t!(app, "Share Current Session", "共享当前会话"),
+        "Share Pane" => t!(app, "Share Pane", "共享面板"),
+        "Share Selected Block" => t!(app, "Share Selected Block", "共享所选块"),
+        "Show Warp Network Log" => t!(app, "Show Warp Network Log", "显示 Warp 网络日志"),
+        "Show Find Bar In Code Review" => t!(app, "Show Find Bar In Code Review", "在代码审查中显示查找栏"),
+        "Split Pane Down" => t!(app, "Split Pane Down", "向下分割面板"),
+        "Split Pane Left" => t!(app, "Split Pane Left", "向左分割面板"),
+        "Split Pane Right" => t!(app, "Split Pane Right", "向右分割面板"),
+        "Split Pane Up" => t!(app, "Split Pane Up", "向上分割面板"),
+        "Stop Synchronizing Any Panes" => t!(app, "Stop Synchronizing Any Panes", "停止同步所有面板"),
+        "Stop Sharing Current Session" => t!(app, "Stop Sharing Current Session", "停止共享当前会话"),
+        "Switch Focus To Left Panel" => t!(app, "Switch Focus To Left Panel", "切换焦点至左侧面板"),
+        "Switch Focus To Right Panel" => t!(app, "Switch Focus To Right Panel", "切换焦点至右侧面板"),
+        "Switch Panes Down" => t!(app, "Switch Panes Down", "切换到下方面板"),
+        "Switch Panes Left" => t!(app, "Switch Panes Left", "切换到左侧面板"),
+        "Switch Panes Right" => t!(app, "Switch Panes Right", "切换到右侧面板"),
+        "Switch Panes Up" => t!(app, "Switch Panes Up", "切换到上方面板"),
+        "Switch To 1St Tab" => t!(app, "Switch To 1St Tab", "切换到第 1 个标签页"),
+        "Switch To 2Nd Tab" => t!(app, "Switch To 2Nd Tab", "切换到第 2 个标签页"),
+        "Switch To 3Rd Tab" => t!(app, "Switch To 3Rd Tab", "切换到第 3 个标签页"),
+        "Switch To 4Th Tab" => t!(app, "Switch To 4Th Tab", "切换到第 4 个标签页"),
+        "Switch To 5Th Tab" => t!(app, "Switch To 5Th Tab", "切换到第 5 个标签页"),
+        "Switch To 6Th Tab" => t!(app, "Switch To 6Th Tab", "切换到第 6 个标签页"),
+        "Switch To 7Th Tab" => t!(app, "Switch To 7Th Tab", "切换到第 7 个标签页"),
+        "Switch To 8Th Tab" => t!(app, "Switch To 8Th Tab", "切换到第 8 个标签页"),
+        "Switch To Last Tab" => t!(app, "Switch To Last Tab", "切换到最后标签页"),
+        "Switch To Next Tab" => t!(app, "Switch To Next Tab", "切换到下一标签页"),
+        "Switch To Previous Tab" => t!(app, "Switch To Previous Tab", "切换到上一标签页"),
+        "Terminal Session" => t!(app, "Terminal Session", "终端会话"),
+        "Toggle Agent Conversation List View" => t!(app, "Toggle Agent Conversation List View", "切换代理对话列表视图"),
+        "Toggle Case-Sensitive Search" => t!(app, "Toggle Case-Sensitive Search", "切换大小写敏感搜索"),
+        "Toggle Comment" => t!(app, "Toggle Comment", "切换注释"),
+        "Toggle Fullscreen" => t!(app, "Toggle Fullscreen", "切换全屏"),
+        "Toggle Inline Code Styling" => t!(app, "Toggle Inline Code Styling", "切换行内代码样式"),
+        "Toggle Keyboard Shortcuts" => t!(app, "Toggle Keyboard Shortcuts", "切换键盘快捷键"),
+        "Toggle Maximize Active Pane" => t!(app, "Toggle Maximize Active Pane", "切换最大化活动面板"),
+        "Toggle Maximize Code Review Panel" => t!(app, "Toggle Maximize Code Review Panel", "切换最大化代码审查面板"),
+        "Toggle Mouse Reporting" => t!(app, "Toggle Mouse Reporting", "切换鼠标报告"),
+        "Toggle Pty Recording For Session" => t!(app, "Toggle Pty Recording For Session", "切换会话 PTY 录制"),
+        "Toggle Regular Expression Search" => t!(app, "Toggle Regular Expression Search", "切换正则表达式搜索"),
+        "Toggle Resource Center" => t!(app, "Toggle Resource Center", "切换资源中心"),
+        "Toggle Rich-Text Debug Mode" => t!(app, "Toggle Rich-Text Debug Mode", "切换富文本调试模式"),
+        "Toggle Sticky Command Header" => t!(app, "Toggle Sticky Command Header", "切换固定命令标题"),
+        "Toggle Sticky Command Header In Active Pane" => t!(app, "Toggle Sticky Command Header In Active Pane", "切换活动面板固定命令标题"),
+        "Toggle Strikethrough Styling" => t!(app, "Toggle Strikethrough Styling", "切换删除线样式"),
+        "Toggle Synchronizing All Panes In All Tabs" => t!(app, "Toggle Synchronizing All Panes In All Tabs", "切换所有标签页同步"),
+        "Toggle Synchronizing All Panes In Current Tab" => t!(app, "Toggle Synchronizing All Panes In Current Tab", "切换当前标签页面板同步"),
+        "Toggle Team Workflows Modal" => t!(app, "Toggle Team Workflows Modal", "切换团队工作流模态框"),
+        "Toggle The Agent Management View" => t!(app, "Toggle The Agent Management View", "切换代理管理视图"),
+        "Toggle Underline Styling" => t!(app, "Toggle Underline Styling", "切换下划线样式"),
+        "Toggle Vertical Tabs Panel" => t!(app, "Toggle Vertical Tabs Panel", "切换垂直标签面板"),
+        "Toggle Warp Ai" => t!(app, "Toggle Warp Ai", "切换 Warp AI"),
+        "Toggle Warp Drive" => t!(app, "Toggle Warp Drive", "切换 Warp Drive"),
+        "Toggle Code Review" => t!(app, "Toggle Code Review", "切换代码审查"),
+        "Toggle Command Palette" => t!(app, "Toggle Command Palette", "切换命令面板"),
+        "Toggle Files Palette" => t!(app, "Toggle Files Palette", "切换文件面板"),
+        "Toggle Navigation Palette" => t!(app, "Toggle Navigation Palette", "切换导航面板"),
+        "Toggle Project Explorer" => t!(app, "Toggle Project Explorer", "切换项目资源管理器"),
+        "Trigger Auto Detection" => t!(app, "Trigger Auto Detection", "触发自动检测"),
+        "Turn Notifications Off" => t!(app, "Turn Notifications Off", "关闭通知"),
+        "Turn Notifications On" => t!(app, "Turn Notifications On", "开启通知"),
+        "Unfold" => t!(app, "Unfold", "展开"),
+        "Uninstall Oz Cli Command" => t!(app, "Uninstall Oz Cli Command", "卸载 Oz CLI 命令"),
+        "View Warp Logs" => t!(app, "View Warp Logs", "查看 Warp 日志"),
+        "View Latest Changelog" => t!(app, "View Latest Changelog", "查看最新更新日志"),
+        "Warpify Ssh Session" => t!(app, "Warpify Ssh Session", "Warpify SSH 会话"),
+        "Warpify Subshell" => t!(app, "Warpify Subshell", "Warpify 子 Shell"),
+        "Workflows" => t!(app, "Workflows", "工作流"),
+        // Settings shortcuts
+        "Open Settings" => t!(app, "Open Settings", "打开设置"),
+        "Open Settings: Ai" => t!(app, "Open Settings: Ai", "打开设置：AI"),
+        "Open Settings: About" => t!(app, "Open Settings: About", "打开设置：关于"),
+        "Open Settings: Appearance" => t!(app, "Open Settings: Appearance", "打开设置：外观"),
+        "Open Settings: Billing And Usage" => t!(app, "Open Settings: Billing And Usage", "打开设置：账单与用量"),
+        "Open Settings: Code" => t!(app, "Open Settings: Code", "打开设置：代码"),
+        "Open Settings: Environments" => t!(app, "Open Settings: Environments", "打开设置：环境"),
+        "Open Settings: Keyboard Shortcuts" => t!(app, "Open Settings: Keyboard Shortcuts", "打开设置：键盘快捷键"),
+        "Open Settings: Mcp Servers" => t!(app, "Open Settings: Mcp Servers", "打开设置：MCP 服务器"),
+        "Open Settings: Privacy" => t!(app, "Open Settings: Privacy", "打开设置：隐私"),
+        "Open Settings: Referrals" => t!(app, "Open Settings: Referrals", "打开设置：推荐"),
+        "Open Settings: Shared Blocks" => t!(app, "Open Settings: Shared Blocks", "打开设置：共享块"),
+        "Open Settings: Teams" => t!(app, "Open Settings: Teams", "打开设置：团队"),
+        "Open Settings: Warpify" => t!(app, "Open Settings: Warpify", "打开设置：Warpify"),
+        "Open Mcp Servers" => t!(app, "Open Mcp Servers", "打开 MCP 服务器"),
+        "Open Ai Rules" => t!(app, "Open Ai Rules", "打开 AI 规则"),
+        "Open Global Search" => t!(app, "Open Global Search", "打开全局搜索"),
+        // Additional
+        "Add Current Folder As Project" => t!(app, "Add Current Folder As Project", "将当前文件夹添加为项目"),
+        "Initiate Project For Warp" => t!(app, "Initiate Project For Warp", "为 Warp 初始化项目"),
+        "Load Agent Mode Conversation (From Debug Link In Clipboard)" => t!(app, "Load Agent Mode Conversation (From Debug Link In Clipboard)", "从剪贴板调试链接加载代理对话"),
+        _ => name,
+    }
+}
+
 impl KeybindingRow {
     fn render(
         &self,
@@ -216,6 +512,7 @@ impl KeybindingRow {
         is_disabled: bool,
         has_conflicting_binding: bool,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let inner = if !is_disabled {
             let mut row = Hoverable::new(
@@ -229,9 +526,9 @@ impl KeybindingRow {
                         None
                     };
                     if self.editor_open {
-                        self.render_clicked(index, has_conflicting_binding, appearance)
+                        self.render_clicked(index, has_conflicting_binding, appearance, app)
                     } else {
-                        self.render_summary(None, background, has_conflicting_binding, appearance)
+                        self.render_summary(None, background, has_conflicting_binding, appearance, app)
                     }
                 },
             );
@@ -255,6 +552,7 @@ impl KeybindingRow {
                 background,
                 has_conflicting_binding,
                 appearance,
+                app,
             ))
             .with_foreground_overlay(appearance.theme().keybinding_row_overlay())
             .finish()
@@ -273,6 +571,7 @@ impl KeybindingRow {
         background: Option<Fill>,
         has_conflicting_binding: bool,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let binding = &self.binding;
         let keystroke = match binding.trigger.clone() {
@@ -293,7 +592,7 @@ impl KeybindingRow {
         };
         let element = render_columns(
             render_text(
-                binding.description.in_context(DescriptionContext::Default),
+                translate_command_name(binding.description.in_context(DescriptionContext::Default), app),
                 None,
                 appearance,
             ),
@@ -322,10 +621,11 @@ impl KeybindingRow {
         index: usize,
         has_conflicting_binding: bool,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let conflict_warning = if has_conflicting_binding {
             render_text(
-                SHORTCUT_CONFLICT_WARNING_TEXT,
+                t!(app, "This shortcut conflicts with other keybinds", "该快捷键与其他绑定冲突"),
                 Some(UiComponentStyles {
                     font_weight: Some(Weight::Bold),
                     ..Default::default()
@@ -350,6 +650,7 @@ impl KeybindingRow {
                     Some(appearance.theme().accent().into()),
                     has_conflicting_binding,
                     appearance,
+                    app,
                 ))
                 .with_child(
                     Container::new(new_shortcut_element)
@@ -980,10 +1281,11 @@ impl KeybindingsWidget {
         &self,
         bindings: Option<&Vec<CommandBinding>>,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let font_size = appearance.ui_font_size() + FONT_DELTA;
         let mut description = Flex::column().with_child(render_text(
-            "Add your own custom keybindings to existing actions below.",
+            t!(app, "Add your own custom keybindings to existing actions below.", "在下方为现有操作添加自定义键盘绑定。"),
             Some(UiComponentStyles {
                 font_size: Some(font_size),
                 font_color: Some(
@@ -1038,7 +1340,7 @@ impl KeybindingsWidget {
                     )
                     .with_child(
                         Container::new(render_text(
-                            "to reference these keybindings in a side pane at anytime.",
+                            t!(app, "to reference these keybindings in a side pane at anytime.", "随时在侧边栏中查阅这些键盘绑定。"),
                             Some(UiComponentStyles {
                                 font_size: Some(font_size),
                                 font_color: Some(
@@ -1065,6 +1367,7 @@ impl KeybindingsWidget {
         &self,
         view: &KeybindingsView,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         if let Some(rows) = view.rows.as_ref() {
             let rows = Flex::column().with_children(
@@ -1076,6 +1379,7 @@ impl KeybindingsWidget {
                             view.modifying_row.is_some() && !row.editor_open,
                             view.conflict_map.has_conflict(&row.binding.trigger),
                             appearance,
+                            app,
                         )
                     })
                     .collect::<Vec<_>>(),
@@ -1126,17 +1430,17 @@ impl SettingsWidget for KeybindingsWidget {
 
         let subheader = render_sub_header(
             appearance,
-            "Configure keyboard shortcuts",
+            t!(app, "Configure keyboard shortcuts", "配置键盘快捷键"),
             local_only_icon_state,
         );
-        let description = self.render_description(view.bindings.as_ref(), appearance);
+        let description = self.render_description(view.bindings.as_ref(), appearance, app);
 
         Flex::column()
             .with_child(subheader)
             .with_child(description)
             .with_child(render_columns(
                 Container::new(render_text(
-                    "Command",
+                    t!(app, "Command", "命令"),
                     Some(UiComponentStyles {
                         font_size: Some(appearance.ui_font_size() + FONT_DELTA),
                         ..Default::default()
@@ -1157,7 +1461,7 @@ impl SettingsWidget for KeybindingsWidget {
                     left: 0.,
                 }),
             ))
-            .with_child(Shrinkable::new(1., self.render_binding_list(view, appearance)).finish())
+            .with_child(Shrinkable::new(1., self.render_binding_list(view, appearance, app)).finish())
             .finish()
     }
 }

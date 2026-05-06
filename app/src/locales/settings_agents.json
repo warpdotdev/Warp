@@ -1,0 +1,582 @@
+{
+  "settings.agents.encountered_an_incorrect_input_detection": {
+    "en": " Encountered an incorrect input detection? ",
+    "zh": " 检测结果有误？"
+  },
+  "settings.agents.api_keys": {
+    "en": "API Keys",
+    "zh": "API 密钥"
+  },
+  "settings.agents.aws_bedrock": {
+    "en": "AWS Bedrock",
+    "zh": "AWS Bedrock"
+  },
+  "settings.agents.aws_profile": {
+    "en": "AWS Profile",
+    "zh": "AWS 配置文件"
+  },
+  "settings.agents.active_ai": {
+    "en": "Active AI",
+    "zh": "主动 AI"
+  },
+  "settings.agents.add_profile": {
+    "en": "Add Profile",
+    "zh": "添加配置文件"
+  },
+  "settings.agents.add_a_server": {
+    "en": "Add a server",
+    "zh": "添加服务器"
+  },
+  "settings.agents.add_regex_patterns_to_show_the_coding_agent_toolbar_for_matching_commands": {
+    "en": "Add regex patterns to show the coding agent toolbar for matching commands.",
+    "zh": "添加正则表达式以在匹配命令时显示代码代理工具栏。"
+  },
+  "settings.agents.agent_attribution": {
+    "en": "Agent Attribution",
+    "zh": "代理归因"
+  },
+  "settings.agents.agent_decides": {
+    "en": "Agent decides",
+    "zh": "由代理决定"
+  },
+  "settings.agents.agent_thinking_display": {
+    "en": "Agent thinking display",
+    "zh": "代理思考过程显示"
+  },
+  "settings.agents.agents": {
+    "en": "Agents",
+    "zh": "代理"
+  },
+  "settings.agents.allow_in_specific_directories": {
+    "en": "Allow in specific directories",
+    "zh": "允许访问指定目录"
+  },
+  "settings.agents.allow_the_warp_agent_to_call_these_mcp_servers": {
+    "en": "Allow the Warp Agent to call these MCP servers.",
+    "zh": "允许代理调用这些 MCP 服务器。"
+  },
+  "settings.agents.allow_the_warp_agent_to_generate_an_outline_of_your_codebase_that_can_be_used_for_context_no_code_is_ever_stored_on_our_servers": {
+    "en": "Allow the Warp Agent to generate an outline of your codebase that can be used for context. No code is ever stored on our servers. ",
+    "zh": "允许代理生成代码库概览用于上下文分析。代码不会存储在服务器上。"
+  },
+  "settings.agents.always_allow": {
+    "en": "Always allow",
+    "zh": "始终允许"
+  },
+  "settings.agents.always_ask": {
+    "en": "Always ask",
+    "zh": "始终询问"
+  },
+  "settings.agents.anthropic_api_key": {
+    "en": "Anthropic API Key",
+    "zh": "Anthropic API 密钥"
+  },
+  "settings.agents.apply_code_diffs": {
+    "en": "Apply code diffs:",
+    "zh": "应用代码差异："
+  },
+  "settings.agents.ask_on_first_write": {
+    "en": "Ask on first write",
+    "zh": "首次写入时询问"
+  },
+  "settings.agents.ask_questions": {
+    "en": "Ask questions:",
+    "zh": "提问："
+  },
+  "settings.agents.ask_unless_auto_approve": {
+    "en": "Ask unless auto-approve",
+    "zh": "除非自动审批否则询问"
+  },
+  "settings.agents.auto_dismiss_rich_input_after_prompt_submission": {
+    "en": "Auto dismiss Rich Input after prompt submission",
+    "zh": "提交提示后自动关闭富输入框"
+  },
+  "settings.agents.auto_open_rich_input_when_a_coding_agent_session_starts": {
+    "en": "Auto open Rich Input when a coding agent session starts",
+    "zh": "代码代理会话启动时自动打开富输入框"
+  },
+  "settings.agents.auto_show_hide_rich_input_based_on_agent_status": {
+    "en": "Auto show/hide Rich Input based on agent status",
+    "zh": "根据代理状态自动显示/隐藏富输入框"
+  },
+  "settings.agents.auto_spawn_servers_from_third_party_agents": {
+    "en": "Auto-spawn servers from third-party agents",
+    "zh": "从第三方代理自动启动服务器"
+  },
+  "settings.agents.auto_sync_plans_to_warp_drive": {
+    "en": "Auto-sync plans to Warp Drive:",
+    "zh": "自动同步计划到 Warp Drive："
+  },
+  "settings.agents.autodetect_agent_prompts_in_terminal_input": {
+    "en": "Autodetect agent prompts in terminal input",
+    "zh": "自动检测终端输入中的代理提示"
+  },
+  "settings.agents.autodetect_terminal_commands_in_agent_input": {
+    "en": "Autodetect terminal commands in agent input",
+    "zh": "自动检测代理输入中的终端命令"
+  },
+  "settings.agents.automatically_detect_and_spawn_mcp_servers_from_globally_scoped_third_party_ai_agent_configuration_files_e_g_in_your_home_directory_servers_detected_inside_a_repository_are_never_spawned_automatically_and_must_be_enabled_individually_from_the_mcp_settings_page": {
+    "en": "Automatically detect and spawn MCP servers from globally-scoped third-party AI agent configuration files (e.g. in your home directory). Servers detected inside a repository are never spawned automatically and must be enabled individually from the MCP settings page. ",
+    "zh": "自动检测并启动全局范围第三方 AI 代理配置文件（如主目录）中的 MCP 服务器。仓库内检测到的服务器不会自动启动，需在 MCP 设置页单独启用。"
+  },
+  "settings.agents.automatically_run_login_command": {
+    "en": "Automatically run login command",
+    "zh": "自动运行登录命令"
+  },
+  "settings.agents.base_model": {
+    "en": "Base model:",
+    "zh": "基础模型："
+  },
+  "settings.agents.call_mcp_servers": {
+    "en": "Call MCP servers:",
+    "zh": "调用 MCP 服务器："
+  },
+  "settings.agents.call_web_tools": {
+    "en": "Call web tools:",
+    "zh": "调用网络工具："
+  },
+  "settings.agents.codebase_context": {
+    "en": "Codebase Context",
+    "zh": "代码库上下文"
+  },
+  "settings.agents.command_allowlist": {
+    "en": "Command allowlist:",
+    "zh": "命令白名单："
+  },
+  "settings.agents.command_denylist": {
+    "en": "Command denylist:",
+    "zh": "命令黑名单："
+  },
+  "settings.agents.commands_listed_here_will_never_trigger_natural_language_detection": {
+    "en": "Commands listed here will never trigger natural language detection.",
+    "zh": "此处列出的命令不会触发自然语言检测。"
+  },
+  "settings.agents.commands_that_enable_the_toolbar": {
+    "en": "Commands that enable the toolbar",
+    "zh": "启用工具栏的命令"
+  },
+  "settings.agents.commands_comma_separated": {
+    "en": "Commands, comma separated",
+    "zh": "命令，以逗号分隔"
+  },
+  "settings.agents.commit_pull_request_generation": {
+    "en": "Commit & Pull Request Generation",
+    "zh": "提交与 PR 生成"
+  },
+  "settings.agents.compare_plans": {
+    "en": "Compare plans",
+    "zh": "比较方案"
+  },
+  "settings.agents.computer_use_in_cloud_agents": {
+    "en": "Computer use in Cloud Agents",
+    "zh": "云代理中的计算机使用"
+  },
+  "settings.agents.computer_use": {
+    "en": "Computer use:",
+    "zh": "计算机使用："
+  },
+  "settings.agents.contact_support": {
+    "en": "Contact support",
+    "zh": "联系支持"
+  },
+  "settings.agents.context_window_tokens": {
+    "en": "Context window (tokens)",
+    "zh": "上下文窗口（Token 数）"
+  },
+  "settings.agents.controls_how_reasoning_thinking_traces_are_displayed": {
+    "en": "Controls how reasoning/thinking traces are displayed.",
+    "zh": "控制推理/思考轨迹的显示方式。"
+  },
+  "settings.agents.credits": {
+    "en": "Credits",
+    "zh": "积分"
+  },
+  "settings.agents.directory_allowlist": {
+    "en": "Directory allowlist:",
+    "zh": "目录白名单："
+  },
+  "settings.agents.edit": {
+    "en": "Edit",
+    "zh": "编辑"
+  },
+  "settings.agents.enable_agent_attribution": {
+    "en": "Enable agent attribution",
+    "zh": "启用代理归因"
+  },
+  "settings.agents.enable_computer_use_in_cloud_agent_conversations_started_from_the_warp_app": {
+    "en": "Enable computer use in cloud agent conversations started from the Warp app.",
+    "zh": "在 Warp 应用发起的云代理对话中启用计算机使用。"
+  },
+  "settings.agents.enable_multi_agent_orchestration_allowing_the_agent_to_spawn_and_coordinate_parallel_sub_agents": {
+    "en": "Enable multi-agent orchestration, allowing the agent to spawn and coordinate parallel sub-agents.",
+    "zh": "启用多代理编排，允许代理生成并协调并行子代理。"
+  },
+  "settings.agents.enabling_natural_language_detection_will_detect_when_natural_language_is_written_in_the_terminal_input_and_then_automatically_switch_to_agent_mode_for_ai_queries": {
+    "en": "Enabling natural language detection will detect when natural language is written in the terminal input, and then automatically switch to Agent Mode for AI queries.",
+    "zh": "启用自然语言检测后，将自动识别终端输入中的自然语言并切换至代理模式进行 AI 查询。"
+  },
+  "settings.agents.encountered_an_incorrect_detection": {
+    "en": "Encountered an incorrect detection? ",
+    "zh": "检测结果有误？"
+  },
+  "settings.agents.execute_commands": {
+    "en": "Execute commands:",
+    "zh": "执行命令："
+  },
+  "settings.agents.experimental": {
+    "en": "Experimental",
+    "zh": "实验性"
+  },
+  "settings.agents.full_terminal_use": {
+    "en": "Full terminal use:",
+    "zh": "完整终端使用："
+  },
+  "settings.agents.give_the_agent_file_access_to_certain_directories": {
+    "en": "Give the agent file access to certain directories.",
+    "zh": "授予代理对指定目录的文件访问权限。"
+  },
+  "settings.agents.google_api_key": {
+    "en": "Google API Key",
+    "zh": "Google API 密钥"
+  },
+  "settings.agents.hide_oz_changelog_in_new_agent_conversation_view": {
+    "en": "Hide Oz changelog in new agent conversation view",
+    "zh": "隐藏 Oz 更新日志"
+  },
+  "settings.agents.hide_agent_tips": {
+    "en": "Hide agent tips",
+    "zh": "隐藏代理提示"
+  },
+  "settings.agents.include_agent_executed_commands_in_history": {
+    "en": "Include agent-executed commands in history",
+    "zh": "在历史记录中包含代理执行的命令"
+  },
+  "settings.agents.input": {
+    "en": "Input",
+    "zh": "输入"
+  },
+  "settings.agents.interact_with_running_commands": {
+    "en": "Interact with running commands:",
+    "zh": "与运行命令交互："
+  },
+  "settings.agents.key_for_activating_voice_input": {
+    "en": "Key for Activating Voice Input",
+    "zh": "激活语音输入的按键"
+  },
+  "settings.agents.knowledge": {
+    "en": "Knowledge",
+    "zh": "知识库"
+  },
+  "settings.agents.learn_more": {
+    "en": "Learn more",
+    "zh": "了解更多"
+  },
+  "settings.agents.let_ai_generate_a_title_for_your_shared_block_based_on_the_command_and_output": {
+    "en": "Let AI generate a title for your shared block based on the command and output.",
+    "zh": "让 AI 根据命令及输出为共享块自动生成标题。"
+  },
+  "settings.agents.let_ai_generate_commit_messages_and_pull_request_titles_and_descriptions": {
+    "en": "Let AI generate commit messages and pull request titles and descriptions.",
+    "zh": "让 AI 自动生成提交消息及 PR 标题和描述。"
+  },
+  "settings.agents.let_ai_suggest_code_diffs_and_queries_as_inline_banners_in_the_blocklist_based_on_recent_commands_and_their_outputs": {
+    "en": "Let AI suggest code diffs and queries as inline banners in the blocklist, based on recent commands and their outputs.",
+    "zh": "让 AI 根据近期命令及输出，以内嵌横幅形式建议代码差异和查询。"
+  },
+  "settings.agents.let_ai_suggest_natural_language_autosuggestions_based_on_recent_commands_and_their_outputs": {
+    "en": "Let AI suggest natural language autosuggestions, based on recent commands and their outputs.",
+    "zh": "让 AI 根据近期命令及输出提供自然语言自动建议。"
+  },
+  "settings.agents.let_ai_suggest_natural_language_prompts_as_inline_banners_in_the_input_based_on_recent_commands_and_their_outputs": {
+    "en": "Let AI suggest natural language prompts, as inline banners in the input, based on recent commands and their outputs.",
+    "zh": "让 AI 根据近期命令及输出，以内嵌横幅形式建议自然语言提示。"
+  },
+  "settings.agents.let_ai_suggest_rules_to_save_based_on_your_interactions": {
+    "en": "Let AI suggest rules to save based on your interactions.",
+    "zh": "让 AI 根据您的交互建议要保存的规则。"
+  },
+  "settings.agents.let_ai_suggest_the_next_command_to_run_based_on_your_command_history_outputs_and_common_workflows": {
+    "en": "Let AI suggest the next command to run based on your command history, outputs, and common workflows.",
+    "zh": "让 AI 根据命令历史、输出及常用工作流建议下一条命令。"
+  },
+  "settings.agents.let_us_know": {
+    "en": "Let us know",
+    "zh": "告知我们"
+  },
+  "settings.agents.login_command": {
+    "en": "Login Command",
+    "zh": "登录命令"
+  },
+  "settings.agents.mcp_servers": {
+    "en": "MCP Servers",
+    "zh": "MCP 服务器"
+  },
+  "settings.agents.mcp_allowlist": {
+    "en": "MCP allowlist:",
+    "zh": "MCP 白名单："
+  },
+  "settings.agents.mcp_denylist": {
+    "en": "MCP denylist:",
+    "zh": "MCP 黑名单："
+  },
+  "settings.agents.models": {
+    "en": "Models",
+    "zh": "模型"
+  },
+  "settings.agents.manage_mcp_servers": {
+    "en": "Manage MCP servers",
+    "zh": "管理 MCP 服务器"
+  },
+  "settings.agents.manage_rules": {
+    "en": "Manage rules",
+    "zh": "管理规则"
+  },
+  "settings.agents.natural_language_autosuggestions": {
+    "en": "Natural Language Autosuggestions",
+    "zh": "自然语言自动建议"
+  },
+  "settings.agents.natural_language_denylist": {
+    "en": "Natural language denylist",
+    "zh": "自然语言黑名单"
+  },
+  "settings.agents.natural_language_detection": {
+    "en": "Natural language detection",
+    "zh": "自然语言检测"
+  },
+  "settings.agents.never": {
+    "en": "Never",
+    "zh": "从不"
+  },
+  "settings.agents.new_tab": {
+    "en": "New Tab",
+    "zh": "新标签页"
+  },
+  "settings.agents.next_command": {
+    "en": "Next Command",
+    "zh": "下一条命令"
+  },
+  "settings.agents.off": {
+    "en": "Off",
+    "zh": "关"
+  },
+  "settings.agents.on": {
+    "en": "On",
+    "zh": "开"
+  },
+  "settings.agents.openai_api_key": {
+    "en": "OpenAI API Key",
+    "zh": "OpenAI API 密钥"
+  },
+  "settings.agents.orchestration": {
+    "en": "Orchestration",
+    "zh": "编排"
+  },
+  "settings.agents.oz_can_add_attribution_to_commit_messages_and_pull_requests_it_creates": {
+    "en": "Oz can add attribution to commit messages and pull requests it creates",
+    "zh": "Oz 可在其创建的提交消息和 PR 中添加归因信息"
+  },
+  "settings.agents.permissions": {
+    "en": "Permissions",
+    "zh": "权限"
+  },
+  "settings.agents.preferred_layout_when_opening_existing_agent_conversations": {
+    "en": "Preferred layout when opening existing agent conversations",
+    "zh": "打开现有代理对话时的首选布局"
+  },
+  "settings.agents.press_and_hold_to_activate": {
+    "en": "Press and hold to activate.",
+    "zh": "按住以激活。"
+  },
+  "settings.agents.profiles": {
+    "en": "Profiles",
+    "zh": "配置文件"
+  },
+  "settings.agents.profiles_let_you_define_how_your_agent_operates_from_the_actions_it_can_take_and_when_it_needs_approval_to_the_models_it_uses_for_tasks_like_coding_and_planning_you_can_also_scope_them_to_individual_projects": {
+    "en": "Profiles let you define how your Agent operates — from the actions it can take and when it needs approval, to the models it uses for tasks like coding and planning. You can also scope them to individual projects.",
+    "zh": "配置文件让您定义代理的运作方式：包括可执行的操作、何时需要审批，以及用于编码和规划等任务的模型。还可以将其限定到特定项目。"
+  },
+  "settings.agents.prompt_suggestions": {
+    "en": "Prompt Suggestions",
+    "zh": "提示建议"
+  },
+  "settings.agents.read_files": {
+    "en": "Read files:",
+    "zh": "读取文件："
+  },
+  "settings.agents.read_only": {
+    "en": "Read only",
+    "zh": "只读"
+  },
+  "settings.agents.refresh": {
+    "en": "Refresh",
+    "zh": "刷新"
+  },
+  "settings.agents.regular_expressions_to_match_commands_that_can_be_automatically_executed_by_the_warp_agent": {
+    "en": "Regular expressions to match commands that can be automatically executed by the Warp Agent.",
+    "zh": "匹配代理可自动执行的命令的正则表达式。"
+  },
+  "settings.agents.regular_expressions_to_match_commands_that_the_warp_agent_should_always_ask_permission_to_execute": {
+    "en": "Regular expressions to match commands that the Warp Agent should always ask permission to execute.",
+    "zh": "匹配代理始终需要询问权限才能执行的命令的正则表达式。"
+  },
+  "settings.agents.requires_the_warp_plugin_for_your_coding_agent": {
+    "en": "Requires the Warp plugin for your coding agent",
+    "zh": "需要为代码代理安装 Warp 插件"
+  },
+  "settings.agents.restricted_due_to_billing_issue": {
+    "en": "Restricted due to billing issue",
+    "zh": "因账单问题受限"
+  },
+  "settings.agents.rules_help_the_warp_agent_follow_your_conventions_whether_for_codebases_or_specific_workflows": {
+    "en": "Rules help the Warp Agent follow your conventions, whether for codebases or specific workflows. ",
+    "zh": "规则帮助代理遵循您的开发规范，无论是代码库还是特定工作流。"
+  },
+  "settings.agents.see_supported_providers": {
+    "en": "See supported providers.",
+    "zh": "查看支持的服务商。"
+  },
+  "settings.agents.select_mcp_servers": {
+    "en": "Select MCP servers",
+    "zh": "选择 MCP 服务器"
+  },
+  "settings.agents.set_the_boundaries_for_how_your_agent_operates_choose_what_it_can_access_how_much_autonomy_it_has_and_when_it_must_ask_for_your_approval_you_can_also_fine_tune_behavior_around_natural_language_input_codebase_awareness_and_more": {
+    "en": "Set the boundaries for how your Agent operates. Choose what it can access, how much autonomy it has, and when it must ask for your approval. You can also fine-tune behavior around natural language input, codebase awareness, and more.",
+    "zh": "设置代理的操作边界：访问权限、自主程度以及需要确认的时机。也可微调自然语言输入和代码库感知等行为。"
+  },
+  "settings.agents.shared_block_title_generation": {
+    "en": "Shared Block Title Generation",
+    "zh": "共享块标题生成"
+  },
+  "settings.agents.show_oz_changelog_in_new_agent_conversation_view": {
+    "en": "Show Oz changelog in new agent conversation view",
+    "zh": "在新对话视图中显示 Oz 更新日志"
+  },
+  "settings.agents.show_oz_changelog_in_new_conversation_view": {
+    "en": "Show Oz changelog in new conversation view",
+    "zh": "在新对话中显示 Oz 更新日志"
+  },
+  "settings.agents.show_agent_tips": {
+    "en": "Show agent tips",
+    "zh": "显示代理提示"
+  },
+  "settings.agents.show_coding_agent_toolbar": {
+    "en": "Show coding agent toolbar",
+    "zh": "显示代码代理工具栏"
+  },
+  "settings.agents.show_conversation_history_in_tools_panel": {
+    "en": "Show conversation history in tools panel",
+    "zh": "在工具面板中显示对话历史"
+  },
+  "settings.agents.show_input_hint_text": {
+    "en": "Show input hint text",
+    "zh": "显示输入提示文本"
+  },
+  "settings.agents.show_model_picker_in_prompt": {
+    "en": "Show model picker in prompt",
+    "zh": "在提示中显示模型选择器"
+  },
+  "settings.agents.sign_up": {
+    "en": "Sign up",
+    "zh": "注册"
+  },
+  "settings.agents.some_of_your_permissions_are_managed_by_your_workspace": {
+    "en": "Some of your permissions are managed by your workspace.",
+    "zh": "部分权限由您的工作区管理。"
+  },
+  "settings.agents.split_pane": {
+    "en": "Split Pane",
+    "zh": "分屏"
+  },
+  "settings.agents.suggested_code_banners": {
+    "en": "Suggested Code Banners",
+    "zh": "代码建议横幅"
+  },
+  "settings.agents.suggested_rules": {
+    "en": "Suggested Rules",
+    "zh": "建议规则"
+  },
+  "settings.agents.supervised": {
+    "en": "Supervised",
+    "zh": "监督模式"
+  },
+  "settings.agents.the_warp_agent_can_leverage_your_warp_drive_contents_to_tailor_responses_to_your_personal_and_team_developer_workflows_and_environments_this_includes_any_workflows_notebooks_and_environment_variables": {
+    "en": "The Warp Agent can leverage your Warp Drive Contents to tailor responses to your personal and team developer workflows and environments. This includes any Workflows, Notebooks, and Environment Variables.",
+    "zh": "代理可利用 Warp Drive 内容（工作流、笔记本、环境变量）定制响应以匹配个人和团队开发环境。"
+  },
+  "settings.agents.the_warp_agent_will_always_ask_for_permission_before_calling_any_mcp_servers_on_this_list": {
+    "en": "The Warp Agent will always ask for permission before calling any MCP servers on this list.",
+    "zh": "代理调用此列表中的 MCP 服务器前始终会请求许可。"
+  },
+  "settings.agents.third_party_cli_agents": {
+    "en": "Third party CLI agents",
+    "zh": "第三方 CLI 代理"
+  },
+  "settings.agents.this_is_the_limit_of_ai_credits_for_your_account": {
+    "en": "This is the {} limit of AI credits for your account.",
+    "zh": "这是您账户 AI 积分的 {} 限额。"
+  },
+  "settings.agents.this_model_serves_as_the_primary_engine_behind_the_warp_agent_it_powers_most_interactions_and_invokes_other_models_for_tasks_like_planning_or_code_generation_when_necessary_warp_may_automatically_switch_to_alternate_models_based_on_model_availability_or_for_auxiliary_tasks_such_as_conversation_summarization": {
+    "en": "This model serves as the primary engine behind the Warp Agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization.",
+    "zh": "此模型是 Warp 代理的主引擎，支撑大多数交互，并在需要时调用其他模型完成规划或代码生成等任务。Warp 可能根据模型可用性或辅助任务自动切换模型。"
+  },
+  "settings.agents.to_use_ai_features_please_create_an_account": {
+    "en": "To use AI features, please create an account.",
+    "zh": "请先创建账户以使用 AI 功能。"
+  },
+  "settings.agents.toolbar_layout": {
+    "en": "Toolbar layout",
+    "zh": "工具栏布局"
+  },
+  "settings.agents.unlimited": {
+    "en": "Unlimited",
+    "zh": "无限制"
+  },
+  "settings.agents.upgrade": {
+    "en": "Upgrade",
+    "zh": "升级"
+  },
+  "settings.agents.usage": {
+    "en": "Usage",
+    "zh": "用量"
+  },
+  "settings.agents.use_aws_bedrock_credentials": {
+    "en": "Use AWS Bedrock credentials",
+    "zh": "使用 AWS Bedrock 凭证"
+  },
+  "settings.agents.use_your_own_api_keys_from_model_providers_for_the_warp_agent_to_use_api_keys_are_stored_locally_and_never_synced_to_the_cloud_using_auto_models_or_models_from_providers_you_have_not_provided_api_keys_for_will_consume_warp_credits": {
+    "en": "Use your own API keys from model providers for the Warp Agent to use. API keys are stored locally and never synced to the cloud. Using auto models or models from providers you have not provided API keys for will consume Warp credits.",
+    "zh": "使用来自模型提供商的自有 API 密钥。密钥仅本地存储，不同步至云端。使用自动模型或未提供密钥的提供商模型将消耗 Warp 积分。"
+  },
+  "settings.agents.voice_input": {
+    "en": "Voice Input",
+    "zh": "语音输入"
+  },
+  "settings.agents.warp_agent": {
+    "en": "Warp Agent",
+    "zh": "Warp 代理"
+  },
+  "settings.agents.warp_drive_as_agent_context": {
+    "en": "Warp Drive as agent context",
+    "zh": "将 Warp Drive 作为代理上下文"
+  },
+  "settings.agents.warp_credit_fallback": {
+    "en": "Warp credit fallback",
+    "zh": "Warp 积分回退"
+  },
+  "settings.agents.when_enabled_agent_requests_may_be_routed_to_one_of_warp_s_provided_models_in_the_event_of_an_error_warp_will_prioritize_using_your_api_keys_over_your_warp_credits": {
+    "en": "When enabled, agent requests may be routed to one of Warp's provided models in the event of an error. Warp will prioritize using your API keys over your Warp credits.",
+    "zh": "启用后，代理请求在出错时将路由到 Warp 提供的模型。Warp 优先使用您的 API 密钥而非 Warp 积分。"
+  },
+  "settings.agents.when_enabled_the_login_command_will_run_automatically_when_aws_bedrock_credentials_expire": {
+    "en": "When enabled, the login command will run automatically when AWS Bedrock credentials expire.",
+    "zh": "启用后，AWS Bedrock 凭证过期时将自动运行登录命令。"
+  },
+  "settings.agents.you_haven_t_added_any_mcp_servers_yet_once_you_do_you_ll_be_able_to_control_how_much_autonomy_the_warp_agent_has_when_interacting_with_them": {
+    "en": "You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Warp Agent has when interacting with them. ",
+    "zh": "尚未添加 MCP 服务器。添加后，您可以控制代理与其交互时的自主程度。"
+  },
+  "settings.agents.your_organization_disallows_ai_when_the_active_pane_contains_content_from_a_remote_session": {
+    "en": "Your organization disallows AI when the active pane contains content from a remote session",
+    "zh": "当前面板包含远程会话内容时，组织禁止使用 AI。"
+  }
+}

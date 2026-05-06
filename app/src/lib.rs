@@ -41,6 +41,7 @@ mod external_secrets;
 mod font_fallback;
 mod global_resource_handles;
 mod gpu_state;
+pub mod i18n;
 mod input_classifier;
 mod interval_timer;
 mod linear;

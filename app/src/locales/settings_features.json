@@ -1,0 +1,274 @@
+{
+  "settings.features.active_screen": {
+    "en": "Active Screen",
+    "zh": "活动屏幕"
+  },
+  "settings.features.after_all_tabs": {
+    "en": "After all tabs",
+    "zh": "在所有标签后"
+  },
+  "settings.features.after_current_tab": {
+    "en": "After current tab",
+    "zh": "在当前标签后"
+  },
+  "settings.features.auto_open_code_review_panel": {
+    "en": "Auto open code review panel",
+    "zh": "自动打开代码审查面板"
+  },
+  "settings.features.autocomplete_quotes_parentheses_and_brackets": {
+    "en": "Autocomplete quotes, parentheses, and brackets",
+    "zh": "自动补全引号、括号"
+  },
+  "settings.features.autohides_on_loss_of_keyboard_focus": {
+    "en": "Autohides on loss of keyboard focus",
+    "zh": "失去键盘焦点时自动隐藏"
+  },
+  "settings.features.automatically_open_links_in_desktop_app_whenever_possible": {
+    "en": "Automatically open links in desktop app whenever possible.",
+    "zh": "尽可能在桌面应用中打开链接。"
+  },
+  "settings.features.cancel": {
+    "en": "Cancel",
+    "zh": "取消"
+  },
+  "settings.features.choose_a_layout_to_open_files_in_warp": {
+    "en": "Choose a layout to open files in Warp",
+    "zh": "选择在 Warp 中打开文件的布局"
+  },
+  "settings.features.choose_an_editor_to_open_file_links": {
+    "en": "Choose an editor to open file links",
+    "zh": "选择打开文件链接的编辑器"
+  },
+  "settings.features.choose_an_editor_to_open_files_from_the_code_review_panel_project_explorer_and_global_search": {
+    "en": "Choose an editor to open files from the code review panel, project explorer, and global search",
+    "zh": "选择从代码审查面板、项目资源管理器和全局搜索打开文件的编辑器"
+  },
+  "settings.features.click_to_set_global_hotkey": {
+    "en": "Click to set global hotkey",
+    "zh": "点击设置全局热键"
+  },
+  "settings.features.confirm_before_closing_shared_session": {
+    "en": "Confirm before closing shared session",
+    "zh": "关闭共享会话前确认"
+  },
+  "settings.features.default": {
+    "en": "Default",
+    "zh": "默认"
+  },
+  "settings.features.default_app": {
+    "en": "Default App",
+    "zh": "默认应用"
+  },
+  "settings.features.default_mode_for_new_sessions": {
+    "en": "Default mode for new sessions",
+    "zh": "新会话默认模式"
+  },
+  "settings.features.default_shell_for_new_sessions": {
+    "en": "Default shell for new sessions",
+    "zh": "新会话默认 Shell"
+  },
+  "settings.features.edit_code_and_commands_with_vim_keybindings": {
+    "en": "Edit code and commands with Vim keybindings",
+    "zh": "使用 Vim 键绑定编辑代码和命令"
+  },
+  "settings.features.enable_context_menu_in_terminal_mode": {
+    "en": "Enable '@' context menu in terminal mode",
+    "zh": "在终端模式中启用 @ 上下文菜单"
+  },
+  "settings.features.error_underlining_for_commands": {
+    "en": "Error underlining for commands",
+    "zh": "为命令错误添加下划线"
+  },
+  "settings.features.expand_aliases_as_you_type": {
+    "en": "Expand aliases as you type",
+    "zh": "输入时展开别名"
+  },
+  "settings.features.group_files_into_single_editor_pane": {
+    "en": "Group files into single editor pane",
+    "zh": "将文件分组到单个编辑器面板"
+  },
+  "settings.features.height": {
+    "en": "Height %",
+    "zh": "高度 %"
+  },
+  "settings.features.keybinding": {
+    "en": "Keybinding",
+    "zh": "快捷键"
+  },
+  "settings.features.lines_scrolled_by_mouse_wheel_interval": {
+    "en": "Lines scrolled by mouse wheel interval",
+    "zh": "鼠标滚轮滚动行数"
+  },
+  "settings.features.make_warp_the_default_terminal": {
+    "en": "Make Warp the default terminal",
+    "zh": "将 Warp 设为默认终端"
+  },
+  "settings.features.maximum_rows_in_a_block": {
+    "en": "Maximum rows in a block",
+    "zh": "每块最大行数"
+  },
+  "settings.features.middle_click_to_paste": {
+    "en": "Middle-click to paste",
+    "zh": "中键点击粘贴"
+  },
+  "settings.features.new_tab": {
+    "en": "New Tab",
+    "zh": "新标签页"
+  },
+  "settings.features.new_tab_placement": {
+    "en": "New tab placement",
+    "zh": "新标签页位置"
+  },
+  "settings.features.not_supported_on_wayland": {
+    "en": "Not supported on Wayland. ",
+    "zh": "Wayland 不支持。"
+  },
+  "settings.features.open_markdown_files_in_warp_s_markdown_viewer_by_default": {
+    "en": "Open Markdown files in Warp's Markdown Viewer by default",
+    "zh": "默认在 Warp Markdown 查看器中打开 Markdown 文件"
+  },
+  "settings.features.open_completions_menu_as_you_type": {
+    "en": "Open completions menu as you type",
+    "zh": "输入时自动打开补全菜单"
+  },
+  "settings.features.open_links_in_desktop_app": {
+    "en": "Open links in desktop app",
+    "zh": "在桌面应用中打开链接"
+  },
+  "settings.features.pin_to_bottom": {
+    "en": "Pin to bottom",
+    "zh": "固定到底部"
+  },
+  "settings.features.pin_to_left": {
+    "en": "Pin to left",
+    "zh": "固定到左侧"
+  },
+  "settings.features.pin_to_right": {
+    "en": "Pin to right",
+    "zh": "固定到右侧"
+  },
+  "settings.features.pin_to_top": {
+    "en": "Pin to top",
+    "zh": "固定到顶部"
+  },
+  "settings.features.play_notification_sounds": {
+    "en": "Play notification sounds",
+    "zh": "播放通知音效"
+  },
+  "settings.features.press_new_keyboard_shortcut": {
+    "en": "Press new keyboard shortcut",
+    "zh": "按下新的键盘快捷键"
+  },
+  "settings.features.quit_when_all_windows_are_closed": {
+    "en": "Quit when all windows are closed",
+    "zh": "关闭所有窗口时退出"
+  },
+  "settings.features.receive_desktop_notifications_from_warp": {
+    "en": "Receive desktop notifications from Warp",
+    "zh": "接收 Warp 桌面通知"
+  },
+  "settings.features.restore_windows_tabs_and_panes_on_startup": {
+    "en": "Restore windows, tabs, and panes on startup",
+    "zh": "启动时恢复窗口、标签和面板"
+  },
+  "settings.features.save": {
+    "en": "Save",
+    "zh": "保存"
+  },
+  "settings.features.see_docs": {
+    "en": "See docs.",
+    "zh": "查看文档。"
+  },
+  "settings.features.set_unnamed_register_as_system_clipboard": {
+    "en": "Set unnamed register as system clipboard",
+    "zh": "将未命名寄存器设为系统剪贴板"
+  },
+  "settings.features.show_vim_status_bar": {
+    "en": "Show Vim status bar",
+    "zh": "显示 Vim 状态栏"
+  },
+  "settings.features.show_changelog_toast_after_updates": {
+    "en": "Show changelog toast after updates",
+    "zh": "更新后显示更新日志提示"
+  },
+  "settings.features.show_in_app_agent_notifications": {
+    "en": "Show in-app agent notifications",
+    "zh": "显示应用内代理通知"
+  },
+  "settings.features.show_sticky_command_header": {
+    "en": "Show sticky command header",
+    "zh": "显示固定命令标题栏"
+  },
+  "settings.features.show_tooltip_on_click_on_links": {
+    "en": "Show tooltip on click on links",
+    "zh": "点击链接时显示提示"
+  },
+  "settings.features.show_warning_before_quitting_logging_out": {
+    "en": "Show warning before quitting/logging out",
+    "zh": "退出/注销前显示警告"
+  },
+  "settings.features.split_pane": {
+    "en": "Split Pane",
+    "zh": "分屏"
+  },
+  "settings.features.start_warp_at_login": {
+    "en": "Start Warp at login",
+    "zh": "登录时启动 Warp"
+  },
+  "settings.features.start_warp_at_login_requires_macos_13": {
+    "en": "Start Warp at login (requires macOS 13+)",
+    "zh": "登录时启动 Warp（需要 macOS 13+）"
+  },
+  "settings.features.suggest_corrected_commands": {
+    "en": "Suggest corrected commands",
+    "zh": "建议纠正命令"
+  },
+  "settings.features.syntax_highlighting_for_commands": {
+    "en": "Syntax highlighting for commands",
+    "zh": "命令语法高亮"
+  },
+  "settings.features.tab_key_behavior": {
+    "en": "Tab key behavior",
+    "zh": "Tab 键行为"
+  },
+  "settings.features.toast_notifications_stay_visible_for": {
+    "en": "Toast notifications stay visible for",
+    "zh": "通知提示保持显示"
+  },
+  "settings.features.warp": {
+    "en": "Warp",
+    "zh": "Warp"
+  },
+  "settings.features.warp_ssh_wrapper": {
+    "en": "Warp SSH Wrapper",
+    "zh": "Warp SSH 封装"
+  },
+  "settings.features.when_a_command_takes_longer_than": {
+    "en": "When a command takes longer than",
+    "zh": "当命令执行时间超过"
+  },
+  "settings.features.when_this_setting_is_on_any_files_opened_in_the_same_tab_will_be_automatically_grouped_into_a_single_editor_pane": {
+    "en": "When this setting is on, any files opened in the same tab will be automatically grouped into a single editor pane.",
+    "zh": "开启此设置后，在同一标签页中打开的文件将自动分组到单个编辑器面板。"
+  },
+  "settings.features.width": {
+    "en": "Width %",
+    "zh": "宽度 %"
+  },
+  "settings.features.window_positions_won_t_be_restored_on_wayland": {
+    "en": "Window positions won't be restored on Wayland. ",
+    "zh": "Wayland 上窗口位置不会被恢复。"
+  },
+  "settings.features.working_directory_for_new_sessions": {
+    "en": "Working directory for new sessions",
+    "zh": "新会话工作目录"
+  },
+  "settings.features.seconds": {
+    "en": "seconds",
+    "zh": "秒"
+  },
+  "settings.features.seconds_to_complete": {
+    "en": "seconds to complete",
+    "zh": "秒时"
+  }
+}

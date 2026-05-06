@@ -1,0 +1,254 @@
+{
+  "settings.appearance.always": {
+    "en": "Always",
+    "zh": "始终"
+  },
+  "settings.appearance.automatically_color_tabs_based_on_the_directory_or_repo_you_re_working_in": {
+    "en": "Automatically color tabs based on the directory or repo you're working in.",
+    "zh": "根据当前目录或仓库自动设置标签颜色。"
+  },
+  "settings.appearance.automatically_switch_between_light_and_dark_themes_when_your_system_does": {
+    "en": "Automatically switch between light and dark themes when your system does.",
+    "zh": "随系统自动切换深色/浅色主题。"
+  },
+  "settings.appearance.blinking_cursor": {
+    "en": "Blinking cursor",
+    "zh": "光标闪烁"
+  },
+  "settings.appearance.changing_the_app_icon_requires_the_app_to_be_bundled": {
+    "en": "Changing the app icon requires the app to be bundled.",
+    "zh": "更改应用图标需要打包的应用程序。"
+  },
+  "settings.appearance.columns": {
+    "en": "Columns",
+    "zh": "列数"
+  },
+  "settings.appearance.compact_mode": {
+    "en": "Compact mode",
+    "zh": "紧凑模式"
+  },
+  "settings.appearance.create_your_own_custom_theme": {
+    "en": "Create your own custom theme",
+    "zh": "创建自定义主题"
+  },
+  "settings.appearance.current_theme": {
+    "en": "Current theme",
+    "zh": "当前主题"
+  },
+  "settings.appearance.cursor_type": {
+    "en": "Cursor type",
+    "zh": "光标类型"
+  },
+  "settings.appearance.cursor_type_is_disabled_in_vim_mode": {
+    "en": "Cursor type is disabled in Vim mode",
+    "zh": "Vim 模式下光标类型不可用"
+  },
+  "settings.appearance.customize_your_app_icon": {
+    "en": "Customize your app icon",
+    "zh": "自定义应用图标"
+  },
+  "settings.appearance.dark": {
+    "en": "Dark",
+    "zh": "深色"
+  },
+  "settings.appearance.dim_inactive_panes": {
+    "en": "Dim inactive panes",
+    "zh": "淡化非活动面板"
+  },
+  "settings.appearance.directory_tab_colors": {
+    "en": "Directory tab colors",
+    "zh": "目录标签颜色"
+  },
+  "settings.appearance.enforce_minimum_contrast": {
+    "en": "Enforce minimum contrast",
+    "zh": "强制最低对比度"
+  },
+  "settings.appearance.focus_follows_mouse": {
+    "en": "Focus follows mouse",
+    "zh": "鼠标跟随焦点"
+  },
+  "settings.appearance.font_size_px": {
+    "en": "Font size (px)",
+    "zh": "字体大小（px）"
+  },
+  "settings.appearance.font_weight": {
+    "en": "Font weight",
+    "zh": "字体粗细"
+  },
+  "settings.appearance.header_toolbar_layout": {
+    "en": "Header toolbar layout",
+    "zh": "标题栏布局"
+  },
+  "settings.appearance.input_position": {
+    "en": "Input position",
+    "zh": "输入位置"
+  },
+  "settings.appearance.input_type": {
+    "en": "Input type",
+    "zh": "输入类型"
+  },
+  "settings.appearance.left": {
+    "en": "Left",
+    "zh": "左"
+  },
+  "settings.appearance.ligatures_may_reduce_performance": {
+    "en": "Ligatures may reduce performance",
+    "zh": "连字可能会降低性能"
+  },
+  "settings.appearance.light": {
+    "en": "Light",
+    "zh": "浅色"
+  },
+  "settings.appearance.line_height": {
+    "en": "Line height",
+    "zh": "行高"
+  },
+  "settings.appearance.match_terminal": {
+    "en": "Match terminal",
+    "zh": "与终端匹配"
+  },
+  "settings.appearance.never": {
+    "en": "Never",
+    "zh": "从不"
+  },
+  "settings.appearance.notebook_font_size": {
+    "en": "Notebook font size",
+    "zh": "笔记本字体大小"
+  },
+  "settings.appearance.on_high_dpi_displays": {
+    "en": "On high-DPI displays",
+    "zh": "高 DPI 屏幕"
+  },
+  "settings.appearance.on_low_dpi_displays": {
+    "en": "On low-DPI displays",
+    "zh": "低 DPI 屏幕"
+  },
+  "settings.appearance.only_for_named_colors": {
+    "en": "Only for named colors",
+    "zh": "仅命名颜色"
+  },
+  "settings.appearance.only_on_hover": {
+    "en": "Only on hover",
+    "zh": "悬停时"
+  },
+  "settings.appearance.open_new_windows_with_custom_size": {
+    "en": "Open new windows with custom size",
+    "zh": "以自定义大小打开新窗口"
+  },
+  "settings.appearance.pin_to_the_bottom_warp_mode": {
+    "en": "Pin to the bottom (Warp mode)",
+    "zh": "固定到底部（Warp 模式）"
+  },
+  "settings.appearance.pin_to_the_top_reverse_mode": {
+    "en": "Pin to the top (Reverse mode)",
+    "zh": "固定到顶部（反转模式）"
+  },
+  "settings.appearance.preserve_active_tab_color_for_new_tabs": {
+    "en": "Preserve active tab color for new tabs",
+    "zh": "新标签页继承活动标签颜色"
+  },
+  "settings.appearance.reset_to_default": {
+    "en": "Reset to default",
+    "zh": "恢复默认"
+  },
+  "settings.appearance.right": {
+    "en": "Right",
+    "zh": "右"
+  },
+  "settings.appearance.rows": {
+    "en": "Rows",
+    "zh": "行数"
+  },
+  "settings.appearance.show_jump_to_bottom_of_block_button": {
+    "en": "Show Jump to Bottom of Block button",
+    "zh": "显示跳到块底部按钮"
+  },
+  "settings.appearance.show_block_dividers": {
+    "en": "Show block dividers",
+    "zh": "显示块分隔线"
+  },
+  "settings.appearance.show_code_review_button": {
+    "en": "Show code review button",
+    "zh": "显示代码审查按钮"
+  },
+  "settings.appearance.show_ligatures_in_terminal": {
+    "en": "Show ligatures in terminal",
+    "zh": "在终端中显示连字"
+  },
+  "settings.appearance.show_tab_indicators": {
+    "en": "Show tab indicators",
+    "zh": "显示标签页指示器"
+  },
+  "settings.appearance.show_the_tab_bar": {
+    "en": "Show the tab bar",
+    "zh": "显示标签栏"
+  },
+  "settings.appearance.show_vertical_tabs_panel_in_restored_windows": {
+    "en": "Show vertical tabs panel in restored windows",
+    "zh": "恢复窗口时显示垂直标签面板"
+  },
+  "settings.appearance.start_at_the_top_classic_mode": {
+    "en": "Start at the top (Classic mode)",
+    "zh": "从顶部开始（经典模式）"
+  },
+  "settings.appearance.sync_with_os": {
+    "en": "Sync with OS",
+    "zh": "与系统同步"
+  },
+  "settings.appearance.tab_close_button_position": {
+    "en": "Tab close button position",
+    "zh": "标签关闭按钮位置"
+  },
+  "settings.appearance.the_selected_graphics_settings_may_not_support_rendering_transparent_windows": {
+    "en": "The selected graphics settings may not support rendering transparent windows.",
+    "zh": "当前图形设置可能不支持透明窗口。"
+  },
+  "settings.appearance.the_selected_hardware_may_not_support_rendering_transparent_windows": {
+    "en": "The selected hardware may not support rendering transparent windows.",
+    "zh": "当前硬件可能不支持透明窗口。"
+  },
+  "settings.appearance.transparency_is_not_supported_with_your_graphics_drivers": {
+    "en": "Transparency is not supported with your graphics drivers.",
+    "zh": "您的图形驱动不支持透明效果。"
+  },
+  "settings.appearance.use_window_blur_acrylic_texture": {
+    "en": "Use Window Blur (Acrylic texture)",
+    "zh": "使用窗口模糊效果"
+  },
+  "settings.appearance.use_custom_padding_in_alt_screen": {
+    "en": "Use custom padding in alt-screen",
+    "zh": "在替代屏幕中使用自定义边距"
+  },
+  "settings.appearance.use_latest_user_prompt_as_conversation_title_in_tab_names": {
+    "en": "Use latest user prompt as conversation title in tab names",
+    "zh": "用最近输入作为标签页标题"
+  },
+  "settings.appearance.use_thin_strokes": {
+    "en": "Use thin strokes",
+    "zh": "使用细描边"
+  },
+  "settings.appearance.use_vertical_tab_layout": {
+    "en": "Use vertical tab layout",
+    "zh": "使用垂直标签布局"
+  },
+  "settings.appearance.view_all_available_system_fonts": {
+    "en": "View all available system fonts",
+    "zh": "查看所有系统字体"
+  },
+  "settings.appearance.when_windowed": {
+    "en": "When windowed",
+    "zh": "窗口模式时"
+  },
+  "settings.appearance.window_opacity": {
+    "en": "Window Opacity:",
+    "zh": "窗口不透明度："
+  },
+  "settings.appearance.you_may_need_to_restart_warp_for_macos_to_apply_the_preferred_icon_style": {
+    "en": "You may need to restart Warp for MacOS to apply the preferred icon style.",
+    "zh": "可能需要重启 Warp 以使 macOS 应用新图标样式。"
+  },
+  "settings.appearance.zoom": {
+    "en": "Zoom",
+    "zh": "缩放"
+  }
+}

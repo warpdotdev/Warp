@@ -32,6 +32,7 @@ use warpui::{
     UpdateModel, View, ViewContext, ViewHandle,
 };
 
+use crate::t;
 use crate::settings::{CustomSecretRegex, RegexDisplayInfo};
 use crate::settings_view::privacy::AddRegexModalViewState;
 use crate::settings_view::render_body_item_label;
@@ -772,7 +773,7 @@ impl SecretRedactionWidget {
             .count();
 
         let personal_tab = self.render_tab(
-            "Personal".to_string(),
+            t!(app, "Personal", "个人").to_string(),
             personal_count,
             SecretRedactionTab::Personal,
             active_tab == SecretRedactionTab::Personal,
@@ -783,7 +784,7 @@ impl SecretRedactionWidget {
         let is_enterprise_tab_active = active_tab == SecretRedactionTab::Enterprise;
 
         let enterprise_tab = self.render_tab(
-            "Enterprise".to_string(),
+            t!(app, "Enterprise", "企业").to_string(),
             enterprise_count,
             SecretRedactionTab::Enterprise,
             is_enterprise_tab_active,
@@ -1186,7 +1187,7 @@ impl SettingsWidget for SecretRedactionWidget {
                 .with_child(
                     Shrinkable::new(
                         1.0,
-                        render_sub_header(appearance, SAFE_MODE_TITLE, Some(local_only_icon_state)),
+                        render_sub_header(appearance, t!(app, "Secret redaction", "隐私信息遮蔽"), Some(local_only_icon_state)),
                     )
                     .finish(),
                 )
@@ -1488,7 +1489,7 @@ impl SettingsWidget for AppAnalyticsWidget {
             Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(render_body_item_label::<PrivacyPageAction>(
-                    TELEMETRY_TITLE.into(),
+                    t!(app, "Help improve Warp", "帮助改进 Warp").into(),
                     None,
                     None,
                     LocalOnlyIconState::Hidden,
@@ -1499,7 +1500,7 @@ impl SettingsWidget for AppAnalyticsWidget {
                 .finish()
         } else {
             render_body_item_label::<PrivacyPageAction>(
-                TELEMETRY_TITLE.into(),
+                t!(app, "Help improve Warp", "帮助改进 Warp").into(),
                 None,
                 None,
                 LocalOnlyIconState::Hidden,
@@ -1630,7 +1631,7 @@ impl SettingsWidget for CrashReportsWidget {
         let privacy_settings = PrivacySettings::as_ref(app);
         Flex::column()
             .with_child(render_body_item::<PrivacyPageAction>(
-                "Send crash reports".into(),
+                t!(app, "Send crash reports", "发送崩溃报告").into(),
                 None,
                 // Crash report state is always synced to cloud, so no need to show local only icon.
                 LocalOnlyIconState::Hidden,
@@ -1744,7 +1745,7 @@ impl SettingsWidget for CloudConversationStorageWidget {
 
         Flex::column()
             .with_child(render_body_item::<PrivacyPageAction>(
-                "Store AI conversations in the cloud".into(),
+                t!(app, "Store AI conversations in the cloud", "在云端存储 AI 对话").into(),
                 None,
                 LocalOnlyIconState::Hidden,
                 toggle_state,
@@ -1803,12 +1804,12 @@ impl SettingsWidget for NetworkLogWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         Flex::column()
             .with_child(render_body_item::<PrivacyPageAction>(
-                "Network log console".into(),
+                t!(app, "Network log console", "网络日志控制台").into(),
                 None,
                 // Not rendering a setting, so no need to show local only icon state.
                 LocalOnlyIconState::Hidden,
@@ -1881,12 +1882,12 @@ impl SettingsWidget for DataManagementWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         Flex::column()
             .with_child(render_body_item::<PrivacyPageAction>(
-                DATA_MANAGEMENT_TITLE.into(),
+                t!(app, "Manage your data", "管理您的数据").into(),
                 None,
                 // Not rendering a setting, so no need to show local only icon state.
                 LocalOnlyIconState::Hidden,
@@ -1957,11 +1958,11 @@ impl SettingsWidget for PrivacyPolicyWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         Flex::column()
             .with_child(render_body_item::<PrivacyPageAction>(
-                PRIVACY_POLICY_TITLE.into(),
+                t!(app, "Privacy policy", "隐私政策").into(),
                 None,
                 // Not rendering a setting, so no need to show local only icon state.
                 LocalOnlyIconState::Hidden,

@@ -1,3 +1,4 @@
+use crate::t;
 use super::{
     settings_page::{
         render_body_item, AdditionalInfo, MatchData, PageType, SettingsPageMeta,
@@ -133,13 +134,13 @@ impl SettingsWidget for WarpDriveHeaderWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
 
         let message = Container::new(
             Text::new_inline(
-                "To use Warp Drive, please create an account.".to_string(),
+                t!(app, "To use Warp Drive, please create an account.", "请先创建账户以使用 Warp Drive。").to_string(),
                 appearance.ui_font_family(),
                 14.,
             )
@@ -171,7 +172,7 @@ impl SettingsWidget for WarpDriveHeaderWidget {
                     }),
                     ..Default::default()
                 })
-                .with_text_label("Sign up".to_owned())
+                .with_text_label(t!(app, "Sign up", "注册").to_owned())
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(WarpDriveSettingsPageAction::SignUp);
@@ -218,7 +219,7 @@ impl SettingsWidget for WarpDriveToggleWidget {
                 .is_anonymous_or_logged_out();
 
         render_body_item::<WarpDriveSettingsPageAction>(
-            "Warp Drive".into(),
+            t!(app, "Warp Drive", "Warp Drive").into(),
             Some(AdditionalInfo {
                 mouse_state: self.info_icon_mouse_state.clone(),
                 on_click_action: Some(WarpDriveSettingsPageAction::OpenUrl(

@@ -1,0 +1,29 @@
+{
+  "settings.warpify.install_ssh_extension": {
+    "en": "Install SSH extension",
+    "zh": "安装 SSH 扩展"
+  },
+  "settings.warpify.use_tmux_warpification": {
+    "en": "Use Tmux Warpification",
+    "zh": "使用 Tmux Warpify"
+  },
+  "settings.warpify.warpify_ssh_sessions": {
+    "en": "Warpify SSH Sessions",
+    "zh": "Warpify SSH 会话"
+  },
+  "settings.warpify.description": {
+    "en": "Configure whether Warp attempts to “Warpify” (add support for blocks, input modes, etc) certain shells. ",
+    "zh": "配置 Warp 是否对某些 Shell 进行 Warpify 处理（添加块、输入模式等支持）。"
+  },
+  "settings.warpify.learn_more": { "en": "Learn more", "zh": "了解更多" },
+  "settings.warpify.subshells_supported": {
+    "en": "Subshells supported: bash, zsh, and fish.",
+    "zh": "支持的子 Shell：bash、zsh 和 fish。"
+  },
+  "settings.warpify.added_commands": { "en": "Added commands", "zh": "已添加的命令" },
+  "settings.warpify.denylisted_commands": { "en": "Denylisted commands", "zh": "黑名单命令" },
+  "settings.warpify.command_placeholder": {
+    "en": "command (supports regex)",
+    "zh": "命令（支持正则）"
+  }
+}
