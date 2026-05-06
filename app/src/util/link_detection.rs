@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Range;
+use string_offset::ByteOffset;
 use urlocator::{UrlLocation, UrlLocator};
 use warpui::elements::PartialClickableElement;
 
@@ -224,15 +225,11 @@ const MAX_SEPARATORS_PER_WORD: usize = 256;
 
 /// A separator's byte range in the original word.
 ///
-/// File path candidates start after one separator and end before another. Keeping both the
-/// start and end byte offsets avoids slicing inside multi-byte separators like box-drawing
-/// characters.
+/// File path candidates start after one separator and end before another. Using [`ByteOffset`]
+/// keeps the byte-indexing semantics explicit when separators are multi-byte characters like
+/// box-drawing glyphs.
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-#[derive(Clone, Copy)]
-struct SeparatorByteRange {
-    start: usize,
-    end: usize,
-}
+type SeparatorByteRange = Range<ByteOffset>;
 
 /// Returns separator byte ranges in `word`, framed by zero-width virtual separators at
 /// the start and end of the word. Returns empty if either safety cap is exceeded.
@@ -243,7 +240,7 @@ fn separator_byte_ranges_for_file_path_search(word: &str) -> Vec<SeparatorByteRa
     }
     // To include any substrings starting at the beginning of the word, we
     // pretend there's a zero-width separator before the first character.
-    let mut separator_byte_ranges = vec![SeparatorByteRange { start: 0, end: 0 }];
+    let mut separator_byte_ranges = vec![ByteOffset::zero()..ByteOffset::zero()];
     // We use char_indices() to get byte indices of each char which are used to index the string,
     // rather than chars().enumerate() would give char indices.
     for (i, c) in word.char_indices() {
@@ -251,10 +248,7 @@ fn separator_byte_ranges_for_file_path_search(word: &str) -> Vec<SeparatorByteRa
             if separator_byte_ranges.len() > MAX_SEPARATORS_PER_WORD {
                 return Vec::new();
             }
-            separator_byte_ranges.push(SeparatorByteRange {
-                start: i,
-                end: i + c.len_utf8(),
-            });
+            separator_byte_ranges.push(ByteOffset::from(i)..ByteOffset::from(i + c.len_utf8()));
         }
     }
     // Consider trailing periods to be separators. This is because
@@ -263,17 +257,11 @@ fn separator_byte_ranges_for_file_path_search(word: &str) -> Vec<SeparatorByteRa
     // periods can also be part of a valid file path.
     let word_ends_with_period = word.ends_with('.');
     if word_ends_with_period {
-        separator_byte_ranges.push(SeparatorByteRange {
-            start: word.len() - 1,
-            end: word.len(),
-        });
+        separator_byte_ranges.push(ByteOffset::from(word.len() - 1)..ByteOffset::from(word.len()));
     }
     // To include any substrings ending at the end of the word, we pretend there's
     // a zero-width separator after the last character.
-    separator_byte_ranges.push(SeparatorByteRange {
-        start: word.len(),
-        end: word.len(),
-    });
+    separator_byte_ranges.push(ByteOffset::from(word.len())..ByteOffset::from(word.len()));
     separator_byte_ranges
 }
 
@@ -298,10 +286,12 @@ fn possible_file_paths_in_word(word: &str) -> impl Iterator<Item = &str> {
         }
     }
     // Sort by longest to shortest.
-    possible_path_byte_ranges.sort_by(|a, b| (b.end - b.start).cmp(&(a.end - a.start)));
+    possible_path_byte_ranges.sort_by(|a, b| {
+        (b.end.as_usize() - b.start.as_usize()).cmp(&(a.end.as_usize() - a.start.as_usize()))
+    });
     possible_path_byte_ranges
         .into_iter()
-        .map(|range| &word[range.start..range.end])
+        .map(|range| &word[range.start.as_usize()..range.end.as_usize()])
 }
 
 /// Returns a DetectedLink::FilePath if expanded_path is a valid path that actually exists on the file system.
