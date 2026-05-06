@@ -14924,6 +14924,8 @@ dependencies = [
 name = "warp_util"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "command",
  "content_inspector",
  "dirs 6.0.0",
  "dunce",
@@ -14933,6 +14935,7 @@ dependencies = [
  "gloo",
  "hex",
  "lazy_static",
+ "log",
  "mime_guess",
  "pathdiff",
  "pin-project",
