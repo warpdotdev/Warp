@@ -1179,8 +1179,9 @@ impl LocalCodeEditorView {
     where
         T: FnOnce(BufferState, &mut ViewContext<Self>) -> ViewHandle<CodeEditorView>,
     {
-        let buffer_state = GlobalBufferModel::handle(ctx)
-            .update(ctx, |model, ctx| model.open(BufferLocation::Local(path.to_path_buf()), ctx));
+        let buffer_state = GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
+            model.open(BufferLocation::Local(path.to_path_buf()), ctx)
+        });
         let file_id = buffer_state.file_id;
         let editor = editor_constructor(buffer_state, ctx);
 

@@ -110,7 +110,10 @@ fn open_server_local_creates_buffer_and_is_server_local() {
         let handle = gbm(&app);
         app.read(|ctx| {
             assert!(handle.as_ref(ctx).is_server_local(file_id));
-            assert!(handle.as_ref(ctx).sync_clock_for_server_local(file_id).is_some());
+            assert!(handle
+                .as_ref(ctx)
+                .sync_clock_for_server_local(file_id)
+                .is_some());
         });
     })
 }
@@ -325,13 +328,7 @@ fn handle_buffer_updated_push_conflict_when_client_version_stale() {
 
         let _buffer_state = gbm(&app).update(&mut app, |gbm, ctx| {
             // Seed with client_version = 0.
-            gbm.seed_remote_buffer_for_test(
-                host_id.clone(),
-                path.clone(),
-                "original",
-                42,
-                ctx,
-            )
+            gbm.seed_remote_buffer_for_test(host_id.clone(), path.clone(), "original", 42, ctx)
         });
         let file_id = _buffer_state.file_id;
 
@@ -427,20 +424,17 @@ fn apply_client_edit_updates_sync_clock() {
         let new_cv = ContentVersion::new();
 
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            gbm.apply_client_edit(
-                file_id,
-                &[text_edit(0, 5, 0, 5, " world")],
-                sv,
-                new_cv,
-                ctx,
-            )
+            gbm.apply_client_edit(file_id, &[text_edit(0, 5, 0, 5, " world")], sv, new_cv, ctx)
         });
         assert!(accepted);
 
         // client_version should be updated; server_version unchanged.
         let handle = gbm(&app);
         app.read(|ctx| {
-            let clock = handle.as_ref(ctx).sync_clock_for_server_local(file_id).unwrap();
+            let clock = handle
+                .as_ref(ctx)
+                .sync_clock_for_server_local(file_id)
+                .unwrap();
             assert_eq!(clock.client_version, new_cv);
             assert_eq!(clock.server_version, sv);
         });
@@ -475,7 +469,10 @@ fn server_push_updates_sync_clock() {
         // server_version should be updated; client_version unchanged.
         let handle = gbm(&app);
         app.read(|ctx| {
-            let clock = handle.as_ref(ctx).sync_clock_for_remote_test(file_id).unwrap();
+            let clock = handle
+                .as_ref(ctx)
+                .sync_clock_for_remote_test(file_id)
+                .unwrap();
             assert_eq!(clock.server_version, ContentVersion::from_raw(43));
             assert_eq!(clock.client_version, ContentVersion::from_raw(0));
         });
@@ -525,7 +522,10 @@ fn sequential_client_edits_accepted() {
         // Final clock state.
         let handle = gbm(&app);
         app.read(|ctx| {
-            let clock = handle.as_ref(ctx).sync_clock_for_server_local(file_id).unwrap();
+            let clock = handle
+                .as_ref(ctx)
+                .sync_clock_for_server_local(file_id)
+                .unwrap();
             assert_eq!(clock.client_version, cv2);
             assert_eq!(clock.server_version, sv);
         });
@@ -575,7 +575,10 @@ fn sequential_server_pushes_accepted() {
         // Final clock state.
         let handle = gbm(&app);
         app.read(|ctx| {
-            let clock = handle.as_ref(ctx).sync_clock_for_remote_test(file_id).unwrap();
+            let clock = handle
+                .as_ref(ctx)
+                .sync_clock_for_remote_test(file_id)
+                .unwrap();
             assert_eq!(clock.server_version, ContentVersion::from_raw(12));
             assert_eq!(clock.client_version, ContentVersion::from_raw(0));
         });
@@ -616,7 +619,10 @@ fn resolve_conflict_updates_content_and_clock() {
 
         let handle = gbm(&app);
         app.read(|ctx| {
-            let clock = handle.as_ref(ctx).sync_clock_for_server_local(file_id).unwrap();
+            let clock = handle
+                .as_ref(ctx)
+                .sync_clock_for_server_local(file_id)
+                .unwrap();
             assert_eq!(clock.server_version, acked_sv);
         });
     })
@@ -649,10 +655,7 @@ fn apply_client_edit_multiple_edits_in_batch() {
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.apply_client_edit(
                 file_id,
-                &[
-                    text_edit(0, 0, 0, 3, "xxx"),
-                    text_edit(0, 8, 0, 11, "zzz"),
-                ],
+                &[text_edit(0, 0, 0, 3, "xxx"), text_edit(0, 8, 0, 11, "zzz")],
                 sv,
                 ContentVersion::new(),
                 ctx,
@@ -674,13 +677,7 @@ fn handle_buffer_updated_push_multiple_edits_in_batch() {
         let path = test_path();
 
         let _buffer_state = gbm(&app).update(&mut app, |gbm, ctx| {
-            gbm.seed_remote_buffer_for_test(
-                host_id.clone(),
-                path.clone(),
-                "aaa bbb ccc",
-                1,
-                ctx,
-            )
+            gbm.seed_remote_buffer_for_test(host_id.clone(), path.clone(), "aaa bbb ccc", 1, ctx)
         });
         let file_id = _buffer_state.file_id;
 

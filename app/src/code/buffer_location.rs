@@ -58,6 +58,7 @@ impl SyncClock {
     }
 
     /// Bump the client version after a local edit.
+    #[expect(dead_code)]
     pub fn bump_client(&mut self) -> ContentVersion {
         self.client_version = ContentVersion::new();
         self.client_version

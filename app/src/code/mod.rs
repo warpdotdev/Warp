@@ -15,10 +15,10 @@ pub mod language_server_extension;
 pub mod local_code_editor;
 #[cfg(not(target_family = "wasm"))]
 pub use local_code_editor::ShowFindReferencesCard;
+pub mod buffer_location;
 pub mod diff_viewer;
 pub mod editor;
 pub mod editor_management;
-pub mod buffer_location;
 pub mod global_buffer_model;
 pub mod inline_diff;
 #[cfg(feature = "local_fs")]

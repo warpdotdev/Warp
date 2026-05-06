@@ -26,5 +26,5 @@ pub mod ui;
 pub mod user_preferences;
 
 pub use app_id::AppId;
-pub use warp_util::host_id::HostId;
 pub use session_id::SessionId;
+pub use warp_util::host_id::HostId;

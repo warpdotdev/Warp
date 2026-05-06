@@ -47,9 +47,13 @@ impl ServerBufferTracker {
 
     /// Look up the wire path for a given FileId.
     pub fn path_for_file_id(&self, file_id: FileId) -> Option<String> {
-        self.open_buffers
-            .iter()
-            .find_map(|(p, id)| if *id == file_id { Some(p.clone()) } else { None })
+        self.open_buffers.iter().find_map(|(p, id)| {
+            if *id == file_id {
+                Some(p.clone())
+            } else {
+                None
+            }
+        })
     }
 
     // ── Connection tracking ───────────────────────────────────────
@@ -115,7 +119,12 @@ impl ServerBufferTracker {
     // ── Pending request tracking ──────────────────────────────────
 
     /// Stash a pending async request for later correlation with an event.
-    pub fn insert_pending(&mut self, file_id: FileId, request_id: RequestId, conn_id: ConnectionId) {
+    pub fn insert_pending(
+        &mut self,
+        file_id: FileId,
+        request_id: RequestId,
+        conn_id: ConnectionId,
+    ) {
         self.pending_requests.insert(file_id, (request_id, conn_id));
     }
 
