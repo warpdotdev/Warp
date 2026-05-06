@@ -16041,13 +16041,18 @@ impl Workspace {
             StateEvent::ValueChanged { current, previous } => {
                 let did_window_change_focus =
                     WindowManager::did_window_change_focus(self.window_id, current, previous);
+                let cached_window_is_active = current.active_window == Some(self.window_id);
+                let app_became_active = previous.stage != ApplicationStage::Active
+                    && current.stage == ApplicationStage::Active;
+                let platform_window_is_active =
+                    ctx.windows().active_window() == Some(self.window_id);
 
                 // Notify focus listeners when this window is active after either a window focus
                 // change or app reactivation while the active window stayed the same.
-                if current.active_window == Some(self.window_id)
-                    && (did_window_change_focus
-                        || (previous.stage != ApplicationStage::Active
-                            && current.stage == ApplicationStage::Active))
+                // On macOS, app activation can beat the deferred key-window update, so
+                // reactivation also verifies the live platform window.
+                if cached_window_is_active
+                    && (did_window_change_focus || (app_became_active && platform_window_is_active))
                 {
                     if let Some(terminal_view) = self
                         .active_tab_pane_group()
