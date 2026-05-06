@@ -1282,8 +1282,15 @@ impl AmbientAgentViewModel {
         }
         if let Some(ai_api_error) = err.downcast_ref::<AIApiError>() {
             match ai_api_error {
-                AIApiError::QuotaLimit => {
-                    self.handle_spawn_error(OUT_OF_CREDITS_TASK_FAILURE_MESSAGE.to_string(), ctx);
+                AIApiError::QuotaLimit {
+                    user_display_message,
+                } => {
+                    let error_message = user_display_message
+                        .clone()
+                        .unwrap_or_else(|| {
+                            OUT_OF_CREDITS_TASK_FAILURE_MESSAGE.to_string()
+                        });
+                    self.handle_spawn_error(error_message, ctx);
                     ctx.emit(AmbientAgentViewModelEvent::ShowAICreditModal);
                     return;
                 }

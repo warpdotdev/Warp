@@ -5645,10 +5645,10 @@ impl TerminalView {
                     if let Some(conversation) =
                         BlocklistAIHistoryModel::as_ref(ctx).conversation(conversation_id)
                     {
-                        if matches!(
+                    if matches!(
                             conversation_output_status_from_conversation(conversation),
                             Some(AmbientConversationStatus::Error {
-                                error: RenderableAIError::QuotaLimit
+                                error: RenderableAIError::QuotaLimit { .. }
                             })
                         ) {
                             self.show_out_of_credits_modal(ctx);
