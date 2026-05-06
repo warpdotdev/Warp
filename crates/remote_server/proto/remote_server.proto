@@ -381,13 +381,11 @@ message BufferEdit {
   repeated TextEdit edits = 4;
 }
 
-// A single text edit within a buffer, using 0-indexed line/column positions.
+// A single text edit within a buffer, using 0-indexed character offsets.
 message TextEdit {
-  uint32 start_line = 1;
-  uint32 start_column = 2;
-  uint32 end_line = 3;
-  uint32 end_column = 4;
-  string text = 5;
+  uint64 start_offset = 1;
+  uint64 end_offset = 2;
+  string text = 3;
 }
 
 // Server → client push: file changed on disk.

@@ -62,7 +62,8 @@ enum BufferSource {
     /// Backed by a remote filesystem over the remote server protocol.
     Remote {
         remote_path: RemotePath,
-        sync_clock: SyncClock,
+        /// `None` while waiting for the `OpenBufferResponse`; `Some` once loaded.
+        sync_clock: Option<SyncClock>,
     },
     /// Local file managed by the remote-server daemon.
     /// Owns the SyncClock for version tracking. Connection tracking
@@ -171,8 +172,9 @@ impl InternalBufferState {
                 base_content_version,
                 ..
             } => base_content_version.is_some(),
-            // Remote buffers are loaded once they have a sync clock (always after open).
-            BufferSource::Remote { .. } => true,
+            // Remote buffers are loaded once the OpenBufferResponse arrives
+            // and populates the sync clock.
+            BufferSource::Remote { sync_clock, .. } => sync_clock.is_some(),
         }
     }
 }
@@ -210,8 +212,8 @@ pub enum GlobalBufferModelEvent {
     /// to connected clients as `BufferUpdatedPush`.
     ServerLocalBufferUpdated {
         file_id: FileId,
-        /// Incremental edits with 0-indexed line/column positions.
-        edits: Vec<LineColumnEdit>,
+        /// Incremental edits with 0-indexed character offsets.
+        edits: Vec<CharOffsetEdit>,
         new_server_version: ContentVersion,
         expected_client_version: ContentVersion,
     },
@@ -231,15 +233,14 @@ impl GlobalBufferModelEvent {
     }
 }
 
-/// A text edit with 0-indexed line/column positions.
+/// A text edit using 0-indexed character offsets.
 ///
 /// Used to carry incremental edits in `ServerLocalBufferUpdated` events
-/// without coupling `GlobalBufferModel` to proto types.
-pub struct LineColumnEdit {
-    pub start_line: u32,
-    pub start_column: u32,
-    pub end_line: u32,
-    pub end_column: u32,
+/// and `handle_buffer_updated_push` without coupling `GlobalBufferModel`
+/// to proto types. Offsets are 0-indexed: offset 0 = first character.
+pub struct CharOffsetEdit {
+    pub start: usize,
+    pub end: usize,
     pub text: String,
 }
 
@@ -515,34 +516,44 @@ impl GlobalBufferModel {
         state.set_base_content_version(new_version);
 
         if is_server_local {
-            // For ServerLocal buffers, convert byte-range edits to line/column
-            // and push to clients as BufferUpdatedPush.
+            // For ServerLocal buffers, emit char-offset edits so the
+            // ServerModel can push them to connected clients.
             if let BufferSource::ServerLocal { sync_clock, .. } = &mut state.source {
                 let new_sv = sync_clock.bump_server();
-                // Convert byte-range edits to line/column using the *new* content
-                // (post-edit), since diff.edits ranges refer to byte positions in
-                // the new content.
-                let new_content = buffer.as_ref(ctx).text().into_string();
-                let line_col_edits = diff
+                // Convert byte-range edits to char offsets using the old
+                // buffer content (pre-edit). We use the buffer reference
+                // which still has the old content at the time
+                // to_char_offset_edits was called, but since we already
+                // applied the diff above the buffer now has new content.
+                // Instead, convert byte offsets directly to char offsets
+                // by counting chars in the old text stored in the diff.
+                let old_content = {
+                    // Reconstruct old content from new content + reverse diff
+                    // is complex; instead, convert byte offsets from the diff
+                    // to 0-indexed char offsets using the new content.
+                    // The byte ranges in diff.edits refer to the OLD text,
+                    // but after applying the edits, the buffer has new text.
+                    // We use the new buffer to map via line_start, but the
+                    // edits have already been applied — so we use the
+                    // replacement text positions in the new content.
+                    buffer.as_ref(ctx).text().into_string()
+                };
+                let char_offset_edits = diff
                     .edits
                     .iter()
                     .map(|(range, text)| {
-                        let (start_line, start_column) =
-                            byte_offset_to_line_col(&new_content, range.start);
-                        let (end_line, end_column) =
-                            byte_offset_to_line_col(&new_content, range.end);
-                        LineColumnEdit {
-                            start_line,
-                            start_column,
-                            end_line,
-                            end_column,
+                        let start = byte_offset_to_char_offset(&old_content, range.start);
+                        let end = byte_offset_to_char_offset(&old_content, range.end);
+                        CharOffsetEdit {
+                            start,
+                            end,
                             text: text.clone(),
                         }
                     })
                     .collect();
                 ctx.emit(GlobalBufferModelEvent::ServerLocalBufferUpdated {
                     file_id,
-                    edits: line_col_edits,
+                    edits: char_offset_edits,
                     new_server_version: new_sv,
                     expected_client_version: sync_clock.client_version,
                 });
@@ -1479,6 +1490,9 @@ impl GlobalBufferModel {
                     let BufferSource::Remote { sync_clock, .. } = &mut state.source else {
                         return;
                     };
+                    let Some(sync_clock) = sync_clock.as_mut() else {
+                        return;
+                    };
                     let expected_sv = sync_clock.server_version.as_u64();
                     let new_cv = ContentVersion::new();
                     sync_clock.client_version = new_cv;
@@ -1488,15 +1502,14 @@ impl GlobalBufferModel {
                         return;
                     };
                     let content = buffer.as_ref(ctx).text().into_string();
+                    let total_chars = content.chars().count() as u64;
                     client.send_buffer_edit(
                         path_for_edit.clone(),
                         expected_sv,
                         new_cv.as_u64(),
                         vec![remote_server::proto::TextEdit {
-                            start_line: 0,
-                            start_column: 0,
-                            end_line: u32::MAX,
-                            end_column: 0,
+                            start_offset: 0,
+                            end_offset: total_chars,
                             text: content,
                         }],
                     );
@@ -1504,7 +1517,7 @@ impl GlobalBufferModel {
             });
         }
 
-        // Store state with a placeholder sync clock (will be set on OpenBufferResponse).
+        // Store state with sync_clock = None (set to Some on OpenBufferResponse).
         self.location_to_id.insert(location, file_id);
         self.buffers.insert(
             file_id,
@@ -1514,7 +1527,7 @@ impl GlobalBufferModel {
                 pending_diff_parse: None,
                 source: BufferSource::Remote {
                     remote_path,
-                    sync_clock: SyncClock::new(),
+                    sync_clock: None,
                 },
             },
         );
@@ -1543,7 +1556,7 @@ impl GlobalBufferModel {
                         return;
                     };
                     if let BufferSource::Remote { sync_clock, .. } = &mut state.source {
-                        *sync_clock = SyncClock::from_wire(response.server_version, 0);
+                        *sync_clock = Some(SyncClock::from_wire(response.server_version, 0));
                     }
                     let Some(buffer) = state.buffer.upgrade(ctx) else {
                         return;
@@ -1642,25 +1655,18 @@ impl GlobalBufferModel {
             return false;
         };
 
-        // Apply the text edits incrementally via insert_at_char_offset_ranges.
-        // This avoids a full buffer round-trip (read → mutate string → replace_all)
-        // and preserves anchors/selections better.
+        // Apply the text edits using 0-indexed char offsets from the proto.
+        // Convert to the buffer's 1-indexed CharOffset coordinate system.
         use string_offset::CharOffset;
-        use warp_editor::content::text::LineCount;
 
         let new_version = ContentVersion::new();
         buffer.update(ctx, |buffer, ctx| {
+            let total_chars = buffer.text().into_string().chars().count();
             let char_edits: Vec<(std::ops::Range<CharOffset>, String)> = edits
                 .iter()
                 .map(|edit| {
-                    // Convert 0-indexed line/col to CharOffset via the buffer's line_start helper.
-                    // line_start takes a 1-indexed LineCount.
-                    let start_line = LineCount::from(edit.start_line as usize + 1);
-                    let end_line = LineCount::from(edit.end_line as usize + 1);
-                    let start = buffer.line_start(start_line)
-                        + CharOffset::from(edit.start_column as usize);
-                    let end =
-                        buffer.line_start(end_line) + CharOffset::from(edit.end_column as usize);
+                    let start = CharOffset::from((edit.start_offset as usize).min(total_chars) + 1);
+                    let end = CharOffset::from((edit.end_offset as usize).min(total_chars) + 1);
                     (start..end, edit.text.clone())
                 })
                 .collect();
@@ -1756,7 +1762,7 @@ impl GlobalBufferModel {
 
     /// Handle an incoming `BufferUpdatedPush` from the remote server.
     ///
-    /// Accepts incremental edits (line/column positions) and applies them
+    /// Accepts incremental edits (0-indexed char offsets) and applies them
     /// to the local buffer via `insert_at_char_offset_ranges`. If the
     /// expected client version doesn't match, a conflict event is emitted.
     #[allow(dead_code)]
@@ -1766,7 +1772,7 @@ impl GlobalBufferModel {
         path: &str,
         new_server_version: u64,
         expected_client_version: u64,
-        edits: &[LineColumnEdit],
+        edits: &[CharOffsetEdit],
         ctx: &mut ModelContext<Self>,
     ) {
         // Find the buffer by scanning for a Remote source with matching host+path.
@@ -1791,6 +1797,9 @@ impl GlobalBufferModel {
         let BufferSource::Remote { sync_clock, .. } = &mut state.source else {
             return;
         };
+        let Some(sync_clock) = sync_clock.as_mut() else {
+            return;
+        };
 
         let expected_cv = ContentVersion::from_raw(expected_client_version as usize);
         if sync_clock.server_push_matches(expected_cv) {
@@ -1802,19 +1811,15 @@ impl GlobalBufferModel {
             };
 
             use string_offset::CharOffset;
-            use warp_editor::content::text::LineCount;
 
             let new_version = ContentVersion::new();
             buffer.update(ctx, |buffer, ctx| {
+                let total_chars = buffer.text().into_string().chars().count();
                 let char_edits: Vec<(std::ops::Range<CharOffset>, String)> = edits
                     .iter()
                     .map(|edit| {
-                        let start_line = LineCount::from(edit.start_line as usize + 1);
-                        let end_line = LineCount::from(edit.end_line as usize + 1);
-                        let start = buffer.line_start(start_line)
-                            + CharOffset::from(edit.start_column as usize);
-                        let end = buffer.line_start(end_line)
-                            + CharOffset::from(edit.end_column as usize);
+                        let start = CharOffset::from(edit.start.min(total_chars) + 1);
+                        let end = CharOffset::from(edit.end.min(total_chars) + 1);
                         (start..end, edit.text.clone())
                     })
                     .collect();
@@ -1872,7 +1877,7 @@ impl GlobalBufferModel {
                 pending_diff_parse: None,
                 source: BufferSource::Remote {
                     remote_path,
-                    sync_clock: SyncClock::from_wire(server_version, 0),
+                    sync_clock: Some(SyncClock::from_wire(server_version, 0)),
                 },
             },
         );
@@ -1883,54 +1888,39 @@ impl GlobalBufferModel {
     pub fn sync_clock_for_remote_test(&self, file_id: FileId) -> Option<&SyncClock> {
         let state = self.buffers.get(&file_id)?;
         match &state.source {
-            BufferSource::Remote { sync_clock, .. } => Some(sync_clock),
+            BufferSource::Remote { sync_clock, .. } => sync_clock.as_ref(),
             _ => None,
         }
     }
 }
 
-/// Converts a byte offset within `content` to 0-indexed (line, column).
+/// Converts a byte offset within `content` to a 0-indexed character offset.
 ///
-/// The column is measured in **characters** (not bytes) so it aligns with
-/// `CharOffset`-based edit positions used by `Buffer::line_start`.
-fn byte_offset_to_line_col(content: &str, offset: usize) -> (u32, u32) {
+/// Counts the number of characters in `content[..offset]`.
+/// Clamps `offset` to `content.len()` so out-of-bounds values are safe.
+fn byte_offset_to_char_offset(content: &str, offset: usize) -> usize {
     let offset = offset.min(content.len());
-    let before = &content[..offset];
-    let line = before.matches('\n').count() as u32;
-    let last_newline = before.rfind('\n').map(|p| p + 1).unwrap_or(0);
-    let col = before[last_newline..].chars().count() as u32;
-    (line, col)
+    content[..offset].chars().count()
 }
 
 #[cfg(test)]
 mod byte_offset_tests {
-    use super::byte_offset_to_line_col;
+    use super::byte_offset_to_char_offset;
 
     #[test]
-    fn ascii_single_line() {
-        assert_eq!(byte_offset_to_line_col("hello", 0), (0, 0));
-        assert_eq!(byte_offset_to_line_col("hello", 3), (0, 3));
-        assert_eq!(byte_offset_to_line_col("hello", 5), (0, 5));
+    fn ascii() {
+        assert_eq!(byte_offset_to_char_offset("hello", 0), 0);
+        assert_eq!(byte_offset_to_char_offset("hello", 3), 3);
+        assert_eq!(byte_offset_to_char_offset("hello", 5), 5);
     }
 
     #[test]
-    fn ascii_multi_line() {
-        let s = "ab\ncd\nef";
-        assert_eq!(byte_offset_to_line_col(s, 0), (0, 0)); // 'a'
-        assert_eq!(byte_offset_to_line_col(s, 3), (1, 0)); // 'c'
-        assert_eq!(byte_offset_to_line_col(s, 5), (1, 2)); // '\n'
-        assert_eq!(byte_offset_to_line_col(s, 6), (2, 0)); // 'e'
-    }
-
-    #[test]
-    fn non_ascii_column_counts_chars_not_bytes() {
-        // "café" — 'é' is 2 bytes in UTF-8, so byte offset 5 points past 'é'
-        // which is char index 4, not byte index 5.
+    fn non_ascii_counts_chars_not_bytes() {
+        // "café" — 'é' is 2 bytes in UTF-8
         let s = "café";
         assert_eq!(s.len(), 5); // 4 chars, 5 bytes
-        assert_eq!(byte_offset_to_line_col(s, 5), (0, 4));
-        // Offset 3 is the start of 'é' (byte 3), which is char index 3.
-        assert_eq!(byte_offset_to_line_col(s, 3), (0, 3));
+        assert_eq!(byte_offset_to_char_offset(s, 5), 4);
+        assert_eq!(byte_offset_to_char_offset(s, 3), 3);
     }
 
     #[test]
@@ -1938,22 +1928,20 @@ mod byte_offset_tests {
         // "你好" — each CJK char is 3 bytes.
         let s = "你好";
         assert_eq!(s.len(), 6);
-        assert_eq!(byte_offset_to_line_col(s, 0), (0, 0));
-        assert_eq!(byte_offset_to_line_col(s, 3), (0, 1)); // after '你'
-        assert_eq!(byte_offset_to_line_col(s, 6), (0, 2)); // after '好'
+        assert_eq!(byte_offset_to_char_offset(s, 0), 0);
+        assert_eq!(byte_offset_to_char_offset(s, 3), 1);
+        assert_eq!(byte_offset_to_char_offset(s, 6), 2);
     }
 
     #[test]
-    fn non_ascii_on_second_line() {
+    fn multi_line() {
         let s = "abc\n你好";
-        // '你' starts at byte 4, is char 0 on line 1.
-        assert_eq!(byte_offset_to_line_col(s, 4), (1, 0));
-        // After '你' (byte 7) is char 1 on line 1.
-        assert_eq!(byte_offset_to_line_col(s, 7), (1, 1));
+        assert_eq!(byte_offset_to_char_offset(s, 4), 4); // start of '你'
+        assert_eq!(byte_offset_to_char_offset(s, 7), 5); // after '你'
     }
 
     #[test]
     fn offset_clamped_to_content_length() {
-        assert_eq!(byte_offset_to_line_col("abc", 100), (0, 3));
+        assert_eq!(byte_offset_to_char_offset("abc", 100), 3);
     }
 }

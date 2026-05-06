@@ -172,13 +172,11 @@ impl Sessions {
                     expected_client_version,
                     edits,
                 } => {
-                    let line_col_edits: Vec<_> = edits
+                    let char_edits: Vec<_> = edits
                         .iter()
-                        .map(|e| crate::code::global_buffer_model::LineColumnEdit {
-                            start_line: e.start_line,
-                            start_column: e.start_column,
-                            end_line: e.end_line,
-                            end_column: e.end_column,
+                        .map(|e| crate::code::global_buffer_model::CharOffsetEdit {
+                            start: e.start_offset as usize,
+                            end: e.end_offset as usize,
                             text: e.text.clone(),
                         })
                         .collect();
@@ -190,7 +188,7 @@ impl Sessions {
                                 path,
                                 *new_server_version,
                                 *expected_client_version,
-                                &line_col_edits,
+                                &char_edits,
                                 ctx,
                             );
                         },

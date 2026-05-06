@@ -388,10 +388,8 @@ impl ServerModel {
                     let proto_edits: Vec<TextEdit> = edits
                         .iter()
                         .map(|edit| TextEdit {
-                            start_line: edit.start_line,
-                            start_column: edit.start_column,
-                            end_line: edit.end_line,
-                            end_column: edit.end_column,
+                            start_offset: edit.start as u64,
+                            end_offset: edit.end as u64,
                             text: edit.text.clone(),
                         })
                         .collect();
@@ -1424,12 +1422,8 @@ impl ServerModel {
                 .map(|c| (c.server_version.as_u64(), c.client_version.as_u64()))
                 .unwrap_or((0, 0));
 
-            // Convert full content to a single replacing TextEdit.
-            let line_count = content.matches('\n').count() as u32;
-            let last_line_len = content
-                .rfind('\n')
-                .map(|p| content[p + 1..].chars().count())
-                .unwrap_or_else(|| content.chars().count()) as u32;
+            // Convert full content to a single replacing TextEdit using char offsets.
+            let total_chars = content.chars().count() as u64;
 
             let Some(conns) = self.buffers.connections_for_buffer(&file_id) else {
                 return;
@@ -1443,10 +1437,8 @@ impl ServerModel {
                         new_server_version: sv,
                         expected_client_version: cv,
                         edits: vec![TextEdit {
-                            start_line: 0,
-                            start_column: 0,
-                            end_line: line_count,
-                            end_column: last_line_len,
+                            start_offset: 0,
+                            end_offset: total_chars,
                             text: content.clone(),
                         }],
                     }),

@@ -9,7 +9,7 @@ use warp_util::host_id::HostId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::{App, ModelHandle, SingletonEntity};
 
-use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent, LineColumnEdit};
+use crate::code::global_buffer_model::{CharOffsetEdit, GlobalBufferModel, GlobalBufferModelEvent};
 use crate::test_util::settings::initialize_settings_for_tests;
 
 // ── Test setup ────────────────────────────────────────────────────
@@ -53,35 +53,21 @@ fn server_version(app: &App, file_id: warp_util::file::FileId) -> ContentVersion
 }
 
 /// Helper: creates a proto `TextEdit` for use with `apply_client_edit`.
-fn text_edit(
-    start_line: u32,
-    start_column: u32,
-    end_line: u32,
-    end_column: u32,
-    text: &str,
-) -> TextEdit {
+/// `start` and `end` are 0-indexed character offsets.
+fn text_edit(start: u64, end: u64, text: &str) -> TextEdit {
     TextEdit {
-        start_line,
-        start_column,
-        end_line,
-        end_column,
+        start_offset: start,
+        end_offset: end,
         text: text.to_string(),
     }
 }
 
-/// Helper: creates a `LineColumnEdit` for use with `handle_buffer_updated_push`.
-fn line_col_edit(
-    start_line: u32,
-    start_column: u32,
-    end_line: u32,
-    end_column: u32,
-    text: &str,
-) -> LineColumnEdit {
-    LineColumnEdit {
-        start_line,
-        start_column,
-        end_line,
-        end_column,
+/// Helper: creates a `CharOffsetEdit` for use with `handle_buffer_updated_push`.
+/// `start` and `end` are 0-indexed character offsets.
+fn char_edit(start: usize, end: usize, text: &str) -> CharOffsetEdit {
+    CharOffsetEdit {
+        start,
+        end,
         text: text.to_string(),
     }
 }
@@ -152,7 +138,7 @@ fn apply_client_edit_accepted_when_version_matches() {
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(0, 5, 0, 5, " there")],
+                &[text_edit(5, 5, " there")],
                 sv, // expected_server_version matches
                 ContentVersion::new(),
                 ctx,
@@ -190,7 +176,7 @@ fn apply_client_edit_rejected_when_version_stale() {
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(0, 8, 0, 8, " edit")],
+                &[text_edit(8, 8, " edit")],
                 stale_sv,
                 ContentVersion::new(),
                 ctx,
@@ -225,10 +211,10 @@ fn apply_client_edit_replaces_range() {
         let sv = server_version(&app, file_id);
 
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            // Replace "world" (col 6..11) with "rust".
+            // Replace "world" (char offset 6..11) with "rust".
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(0, 6, 0, 11, "rust")],
+                &[text_edit(6, 11, "rust")],
                 sv,
                 ContentVersion::new(),
                 ctx,
@@ -263,10 +249,11 @@ fn apply_client_edit_across_lines() {
         let sv = server_version(&app, file_id);
 
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            // Delete from end of line1 to start of line3.
+            // Delete from end of "line1" (offset 5) to start of "line3" (offset 12).
+            // "line1\nline2\n" = 12 chars, then "line3".
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(0, 5, 2, 0, "\n")],
+                &[text_edit(5, 12, "\n")],
                 sv,
                 ContentVersion::new(),
                 ctx,
@@ -308,7 +295,7 @@ fn handle_buffer_updated_push_accepted_when_version_matches() {
                 path.as_str(),
                 43, // new_server_version
                 0,  // expected_client_version (matches the seeded 0)
-                &[line_col_edit(0, 5, 0, 5, " there")],
+                &[char_edit(5, 5, " there")],
                 ctx,
             );
         });
@@ -350,7 +337,7 @@ fn handle_buffer_updated_push_conflict_when_client_version_stale() {
                 path.as_str(),
                 43,
                 999, // stale expected_client_version
-                &[line_col_edit(0, 0, 0, 8, "replaced")],
+                &[char_edit(0, 8, "replaced")],
                 ctx,
             );
         });
@@ -424,7 +411,7 @@ fn apply_client_edit_updates_sync_clock() {
         let new_cv = ContentVersion::new();
 
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &[text_edit(0, 5, 0, 5, " world")], sv, new_cv, ctx)
+            gbm.apply_client_edit(file_id, &[text_edit(5, 5, " world")], sv, new_cv, ctx)
         });
         assert!(accepted);
 
@@ -461,7 +448,7 @@ fn server_push_updates_sync_clock() {
                 path.as_str(),
                 43,
                 0,
-                &[line_col_edit(0, 5, 0, 5, " world")],
+                &[char_edit(5, 5, " world")],
                 ctx,
             );
         });
@@ -506,7 +493,7 @@ fn sequential_client_edits_accepted() {
 
         // First edit: append "d".
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &[text_edit(0, 3, 0, 3, "d")], sv, cv1, ctx)
+            gbm.apply_client_edit(file_id, &[text_edit(3, 3, "d")], sv, cv1, ctx)
         });
         assert!(accepted);
         assert_eq!(content(&app, file_id), "abcd");
@@ -514,7 +501,7 @@ fn sequential_client_edits_accepted() {
         // Second edit: append "e". server_version is unchanged.
         let cv2 = ContentVersion::new();
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &[text_edit(0, 4, 0, 4, "e")], sv, cv2, ctx)
+            gbm.apply_client_edit(file_id, &[text_edit(4, 4, "e")], sv, cv2, ctx)
         });
         assert!(accepted);
         assert_eq!(content(&app, file_id), "abcde");
@@ -553,7 +540,7 @@ fn sequential_server_pushes_accepted() {
                 path.as_str(),
                 11,
                 0,
-                &[line_col_edit(0, 2, 0, 2, "c")],
+                &[char_edit(2, 2, "c")],
                 ctx,
             );
         });
@@ -566,7 +553,7 @@ fn sequential_server_pushes_accepted() {
                 path.as_str(),
                 12,
                 0,
-                &[line_col_edit(0, 3, 0, 3, "d")],
+                &[char_edit(3, 3, "d")],
                 ctx,
             );
         });
@@ -655,7 +642,7 @@ fn apply_client_edit_multiple_edits_in_batch() {
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(0, 0, 0, 3, "xxx"), text_edit(0, 8, 0, 11, "zzz")],
+                &[text_edit(0, 3, "xxx"), text_edit(8, 11, "zzz")],
                 sv,
                 ContentVersion::new(),
                 ctx,
@@ -687,10 +674,7 @@ fn handle_buffer_updated_push_multiple_edits_in_batch() {
                 path.as_str(),
                 2,
                 0,
-                &[
-                    line_col_edit(0, 0, 0, 3, "xxx"),
-                    line_col_edit(0, 8, 0, 11, "zzz"),
-                ],
+                &[char_edit(0, 3, "xxx"), char_edit(8, 11, "zzz")],
                 ctx,
             );
         });
