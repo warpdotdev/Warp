@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use super::super::proto::{Authenticate, Initialize};
 use super::super::protocol::RequestId;
+use super::super::server_buffer_tracker::ServerBufferTracker;
 use super::{DaemonAuthContext, PendingFileOps, ServerModel};
 
 fn test_model() -> ServerModel {
@@ -14,6 +15,7 @@ fn test_model() -> ServerModel {
         executors: HashMap::new(),
         pending_file_ops: PendingFileOps::new(),
         auth: DaemonAuthContext::new(),
+        buffers: ServerBufferTracker::new(),
     }
 }
 

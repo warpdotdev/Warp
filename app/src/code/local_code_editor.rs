@@ -53,6 +53,7 @@ use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 
 use crate::{
     code::{
+        buffer_location::BufferLocation,
         editor::model::HoverableLink,
         footer::{CodeFooterView, CodeFooterViewEvent},
         global_buffer_model::{BufferState, GlobalBufferModel},
@@ -1179,7 +1180,7 @@ impl LocalCodeEditorView {
         T: FnOnce(BufferState, &mut ViewContext<Self>) -> ViewHandle<CodeEditorView>,
     {
         let buffer_state = GlobalBufferModel::handle(ctx)
-            .update(ctx, |model, ctx| model.open(path.to_path_buf(), ctx));
+            .update(ctx, |model, ctx| model.open(BufferLocation::Local(path.to_path_buf()), ctx));
         let file_id = buffer_state.file_id;
         let editor = editor_constructor(buffer_state, ctx);
 
@@ -1531,6 +1532,10 @@ impl LocalCodeEditorView {
                     ctx.emit(LocalCodeEditorEvent::FailedToSave {
                         error: error.clone(),
                     });
+                }
+                GlobalBufferModelEvent::RemoteBufferConflict { .. }
+                | GlobalBufferModelEvent::ServerLocalBufferUpdated { .. } => {
+                    // Not relevant for local code editors.
                 }
             }
         });

@@ -27,6 +27,8 @@ message ClientMessage {
     OpenBuffer open_buffer = 13;
     BufferEdit buffer_edit = 14;
     CloseBuffer close_buffer = 15;
+    SaveBuffer save_buffer = 16;
+    ResolveConflict resolve_conflict = 17;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -49,6 +51,7 @@ message ServerMessage {
     CodebaseIndexStatusUpdated codebase_index_status_updated = 13;
     OpenBufferResponse open_buffer_response = 14;
     BufferUpdatedPush buffer_updated = 15;
+    SaveBufferResponse save_buffer_response = 16;
   }
 }
 
@@ -387,17 +390,43 @@ message TextEdit {
   string text = 5;
 }
 
-// Server → client push: file changed on disk OR a BufferEdit was rejected.
+// Server → client push: file changed on disk.
 // The client uses expected_client_version to detect conflicts.
+// Carries only incremental edits — full content is served by OpenBufferResponse.
 message BufferUpdatedPush {
   string path = 1;
   uint64 new_server_version = 2;
   uint64 expected_client_version = 3;
-  // Full content for now; incremental diffs can be added later.
-  string content = 4;
+  repeated TextEdit edits = 4;
 }
 
 // Client → server: close a buffer (stop watching).
 message CloseBuffer {
   string path = 1;
+}
+
+// Client → server: persist the current in-memory buffer to disk.
+message SaveBuffer {
+  string path = 1;
+}
+
+// Server → client: result of a SaveBuffer request.
+message SaveBufferResponse {
+  oneof result {
+    SaveBufferSuccess success = 1;
+    FileOperationError error = 2;
+  }
+}
+
+message SaveBufferSuccess {}
+
+// Client → server: resolve a conflict by accepting the client's content.
+// The server replaces its in-memory buffer with client_content,
+// updates the clock to {acknowledged_server_version, current_client_version},
+// and persists to disk (updates base_content_version to avoid re-triggering).
+// For "accept server", the client simply re-sends OpenBuffer instead.
+message ResolveConflict {
+  string path = 1;
+  uint64 acknowledged_server_version = 2;
+  string client_content = 3;
 }

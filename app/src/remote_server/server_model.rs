@@ -13,19 +13,21 @@ use warpui::platform::TerminationMode;
 use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
 use warpui::{Entity, ModelContext, SingletonEntity};
 
+use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
 use warp_files::{FileModel, FileModelEvent};
 use warp_util::content_version::ContentVersion;
 use warp_util::file::FileId;
 
 use super::proto::{
-    client_message, delete_file_response, run_command_response, server_message,
-    write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush, CloseBuffer,
-    ClientMessage, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
-    ErrorCode, ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, Initialize,
-    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextResponse, RunCommandError, RunCommandErrorCode,
-    RunCommandRequest, RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped,
-    WriteFile, WriteFileResponse, WriteFileSuccess,
+    client_message, delete_file_response, run_command_response, save_buffer_response,
+    server_message, write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush,
+    CloseBuffer, ClientMessage, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
+    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
+    FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
+    ResolveConflict, RunCommandError, RunCommandErrorCode, RunCommandRequest, RunCommandResponse,
+    RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess, ServerMessage,
+    SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
 };
 
 /// How long the daemon waits with no connections before exiting.
@@ -199,24 +201,9 @@ pub struct ServerModel {
     pending_file_ops: PendingFileOps,
     /// Daemon-wide auth credentials and user identity.
     auth: DaemonAuthContext,
-    /// Server-side state for buffers opened via `OpenBuffer`.
-    ///
-    /// TODO: Replace this with a `GlobalBufferModel` instance operating on
-    /// local files. That would give us in-memory buffers (no re-reading from
-    /// disk on each edit), file-watcher integration for pushing updates, and
-    /// incremental edit application instead of the current
-    /// read-apply-write-back approach.
-    open_buffers: HashMap<String, ServerBufferState>,
-}
-
-/// Server-side tracking for a buffer opened by a client.
-struct ServerBufferState {
-    /// Monotonically increasing version bumped on each file-watcher change.
-    server_version: u64,
-    /// Last client version acknowledged by the server.
-    client_version: u64,
-    /// The connection that opened this buffer (for push targeting).
-    conn_id: ConnectionId,
+    /// Tracks open buffers, per-buffer connection sets, and pending async
+    /// buffer requests (OpenBuffer, SaveBuffer).
+    buffers: super::server_buffer_tracker::ServerBufferTracker,
 }
 
 impl Entity for ServerModel {
@@ -242,7 +229,7 @@ impl ServerModel {
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
             auth: DaemonAuthContext::new(),
-            open_buffers: HashMap::new(),
+            buffers: super::server_buffer_tracker::ServerBufferTracker::new(),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -345,6 +332,130 @@ impl ServerModel {
                 } => {}
             });
         }
+        // Subscribe to GlobalBufferModel events for server-local buffers.
+        {
+            let gbm = GlobalBufferModel::handle(ctx);
+            ctx.subscribe_to_model(&gbm, |me, event, ctx| match event {
+                GlobalBufferModelEvent::BufferLoaded {
+                    file_id, ..
+                } => {
+                    // Complete a pending OpenBuffer request.
+                    if let Some((request_id, conn_id)) =
+                        me.buffers.take_pending(file_id)
+                    {
+                        let gbm = GlobalBufferModel::handle(ctx);
+                        let content = gbm
+                            .as_ref(ctx)
+                            .content_for_file(*file_id, ctx)
+                            .unwrap_or_default();
+                        let server_version = gbm
+                            .as_ref(ctx)
+                            .sync_clock_for_server_local(*file_id)
+                            .map(|c| c.server_version.as_u64())
+                            .unwrap_or(1);
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::OpenBufferResponse(OpenBufferResponse {
+                                content,
+                                server_version,
+                            }),
+                        );
+                    }
+                }
+                GlobalBufferModelEvent::ServerLocalBufferUpdated {
+                    file_id,
+                    edits,
+                    new_server_version,
+                    expected_client_version,
+                } => {
+                    // Push incremental edits to all connections that have this buffer open.
+                    let Some(conns) = me.buffers.connections_for_buffer(file_id) else {
+                        return;
+                    };
+                    // Find the path for this file_id.
+                    let path = me
+                        .buffers
+                        .path_for_file_id(*file_id)
+                        .unwrap_or_default();
+
+                    let proto_edits: Vec<TextEdit> = edits
+                        .iter()
+                        .map(|edit| TextEdit {
+                            start_line: edit.start_line,
+                            start_column: edit.start_column,
+                            end_line: edit.end_line,
+                            end_column: edit.end_column,
+                            text: edit.text.clone(),
+                        })
+                        .collect();
+
+                    for &conn_id in conns {
+                        me.send_server_message(
+                            Some(conn_id),
+                            None,
+                            server_message::Message::BufferUpdated(BufferUpdatedPush {
+                                path: path.clone(),
+                                new_server_version: new_server_version.as_u64(),
+                                expected_client_version: expected_client_version.as_u64(),
+                                edits: proto_edits.clone(),
+                            }),
+                        );
+                    }
+                }
+                GlobalBufferModelEvent::FileSaved { file_id } => {
+                    // Complete a pending SaveBuffer request.
+                    if let Some((request_id, conn_id)) =
+                        me.buffers.take_pending(file_id)
+                    {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::SaveBufferResponse(SaveBufferResponse {
+                                result: Some(save_buffer_response::Result::Success(
+                                    SaveBufferSuccess {},
+                                )),
+                            }),
+                        );
+                    }
+                }
+                GlobalBufferModelEvent::FailedToSave { file_id, error } => {
+                    if let Some((request_id, conn_id)) =
+                        me.buffers.take_pending(file_id)
+                    {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::SaveBufferResponse(SaveBufferResponse {
+                                result: Some(save_buffer_response::Result::Error(
+                                    FileOperationError {
+                                        message: format!("{error}"),
+                                    },
+                                )),
+                            }),
+                        );
+                    }
+                }
+                GlobalBufferModelEvent::FailedToLoad { file_id, error } => {
+                    if let Some((request_id, conn_id)) =
+                        me.buffers.take_pending(file_id)
+                    {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::Error(ErrorResponse {
+                                code: ErrorCode::Internal.into(),
+                                message: format!("Failed to load buffer: {error}"),
+                            }),
+                        );
+                    }
+                }
+                GlobalBufferModelEvent::BufferUpdatedFromFileEvent { .. }
+                | GlobalBufferModelEvent::RemoteBufferConflict { .. } => {
+                    // Not relevant for server-local buffers.
+                }
+            });
+        }
         // Start the grace timer immediately so the daemon exits if no proxy
         // connects within GRACE_PERIOD. In practice the spawning proxy connects
         // within milliseconds, so the risk of premature shutdown is negligible;
@@ -386,6 +497,11 @@ impl ServerModel {
         if self.connection_senders.remove(&conn_id).is_none() {
             return;
         }
+
+        // Remove this connection from all buffer connection sets.
+        // Orphaned buffers (no connections left) are deallocated automatically.
+        self.buffers.remove_connection(conn_id, ctx);
+
         let remaining = self.connection_senders.len();
         log::info!("Daemon: connection {conn_id} deregistered — {remaining} active remaining");
         if remaining == 0 {
@@ -473,11 +589,18 @@ impl ServerModel {
                 self.handle_open_buffer(msg, &request_id, conn_id, ctx)
             }
             Some(client_message::Message::BufferEdit(msg)) => {
-                self.handle_buffer_edit(msg, conn_id, ctx);
+                self.handle_buffer_edit(msg, ctx);
                 return; // fire-and-forget notification
             }
             Some(client_message::Message::CloseBuffer(msg)) => {
-                self.handle_close_buffer(msg);
+                self.handle_close_buffer(msg, ctx);
+                return; // fire-and-forget notification
+            }
+            Some(client_message::Message::SaveBuffer(msg)) => {
+                self.handle_save_buffer(msg, &request_id, conn_id, ctx)
+            }
+            Some(client_message::Message::ResolveConflict(msg)) => {
+                self.handle_resolve_conflict(msg, ctx);
                 return; // fire-and-forget notification
             }
             None => {
@@ -1222,8 +1345,8 @@ impl ServerModel {
         HandlerOutcome::Async(Some(handle))
     }
 
-    /// Handles `OpenBuffer` by reading the file and returning its content.
-    /// Registers the buffer for future edit syncing.
+    /// Handles `OpenBuffer` by opening the file via `GlobalBufferModel`.
+    /// The response is sent asynchronously when `BufferLoaded` fires.
     fn handle_open_buffer(
         &mut self,
         msg: OpenBuffer,
@@ -1236,168 +1359,142 @@ impl ServerModel {
             msg.path
         );
 
-        let path = msg.path.clone();
-        let path_for_read = PathBuf::from(&msg.path);
-        let request_id_for_response = request_id.clone();
+        let path = PathBuf::from(&msg.path);
+        let gbm = GlobalBufferModel::handle(ctx);
+        let buffer_state = gbm.update(ctx, |gbm, ctx| gbm.open_server_local(path, ctx));
+        let file_id = buffer_state.file_id;
 
-        let handle = self.spawn_request_handler(
-            request_id.clone(),
-            async move { async_fs::read_to_string(&path_for_read).await },
-            move |me, result, _ctx| {
-                match result {
-                    Ok(content) => {
-                        let server_version = 1u64;
-                        me.open_buffers.insert(
-                            path.clone(),
-                            ServerBufferState {
-                                server_version,
-                                client_version: 0,
-                                conn_id,
-                            },
-                        );
-                        me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id_for_response),
-                            server_message::Message::OpenBufferResponse(OpenBufferResponse {
-                                content,
-                                server_version,
-                            }),
-                        );
-                    }
-                    Err(e) => {
-                        me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id_for_response),
-                            server_message::Message::Error(ErrorResponse {
-                                code: ErrorCode::Internal.into(),
-                                message: format!("Failed to read file: {e}"),
-                            }),
-                        );
-                    }
-                }
-            },
-            ctx,
-        );
-        HandlerOutcome::Async(Some(handle))
+        // Track path → FileId mapping and connection.
+        self.buffers.track_open_buffer(msg.path.clone(), file_id);
+        self.buffers.add_connection(file_id, conn_id);
+
+        // If already loaded, respond immediately.
+        if gbm.as_ref(ctx).buffer_loaded(file_id) {
+            let content = gbm
+                .as_ref(ctx)
+                .content_for_file(file_id, ctx)
+                .unwrap_or_default();
+            let server_version = gbm
+                .as_ref(ctx)
+                .sync_clock_for_server_local(file_id)
+                .map(|c| c.server_version.as_u64())
+                .unwrap_or(1);
+            return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
+                OpenBufferResponse {
+                    content,
+                    server_version,
+                },
+            ));
+        }
+
+        // Not yet loaded — stash request info so the GlobalBufferModelEvent
+        // subscription can send the response when content arrives.
+        self.buffers.insert_pending(file_id, request_id.clone(), conn_id);
+        HandlerOutcome::Async(None)
     }
 
     /// Handles `BufferEdit` notification (fire-and-forget).
-    /// If the expected server version matches, applies the edit.
-    /// If not, pushes the current content back to the client.
+    /// Delegates to `GlobalBufferModel::apply_client_edit`. Stale edits
+    /// are silently discarded.
     fn handle_buffer_edit(
         &mut self,
         msg: BufferEdit,
-        conn_id: ConnectionId,
         ctx: &mut ModelContext<Self>,
     ) {
-        let Some(state) = self.open_buffers.get_mut(&msg.path) else {
+        let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
             log::warn!("BufferEdit for unknown buffer: {}", msg.path);
             return;
         };
 
-        if msg.expected_server_version == state.server_version {
-            // Accept: update client version.
-            state.client_version = msg.new_client_version;
+        let expected_sv = ContentVersion::from_raw(msg.expected_server_version as usize);
+        let new_cv = ContentVersion::from_raw(msg.new_client_version as usize);
 
-            // Write the edits to disk asynchronously.
-            // For now, we reconstruct the file content by reading + applying edits.
-            // TODO: Maintain an in-memory buffer on the server side for incremental application.
-            let path = PathBuf::from(&msg.path);
-            let edits = msg.edits;
-            ctx.spawn(
-                async move {
-                    // Read current file, apply edits, write back.
-                    let content = async_fs::read_to_string(&path).await?;
-                    let updated = apply_text_edits_to_string(&content, &edits);
-                    async_fs::write(&path, &updated).await?;
-                    Ok::<(), std::io::Error>(())
+        GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
+            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx);
+        });
+    }
+
+    /// Handles `SaveBuffer` by persisting the buffer to disk.
+    fn handle_save_buffer(
+        &mut self,
+        msg: SaveBuffer,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        log::info!(
+            "Handling SaveBuffer path={} (request_id={request_id})",
+            msg.path
+        );
+
+        let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
+            return HandlerOutcome::Sync(server_message::Message::SaveBufferResponse(
+                SaveBufferResponse {
+                    result: Some(save_buffer_response::Result::Error(FileOperationError {
+                        message: format!("Buffer not open: {}", msg.path),
+                    })),
                 },
-                |_me, result, _ctx| {
-                    if let Err(e) = result {
-                        log::warn!("Failed to apply buffer edit to disk: {e}");
-                    }
+            ));
+        };
+
+        let result = GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
+            gbm.save_server_local(file_id, ctx)
+        });
+
+        match result {
+            Ok(()) => {
+                // Response will come via the FileSaved event subscription.
+                // Track the file_id → (request_id, conn_id) so the event
+                // handler can correlate.
+                self.buffers
+                    .insert_pending(file_id, request_id.clone(), conn_id);
+                HandlerOutcome::Async(None)
+            }
+            Err(err) => HandlerOutcome::Sync(server_message::Message::SaveBufferResponse(
+                SaveBufferResponse {
+                    result: Some(save_buffer_response::Result::Error(FileOperationError {
+                        message: format!("Failed to save: {err}"),
+                    })),
                 },
-            );
-        } else {
-            // Reject: push current server content.
-            log::info!(
-                "BufferEdit rejected for {}: expected S={}, actual S={}",
-                msg.path,
-                msg.expected_server_version,
-                state.server_version
-            );
-            let path = PathBuf::from(&msg.path);
-            let server_version = state.server_version;
-            let client_version = state.client_version;
-            let push_path = msg.path.clone();
-            ctx.spawn(
-                async move { async_fs::read_to_string(&path).await },
-                move |me, result, _ctx| {
-                    if let Ok(content) = result {
-                        me.send_server_message(
-                            Some(conn_id),
-                            None,
-                            server_message::Message::BufferUpdated(BufferUpdatedPush {
-                                path: push_path,
-                                new_server_version: server_version,
-                                expected_client_version: client_version,
-                                content,
-                            }),
-                        );
-                    }
-                },
-            );
+            )),
+        }
+    }
+
+    /// Handles `ResolveConflict` notification (fire-and-forget).
+    /// Accepts the client's content, replaces the server buffer, and saves to disk.
+    fn handle_resolve_conflict(
+        &mut self,
+        msg: ResolveConflict,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        log::info!("Handling ResolveConflict path={}", msg.path);
+
+        let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
+            log::warn!("ResolveConflict for unknown buffer: {}", msg.path);
+            return;
+        };
+
+        let ack_sv = ContentVersion::from_raw(msg.acknowledged_server_version as usize);
+        let result = GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
+            gbm.resolve_conflict(file_id, ack_sv, &msg.client_content, ctx)
+        });
+
+        if let Err(err) = result {
+            log::warn!("ResolveConflict failed for {}: {err}", msg.path);
         }
     }
 
     /// Handles `CloseBuffer` notification (fire-and-forget).
-    fn handle_close_buffer(&mut self, msg: CloseBuffer) {
+    /// Removes the connection from the buffer's connection set.
+    /// Deallocates the buffer if no connections remain.
+    fn handle_close_buffer(
+        &mut self,
+        msg: CloseBuffer,
+        ctx: &mut ModelContext<Self>,
+    ) {
         log::info!("Handling CloseBuffer path={}", msg.path);
-        self.open_buffers.remove(&msg.path);
+        self.buffers.close_buffer(&msg.path, ctx);
     }
-}
-
-/// Applies text edits to a string. Edits are applied in reverse order
-/// (bottom-to-top) to avoid offset invalidation.
-fn apply_text_edits_to_string(
-    content: &str,
-    edits: &[super::proto::TextEdit],
-) -> String {
-    let lines: Vec<&str> = content.split('\n').collect();
-
-    // Convert line/column edits to byte offsets, then apply in reverse.
-    let mut byte_edits: Vec<(usize, usize, &str)> = edits
-        .iter()
-        .filter_map(|edit| {
-            let start = line_col_to_byte_offset(&lines, edit.start_line as usize, edit.start_column as usize)?;
-            let end = line_col_to_byte_offset(&lines, edit.end_line as usize, edit.end_column as usize)?;
-            Some((start, end, edit.text.as_str()))
-        })
-        .collect();
-
-    // Sort by start offset descending so we can apply without shifting.
-    byte_edits.sort_by(|a, b| b.0.cmp(&a.0));
-
-    let mut result = content.to_string();
-    for (start, end, text) in byte_edits {
-        let start = start.min(result.len());
-        let end = end.min(result.len());
-        result.replace_range(start..end, text);
-    }
-    result
-}
-
-/// Converts 0-indexed line/column to a byte offset within newline-split content.
-fn line_col_to_byte_offset(lines: &[&str], line: usize, col: usize) -> Option<usize> {
-    if line >= lines.len() {
-        return None;
-    }
-    let mut offset = 0;
-    for l in &lines[..line] {
-        offset += l.len() + 1; // +1 for '\n'
-    }
-    offset += col.min(lines[line].len());
-    Some(offset)
 }
 
 /// Converts a [`ReadFileContextResult`] into its protobuf equivalent.

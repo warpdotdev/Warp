@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use warp_util::content_version::ContentVersion;
 use warp_util::remote_path::RemotePath;
 
 /// Uniquely identifies where a buffer's content lives.
@@ -22,35 +23,53 @@ pub enum BufferLocation {
 ///   Match → accept. Mismatch → conflict.
 /// - Client sends `{S_expected, C_new}`. Server checks `S_expected == local server_version`.
 ///   Match → accept. Mismatch → reject (server pushes its current state).
+///
+/// Both fields use `ContentVersion` internally. At the wire boundary (proto
+/// encode/decode), convert via `ContentVersion::as_u64()` and
+/// `ContentVersion::from_raw()`.
 #[derive(Clone, Debug)]
 pub struct SyncClock {
     /// Last version acknowledged from the server (file-watcher side).
-    ///
-    /// This is a raw `u64` rather than `ContentVersion` because it represents
-    /// a version counter from the remote server protocol, not a local
-    /// buffer mutation. `ContentVersion` is auto-incremented locally and
-    /// cannot be constructed from an arbitrary wire value.
-    pub server_version: u64,
+    pub server_version: ContentVersion,
     /// Last version acknowledged from the client (user-edit side).
-    pub client_version: u64,
+    pub client_version: ContentVersion,
 }
 
 impl SyncClock {
-    pub fn new(server_version: u64) -> Self {
+    pub fn new() -> Self {
         Self {
-            server_version,
-            client_version: 0,
+            server_version: ContentVersion::new(),
+            client_version: ContentVersion::from_raw(0),
         }
     }
 
-    /// Bump the client version after a local edit. Returns the new client version.
-    pub fn bump_client(&mut self) -> u64 {
-        self.client_version += 1;
+    /// Reconstruct a `SyncClock` from wire values (proto deserialization).
+    pub fn from_wire(server_version: u64, client_version: u64) -> Self {
+        Self {
+            server_version: ContentVersion::from_raw(server_version as usize),
+            client_version: ContentVersion::from_raw(client_version as usize),
+        }
+    }
+
+    /// Bump the server version after a file-watcher change.
+    pub fn bump_server(&mut self) -> ContentVersion {
+        self.server_version = ContentVersion::new();
+        self.server_version
+    }
+
+    /// Bump the client version after a local edit.
+    pub fn bump_client(&mut self) -> ContentVersion {
+        self.client_version = ContentVersion::new();
         self.client_version
     }
 
     /// Check whether a server push's expected client version matches our local state.
-    pub fn server_push_matches(&self, expected_client_version: u64) -> bool {
+    pub fn server_push_matches(&self, expected_client_version: ContentVersion) -> bool {
         self.client_version == expected_client_version
+    }
+
+    /// Check whether a client edit's expected server version matches our local state.
+    pub fn client_edit_matches(&self, expected_server_version: ContentVersion) -> bool {
+        self.server_version == expected_server_version
     }
 }
