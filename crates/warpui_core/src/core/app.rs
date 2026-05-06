@@ -1208,6 +1208,18 @@ impl AppContext {
             .unwrap_or(self.zoom_factor)
     }
 
+    /// Returns the per-window zoom factor override for `window_id`, or
+    /// `None` if no override has been set or the window is not found.
+    /// Distinct from [`AppContext::window_zoom_factor`], which resolves
+    /// `None` to the app-wide default; this accessor exposes the raw
+    /// override so callers (e.g. session persistence) can distinguish
+    /// "follow the default" from "explicitly overridden to the default".
+    pub fn window_zoom_factor_override(&self, window_id: WindowId) -> Option<ZoomFactor> {
+        self.windows
+            .get(&window_id)
+            .and_then(|w| w.zoom_factor_override)
+    }
+
     /// Sets a per-window zoom factor override. Only invalidates the views of
     /// `window_id`; other windows are unaffected.
     ///

@@ -376,7 +376,7 @@ use crate::view_components::callout_bubble::{
 use crate::view_components::{
     AgentToast, AgentToastStack, DismissibleToast, DismissibleToastStack, ToastLink,
 };
-use crate::window_settings::{WindowSettings, WindowSettingsChangedEvent};
+use crate::window_settings::{WindowSettings, WindowSettingsChangedEvent, ZoomLevel};
 use crate::workflows::{
     manager::WorkflowOpenSource, AIWorkflowOrigin, CloudWorkflow, WorkflowSelectionSource,
     WorkflowSource, WorkflowType, WorkflowViewMode,
@@ -3740,6 +3740,17 @@ impl Workspace {
                 }
 
                 self.activate_tab_internal(active_tab_index, ctx);
+
+                // Restore the per-window zoom override (only present in
+                // snapshots written while `appearance.window.zoom_per_window`
+                // was enabled). `None` means the window had no override and
+                // should follow the app-wide default after restart.
+                if let Some(zoom_override) = window_snapshot.zoom_factor_override {
+                    let window_id = self.window_id;
+                    ctx.set_window_zoom_factor(window_id, zoom_override);
+                    self.update_titlebar_height(ctx);
+                }
+
                 self.check_and_trigger_onboarding(ctx);
                 self.maybe_auto_open_conversation_list(ctx);
             }
@@ -10129,6 +10140,10 @@ impl Workspace {
                 .read(app, |view, _| view.get_filters()),
         );
 
+        let zoom_factor_override = app
+            .window_zoom_factor_override(self.window_id)
+            .map(|z| z.as_f32());
+
         WindowSnapshot {
             tabs,
             active_tab_index,
@@ -10144,6 +10159,7 @@ impl Workspace {
             left_panel_width,
             right_panel_width,
             agent_management_filters,
+            zoom_factor_override,
         }
     }
 
@@ -16201,36 +16217,62 @@ impl Workspace {
     }
 
     fn reset_zoom(&mut self, ctx: &mut ViewContext<Self>) {
-        // Cmd+0: clear the per-window zoom override so this window follows
-        // the app-wide default again. The native macOS titlebar height also
-        // needs to be recomputed for this window because we no longer route
-        // through `WindowSettingsChangedEvent::ZoomLevel`.
-        let window_id = ctx.window_id();
-        ctx.reset_window_zoom_factor(window_id);
-        self.update_titlebar_height(ctx);
+        // Cmd+0: behaviour depends on `zoom_per_window`.
+        //
+        // - When false (default), the shortcut reverts to the legacy app-wide
+        //   path: reset `WindowSettings::zoom_level` to its default; the
+        //   `WindowSettingsChangedEvent::ZoomLevel` subscriber relays into
+        //   `ctx.set_zoom_factor`, invalidating every window.
+        // - When true, the shortcut clears the focused window's per-window
+        //   override so it follows the app-wide default again. The native
+        //   macOS titlebar height is recomputed explicitly because we no
+        //   longer route through `WindowSettingsChangedEvent::ZoomLevel`.
+        if *WindowSettings::as_ref(ctx).zoom_per_window {
+            let window_id = ctx.window_id();
+            ctx.reset_window_zoom_factor(window_id);
+            self.update_titlebar_height(ctx);
+        } else {
+            WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
+                report_if_error!(window_settings
+                    .zoom_level
+                    .set_value(ZoomLevel::default_value(), ctx));
+            });
+        }
     }
 
     fn adjust_zoom(&mut self, increase: bool, ctx: &mut ViewContext<Self>) {
-        // Cmd++ / Cmd+-: step the focused window's zoom up or down within
-        // the discrete percentages defined by `ZoomLevel::VALUES`. Writes a
-        // per-window override; other windows are unaffected. The native macOS
-        // titlebar height is recomputed explicitly because Cmd++/Cmd+- no
-        // longer mutates `WindowSettings::zoom_level` (and therefore does not
-        // fire `WindowSettingsChangedEvent::ZoomLevel`).
+        // Cmd++ / Cmd+-: behaviour depends on `zoom_per_window`.
         //
-        // The current effective zoom is not guaranteed to be one of the
-        // discrete `ZoomLevel::VALUES` entries — e.g. a caller could set the
-        // app-wide default to a value that does not appear in VALUES — so we
-        // snap to the nearest VALUES entry in the chosen direction rather
-        // than indexing into VALUES directly. This keeps Cmd++/Cmd+- usable
-        // from any in-range starting factor.
-        let window_id = ctx.window_id();
-        let current_factor = ctx.window_zoom_factor(window_id);
-        let current_percent = (current_factor.as_f32() * 100.0).round() as u16;
-        let next_percent = next_zoom_step(current_percent, increase);
-        let next_factor = next_percent as f32 / 100.0;
-        ctx.set_window_zoom_factor(window_id, next_factor);
-        self.update_titlebar_height(ctx);
+        // - When false (default), step `WindowSettings::zoom_level` within
+        //   the discrete `ZoomLevel::VALUES` percentages; the settings
+        //   subscriber relays the value into `ctx.set_zoom_factor` and every
+        //   window updates together (legacy app-wide behaviour preserved for
+        //   existing users).
+        // - When true, step the focused window's per-window override; other
+        //   windows are unaffected. The native macOS titlebar height is
+        //   recomputed explicitly because the per-window path does not fire
+        //   `WindowSettingsChangedEvent::ZoomLevel`.
+        //
+        // In both modes the current effective zoom is not guaranteed to be
+        // one of the discrete `ZoomLevel::VALUES` entries (a caller could
+        // set the app-wide default to a non-VALUES factor), so we snap to
+        // the nearest VALUES entry in the chosen direction via
+        // `next_zoom_step` rather than indexing into VALUES directly.
+        if *WindowSettings::as_ref(ctx).zoom_per_window {
+            let window_id = ctx.window_id();
+            let current_factor = ctx.window_zoom_factor(window_id);
+            let current_percent = (current_factor.as_f32() * 100.0).round() as u16;
+            let next_percent = next_zoom_step(current_percent, increase);
+            let next_factor = next_percent as f32 / 100.0;
+            ctx.set_window_zoom_factor(window_id, next_factor);
+            self.update_titlebar_height(ctx);
+        } else {
+            let current_percent = *WindowSettings::as_ref(ctx).zoom_level.value();
+            let next_percent = next_zoom_step(current_percent, increase);
+            WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
+                report_if_error!(window_settings.zoom_level.set_value(next_percent, ctx));
+            });
+        }
     }
 
     fn adjust_terminal_font_size(&mut self, font_size_delta: f32, ctx: &mut ViewContext<Self>) {

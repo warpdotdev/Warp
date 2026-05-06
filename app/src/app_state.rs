@@ -57,6 +57,10 @@ pub struct WindowSnapshot {
     pub left_panel_width: Option<f32>,
     pub right_panel_width: Option<f32>,
     pub agent_management_filters: Option<PersistedAgentManagementFilters>,
+    /// Per-window zoom factor override (None = follows the app-wide default
+    /// `WindowSettings::zoom_level`). Only populated when the
+    /// `appearance.window.zoom_per_window` setting is enabled.
+    pub zoom_factor_override: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
