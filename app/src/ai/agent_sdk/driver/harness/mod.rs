@@ -378,7 +378,7 @@ pub(crate) fn harness_model_env_vars(
     harness_model_id: Option<&str>,
 ) -> HashMap<OsString, OsString> {
     let mut env_vars = HashMap::new();
-    let Some(model_id) = harness_model_id.filter(|id| !id.is_empty() && *id != "default") else {
+    let Some(model_id) = harness_model_id.filter(|id| !id.is_empty()) else {
         return env_vars;
     };
 

@@ -23,8 +23,7 @@ use crate::ai::{
     agent::conversation::AIConversationId,
     agent_sdk::driver::harness::{
         harness_model_env_vars, task_env_vars, HarnessCleanupDisposition, HarnessKind,
-        HarnessRunner, ResumePayload,
-        SavePoint, ThirdPartyHarness,
+        HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness,
     },
 };
 use crate::terminal::cli_agent_sessions::plugin_manager::{

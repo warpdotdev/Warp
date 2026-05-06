@@ -838,9 +838,6 @@ impl AmbientAgentViewModel {
         let computer_use_enabled = Some(enabled);
 
         let selected_harness = self.selected_harness();
-        let default_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
-            .ok()
-            .filter(|s| !s.is_empty());
 
         let oz_model = (selected_harness == Harness::Oz).then(|| {
             LLMPreferences::as_ref(ctx)

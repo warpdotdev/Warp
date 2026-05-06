@@ -591,20 +591,6 @@ pub struct GitCredential {
     pub host: String,
 }
 
-/// Public API response for harness model listings.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct HarnessModelInfo {
-    pub id: String,
-    pub display_name: String,
-}
-
-/// Public API response for `GET /api/v1/agent/harness-models`.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct ListHarnessModelsResponse {
-    pub default_model_id: String,
-    pub models: Vec<HarnessModelInfo>,
-}
-
 /// Filter parameters for listing ambient agent tasks.
 #[derive(Clone, Debug, Default)]
 pub struct TaskListFilter {
@@ -878,13 +864,6 @@ pub trait AIClient: 'static + Send + Sync {
     async fn get_feature_model_choices(&self) -> Result<ModelsByFeature, anyhow::Error>;
 
     async fn get_available_harnesses(&self) -> Result<Vec<HarnessAvailability>, anyhow::Error>;
-
-    /// Fetches the list of models supported by a third-party harness (e.g. "claude").
-    /// Returns an empty response when the harness is not recognized by the server.
-    async fn get_harness_models(
-        &self,
-        harness: &str,
-    ) -> Result<ListHarnessModelsResponse, anyhow::Error>;
 
     /// Fetches the free-tier available models without requiring authentication.
     /// Used during pre-login onboarding so logged-out users see an accurate model list
@@ -1394,18 +1373,6 @@ impl AIClient for ServerApi {
         }
     }
 
-    async fn get_harness_models(
-        &self,
-        harness: &str,
-    ) -> Result<ListHarnessModelsResponse, anyhow::Error> {
-        let path = format!(
-            "agent/harness-models?harness={}",
-            urlencoding::encode(harness)
-        );
-        let response: ListHarnessModelsResponse = self.get_public_api(&path).await?;
-        Ok(response)
-    }
-
     async fn get_feature_model_choices(&self) -> Result<ModelsByFeature, anyhow::Error> {
         let variables = GetFeatureModelChoicesVariables {
             request_context: get_request_context(),
@@ -1445,6 +1412,14 @@ impl AIClient for ServerApi {
                         harness: convert_harness(h.harness).into(),
                         display_name: h.display_name,
                         enabled: h.enabled,
+                        available_models: h
+                            .available_models
+                            .into_iter()
+                            .map(|m| crate::ai::harness_availability::HarnessModelInfo {
+                                id: m.id.into_inner(),
+                                display_name: m.display_name,
+                            })
+                            .collect(),
                     })
                     .collect())
             }

@@ -829,7 +829,6 @@ impl AISettingsPageView {
                 LLMPreferencesEvent::UpdatedActiveCodingLLM => {
                     Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
                 }
-                LLMPreferencesEvent::UpdatedHarnessModels => {}
             },
         );
 

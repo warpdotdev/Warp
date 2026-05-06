@@ -16,6 +16,7 @@ use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
 
 use crate::ai::blocklist::agent_view::agent_input_footer::AgentInputButtonTheme;
+use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
 use crate::ai::harness_display::icon_for as harness_icon_for;
 use crate::ai::llms::{LLMId, LLMPreferences, LLMPreferencesEvent};
 use crate::editor::{
@@ -167,12 +168,21 @@ impl ModelSelector {
             &LLMPreferences::handle(ctx),
             |me, _, event, ctx| match event {
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM
-                | LLMPreferencesEvent::UpdatedAvailableLLMs
-                | LLMPreferencesEvent::UpdatedHarnessModels => {
+                | LLMPreferencesEvent::UpdatedAvailableLLMs => {
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }
                 LLMPreferencesEvent::UpdatedActiveCodingLLM => {}
+            },
+        );
+
+        ctx.subscribe_to_model(
+            &HarnessAvailabilityModel::handle(ctx),
+            |me, _, event, ctx| match event {
+                HarnessAvailabilityEvent::Changed => {
+                    me.refresh_button(ctx);
+                    me.refresh_menu(ctx);
+                }
             },
         );
 
@@ -181,18 +191,9 @@ impl ModelSelector {
         });
 
         if let Some(ambient_agent_model) = ambient_agent_model.as_ref() {
-            ctx.subscribe_to_model(ambient_agent_model, |me, model, event, ctx| match event {
-                AmbientAgentViewModelEvent::HarnessSelected => {
-                    let harness = model.as_ref(ctx).selected_harness();
-                    if !matches!(harness, Harness::Oz | Harness::Unknown) {
-                        LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
-                            prefs.fetch_harness_models(harness, ctx);
-                        });
-                    }
-                    me.refresh_button(ctx);
-                    me.refresh_menu(ctx);
-                }
-                AmbientAgentViewModelEvent::HarnessModelSelected => {
+            ctx.subscribe_to_model(ambient_agent_model, |me, _, event, ctx| match event {
+                AmbientAgentViewModelEvent::HarnessSelected
+                | AmbientAgentViewModelEvent::HarnessModelSelected => {
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }
@@ -210,14 +211,6 @@ impl ModelSelector {
             terminal_view_id,
             ambient_agent_model,
         };
-
-        if let Some(harness) = me.active_harness(ctx) {
-            if !matches!(harness, Harness::Oz | Harness::Unknown) {
-                LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
-                    prefs.fetch_harness_models(harness, ctx);
-                });
-            }
-        }
 
         me.refresh_button(ctx);
         me.refresh_menu(ctx);
@@ -239,30 +232,18 @@ impl ModelSelector {
     }
 
     /// Resolves the selection for `harness`, preferring the user's pick on the ambient agent
-    /// view model and falling back to the harness catalog's default model id.
+    /// view model. Returns `None` when no explicit selection has been made ("Default").
     fn resolved_harness_selection(
         &self,
         harness: Harness,
         app: &AppContext,
     ) -> Option<HarnessSelection> {
-        if let Some(model_id) = self
+        let model_id = self
             .ambient_agent_model
             .as_ref()
             .and_then(|m| m.as_ref(app).selected_harness_model_id())
-            .map(str::to_owned)
-        {
-            return Some(HarnessSelection { harness, model_id });
-        }
-        let models = LLMPreferences::as_ref(app).get_harness_models(harness)?;
-        let default_id = &models.default_model_id;
-        if default_id.is_empty() {
-            None
-        } else {
-            Some(HarnessSelection {
-                harness,
-                model_id: default_id.clone(),
-            })
-        }
+            .map(str::to_owned)?;
+        Some(HarnessSelection { harness, model_id })
     }
 
     fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
@@ -322,17 +303,19 @@ impl ModelSelector {
 
     fn refresh_button(&mut self, ctx: &mut ViewContext<Self>) {
         let active_label = match self.active_harness(ctx) {
-            Some(harness) if !matches!(harness, Harness::Oz | Harness::Unknown) => {
-                let llm_preferences = LLMPreferences::as_ref(ctx);
-                self.resolved_harness_selection(harness, ctx)
-                    .and_then(|selection| {
-                        llm_preferences.get_harness_models(harness).and_then(|m| {
-                            m.info_for_id(&selection.model_id)
+            Some(harness) if !matches!(harness, Harness::Oz | Harness::Unknown) => self
+                .resolved_harness_selection(harness, ctx)
+                .and_then(|selection| {
+                    HarnessAvailabilityModel::as_ref(ctx)
+                        .models_for(harness)
+                        .and_then(|models| {
+                            models
+                                .iter()
+                                .find(|m| m.id == selection.model_id)
                                 .map(|info| info.display_name.clone())
                         })
-                    })
-                    .unwrap_or_else(|| "default".to_string())
-            }
+                })
+                .unwrap_or_else(|| "Default".to_string()),
             _ => LLMPreferences::as_ref(ctx)
                 .get_active_base_model(ctx, Some(self.terminal_view_id))
                 .display_name
@@ -428,15 +411,16 @@ impl ModelSelector {
         hover_background: Fill,
         ctx: &AppContext,
     ) -> (Vec<MenuItem<ModelSelectorAction>>, ModelSelectorAction) {
-        let llm_preferences = LLMPreferences::as_ref(ctx);
         let active_id = self
             .resolved_harness_selection(harness, ctx)
             .map(|selection| selection.model_id)
             .unwrap_or_default();
         let icon = harness_icon_for(harness);
 
-        let items: Vec<MenuItem<ModelSelectorAction>> = llm_preferences
-            .get_harness_llm_choices(harness)
+        let models = HarnessAvailabilityModel::as_ref(ctx).models_for(harness);
+        let items: Vec<MenuItem<ModelSelectorAction>> = models
+            .into_iter()
+            .flat_map(|slice| slice.iter())
             .filter_map(|model| {
                 let display_name = model.display_name.clone();
                 if !query.is_empty() && !display_name.to_lowercase().contains(query) {
