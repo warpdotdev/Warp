@@ -14,7 +14,10 @@ Link the GitHub issue this PR addresses. Before opening this PR, please confirm:
 ## Testing
 <!--
 How did you test this change? What automated tests did you add? If you didn't add any new tests, what's your justification for not adding any?
+If your change can be manually tested, please do so. You can run the app locally using `./script/run`. Screenshots or videos are appreciated.
 -->
+
+- [ ] I have manually tested my changes locally with `./script/run`
 
 ## Agent Mode
 - [ ] Warp Agent Mode - This PR was created via Warp's AI Agent Mode
