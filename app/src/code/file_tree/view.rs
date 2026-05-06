@@ -623,9 +623,17 @@ impl FileTreeView {
                 ctx.notify();
             }
             RepoMetadataEvent::RepositoryIndexedWithLimit {
-                id: RepositoryIdentifier::Local(_),
+                id: RepositoryIdentifier::Local(std_path),
             } => {
-                Self::show_repo_indexed_with_limit_toast(ctx);
+                // RepoMetadataModel is global; only toast in views that display this repo.
+                let displays_repo = self.root_directories.contains_key(std_path)
+                    || self
+                        .root_directories
+                        .values()
+                        .any(|root_dir| **root_dir.entry.root_directory() == *std_path);
+                if displays_repo {
+                    Self::show_repo_indexed_with_limit_toast(ctx);
+                }
             }
             RepoMetadataEvent::FileTreeUpdated { .. }
             | RepoMetadataEvent::RepositoryRemoved { .. }
