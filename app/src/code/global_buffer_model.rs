@@ -8,9 +8,10 @@ use bimap::BiMap;
 use futures_util::stream::AbortHandle;
 use lsp::types::TextDocumentContentChangeEvent;
 use lsp::{LspManagerModel, LspServerLogLevel, LspServerModel};
+use string_offset::{ByteOffset, CharOffset};
 use vec1::vec1;
 use warp_core::features::FeatureFlag;
-use warp_editor::content::buffer::Buffer;
+use warp_editor::content::buffer::{Buffer, ToBufferCharOffset};
 use warp_editor::content::diff::{text_diff, TextDiff};
 use warp_editor::content::edit::PreciseDelta;
 use warp_editor::content::version::BufferVersion;
@@ -239,8 +240,8 @@ impl GlobalBufferModelEvent {
 /// and `handle_buffer_updated_push` without coupling `GlobalBufferModel`
 /// to proto types. Offsets are 0-indexed: offset 0 = first character.
 pub struct CharOffsetEdit {
-    pub start: usize,
-    pub end: usize,
+    pub start: CharOffset,
+    pub end: CharOffset,
     pub text: String,
 }
 
@@ -263,6 +264,40 @@ impl GlobalBufferModel {
             &LspManagerModel::handle(_ctx),
             Self::handle_lsp_manager_events,
         );
+
+        // Subscribe to remote buffer updates from the RemoteServerManager.
+        #[cfg(feature = "local_tty")]
+        if FeatureFlag::SshRemoteServer.is_enabled() {
+            use remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
+            let mgr = RemoteServerManager::handle(_ctx);
+            _ctx.subscribe_to_model(&mgr, |me, event, ctx| {
+                if let RemoteServerManagerEvent::BufferUpdated {
+                    host_id,
+                    path,
+                    new_server_version,
+                    expected_client_version,
+                    edits,
+                } = event
+                {
+                    let char_edits: Vec<_> = edits
+                        .iter()
+                        .map(|e| CharOffsetEdit {
+                            start: CharOffset::from(e.start_offset as usize),
+                            end: CharOffset::from(e.end_offset as usize),
+                            text: e.text.clone(),
+                        })
+                        .collect();
+                    me.handle_buffer_updated_push(
+                        host_id,
+                        path,
+                        *new_server_version,
+                        *expected_client_version,
+                        &char_edits,
+                        ctx,
+                    );
+                }
+            });
+        }
 
         Self {
             location_to_id: BiMap::new(),
@@ -489,7 +524,11 @@ impl GlobalBufferModel {
             return;
         };
 
-        // Verify the buffer still matches the expected base version
+        // Verify the buffer still matches the expected base version.
+        // This also correctly handles the case where a client edit arrives
+        // during the background diff parse: apply_client_edit modifies the
+        // buffer version, so this check will fail and we discard the stale
+        // diff rather than incorrectly bumping the server version.
         if !buffer.as_ref(ctx).version_match(&base_version) {
             log::info!("Buffer version changed during diff parsing, aborting apply");
             ctx.emit(GlobalBufferModelEvent::BufferUpdatedFromFileEvent {
@@ -499,6 +538,36 @@ impl GlobalBufferModel {
             });
             return;
         }
+
+        let is_server_local = matches!(state.source, BufferSource::ServerLocal { .. });
+
+        // For ServerLocal buffers, convert byte-range edits to 0-indexed
+        // char-offset edits BEFORE applying the diff, because the byte
+        // ranges in diff.edits reference the old (pre-edit) buffer content.
+        // Uses the buffer's native byte→char offset conversion.
+        let char_offset_edits: Option<Vec<CharOffsetEdit>> = if is_server_local {
+            let buffer_ref = buffer.as_ref(ctx);
+            Some(
+                diff.edits
+                    .iter()
+                    .map(|(range, text)| {
+                        // +1: 0-indexed text byte offset → 1-indexed buffer byte offset
+                        let start_1 =
+                            ByteOffset::from(range.start + 1).to_buffer_char_offset(buffer_ref);
+                        let end_1 =
+                            ByteOffset::from(range.end + 1).to_buffer_char_offset(buffer_ref);
+                        CharOffsetEdit {
+                            // -1: 1-indexed buffer char offset → 0-indexed wire char offset
+                            start: start_1 - 1,
+                            end: end_1 - 1,
+                            text: text.clone(),
+                        }
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        };
 
         // Apply the diff edits
         buffer.update(ctx, |buffer, ctx| {
@@ -511,46 +580,11 @@ impl GlobalBufferModel {
             buffer.insert_at_char_offset_ranges(char_edits, new_version, ctx);
         });
 
-        let is_server_local = matches!(state.source, BufferSource::ServerLocal { .. });
-
         state.set_base_content_version(new_version);
 
-        if is_server_local {
-            // For ServerLocal buffers, emit char-offset edits so the
-            // ServerModel can push them to connected clients.
+        if let Some(char_offset_edits) = char_offset_edits {
             if let BufferSource::ServerLocal { sync_clock, .. } = &mut state.source {
                 let new_sv = sync_clock.bump_server();
-                // Convert byte-range edits to char offsets using the old
-                // buffer content (pre-edit). We use the buffer reference
-                // which still has the old content at the time
-                // to_char_offset_edits was called, but since we already
-                // applied the diff above the buffer now has new content.
-                // Instead, convert byte offsets directly to char offsets
-                // by counting chars in the old text stored in the diff.
-                let old_content = {
-                    // Reconstruct old content from new content + reverse diff
-                    // is complex; instead, convert byte offsets from the diff
-                    // to 0-indexed char offsets using the new content.
-                    // The byte ranges in diff.edits refer to the OLD text,
-                    // but after applying the edits, the buffer has new text.
-                    // We use the new buffer to map via line_start, but the
-                    // edits have already been applied — so we use the
-                    // replacement text positions in the new content.
-                    buffer.as_ref(ctx).text().into_string()
-                };
-                let char_offset_edits = diff
-                    .edits
-                    .iter()
-                    .map(|(range, text)| {
-                        let start = byte_offset_to_char_offset(&old_content, range.start);
-                        let end = byte_offset_to_char_offset(&old_content, range.end);
-                        CharOffsetEdit {
-                            start,
-                            end,
-                            text: text.clone(),
-                        }
-                    })
-                    .collect();
                 ctx.emit(GlobalBufferModelEvent::ServerLocalBufferUpdated {
                     file_id,
                     edits: char_offset_edits,
@@ -963,7 +997,7 @@ impl GlobalBufferModel {
     pub fn open(&mut self, location: BufferLocation, ctx: &mut ModelContext<Self>) -> BufferState {
         match location {
             #[cfg(feature = "local_fs")]
-            BufferLocation::Local(path) => self.open_local(path, ctx),
+            BufferLocation::Local(path) => self.open_local(path, false, ctx),
             #[cfg(not(feature = "local_fs"))]
             BufferLocation::Local(_) => {
                 unimplemented!("Local buffers require the local_fs feature")
@@ -977,8 +1011,16 @@ impl GlobalBufferModel {
     /// If a buffer already exists for this path and is loaded, returns the existing BufferState.
     /// If no buffer exists, creates a new Buffer and BufferState using FileModel.
     /// File system updates are automatically subscribed to for all buffers.
+    ///
+    /// When `is_server_local` is true, the buffer is created with a `ServerLocal`
+    /// source (with a `SyncClock`) instead of a plain `Local` source.
     #[cfg(feature = "local_fs")]
-    fn open_local(&mut self, path: PathBuf, ctx: &mut ModelContext<Self>) -> BufferState {
+    fn open_local(
+        &mut self,
+        path: PathBuf,
+        is_server_local: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> BufferState {
         if let Some(id) = self
             .location_to_id
             .get_by_left(&BufferLocation::Local(path.clone()))
@@ -999,11 +1041,16 @@ impl GlobalBufferModel {
             }
         }
 
-        self.create_new_buffer(&path, ctx)
+        self.create_new_buffer(&path, is_server_local, ctx)
     }
 
     #[cfg(feature = "local_fs")]
-    fn create_new_buffer(&mut self, path: &Path, ctx: &mut ModelContext<Self>) -> BufferState {
+    fn create_new_buffer(
+        &mut self,
+        path: &Path,
+        is_server_local: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> BufferState {
         // Open file through FileModel to get FileId
         // Always subscribe to updates for GlobalBufferModel created buffers
         let file_id =
@@ -1107,16 +1154,25 @@ impl GlobalBufferModel {
 
         self.location_to_id
             .insert(BufferLocation::Local(path.to_path_buf()), file_id);
+        let source = if is_server_local {
+            BufferSource::ServerLocal {
+                sync_clock: SyncClock::new(),
+                base_content_version: None,
+                initial_content_version: None,
+            }
+        } else {
+            BufferSource::Local {
+                base_content_version: None,
+                initial_content_version: None,
+            }
+        };
         self.buffers.insert(
             file_id,
             InternalBufferState {
                 buffer: buffer.downgrade(),
                 latest_buffer_version: None,
                 pending_diff_parse: None,
-                source: BufferSource::Local {
-                    base_content_version: None,
-                    initial_content_version: None,
-                },
+                source,
             },
         );
 
@@ -1481,7 +1537,7 @@ impl GlobalBufferModel {
             let path_for_edit = path_str.clone();
             ctx.subscribe_to_model(&buffer, move |me, event, ctx| {
                 use warp_editor::content::buffer::BufferEvent;
-                if let BufferEvent::ContentChanged { .. } = event {
+                if let BufferEvent::ContentChanged { delta, .. } = event {
                     // Look up the sync clock to get the expected server version
                     // and bump the client version.
                     let Some(state) = me.buffers.get_mut(&file_id) else {
@@ -1497,21 +1553,36 @@ impl GlobalBufferModel {
                     let new_cv = ContentVersion::new();
                     sync_clock.client_version = new_cv;
 
-                    // Read the full buffer content and send as a replacing edit.
+                    // Build incremental edits from the ContentChanged delta.
+                    // Each PreciseDelta carries the replaced range (old buffer
+                    // coordinates) and the resolved range (new buffer coordinates)
+                    // from which we can read the replacement text.
                     let Some(buffer) = state.buffer.upgrade(ctx) else {
                         return;
                     };
-                    let content = buffer.as_ref(ctx).text().into_string();
-                    let total_chars = content.chars().count() as u64;
+                    let edits: Vec<remote_server::proto::TextEdit> = delta
+                        .precise_deltas
+                        .iter()
+                        .map(|d| {
+                            // replaced_range is 1-indexed; convert to 0-indexed proto offsets.
+                            let start = d.replaced_range.start.as_usize().saturating_sub(1);
+                            let end = d.replaced_range.end.as_usize().saturating_sub(1);
+                            let text = buffer
+                                .as_ref(ctx)
+                                .text_in_range(d.resolved_range.clone())
+                                .into_string();
+                            remote_server::proto::TextEdit {
+                                start_offset: start as u64,
+                                end_offset: end as u64,
+                                text,
+                            }
+                        })
+                        .collect();
                     client.send_buffer_edit(
                         path_for_edit.clone(),
                         expected_sv,
                         new_cv.as_u64(),
-                        vec![remote_server::proto::TextEdit {
-                            start_offset: 0,
-                            end_offset: total_chars,
-                            text: content,
-                        }],
+                        edits,
                     );
                 }
             });
@@ -1588,33 +1659,15 @@ impl GlobalBufferModel {
 
     /// Open a server-local buffer for the given file path on the daemon.
     ///
-    /// Reuses `open_local` for buffer creation and file-watching setup,
-    /// then upgrades the `BufferSource` from `Local` to `ServerLocal`
-    /// to enable sync-clock tracking.
+    /// Delegates to `open_local` with `is_server_local = true` so the buffer
+    /// is created directly with a `ServerLocal` source and `SyncClock`.
     #[cfg(feature = "local_fs")]
     pub fn open_server_local(
         &mut self,
         path: PathBuf,
         ctx: &mut ModelContext<Self>,
     ) -> BufferState {
-        let buffer_state = self.open_local(path, ctx);
-
-        // Upgrade newly created buffers from Local to ServerLocal.
-        if let Some(state) = self.buffers.get_mut(&buffer_state.file_id) {
-            if let BufferSource::Local {
-                base_content_version,
-                initial_content_version,
-            } = &state.source
-            {
-                state.source = BufferSource::ServerLocal {
-                    sync_clock: SyncClock::new(),
-                    base_content_version: *base_content_version,
-                    initial_content_version: *initial_content_version,
-                };
-            }
-        }
-
-        buffer_state
+        self.open_local(path, true, ctx)
     }
 
     /// Apply a client edit to a server-local buffer.
@@ -1657,16 +1710,24 @@ impl GlobalBufferModel {
 
         // Apply the text edits using 0-indexed char offsets from the proto.
         // Convert to the buffer's 1-indexed CharOffset coordinate system.
-        use string_offset::CharOffset;
-
         let new_version = ContentVersion::new();
         buffer.update(ctx, |buffer, ctx| {
-            let total_chars = buffer.text().into_string().chars().count();
+            let max_offset = buffer.max_charoffset();
             let char_edits: Vec<(std::ops::Range<CharOffset>, String)> = edits
                 .iter()
                 .map(|edit| {
-                    let start = CharOffset::from((edit.start_offset as usize).min(total_chars) + 1);
-                    let end = CharOffset::from((edit.end_offset as usize).min(total_chars) + 1);
+                    // +1: 0-indexed proto offset → 1-indexed buffer offset, clamped to max.
+                    // saturating_add prevents overflow when the client sends u64::MAX.
+                    let start = CharOffset::from(
+                        (edit.start_offset as usize)
+                            .saturating_add(1)
+                            .min(max_offset.as_usize()),
+                    );
+                    let end = CharOffset::from(
+                        (edit.end_offset as usize)
+                            .saturating_add(1)
+                            .min(max_offset.as_usize()),
+                    );
                     (start..end, edit.text.clone())
                 })
                 .collect();
@@ -1810,16 +1871,17 @@ impl GlobalBufferModel {
                 return;
             };
 
-            use string_offset::CharOffset;
-
             let new_version = ContentVersion::new();
             buffer.update(ctx, |buffer, ctx| {
-                let total_chars = buffer.text().into_string().chars().count();
+                let max_offset = buffer.max_charoffset();
                 let char_edits: Vec<(std::ops::Range<CharOffset>, String)> = edits
                     .iter()
                     .map(|edit| {
-                        let start = CharOffset::from(edit.start.min(total_chars) + 1);
-                        let end = CharOffset::from(edit.end.min(total_chars) + 1);
+                        // +1: 0-indexed wire offset → 1-indexed buffer offset, clamped to max
+                        let start =
+                            std::cmp::min(CharOffset::from(edit.start.as_usize() + 1), max_offset);
+                        let end =
+                            std::cmp::min(CharOffset::from(edit.end.as_usize() + 1), max_offset);
                         (start..end, edit.text.clone())
                     })
                     .collect();
@@ -1891,57 +1953,5 @@ impl GlobalBufferModel {
             BufferSource::Remote { sync_clock, .. } => sync_clock.as_ref(),
             _ => None,
         }
-    }
-}
-
-/// Converts a byte offset within `content` to a 0-indexed character offset.
-///
-/// Counts the number of characters in `content[..offset]`.
-/// Clamps `offset` to `content.len()` so out-of-bounds values are safe.
-fn byte_offset_to_char_offset(content: &str, offset: usize) -> usize {
-    let offset = offset.min(content.len());
-    content[..offset].chars().count()
-}
-
-#[cfg(test)]
-mod byte_offset_tests {
-    use super::byte_offset_to_char_offset;
-
-    #[test]
-    fn ascii() {
-        assert_eq!(byte_offset_to_char_offset("hello", 0), 0);
-        assert_eq!(byte_offset_to_char_offset("hello", 3), 3);
-        assert_eq!(byte_offset_to_char_offset("hello", 5), 5);
-    }
-
-    #[test]
-    fn non_ascii_counts_chars_not_bytes() {
-        // "café" — 'é' is 2 bytes in UTF-8
-        let s = "café";
-        assert_eq!(s.len(), 5); // 4 chars, 5 bytes
-        assert_eq!(byte_offset_to_char_offset(s, 5), 4);
-        assert_eq!(byte_offset_to_char_offset(s, 3), 3);
-    }
-
-    #[test]
-    fn cjk_characters() {
-        // "你好" — each CJK char is 3 bytes.
-        let s = "你好";
-        assert_eq!(s.len(), 6);
-        assert_eq!(byte_offset_to_char_offset(s, 0), 0);
-        assert_eq!(byte_offset_to_char_offset(s, 3), 1);
-        assert_eq!(byte_offset_to_char_offset(s, 6), 2);
-    }
-
-    #[test]
-    fn multi_line() {
-        let s = "abc\n你好";
-        assert_eq!(byte_offset_to_char_offset(s, 4), 4); // start of '你'
-        assert_eq!(byte_offset_to_char_offset(s, 7), 5); // after '你'
-    }
-
-    #[test]
-    fn offset_clamped_to_content_length() {
-        assert_eq!(byte_offset_to_char_offset("abc", 100), 3);
     }
 }

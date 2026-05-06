@@ -165,34 +165,8 @@ impl Sessions {
                     sessions.set_remote_server_setup_state(*session_id, state.clone());
                     ctx.notify();
                 }
-                RemoteServerManagerEvent::BufferUpdated {
-                    host_id,
-                    path,
-                    new_server_version,
-                    expected_client_version,
-                    edits,
-                } => {
-                    let char_edits: Vec<_> = edits
-                        .iter()
-                        .map(|e| crate::code::global_buffer_model::CharOffsetEdit {
-                            start: e.start_offset as usize,
-                            end: e.end_offset as usize,
-                            text: e.text.clone(),
-                        })
-                        .collect();
-                    crate::code::global_buffer_model::GlobalBufferModel::handle(ctx).update(
-                        ctx,
-                        |gbm, ctx| {
-                            gbm.handle_buffer_updated_push(
-                                host_id,
-                                path,
-                                *new_server_version,
-                                *expected_client_version,
-                                &char_edits,
-                                ctx,
-                            );
-                        },
-                    );
+                RemoteServerManagerEvent::BufferUpdated { .. } => {
+                    // Handled directly by GlobalBufferModel's subscription.
                 }
                 RemoteServerManagerEvent::SessionConnecting { .. }
                 | RemoteServerManagerEvent::SessionDeregistered { .. }

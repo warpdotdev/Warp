@@ -66,8 +66,8 @@ fn text_edit(start: u64, end: u64, text: &str) -> TextEdit {
 /// `start` and `end` are 0-indexed character offsets.
 fn char_edit(start: usize, end: usize, text: &str) -> CharOffsetEdit {
     CharOffsetEdit {
-        start,
-        end,
+        start: string_offset::CharOffset::from(start),
+        end: string_offset::CharOffset::from(end),
         text: text.to_string(),
     }
 }

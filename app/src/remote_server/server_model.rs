@@ -39,6 +39,7 @@ use super::proto::{
     WriteFileResponse, WriteFileSuccess,
 >>>>>>> a484543 (fmt)
 };
+use super::server_buffer_tracker::ServerBufferTracker;
 
 /// How long the daemon waits with no connections before exiting.
 pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 * 60);
@@ -213,7 +214,7 @@ pub struct ServerModel {
     auth: DaemonAuthContext,
     /// Tracks open buffers, per-buffer connection sets, and pending async
     /// buffer requests (OpenBuffer, SaveBuffer).
-    buffers: super::server_buffer_tracker::ServerBufferTracker,
+    buffers: ServerBufferTracker,
 }
 
 impl Entity for ServerModel {
@@ -239,7 +240,7 @@ impl ServerModel {
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
             auth: DaemonAuthContext::new(),
-            buffers: super::server_buffer_tracker::ServerBufferTracker::new(),
+            buffers: ServerBufferTracker::new(),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -351,23 +352,33 @@ impl ServerModel {
                     let pending = me.buffers.take_pending(file_id);
                     if !pending.is_empty() {
                         let gbm = GlobalBufferModel::handle(ctx);
-                        let content = gbm
-                            .as_ref(ctx)
-                            .content_for_file(*file_id, ctx)
-                            .unwrap_or_default();
+                        let content = gbm.as_ref(ctx).content_for_file(*file_id, ctx);
                         let server_version = gbm
                             .as_ref(ctx)
                             .sync_clock_for_server_local(*file_id)
-                            .map(|c| c.server_version.as_u64())
-                            .unwrap_or(1);
+                            .map(|c| c.server_version.as_u64());
+
                         for (request_id, conn_id) in pending {
+                            let message = match (&content, server_version) {
+                                (Some(content), Some(sv)) => {
+                                    server_message::Message::OpenBufferResponse(
+                                        OpenBufferResponse {
+                                            content: content.clone(),
+                                            server_version: sv,
+                                        },
+                                    )
+                                }
+                                _ => server_message::Message::Error(ErrorResponse {
+                                    code: ErrorCode::Internal.into(),
+                                    message: format!(
+                                        "Buffer loaded but content or sync clock unavailable for file {file_id:?}"
+                                    ),
+                                }),
+                            };
                             me.send_server_message(
                                 Some(conn_id),
                                 Some(&request_id),
-                                server_message::Message::OpenBufferResponse(OpenBufferResponse {
-                                    content: content.clone(),
-                                    server_version,
-                                }),
+                                message,
                             );
                         }
                     }
@@ -388,8 +399,8 @@ impl ServerModel {
                     let proto_edits: Vec<TextEdit> = edits
                         .iter()
                         .map(|edit| TextEdit {
-                            start_offset: edit.start as u64,
-                            end_offset: edit.end as u64,
+                            start_offset: edit.start.as_usize() as u64,
+                            end_offset: edit.end.as_usize() as u64,
                             text: edit.text.clone(),
                         })
                         .collect();
@@ -1404,47 +1415,11 @@ impl ServerModel {
         let expected_sv = ContentVersion::from_raw(msg.expected_server_version as usize);
         let new_cv = ContentVersion::from_raw(msg.new_client_version as usize);
 
-        let accepted = GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx)
+        // Per spec: if the edit is rejected (stale server version),
+        // the server silently drops it.
+        GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
+            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx);
         });
-
-        if !accepted {
-            // Stale edit — push the server's current content + version so the
-            // client knows its edit was rejected and can reconcile.
-            let gbm = GlobalBufferModel::handle(ctx);
-            let content = gbm
-                .as_ref(ctx)
-                .content_for_file(file_id, ctx)
-                .unwrap_or_default();
-            let (sv, cv) = gbm
-                .as_ref(ctx)
-                .sync_clock_for_server_local(file_id)
-                .map(|c| (c.server_version.as_u64(), c.client_version.as_u64()))
-                .unwrap_or((0, 0));
-
-            // Convert full content to a single replacing TextEdit using char offsets.
-            let total_chars = content.chars().count() as u64;
-
-            let Some(conns) = self.buffers.connections_for_buffer(&file_id) else {
-                return;
-            };
-            for &conn_id in conns {
-                self.send_server_message(
-                    Some(conn_id),
-                    None,
-                    server_message::Message::BufferUpdated(BufferUpdatedPush {
-                        path: msg.path.clone(),
-                        new_server_version: sv,
-                        expected_client_version: cv,
-                        edits: vec![TextEdit {
-                            start_offset: 0,
-                            end_offset: total_chars,
-                            text: content.clone(),
-                        }],
-                    }),
-                );
-            }
-        }
     }
 
     /// Handles `SaveBuffer` by persisting the buffer to disk.
