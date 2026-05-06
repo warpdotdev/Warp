@@ -363,12 +363,18 @@ pub fn init(app: &mut AppContext) {
         .with_key_binding("cmdorctrl-enter"),
     ]);
 
-    // When shell command execution is disabled (e.g., comment editors),
+    // When shell command execution is disabled (e.g., inline comment editors),
     // Cmd/Ctrl+Enter emits CmdEnter instead of running commands.
+    // The EditorIsEditable guard is required: without it, Selectable
+    // RichTextEditorViews (read-only comment cards, dormant CommentEditors)
+    // would match this binding and consume the keystroke before it can
+    // bubble up to CodeReviewView's SubmitComments handler.
     app.register_fixed_bindings([FixedBinding::new(
         "cmdorctrl-enter",
         EditorViewAction::CmdEnter,
-        id!("RichTextEditorView") & !id!("CanExecuteShellCommands"),
+        id!("RichTextEditorView")
+            & !id!("CanExecuteShellCommands")
+            & id!("EditorIsEditable"),
     )]);
 
     // When shell command execution is disabled (e.g., comment editors),

@@ -14,7 +14,8 @@ use crate::notebooks::editor::view::{EditorViewEvent, RichTextEditorView};
 use crate::send_telemetry_from_ctx;
 use crate::settings::AISettings;
 use crate::view_components::action_button::{
-    ActionButton, ActionButtonTheme, ButtonSize, NakedTheme, SecondaryTheme,
+    ActionButton, ActionButtonTheme, ButtonSize, KeystrokeSource, NakedTheme, PrimaryTheme,
+    SecondaryTheme,
 };
 use crate::{
     appearance::Appearance, code_review::code_review_view::CodeReviewView,
@@ -49,8 +50,8 @@ use warpui::{
     },
     platform::Cursor,
     ui_components::{
-        button::{ButtonTooltipPosition, ButtonVariant},
-        components::{UiComponent, UiComponentStyles},
+        button::ButtonVariant,
+        components::UiComponent,
     },
     units::Pixels,
     AppContext, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
@@ -131,7 +132,6 @@ struct ViewState {
     chevron_mouse_state: MouseStateHandle,
     outdated_chevron_mouse_state: MouseStateHandle,
     cancel_button_mouse_state: MouseStateHandle,
-    submit_button_mouse_state: MouseStateHandle,
     resizable_state: ResizableStateHandle,
 }
 
@@ -142,7 +142,6 @@ impl Default for ViewState {
             chevron_mouse_state: Default::default(),
             outdated_chevron_mouse_state: Default::default(),
             cancel_button_mouse_state: Default::default(),
-            submit_button_mouse_state: Default::default(),
             resizable_state: resizable_state_handle(300.0),
         }
     }
@@ -192,6 +191,7 @@ pub struct CommentListView {
     active_overflow_comment_id: Option<CommentId>,
     pending_scroll_to_comment: Option<CommentId>,
     comments_button: ViewHandle<ActionButton>,
+    send_button: ViewHandle<ActionButton>,
 }
 
 impl CommentListView {
@@ -218,6 +218,22 @@ impl CommentListView {
             Event::ItemHovered => {}
         });
 
+        let send_button = ctx.add_typed_action_view(|ctx| {
+            ActionButton::new("Send to Agent", PrimaryTheme)
+                .with_keybinding(
+                    KeystrokeSource::Binding("code_review:submit_comments"),
+                    ctx,
+                )
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(CommentListAction::Submit);
+                })
+                .with_size(ButtonSize::Small)
+        });
+
+        ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), |me, _, _, ctx| {
+            me.update_send_button_state(ctx);
+        });
+
         Self {
             parent,
             comment_model: None,
@@ -231,6 +247,7 @@ impl CommentListView {
             active_overflow_comment_id: None,
             pending_scroll_to_comment: None,
             comments_button,
+            send_button,
         }
     }
 
@@ -276,6 +293,7 @@ impl CommentListView {
     ) {
         if self.review_destination != destination {
             self.review_destination = destination;
+            self.update_send_button_state(ctx);
             ctx.notify();
         }
     }
@@ -436,6 +454,7 @@ impl CommentListView {
         }
 
         self.recompute_comment_button_label(ctx);
+        self.update_send_button_state(ctx);
         ctx.notify();
     }
 
@@ -550,6 +569,7 @@ impl CommentListView {
         self.comments_by_id.clear();
         self.is_collapsed = true;
         self.pending_scroll_to_comment = None;
+        self.update_send_button_state(ctx);
         ctx.notify();
     }
 
@@ -929,16 +949,19 @@ impl CommentListView {
         }
     }
 
-    fn render_send_button(&self, appearance: &Appearance, ctx: &AppContext) -> Box<dyn Element> {
+    fn render_send_button(&self, _appearance: &Appearance, _ctx: &AppContext) -> Box<dyn Element> {
+        ChildView::new(&self.send_button).finish()
+    }
+
+    fn update_send_button_state(&mut self, ctx: &mut ViewContext<Self>) {
         let ai_available = AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx);
         let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         let has_sendable_comments = self.has_non_outdated_comments();
 
-        // CLI agents don't consume AI credits, so bypass the ai_available check.
         let enable_send = match &self.review_destination {
             ReviewDestination::None => false,
             ReviewDestination::Cli(_) => has_sendable_comments,
-            ReviewDestination::Warp => ai_available && has_sendable_comments,
+            ReviewDestination::Warp => ai_available && ai_enabled && has_sendable_comments,
         };
 
         let tooltip_text = Self::send_button_tooltip_text(
@@ -948,47 +971,10 @@ impl CommentListView {
             ai_enabled,
         );
 
-        let tooltip = appearance
-            .ui_builder()
-            .tool_tip(tooltip_text.into_owned())
-            .build()
-            .finish();
-
-        let button = appearance
-            .ui_builder()
-            .button(
-                ButtonVariant::Accent,
-                self.view_state.submit_button_mouse_state.clone(),
-            )
-            .with_text_label("Send to Agent".to_string())
-            .with_tooltip(|| tooltip)
-            .with_tooltip_position(ButtonTooltipPosition::AboveLeft);
-
-        if enable_send {
-            EventHandler::new(button.build().finish())
-                .on_left_mouse_down(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(CommentListAction::Submit);
-                    DispatchEventResult::StopPropagation
-                })
-                .finish()
-        } else {
-            // Custom disabled button appearance because setting the `disabled` property
-            // on the button itself prevents all hoverable interaction (including tooltips).
-            let background_fill = appearance.theme().surface_3();
-            let foreground_color = appearance
-                .theme()
-                .disabled_text_color(background_fill)
-                .into_solid();
-            button
-                .with_style(UiComponentStyles {
-                    background: Some(background_fill.into_solid().into()),
-                    border_color: Some(foreground_color.into()),
-                    font_color: Some(foreground_color),
-                    ..Default::default()
-                })
-                .build()
-                .finish()
-        }
+        self.send_button.update(ctx, |button, ctx| {
+            button.set_disabled(!enable_send, ctx);
+            button.set_tooltip(Some(tooltip_text.into_owned()), ctx);
+        });
     }
 
     fn render_comment(
