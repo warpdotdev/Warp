@@ -864,36 +864,48 @@ impl MessageProvider<AgentMessageArgs<'_>> for ExitCloudHandoffModeMessageProduc
         }
 
         let active_color = ai_brand_color(appearance.theme());
-        let (text_color, keystroke_color_override, keystroke_bg_color_override) =
-            if input_buffer_model.current_value().is_empty() {
-                (active_color, None, None)
-            } else {
-                (
-                    Fill::from(active_color).with_opacity(60).into_solid(),
-                    Some(
-                        appearance
-                            .theme()
-                            .sub_text_color(appearance.theme().background())
-                            .into_solid(),
-                    ),
-                    Some(blended_colors::neutral_1(appearance.theme())),
-                )
-            };
+        let is_buffer_empty = input_buffer_model.current_value().is_empty();
+        let (dismiss_text_color, dismiss_key_color, dismiss_key_bg) = if is_buffer_empty {
+            (active_color, None, None)
+        } else {
+            (
+                Fill::from(active_color).with_opacity(60).into_solid(),
+                Some(
+                    appearance
+                        .theme()
+                        .sub_text_color(appearance.theme().background())
+                        .into_solid(),
+                ),
+                Some(blended_colors::neutral_1(appearance.theme())),
+            )
+        };
 
-        Some(
-            Message::new(vec![
-                MessageItem::Keystroke {
-                    keystroke: Keystroke {
-                        key: "backspace".to_owned(),
-                        ..Default::default()
-                    },
-                    color: keystroke_color_override,
-                    background_color: keystroke_bg_color_override,
+        Some(Message::new(vec![
+            MessageItem::Keystroke {
+                keystroke: Keystroke {
+                    key: "enter".to_owned(),
+                    ..Default::default()
                 },
-                MessageItem::text("to exit cloud mode"),
-            ])
-            .with_text_color(text_color),
-        )
+                color: None,
+                background_color: None,
+            },
+            MessageItem::Text {
+                content: "to hand off to cloud".into(),
+                color: Some(active_color),
+            },
+            MessageItem::Keystroke {
+                keystroke: Keystroke {
+                    key: "backspace".to_owned(),
+                    ..Default::default()
+                },
+                color: dismiss_key_color,
+                background_color: dismiss_key_bg,
+            },
+            MessageItem::Text {
+                content: "to dismiss".into(),
+                color: Some(dismiss_text_color),
+            },
+        ]))
     }
 }
 

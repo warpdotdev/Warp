@@ -2524,15 +2524,7 @@ impl Input {
                     ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
                 }
                 AgentInputFooterEvent::OpenHandoffPane => {
-                    let attachments = me.collect_cloud_launch_attachments(ctx);
-                    let request = CloudLaunchRequest::compose(
-                        crate::ai::blocklist::handoff::CloudLaunchEntrypoint::FooterChip,
-                    )
-                    .with_attachments(attachments);
-                    me.track_cloud_launch_request(request.id(), ctx);
-                    ctx.dispatch_typed_action(
-                        &crate::workspace::WorkspaceAction::OpenLocalToCloudHandoffPane { request },
-                    );
+                    me.activate_cloud_handoff_compose(ctx);
                 }
             }
         });
@@ -3783,6 +3775,29 @@ impl Input {
     }
 
     // Cloud handoff input helpers.
+
+    fn activate_cloud_handoff_compose(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.is_cloud_handoff_prefix_mode(ctx) {
+            return;
+        }
+
+        let is_input_buffer_empty = self.editor.as_ref(ctx).is_empty(ctx);
+        self.ai_input_model.update(ctx, |ai_input_model, ctx| {
+            ai_input_model.set_input_config(
+                InputConfig {
+                    input_type: InputType::AI,
+                    is_locked: true,
+                },
+                is_input_buffer_empty,
+                ctx,
+            );
+        });
+
+        self.handoff_compose_state
+            .update(ctx, |state, ctx| state.activate(ctx));
+        self.is_editor_empty_on_last_edit = is_input_buffer_empty;
+        ctx.notify();
+    }
 
     fn exit_cloud_handoff_compose(&mut self, ctx: &mut ViewContext<Self>) {
         if !self.is_cloud_handoff_prefix_mode(ctx) {
@@ -6273,8 +6288,20 @@ impl Input {
             return;
         }
         if self.current_prefix_mode(ctx) == InputPrefixMode::CloudHandoff {
+            let hint = self
+                .handoff_compose_state
+                .as_ref(ctx)
+                .selected_environment_id()
+                .and_then(|id| {
+                    crate::ai::cloud_environments::CloudAmbientAgentEnvironment::get_by_id(id, ctx)
+                })
+                .map(|env| {
+                    use crate::cloud_object::model::generic_string_model::StringModel;
+                    format!("Hand off to {}", env.model().string_model.display_name())
+                })
+                .unwrap_or_else(|| CLOUD_HANDOFF_HINT_TEXT.to_owned());
             self.editor.update(ctx, |editor, ctx| {
-                editor.set_placeholder_text(CLOUD_HANDOFF_HINT_TEXT, ctx);
+                editor.set_placeholder_text(&hint, ctx);
             });
             return;
         }

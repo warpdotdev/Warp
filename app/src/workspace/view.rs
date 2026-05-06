@@ -13151,6 +13151,24 @@ impl Workspace {
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn maybe_show_handoff_success_toast(
+        request: &CloudLaunchRequest,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !matches!(request.submit_mode, CloudLaunchSubmitMode::AutoSubmit) {
+            return;
+        }
+        let window_id = ctx.window_id();
+        WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+            toast_stack.add_ephemeral_toast(
+                DismissibleToast::success("Handing off to cloud".to_owned()),
+                window_id,
+                ctx,
+            );
+        });
+    }
+
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn queue_handoff_auto_submit(
         model_handle: &ModelHandle<AmbientAgentViewModel>,
         ctx: &mut ViewContext<Self>,
@@ -13177,6 +13195,7 @@ impl Workspace {
 
         Self::hydrate_cloud_launch_draft(&new_pane_view, &request, ctx);
         Self::apply_explicit_cloud_launch_environment(&model_handle, &request, ctx);
+        Self::maybe_show_handoff_success_toast(&request, ctx);
         if !Self::claim_cloud_launch_request(&source_view, &request, ctx) {
             log::warn!("Failed to claim cloud launch request after opening fresh cloud pane");
         }
@@ -13350,6 +13369,7 @@ impl Workspace {
             model.set_pending_handoff(Some(pending), model_ctx);
         });
 
+        Self::maybe_show_handoff_success_toast(&request, ctx);
         if !Self::claim_cloud_launch_request(&source_view, &request, ctx) {
             log::warn!("Failed to claim cloud launch request after opening handoff pane");
         }

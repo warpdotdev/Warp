@@ -33,10 +33,10 @@ Figma: none provided.
 3. After activation, the visible input behaves like `!` shell-mode input: the literal `&` is removed from the prompt text and rendered as a visible input indicator/chip. The prompt content sent to the cloud does not include the leading `&`. The `&` indicator uses the Agent/AI magenta color, not shell blue.
 4. While handoff-compose mode is active, the input is locked in AI mode. Autodetection does not unlock it, and typed `!` is prompt text rather than a shell-mode transition until the user exits cloud handoff mode.
 5. While handoff-compose mode is active and the prompt is empty, the input shows explanatory ghost/hint text so the user understands that the prompt will start a cloud run. Once the user has typed any prompt text, this ghost/hint text is hidden.
-6. The exit affordance for handoff-compose mode mirrors `!` shell mode: the Agent View message bar shows a Backspace keycap followed by "to exit cloud mode". When Backspace can exit immediately, the message uses Agent/AI magenta. When prompt text is present and Backspace would edit text first, the message follows the same disabled/muted treatment as the `!` shell-mode message.
+6. The exit affordance for handoff-compose mode mirrors `!` shell mode: the Agent View message bar shows Enter + "to hand off to cloud" and Backspace + "to dismiss". When the prompt is empty (Backspace can exit immediately), both labels use Agent/AI magenta. When prompt text is present, the Backspace label follows the same disabled/muted treatment as the `!` shell-mode message, while the Enter label stays active-colored.
 7. When the prompt is empty, the user can press Backspace to exit cloud handoff mode. Exiting this way removes the `&` indicator and hides the transient environment selector.
 8. While handoff-compose mode is active, the agent footer shows a transient environment selector in the existing footer left-side chip area. The selector uses the same visual style, menu behavior, focus behavior, labels, and environment-management affordance as the existing cloud-mode environment selector.
-9. The transient environment selector is shown only for `&` handoff-compose mode. It is not shown for ordinary local agent prompts, the footer chip handoff flow, or `/move-to-cloud query`.
+9. The transient environment selector is shown only for `&` handoff-compose mode. It is not shown for ordinary local agent prompts or `/move-to-cloud query`.
 10. If the user selects an environment from the transient selector, that selection applies to the next `&` submission and persists as the user's last selected cloud environment, matching the existing environment selector behavior.
 11. If the user does not explicitly select an environment in the transient selector, submission uses the normal cloud environment defaulting behavior. For a non-empty handoff source, touched-repo overlap may choose a better default after handoff preparation; for an empty source, the run uses the saved/default environment if one exists.
 12. An explicit user selection in the transient selector always wins over any touched-repo overlap default discovered later.
@@ -77,9 +77,9 @@ Figma: none provided.
 34. `/move-to-cloud query` follows the same blocked and failure behavior as `& query`: running/blocked conversations are blocked with a toast; missing synced cloud conversation identity is blocked with a toast; user input and pending file/image attachments are not silently discarded.
 35. If `/move-to-cloud query` fails before a pane opens, the slash-command text or extracted prompt remains available in the source input so the user can retry or edit it. The exact text representation may follow existing slash-command input conventions, but the user's prompt must not be lost.
 ### Existing handoff chip
-36. The existing "Hand off to cloud" footer chip remains a compose/open entrypoint. It does not auto-start a cloud run because the chip provides no prompt.
-37. The chip continues to open the handoff compose pane for eligible non-empty local conversations and a fresh cloud compose pane for empty conversations.
-38. The chip does not show the transient `&` environment selector in the source local footer. Environment selection happens in the opened cloud or handoff pane.
+36. Clicking the "Hand off to cloud" footer chip activates `&` handoff-compose mode, matching the same state as typing `&` as the first character. If the user is already in handoff-compose mode, the chip click is a no-op.
+37. The chip does not auto-start a cloud run or open a cloud pane. It only enters handoff-compose mode; the user must type a prompt and press Enter to proceed.
+38. Because the chip activates `&` mode, the transient environment selector, message bar affordances, and input indicator all appear in the source local footer after clicking.
 ### Environment behavior
 39. Environment selection has three priority levels for auto-started local-to-cloud handoff:
    1. User's explicit transient `&` selection, if present.
