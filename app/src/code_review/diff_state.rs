@@ -47,18 +47,17 @@ use warp_core::{safe_warn, send_telemetry_from_ctx};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
+        use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
         use repo_metadata::{
             repository::{RepositorySubscriber, SubscriberId},
             RepoMetadataError, Repository, RepositoryUpdate,
         };
         use async_channel::Sender;
-        use warpui::ModelHandle;
+        use warpui::{ModelHandle, SingletonEntity};
     }
 }
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
 use crate::terminal::local_shell::LocalShellState;
-#[cfg(all(feature = "local_fs", feature = "local_tty"))]
-use warpui::SingletonEntity;
 
 const UNCOMMITTED_CHANGES: &str = "Uncommitted changes";
 
@@ -409,94 +408,44 @@ struct GitNumStatMetadata {
 }
 
 impl DiffStateModel {
-    /// Creates a new `DiffStateModel` bound to the given repository.
     #[cfg(feature = "local_fs")]
-    pub fn new(repository: ModelHandle<Repository>, ctx: &mut ModelContext<Self>) -> Self {
-        // Step 1: kick off initial metadata load.
-        let new_repository_root = repository.as_ref(ctx).root_dir().to_local_path_lossy();
-        // Always include base branch metadata since only code review uses this model now.
-        let include_base_branch = true;
-        let abort_handle =
-            ctx.spawn(
-                async move {
-                    Self::load_metadata_for_repo(new_repository_root, include_base_branch).await
-                },
-                move |me, res, ctx| {
-                    me.handle_updated_metadata_for_repo(
-                        res,
-                        InvalidationBehavior::All(InvalidationSource::MetadataChange),
-                        ctx,
-                    )
-                },
-            );
-
-        // Step 2: register the filesystem watcher.
-        let (repository_update_tx, repository_update_rx) = async_channel::unbounded();
-        let (throttled_repository_update_tx, throttled_repository_update_rx) =
-            async_channel::unbounded();
-        let start = repository.update(ctx, |repo, ctx| {
-            repo.start_watching(
-                Box::new(DiffStateModelRepositorySubscriber {
-                    repository_update_tx,
-                }),
-                ctx,
-            )
-        });
-        let subscriber_id = start.subscriber_id;
-        ctx.spawn(start.registration_future, Self::handle_repository_updated);
-
-        // Step 3: wire up the raw and throttled stream processors.
-        ctx.spawn_stream_local(
-            repository_update_rx,
-            move |me, item, ctx| match item {
-                DiffStateRepositoryUpdate::Invalidation(update) => {
-                    if me.handle_file_update(update, ctx) {
-                        log::debug!("[GIT OPERATION] handle_file_update found changes");
-                        let throttled_repository_update_tx_clone =
-                            throttled_repository_update_tx.clone();
-                        ctx.background_executor()
-                            .spawn(async move {
-                                let _ = throttled_repository_update_tx_clone.send(()).await;
-                            })
-                            .detach();
-                    } else {
-                        log::debug!("[GIT OPERATION] No changes found no metadata update.");
-                    }
-                }
-                DiffStateRepositoryUpdate::InvalidationWithLockedIndex => {
-                    ctx.emit(DiffStateModelEvent::DiffMetadataChanged(
-                        InvalidationBehavior::AllLockedIndex,
-                    ));
-                }
-            },
-            |_, _| {},
-        );
-
-        // Only update metadata at most once every 5 seconds. The code review pane
-        // will refresh diffs at a faster rate if it's open (from the stream above).
-        ctx.spawn_stream_local(
-            throttle(Duration::from_secs(5), throttled_repository_update_rx),
-            |me, _, ctx| {
-                me.refresh_diff_metadata_for_current_repo(InvalidationBehavior::PromptRefresh, ctx);
-            },
-            |_, _| {},
-        );
-
-        Self {
-            repository: Some(repository),
-            subscriber_id: Some(subscriber_id),
-            state: InternalDiffState::Loading,
+    pub fn new(repo_path: Option<String>, ctx: &mut ModelContext<Self>) -> Self {
+        let model = Self {
+            repository: None,
+            state: InternalDiffState::default(),
+            subscriber_id: None,
             mode: DiffMode::default(),
             metadata: None,
             computing_diffs_abort_handle: None,
-            computing_metadata_abort_handle: Some(abort_handle),
+            computing_metadata_abort_handle: None,
             refreshing_pr_info_handle: None,
             metadata_refresh_enabled: false,
+        };
+
+        if let Some(repo_path) = &repo_path {
+            let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
+                model.detect_possible_git_repo(
+                    repo_path,
+                    RepoDetectionSource::CodeReviewInitialization,
+                    ctx,
+                )
+            });
+
+            ctx.spawn(fut, move |me, repo_path, ctx| {
+                if let Some(repo_path) = &repo_path {
+                    if let Some(repo_handle) =
+                        DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(repo_path, ctx)
+                    {
+                        me.set_active_repository(repo_handle, ctx);
+                    }
+                }
+            });
         }
+        model
     }
 
     #[cfg(not(feature = "local_fs"))]
-    pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
+    pub fn new(_repo_path: Option<String>, _ctx: &mut ModelContext<Self>) -> Self {
         Self {
             state: InternalDiffState::default(),
             mode: DiffMode::default(),
@@ -1120,6 +1069,89 @@ impl DiffStateModel {
         _ctx: &mut ModelContext<Self>,
     ) {
         // Noop on WASM builds.
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn set_active_repository(
+        &mut self,
+        new_repository: ModelHandle<Repository>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let new_repository_root = new_repository.as_ref(ctx).root_dir().to_local_path_lossy();
+
+        // Always include base branch metadata since only code review uses this model now.
+        let include_base_branch = true;
+        let abort_handle =
+            ctx.spawn(
+                async move {
+                    Self::load_metadata_for_repo(new_repository_root, include_base_branch).await
+                },
+                move |me, res, ctx| {
+                    me.handle_updated_metadata_for_repo(
+                        res,
+                        InvalidationBehavior::All(InvalidationSource::MetadataChange),
+                        ctx,
+                    )
+                },
+            );
+
+        self.computing_metadata_abort_handle = Some(abort_handle);
+        self.state = InternalDiffState::Loading;
+
+        // Assign the repository handle before spawning the registration future.
+        // `registration_future` may resolve immediately (e.g. watcher already active), and
+        // `handle_repository_updated` relies on `self.repository` being available for cleanup.
+        self.repository = Some(new_repository.clone());
+
+        let (repository_update_tx, repository_update_rx) = async_channel::unbounded();
+        let (throttled_repository_update_tx, throttled_repository_update_rx) =
+            async_channel::unbounded();
+        let start = new_repository.update(ctx, |new_repository, ctx| {
+            new_repository.start_watching(
+                Box::new(DiffStateModelRepositorySubscriber {
+                    repository_update_tx,
+                }),
+                ctx,
+            )
+        });
+        self.subscriber_id = Some(start.subscriber_id);
+        ctx.spawn(start.registration_future, Self::handle_repository_updated);
+
+        ctx.spawn_stream_local(
+            repository_update_rx,
+            move |me, item, ctx| match item {
+                DiffStateRepositoryUpdate::Invalidation(update) => {
+                    if me.handle_file_update(update, ctx) {
+                        log::debug!("[GIT OPERATION] handle_file_update found changes");
+                        let throttled_repository_update_tx_clone =
+                            throttled_repository_update_tx.clone();
+                        ctx.background_executor()
+                            .spawn(async move {
+                                let _ = throttled_repository_update_tx_clone.send(()).await;
+                            })
+                            .detach();
+                    } else {
+                        log::debug!("[GIT OPERATION] No changes found no metadata update.");
+                    }
+                }
+                DiffStateRepositoryUpdate::InvalidationWithLockedIndex => {
+                    ctx.emit(DiffStateModelEvent::DiffMetadataChanged(
+                        InvalidationBehavior::AllLockedIndex,
+                    ));
+                }
+            },
+            |_, _| {},
+        );
+
+        // Only update metadata at most once every 5 seconds. The code review pane
+        // will refresh diffs at a faster rate if it's open (from the stream above).
+        ctx.spawn_stream_local(
+            throttle(Duration::from_secs(5), throttled_repository_update_rx),
+            |me, _, ctx| {
+                me.refresh_diff_metadata_for_current_repo(InvalidationBehavior::PromptRefresh, ctx);
+            },
+            |_, _| {},
+        );
     }
 
     #[cfg(feature = "local_fs")]
