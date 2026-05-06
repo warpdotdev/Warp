@@ -26,11 +26,13 @@ Non-goals:
 
 ## Behavior
 
-1. Warp exposes a new Code setting named "Auto-save" with four values:
-   - `off`
-   - `after_delay`
-   - `on_focus_change`
-   - `after_delay_and_focus_change`
+1. Warp exposes a new Code setting named "Auto-save" with four user-facing
+   options and stable persisted identifiers:
+   - `Off` (persisted value: `off`)
+   - `After Delay` (persisted value: `after_delay`)
+   - `On Focus Change` (persisted value: `on_focus_change`)
+   - `After Delay + On Focus Change` (persisted value:
+     `after_delay_and_focus_change`)
 
 2. The default auto-save value is `off`.
 
@@ -68,7 +70,9 @@ Non-goals:
 13. Failed auto-saves surface the same error behavior as failed manual saves.
 
 14. Auto-save mode changes in Settings apply to newly opened and currently open
-    code editors without requiring app restart.
+    code editors without requiring app restart. Delayed autosave callbacks read
+    the current mode at fire time, and pending delayed autosaves are canceled/
+    skipped when mode is changed to `off`.
 
 15. The auto-save setting participates in normal settings persistence and sync
     semantics for Code settings.

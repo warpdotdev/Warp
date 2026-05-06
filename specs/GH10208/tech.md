@@ -35,12 +35,14 @@ targets auto-save behavior.
      `Off`, `AfterDelay`, `OnFocusChange`, `AfterDelayAndFocusChange`.
    - Add a new setting field under `CodeSettings` at TOML path
      `code.editor.auto_save.mode`.
-   - Serialize values as `off`, `after_delay`, `on_focus_change`,
-     `after_delay_and_focus_change` to match product wording.
+   - Persist enum values as `off`, `after_delay`, `on_focus_change`,
+     `after_delay_and_focus_change`.
+   - Render user-facing dropdown labels as `Off`, `After Delay`,
+     `On Focus Change`, `After Delay + On Focus Change` (labels are display
+     strings; persisted values remain snake_case identifiers).
    - Set settings metadata explicitly:
-     - `supported_platforms`: all desktop platforms currently supported by
-       Warp settings.
-     - `sync_to_cloud`: enabled (normal synced code setting behavior).
+     - `supported_platforms`: `SupportedPlatforms::ALL`.
+     - `sync_to_cloud`: `SyncToCloud::Globally(RespectUserSyncSetting::Yes)`.
      - `private`: false (non-secret preference).
    - Keep default at `Off`.
 
@@ -62,6 +64,9 @@ targets auto-save behavior.
      - no unresolved version conflict
    - Re-check conflict/version state immediately before dispatching each autosave
      (after debounce delay and after blur trigger).
+   - Evaluate current auto-save mode at trigger fire time (not only at schedule
+     time), and cancel/skip pending debounced autosaves when mode transitions to
+     `Off`.
 
 4. Enforce conflict safety at final write point in
    `app/src/code/global_buffer_model.rs`.
@@ -72,8 +77,8 @@ targets auto-save behavior.
    - On abort, preserve dirty/conflict state and emit an explicit save-skipped
      (conflict) outcome so existing conflict UX remains authoritative and no
      success path is observed.
-   - Keep manual save behavior unchanged unless maintainers prefer this same
-     guard to apply uniformly.
+   - Keep manual save behavior exactly unchanged: this expected-version final
+     guard is autosave-only in this feature.
 
 5. Differentiate manual vs automatic save origin.
    - Add save-origin metadata to local editor save completion events.
@@ -102,10 +107,13 @@ Map to `product.md` behavior invariants:
   - Add/update settings-view tests asserting:
     - Auto-save dropdown renders in Code Editor and Review page.
     - Setting writes persist and UI reflects current selection.
+    - Dropdown shows user-facing labels (not raw persisted snake_case values).
     - Defaults are `off`.
 
 - (3) Off mode:
   - Unit test: user edit in `Off` mode does not trigger save call after debounce.
+  - Unit test: switching mode to `Off` cancels/skips already-pending debounced
+    autosave and delayed callback re-checks current mode before save dispatch.
 
 - (4) After-delay mode:
   - Unit test in local editor model: user edit schedules one save after debounce.
