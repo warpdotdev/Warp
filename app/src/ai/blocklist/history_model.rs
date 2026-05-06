@@ -574,10 +574,7 @@ impl BlocklistAIHistoryModel {
     /// if any.
     ///
     /// Prefers conversations in the given terminal view's live list, but falls
-    /// back to a global search across all in-memory conversations. This
-    /// fallback prevents requested commands from being silently dropped when a
-    /// conversation is transferred to another view or removed from the live
-    /// list while actions are still in flight.
+    /// back to a global search across all in-memory conversations.
     pub fn conversation_id_for_action(
         &self,
         action_id: &AIAgentActionId,
@@ -733,10 +730,8 @@ impl BlocklistAIHistoryModel {
     ///
     /// Use this when the user **explicitly navigates** to a conversation in a
     /// different view (e.g. from the conversation history or command palette).
-    /// For automatic follow-ups during tool-call cycles, use
-    /// [`Self::mark_active_conversation_id`] instead — it updates the active
-    /// pointer without touching other views, avoiding a race where two views
-    /// processing separate conversations steal each other's conversations.
+    /// For automatic follow-ups during tool-call cycles, use [`Self::mark_active_conversation_id`]
+    /// instead — it updates the active pointer without touching other views.
     pub fn set_active_conversation_id(
         &mut self,
         conversation_id: AIConversationId,
