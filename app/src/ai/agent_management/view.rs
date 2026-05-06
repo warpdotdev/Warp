@@ -108,6 +108,7 @@ const CARD_MARGIN_BOTTOM: f32 = 8.;
 const STATUS_ICON_SIZE: f32 = 12.;
 const BUTTON_SIZE: f32 = 20.;
 const CREATOR_AVATAR_FONT_SIZE: f32 = 10.;
+
 const SESSION_EXPIRED_TEXT: &str = "Sessions expire after one week and cannot be opened.";
 
 pub fn init(app: &mut AppContext) {
@@ -126,6 +127,7 @@ fn should_show_artifacts(artifacts: &[Artifact]) -> bool {
 
 pub type ManagementCardItemId = AgentConversationEntryId;
 
+/// Store state for a given task row
 struct CardState {
     hover_state: MouseStateHandle,
     avatar_hover_state: MouseStateHandle,
@@ -133,6 +135,7 @@ struct CardState {
     artifact_buttons_view: Option<ViewHandle<ArtifactButtonsRow>>,
     action_buttons_hover_state: MouseStateHandle,
     action_buttons_view: ViewHandle<ConversationActionButtonsRow>,
+    /// Use this ID to look up the full data from the model
     item_id: ManagementCardItemId,
 }
 
@@ -141,6 +144,7 @@ pub struct AgentManagementView {
     loading_icon_mouse_state: MouseStateHandle,
     scroll_state: ScrollStateHandle,
 
+    /// Store the most recent requested set of ConversationOrTasks on the view
     items: Vec<CardState>,
 
     /// Store filters on the data
@@ -1350,6 +1354,7 @@ impl AgentManagementView {
         };
         let artifacts = entry.display.artifacts;
 
+        // Update the artifact buttons for this card
         if should_show_artifacts(&artifacts) {
             if let Some(view) = &self.items[index].artifact_buttons_view {
                 view.update(ctx, |v, ctx| v.update_artifacts(&artifacts, ctx));
@@ -1481,6 +1486,56 @@ impl AgentManagementView {
         .finish()
     }
 
+    // Renders a session status label based on the provided session status
+    fn render_session_status_label(
+        appearance: &Appearance,
+        mouse_state: MouseStateHandle,
+        session_status: &SessionStatus,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let font_family = appearance.ui_font_family();
+        let font_size = appearance.ui_font_size();
+        let ui_builder = appearance.ui_builder().clone();
+
+        // Early return if session is available - no status label rendered
+        let (label_text, tooltip_text_opt) = match session_status {
+            SessionStatus::Expired => ("Session expired", Some(SESSION_EXPIRED_TEXT)),
+            SessionStatus::Unavailable => ("No session available", None),
+            SessionStatus::Available => return Empty::new().finish(),
+        };
+
+        Hoverable::new(mouse_state, move |state| {
+            let label = Text::new_inline(label_text, font_family, font_size)
+                .with_color(theme.nonactive_ui_text_color().into());
+
+            let container = Container::new(label.finish())
+                .with_background(internal_colors::fg_overlay_2(theme))
+                .with_horizontal_padding(4.)
+                .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)));
+
+            let mut stack = Stack::new().with_child(container.finish());
+            if state.is_hovered() {
+                if let Some(tooltip_text) = tooltip_text_opt {
+                    let tooltip = ui_builder
+                        .tool_tip(tooltip_text.to_string())
+                        .build()
+                        .finish();
+                    stack.add_positioned_overlay_child(
+                        tooltip,
+                        OffsetPositioning::offset_from_parent(
+                            vec2f(0., -4.),
+                            ParentOffsetBounds::WindowByPosition,
+                            ParentAnchor::TopMiddle,
+                            ChildAnchor::BottomMiddle,
+                        ),
+                    );
+                }
+            }
+            stack.finish()
+        })
+        .finish()
+    }
+
     // Create a skeleton card for the loading screen
     fn render_skeleton_card(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
@@ -1579,10 +1634,13 @@ impl AgentManagementView {
                 .with_child(Self::render_header_row(card_state, entry, appearance))
                 .with_child(Self::render_metadata_row(entry, appearance, app));
 
+            // Add artifacts row if there is a buttons view
             if let Some(buttons_element) = artifact_buttons_element {
                 card_content.add_child(buttons_element);
             }
 
+            // Determine whether to show the buttons based on whether we are hovering on the action buttons or the card,
+            // to prevent lots of flickering.
             let should_show_action_buttons = mouse_state.is_hovered() || action_buttons_mouse_over;
 
             let card_background = if should_show_action_buttons {
@@ -1618,6 +1676,8 @@ impl AgentManagementView {
                     .with_cursor(Cursor::PointingHand)
                     .with_defer_events_to_children();
 
+                // Note: we use an overlay layer so that the hover on the top of the list can extend outside
+                // of the list boundaries, rendered unclipped.
                 stack.add_positioned_overlay_child(
                     action_buttons.finish(),
                     OffsetPositioning::offset_from_parent(
@@ -1680,20 +1740,28 @@ impl AgentManagementView {
             .with_spacing(2.)
             .with_child(Container::new(status_icon).with_margin_right(4.).finish())
             .with_child(Expanded::new(1., title_text.finish()).finish());
-
-        let time_and_avatar = Flex::row()
+        let mut time_and_avatar = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(4.)
-            .with_child(time_text.finish())
-            .with_child(avatar)
-            .finish();
+            .with_spacing(4.);
+
+        if let Some(session_status) = &entry.display.session_status {
+            time_and_avatar.add_child(Self::render_session_status_label(
+                appearance,
+                card_state.session_status_hover_state.clone(),
+                session_status,
+            ));
+        }
+
+        time_and_avatar.add_child(time_text.finish());
+        time_and_avatar.add_child(avatar);
 
         row.add_child(
-            Container::new(time_and_avatar)
+            Container::new(time_and_avatar.finish())
                 .with_margin_right(2.)
                 .finish(),
         );
 
+        // We want to make sure the text in the row is always at least the button height
         ConstrainedBox::new(row.finish())
             .with_min_height(BUTTON_SIZE)
             .finish()

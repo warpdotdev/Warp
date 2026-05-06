@@ -488,9 +488,9 @@ impl ConversationDetailsData {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
     /// Used to populate the details panel from the management view, where we don't always have access
     /// to the full `AIConversation`.
-    #[allow(dead_code)]
     pub fn from_conversation_metadata(
         ai_conversation_id: AIConversationId,
         title: String,
