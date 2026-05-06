@@ -774,6 +774,10 @@ pub enum BlockItem {
     RunnableCodeBlock {
         paragraph_block: ParagraphBlock,
         code_block_type: CodeBlockType,
+        /// Horizontal scroll for overflow (render + hit-testing); see [`LaidOutTable::scroll_left`].
+        scroll_left: Cell<Pixels>,
+        /// Scrollbar drag/hover state; survives layout rebuilds. See [`LaidOutTable::scrollbar_interaction_state`].
+        scrollbar_interaction_state: CodeBlockScrollbarInteractionState,
     },
     MermaidDiagram {
         content_length: CharOffset,
@@ -1241,6 +1245,55 @@ pub(crate) struct TableScrollbarDragState {
 pub(crate) struct TableScrollbarInteractionState {
     drag_state: Cell<Option<TableScrollbarDragState>>,
     hovered: Cell<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CodeBlockScrollbarDragState {
+    pub start_position_x: Pixels,
+    pub start_scroll_left: Pixels,
+    pub scroll_data: ScrollData,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CodeBlockScrollbarInteractionState {
+    drag_state: Cell<Option<CodeBlockScrollbarDragState>>,
+    hovered: Cell<bool>,
+}
+
+impl CodeBlockScrollbarInteractionState {
+    pub(crate) fn start_drag(
+        &self,
+        start_position_x: Pixels,
+        start_scroll_left: Pixels,
+        scroll_data: ScrollData,
+    ) {
+        self.drag_state.set(Some(CodeBlockScrollbarDragState {
+            start_position_x,
+            start_scroll_left,
+            scroll_data,
+        }));
+    }
+
+    pub(crate) fn end_drag(&self) -> bool {
+        self.drag_state.take().is_some()
+    }
+
+    pub(crate) fn drag_state(&self) -> Option<CodeBlockScrollbarDragState> {
+        self.drag_state.get()
+    }
+
+    pub(crate) fn hovered(&self) -> bool {
+        self.hovered.get()
+    }
+
+    pub(crate) fn set_hovered(&self, hovered: bool) -> bool {
+        self.hovered.replace(hovered) != hovered
+    }
+
+    pub(crate) fn clear(&self) {
+        self.drag_state.set(None);
+        self.hovered.set(false);
+    }
 }
 
 impl LaidOutTable {
@@ -3810,13 +3863,21 @@ impl Positioned<'_, BlockItem> {
             }
             BlockItem::Header { paragraph, .. } => self.header(paragraph).character_bounds(offset),
             BlockItem::RunnableCodeBlock {
-                paragraph_block, ..
+                paragraph_block,
+                scroll_left,
+                ..
             } => {
                 let code_block = self.code_block(paragraph_block);
                 code_block
                     .paragraphs()
                     .find_or_last(|paragraph| paragraph.end_char_offset() > offset)
                     .and_then(|paragraph| paragraph.character_bounds(offset))
+                    .map(|bounds| {
+                        RectF::new(
+                            bounds.origin() - vec2f(scroll_left.get().as_f32(), 0.0),
+                            bounds.size(),
+                        )
+                    })
             }
             BlockItem::MermaidDiagram { config, .. } => {
                 let origin = self.content_origin();

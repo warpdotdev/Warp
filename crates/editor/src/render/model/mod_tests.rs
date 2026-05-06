@@ -336,6 +336,8 @@ fn test_non_empty_content_can_hide_final_trailing_newline() {
             model.viewport.width().as_f32(),
         )),
         code_block_type: Default::default(),
+        scroll_left: Cell::new(Pixels::zero()),
+        scrollbar_interaction_state: Default::default(),
     });
     model.set_content(content);
 
@@ -612,6 +614,8 @@ fn test_first_line_bounds() {
             model.viewport.width().as_f32(),
         )),
         code_block_type: Default::default(),
+        scroll_left: Cell::new(Pixels::zero()),
+        scrollbar_interaction_state: Default::default(),
     });
     model.set_content(content);
 
