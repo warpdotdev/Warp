@@ -173,6 +173,7 @@ async fn list_directory_contents(
         relative_to.as_str(),
         home_dir,
         path_separators.all,
+        path_separators.main,
     );
 
     let dir_entries = ctx
@@ -200,7 +201,7 @@ async fn list_directory_contents(
                 ROOT_DIR_STR.to_owned()
             } else {
                 if entry.is_dir() {
-                    file_name.push(path_separators.main);
+                    file_name.push(split_path.directory_separator);
                 }
                 // We use `shell_escape()` instead of `escape()` on the relative path name to allow
                 // home directory expansion if needed.
@@ -258,6 +259,9 @@ struct SplitPath {
 
     /// The name of the `file`.
     file_name: String,
+
+    /// The separator to append to directory completions.
+    directory_separator: char,
 }
 
 impl SplitPath {
@@ -275,11 +279,20 @@ impl SplitPath {
         relative_path: &str,
         home_directory: Option<&str>,
         path_separators: &[char],
+        main_path_separator: char,
     ) -> Self {
-        let (directory_relative_path_name, file_name) = match relative_path.rfind(path_separators) {
-            Some(pos) => relative_path.split_at(pos + 1),
-            None => ("", relative_path),
-        };
+        let (directory_relative_path_name, file_name, directory_separator) =
+            match relative_path.rfind(path_separators) {
+                Some(pos) => {
+                    let separator = relative_path[pos..]
+                        .chars()
+                        .next()
+                        .unwrap_or(main_path_separator);
+                    let (directory, file_name) = relative_path.split_at(pos + separator.len_utf8());
+                    (directory, file_name, separator)
+                }
+                None => ("", relative_path, main_path_separator),
+            };
 
         let directory_absolute_path = if directory_relative_path_name.is_empty() {
             current_directory.to_path_buf()
@@ -302,6 +315,7 @@ impl SplitPath {
             directory_absolute_path,
             directory_relative_path_name: directory_relative_path_name.to_owned(),
             file_name,
+            directory_separator,
         }
     }
 }

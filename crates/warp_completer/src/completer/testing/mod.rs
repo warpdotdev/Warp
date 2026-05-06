@@ -143,6 +143,8 @@ pub struct MockPathCompletionContext {
     home_directory: Option<String>,
     pwd: TypedPathBuf,
     directory_to_entries: HashMap<PathBuf, Vec<EngineDirEntry>>,
+    path_separators: PathSeparators,
+    shell_family: ShellFamily,
 }
 
 impl MockPathCompletionContext {
@@ -151,11 +153,23 @@ impl MockPathCompletionContext {
             home_directory: TEST_SESSION_HOME_DIR.clone(),
             pwd,
             directory_to_entries: HashMap::new(),
+            path_separators: PathSeparators::for_unix(),
+            shell_family: ShellFamily::Posix,
         }
     }
 
     pub fn with_home_directory(mut self, home_directory: String) -> Self {
         self.home_directory = Some(home_directory);
+        self
+    }
+
+    pub fn with_path_separators(mut self, path_separators: PathSeparators) -> Self {
+        self.path_separators = path_separators;
+        self
+    }
+
+    pub fn with_shell_family(mut self, shell_family: ShellFamily) -> Self {
+        self.shell_family = shell_family;
         self
     }
 
@@ -226,7 +240,7 @@ impl PathCompletionContext for MockPathCompletionContext {
     }
 
     fn shell_family(&self) -> ShellFamily {
-        ShellFamily::Posix
+        self.shell_family
     }
 
     fn home_directory(&self) -> Option<&str> {
@@ -238,7 +252,7 @@ impl PathCompletionContext for MockPathCompletionContext {
     }
 
     fn path_separators(&self) -> PathSeparators {
-        PathSeparators::for_unix()
+        self.path_separators.clone()
     }
 }
 

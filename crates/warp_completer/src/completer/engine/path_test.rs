@@ -1,6 +1,10 @@
 use warp_command_signatures::IconType;
+#[cfg(windows)]
+use warp_util::path::ShellFamily;
 
 use crate::completer::testing::MockPathCompletionContext;
+#[cfg(windows)]
+use crate::completer::PathSeparators;
 
 use super::*;
 
@@ -28,6 +32,7 @@ fn test_split_path() {
         "~/Warp.app",
         Some("/Users/warpuser"),
         &['/'],
+        '/',
     );
 
     assert_eq!(
@@ -35,7 +40,8 @@ fn test_split_path() {
         SplitPath {
             directory_absolute_path: path.clone(),
             directory_relative_path_name: "~/".to_owned(),
-            file_name: "Warp.app".to_owned()
+            file_name: "Warp.app".to_owned(),
+            directory_separator: '/',
         }
     );
 
@@ -44,13 +50,15 @@ fn test_split_path() {
         "Warp.app/Contents",
         Some("/Users/warpuser"),
         &['/'],
+        '/',
     );
     assert_eq!(
         split_path,
         SplitPath {
             directory_absolute_path: TypedPathBuf::from("/Users/warpuser/Warp.app/"),
             directory_relative_path_name: "Warp.app/".to_owned(),
-            file_name: "Contents".to_owned()
+            file_name: "Contents".to_owned(),
+            directory_separator: '/',
         }
     );
 
@@ -59,15 +67,41 @@ fn test_split_path() {
         "Warp.app/macOS/bin/warp.o",
         Some("/Users/warpuser"),
         &['/'],
+        '/',
     );
     assert_eq!(
         split_path,
         SplitPath {
             directory_absolute_path: TypedPathBuf::from("/Users/warpuser/Warp.app/macOS/bin/"),
             directory_relative_path_name: "Warp.app/macOS/bin/".to_owned(),
-            file_name: "warp.o".to_owned()
+            file_name: "warp.o".to_owned(),
+            directory_separator: '/',
         }
     );
+}
+
+#[test]
+fn test_split_path_preserves_last_typed_separator() {
+    let path = TypedPathBuf::from_windows(r"C:\Users\warpuser");
+    let split_path = SplitPath::new(
+        path.to_path(),
+        r"src/lib",
+        Some(r"C:\Users\warpuser"),
+        &['/', '\\'],
+        '\\',
+    );
+
+    assert_eq!(split_path.directory_separator, '/');
+
+    let split_path = SplitPath::new(
+        path.to_path(),
+        r"src\lib",
+        Some(r"C:\Users\warpuser"),
+        &['/', '\\'],
+        '\\',
+    );
+
+    assert_eq!(split_path.directory_separator, '\\');
 }
 
 fn file_entry(file_name: &str) -> EngineDirEntry {
@@ -181,6 +215,48 @@ pub fn test_sorted_paths_relative_to() {
             .with_file_type(EngineFileType::Directory),
             Suggestion::with_same_display_and_replacement(
                 ".hidden/",
+                Some("Directory".into()),
+                SuggestionType::Argument,
+                Priority::default(),
+            )
+            .with_icon_override(IconType::Folder)
+            .with_file_type(EngineFileType::Directory),
+        ]
+    );
+}
+
+#[cfg(windows)]
+#[test]
+pub fn test_windows_forward_slash_path_completion_preserves_slash() {
+    let pwd = TypedPathBuf::from_windows(r"C:\Users\test");
+    let entries = [file_entry("Cargo.toml"), dir_entry("src")];
+    let ctx = MockPathCompletionContext::new(pwd.clone())
+        .with_shell_family(ShellFamily::PowerShell)
+        .with_path_separators(PathSeparators::for_windows())
+        .with_entries(pwd.join("./"), entries);
+
+    assert_eq!(
+        warpui::r#async::block_on(sorted_paths_relative_to(
+            &ParsedToken::new("./"),
+            MatchStrategy::CaseInsensitive,
+            &ctx
+        ))
+        .into_iter()
+        .map(|matched_suggestion| matched_suggestion.suggestion)
+        .collect_vec(),
+        vec![
+            Suggestion::new(
+                "Cargo.toml",
+                "./Cargo.toml",
+                Some("File".into()),
+                SuggestionType::Argument,
+                Priority::default(),
+            )
+            .with_icon_override(IconType::File)
+            .with_file_type(EngineFileType::File),
+            Suggestion::new(
+                "src/",
+                "./src/",
                 Some("Directory".into()),
                 SuggestionType::Argument,
                 Priority::default(),

@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 
 use typed_path::TypedPathBuf;
+#[cfg(windows)]
+use warp_util::path::ShellFamily;
 
 use crate::completer::context::CompletionContext;
 use crate::completer::engine::EngineDirEntry;
@@ -9,6 +11,8 @@ use crate::completer::matchers::MatchStrategy;
 use crate::completer::testing::{
     FakeCompletionContext, MockGeneratorContext, MockPathCompletionContext,
 };
+#[cfg(windows)]
+use crate::completer::PathSeparators;
 use crate::meta::Span;
 use crate::signatures::testing::{
     cd_signature, create_test_command_registry, fuzzy_signature, git_signature, java_signature,
@@ -524,6 +528,29 @@ pub fn test_file_path_completions_only_trailing_whitespace() {
 
     // Only file paths should exist, no commands
     assert_eq!(gi_prefix_results, vec!["giants/", "gids/"]);
+}
+
+#[cfg(windows)]
+#[test]
+pub fn test_windows_forward_slash_current_dir_completions() {
+    let pwd = TypedPathBuf::from_windows(TEST_WORK_DIR);
+    let path_ctx = MockPathCompletionContext::new(pwd.clone())
+        .with_shell_family(ShellFamily::PowerShell)
+        .with_path_separators(PathSeparators::for_windows())
+        .with_entries(
+            pwd.join("./"),
+            [
+                EngineDirEntry::test_file("Cargo.toml"),
+                EngineDirEntry::test_dir("src"),
+            ],
+        );
+    let ctx = FakeCompletionContext::new(create_test_command_registry([]))
+        .with_path_completion_context(path_ctx);
+
+    assert_eq!(
+        complete_at_end_of_line("./", &ctx),
+        vec!["Cargo.toml", "src/"]
+    );
 }
 
 #[test]
