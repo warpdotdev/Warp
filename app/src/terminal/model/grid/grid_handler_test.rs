@@ -2211,10 +2211,10 @@ fn content_len_equals_len_when_no_trailing_blanks() {
 #[test]
 fn test_full_grid_clear_resize_then_scroll_does_not_panic_on_row_iteration() {
     // Regression test for issue with `FullGridClearBehavior`: make sure that
-    // when FullGridClearBehavior::Clear is active, resize_storage 
+    // when FullGridClearBehavior::Clear is active, resize_storage
     // resizes the active GridStorage and the flat storage correctly.
-    // Before, we didn't set 'flat_storage.set_columns(), and subsequent scrolls pushed 
-	// wider rows into the narrower flat storage, corrupting the index. Iterating
+    // Before, we didn't set 'flat_storage.set_columns(), and subsequent scrolls pushed
+    // wider rows into the narrower flat storage, corrupting the index. Iterating
     // those rows then panicked.
     let old_cols = 10;
     let new_cols = 20;
@@ -2224,7 +2224,7 @@ fn test_full_grid_clear_resize_then_scroll_does_not_panic_on_row_iteration() {
         GridHandler::new_for_test_with_scroll_limit(num_rows, old_cols, MAX_SCROLL_LIMIT);
     grid.enable_full_grid_clear_behavior();
 
-    // Resize grid wider. 
+    // Resize grid wider.
     grid.resize(SizeInfo::new_without_font_metrics(num_rows, new_cols));
 
     // Fill visible rows with new-width content and trigger a scroll so
