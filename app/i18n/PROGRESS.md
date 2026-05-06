@@ -31,7 +31,7 @@
 | 3 | command_palette | `app/src/command_palette.rs`, `app/src/palette/**` | ⬜ | ⬜ | ⬜ | (free) | |
 | 4 | drive | `app/src/drive/**` | ⬜ | ⬜ | ⬜ | (free) | |
 | 5 | onboarding | `crates/onboarding/**`, `app/src/coding_entrypoints/**` | ⬜ | ⬜ | ⬜ | (free) | 跨 crate 注意:`onboarding` 是独立 crate,要看是否单独建 i18n |
-| 6 | workspace | `app/src/workspace/**`, `app/src/workspaces/**` | ⬜ | ⬜ | ⬜ | (free) | |
+| 6 | workspace | `app/src/workspace/**`, `app/src/workspaces/**` | 🟡 (view.rs + delete_conversation_confirmation_dialog.rs + vertical_tabs.rs) | 🟡 | 20+ | agent-workspace-i18n | workspace-runtime section 已有基础 key；新增版本更新(workspace-version-*)、worktree(workspace-worktree-*)、对话框(workspace-dialog-*)、toast(workspace-toast-*)、溢出计数(workspace-overflow-*)相关 key。call sites:view.rs(版本更新3处+worktree4处+对话框1处+toast8处)、delete_conversation_confirmation_dialog.rs(3处)、vertical_tabs.rs(溢出计数3处)。需验证 cargo check。
 | 7 | modal & prompt | `app/src/modal/**`, `app/src/prompt/**`, `app/src/quit_warning/**` | 🟡 | 🟡 | 14 | agent-quit-warning | quit_warning ✅,modal/prompt 待办 |
 | 7a | quit_warning | `app/src/quit_warning/mod.rs` | ✅ | ✅ | 14 | agent-quit-warning | 退出/关闭确认对话框 |
 | 1b | settings-warpify | `app/src/settings_view/warpify_page.rs` | ✅ | ✅ | 17 | agent-settings-warpify | Warpify 子页(subshell + SSH 配置)。19 key:page-title / description-prefix / learn-more / section-subshells(+subtitle)/ section-ssh(+subtitle)/ added-commands / denylisted-commands / denylisted-hosts / command-placeholder / host-placeholder / enable-ssh / install-ssh-extension(+description)/ use-tmux / tmux-description / ssh-tmux-toggle-binding-label。Category 要求 'static 用 Box::leak 提升 |

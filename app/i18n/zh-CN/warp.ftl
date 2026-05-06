@@ -172,6 +172,44 @@ workspace-view-all-cloud-runs = 查看所有云端运行
 pane-get-started-title = 开始使用
 pane-new-tab-title = 新建标签页
 
+# 版本更新相关
+workspace-version-current = 当前版本是 { $version }
+workspace-version-install-update = 安装更新 ({ $version })
+workspace-version-updating-to = 正在更新到 ({ $version })
+
+# Worktree 相关
+workspace-worktree-new-with-name = 新建 worktree: { $repo }, { $name }
+workspace-worktree-new-with-branch = 新建 worktree: { $repo }, { $branch }
+workspace-worktree-new-default = 新建 worktree: { $repo }
+workspace-worktree-title = Worktree: { $repo }
+
+# 对话框标题
+workspace-dialog-open-title = 打开: { $name }
+workspace-dialog-delete-title = 删除 '{ $title }'?
+workspace-dialog-delete-generic = 删除对话?
+
+# 对话框正文
+workspace-dialog-delete-body = 此对话将被永久删除。此操作无法撤销。
+
+# Toast 提示
+workspace-toast-forked-conversation = 已 fork "{ $title }"
+workspace-toast-mouse-reporting = 你已{ $verb }鼠标报告
+workspace-toast-mouse-reporting-with-undo = 你已{ $verb }鼠标报告。按 { $keystroke } 撤销。
+workspace-toast-synchronized-inputs-all-tabs = 你已{ $verb }所有标签页的同步输入
+workspace-toast-synchronized-inputs-all-tabs-with-undo = 你已{ $verb }所有标签页的同步输入。按 { $keystroke } 撤销。
+workspace-toast-synchronized-inputs-current-tab = 你已{ $verb }当前标签页的同步输入
+workspace-toast-synchronized-inputs-current-tab-with-undo = 你已{ $verb }当前标签页的同步输入。按 { $keystroke } 撤销。
+workspace-toast-install-cli-success = 成功安装 Oz CLI！现在可以在命令行运行 '{ $command }'。
+workspace-toast-install-cli-failed = 安装 Oz 命令失败: { $error }
+workspace-toast-uninstall-cli-failed = 卸载 Oz 命令失败: { $error }
+workspace-toast-remove-config-failed = 删除标签页配置失败: { $error }
+workspace-toast-create-log-bundle-failed = 创建日志包失败: { $error }
+workspace-toast-process-sample-saved = 进程样本已保存到 { $path }
+
+# 溢出计数
+workspace-overflow-more-items = + 还有 { $count } 个
+workspace-overflow-and-more-items = 还有 { $count } 个
+
 # =============================================================================
 # SECTION: terminal-runtime (Owner: agent-i18n-remaining)
 # =============================================================================

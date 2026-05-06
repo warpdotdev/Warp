@@ -177,6 +177,44 @@ workspace-view-all-cloud-runs = View all cloud runs
 pane-get-started-title = Get started
 pane-new-tab-title = New tab
 
+# Version update related
+workspace-version-current = Current version is { $version }
+workspace-version-install-update = Install update ({ $version })
+workspace-version-updating-to = Updating to ({ $version })
+
+# Worktree related
+workspace-worktree-new-with-name = New worktree: { $repo }, { $name }
+workspace-worktree-new-with-branch = New worktree: { $repo }, { $branch }
+workspace-worktree-new-default = New worktree: { $repo }
+workspace-worktree-title = Worktree: { $repo }
+
+# Dialog titles
+workspace-dialog-open-title = Open: { $name }
+workspace-dialog-delete-title = Delete '{ $title }'?
+workspace-dialog-delete-generic = Delete conversation?
+
+# Dialog body text
+workspace-dialog-delete-body = This conversation will be permanently deleted. This action cannot be undone.
+
+# Toast messages
+workspace-toast-forked-conversation = Forked "{ $title }"
+workspace-toast-mouse-reporting = You { $verb } mouse reporting.
+workspace-toast-mouse-reporting-with-undo = You { $verb } mouse reporting. Press { $keystroke } to undo.
+workspace-toast-synchronized-inputs-all-tabs = You { $verb } synchronized inputs in all tabs.
+workspace-toast-synchronized-inputs-all-tabs-with-undo = You { $verb } synchronized inputs in all tabs. Press { $keystroke } to undo.
+workspace-toast-synchronized-inputs-current-tab = You { $verb } synchronized inputs in this tab.
+workspace-toast-synchronized-inputs-current-tab-with-undo = You { $verb } synchronized inputs in this tab. Press { $keystroke } to undo.
+workspace-toast-install-cli-success = Successfully installed the Oz CLI! You can now run '{ $command }' from the command line.
+workspace-toast-install-cli-failed = Failed to install Oz command: { $error }
+workspace-toast-uninstall-cli-failed = Failed to uninstall Oz command: { $error }
+workspace-toast-remove-config-failed = Failed to remove tab config: { $error }
+workspace-toast-create-log-bundle-failed = Failed to create log bundle: { $error }
+workspace-toast-process-sample-saved = Process sample saved to { $path }
+
+# Overflow count
+workspace-overflow-more-items = + { $count } more
+workspace-overflow-and-more-items = and { $count } more
+
 # =============================================================================
 # SECTION: terminal-runtime (Owner: agent-i18n-remaining)
 # Files: app/src/terminal/view.rs

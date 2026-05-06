@@ -898,7 +898,7 @@ fn format_summary_primary_labels(labels: &[String], visible_limit: usize) -> Opt
     let mut rendered = labels[..visible_count].join(SEPARATOR);
     let overflow_count = summary_overflow_count(labels.len(), visible_limit);
     if overflow_count > 0 {
-        rendered.push_str(&format!(" + {overflow_count} more"));
+        rendered.push_str(&crate::t!("workspace-overflow-more-items", count = overflow_count));
     }
     Some(rendered)
 }
@@ -3643,7 +3643,7 @@ fn render_summary_tab_item(
         text_col.add_child(
             Container::new(
                 Text::new_inline(
-                    format!("+ {hidden_branch_count} more"),
+                    crate::t!("workspace-overflow-more-items", count = hidden_branch_count),
                     appearance.ui_font_family(),
                     10.,
                 )
@@ -5588,7 +5588,7 @@ fn render_code_detail_section(
 
     if extra_open_tabs > 0 {
         section.add_child(render_detail_wrapping_text(
-            format!("and {extra_open_tabs} more"),
+            crate::t!("workspace-overflow-and-more-items", count = extra_open_tabs),
             12.,
             text_colors.sub,
             None,

@@ -103,15 +103,12 @@ impl View for DeleteConversationConfirmationDialog {
         let title = self
             .source
             .as_ref()
-            .map(|s| format!("Delete '{}'?", s.conversation_title))
-            .unwrap_or_else(|| "Delete conversation?".into());
+            .map(|s| crate::t!("workspace-dialog-delete-title", title = s.conversation_title))
+            .unwrap_or_else(|| crate::t!("workspace-dialog-delete-generic"));
 
         let dialog = Dialog::new(
             title,
-            Some(
-                "This conversation will be permanently deleted. This action cannot be undone."
-                    .into(),
-            ),
+            Some(crate::t!("workspace-dialog-delete-body")),
             UiComponentStyles {
                 width: Some(DIALOG_WIDTH),
                 ..dialog_styles(appearance)

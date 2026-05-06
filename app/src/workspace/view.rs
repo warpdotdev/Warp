@@ -1928,7 +1928,7 @@ impl Workspace {
                     log::warn!("Failed to remove tab config file: {e:?}");
                     self.toast_stack.update(ctx, |toast_stack, ctx| {
                         toast_stack.add_ephemeral_toast(
-                            DismissibleToast::error(format!("Failed to remove tab config: {e}")),
+                            DismissibleToast::error(crate::t!("workspace-toast-remove-config-failed", error = e)),
                             ctx,
                         );
                     });
@@ -6022,7 +6022,7 @@ impl Workspace {
                     ctx.open_file_path_in_explorer(&path);
                 }
                 Ok(Err(err)) => {
-                    let error_message = format!("Failed to create log bundle: {err}");
+                    let error_message = crate::t!("workspace-toast-create-log-bundle-failed", error = err);
                     log::error!("{error_message}");
                     me.toast_stack.update(ctx, |toast_stack, ctx| {
                         let toast = DismissibleToast::error(error_message);
@@ -6030,7 +6030,7 @@ impl Workspace {
                     });
                 }
                 Err(err) => {
-                    let error_message = format!("Failed to create log bundle: {err}");
+                    let error_message = crate::t!("workspace-toast-create-log-bundle-failed", error = err);
                     log::error!("{error_message}");
                     me.toast_stack.update(ctx, |toast_stack, ctx| {
                         let toast = DismissibleToast::error(error_message);
@@ -6420,7 +6420,7 @@ impl Workspace {
                 .and_then(|view| view.as_ref(ctx).pwd())
                 .map(PathBuf::from);
 
-            let modal_title = format!("Open: {}", tab_config.name);
+            let modal_title = crate::t!("workspace-dialog-open-title", name = tab_config.name);
             self.tab_config_params_modal.view.update(ctx, |modal, ctx| {
                 modal.body().update(ctx, |body, ctx| {
                     body.set_title(modal_title);
@@ -6597,19 +6597,19 @@ impl Workspace {
         if FeatureFlag::Autoupdate.is_enabled() && ChannelState::show_autoupdate_menu_items() {
             if let Some(version) = ChannelState::app_version() {
                 menu_items.push(
-                    MenuItemFields::new(format!("Current version is {version}"))
+                    MenuItemFields::new(crate::t!("workspace-version-current", version = version))
                         .with_disabled(true)
                         .into_item(),
                 );
                 match autoupdate::get_update_state(ctx) {
                     AutoupdateStage::UpdateReady { new_version, .. }
                     | AutoupdateStage::UpdatedPendingRestart { new_version } => menu_items.push(
-                        MenuItemFields::new(format!("Install update ({})", new_version.version))
+                        MenuItemFields::new(crate::t!("workspace-version-install-update", version = new_version.version))
                             .with_on_select_action(WorkspaceAction::ApplyUpdate)
                             .into_item(),
                     ),
                     AutoupdateStage::Updating { new_version, .. } => menu_items.push(
-                        MenuItemFields::new(format!("Updating to ({})", new_version.version))
+                        MenuItemFields::new(crate::t!("workspace-version-updating-to", version = new_version.version))
                             .with_disabled(true)
                             .into_item(),
                     ),
@@ -7595,9 +7595,9 @@ impl Workspace {
             match result {
                 Ok(_) => {
                     let command_name = ChannelState::channel().cli_command_name();
-                    let message = format!("Successfully installed the Oz CLI! You can now run '{command_name}' from the command line.");
+                    let message = crate::t!("workspace-toast-install-cli-success", command = command_name);
                     view.toast_stack.update(ctx, |toast_stack, ctx| {
-                        let toast = DismissibleToast::success(message.to_string())
+                        let toast = DismissibleToast::success(message)
                             .with_link(
                                 ToastLink::new(crate::t!("common-learn-more")).with_href(
                                     "https://docs.warp.dev/reference/cli".to_string(),
@@ -7607,7 +7607,7 @@ impl Workspace {
                     });
                 }
                 Err(error) => {
-                    let error_message = format!("Failed to install Oz command: {error}");
+                    let error_message = crate::t!("workspace-toast-install-cli-failed", error = error);
                     log::error!("{error_message}");
                     view.toast_stack.update(ctx, |toast_stack, ctx| {
                         let toast = DismissibleToast::error(error_message);
@@ -7632,7 +7632,7 @@ impl Workspace {
                     });
                 }
                 Err(error) => {
-                    let error_message = format!("Failed to uninstall Oz command: {error}");
+                    let error_message = crate::t!("workspace-toast-uninstall-cli-failed", error = error);
                     log::error!("{error_message}");
                     view.toast_stack.update(ctx, |toast_stack, ctx| {
                         let toast = DismissibleToast::error(error_message);
@@ -9134,12 +9134,12 @@ impl Workspace {
             .unwrap_or_else(|| repo.to_string());
         let config_name = match worktree_branch_name {
             Some(name) if !name.is_empty() => {
-                format!("New worktree: {repo_display_name}, {name}")
+                crate::t!("workspace-worktree-new-with-name", repo = repo_display_name, name = name)
             }
             _ if !base_branch.is_empty() => {
-                format!("New worktree: {repo_display_name}, {base_branch}")
+                crate::t!("workspace-worktree-new-with-branch", repo = repo_display_name, branch = base_branch)
             }
-            _ => format!("New worktree: {repo_display_name}"),
+            _ => crate::t!("workspace-worktree-new-default", repo = repo_display_name),
         };
 
         let filename_hint = if let Some(name) = worktree_branch_name {
@@ -9259,7 +9259,7 @@ impl Workspace {
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_else(|| repo_path.clone());
-        let config_name = format!("Worktree: {repo_display_name}");
+        let config_name = crate::t!("workspace-worktree-title", repo = repo_display_name);
         // Use the user's default session mode to decide pane type.
         let pane_type = if AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
             && AISettings::as_ref(ctx).default_session_mode(ctx) == DefaultSessionMode::Agent
@@ -11736,7 +11736,7 @@ impl Workspace {
         };
 
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast = DismissibleToast::default(format!("Forked \"{title}\""));
+            let toast = DismissibleToast::default(crate::t!("workspace-toast-forked-conversation", title = title));
             toast_stack.add_ephemeral_toast(toast, window_id, ctx);
         });
     }
@@ -15427,12 +15427,13 @@ impl Workspace {
         } else {
             "enabled"
         };
-        let mut message = format!("You {verb} mouse reporting.");
-        if let Some(keystroke) =
+        let message = if let Some(keystroke) =
             keybinding_name_to_keystroke("workspace:toggle_mouse_reporting", ctx)
         {
-            let _ = write!(message, " Press {} to undo.", keystroke.displayed());
-        }
+            crate::t!("workspace-toast-mouse-reporting-with-undo", verb = verb, keystroke = keystroke.displayed())
+        } else {
+            crate::t!("workspace-toast-mouse-reporting", verb = verb)
+        };
 
         self.toast_stack.update(ctx, |view, ctx| {
             let new_toast = DismissibleToast::default(message);
@@ -20354,13 +20355,14 @@ impl TypedActionView for Workspace {
                     status.is_syncing_all_inputs(window_id)
                 });
                 let verb = if enabled { "enabled" } else { "disabled" };
-                let mut message = format!("You {verb} synchronized inputs in all tabs.");
-                if let Some(keystroke) = keybinding_name_to_keystroke(
+                let message = if let Some(keystroke) = keybinding_name_to_keystroke(
                     "workspace:toggle_sync_all_terminal_inputs_in_all_tabs",
                     ctx,
                 ) {
-                    let _ = write!(message, " Press {} to undo.", keystroke.displayed());
-                }
+                    crate::t!("workspace-toast-synchronized-inputs-all-tabs-with-undo", verb = verb, keystroke = keystroke.displayed())
+                } else {
+                    crate::t!("workspace-toast-synchronized-inputs-all-tabs", verb = verb)
+                };
                 self.toast_stack.update(ctx, |view, ctx| {
                     let new_toast = DismissibleToast::default(message);
                     view.add_ephemeral_toast(new_toast, ctx);
@@ -20387,13 +20389,14 @@ impl TypedActionView for Workspace {
                     status.should_sync_this_pane_group(current_pane_group_id, window_id)
                 });
                 let verb = if enabled { "enabled" } else { "disabled" };
-                let mut message = format!("You {verb} synchronized inputs in this tab.");
-                if let Some(keystroke) = keybinding_name_to_keystroke(
+                let message = if let Some(keystroke) = keybinding_name_to_keystroke(
                     "workspace:toggle_sync_terminal_inputs_in_tab",
                     ctx,
                 ) {
-                    let _ = write!(message, " Press {} to undo.", keystroke.displayed());
-                }
+                    crate::t!("workspace-toast-synchronized-inputs-current-tab-with-undo", verb = verb, keystroke = keystroke.displayed())
+                } else {
+                    crate::t!("workspace-toast-synchronized-inputs-current-tab", verb = verb)
+                };
                 self.toast_stack.update(ctx, |view, ctx| {
                     let new_toast = DismissibleToast::default(message);
                     view.add_ephemeral_toast(new_toast, ctx);
@@ -21118,7 +21121,7 @@ impl TypedActionView for Workspace {
                                     }
                                 }
 
-                                format!("Process sample saved to {output_path}")
+                                crate::t!("workspace-toast-process-sample-saved", path = output_path)
                             }
                             Ok(Ok(output)) => {
                                 let stderr = String::from_utf8_lossy(&output.stderr);
