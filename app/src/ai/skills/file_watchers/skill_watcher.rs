@@ -187,6 +187,7 @@ impl SkillWatcher {
                 | RepoMetadataEvent::RepositoryRemoved { .. }
                 | RepoMetadataEvent::FileTreeUpdated { .. }
                 | RepoMetadataEvent::UpdatingRepositoryFailed { .. }
+                | RepoMetadataEvent::RepositoryIndexedWithLimit { .. }
                 | RepoMetadataEvent::IncrementalUpdateReady { .. } => {}
             }
         });

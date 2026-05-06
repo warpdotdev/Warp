@@ -37,6 +37,10 @@ pub enum RepoMetadataEvent {
     FileTreeEntryUpdated { id: RepositoryIdentifier },
     /// Updating a repository failed.
     UpdatingRepositoryFailed { id: RepositoryIdentifier },
+    /// A repository was indexed in degraded mode because it exceeded the
+    /// max-file limit during the initial full-depth scan. Subdirectories
+    /// load lazily on expand.
+    RepositoryIndexedWithLimit { id: RepositoryIdentifier },
     /// An incremental file tree update is ready to be sent to the remote
     /// client. Only emitted when the local model has
     /// `emit_incremental_updates` enabled.
@@ -117,6 +121,11 @@ impl RepoMetadataModel {
             }
             RepositoryMetadataEvent::UpdatingRepositoryFailed { path } => {
                 RepoMetadataEvent::UpdatingRepositoryFailed {
+                    id: RepositoryIdentifier::local(path.clone()),
+                }
+            }
+            RepositoryMetadataEvent::RepositoryIndexedWithLimit { path } => {
+                RepoMetadataEvent::RepositoryIndexedWithLimit {
                     id: RepositoryIdentifier::local(path.clone()),
                 }
             }
