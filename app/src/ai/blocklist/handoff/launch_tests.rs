@@ -4,7 +4,7 @@ use crate::server::ids::ClientId;
 
 #[test]
 fn compose_request_has_no_auto_submit_payload() {
-    let request = CloudLaunchRequest::compose();
+    let request = CloudLaunchRequest::compose(CloudLaunchEntrypoint::FooterChip);
 
     assert_eq!(request.prompt(), None);
     assert_eq!(request.submit_mode, CloudLaunchSubmitMode::Compose);
@@ -25,8 +25,12 @@ fn auto_submit_request_carries_prompt_attachments_and_environment() {
         display_attachments: vec![],
     };
 
-    let request =
-        CloudLaunchRequest::auto_submit("fix tests".to_owned(), attachments, Some(environment_id));
+    let request = CloudLaunchRequest::auto_submit(
+        "fix tests".to_owned(),
+        attachments,
+        Some(environment_id),
+        CloudLaunchEntrypoint::Ampersand,
+    );
 
     assert_eq!(request.prompt(), Some("fix tests"));
     assert_eq!(request.submit_mode, CloudLaunchSubmitMode::AutoSubmit);

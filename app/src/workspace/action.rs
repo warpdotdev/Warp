@@ -8,7 +8,6 @@ use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::blocklist::handoff::CloudLaunchRequest;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::auth::auth_manager::LoginGatedFeature;
 use crate::drive::items::WarpDriveItemId;
@@ -491,8 +490,9 @@ pub enum WorkspaceAction {
     /// Falls through to splitting a fresh cloud-mode pane when the active
     /// conversation isn't handoff-able (no synced server token, empty, or no
     /// active conversation at all).
+    #[allow(private_interfaces)]
     OpenLocalToCloudHandoffPane {
-        request: CloudLaunchRequest,
+        request: crate::ai::blocklist::handoff::CloudLaunchRequest,
     },
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {

@@ -41,7 +41,7 @@ Figma: none provided.
 11. If the user does not explicitly select an environment in the transient selector, submission uses the normal cloud environment defaulting behavior. For a non-empty handoff source, touched-repo overlap may choose a better default after handoff preparation; for an empty source, the run uses the saved/default environment if one exists.
 12. An explicit user selection in the transient selector always wins over any touched-repo overlap default discovered later.
 13. If no environment exists or no environment is selected, `& query` can still start a cloud run without an environment, matching normal cloud-mode behavior.
-14. Clearing the prompt back to empty exits handoff-compose mode automatically, removes the `&` indicator, and hides the transient environment selector.
+14. While in handoff-compose mode, editing the prompt down to empty does not exit the mode; the user remains in handoff-compose mode with the `&` indicator and transient environment selector visible. Exiting requires an explicit affordance: Backspace on an already-empty buffer (item 7), Escape (item 15), or a programmatic buffer clear (e.g. starting a new conversation).
 15. Pressing Escape while in handoff-compose mode exits handoff-compose mode, removes the `&` indicator, hides the transient environment selector, and keeps the prompt text in the local input.
 16. Normal prompt editing continues to work while in handoff-compose mode. Pending file/image attachments remain visible and editable until the prompt is submitted or the user removes them.
 ### Submitting `& query`

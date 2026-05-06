@@ -51,7 +51,7 @@ impl HandoffComposeState {
 
     pub(crate) fn explicit_environment_id(&self) -> Option<SyncId> {
         self.has_explicit_environment_selection
-            .then(|| self.selected_environment_id.clone())
+            .then_some(self.selected_environment_id)
             .flatten()
     }
 

@@ -893,9 +893,17 @@ impl Input {
                     .map(str::to_owned);
                 let attachments = self.collect_cloud_launch_attachments(ctx);
                 let request = if let Some(prompt) = prompt {
-                    CloudLaunchRequest::auto_submit(prompt, attachments, None)
+                    CloudLaunchRequest::auto_submit(
+                        prompt,
+                        attachments,
+                        None,
+                        crate::ai::blocklist::handoff::CloudLaunchEntrypoint::SlashCommand,
+                    )
                 } else {
-                    CloudLaunchRequest::compose().with_attachments(attachments)
+                    CloudLaunchRequest::compose(
+                        crate::ai::blocklist::handoff::CloudLaunchEntrypoint::SlashCommand,
+                    )
+                    .with_attachments(attachments)
                 };
                 self.track_cloud_launch_request(request.id(), ctx);
                 ctx.dispatch_typed_action(&WorkspaceAction::OpenLocalToCloudHandoffPane {

@@ -2525,7 +2525,10 @@ impl Input {
                 }
                 AgentInputFooterEvent::OpenHandoffPane => {
                     let attachments = me.collect_cloud_launch_attachments(ctx);
-                    let request = CloudLaunchRequest::compose().with_attachments(attachments);
+                    let request = CloudLaunchRequest::compose(
+                        crate::ai::blocklist::handoff::CloudLaunchEntrypoint::FooterChip,
+                    )
+                    .with_attachments(attachments);
                     me.track_cloud_launch_request(request.id(), ctx);
                     ctx.dispatch_typed_action(
                         &crate::workspace::WorkspaceAction::OpenLocalToCloudHandoffPane { request },
@@ -3917,9 +3920,7 @@ impl Input {
             .ai_context_model
             .as_ref(ctx)
             .pending_attachments()
-            .iter()
-            .cloned()
-            .collect();
+            .to_vec();
 
         CloudLaunchAttachments {
             request_attachments,
@@ -3942,7 +3943,12 @@ impl Input {
             .handoff_compose_state
             .as_ref(ctx)
             .explicit_environment_id();
-        let request = CloudLaunchRequest::auto_submit(prompt, attachments, explicit_environment_id);
+        let request = CloudLaunchRequest::auto_submit(
+            prompt,
+            attachments,
+            explicit_environment_id,
+            crate::ai::blocklist::handoff::CloudLaunchEntrypoint::Ampersand,
+        );
         let request_id = request.id();
         self.handoff_compose_state.update(ctx, |state, ctx| {
             state.set_active_request_id(request_id, ctx)
@@ -12531,9 +12537,8 @@ impl Input {
                 });
             }
             return;
-        } else if self.maybe_launch_cloud_handoff_request(ctx) {
-            return;
-        } else if self.maybe_queue_input_for_in_progress_conversation(ctx)
+        } else if self.maybe_launch_cloud_handoff_request(ctx)
+            || self.maybe_queue_input_for_in_progress_conversation(ctx)
             || self.maybe_handle_enter_for_slash_command(ctx)
         {
             return;

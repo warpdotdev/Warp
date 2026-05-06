@@ -17,8 +17,10 @@ mod launch;
 
 use crate::features::FeatureFlag;
 
-pub use launch::CloudLaunchRequest;
-pub(crate) use launch::{CloudLaunchAttachments, CloudLaunchRequestId, CloudLaunchSubmitMode};
+pub(crate) use launch::CloudLaunchRequest;
+pub(crate) use launch::{
+    CloudLaunchAttachments, CloudLaunchEntrypoint, CloudLaunchRequestId, CloudLaunchSubmitMode,
+};
 
 pub(crate) fn is_local_to_cloud_handoff_available() -> bool {
     FeatureFlag::OzHandoff.is_enabled()
@@ -26,5 +28,7 @@ pub(crate) fn is_local_to_cloud_handoff_available() -> bool {
         && cfg!(all(feature = "local_fs", not(target_family = "wasm")))
 }
 
+// `launch` compiles on all targets (only depends on `server::ids` / `server::server_api`).
+// `touched_repos` requires `local_fs` for filesystem-walking APIs.
 #[cfg(feature = "local_fs")]
 pub(crate) mod touched_repos;

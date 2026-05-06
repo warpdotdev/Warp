@@ -26,22 +26,32 @@ pub(crate) enum CloudLaunchSubmitMode {
     AutoSubmit,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CloudLaunchEntrypoint {
+    Ampersand,
+    SlashCommand,
+    FooterChip,
+}
+
 #[derive(Debug, Clone)]
-pub struct CloudLaunchRequest {
+pub(crate) struct CloudLaunchRequest {
     id: CloudLaunchRequestId,
     pub(crate) initial_prompt: Option<String>,
     pub(crate) attachments: CloudLaunchAttachments,
     pub(crate) explicit_environment_id: Option<SyncId>,
     pub(crate) submit_mode: CloudLaunchSubmitMode,
+    #[allow(dead_code)]
+    pub(crate) entrypoint: CloudLaunchEntrypoint,
 }
 
 impl CloudLaunchRequest {
-    pub(crate) fn compose() -> Self {
+    pub(crate) fn compose(entrypoint: CloudLaunchEntrypoint) -> Self {
         Self::new(
             None,
             CloudLaunchAttachments::default(),
             None,
             CloudLaunchSubmitMode::Compose,
+            entrypoint,
         )
     }
 
@@ -49,12 +59,14 @@ impl CloudLaunchRequest {
         initial_prompt: String,
         attachments: CloudLaunchAttachments,
         explicit_environment_id: Option<SyncId>,
+        entrypoint: CloudLaunchEntrypoint,
     ) -> Self {
         Self::new(
             Some(initial_prompt),
             attachments,
             explicit_environment_id,
             CloudLaunchSubmitMode::AutoSubmit,
+            entrypoint,
         )
     }
 
@@ -68,6 +80,7 @@ impl CloudLaunchRequest {
         attachments: CloudLaunchAttachments,
         explicit_environment_id: Option<SyncId>,
         submit_mode: CloudLaunchSubmitMode,
+        entrypoint: CloudLaunchEntrypoint,
     ) -> Self {
         Self {
             id: CloudLaunchRequestId::new(),
@@ -75,6 +88,7 @@ impl CloudLaunchRequest {
             attachments,
             explicit_environment_id,
             submit_mode,
+            entrypoint,
         }
     }
 

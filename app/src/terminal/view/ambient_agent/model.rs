@@ -142,6 +142,10 @@ pub(crate) struct PendingHandoff {
 
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 #[derive(Debug, Clone)]
+/// Carries the auto-submit payload for `& query` and `/move-to-cloud query`.
+/// Serves double duty: `request_attachments` feed the spawn request while
+/// `display_attachments` are restored into the editor if submission fails
+/// before the server accepts the run.
 pub(crate) struct PendingCloudLaunch {
     pub(crate) prompt: String,
     pub(crate) attachments: CloudLaunchAttachments,
@@ -506,7 +510,10 @@ impl AmbientAgentViewModel {
             };
             handoff.touched_workspace.is_some()
                 && handoff.snapshot_upload.is_settled()
-                && matches!(handoff.submission_state, HandoffSubmissionState::Idle)
+                && matches!(
+                    handoff.submission_state,
+                    HandoffSubmissionState::Idle | HandoffSubmissionState::Queued
+                )
         }
         #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
         {
@@ -561,6 +568,13 @@ impl AmbientAgentViewModel {
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn pending_handoff_has_explicit_environment(&self) -> bool {
+        self.has_handoff_explicit_environment_lock()
+    }
+
+    /// True when the handoff owns an explicit environment that must not be
+    /// overwritten by default-selection or overlap logic.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn has_handoff_explicit_environment_lock(&self) -> bool {
         self.pending_handoff
             .as_ref()
             .is_some_and(|handoff| handoff.explicit_environment_id.is_some())

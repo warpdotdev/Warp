@@ -37,16 +37,17 @@ use crate::{
 
 use super::{AgentInputButtonTheme, AmbientAgentViewModel};
 
+/// Normalizes ambient-agent and handoff compose state behind one selector API.
 #[derive(Clone)]
 pub(crate) enum EnvironmentSelectorTarget {
-    Ambient(ModelHandle<AmbientAgentViewModel>),
+    CloudPane(ModelHandle<AmbientAgentViewModel>),
     Handoff(ModelHandle<HandoffComposeState>),
 }
-// Normalizes ambient-agent and handoff compose state behind one selector API.
+
 impl EnvironmentSelectorTarget {
     fn selected_environment_id(&self, ctx: &AppContext) -> Option<SyncId> {
         match self {
-            Self::Ambient(model) => model.as_ref(ctx).selected_environment_id().cloned(),
+            Self::CloudPane(model) => model.as_ref(ctx).selected_environment_id().cloned(),
             Self::Handoff(state) => state.as_ref(ctx).selected_environment_id().cloned(),
         }
     }
@@ -58,7 +59,7 @@ impl EnvironmentSelectorTarget {
         ctx: &mut ViewContext<EnvironmentSelector>,
     ) {
         match self {
-            Self::Ambient(model) => {
+            Self::CloudPane(model) => {
                 model.update(ctx, |model, ctx| {
                     model.set_environment_id(environment_id, ctx);
                 });
@@ -77,7 +78,13 @@ impl EnvironmentSelectorTarget {
         ctx: &mut ViewContext<EnvironmentSelector>,
     ) {
         match self {
-            Self::Ambient(model) => {
+            Self::CloudPane(model) => {
+                // During local-to-cloud handoff with an explicit env, skip
+                // default selection so the user's `&` choice is preserved.
+                let is_locked = model.as_ref(ctx).pending_handoff_has_explicit_environment();
+                if is_locked {
+                    return;
+                }
                 model.update(ctx, |model, ctx| {
                     model.set_environment_id(Some(environment_id), ctx);
                 });
@@ -92,7 +99,7 @@ impl EnvironmentSelectorTarget {
 
     fn is_configuring(&self, ctx: &AppContext) -> bool {
         match self {
-            Self::Ambient(model) => model.as_ref(ctx).is_configuring_ambient_agent(),
+            Self::CloudPane(model) => model.as_ref(ctx).is_configuring_ambient_agent(),
             Self::Handoff(state) => state.as_ref(ctx).is_active(),
         }
     }
@@ -275,7 +282,7 @@ impl EnvironmentSelector {
         });
 
         match &target {
-            EnvironmentSelectorTarget::Ambient(model) => {
+            EnvironmentSelectorTarget::CloudPane(model) => {
                 ctx.subscribe_to_model(model, |me, _, event, ctx| {
                     if let AmbientAgentViewModelEvent::EnvironmentSelected = event {
                         me.refresh_menu(ctx);

@@ -13078,6 +13078,7 @@ impl Workspace {
     fn should_hydrate_cloud_launch_draft(request: &CloudLaunchRequest) -> bool {
         matches!(request.submit_mode, CloudLaunchSubmitMode::Compose)
     }
+
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn hydrate_cloud_launch_draft(
         target_view: &ViewHandle<TerminalView>,
@@ -13120,7 +13121,7 @@ impl Workspace {
         request: &CloudLaunchRequest,
         ctx: &mut ViewContext<Self>,
     ) {
-        let Some(environment_id) = request.explicit_environment_id.clone() else {
+        let Some(environment_id) = request.explicit_environment_id else {
             return;
         };
         model_handle.update(ctx, |model, ctx| {
@@ -13138,6 +13139,8 @@ impl Workspace {
         let Some(launch) = launch else {
             return;
         };
+        // The target pane is freshly created (auto-submit skips hydrating its editor),
+        // so this clear is a no-op safety net.
         target_view.update(ctx, |terminal_view, ctx| {
             let input = terminal_view.input().clone();
             input.update(ctx, |input, ctx| input.clear_cloud_launch_draft(ctx));
@@ -13146,6 +13149,7 @@ impl Workspace {
             model.submit_handoff(launch.prompt, launch.attachments.request_attachments, ctx);
         });
     }
+
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn queue_handoff_auto_submit(
         model_handle: &ModelHandle<AmbientAgentViewModel>,
@@ -13340,7 +13344,7 @@ impl Workspace {
             snapshot_upload: SnapshotUploadStatus::Pending,
             submission_state: HandoffSubmissionState::Idle,
             auto_submit: Self::pending_cloud_launch_for_request(&request),
-            explicit_environment_id: request.explicit_environment_id.clone(),
+            explicit_environment_id: request.explicit_environment_id,
         };
         model_handle.update(ctx, |model, model_ctx| {
             model.set_pending_handoff(Some(pending), model_ctx);

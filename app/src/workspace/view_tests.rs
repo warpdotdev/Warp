@@ -283,13 +283,15 @@ fn transferred_tab_workspace(
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 #[test]
 fn cloud_launch_draft_hydrates_only_for_compose() {
-    let compose = CloudLaunchRequest::compose();
+    use crate::ai::blocklist::handoff::CloudLaunchEntrypoint;
+    let compose = CloudLaunchRequest::compose(CloudLaunchEntrypoint::FooterChip);
     assert!(Workspace::should_hydrate_cloud_launch_draft(&compose));
 
     let auto_submit = CloudLaunchRequest::auto_submit(
         "handoff prompt".to_owned(),
         CloudLaunchAttachments::default(),
         None,
+        CloudLaunchEntrypoint::Ampersand,
     );
     assert!(!Workspace::should_hydrate_cloud_launch_draft(&auto_submit));
 }

@@ -1213,7 +1213,7 @@ impl UseAgentToolbar {
                 ctx.emit(UseAgentToolbarEvent::HideRichInput);
             }
             // The handoff pane is a non-CLI surface; `Input` handles this event.
-            AgentInputFooterEvent::OpenHandoffPane { .. } => {}
+            AgentInputFooterEvent::OpenHandoffPane => {}
             // Non-CLI events are handled by Input's subscription, not here.
             _ => {}
         }

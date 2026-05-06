@@ -631,7 +631,7 @@ impl AgentInputFooter {
                     ctx.add_typed_action_view(|ctx| {
                         EnvironmentSelector::new(
                             menu_positioning_provider.clone(),
-                            EnvironmentSelectorTarget::Ambient(ambient_agent_view_model.clone()),
+                            EnvironmentSelectorTarget::CloudPane(ambient_agent_view_model.clone()),
                             ctx,
                         )
                     })

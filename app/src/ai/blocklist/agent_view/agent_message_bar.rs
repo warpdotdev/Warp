@@ -317,8 +317,8 @@ impl View for AgentMessageBar {
 
         let args = AgentMessageArgs {
             active_conversation,
-            ephemeral_message_model,
             agent_view_controller,
+            ephemeral_message_model,
             shortcut_view_model,
             input_buffer_model,
             input_model,
@@ -408,8 +408,8 @@ impl View for AgentMessageBar {
 #[derive(Copy, Clone)]
 pub struct AgentMessageArgs<'a> {
     pub active_conversation: &'a AIConversation,
-    pub ephemeral_message_model: &'a EphemeralMessageModel,
     pub agent_view_controller: &'a AgentViewController,
+    pub ephemeral_message_model: &'a EphemeralMessageModel,
     pub shortcut_view_model: &'a AgentShortcutViewModel,
     pub input_buffer_model: &'a InputBufferModel,
     pub input_model: &'a BlocklistAIInputModel,
