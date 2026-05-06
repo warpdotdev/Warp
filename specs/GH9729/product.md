@@ -79,19 +79,30 @@ This is the same modality contract the Lightbox already enforces in its existing
 
 ### Performance posture
 
-- Image bytes are read on the background executor; the bytes-to-RGBA decode itself runs on the foreground executor (`AssetCache::load_asynchronously` invokes `try_from_bytes` on the foreground executor before publishing the loaded asset). v1 does not change this. The decoder caps below bound the worst-case decode time, and the loading indicator is shown until decode completes; a file that would exceed the caps is rejected at the pre-read step before any decode runs.
+- Image bytes are read on the background executor; the bytes-to-RGBA decode itself runs on the foreground executor (`AssetCache::load_asynchronously` invokes `try_from_bytes` on the foreground executor before publishing the loaded asset). v1 does not change this. The decoder caps below bound the worst-case decode time, and the loading indicator is shown until decode completes. There are two distinct caps that fire at two different points and they are complementary, not redundant: a **pre-read file-size cap** rejects oversize files before any byte is read, and **decode-time dimension and pixel caps** reject files whose declared image dimensions or decoded pixel count exceed the budget. A file that exceeds the pre-read cap never reaches the decoder; a file that passes the pre-read cap (e.g. a 3 MB JPEG header that decodes to 100000×100000 pixels) is still rejected by the decode-time caps.
 - Moving decode to the background executor is a follow-up that affects every Lightbox surface, not just file-tree previews; it is intentionally not entangled with this v1.
 - The pre-read metadata check also runs on the foreground executor in v1. On a stalled NFS/sshfs/FUSE mount this can briefly freeze the workspace until the FS timeout; v1 accepts this tradeoff to keep the new code path small. Moving the metadata check off-thread is enumerated as part of the same follow-up.
 
 ### Limits (visible to the user only as the per-entry error state)
 
-- **Pre-read file-size cap.** Files whose on-disk size exceeds a fixed cap are rejected before the bytes are read into memory. The Lightbox opens directly into the per-entry error state with the filename shown.
-- **Bounded read.** The actual file read is bounded by the same cap, so a file that grows after the metadata check or a symlink to a special device cannot bypass the limit.
-- **Decoded-dimension and decoded-pixel caps.** Files whose declared image dimensions or `width × height` pixel count exceed fixed maximums are rejected at decode time and surface as the per-entry error state.
-- **Animated frame budget.** Animated GIF and animated WebP files whose total frame count or whose summed pixels-across-frames exceed fixed maximums are rejected during decoding (without first materializing every frame into memory).
-- **SVG intrinsic-dimension cap.** SVG files whose declared `<svg width=... height=...>` exceeds a fixed maximum render dimension are rejected at parse time, before rasterization.
+The caps below fire at distinct points in the load pipeline and bound distinct failure modes. They do not overlap: a file can fail any one of them while passing the others.
 
-The exact cap values are defined in the tech spec. From the user's perspective, the contract is: a normal photo (4000×3000), a typical screenshot, a typical 4K image, a typical icon SVG, and a typical app-asset PNG all open. A multi-gigabyte file, a 65535×65535 decompression bomb, a many-thousand-frame animated WebP, and a 200-byte SVG declaring 200000×200000 dimensions all do not open and do not crash.
+- **Pre-read file-size cap.** Rejects files whose on-disk size exceeds a fixed cap **before any byte is read into memory**. Fires before the asset-cache load even begins. Bounds disk-to-memory I/O. Example: a 100 MB PNG with normal pixel content fails this cap; the Lightbox opens directly into the per-entry error state with the filename shown.
+- **Bounded read.** The actual file read in the asset cache is bounded by the same cap, so a file that grows after the pre-read metadata check, or a path swapped to a special device or FIFO between the metadata check and the open, cannot bypass the limit. Fires during the read step.
+- **Decode-time dimension and pixel caps.** Rejects files whose declared image **dimensions** or `width × height` **pixel count** exceed fixed maximums. Fires during decode, after the bytes have been read; the file size may be small (and within the pre-read cap) while the decoded image would still exceed the pixel budget. Example: a 3 MB JPEG header that decodes to 100000×100000 pixels passes the pre-read cap but fails this cap.
+- **Animated frame budget.** Rejects animated GIF and animated WebP files whose total frame count or whose summed pixels-across-frames exceed fixed maximums. Fires mid-iteration during decoding so pathological inputs do not first materialize every frame into memory.
+- **SVG-specific pre-read cap.** Rejects SVG files whose on-disk size exceeds a tighter SVG-only cap (smaller than the raster cap), because XML parsers have super-linear cost in input size and a large SVG can consume parser memory disproportionate to its file size. Fires at the same point as the pre-read file-size cap, with a tighter ceiling for `.svg`.
+- **SVG content-sanity check.** Rejects SVG files whose contents are not XML-like (e.g. a binary blob renamed `.svg`) before the parser runs. Fires before parse, after read.
+- **SVG intrinsic-dimension cap.** Rejects SVG files whose declared `<svg width=... height=...>` exceeds a fixed maximum render dimension. Fires at parse time, before rasterization.
+
+The exact cap values are defined in the tech spec. From the user's perspective, the contract is:
+
+- A normal photo (4000×3000), a typical screenshot, a typical 4K image, a typical icon SVG, and a typical app-asset PNG all open.
+- A 3 MB JPEG with normal pixel count opens (passes both pre-read and decode-time caps).
+- A 100 MB PNG with normal pixel content does not open (fails the pre-read cap, never reaches decode).
+- A 3 MB JPEG header that decodes to 100000×100000 pixels does not open (passes pre-read, fails decode-time).
+- A 100 MB PNG that also decodes to 100000×100000 does not open (fails pre-read first; decode is never reached).
+- A many-thousand-frame animated WebP, a 200-byte SVG declaring 200000×200000 dimensions, and a multi-MB SVG containing 50000 deeply nested `<g>` elements all do not open and do not crash.
 
 ### Accessibility
 
@@ -114,12 +125,12 @@ The exact cap values are defined in the tech spec. From the user's perspective, 
 2. While the Lightbox is open, clicks on the File Tree, terminal panes, Code Editor panes, and tab bar do nothing; the user must dismiss first.
 3. Escape, scrim click, and × button all dismiss the Lightbox and restore focus to the previously-active tab pane.
 4. A corrupt image, an unreadable file, and a mislabeled file (e.g. a `.png` containing tarball bytes) each surface as the per-entry error state with the filename shown; no crash and no permanent spinner.
-5. A file above the pre-read size cap (e.g. a 100 MB `.png`) opens directly into the per-entry error state without being read into memory or decoded.
-6. A symlink to a special file (e.g. `/dev/zero`) opens directly into the per-entry error state; no read is attempted.
-7. A file below the size cap but above the dimension or pixel cap (e.g. a 10000×10000 PNG) surfaces as the per-entry error state at decode time; no partial render, no OOM.
+5. A file above the pre-read file-size cap (e.g. a 100 MB `.png`) opens directly into the per-entry error state via the pre-read cap without being read into memory or decoded.
+6. A symlink to a special file (e.g. `/dev/zero`) and a path swapped to a FIFO between the pre-read stat and the open syscall both open directly into the per-entry error state; the `is_file()` rejection fires before any read is attempted, and the open does not hang.
+7. A file below the pre-read size cap but above the decode-time dimension or pixel cap (e.g. a small-on-disk JPEG header declaring 100000×100000, or a 10000×10000 PNG that fits inside the pre-read cap) surfaces as the per-entry error state at decode time via the decoded-dimension or decoded-pixel cap; no partial render, no OOM. Critically, this is a different failure point from criterion 5: the bytes are read, then the decoder rejects.
 8. An animated GIF and an animated WebP with normal frame counts open and render their first frame statically. The changelog section continues to animate as it does today (unchanged).
 9. An animated file with a pathological frame count or pathological per-frame size surfaces as the per-entry error state mid-decode, without first materializing every frame.
-10. SVG renders via `usvg` / `resvg`. A small SVG declaring a pathological `<svg width="200000" height="200000">` surfaces as the per-entry error state at parse time, before rasterization.
+10. SVG renders via `usvg` / `resvg`. A small SVG declaring a pathological `<svg width="200000" height="200000">` surfaces as the per-entry error state via the SVG intrinsic-dimension cap at parse time, before rasterization. Separately, an over-cap SVG file (e.g. a 4 MB SVG containing 50000 deeply nested `<g>` elements) surfaces as the per-entry error state via the SVG-specific pre-read cap, before the parser runs at all. A non-XML binary blob renamed `.svg` surfaces via the content-sanity check, also before the parser runs.
 11. Telemetry events for image opens are distinguishable from `MarkdownViewer` / `CodeEditor` / `SystemGeneric` opens via the `target` field on `CodePanelsFileOpened`.
 12. Non-image binary files (`.zip`, `.mp3`, `.exe`, `.pdf`, `.bmp`, `.tiff`, `.ico`, etc.) continue to route to `SystemGeneric` exactly as before; no regression.
 
@@ -131,7 +142,7 @@ Tied 1:1 to the success criteria above and detailed in the tech spec's Testing a
 - Unit tests for the pre-read size cap rejecting an oversize file before any decode, and for the bounded read in the asset cache rejecting a file that grows past the cap after the metadata stat.
 - Unit tests for the decoder caps: rejecting a synthesized PNG header declaring dimensions above the cap, rejecting a header declaring a pixel count above the pixel cap, rejecting an animated fixture above the frame-count cap, rejecting an animated fixture above the total-pixel-budget cap, rejecting an SVG declaring intrinsic dimensions above the SVG render cap.
 - Regression unit tests confirming the existing global `ImageType::try_from_bytes` continues to construct `AnimatedBitmap` for legitimate animated WebP and GIF (no regression for the changelog).
-- Manual: each behavior listed under User Experience above against fixtures including a small image, a 4000×3000 photo, a 5000×5000 PNG (below caps), a 10000×10000 PNG (above the dimension and pixel caps), a 100 MB sparse-file `.png` (above the pre-read cap), a symlink to `/dev/zero` (rejected for non-regular-file), a normal animated GIF, a 500-frame animated GIF (above the frame-count cap), a normal animated WebP, a small SVG, a `<svg width="200000" height="200000">` SVG (above the intrinsic-dimension cap), a `.png` containing tarball bytes (mislabeled), a corrupt PNG, and the workspace's existing changelog page (regression check on animation).
+- Manual: each behavior listed under User Experience above against fixtures including a small image, a 4000×3000 photo, a 5000×5000 PNG (below caps), a 10000×10000 PNG (above the decode-time dimension and pixel caps), a 100 MB sparse-file `.png` (above the pre-read cap), a symlink to `/dev/zero` (rejected for non-regular-file), a FIFO created via `mkfifo` then named with an image extension (rejected fast via Unix `O_NONBLOCK` + post-open `is_file()`, no hang), a normal animated GIF, a 500-frame animated GIF (above the frame-count cap), a normal animated WebP, a small SVG, a `<svg width="200000" height="200000">` SVG (above the intrinsic-dimension cap), a 4 MB SVG with 50000 deeply nested `<g>` elements (above the SVG-specific pre-read cap), a 5 MB binary blob renamed `.svg` (rejected by either the SVG byte cap or the content-sanity check), a `.png` containing tarball bytes (mislabeled), a corrupt PNG, and the workspace's existing changelog page (regression check on animation).
 
 ## Alternatives considered
 

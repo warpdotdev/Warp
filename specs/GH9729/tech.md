@@ -17,7 +17,7 @@ v1 is therefore five small things:
 2. A new `Workspace::open_file_with_target` arm that performs a synchronous pre-read metadata check (regular-file check + size cap), then dispatches `WorkspaceAction::OpenLightbox` with a single-element `Vec<LightboxImage>`. If the pre-read check fails, the arm dispatches the same overlay with the entry's source set to the new `Error` variant so the user sees a per-entry inline error instead of nothing.
 3. A new `LightboxImageSource::Error { message }` variant and corresponding render arm so per-entry decode/read failures surface in the Lightbox with the filename instead of spinning forever. Also extended into the asset-load callback so an `AssetState::FailedToLoad`, or a `Loaded { ImageType::Unrecognized }`, rewrites the entry to `Error`.
 4. Decoder limits applied to `ImageType::try_from_bytes` via `image::Limits` plus an explicit total-pixel cap (post-decode for static, during-iteration for animated), and an SVG intrinsic-dimension cap applied after `usvg::Tree::from_data` parses. Frame-collection logic for `AnimatedBitmap` is unchanged in shape; the animated arms gain a frame-count cap and a total-pixel cap during iteration so they cannot be tricked into multi-gigabyte allocation.
-5. A bounded LocalFile read in the asset cache (post-open `is_file()` check on the opened descriptor + `take(N)` streaming read) so a symlink to a special file (`/dev/zero`, FIFO), a path replaced with a FIFO/special-file/directory between change 2's pre-read stat and the open syscall, or a TOCTOU growth between metadata and read cannot bypass the pre-read cap.
+5. A bounded LocalFile read in the asset cache (Unix `O_NONBLOCK` on open + post-open `is_file()` check on the opened descriptor + `take(N)` streaming read) so a symlink to a special file (`/dev/zero`, FIFO), a path replaced with a FIFO/special-file/directory between change 2's pre-read stat and the open syscall, or a TOCTOU growth between metadata and read cannot bypass the pre-read cap. The `O_NONBLOCK` flag is required because `open()` of a FIFO with no writer attached blocks indefinitely on Linux/macOS, which would prevent the post-open `is_file()` check from ever running; with `O_NONBLOCK`, `open()` of a FIFO returns immediately and the post-open check rejects it before any read.
 
 Everything else (sibling navigation, zoom, pan, footer, animation control in the Lightbox, EXIF, ICC, thumbnail strip, additional formats, magic-byte sniffing, context menu, drag-out, disk-backed thumbnail cache) is deferred to follow-ups, listed at the end of this spec.
 
@@ -320,24 +320,53 @@ The animated-image regression flagged in earlier review rounds was about *changi
 
 #### SVG
 
-For SVG, the byte-cap on input (handled by change 2's pre-read cap) is necessary but not sufficient: a 200-byte SVG `<svg width="200000" height="200000">` parses fine in `usvg::Tree::from_data`, then the `tiny_skia::Pixmap` allocation during render scales with intrinsic dimensions, not bytes. Add an intrinsic-dimension cap immediately after the parse:
+For SVG, three bounds stack to defend the parser plus the renderer. The 64 MB unified pre-read cap from earlier drafts of change 2 is too loose to feed `usvg::Tree::from_data`, because XML-style parsers exhibit super-linear cost in input size: a 4 MB SVG with thousands of deeply nested `<g>` groups, gradients, filters, or path elements consumes far more parser CPU and intermediate memory than the file size implies, and `usvg` does not expose a parse-budget API today. The intrinsic-dimension cap below also cannot help, because the parse is what allocates the parser's intermediate trees — by the time `usvg::Tree::from_data` returns, the damage is done.
 
-```rust
-let tree = usvg::Tree::from_data(data, &usvg::Options::default())?;
-let size = tree.size();
-let w = size.width()  as u32;
-let h = size.height() as u32;
-if w > MAX_SVG_RENDER_DIMENSION || h > MAX_SVG_RENDER_DIMENSION {
-    anyhow::bail!("svg dimensions exceed render budget");
-}
-let pixels = (w as u64).saturating_mul(h as u64);
-if pixels > MAX_DECODE_PIXELS {
-    anyhow::bail!("svg dimensions exceed render budget");
-}
-// ... existing rasterization ...
-```
+The bounds, applied in order:
+
+1. **SVG-specific pre-parse byte cap (`MAX_SVG_BYTES = 4 * 1024 * 1024`).** Applied in change 5's bounded read on the asset-cache side: `.svg` paths are read with a 4 MB ceiling (`MAX_SVG_BYTES + 1`) instead of the 64 MB raster ceiling. An over-cap SVG returns `Err` from the asset-cache read step before bytes reach `try_from_bytes`. 4 MB is roomy for any legitimate icon, diagram, or illustration SVG (real-world SVGs are typically a few hundred KB; even maximalist illustration SVGs rarely exceed 1-2 MB) while preventing a 64 MB SVG from being handed to `usvg`.
+
+2. **Content-sanity prefix check on the bytes that reach `try_from_bytes`.** Before `usvg::Tree::from_data` runs, peek the first 1 KB of the buffer and confirm a UTF-8 prefix consistent with XML/SVG: optional UTF-8 BOM, optional whitespace, then `<?xml` or `<svg`. Reject inputs that pass the `.svg` extension test but whose content is not XML-like, before they reach the parser. This catches the "binary blob renamed to `.svg`" case (which would otherwise either parse-fail expensively or waste cycles in `usvg`'s error paths) and is cheap (a bounded byte scan, no allocation):
+
+   ```rust
+   fn looks_like_svg_xml(data: &[u8]) -> bool {
+       // Strip optional UTF-8 BOM.
+       let bytes = data.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(data);
+       // Skip leading ASCII whitespace, bounded to the first 1 KB to keep
+       // the scan O(1) and to refuse pathological "1 GB of whitespace" inputs.
+       let scan_end = bytes.len().min(1024);
+       let after_ws = bytes[..scan_end]
+           .iter()
+           .position(|b| !b.is_ascii_whitespace())
+           .map(|i| &bytes[i..])
+           .unwrap_or(&[]);
+       after_ws.starts_with(b"<?xml") || after_ws.starts_with(b"<svg")
+   }
+   ```
+
+3. **Intrinsic-dimension cap on the parsed tree.** Same as before; closes the "200-byte SVG declares 200000×200000" attack on the renderer:
+
+   ```rust
+   if !looks_like_svg_xml(data) {
+       anyhow::bail!("svg content does not look like XML");
+   }
+   let tree = usvg::Tree::from_data(data, &usvg::Options::default())?;
+   let size = tree.size();
+   let w = size.width()  as u32;
+   let h = size.height() as u32;
+   if w > MAX_SVG_RENDER_DIMENSION || h > MAX_SVG_RENDER_DIMENSION {
+       anyhow::bail!("svg dimensions exceed render budget");
+   }
+   let pixels = (w as u64).saturating_mul(h as u64);
+   if pixels > MAX_DECODE_PIXELS {
+       anyhow::bail!("svg dimensions exceed render budget");
+   }
+   // ... existing rasterization ...
+   ```
 
 `usvg` 0.47 disables network and external-entity expansion by default; this cap covers the remaining concrete render-time exposure.
+
+This layered approach (file-size cap → content-sanity prefix → intrinsic-dimension cap → renderer) is the correct response while `usvg`/`resvg` do not expose a parse-budget API. If a future `usvg` release exposes such an API (parse-time CPU budget, max element count, max nesting depth), that becomes the right primary defense and the 4 MB byte cap can relax. Tracked as a follow-up.
 
 #### Survey of consumers (full)
 
@@ -358,18 +387,41 @@ v1 does not change global `try_from_bytes` (so other consumers of `Unrecognized`
 
 ### 5. Bound the LocalFile asset-cache read
 
-In `crates/warpui_core/src/assets/asset_cache.rs:320-328`, the `AssetSource::LocalFile { path }` load future is `async_fs::read(path).await`, which has no size cap. Combined with the change-2 pre-read metadata check, this leaves two surfaces:
+In `crates/warpui_core/src/assets/asset_cache.rs:320-328`, the `AssetSource::LocalFile { path }` load future is `async_fs::read(path).await`, which has no size cap. Combined with the change-2 pre-read metadata check, this leaves three surfaces:
 
 - A symlink to a special file (`/dev/zero`, FIFO) where `metadata` does not give a meaningful `len()`. Change 2's `is_file()` check rejects most of these, but `async_fs::read` on a FIFO that someone managed to point a regular-file path at can still hang or read until OOM.
-- TOCTOU: between `metadata()` in the workspace arm and `async_fs::read` in the asset cache, the file can grow (or be replaced with a larger file) and the unbounded read consumes whatever is on disk at read time.
+- TOCTOU file-type swap: between `metadata()` in the workspace arm and `open()` in the asset cache, the path can be swapped to a FIFO. On Linux/macOS, `open(O_RDONLY)` on a FIFO with no writer attached **blocks indefinitely** waiting for a writer; this means the post-open `is_file()` check (introduced in round 5) never runs, because `open()` itself is the blocking point. The defense therefore needs to make the open call non-blocking on Unix.
+- TOCTOU growth: between `metadata()` and `read()`, the file can grow (or be replaced with a larger file) and the unbounded read consumes whatever is on disk at read time.
 
-Replace the unbounded read with a bounded one, and re-validate the regular-file contract on the **opened handle** (not the path) before any byte is read. Doing the `is_file()` check on the opened `File` (via `file.metadata()`, which on POSIX is `fstat` against the open descriptor) closes the TOCTOU window between change 2's pre-read path-based stat and the open syscall: even if the path was swapped to a FIFO, character device, or directory between those two syscalls, the swap cannot affect a check performed against an already-open descriptor. A FIFO that was opened — which would otherwise hang `read_to_end` until the writer side closes, or stream until OOM — is caught here and rejected before any read is attempted. The `is_file()` rejection on the opened handle ALSO covers the "directory was opened" edge case on platforms where `File::open` succeeds for directories.
+Replace the unbounded read with a bounded one, apply `O_NONBLOCK` on the open call so a FIFO returns immediately rather than hanging, and re-validate the regular-file contract on the **opened handle** (not the path) before any byte is read. Doing the `is_file()` check on the opened `File` (via `file.metadata()`, which on POSIX is `fstat` against the open descriptor) closes the TOCTOU window between change 2's pre-read path-based stat and the open syscall: even if the path was swapped to a FIFO, character device, or directory between those two syscalls, the swap cannot affect a check performed against an already-open descriptor. A FIFO that was opened — which would otherwise hang the `open` call until a writer attaches, then hang `read_to_end` until the writer side closes, or stream until OOM — is caught here and rejected before any read is attempted. The `is_file()` rejection on the opened handle ALSO covers the "directory was opened" edge case on platforms where `File::open` succeeds for directories.
 
 ```rust
-const MAX_ASSET_LOCAL_FILE_BYTES: u64 = 64 * 1024 * 1024; // matches MAX_PREVIEW_FILE_BYTES
+const MAX_ASSET_LOCAL_FILE_BYTES: u64 = 64 * 1024 * 1024; // matches MAX_PREVIEW_FILE_BYTES (raster cap)
+const MAX_SVG_BYTES:              u64 = 4  * 1024 * 1024; // tighter SVG-specific pre-parse cap
 
 async {
-    let file = async_fs::File::open(&path).await?;
+    // Apply O_NONBLOCK on Unix so open() of a FIFO returns immediately
+    // instead of blocking indefinitely waiting for a writer. Without this,
+    // a FIFO swapped in between change 2's pre-read stat and this open
+    // syscall would hang the asset-cache load future before the post-open
+    // is_file() check can run. O_NONBLOCK has no effect on regular-file
+    // reads on POSIX: read(2) on a regular file completes fully regardless
+    // of the flag, so no fcntl-clear step is needed before take()/read_to_end.
+    // On Windows, OpenOptionsExt::custom_flags exists but the equivalent
+    // FIFO/named-pipe failure mode does not apply the same way; the
+    // post-open is_file() check is sufficient there. The non-blocking flag
+    // is therefore gated on #[cfg(unix)].
+    #[cfg(unix)]
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let file = {
+        let mut opts = async_fs::OpenOptions::new();
+        opts.read(true);
+        #[cfg(unix)]
+        opts.custom_flags(libc::O_NONBLOCK);
+        opts.open(&path).await?
+    };
+
     // Post-open regular-file check on the opened descriptor (fstat, not
     // path-based stat). This is required in addition to change 2's pre-read
     // metadata check: it closes the TOCTOU window where the path was
@@ -380,18 +432,35 @@ async {
     if !meta.file_type().is_file() {
         anyhow::bail!("local asset is not a regular file");
     }
-    let mut taken = file.take(MAX_ASSET_LOCAL_FILE_BYTES + 1);
+
+    // Pick the byte cap based on file extension. Regular-image extensions
+    // (.png/.jpg/.jpeg/.gif/.webp) keep the 64 MB cap; .svg drops to 4 MB
+    // because XML-style parsers (usvg) have super-linear cost in input
+    // size, and a 64 MB SVG with deeply nested <g> trees can consume far
+    // more parser CPU/memory than its file size suggests before any
+    // intrinsic-dimension check is possible. 4 MB comfortably covers any
+    // legitimate icon, diagram, or illustration SVG (real-world SVGs are
+    // typically a few hundred KB at most).
+    let cap = if path_has_svg_extension(&path) {
+        MAX_SVG_BYTES
+    } else {
+        MAX_ASSET_LOCAL_FILE_BYTES
+    };
+
+    let mut taken = file.take(cap + 1);
     let mut buf = Vec::new();
     use futures_lite::AsyncReadExt as _;
     taken.read_to_end(&mut buf).await?;
-    if buf.len() as u64 > MAX_ASSET_LOCAL_FILE_BYTES {
+    if buf.len() as u64 > cap {
         anyhow::bail!("local asset exceeds size cap");
     }
     Ok(buf.into())
 }
 ```
 
-The post-open `is_file()` check is **in addition to**, not a replacement for, the pre-read size cap from change 2 and the `MAX + 1` bounded read below. Change 2 still rejects oversize regular files synchronously before dispatch (avoiding even an open syscall on the obvious-bad cases), and the bounded read still defends against a regular file that grows past the cap between the pre-read stat and the open. The new post-open `is_file()` check defends specifically against the path-replacement TOCTOU where the file type, not the size, changes between syscalls.
+The post-open `is_file()` check is **in addition to**, not a replacement for, `O_NONBLOCK`, the pre-read size cap from change 2, and the `MAX + 1` bounded read. `O_NONBLOCK` ensures `open()` of a FIFO returns immediately so the post-open check actually runs; the post-open check rejects the FIFO before any read is attempted. Change 2 still rejects oversize regular files synchronously before dispatch (avoiding even an open syscall on the obvious-bad cases), and the bounded read still defends against a regular file that grows past the cap between the pre-read stat and the open. The dual-cap design (64 MB for raster, 4 MB for SVG) bounds the bytes fed to `usvg::Tree::from_data` more tightly because XML parsers have super-linear cost in input size.
+
+`path_has_svg_extension` is a small case-insensitive helper that returns true if the path ends in `.svg`. This intentionally keys on extension, not content sniffing: change 2's resolver already gates the file-tree path on `is_supported_image_file`, so by the time bytes reach this load future the caller has committed to SVG-vs-raster classification. Other `LocalFile` consumers (none today) would also benefit from extension-driven cap selection because the SVG parser cost is the same regardless of caller.
 
 This is a global asset-cache change. Verification that it does not regress any current consumer:
 
@@ -436,7 +505,7 @@ The synchronous `std::fs::metadata` in change 2 is also on the foreground execut
 4. `FileTreeEvent::OpenFile { path, target: ImagePreview, line_col: None }` is emitted, re-emitted as `LeftPanelEvent::OpenFileWithTarget` by `left_panel.rs:758-768`, and handled by `Workspace::open_file_with_target` at `view.rs:5715-5815`.
 5. The new `ImagePreview` arm (change 2) calls `std::fs::metadata` for the pre-read check (regular-file + size cap). On success it builds a single-element `Vec<LightboxImage>` with `source: Resolved { LocalFile { path } }` and dispatches `WorkspaceAction::OpenLightbox` via `ctx.dispatch_typed_action`. On metadata error, non-regular-file, or oversize file it builds the same single-element vec with `source: Error { message }` (a sanitized constant) and dispatches.
 6. The `OpenLightbox` handler (`view.rs:21710-21737`) creates `lightbox_view` and focuses it. The scrim covers the workspace; pointer input is intercepted by the scrim; the file tree, terminal panes, code editor panes, and tab bar are all inert. `LightboxView::start_asset_loads` queues `AssetCache::load_asset` for the single `Resolved` entry (no-op for `Error`).
-7. The asset cache opens the file, reads up to `MAX_ASSET_LOCAL_FILE_BYTES + 1` bytes via `take()` (change 5), and bails if the cap was exceeded. The bytes are sent through the asset-cache channel and `try_from_bytes` runs on the foreground executor with the static-decode limits, the animated frame budget, and the SVG intrinsic-dimension cap from change 4. The Lightbox renders as a child of the workspace's main `Stack` (`view.rs:22739-22740`); the image fits via `Image::new(asset_source).contain()`. Until the bytes have been decoded, the loading indicator is shown. Animated GIF and animated WebP files render their first frame statically because the Lightbox does not call `enable_animation_with_start_time` (no v1 change to this).
+7. The asset cache opens the file with `O_NONBLOCK` on Unix (change 5) so that `open()` of a FIFO swapped in via TOCTOU returns immediately rather than hanging waiting for a writer; the post-open `fstat`-based `is_file()` then rejects any non-regular-file descriptor before any byte is read. For regular files, the load future reads up to `cap + 1` bytes via `take()` where `cap` is `MAX_SVG_BYTES` (4 MB) for `.svg` paths and `MAX_ASSET_LOCAL_FILE_BYTES` (64 MB) otherwise, and bails if the cap was exceeded. The bytes are sent through the asset-cache channel and `try_from_bytes` runs on the foreground executor with the static-decode limits, the animated frame budget, the SVG content-sanity prefix check, and the SVG intrinsic-dimension cap from change 4. The Lightbox renders as a child of the workspace's main `Stack` (`view.rs:22739-22740`); the image fits via `Image::new(asset_source).contain()`. Until the bytes have been decoded, the loading indicator is shown. Animated GIF and animated WebP files render their first frame statically because the Lightbox does not call `enable_animation_with_start_time` (no v1 change to this).
 8. If the asset load fails (`AssetState::FailedToLoad`) or resolves to `Loaded { ImageType::Unrecognized }`, the post-load callback (change 3) rewrites the entry to `LightboxImageSource::Error { message: <sanitized> }`. The Lightbox re-renders into the per-entry error panel showing the filename and the message. No crash; the user can dismiss.
 9. Escape, scrim click, or × emits `LightboxViewEvent::Close`. The handler at `view.rs:21722-21726` clears `lightbox_view` and calls `focus_active_tab(ctx)` to restore focus to the previously-active pane.
 
@@ -444,10 +513,13 @@ The synchronous `std::fs::metadata` in change 2 is also on the foreground execut
 
 ### Pre-read size envelope (Critical, addressed in changes 2 and 5)
 
-Without a pre-read cap, a 1 GB `.png` triggers a 1 GB `async_fs::read` allocation on the asset-cache background executor before any decoder limit kicks in (`asset_cache.rs:325`). Two coordinated changes close this:
+Without a pre-read cap, a 1 GB `.png` triggers a 1 GB `async_fs::read` allocation on the asset-cache background executor before any decoder limit kicks in (`asset_cache.rs:325`). Three coordinated changes close this:
 
 - Change 2 caps file size via `std::fs::metadata` plus `is_file()` before the dispatch, so `OpenLightbox` is never dispatched with a `Resolved` source for an oversize file or for a symlink to a special file (`/dev/zero`, FIFO). On rejection, the `Error` variant is dispatched inline with a sanitized constant message.
-- Change 5 caps the actual read in the asset cache via `take(MAX + 1)`, so a TOCTOU growth between metadata stat and read cannot bypass the cap, and additionally re-validates the regular-file contract on the opened descriptor (`fstat`-based `is_file()` rather than path-based) so a path replacement between change 2's stat and the open syscall — for example a regular file replaced with a FIFO, character device, or directory — is caught before any byte is read. The unified cap for raster and SVG is 64 MB, which comfortably covers normal photos and project assets while rejecting pathological inputs.
+- Change 5 caps the actual read in the asset cache via `take(MAX + 1)`, so a TOCTOU growth between metadata stat and read cannot bypass the cap, and additionally re-validates the regular-file contract on the opened descriptor (`fstat`-based `is_file()` rather than path-based) so a path replacement between change 2's stat and the open syscall — for example a regular file replaced with a FIFO, character device, or directory — is caught before any byte is read.
+- Change 5 also applies `O_NONBLOCK` on the open syscall on Unix. Without this, `open(path, O_RDONLY)` on a FIFO with no writer attached blocks indefinitely on Linux/macOS, which would prevent the post-open `is_file()` check from ever running — the open call itself is the blocking point. With `O_NONBLOCK`, `open()` of a FIFO returns immediately, the post-open `fstat`-based `is_file()` rejects the FIFO, and the load future surfaces `Err` to the Lightbox as the per-entry error state without hanging the asset-cache executor. POSIX specifies that `O_NONBLOCK` does not affect `read(2)` on regular files (regular-file reads always complete fully regardless of the flag), so no fcntl-clear is needed before `take()`/`read_to_end`. On Windows, the equivalent FIFO/named-pipe failure mode does not apply the same way, so the flag is gated `#[cfg(unix)]` and the post-open `is_file()` check alone covers Windows.
+
+The dual-cap design (raster vs SVG) sets the unified raster cap at 64 MB, which comfortably covers normal photos and project assets while rejecting pathological inputs. The SVG-specific cap at 4 MB is tighter because XML parsers (`usvg`) have super-linear cost in input size and a 64 MB SVG with deeply nested elements consumes far more parser memory than the file size implies; 4 MB is roomy for any legitimate icon, diagram, or illustration SVG.
 
 ### Decoder allocation envelope (Critical, addressed in change 4)
 
@@ -485,7 +557,7 @@ Verified above (change 7): the existing event already carries `target: FileTarge
 
 ### SVG decode
 
-SVG is rendered via `usvg` 0.47 + `resvg` in `ImageType::Svg` (`image_cache.rs:271-282`). `usvg` 0.47 disables network and external-entity expansion by default. The remaining concrete render-time exposure (a small SVG declaring huge intrinsic dimensions) is closed by the `MAX_SVG_RENDER_DIMENSION` cap applied to `tree.size()` immediately after `usvg::Tree::from_data` parses (change 4). The unified pre-read byte cap from change 2 plus the bounded read in change 5 bound the input bytes fed to `usvg::Tree::from_data`. Smoke-test with one well-formed SVG fixture and one pathological-intrinsic-dimension fixture (e.g. `<svg width="200000" height="200000">...</svg>`).
+SVG is rendered via `usvg` 0.47 + `resvg` in `ImageType::Svg` (`image_cache.rs:271-282`). `usvg` 0.47 disables network and external-entity expansion by default. The render-time exposure for a small-but-pathological SVG (e.g. `<svg width="200000" height="200000">`) is closed by the `MAX_SVG_RENDER_DIMENSION` cap applied to `tree.size()` immediately after `usvg::Tree::from_data` parses (change 4). The parser-time exposure for a large-but-pathological SVG (e.g. 4 MB of deeply nested `<g>` groups consuming far more parser memory than file size implies) is closed by the SVG-specific 4 MB byte cap applied in change 5's bounded read, plus the content-sanity prefix check in change 4 that rejects non-XML inputs before they reach the parser. `usvg`/`resvg` do not currently expose a parse-time CPU/memory budget API; if a future release adds one, it becomes the right primary defense and the byte cap can relax. Smoke-test with one well-formed SVG fixture, one pathological-intrinsic-dimension fixture (e.g. `<svg width="200000" height="200000">...</svg>`), one over-cap (>4 MB) deeply-nested fixture, and one binary-blob renamed `.svg` fixture.
 
 ### Mislabeled-file rough edge (closed at the file-tree path)
 
@@ -517,6 +589,8 @@ The product spec previously promised a screen-reader label on the Lightbox image
 - `local_file_read_caps_at_max_bytes`: with a temp file slightly larger than `MAX_ASSET_LOCAL_FILE_BYTES`, the load future returns `Err` and the read does not allocate beyond the cap.
 - `local_file_read_passes_under_cap`: with a temp file of 1 KB, the load future returns the bytes.
 - `local_file_read_rejects_post_open_non_regular_file`: open a regular-file path, race-replace it with a FIFO (or character device, or directory) between the pre-read metadata stat and the asset-cache open call, and confirm the post-open `is_file()` check on the opened descriptor returns `Err` before any read is attempted. On platforms without convenient FIFO support in the test runner, simulate by opening a path that already resolves to a non-regular file and asserting the post-open check fires.
+- `local_file_read_does_not_block_on_fifo` (`#[cfg(unix)]`): create a FIFO via `nix::unistd::mkfifo` (or `libc::mkfifo`) in a temp directory with NO writer attached, pass that path directly to the asset-cache `LocalFile` load future, and confirm the future returns `Err` (the post-open `is_file()` rejection) within a small bounded duration (e.g. under 100 ms). The test guards specifically against regression of the `O_NONBLOCK` flag: without it, this future would hang indefinitely and the test would time out. Mark the test `#[cfg(unix)]` since `mkfifo` is POSIX.
+- `local_file_read_caps_svg_at_smaller_limit`: with a temp file named `huge.svg` of slightly larger than `MAX_SVG_BYTES` (4 MB) but well under `MAX_ASSET_LOCAL_FILE_BYTES` (64 MB), confirm the load future returns `Err` (the SVG-specific cap fires). With the same byte payload renamed `huge.png`, confirm the load future succeeds (the raster cap is looser).
 
 `crates/warpui_core/src/image_cache.rs` (new test module section):
 
@@ -529,6 +603,8 @@ The product spec previously promised a screen-reader label on the Lightbox image
 - `decode_animated_constructs_bitmap_for_legitimate_webp`: same shape for animated WebP.
 - `decode_svg_rejects_intrinsic_dimensions_over_cap`: an SVG of `<svg width="200000" height="200000">...</svg>` parses then bails at the intrinsic-dimension cap.
 - `decode_svg_accepts_normal_icon`: a 256×256 SVG fixture renders successfully.
+- `decode_svg_rejects_non_xml_prefix`: a 1 KB byte buffer that starts with `\x00\x00\x00` (or any non-XML prefix) but is fed through the SVG path returns `Err` from the content-sanity check before `usvg::Tree::from_data` is invoked. Asserts the prefix check fires.
+- `decode_svg_accepts_xml_prelude_with_bom_and_whitespace`: a buffer that starts with the UTF-8 BOM (`\xEF\xBB\xBF`), then `\n  `, then `<?xml version="1.0"?><svg ...>`, passes the content-sanity check.
 
 `crates/ui_components/src/lightbox.rs` (new test module section):
 
@@ -555,6 +631,8 @@ Behavior-to-step mapping (numbered against the product spec's Success criteria):
 9. **Animated formats**: open an animated GIF and an animated WebP from the file tree. Confirm each renders its first frame statically (no continuous playback in the Lightbox). Then navigate to the changelog page in the Resource Center and confirm changelog GIFs/WebPs continue to animate (regression check on change 4).
 10. **Pathological animated input**: open an animated GIF with 500 frames (above `MAX_ANIMATED_FRAMES`). Confirm the per-entry error state. Open an animated WebP whose frames sum above `MAX_ANIMATED_TOTAL_PIXELS` and confirm the same; observe via memory inspection that the error fires before the full frame set is materialized.
 11. **SVG**: open a small well-formed SVG and confirm it renders (not raw XML). Open `<svg width="200000" height="200000">...</svg>` and confirm the per-entry error state ("svg dimensions exceed render budget") rather than a multi-GB pixmap allocation.
+11a. **SVG byte-cap and parser DoS**: generate a `deeply_nested.svg` containing roughly 50000 opened `<g>` elements (file size around 3.5 MB); open it from the file tree and confirm the per-entry error fires from the SVG byte cap before `usvg::Tree::from_data` is ever invoked. With Activity Monitor / `time` / RSS observation, confirm the workspace foreground thread does not spike for hundreds of milliseconds, and total resident memory does not climb to multi-hundred-MB during the dispatch. Then generate a 5 MB binary blob renamed `data.svg` (e.g. `dd if=/dev/urandom of=data.svg bs=1M count=5`) and open it; confirm the per-entry error fires either from the SVG byte cap (if over 4 MB) or from the content-sanity prefix check (if under 4 MB) before the parser runs.
+11b. **FIFO open does not hang** (POSIX-only): in a project directory, run `mkfifo /tmp/preview-fifo.png` (no writer attached), then click the path from the file tree. Confirm the Lightbox shows the per-entry error within a fraction of a second, not a multi-second or indefinite hang. This validates the `O_NONBLOCK` defense: without `O_NONBLOCK`, the asset-cache `open()` call would block on `read()` of the FIFO from a non-existent writer until interrupted.
 12. **Mislabeled file**: create a `.png` whose contents are a tarball or random bytes. Click it. Confirm the per-entry error state ("could not detect image format") rather than a permanent spinner. Click again; confirm the error state appears immediately (the cached `Unrecognized` is recognized by the post-load callback).
 13. **Telemetry**: with telemetry inspection enabled, click an image and confirm `CodePanelsFileOpened` fires with `target` set to the new variant's serialized form.
 14. **No regression for non-image binaries**: click `.zip`, `.mp3`, `.exe`, `.pdf` files. They open in the OS default app (`SystemGeneric`) exactly as today.
@@ -585,6 +663,7 @@ In rough priority order; none are required for v1.
 - **Drag-out to attach as Agent context**: share the payload type used by `app/src/terminal/input.rs::handle_pasted_or_dragdropped_image_filepaths`.
 - **Disk-backed thumbnail cache and size-cap setting**: only relevant once the visible thumbnail strip lands.
 - **SVG `size_in_bytes`** currently returns 0 (`image_cache.rs:370`), so SVGs do not count against the asset-cache eviction budget. Compute a reasonable proxy (e.g. `data.len()` or rasterized pixmap size) so the cache can evict them.
+- **Adopt a `usvg`/`resvg` parse-budget API** if and when one is exposed (parse-time CPU budget, max element count, max nesting depth). When that lands it becomes the right primary defense for SVG parser DoS and the v1 `MAX_SVG_BYTES = 4 MB` byte cap can relax to match the raster cap.
 - **Image diff across git revisions**: render two `Lightbox`-style panes side by side, tied into the existing diff infrastructure.
 - **Slideshow / fullscreen mode**: auto-advance with a configurable interval. Depends on sibling navigation.
 - **RAW formats** (CR2, NEF, ARW, DNG): pulls in a much larger decoder dependency; gate behind a feature flag.
