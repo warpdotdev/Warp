@@ -159,6 +159,11 @@ impl AutoupdateState {
     /// Check if there are any requests in the queue. Return the next one, but only if there isn't
     /// already a request in-flight.
     fn get_next_request(&mut self, ctx: &mut ModelContext<Self>) -> Option<RequestType> {
+        // WASM cannot apply updates, so we should not check the server for new versions.
+        if cfg!(target_family = "wasm") {
+            return None;
+        }
+
         if !self.should_start_update_check() {
             return None;
         }

@@ -66,7 +66,7 @@ impl AppExecutionMode {
 
     /// Whether the app can *automatically* update. This does not prevent manual updates.
     pub fn can_autoupdate(&self) -> bool {
-        self.is_app()
+        self.is_app() && cfg!(not(target_family = "wasm"))
     }
 
     /// Whether the app can automatically start MCP servers from the previous session.
