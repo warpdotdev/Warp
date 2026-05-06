@@ -345,7 +345,9 @@ impl GlobalBufferModel {
     /// Once we finish reading the file's content from the disk, populate the buffer with the content.
     /// For initial load (is_loaded_from_file_system == true), this is synchronous.
     /// For auto-reload (is_loaded_from_file_system == false), this spawns a background task for diff computation.
-    fn populate_buffer_with_read_content(
+    /// Exposed as `pub(crate)` so tests can populate buffer content
+    /// without going through the async `FileModel` load path.
+    pub(crate) fn populate_buffer_with_read_content(
         &mut self,
         file_id: FileId,
         content: &str,
@@ -1733,7 +1735,54 @@ impl Entity for GlobalBufferModel {
 
 impl SingletonEntity for GlobalBufferModel {}
 
-/// Converts a byte offset within `content` to 0-indexed (line, column).
+#[cfg(test)]
+impl GlobalBufferModel {
+    /// Test-only: seeds a Remote buffer with the given content and sync clock,
+    /// bypassing `open_remote` (which requires `RemoteServerManager`).
+    pub fn seed_remote_buffer_for_test(
+        &mut self,
+        host_id: HostId,
+        path: warp_util::standardized_path::StandardizedPath,
+        content: &str,
+        server_version: u64,
+        ctx: &mut ModelContext<Self>,
+    ) -> BufferState {
+        let remote_path = RemotePath::new(host_id, path);
+        let location = BufferLocation::Remote(remote_path.clone());
+        let file_id = warp_util::file::FileId::new();
+        let buffer = ctx.add_model(|_| Buffer::default());
+        let version = ContentVersion::new();
+        buffer.update(ctx, |buf, ctx| {
+            buf.replace_all(content, ctx);
+            buf.set_version(version);
+        });
+        self.location_to_id.insert(location, file_id);
+        self.buffers.insert(
+            file_id,
+            InternalBufferState {
+                buffer: buffer.downgrade(),
+                latest_buffer_version: None,
+                pending_diff_parse: None,
+                source: BufferSource::Remote {
+                    remote_path,
+                    sync_clock: SyncClock::from_wire(server_version, 0),
+                },
+            },
+        );
+        BufferState::new(file_id, buffer)
+    }
+
+    /// Test-only: returns the `SyncClock` for a Remote buffer.
+    pub fn sync_clock_for_remote_test(&self, file_id: FileId) -> Option<&SyncClock> {
+        let state = self.buffers.get(&file_id)?;
+        match &state.source {
+            BufferSource::Remote { sync_clock, .. } => Some(sync_clock),
+            _ => None,
+        }
+    }
+}
+
+/// Converts a byte offset
 fn byte_offset_to_line_col(content: &str, offset: usize) -> (u32, u32) {
     let offset = offset.min(content.len());
     let before = &content[..offset];

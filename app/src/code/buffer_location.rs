@@ -73,3 +73,7 @@ impl SyncClock {
         self.server_version == expected_server_version
     }
 }
+
+#[cfg(test)]
+#[path = "buffer_location_tests.rs"]
+mod tests;
