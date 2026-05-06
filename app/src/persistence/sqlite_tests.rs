@@ -1,5 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
+use diesel::{RunQueryDsl, SqliteConnection};
 use warp_core::features::FeatureFlag;
 use warp_graphql::scalars::time::ServerTimestamp;
 
@@ -11,7 +12,7 @@ use crate::{
     cloud_object::{CloudObjectPermissions, Owner},
     code::editor_management::CodeSource,
     notebooks::{CloudNotebook, CloudNotebookModel},
-    persistence::{model::ObjectPermissions, BlockCompleted, ModelEvent},
+    persistence::{model::ObjectPermissions, schema, BlockCompleted, ModelEvent},
     server::ids::ClientId,
     tab::SelectedTabColor,
     terminal::model::block::SerializedBlock,
@@ -377,6 +378,203 @@ fn test_path_encode_decode() {
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/ñoñàscii/temp.txt"));
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/hindi/हिन्दी"));
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/cjk/狗没有耐心"));
+}
+
+// Helpers for issue #9109 regression tests: build a terminal tab and a code-pane
+// tab, and corrupt a tab's pane tree by deleting its `code_panes` row. The reader
+// at `read_node` returns `Err(NotFound)` for that leaf, exercising the
+// skip-and-log path in `read_sqlite_data`.
+
+fn terminal_tab_snapshot(uuid_byte: u8, cwd: &str) -> TabSnapshot {
+    TabSnapshot {
+        custom_title: None,
+        root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+            is_focused: true,
+            custom_vertical_tabs_title: None,
+            contents: LeafContents::Terminal(TerminalPaneSnapshot {
+                uuid: vec![uuid_byte],
+                cwd: Some(cwd.to_string()),
+                shell_launch_data: Some(ShellLaunchData::Executable {
+                    executable_path: PathBuf::from("/bin/zsh"),
+                    shell_type: crate::terminal::shell::ShellType::Zsh,
+                }),
+                is_active: true,
+                is_read_only: false,
+                input_config: None,
+                llm_model_override: None,
+                active_profile_id: None,
+                conversation_ids_to_restore: vec![],
+                active_conversation_id: None,
+            }),
+        }),
+        default_directory_color: None,
+        selected_color: SelectedTabColor::default(),
+        left_panel: None,
+        right_panel: None,
+    }
+}
+
+fn code_tab_snapshot() -> TabSnapshot {
+    TabSnapshot {
+        custom_title: None,
+        root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+            is_focused: true,
+            custom_vertical_tabs_title: None,
+            contents: LeafContents::Code(CodePaneSnapShot::Local {
+                tabs: vec![CodePaneTabSnapshot {
+                    path: Some(PathBuf::from("/tmp/main.rs")),
+                }],
+                active_tab_index: 0,
+                source: None,
+            }),
+        }),
+        default_directory_color: None,
+        selected_color: SelectedTabColor::default(),
+        left_panel: None,
+        right_panel: None,
+    }
+}
+
+fn window_with_tabs(tabs: Vec<TabSnapshot>) -> WindowSnapshot {
+    WindowSnapshot {
+        tabs,
+        active_tab_index: 0,
+        bounds: None,
+        fullscreen_state: Default::default(),
+        quake_mode: false,
+        universal_search_width: None,
+        warp_ai_width: None,
+        voltron_width: None,
+        warp_drive_index_width: None,
+        left_panel_open: false,
+        vertical_tabs_panel_open: false,
+        left_panel_width: None,
+        right_panel_width: None,
+        agent_management_filters: None,
+    }
+}
+
+// Drops every `code_panes` row, leaving any `pane_leaves` rows of kind `code_pane`
+// orphaned. This reproduces the failure mode described in issue #9109 where the
+// 2026-04-14 migration left a leaf referencing a missing kind-table row.
+fn orphan_all_code_panes(conn: &mut SqliteConnection) {
+    diesel::delete(schema::code_panes::dsl::code_panes)
+        .execute(conn)
+        .expect("delete from code_panes should succeed");
+}
+
+#[test]
+fn restore_skips_bad_pane_tree_keeps_others() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let app_state = AppState {
+        windows: vec![window_with_tabs(vec![
+            terminal_tab_snapshot(1, "/tmp/a"),
+            code_tab_snapshot(),
+            terminal_tab_snapshot(2, "/tmp/b"),
+        ])],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+        running_mcp_servers: Default::default(),
+    };
+
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+    orphan_all_code_panes(&mut conn);
+
+    let restored = read_sqlite_data(&mut conn, None)
+        .expect("read should not fail when one tab has a bad pane tree")
+        .app_state;
+
+    assert_eq!(restored.windows.len(), 1);
+    let tabs = &restored.windows[0].tabs;
+    assert_eq!(
+        tabs.len(),
+        2,
+        "expected 2 surviving tabs, got {} — the bad code-pane tab should be skipped",
+        tabs.len()
+    );
+    let cwds: Vec<_> = tabs
+        .iter()
+        .filter_map(|tab| {
+            if let PaneNodeSnapshot::Leaf(LeafSnapshot {
+                contents: LeafContents::Terminal(t),
+                ..
+            }) = &tab.root
+            {
+                t.cwd.clone()
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(cwds, vec!["/tmp/a".to_string(), "/tmp/b".to_string()]);
+}
+
+#[test]
+fn restore_logs_error_on_bad_blob() {
+    // The structured `log::warn!` line is asserted via behaviour: `read_sqlite_data`
+    // returns Ok and the corrupt tab is dropped without panicking. The actual log
+    // line ("Skipping tab id=N during restore: ...") is observable when the test
+    // is run with `RUST_LOG=warn` — this test guards the skip-and-log contract.
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let app_state = AppState {
+        windows: vec![window_with_tabs(vec![
+            terminal_tab_snapshot(1, "/tmp/good"),
+            code_tab_snapshot(),
+        ])],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+        running_mcp_servers: Default::default(),
+    };
+
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+    orphan_all_code_panes(&mut conn);
+
+    let result = read_sqlite_data(&mut conn, None);
+    assert!(
+        result.is_ok(),
+        "read_sqlite_data must not propagate a per-tab read failure"
+    );
+    let restored = result.unwrap().app_state;
+    assert_eq!(restored.windows.len(), 1);
+    assert_eq!(restored.windows[0].tabs.len(), 1);
+}
+
+#[test]
+fn restore_with_all_bad_blobs_returns_empty_not_panic() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let app_state = AppState {
+        windows: vec![window_with_tabs(vec![
+            code_tab_snapshot(),
+            code_tab_snapshot(),
+            code_tab_snapshot(),
+        ])],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+        running_mcp_servers: Default::default(),
+    };
+
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+    orphan_all_code_panes(&mut conn);
+
+    let restored = read_sqlite_data(&mut conn, None)
+        .expect("read_sqlite_data must not panic when every tab is bad")
+        .app_state;
+
+    // The window survives but contains no tabs (all were skipped).
+    assert_eq!(restored.windows.len(), 1);
+    assert!(
+        restored.windows[0].tabs.is_empty(),
+        "expected no tabs to survive when every pane tree is corrupt"
+    );
 }
 
 #[test]

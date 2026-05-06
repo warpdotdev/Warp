@@ -2681,7 +2681,20 @@ fn read_sqlite_data(
             let saved_tabs: Vec<_> = tabs_for_window
                 .into_iter()
                 .filter_map(|tab| {
-                    let root = read_root_node(conn, tab.id).ok()?;
+                    // Skip-and-log instead of silent-drop: see issue #9109. A single bad
+                    // pane tree (e.g. orphan code_panes row after the 2026-04-14/2026-04-17
+                    // migrations) used to drop every tab in the window. Now we drop only
+                    // the offending tab and surface the error so the rest survive.
+                    let tab_id_for_log = tab.id;
+                    let root = match read_root_node(conn, tab_id_for_log) {
+                        Ok(root) => root,
+                        Err(err) => {
+                            log::warn!(
+                                "Skipping tab id={tab_id_for_log} during restore: failed to read pane tree: {err}"
+                            );
+                            return None;
+                        }
+                    };
                     let panel = db_panels.get(&tab.id);
 
                     let left_panel = panel
