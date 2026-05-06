@@ -223,3 +223,60 @@ pub fn test_git_prompt_chips() -> Builder {
             }),
         )
 }
+
+/// Test that pressing Tab accepts the inline autosuggestion directly
+/// without opening the completion menu.
+///
+/// This tests the fix for: When an inline suggestion (gray hint) is shown,
+/// pressing Tab should accept it directly instead of opening a popup menu.
+pub fn test_tab_accepts_autosuggestion_directly() -> Builder {
+    new_builder()
+        // Ensure that $HOME contains a directory as a tab-completion candidate.
+        .with_setup(|utils| {
+            let dir = utils.test_dir();
+            std::fs::create_dir(dir.join("hfi.network"))
+                .expect("must be able to create dirs for test");
+        })
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        // Execute a command so that we can generate autosuggestions.
+        .with_step(execute_command_for_single_terminal_in_tab(
+            0,
+            "cd .".into(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(
+            new_step_with_default_assertions("Type 'cd ' to trigger autosuggestion")
+                .with_typed_characters(&["cd "])
+                .add_named_assertion(
+                    "Ensure 'cd ' is in input",
+                    input_contains_string(0, String::from("cd ")),
+                )
+                .add_named_assertion(
+                    "Ensure autosuggestion is present with the directory name",
+                    assert_autosuggestion_state(
+                        0,
+                        AutosuggestionState::ActiveWithText(String::from("hfi.network")),
+                    ),
+                ),
+        )
+        .with_step(
+            new_step_with_default_assertions("Press Tab to accept the autosuggestion")
+                .with_keystrokes(&["tab"])
+                // After pressing Tab with a single autosuggestion:
+                // - The suggestion should be inserted into the input
+                // - No completion menu should be open
+                .add_named_assertion(
+                    "Ensure the full completion is in input (cd + hfi.network)",
+                    input_contains_string(0, String::from("cd hfi.network")),
+                )
+                .add_named_assertion(
+                    "Ensure tab completions menu is NOT open",
+                    tab_completions_menu_is_open(0, false),
+                )
+                .add_named_assertion(
+                    "Ensure autosuggestion is closed after acceptance",
+                    assert_autosuggestion_state(0, AutosuggestionState::Closed),
+                ),
+        )
+}
