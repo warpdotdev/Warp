@@ -304,6 +304,9 @@ pub fn test_ssh_with_remote_shell_command_override() -> Builder {
     new_builder()
         // TODO(CORE-2333) PowerShell has no SSH wrapper.
         .set_should_run_test(|| {
+            if !FeatureFlag::SSHTmuxWrapper.is_enabled() {
+                return false;
+            }
             let (starter, _) = current_shell_starter_and_version();
             starter.shell_type() != ShellType::PowerShell
         })

@@ -101,10 +101,17 @@ impl InteractiveSshCommand {
         let mut host: Option<String> = None;
         let mut port: Option<String> = None;
         let mut forces_tty = false;
+        let mut remote_command_started = false;
         let mut remote_command_tokens = Vec::new();
 
         let mut i = 1;
         while i < tokens.len() {
+            if remote_command_started {
+                remote_command_tokens.push(tokens[i].clone());
+                i += 1;
+                continue;
+            }
+
             match tokens[i].as_str() {
                 // -T or -W imply a non-interactive session.
                 "-T" | "-W" => return None,
@@ -138,6 +145,7 @@ impl InteractiveSshCommand {
                     if host.is_none() {
                         host = Some(pos_arg.to_string());
                     } else {
+                        remote_command_started = true;
                         remote_command_tokens.push(pos_arg.to_string());
                     }
                 }
@@ -178,7 +186,13 @@ fn is_supported_interactive_ssh_remote_command(remote_command_tokens: &[String])
 
 /// Returns `true` when Warp knows how to treat the shell as an interactive remote target.
 fn is_supported_remote_shell(shell: &str) -> bool {
-    matches!(shell, "bash" | "zsh" | "fish" | "sh" | "ash")
+    let normalized_shell = Path::new(shell)
+        .file_name()
+        .and_then(|file_name| file_name.to_str())
+        .unwrap_or(shell)
+        .trim_start_matches('-');
+
+    matches!(normalized_shell, "bash" | "zsh" | "fish" | "sh" | "ash")
 }
 
 pub enum SshLikeCommand {
@@ -451,8 +465,15 @@ mod tests {
                 .host
                 == Some("user@host".to_string())
         );
+        assert!(
+            parse_interactive_ssh_command("ssh user@host -t '/usr/local/bin/fish --login'")
+                .unwrap()
+                .host
+                == Some("user@host".to_string())
+        );
         assert!(parse_interactive_ssh_command("ssh user@host fish --login").is_none());
         assert!(parse_interactive_ssh_command("ssh user@host -t 'echo hello'").is_none());
+        assert!(parse_interactive_ssh_command("ssh user@host -t zsh -c 'echo hi'").is_none());
 
         // Weird spacing and shell characters shouldn't matter
         assert!(
