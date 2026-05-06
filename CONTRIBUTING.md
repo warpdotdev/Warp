@@ -141,9 +141,9 @@ cargo run            # build and run Warp
 Tests are required for most code changes:
 
 ### Manual Testing
-Manual testing is required for changes that can be manually tested. You can run the app locally using `./script/run`. Include whether you have manually tested your changes in the PR description. See [WARP.md](WARP.md) for more detail on how to get set up.
+Manual testing is required for changes that can be manually tested. You can run the app locally using `./script/run`. - see [WARP.md](WARP.md) for more detail on how to get set up.
 
-Screenshots or screen recording are required as evidence of manual testing when possible, and should be included in the PR description.
+If your change can be manually tested, please include screenshots or a screen recording that show it working end to end in the PR description.
 
 ### Automated Tests
 - **Bug fixes** should include a regression test that would have caught the bug.
