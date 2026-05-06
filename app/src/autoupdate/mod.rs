@@ -143,6 +143,7 @@ impl AutoupdateState {
             return;
         }
         if FeatureFlag::Autoupdate.is_enabled() && AppExecutionMode::as_ref(ctx).can_autoupdate() {
+            log::info!("Starting autoupdate polling loop");
             self.polling_started = true;
             // Initiate the polling loop.
             self.poll_for_update(ctx);
