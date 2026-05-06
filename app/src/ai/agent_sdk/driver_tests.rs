@@ -9,16 +9,18 @@ use warp_cli::{
 use warp_core::channel::ChannelState;
 
 use super::{
-    build_secret_env_vars, IdleTimeoutSender, LEGACY_OZ_PARENT_LISTENER_MANAGED_EXTERNALLY_ENV,
-    LEGACY_OZ_PARENT_STATE_ROOT_ENV, OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY_ENV,
-    OZ_MESSAGE_LISTENER_STATE_ROOT_ENV,
+    AgentDriver, build_secret_env_vars, IdleTimeoutSender, SkillRepoLoadMode,
+    LEGACY_OZ_PARENT_LISTENER_MANAGED_EXTERNALLY_ENV, LEGACY_OZ_PARENT_STATE_ROOT_ENV,
+    OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY_ENV, OZ_MESSAGE_LISTENER_STATE_ROOT_ENV,
 };
 use crate::ai::agent::{
     task::TaskId, AIAgentActionResult, AIAgentActionResultType, AIAgentInput, AIAgentOutput,
     AIAgentOutputMessage, ArtifactCreatedData, MessageId, UploadArtifactResult,
 };
 use crate::ai::mcp::parsing::normalize_mcp_json;
-use crate::ai::{agent_sdk::task_env_vars, ambient_agents::AmbientAgentTaskId};
+use crate::ai::{
+    agent_sdk::task_env_vars, ambient_agents::AmbientAgentTaskId, cloud_environments::GithubRepo,
+};
 use warp_managed_secrets::ManagedSecretValue;
 
 #[test]
@@ -176,6 +178,62 @@ fn idle_timeout_sender_later_send_after_supersedes_earlier() {
 
     std::thread::sleep(Duration::from_millis(100));
     assert_eq!(rx.try_recv().unwrap(), Some(2));
+}
+
+#[test]
+fn skill_repo_load_requests_loads_all_environment_repos() {
+    let environment_repo = github_repo("warpdotdev", "warp-internal");
+    let global_repo = github_repo("warpdotdev", "warp-skills");
+    let global_specs = vec![
+        skill_spec("warpdotdev/warp-internal:env-skill"),
+        skill_spec("warpdotdev/warp-skills:global-skill"),
+    ];
+
+    let requests = AgentDriver::skill_repo_load_requests(
+        vec![environment_repo.clone()],
+        vec![environment_repo.clone(), global_repo.clone()],
+        &global_specs,
+    );
+
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].repo, environment_repo);
+    assert!(matches!(&requests[0].load_mode, SkillRepoLoadMode::All));
+    assert_eq!(requests[1].repo, global_repo);
+    let SkillRepoLoadMode::ExplicitGlobal(specs) = &requests[1].load_mode else {
+        panic!("expected explicit global skill load mode");
+    };
+    assert_eq!(specs.len(), 1);
+    assert_eq!(specs[0].skill_identifier, "global-skill");
+}
+
+#[test]
+fn skill_repo_load_requests_filters_global_only_repos_to_matching_specs() {
+    let first_repo = github_repo("warpdotdev", "warp-skills");
+    let second_repo = github_repo("warpdotdev", "warp-server-skills");
+    let global_specs = vec![
+        skill_spec("warpdotdev/warp-skills:first"),
+        skill_spec("warpdotdev/warp-server-skills:second"),
+        skill_spec("warpdotdev/warp-skills:third"),
+    ];
+
+    let requests = AgentDriver::skill_repo_load_requests(
+        Vec::new(),
+        vec![first_repo.clone(), second_repo],
+        &global_specs,
+    );
+
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].repo, first_repo);
+    let SkillRepoLoadMode::ExplicitGlobal(specs) = &requests[0].load_mode else {
+        panic!("expected explicit global skill load mode");
+    };
+    assert_eq!(
+        specs
+            .iter()
+            .map(|spec| spec.skill_identifier.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first", "third"]
+    );
 }
 
 #[test]
@@ -386,6 +444,14 @@ fn json_format_input_omits_filepath_and_description_for_proto_upload_result() {
     assert_eq!(value["size_bytes"], 42);
     assert!(value.get("filepath").is_none());
     assert!(value.get("description").is_none());
+}
+
+fn github_repo(owner: &str, repo: &str) -> GithubRepo {
+    GithubRepo::new(owner.to_string(), repo.to_string())
+}
+
+fn skill_spec(raw: &str) -> warp_cli::skill::SkillSpec {
+    raw.parse().unwrap()
 }
 
 // ── build_secret_env_vars tests ──────────────────────────────────────────────
