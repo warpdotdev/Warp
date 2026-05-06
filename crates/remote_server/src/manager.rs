@@ -13,6 +13,7 @@ use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
 use crate::setup::PreinstallCheckResult;
+#[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
 use crate::setup::RemotePlatform;
 use crate::setup::RemoteServerSetupState;
