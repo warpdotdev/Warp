@@ -581,6 +581,7 @@ fn test_hit_code_block() {
             )),
             code_block_type: Default::default(),
             scroll_left: Cell::new(Pixels::zero()),
+            scrollbar_interaction_state: Default::default(),
         },
     ]);
     model.set_content(tree);

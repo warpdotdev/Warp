@@ -953,6 +953,7 @@ fn layout_text_block(
                     paragraph_block,
                     code_block_type,
                     scroll_left: Cell::new(Pixels::zero()),
+                    scrollbar_interaction_state: Default::default(),
                 }
             })
             .ok_or_else(|| anyhow!("Code block should have at least one paragraph")),

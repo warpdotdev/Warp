@@ -27,12 +27,6 @@ use super::{RenderContext, RenderableBlock};
 
 const CODE_SCROLL_SENSITIVITY: f32 = 1.0;
 
-struct CodeBlockScrollDrag {
-    start_position_x: Pixels,
-    start_scroll_left: Pixels,
-    scroll_data: ScrollData,
-}
-
 /// [`RenderableBlock`] implementation for runnable command blocks.
 pub struct RenderableRunnableCommand {
     viewport_item: ViewportItem,
@@ -42,8 +36,6 @@ pub struct RenderableRunnableCommand {
     viewport_bounds: Option<RectF>,
     /// Scrollbar geometry computed during paint.
     scrollbar: Option<ScrollbarGeometry>,
-    scrollbar_hovered: bool,
-    scrollbar_drag: Option<CodeBlockScrollDrag>,
 }
 
 impl RenderableRunnableCommand {
@@ -65,8 +57,6 @@ impl RenderableRunnableCommand {
             border,
             viewport_bounds: None,
             scrollbar: None,
-            scrollbar_hovered: false,
-            scrollbar_drag: None,
         }
     }
 }
@@ -157,6 +147,7 @@ impl RenderableBlock for RenderableRunnableCommand {
         let BlockItem::RunnableCodeBlock {
             paragraph_block,
             scroll_left,
+            scrollbar_interaction_state,
             ..
         } = block.item
         else {
@@ -212,8 +203,7 @@ impl RenderableBlock for RenderableRunnableCommand {
             );
             scrollbar.has_thumb().then_some(scrollbar)
         } else {
-            self.scrollbar_drag = None;
-            self.scrollbar_hovered = false;
+            scrollbar_interaction_state.clear();
             None
         };
 
@@ -229,7 +219,8 @@ impl RenderableBlock for RenderableRunnableCommand {
 
         // Paint scrollbar thumb inside the clip layer.
         if let Some(scrollbar) = self.scrollbar {
-            let active = self.scrollbar_hovered || self.scrollbar_drag.is_some();
+            let active = scrollbar_interaction_state.hovered()
+                || scrollbar_interaction_state.drag_state().is_some();
             ctx.paint
                 .scene
                 .draw_rect_without_hit_recording(scrollbar.thumb_bounds)
@@ -277,6 +268,7 @@ impl RenderableBlock for RenderableRunnableCommand {
         let BlockItem::RunnableCodeBlock {
             paragraph_block,
             scroll_left,
+            scrollbar_interaction_state,
             ..
         } = block.item
         else {
@@ -298,11 +290,11 @@ impl RenderableBlock for RenderableRunnableCommand {
                 if thumb_hit {
                     let scroll_data =
                         code_block_scroll_data(natural_width, container_width, scroll_left.get());
-                    self.scrollbar_drag = Some(CodeBlockScrollDrag {
-                        start_position_x: position.x().into_pixels(),
-                        start_scroll_left: scroll_left.get(),
+                    scrollbar_interaction_state.start_drag(
+                        position.x().into_pixels(),
+                        scroll_left.get(),
                         scroll_data,
-                    });
+                    );
                     ctx.notify();
                     return true;
                 }
@@ -328,7 +320,7 @@ impl RenderableBlock for RenderableRunnableCommand {
                 false
             }
             Event::LeftMouseDragged { position, .. } => {
-                let Some(drag) = &self.scrollbar_drag else {
+                let Some(drag) = scrollbar_interaction_state.drag_state() else {
                     return false;
                 };
                 let delta = scroll_delta_for_pointer_movement(
@@ -346,7 +338,7 @@ impl RenderableBlock for RenderableRunnableCommand {
                 true
             }
             Event::LeftMouseUp { .. } => {
-                let had_drag = self.scrollbar_drag.take().is_some();
+                let had_drag = scrollbar_interaction_state.end_drag();
                 if had_drag {
                     ctx.notify();
                 }
@@ -356,8 +348,7 @@ impl RenderableBlock for RenderableRunnableCommand {
                 let hovered = self
                     .scrollbar
                     .is_some_and(|sb| sb.thumb_bounds.contains_point(*position));
-                if hovered != self.scrollbar_hovered {
-                    self.scrollbar_hovered = hovered;
+                if scrollbar_interaction_state.set_hovered(hovered) {
                     ctx.notify();
                 }
                 // Never consume MouseMoved so downstream handlers (hover-link, cursor) still fire.
