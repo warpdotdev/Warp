@@ -204,7 +204,9 @@ pub enum GlobalBufferModelEvent {
     /// A remote buffer update conflicted with local edits.
     /// The UI should present a resolution dialog.
     #[allow(dead_code)]
-    RemoteBufferConflict { file_id: FileId },
+    RemoteBufferConflict {
+        file_id: FileId,
+    },
     /// A server-local buffer was updated from a file-watcher event.
     /// Carries the incremental diff edits for the ServerModel to push
     /// to connected clients as `BufferUpdatedPush`.
