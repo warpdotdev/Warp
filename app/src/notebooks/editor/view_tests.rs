@@ -2,6 +2,7 @@ use crate::features::FeatureFlag;
 use async_channel::TryRecvError;
 use std::sync::Arc;
 use string_offset::CharOffset;
+use warp_editor::model::CoreEditorModel;
 use warp_editor::render::{
     element::RichTextAction,
     model::{HitTestBlockType, Location, RenderEvent},
@@ -519,6 +520,42 @@ fn test_link_editing() {
                 "<text>Some <a_https://warp.dev>text<a><a_https://example.com>new link<a>"
             );
         });
+    });
+}
+
+#[test]
+fn markdown_anchor_link_jumps_locally_without_link_resolution() {
+    App::test((), |mut app| async move {
+        let (_, editor_view, _) = initialize_editor(&mut app);
+        reset_editor_with_markdown(
+            &mut app,
+            &editor_view,
+            "# Intro\n\n[Go](#goal)\n\n## Goal\n",
+        )
+        .await;
+
+        let goal_offset = editor_view
+            .read(&app, |editor, ctx| {
+                editor.model.as_ref(ctx).markdown_anchor_offset("goal", ctx)
+            })
+            .expect("heading should resolve");
+
+        editor_view.update(&mut app, |editor, ctx| {
+            assert!(editor.maybe_open_markdown_anchor("#goal", false, false, ctx));
+            assert!(editor.open_link.is_none());
+        });
+
+        assert_eq!(
+            editor_view.read(&app, |editor, ctx| {
+                editor
+                    .model
+                    .as_ref(ctx)
+                    .buffer_selection_model()
+                    .as_ref(ctx)
+                    .first_selection_head()
+            }),
+            goal_offset
+        );
     });
 }
 

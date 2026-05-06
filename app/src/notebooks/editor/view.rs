@@ -61,7 +61,7 @@ use crate::{
     editor::InteractionState,
     features::FeatureFlag,
     notebooks::{
-        editor::{find_bar::FindBarAction, model::word_unit},
+        editor::{find_bar::FindBarAction, model::markdown_anchor_slug_from_url, model::word_unit},
         link::{LinkTarget, NotebookLinks, ResolveError},
         telemetry::{ActionEntrypoint, BlockInfo, EmbeddedObjectInfo, SelectionMode},
     },
@@ -1880,9 +1880,15 @@ impl RichTextEditorView {
         };
 
         if let Some(url) = url {
+            let open_directly =
+                cmd || matches!(self.interaction_state(ctx), InteractionState::Selectable);
+            if self.maybe_open_markdown_anchor(&url, editable, open_directly, ctx) {
+                return;
+            }
+
             // In read-only comment chips (Selectable), open the link directly on
             // click instead of showing a tooltip.
-            if cmd || matches!(self.interaction_state(ctx), InteractionState::Selectable) {
+            if open_directly {
                 self.links
                     .update(ctx, |links, ctx| links.resolve_and_open(&url, ctx));
             } else {
@@ -1907,6 +1913,41 @@ impl RichTextEditorView {
                 ctx.notify();
             }
         }
+    }
+
+    pub(super) fn maybe_open_markdown_anchor(
+        &mut self,
+        url: &str,
+        editable: bool,
+        open_directly: bool,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let Some(anchor_slug) = markdown_anchor_slug_from_url(url) else {
+            return false;
+        };
+
+        if let Some(had_command_selection) = self.model.update(ctx, |model, ctx| {
+            model.jump_to_markdown_anchor(&anchor_slug, ctx)
+        }) {
+            self.focus(ctx);
+            self.open_link = None;
+            if had_command_selection {
+                ctx.emit(EditorViewEvent::ChangedSelectionMode(SelectionMode::Text));
+            }
+            ctx.notify();
+            return true;
+        }
+
+        if !open_directly {
+            self.open_link = Some(LinkToolTipConfig {
+                url: url.to_string(),
+                editable,
+                state: LinkState::Broken(ResolveError::FileNotFound),
+            });
+            ctx.notify();
+        }
+
+        true
     }
 
     /// Make this editor the focused view.
