@@ -14,6 +14,12 @@ pub struct DataSource {
     tabs: Vec<TabNavigationData>,
 }
 
+impl Default for DataSource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DataSource {
     pub fn new() -> Self {
         Self { tabs: vec![] }

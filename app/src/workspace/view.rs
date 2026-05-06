@@ -4823,11 +4823,7 @@ impl Workspace {
         }
     }
 
-    fn tab_navigation_data(
-        &self,
-        window_id: WindowId,
-        ctx: &AppContext,
-    ) -> Vec<TabNavigationData> {
+    fn tab_navigation_data(&self, window_id: WindowId, ctx: &AppContext) -> Vec<TabNavigationData> {
         self.tab_mru_order
             .iter()
             .filter_map(|&pane_group_id| {
@@ -10168,10 +10164,7 @@ impl Workspace {
                 // advance after palette open). CycleMostRecentTab: advance only when
                 // palette was already open (sync offset handles first-open selection).
                 if palette_was_open
-                    || matches!(
-                        ctrl_tab_behavior,
-                        CtrlTabBehavior::CycleMostRecentSession
-                    )
+                    || matches!(ctrl_tab_behavior, CtrlTabBehavior::CycleMostRecentSession)
                 {
                     self.ctrl_tab_palette
                         .update(ctx, |palette, ctx| match direction {
