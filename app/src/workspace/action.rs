@@ -534,6 +534,9 @@ pub enum WorkspaceAction {
     OpenRepository {
         path: Option<String>,
     },
+    /// Reveal the active local terminal session's current working directory in Finder.
+    #[cfg(target_os = "macos")]
+    RevealInFinder,
     /// Open the native folder picker for a repo param in the tab-config modal after the
     /// current interaction cycle finishes.
     OpenTabConfigRepoPicker {
