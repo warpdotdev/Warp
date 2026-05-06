@@ -659,3 +659,60 @@ fn test_open_file_non_runnable_shebang_routes_to_editor() {
     std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
 }
+
+#[test]
+fn test_session_uri_host_parsing() {
+    let result = UriHost::from_str("session");
+    assert!(matches!(result, Ok(UriHost::Session)));
+}
+
+#[test]
+fn test_session_uri_validation() {
+    let url = Url::parse(&format!(
+        "{}://session/A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+    let host = validate_custom_uri(&url).unwrap();
+    assert!(matches!(host, UriHost::Session));
+}
+
+#[test]
+fn test_session_uri_empty_path_does_not_panic() {
+    let url = Url::parse(&format!("{}://session/", ChannelState::url_scheme())).unwrap();
+    let host = validate_custom_uri(&url).unwrap();
+    assert!(matches!(host, UriHost::Session));
+}
+
+#[test]
+fn test_session_uri_invalid_hex_does_not_panic() {
+    let url = Url::parse(&format!(
+        "{}://session/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+    let host = validate_custom_uri(&url).unwrap();
+    assert!(matches!(host, UriHost::Session));
+}
+
+#[test]
+fn test_session_uri_case_insensitive_hex() {
+    let upper = "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4";
+    let lower = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4";
+    let upper_bytes = super::decode_uuid_hex(upper).expect("upper hex should decode");
+    let lower_bytes = super::decode_uuid_hex(lower).expect("lower hex should decode");
+    assert_eq!(upper_bytes, lower_bytes);
+    assert_eq!(upper_bytes.len(), 16);
+}
+
+#[test]
+fn test_decode_uuid_hex_rejects_wrong_length() {
+    assert!(super::decode_uuid_hex("ABCD").is_none());
+    assert!(super::decode_uuid_hex("").is_none());
+    assert!(super::decode_uuid_hex("A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4FF").is_none());
+}
+
+#[test]
+fn test_decode_uuid_hex_rejects_invalid_chars() {
+    assert!(super::decode_uuid_hex("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ").is_none());
+}

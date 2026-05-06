@@ -2155,6 +2155,15 @@ impl PaneGroup {
         self.panes_of::<TerminalPane>()
             .any(|pane| pane.terminal_view(ctx).id() == terminal_view_id)
     }
+
+    /// Returns the [`PaneId`] of the terminal pane whose persistent UUID matches
+    /// the given bytes, or `None` if no such pane exists in this group.
+    pub fn find_terminal_pane_by_session_uuid(&self, uuid: &[u8]) -> Option<PaneId> {
+        self.panes_of::<TerminalPane>()
+            .find(|pane| pane.session_uuid() == uuid && !self.is_pane_hidden_for_close(pane.id()))
+            .map(|pane| pane.id())
+    }
+
     /// Iterate over the code editors in this pane group.
     pub fn code_panes<'a>(
         &'a self,
