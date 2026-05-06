@@ -150,6 +150,81 @@ impl ThemeKind {
     }
 }
 
+fn normalize_theme_ref(raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .filter(|ch| !ch.is_whitespace() && *ch != '_' && *ch != '-')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+pub fn builtin_theme_kinds() -> Vec<ThemeKind> {
+    vec![
+        ThemeKind::SentReferralReward,
+        ThemeKind::ReceivedReferralReward,
+        ThemeKind::Adeberry,
+        ThemeKind::Phenomenon,
+        ThemeKind::Dark,
+        ThemeKind::Dracula,
+        ThemeKind::FancyDracula,
+        ThemeKind::CyberWave,
+        ThemeKind::SolarFlare,
+        ThemeKind::SolarizedDark,
+        ThemeKind::WillowDream,
+        ThemeKind::Light,
+        ThemeKind::DarkCity,
+        ThemeKind::GruvboxDark,
+        ThemeKind::RedRock,
+        ThemeKind::JellyFish,
+        ThemeKind::Leafy,
+        ThemeKind::Koi,
+        ThemeKind::SolarizedLight,
+        ThemeKind::Snowy,
+        ThemeKind::GruvboxLight,
+        ThemeKind::PinkCity,
+        ThemeKind::Marble,
+    ]
+}
+
+/// Resolve a free-form theme reference from launch configurations or directory
+/// overrides. Built-in themes accept both display names ("Dark City") and
+/// snake-case identifiers ("dark_city") using case-insensitive matching.
+pub fn resolve_theme_ref(raw: &str) -> Option<ThemeKind> {
+    let normalized = normalize_theme_ref(raw);
+    if normalized.is_empty() {
+        return None;
+    }
+
+    builtin_theme_kinds().into_iter().find(|kind| {
+        normalize_theme_ref(&kind.to_string()) == normalized
+            || normalize_theme_ref(&format!("{kind:?}")) == normalized
+    })
+}
+
+#[cfg(test)]
+mod theme_ref_tests {
+    use super::{resolve_theme_ref, ThemeKind};
+
+    #[test]
+    fn resolves_display_and_snake_case_builtin_theme_names() {
+        assert_eq!(resolve_theme_ref("Dark City"), Some(ThemeKind::DarkCity));
+        assert_eq!(resolve_theme_ref("dark_city"), Some(ThemeKind::DarkCity));
+        assert_eq!(
+            resolve_theme_ref("  DARK CITY  "),
+            Some(ThemeKind::DarkCity)
+        );
+        assert_eq!(
+            resolve_theme_ref("solarized_dark"),
+            Some(ThemeKind::SolarizedDark)
+        );
+    }
+
+    #[test]
+    fn unknown_theme_ref_returns_none() {
+        assert_eq!(resolve_theme_ref("Definitely Not A Theme"), None);
+    }
+}
+
 #[derive(
     Debug,
     Clone,

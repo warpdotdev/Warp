@@ -19,7 +19,7 @@ use crate::server::ids::SyncId;
 use crate::settings_view::{environments_page::EnvironmentsPage, SettingsSection};
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
-use crate::themes::theme::AnsiColorIdentifier;
+use crate::themes::theme::{AnsiColorIdentifier, ThemeKind};
 use crate::workspace::view::left_panel::ToolPanelView;
 use crate::workspace::WorkspaceRegistry;
 use warpui::SingletonEntity as _;
@@ -65,6 +65,7 @@ pub struct TabSnapshot {
     pub root: PaneNodeSnapshot,
     pub default_directory_color: Option<AnsiColorIdentifier>,
     pub selected_color: SelectedTabColor,
+    pub theme_state: TabThemeState,
     pub left_panel: Option<LeftPanelSnapshot>,
     pub right_panel: Option<RightPanelSnapshot>,
 }
@@ -72,6 +73,118 @@ pub struct TabSnapshot {
 impl TabSnapshot {
     pub(crate) fn color(&self) -> Option<AnsiColorIdentifier> {
         self.selected_color.resolve(self.default_directory_color)
+    }
+}
+
+/// Per-tab theme state. Each slot stores one resolution layer; callers use
+/// [`TabThemeState::effective`] to apply product.md's priority order.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TabThemeState {
+    /// Layer #1. Set by the tab context menu; cleared by "Reset theme".
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub menu_pin: Option<ThemeKind>,
+    /// Layer #2. Set by a tab-level launch-configuration `theme:`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub launch_config_pin: Option<ThemeKind>,
+    /// Layer #3. Computed from `appearance.themes.directory_overrides`.
+    /// This is intentionally runtime-only and is recomputed on restore.
+    #[serde(skip, default)]
+    pub cwd_resolved: Option<ThemeKind>,
+    /// Layer #4. Set by a window-level launch-configuration `theme:`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub window_default: Option<ThemeKind>,
+}
+
+impl TabThemeState {
+    pub fn effective<'a>(&'a self, global: &'a ThemeKind) -> &'a ThemeKind {
+        self.menu_pin
+            .as_ref()
+            .or(self.launch_config_pin.as_ref())
+            .or(self.cwd_resolved.as_ref())
+            .or(self.window_default.as_ref())
+            .unwrap_or(global)
+    }
+
+    pub fn has_any_override(&self) -> bool {
+        self.menu_pin.is_some()
+            || self.launch_config_pin.is_some()
+            || self.cwd_resolved.is_some()
+            || self.window_default.is_some()
+    }
+
+    pub fn has_persisted_override(&self) -> bool {
+        self.menu_pin.is_some() || self.launch_config_pin.is_some() || self.window_default.is_some()
+    }
+
+    pub fn preserved_override(&self) -> Option<&ThemeKind> {
+        self.menu_pin
+            .as_ref()
+            .or(self.launch_config_pin.as_ref())
+            .or(self.window_default.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod tab_theme_state_tests {
+    use super::{SelectedTabColor, TabThemeState};
+    use crate::themes::theme::ThemeKind;
+
+    #[test]
+    fn tab_theme_state_resolves_in_product_priority_order() {
+        let global = ThemeKind::Dark;
+        let mut state = TabThemeState {
+            menu_pin: Some(ThemeKind::Light),
+            launch_config_pin: Some(ThemeKind::Dracula),
+            cwd_resolved: Some(ThemeKind::SolarizedDark),
+            window_default: Some(ThemeKind::DarkCity),
+        };
+        assert_eq!(state.effective(&global), &ThemeKind::Light);
+
+        state.menu_pin = None;
+        assert_eq!(state.effective(&global), &ThemeKind::Dracula);
+
+        state.launch_config_pin = None;
+        assert_eq!(state.effective(&global), &ThemeKind::SolarizedDark);
+
+        state.cwd_resolved = None;
+        assert_eq!(state.effective(&global), &ThemeKind::DarkCity);
+
+        state.window_default = None;
+        assert_eq!(state.effective(&global), &ThemeKind::Dark);
+    }
+
+    #[test]
+    fn reset_menu_pin_reveals_launch_config_pin() {
+        let global = ThemeKind::Dark;
+        let mut state = TabThemeState {
+            menu_pin: Some(ThemeKind::Light),
+            launch_config_pin: Some(ThemeKind::Dracula),
+            cwd_resolved: None,
+            window_default: None,
+        };
+        assert_eq!(state.effective(&global), &ThemeKind::Light);
+
+        state.menu_pin = None;
+        assert_eq!(state.effective(&global), &ThemeKind::Dracula);
+    }
+
+    #[test]
+    fn cwd_resolved_is_not_serialized() {
+        let state = TabThemeState {
+            menu_pin: None,
+            launch_config_pin: None,
+            cwd_resolved: Some(ThemeKind::SolarizedDark),
+            window_default: None,
+        };
+        let serialized = serde_yaml::to_string(&state).expect("serialize theme state");
+        let restored: TabThemeState =
+            serde_yaml::from_str(&serialized).expect("deserialize theme state");
+        assert_eq!(restored.cwd_resolved, None);
+    }
+
+    #[test]
+    fn selected_tab_color_is_independent_from_theme_state() {
+        assert_eq!(SelectedTabColor::Unset.resolve(None), None);
     }
 }
 
