@@ -17,7 +17,7 @@ v1 is therefore five small things:
 2. A new `Workspace::open_file_with_target` arm that performs a synchronous pre-read metadata check (regular-file check + size cap), then dispatches `WorkspaceAction::OpenLightbox` with a single-element `Vec<LightboxImage>`. If the pre-read check fails, the arm dispatches the same overlay with the entry's source set to the new `Error` variant so the user sees a per-entry inline error instead of nothing.
 3. A new `LightboxImageSource::Error { message }` variant and corresponding render arm so per-entry decode/read failures surface in the Lightbox with the filename instead of spinning forever. Also extended into the asset-load callback so an `AssetState::FailedToLoad`, or a `Loaded { ImageType::Unrecognized }`, rewrites the entry to `Error`.
 4. Decoder limits applied to `ImageType::try_from_bytes` via `image::Limits` plus an explicit total-pixel cap (post-decode for static, during-iteration for animated), and an SVG intrinsic-dimension cap applied after `usvg::Tree::from_data` parses. Frame-collection logic for `AnimatedBitmap` is unchanged in shape; the animated arms gain a frame-count cap and a total-pixel cap during iteration so they cannot be tricked into multi-gigabyte allocation.
-5. A bounded LocalFile read in the asset cache (`is_file()` check + `take(N)` streaming read) so a symlink to a special file (`/dev/zero`, FIFO) or a TOCTOU growth between metadata and read cannot bypass the pre-read cap.
+5. A bounded LocalFile read in the asset cache (post-open `is_file()` check on the opened descriptor + `take(N)` streaming read) so a symlink to a special file (`/dev/zero`, FIFO), a path replaced with a FIFO/special-file/directory between change 2's pre-read stat and the open syscall, or a TOCTOU growth between metadata and read cannot bypass the pre-read cap.
 
 Everything else (sibling navigation, zoom, pan, footer, animation control in the Lightbox, EXIF, ICC, thumbnail strip, additional formats, magic-byte sniffing, context menu, drag-out, disk-backed thumbnail cache) is deferred to follow-ups, listed at the end of this spec.
 
@@ -363,13 +363,23 @@ In `crates/warpui_core/src/assets/asset_cache.rs:320-328`, the `AssetSource::Loc
 - A symlink to a special file (`/dev/zero`, FIFO) where `metadata` does not give a meaningful `len()`. Change 2's `is_file()` check rejects most of these, but `async_fs::read` on a FIFO that someone managed to point a regular-file path at can still hang or read until OOM.
 - TOCTOU: between `metadata()` in the workspace arm and `async_fs::read` in the asset cache, the file can grow (or be replaced with a larger file) and the unbounded read consumes whatever is on disk at read time.
 
-Replace the unbounded read with a bounded one:
+Replace the unbounded read with a bounded one, and re-validate the regular-file contract on the **opened handle** (not the path) before any byte is read. Doing the `is_file()` check on the opened `File` (via `file.metadata()`, which on POSIX is `fstat` against the open descriptor) closes the TOCTOU window between change 2's pre-read path-based stat and the open syscall: even if the path was swapped to a FIFO, character device, or directory between those two syscalls, the swap cannot affect a check performed against an already-open descriptor. A FIFO that was opened — which would otherwise hang `read_to_end` until the writer side closes, or stream until OOM — is caught here and rejected before any read is attempted. The `is_file()` rejection on the opened handle ALSO covers the "directory was opened" edge case on platforms where `File::open` succeeds for directories.
 
 ```rust
 const MAX_ASSET_LOCAL_FILE_BYTES: u64 = 64 * 1024 * 1024; // matches MAX_PREVIEW_FILE_BYTES
 
 async {
     let file = async_fs::File::open(&path).await?;
+    // Post-open regular-file check on the opened descriptor (fstat, not
+    // path-based stat). This is required in addition to change 2's pre-read
+    // metadata check: it closes the TOCTOU window where the path was
+    // replaced (e.g. with a FIFO, character device, or directory) between
+    // the pre-read stat and this open syscall. The check is on the open
+    // file descriptor, so a path swap after open cannot affect it.
+    let meta = file.metadata().await?;
+    if !meta.file_type().is_file() {
+        anyhow::bail!("local asset is not a regular file");
+    }
     let mut taken = file.take(MAX_ASSET_LOCAL_FILE_BYTES + 1);
     let mut buf = Vec::new();
     use futures_lite::AsyncReadExt as _;
@@ -380,6 +390,8 @@ async {
     Ok(buf.into())
 }
 ```
+
+The post-open `is_file()` check is **in addition to**, not a replacement for, the pre-read size cap from change 2 and the `MAX + 1` bounded read below. Change 2 still rejects oversize regular files synchronously before dispatch (avoiding even an open syscall on the obvious-bad cases), and the bounded read still defends against a regular file that grows past the cap between the pre-read stat and the open. The new post-open `is_file()` check defends specifically against the path-replacement TOCTOU where the file type, not the size, changes between syscalls.
 
 This is a global asset-cache change. Verification that it does not regress any current consumer:
 
@@ -435,7 +447,7 @@ The synchronous `std::fs::metadata` in change 2 is also on the foreground execut
 Without a pre-read cap, a 1 GB `.png` triggers a 1 GB `async_fs::read` allocation on the asset-cache background executor before any decoder limit kicks in (`asset_cache.rs:325`). Two coordinated changes close this:
 
 - Change 2 caps file size via `std::fs::metadata` plus `is_file()` before the dispatch, so `OpenLightbox` is never dispatched with a `Resolved` source for an oversize file or for a symlink to a special file (`/dev/zero`, FIFO). On rejection, the `Error` variant is dispatched inline with a sanitized constant message.
-- Change 5 caps the actual read in the asset cache via `take(MAX + 1)`, so a TOCTOU growth between metadata stat and read cannot bypass the cap. The unified cap for raster and SVG is 64 MB, which comfortably covers normal photos and project assets while rejecting pathological inputs.
+- Change 5 caps the actual read in the asset cache via `take(MAX + 1)`, so a TOCTOU growth between metadata stat and read cannot bypass the cap, and additionally re-validates the regular-file contract on the opened descriptor (`fstat`-based `is_file()` rather than path-based) so a path replacement between change 2's stat and the open syscall — for example a regular file replaced with a FIFO, character device, or directory — is caught before any byte is read. The unified cap for raster and SVG is 64 MB, which comfortably covers normal photos and project assets while rejecting pathological inputs.
 
 ### Decoder allocation envelope (Critical, addressed in change 4)
 
@@ -504,6 +516,7 @@ The product spec previously promised a screen-reader label on the Lightbox image
 
 - `local_file_read_caps_at_max_bytes`: with a temp file slightly larger than `MAX_ASSET_LOCAL_FILE_BYTES`, the load future returns `Err` and the read does not allocate beyond the cap.
 - `local_file_read_passes_under_cap`: with a temp file of 1 KB, the load future returns the bytes.
+- `local_file_read_rejects_post_open_non_regular_file`: open a regular-file path, race-replace it with a FIFO (or character device, or directory) between the pre-read metadata stat and the asset-cache open call, and confirm the post-open `is_file()` check on the opened descriptor returns `Err` before any read is attempted. On platforms without convenient FIFO support in the test runner, simulate by opening a path that already resolves to a non-regular file and asserting the post-open check fires.
 
 `crates/warpui_core/src/image_cache.rs` (new test module section):
 
@@ -537,6 +550,7 @@ Behavior-to-step mapping (numbered against the product spec's Success criteria):
 5. **Pre-read size cap**: create a 100 MB `.png` (`truncate -s 100M huge.png`) and click it. Confirm the Lightbox opens directly into the per-entry error state, and confirm via Activity Monitor / Process Memory that no 100 MB allocation occurred. The error message is the sanitized constant; no path or OS error string appears.
 6. **Symlink to special file**: create `ln -s /dev/zero zero.png` in a project directory and click it. Confirm the Lightbox opens directly into the per-entry error state ("not a regular file") and that no read is attempted; verify that no memory growth occurs.
 7. **TOCTOU growth**: pass the metadata stat with a small file, then grow the file beyond the cap before the asset cache reads (race window is short; can be reproduced with a wrapper script that grows the file in a tight loop). Confirm the bounded read in change 5 detects the over-cap byte count and dispatches Error.
+7a. **TOCTOU file-type swap**: pass change 2's `is_file()` stat with a regular file, then race-replace the path with a FIFO (or character device, or directory) before the asset cache opens it. Confirm the post-open `is_file()` check on the opened descriptor in change 5 rejects the read before any byte is consumed (no hang, no OOM, error variant rendered in the Lightbox).
 8. **Decoder dimension and pixel caps**: open a 10000×10000 PNG. Confirm the Lightbox shows the per-entry error citing the size, not a partial render or an OOM. Repeat with a 5000×5000 PNG (below the cap, 25 megapixels) and confirm it renders normally.
 9. **Animated formats**: open an animated GIF and an animated WebP from the file tree. Confirm each renders its first frame statically (no continuous playback in the Lightbox). Then navigate to the changelog page in the Resource Center and confirm changelog GIFs/WebPs continue to animate (regression check on change 4).
 10. **Pathological animated input**: open an animated GIF with 500 frames (above `MAX_ANIMATED_FRAMES`). Confirm the per-entry error state. Open an animated WebP whose frames sum above `MAX_ANIMATED_TOTAL_PIXELS` and confirm the same; observe via memory inspection that the error fires before the full frame set is materialized.
