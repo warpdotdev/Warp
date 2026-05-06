@@ -474,13 +474,16 @@ impl ServerModel {
         };
 
         match outcome {
+            HandlerOutcome::Sync(server_message::Message::InitializeResponse(response)) => {
+                self.send_server_message(
+                    Some(conn_id),
+                    Some(&request_id),
+                    server_message::Message::InitializeResponse(response),
+                );
+                self.push_codebase_index_statuses_snapshot(conn_id);
+            }
             HandlerOutcome::Sync(message) => {
-                let push_codebase_status_snapshot_after_response =
-                    matches!(message, server_message::Message::InitializeResponse(_));
                 self.send_server_message(Some(conn_id), Some(&request_id), message);
-                if push_codebase_status_snapshot_after_response {
-                    self.push_codebase_index_statuses_snapshot(conn_id);
-                }
             }
             HandlerOutcome::Async(Some(handle)) => {
                 self.in_progress.insert(request_id, handle);
