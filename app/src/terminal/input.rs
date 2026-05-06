@@ -106,9 +106,7 @@ use crate::ASSETS;
 use crate::code::editor_management::CodeSource;
 
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::agent_sdk::driver::{
-    retry_handoff_snapshot_upload, HandoffSnapshotUploadRetryResult,
-};
+use crate::ai::agent_sdk::driver::upload_snapshot_for_handoff;
 use crate::ai::attachment_utils::MAX_ATTACHMENT_SIZE_BYTES;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::agent_view::{
@@ -4000,23 +3998,43 @@ impl Input {
         let server_api_provider = ServerApiProvider::as_ref(ctx);
         let ai_client = server_api_provider.get_ai_client();
         let http = server_api_provider.get_http_client();
+        let workspace_is_empty = workspace.repos.is_empty() && workspace.orphan_files.is_empty();
         ctx.spawn(
-            async move { retry_handoff_snapshot_upload(workspace, ai_client, http.as_ref()).await },
-            move |me, upload_result, ctx| {
-                let snapshot_status = match upload_result {
-                    HandoffSnapshotUploadRetryResult::Uploaded(initial_snapshot_token) => {
-                        SnapshotUploadStatus::Uploaded(initial_snapshot_token)
+            async move {
+                let repo_paths: Vec<_> = workspace
+                    .repos
+                    .iter()
+                    .map(|repo| repo.git_root.clone())
+                    .collect();
+                match upload_snapshot_for_handoff(
+                    repo_paths,
+                    workspace.orphan_files,
+                    ai_client,
+                    http.as_ref(),
+                )
+                .await
+                {
+                    Ok(Some(token)) => SnapshotUploadStatus::Uploaded(token),
+                    Ok(None) if workspace_is_empty => SnapshotUploadStatus::SkippedEmptyWorkspace,
+                    Ok(None) => SnapshotUploadStatus::Failed(
+                        "Snapshot upload did not produce a usable snapshot.".to_owned(),
+                    ),
+                    Err(err) => {
+                        log::warn!("Handoff snapshot re-upload failed: {err:#}");
+                        SnapshotUploadStatus::Failed(format!("{err}"))
                     }
-                    HandoffSnapshotUploadRetryResult::SkippedEmptyWorkspace => {
-                        SnapshotUploadStatus::SkippedEmptyWorkspace
-                    }
-                    HandoffSnapshotUploadRetryResult::Failed(error_message) => {
-                        ambient_agent_view_model.update(ctx, |model, ctx| {
-                            model.record_handoff_snapshot_upload_failed(error_message, ctx);
-                        });
-                        return;
-                    }
-                };
+                }
+            },
+            move |me, snapshot_status, ctx| {
+                if let SnapshotUploadStatus::Failed(ref error_message) = snapshot_status {
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.record_handoff_snapshot_upload_failed(
+                            error_message.clone(),
+                            ctx,
+                        );
+                    });
+                    return;
+                }
 
                 let ready = ambient_agent_view_model.update(ctx, |model, ctx| {
                     model.set_pending_handoff_snapshot_upload(snapshot_status, ctx);

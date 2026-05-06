@@ -103,9 +103,7 @@ mod snapshot;
 pub(crate) mod terminal;
 
 use environment::PrepareEnvironmentError;
-pub(crate) use snapshot::{
-    retry_handoff_snapshot_upload, upload_snapshot_for_handoff, HandoffSnapshotUploadRetryResult,
-};
+pub(crate) use snapshot::upload_snapshot_for_handoff;
 use terminal::TerminalDriverEvent;
 
 const MCP_SERVER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
