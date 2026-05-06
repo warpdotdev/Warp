@@ -1460,6 +1460,50 @@ impl GlobalBufferModel {
         let path_str = remote_path.path.as_str().to_string();
         let host_id = remote_path.host_id.clone();
 
+        // Subscribe to buffer content changes so edits are sent back to the daemon.
+        let client_for_sub = {
+            let manager = remote_server::manager::RemoteServerManager::handle(ctx);
+            manager.as_ref(ctx).client_for_host(&host_id).cloned()
+        };
+        if let Some(client) = &client_for_sub {
+            let client = client.clone();
+            let path_for_edit = path_str.clone();
+            ctx.subscribe_to_model(&buffer, move |me, event, ctx| {
+                use warp_editor::content::buffer::BufferEvent;
+                if let BufferEvent::ContentChanged { .. } = event {
+                    // Look up the sync clock to get the expected server version
+                    // and bump the client version.
+                    let Some(state) = me.buffers.get_mut(&file_id) else {
+                        return;
+                    };
+                    let BufferSource::Remote { sync_clock, .. } = &mut state.source else {
+                        return;
+                    };
+                    let expected_sv = sync_clock.server_version.as_u64();
+                    let new_cv = ContentVersion::new();
+                    sync_clock.client_version = new_cv;
+
+                    // Read the full buffer content and send as a replacing edit.
+                    let Some(buffer) = state.buffer.upgrade(ctx) else {
+                        return;
+                    };
+                    let content = buffer.as_ref(ctx).text().into_string();
+                    client.send_buffer_edit(
+                        path_for_edit.clone(),
+                        expected_sv,
+                        new_cv.as_u64(),
+                        vec![remote_server::proto::TextEdit {
+                            start_line: 0,
+                            start_column: 0,
+                            end_line: u32::MAX,
+                            end_column: 0,
+                            text: content,
+                        }],
+                    );
+                }
+            });
+        }
+
         // Store state with a placeholder sync clock (will be set on OpenBufferResponse).
         self.location_to_id.insert(location, file_id);
         self.buffers.insert(
@@ -1845,12 +1889,71 @@ impl GlobalBufferModel {
     }
 }
 
-/// Converts a byte offset
+/// Converts a byte offset within `content` to 0-indexed (line, column).
+///
+/// The column is measured in **characters** (not bytes) so it aligns with
+/// `CharOffset`-based edit positions used by `Buffer::line_start`.
 fn byte_offset_to_line_col(content: &str, offset: usize) -> (u32, u32) {
     let offset = offset.min(content.len());
     let before = &content[..offset];
     let line = before.matches('\n').count() as u32;
     let last_newline = before.rfind('\n').map(|p| p + 1).unwrap_or(0);
-    let col = (offset - last_newline) as u32;
+    let col = before[last_newline..].chars().count() as u32;
     (line, col)
+}
+
+#[cfg(test)]
+mod byte_offset_tests {
+    use super::byte_offset_to_line_col;
+
+    #[test]
+    fn ascii_single_line() {
+        assert_eq!(byte_offset_to_line_col("hello", 0), (0, 0));
+        assert_eq!(byte_offset_to_line_col("hello", 3), (0, 3));
+        assert_eq!(byte_offset_to_line_col("hello", 5), (0, 5));
+    }
+
+    #[test]
+    fn ascii_multi_line() {
+        let s = "ab\ncd\nef";
+        assert_eq!(byte_offset_to_line_col(s, 0), (0, 0)); // 'a'
+        assert_eq!(byte_offset_to_line_col(s, 3), (1, 0)); // 'c'
+        assert_eq!(byte_offset_to_line_col(s, 5), (1, 2)); // '\n'
+        assert_eq!(byte_offset_to_line_col(s, 6), (2, 0)); // 'e'
+    }
+
+    #[test]
+    fn non_ascii_column_counts_chars_not_bytes() {
+        // "café" — 'é' is 2 bytes in UTF-8, so byte offset 5 points past 'é'
+        // which is char index 4, not byte index 5.
+        let s = "café";
+        assert_eq!(s.len(), 5); // 4 chars, 5 bytes
+        assert_eq!(byte_offset_to_line_col(s, 5), (0, 4));
+        // Offset 3 is the start of 'é' (byte 3), which is char index 3.
+        assert_eq!(byte_offset_to_line_col(s, 3), (0, 3));
+    }
+
+    #[test]
+    fn cjk_characters() {
+        // "你好" — each CJK char is 3 bytes.
+        let s = "你好";
+        assert_eq!(s.len(), 6);
+        assert_eq!(byte_offset_to_line_col(s, 0), (0, 0));
+        assert_eq!(byte_offset_to_line_col(s, 3), (0, 1)); // after '你'
+        assert_eq!(byte_offset_to_line_col(s, 6), (0, 2)); // after '好'
+    }
+
+    #[test]
+    fn non_ascii_on_second_line() {
+        let s = "abc\n你好";
+        // '你' starts at byte 4, is char 0 on line 1.
+        assert_eq!(byte_offset_to_line_col(s, 4), (1, 0));
+        // After '你' (byte 7) is char 1 on line 1.
+        assert_eq!(byte_offset_to_line_col(s, 7), (1, 1));
+    }
+
+    #[test]
+    fn offset_clamped_to_content_length() {
+        assert_eq!(byte_offset_to_line_col("abc", 100), (0, 3));
+    }
 }

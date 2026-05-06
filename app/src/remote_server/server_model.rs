@@ -347,8 +347,9 @@ impl ServerModel {
             let gbm = GlobalBufferModel::handle(ctx);
             ctx.subscribe_to_model(&gbm, |me, event, ctx| match event {
                 GlobalBufferModelEvent::BufferLoaded { file_id, .. } => {
-                    // Complete a pending OpenBuffer request.
-                    if let Some((request_id, conn_id)) = me.buffers.take_pending(file_id) {
+                    // Complete all pending OpenBuffer requests for this file.
+                    let pending = me.buffers.take_pending(file_id);
+                    if !pending.is_empty() {
                         let gbm = GlobalBufferModel::handle(ctx);
                         let content = gbm
                             .as_ref(ctx)
@@ -359,14 +360,18 @@ impl ServerModel {
                             .sync_clock_for_server_local(*file_id)
                             .map(|c| c.server_version.as_u64())
                             .unwrap_or(1);
-                        me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
-                            server_message::Message::OpenBufferResponse(OpenBufferResponse {
-                                content,
-                                server_version,
-                            }),
-                        );
+                        for (request_id, conn_id) in pending {
+                            me.send_server_message(
+                                Some(conn_id),
+                                Some(&request_id),
+                                server_message::Message::OpenBufferResponse(
+                                    OpenBufferResponse {
+                                        content: content.clone(),
+                                        server_version,
+                                    },
+                                ),
+                            );
+                        }
                     }
                 }
                 GlobalBufferModelEvent::ServerLocalBufferUpdated {
@@ -407,8 +412,7 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FileSaved { file_id } => {
-                    // Complete a pending SaveBuffer request.
-                    if let Some((request_id, conn_id)) = me.buffers.take_pending(file_id) {
+                    for (request_id, conn_id) in me.buffers.take_pending(file_id) {
                         me.send_server_message(
                             Some(conn_id),
                             Some(&request_id),
@@ -421,7 +425,7 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FailedToSave { file_id, error } => {
-                    if let Some((request_id, conn_id)) = me.buffers.take_pending(file_id) {
+                    for (request_id, conn_id) in me.buffers.take_pending(file_id) {
                         me.send_server_message(
                             Some(conn_id),
                             Some(&request_id),
@@ -436,7 +440,7 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FailedToLoad { file_id, error } => {
-                    if let Some((request_id, conn_id)) = me.buffers.take_pending(file_id) {
+                    for (request_id, conn_id) in me.buffers.take_pending(file_id) {
                         me.send_server_message(
                             Some(conn_id),
                             Some(&request_id),
@@ -590,7 +594,7 @@ impl ServerModel {
                 return; // fire-and-forget notification
             }
             Some(client_message::Message::CloseBuffer(msg)) => {
-                self.handle_close_buffer(msg, ctx);
+                self.handle_close_buffer(msg, conn_id, ctx);
                 return; // fire-and-forget notification
             }
             Some(client_message::Message::SaveBuffer(msg)) => {
@@ -1392,8 +1396,9 @@ impl ServerModel {
     }
 
     /// Handles `BufferEdit` notification (fire-and-forget).
-    /// Delegates to `GlobalBufferModel::apply_client_edit`. Stale edits
-    /// are silently discarded.
+    /// Delegates to `GlobalBufferModel::apply_client_edit`. On rejection
+    /// (stale server version), pushes the server's current state back to
+    /// all connections so the client can detect the divergence.
     fn handle_buffer_edit(&mut self, msg: BufferEdit, ctx: &mut ModelContext<Self>) {
         let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
             log::warn!("BufferEdit for unknown buffer: {}", msg.path);
@@ -1403,9 +1408,53 @@ impl ServerModel {
         let expected_sv = ContentVersion::from_raw(msg.expected_server_version as usize);
         let new_cv = ContentVersion::from_raw(msg.new_client_version as usize);
 
-        GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx);
+        let accepted = GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
+            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx)
         });
+
+        if !accepted {
+            // Stale edit — push the server's current content + version so the
+            // client knows its edit was rejected and can reconcile.
+            let gbm = GlobalBufferModel::handle(ctx);
+            let content = gbm
+                .as_ref(ctx)
+                .content_for_file(file_id, ctx)
+                .unwrap_or_default();
+            let (sv, cv) = gbm
+                .as_ref(ctx)
+                .sync_clock_for_server_local(file_id)
+                .map(|c| (c.server_version.as_u64(), c.client_version.as_u64()))
+                .unwrap_or((0, 0));
+
+            // Convert full content to a single replacing TextEdit.
+            let line_count = content.matches('\n').count() as u32;
+            let last_line_len = content
+                .rfind('\n')
+                .map(|p| content[p + 1..].chars().count())
+                .unwrap_or_else(|| content.chars().count()) as u32;
+
+            let Some(conns) = self.buffers.connections_for_buffer(&file_id) else {
+                return;
+            };
+            for &conn_id in conns {
+                self.send_server_message(
+                    Some(conn_id),
+                    None,
+                    server_message::Message::BufferUpdated(BufferUpdatedPush {
+                        path: msg.path.clone(),
+                        new_server_version: sv,
+                        expected_client_version: cv,
+                        edits: vec![TextEdit {
+                            start_line: 0,
+                            start_column: 0,
+                            end_line: line_count,
+                            end_column: last_line_len,
+                            text: content.clone(),
+                        }],
+                    }),
+                );
+            }
+        }
     }
 
     /// Handles `SaveBuffer` by persisting the buffer to disk.
@@ -1476,9 +1525,14 @@ impl ServerModel {
     /// Handles `CloseBuffer` notification (fire-and-forget).
     /// Removes the connection from the buffer's connection set.
     /// Deallocates the buffer if no connections remain.
-    fn handle_close_buffer(&mut self, msg: CloseBuffer, ctx: &mut ModelContext<Self>) {
-        log::info!("Handling CloseBuffer path={}", msg.path);
-        self.buffers.close_buffer(&msg.path, ctx);
+    fn handle_close_buffer(
+        &mut self,
+        msg: CloseBuffer,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        log::info!("Handling CloseBuffer path={} conn={conn_id}", msg.path);
+        self.buffers.close_buffer(&msg.path, conn_id, ctx);
     }
 }
 

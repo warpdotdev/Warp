@@ -165,6 +165,35 @@ impl Sessions {
                     sessions.set_remote_server_setup_state(*session_id, state.clone());
                     ctx.notify();
                 }
+                RemoteServerManagerEvent::BufferUpdated {
+                    host_id,
+                    path,
+                    new_server_version,
+                    expected_client_version,
+                    edits,
+                } => {
+                    let line_col_edits: Vec<_> = edits
+                        .iter()
+                        .map(|e| crate::code::global_buffer_model::LineColumnEdit {
+                            start_line: e.start_line,
+                            start_column: e.start_column,
+                            end_line: e.end_line,
+                            end_column: e.end_column,
+                            text: e.text.clone(),
+                        })
+                        .collect();
+                    crate::code::global_buffer_model::GlobalBufferModel::handle(ctx)
+                        .update(ctx, |gbm, ctx| {
+                            gbm.handle_buffer_updated_push(
+                                host_id,
+                                path,
+                                *new_server_version,
+                                *expected_client_version,
+                                &line_col_edits,
+                                ctx,
+                            );
+                        });
+                }
                 RemoteServerManagerEvent::SessionConnecting { .. }
                 | RemoteServerManagerEvent::SessionDeregistered { .. }
                 | RemoteServerManagerEvent::SessionConnectionFailed { .. }
@@ -179,8 +208,7 @@ impl Sessions {
                 | RemoteServerManagerEvent::BinaryCheckComplete { .. }
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }
-                | RemoteServerManagerEvent::ServerMessageDecodingError { .. }
-                | RemoteServerManagerEvent::BufferUpdated { .. } => {}
+                | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
                 RemoteServerManagerEvent::SessionReconnected {
                     session_id: sid,
                     client,

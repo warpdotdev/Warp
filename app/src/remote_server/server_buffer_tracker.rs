@@ -20,8 +20,9 @@ pub struct ServerBufferTracker {
     buffer_connections: HashMap<FileId, HashSet<ConnectionId>>,
     /// Tracks in-flight OpenBuffer / SaveBuffer requests so
     /// `GlobalBufferModelEvent`s can be correlated back to the originating
-    /// request and connection.
-    pending_requests: HashMap<FileId, (RequestId, ConnectionId)>,
+    /// request and connection. Uses a `Vec` to support concurrent requests
+    /// for the same buffer from different connections.
+    pending_requests: HashMap<FileId, Vec<(RequestId, ConnectionId)>>,
 }
 
 impl ServerBufferTracker {
@@ -101,16 +102,26 @@ impl ServerBufferTracker {
         orphaned
     }
 
-    /// Close a buffer by path: clear all connections and deallocate.
-    pub fn close_buffer(&mut self, path: &str, ctx: &mut ModelContext<ServerModel>) {
+    /// Remove a single connection from a buffer's subscriber set.
+    /// If no connections remain, deallocates the buffer entirely.
+    pub fn close_buffer(
+        &mut self,
+        path: &str,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<ServerModel>,
+    ) {
         let Some(&file_id) = self.open_buffers.get(path) else {
             return;
         };
 
         if let Some(conns) = self.buffer_connections.get_mut(&file_id) {
-            conns.clear();
+            conns.remove(&conn_id);
+            if !conns.is_empty() {
+                return; // Other connections still using this buffer.
+            }
         }
 
+        // No connections remain — deallocate.
         self.buffer_connections.remove(&file_id);
         self.open_buffers.remove(path);
         GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| gbm.remove(file_id, ctx));
@@ -125,11 +136,14 @@ impl ServerBufferTracker {
         request_id: RequestId,
         conn_id: ConnectionId,
     ) {
-        self.pending_requests.insert(file_id, (request_id, conn_id));
+        self.pending_requests
+            .entry(file_id)
+            .or_default()
+            .push((request_id, conn_id));
     }
 
-    /// Retrieve and remove a pending request for the given FileId.
-    pub fn take_pending(&mut self, file_id: &FileId) -> Option<(RequestId, ConnectionId)> {
-        self.pending_requests.remove(file_id)
+    /// Retrieve and remove all pending requests for the given FileId.
+    pub fn take_pending(&mut self, file_id: &FileId) -> Vec<(RequestId, ConnectionId)> {
+        self.pending_requests.remove(file_id).unwrap_or_default()
     }
 }
