@@ -55,6 +55,21 @@ pub fn find_skill_directories_in_tree(
         .collect()
 }
 
+/// Returns skill provider directories that exist directly under `repo_path`
+/// (e.g., `<repo>/.agents/skills`, `<repo>/.claude/skills`) via filesystem
+/// probing. Used when the repo metadata tree is shallow (degraded indexing
+/// after `ExceededMaxFileLimit`) and `find_skill_directories_in_tree` cannot
+/// see nested provider paths. Only checks repo-root provider paths; nested
+/// occurrences (`<repo>/sub/.agents/skills`) are picked up later by the
+/// repository file watcher.
+pub fn find_top_level_skill_directories_in_filesystem(repo_path: &Path) -> Vec<PathBuf> {
+    SKILL_PROVIDER_DEFINITIONS
+        .iter()
+        .map(|p| repo_path.join(&p.skills_path))
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
 /// Reads all skills from the given skill directories.
 pub fn read_skills_from_directories(
     skill_dirs: impl IntoIterator<Item = PathBuf>,
