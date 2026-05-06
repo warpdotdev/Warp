@@ -10,7 +10,7 @@ use crate::ai::agent::api::ServerConversationToken;
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::linear::{LinearAction, LinearIssueWork};
-use crate::root_view::{open_new_window_get_handles, workspace_for_window, OpenLaunchConfigArg};
+use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::tab_configs::TabConfig;
@@ -696,14 +696,14 @@ fn handle_tab_config_uri(primary_window_id: Option<WindowId>, url: &Url, ctx: &m
     let target_window_id = if force_new_window {
         None
     } else {
-        primary_window_id.filter(|id| workspace_for_window(*id, ctx).is_some())
+        primary_window_id.filter(|id| WorkspaceRegistry::as_ref(ctx).get(*id, ctx).is_some())
     };
 
     let workspace = match target_window_id {
-        Some(window_id) => workspace_for_window(window_id, ctx),
+        Some(window_id) => WorkspaceRegistry::as_ref(ctx).get(window_id, ctx),
         None => {
             let new_window_id = open_new_window_get_handles(None, ctx).0;
-            workspace_for_window(new_window_id, ctx)
+            WorkspaceRegistry::as_ref(ctx).get(new_window_id, ctx)
         }
     };
 
