@@ -194,6 +194,7 @@ impl RulesDelta {
     /// This is important because consumers (e.g. persistence) apply the delta
     /// incrementally; a symmetric "cancel both sides" approach would silently
     /// drop real state changes.
+    #[cfg(any(feature = "local_fs", test))]
     fn merge(&mut self, other: RulesDelta) {
         // Each newly-discovered path supersedes any prior deletion or earlier
         // discovery of the same path.
