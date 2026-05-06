@@ -521,6 +521,10 @@ impl View {
     fn on_session_source_changed(&mut self, ctx: &mut ViewContext<Self>) {
         self.compute_recent_items_for_zero_state(ctx);
 
+        if self.search_bar_state.as_ref(ctx).should_show_zero_state() {
+            return;
+        }
+
         self.search_bar.update(ctx, |search_bar, ctx| {
             search_bar.run_query(ctx);
         });

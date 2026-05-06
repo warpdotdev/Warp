@@ -357,6 +357,14 @@ impl<T: Action + Clone> SearchBarState<T> {
     pub fn should_show_zero_state(&self) -> bool {
         self.should_show_zero_state
     }
+
+    fn should_show_zero_state_for_buffer(&self, buffer_text: &str) -> bool {
+        buffer_text.is_empty() && self.query_filter.zero_state()
+    }
+
+    fn should_run_query_for_buffer(&self, buffer_text: &str) -> bool {
+        !self.should_show_zero_state_for_buffer(buffer_text) || self.run_query_on_buffer_empty
+    }
 }
 
 impl<T: Action + Clone> Entity for SearchBarState<T> {
@@ -674,24 +682,29 @@ impl<T: Action + Clone> SearchBar<T> {
         });
 
         self.update_placeholder_text(ctx);
+        self.run_query(ctx);
     }
 
-    /// Updates the active filter and re-runs the query, since results may be affected by the newly
-    /// active filter.
+    /// Updates the active filter and re-runs the query if the current search state should show
+    /// results.
     ///
-    /// This method also updates UI state including the placeholder text and the show/hide
-    /// zero_state flag.
+    /// Empty zero-state buffers skip querying unless this search bar has opted into
+    /// `run_query_on_buffer_empty`.
     pub fn set_visible_query_filter(
         &mut self,
         filter_and_atom_text: Option<(QueryFilter, &'static str)>,
         ctx: &mut ViewContext<Self>,
     ) {
+        let current_buffer_text = self
+            .editor_handle
+            .read(ctx, |editor, ctx| editor.buffer_text(ctx));
+
         if self.filterable(ctx) {
             let new_filter = filter_and_atom_text.map(|(filter, _)| filter);
             let new_filter_atom_text = filter_and_atom_text.map(|(_, atom_text)| atom_text);
-            // NOTE: This event is deferred — handlers receive it after `run_query` (below) has
-            // already started an async search. Handlers must not reset or modify the mixer, as
-            // doing so would abort the in-flight query without re-running it.
+            // NOTE: This event is deferred. When this method starts a query below, handlers
+            // receive it after the async search has already started. Handlers must not reset or
+            // modify the mixer, as doing so would abort the in-flight query without re-running it.
             ctx.emit(SearchBarEvent::QueryFilterChanged { new_filter });
 
             self.state.update(ctx, |state, ctx| {
@@ -705,7 +718,18 @@ impl<T: Action + Clone> SearchBar<T> {
             });
         }
 
-        self.run_query(ctx);
+        let should_show_zero_state = {
+            let state = self.state.as_ref(ctx);
+            state.should_show_zero_state_for_buffer(&current_buffer_text)
+        };
+
+        if self
+            .state
+            .as_ref(ctx)
+            .should_run_query_for_buffer(&current_buffer_text)
+        {
+            self.run_query(ctx);
+        }
 
         // Update the editor placeholder text if necessary.
         self.update_placeholder_text(ctx);
@@ -714,13 +738,8 @@ impl<T: Action + Clone> SearchBar<T> {
         self.update_filter_autosuggestion_text(ctx);
 
         // Update the zero state show/hide flag.
-        let current_buffer_text = self
-            .editor_handle
-            .read(ctx, |editor, ctx| editor.buffer_text(ctx));
-
         self.state.update(ctx, |state, ctx| {
-            state.should_show_zero_state =
-                current_buffer_text.is_empty() && state.query_filter.zero_state();
+            state.should_show_zero_state = should_show_zero_state;
             ctx.notify();
         });
 
@@ -833,7 +852,11 @@ impl<T: Action + Clone> SearchBar<T> {
         let current_buffer_text = self
             .editor_handle
             .read(ctx, |editor, ctx| editor.buffer_text(ctx));
-        if current_buffer_text.is_empty() && self.state.as_ref(ctx).query_filter.zero_state() {
+        if self
+            .state
+            .as_ref(ctx)
+            .should_show_zero_state_for_buffer(&current_buffer_text)
+        {
             self.state.update(ctx, |state, ctx| {
                 state.should_show_zero_state = true;
                 ctx.notify();
@@ -962,6 +985,10 @@ impl<T: Action + Clone> SearchBar<T> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "search_bar_tests.rs"]
+mod tests;
 
 impl<T: Action + Clone> Entity for SearchBar<T> {
     type Event = SearchBarEvent<T>;
