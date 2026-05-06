@@ -203,11 +203,8 @@ pub enum GlobalBufferModelEvent {
     },
     /// A remote buffer update conflicted with local edits.
     /// The UI should present a resolution dialog.
-    #[expect(dead_code)]
-    RemoteBufferConflict {
-        file_id: FileId,
-        server_content: String,
-    },
+    #[allow(dead_code)]
+    RemoteBufferConflict { file_id: FileId },
     /// A server-local buffer was updated from a file-watcher event.
     /// Carries the incremental diff edits for the ServerModel to push
     /// to connected clients as `BufferUpdatedPush`.
@@ -1895,10 +1892,7 @@ impl GlobalBufferModel {
                  local C={:?}",
                 sync_clock.client_version
             );
-            ctx.emit(GlobalBufferModelEvent::RemoteBufferConflict {
-                file_id,
-                server_content: String::new(),
-            });
+            ctx.emit(GlobalBufferModelEvent::RemoteBufferConflict { file_id });
         }
     }
 }
