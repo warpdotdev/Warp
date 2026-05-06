@@ -199,3 +199,225 @@ select { -webkit-appearance: none; appearance: none; }
 .border-yellow-500\/30 { border-color: rgba(234, 179, 8, 0.3); }
 .border-blue-500\/30   { border-color: rgba(59, 130, 246, 0.3); }
 .border-green-500\/30  { border-color: rgba(34, 197, 94, 0.3); }
+
+/* --- Dustin's patterns: additional utilities --- */
+
+/* Typography extensions */
+.font-mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace; }
+.whitespace-nowrap { white-space: nowrap; }
+.leading-none { line-height: 1; }
+.text-right { text-align: right; }
+.uppercase { text-transform: uppercase; }
+.tracking-wide { letter-spacing: 0.025em; }
+
+/* Badge component (tab counts) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+.badge-active {
+  background-color: #3b82f6;
+  color: #ffffff;
+}
+
+/* Tab navigation */
+.tab-nav { display: flex; gap: 0.25rem; border-bottom: 1px solid #374151; padding-bottom: 0; }
+.tab-item {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #9ca3af;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 150ms, border-color 150ms;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.tab-item:hover { color: #d1d5db; }
+.tab-item.active { color: #ffffff; border-bottom-color: #3b82f6; }
+.tab-item.active .badge { background-color: #3b82f6; color: #fff; }
+
+/* Delayed spinner container */
+.spinner-delayed { opacity: 0; transition: opacity 300ms; }
+.spinner-delayed.visible { opacity: 1; }
+
+/* Table utilities */
+.table-row {
+  display: grid;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #1f2937;
+  transition: background-color 150ms;
+}
+.table-row:hover { background-color: rgba(55, 65, 81, 0.4); }
+.table-header {
+  display: grid;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  border-bottom: 1px solid #374151;
+}
+.sort-btn { cursor: pointer; user-select: none; }
+.sort-btn:hover { color: #d1d5db; }
+
+/* Checkbox */
+.checkbox {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  border: 1.5px solid #6b7280;
+  cursor: pointer;
+  transition: all 150ms;
+  appearance: none;
+  background-color: transparent;
+}
+.checkbox:checked {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Bulk action bar */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  transition: all 300ms;
+}
+.bulk-bar.hidden { display: none; }
+
+/* Transitions — Dustin's timing */
+.duration-300 { transition-duration: 300ms; }
+.duration-650 { transition-duration: 650ms; }
+
+/* Animations */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-in { animation: slideIn 0.3s ease-out; }
+
+/* Date group separator */
+.date-group {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  padding: 0.75rem 1rem 0.25rem;
+}
+
+/* Additional colors */
+.bg-gray-800\/50 { background-color: rgba(31, 41, 55, 0.5); }
+.text-purple-400 { color: #c084fc; }
+.bg-red-500\/20 { background-color: rgba(239, 68, 68, 0.2); }
+.text-red-400 { color: #f87171; }
+.border-red-500\/30 { border-color: rgba(239, 68, 68, 0.3); }
+
+/* Search input */
+.search-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem 0.5rem 2.25rem;
+  background-color: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 0.5rem;
+  color: #ffffff;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 150ms;
+}
+.search-input:focus { border-color: #3b82f6; }
+.search-input::placeholder { color: #6b7280; }
+
+/* Relative positioning */
+.relative { position: relative; }
+.absolute { position: absolute; }
+.inset-y-0 { top: 0; bottom: 0; }
+.left-3 { left: 0.75rem; }
+
+/* Connection status indicator */
+.status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  display: inline-block;
+}
+.status-dot.connected { background-color: #22c55e; box-shadow: 0 0 4px #22c55e; }
+.status-dot.disconnected { background-color: #ef4444; }
+.status-dot.connecting { background-color: #facc15; animation: pulse 1.5s infinite; }
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  color: #6b7280;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background-color: rgba(31, 41, 55, 0.6);
+  border: 1px solid #374151;
+}
+
+/* Keyboard hint */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.25rem;
+  font-size: 0.625rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background-color: #374151;
+  border: 1px solid #4b5563;
+  border-radius: 0.25rem;
+  color: #9ca3af;
+}
+
+/* Selected row highlight */
+.row-selected { background-color: rgba(59, 130, 246, 0.1) !important; border-color: rgba(59, 130, 246, 0.4) !important; }
+
+/* Keyboard shortcut help bar */
+.shortcut-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.6875rem;
+  color: #6b7280;
+  border-top: 1px solid #1f2937;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: #111827;
+}
+.shortcut-bar span { display: flex; align-items: center; gap: 0.25rem; }

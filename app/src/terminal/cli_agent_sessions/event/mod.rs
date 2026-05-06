@@ -60,6 +60,9 @@ pub struct CLIAgentEventPayload {
     pub source: Option<String>,
     pub severity: Option<String>,
     pub message: Option<String>,
+    // Interview/Decision request data
+    pub questions: Option<String>,
+    pub slides: Option<String>,
 }
 
 /// A parsed event from a CLI agent plugin.

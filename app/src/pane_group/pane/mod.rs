@@ -26,7 +26,7 @@ pub(super) mod notebook_pane;
 pub(super) mod settings_pane;
 pub(super) mod terminal_pane;
 pub mod view;
-pub(super) mod webview_pane;
+pub(crate) mod webview_pane;
 pub(super) mod webview_view;
 pub(super) mod welcome_pane;
 pub(crate) mod welcome_view;

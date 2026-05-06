@@ -69,6 +69,12 @@
             <button id="submit-btn" class="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 rounded-lg font-semibold transition-colors">
                 Submit Responses
             </button>
+            <div id="submit-spinner" class="text-center mt-4 hidden">
+                <div class="spinner-delayed" id="submit-spinner-inner">
+                    <div class="inline-block w-5 h-5 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span class="text-sm text-gray-400 ml-2">Processing responses...</span>
+                </div>
+            </div>
         </div>
 
         <!-- Success State -->
@@ -318,6 +324,16 @@
                 return;
             }
 
+            // Show delayed spinner (Dustin pattern)
+            const submitBtn = document.getElementById('submit-btn');
+            const submitSpinner = document.getElementById('submit-spinner');
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = '0.5';
+            submitSpinner.classList.remove('hidden');
+            const spinnerTimer = setTimeout(() => {
+                document.getElementById('submit-spinner-inner').classList.add('visible');
+            }, 1000);
+
             // Send via IPC bridge
             if (window.helios && window.helios.postMessage) {
                 window.helios.postMessage(JSON.stringify({
@@ -329,11 +345,14 @@
                 console.log('Interview responses:', responses);
             }
 
-            // Show success state
-            document.getElementById('form-container').classList.add('hidden');
-            document.getElementById('progress-container').classList.add('hidden');
-            document.getElementById('submit-container').classList.add('hidden');
-            document.getElementById('success-state').classList.remove('hidden');
+            // Show success state after brief delay
+            setTimeout(() => {
+                clearTimeout(spinnerTimer);
+                document.getElementById('form-container').classList.add('hidden');
+                document.getElementById('progress-container').classList.add('hidden');
+                document.getElementById('submit-container').classList.add('hidden');
+                document.getElementById('success-state').classList.remove('hidden');
+            }, 1500);
         }
 
         // Test interview data
@@ -413,6 +432,15 @@
                 name: "interview.load",
                 params: {}
             }));
+        }
+
+        // Check if Rust pushed data before page finished loading
+        if (window.__pendingInterviewData) {
+            try {
+                const data = JSON.parse(window.__pendingInterviewData);
+                loadInterview(data);
+                window.__pendingInterviewData = null;
+            } catch(e) {}
         }
 
         // Listen for interview data from IPC

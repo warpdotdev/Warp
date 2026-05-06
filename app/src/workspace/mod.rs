@@ -1525,6 +1525,30 @@ fn add_overflow_menu_items_as_editable_binding(app: &mut AppContext) {
             WorkspaceAction::ViewPrivacyPolicy,
         )
         .with_context_predicate(id!("Workspace")),
+        EditableBinding::new(
+            "workspace:open_inbox",
+            "Open Inbox",
+            WorkspaceAction::OpenInbox,
+        )
+        .with_context_predicate(id!("Workspace")),
+        EditableBinding::new(
+            "workspace:open_crm",
+            "Open CRM",
+            WorkspaceAction::OpenCRM,
+        )
+        .with_context_predicate(id!("Workspace")),
+        EditableBinding::new(
+            "workspace:open_interview",
+            "Open Interview",
+            WorkspaceAction::OpenInterview,
+        )
+        .with_context_predicate(id!("Workspace")),
+        EditableBinding::new(
+            "workspace:open_design_deck",
+            "Open Design Deck",
+            WorkspaceAction::OpenDesignDeck,
+        )
+        .with_context_predicate(id!("Workspace")),
     ]);
 }
 

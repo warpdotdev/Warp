@@ -27,7 +27,11 @@
                 <h1 class="text-3xl font-bold">Helios CRM</h1>
                 <p class="text-gray-400 mt-1">Manage your professional relationships</p>
             </div>
-            <div class="flex space-x-3">
+            <div class="flex items-center space-x-3">
+                <div class="status-bar" id="status-bar">
+                    <span class="status-dot connecting" id="status-dot"></span>
+                    <span id="status-text">Connecting...</span>
+                </div>
                 <button id="refresh-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
                     Refresh
                 </button>
@@ -58,20 +62,30 @@
         </div>
 
         <!-- Filters -->
-        <div class="flex space-x-4 mb-6">
-            <select id="filter-industry" class="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white">
-                <option value="">All Industries</option>
-                <option value="technology">Technology</option>
-                <option value="finance">Finance</option>
-                <option value="healthcare">Healthcare</option>
-                <option value="consulting">Consulting</option>
+        <div class="relative mb-4">
+            <svg class="absolute inset-y-0 left-3 w-5 h-5 text-gray-500" style="top:50%;transform:translateY(-50%)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+            <input id="search-input" type="text" placeholder="Search firms, contacts, notes..." class="search-input">
+        </div>
+
+        <!-- Tabs -->
+        <div class="tab-nav mb-6" role="tablist">
+            <div class="tab-item active" data-tab="all" role="tab" aria-selected="true">All <span class="badge" id="count-all">0</span></div>
+            <div class="tab-item" data-tab="prospect" role="tab" aria-selected="false">Prospects <span class="badge" id="count-prospect">0</span></div>
+            <div class="tab-item" data-tab="engaged" role="tab" aria-selected="false">Engaged <span class="badge" id="count-engaged">0</span></div>
+            <div class="tab-item" data-tab="client" role="tab" aria-selected="false">Clients <span class="badge" id="count-client">0</span></div>
+        </div>
+
+        <!-- Sort -->
+        <div class="flex items-center justify-between mb-4">
+            <select id="sort-by" class="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm">
+                <option value="name">Sort: Name</option>
+                <option value="dealSize">Sort: Deal Size</option>
+                <option value="lastContact">Sort: Last Contact</option>
+                <option value="contacts">Sort: Contacts</option>
             </select>
-            <select id="filter-stage" class="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white">
-                <option value="">All Stages</option>
-                <option value="prospect">Prospect</option>
-                <option value="engaged">Engaged</option>
-                <option value="client">Client</option>
-            </select>
+            <span id="result-count" class="text-sm text-gray-400 font-mono"></span>
         </div>
 
         <!-- Firms Grid -->
@@ -81,7 +95,10 @@
 
         <!-- Loading State -->
         <div id="loading" class="text-center text-gray-400 py-12 hidden">
-            <p>Loading firms...</p>
+            <div class="spinner-delayed" id="spinner">
+                <div class="inline-block w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <p class="mt-3">Loading firms...</p>
         </div>
 
         <!-- Empty State -->
@@ -91,83 +108,18 @@
     </div>
 
     <script>
-        // Placeholder firm data
         const placeholderFirms = [
-            {
-                id: 1,
-                name: "Acme Ventures",
-                industry: "Venture Capital",
-                stage: "client",
-                contacts: [
-                    { name: "Sarah Chen", role: "Partner", email: "sarah@acme.vc" },
-                    { name: "Mike Johnson", role: "Associate", email: "mike@acme.vc" }
-                ],
-                lastContact: "2024-04-15",
-                dealSize: "$2.5M",
-                notes: "Interested in Series A investment"
-            },
-            {
-                id: 2,
-                name: "TechCorp Solutions",
-                industry: "Technology",
-                stage: "engaged",
-                contacts: [
-                    { name: "Alex Rodriguez", role: "CTO", email: "alex@techcorp.com" }
-                ],
-                lastContact: "2024-04-20",
-                dealSize: "$500K",
-                notes: "Evaluating enterprise solutions"
-            },
-            {
-                id: 3,
-                name: "Global Finance Partners",
-                industry: "Finance",
-                stage: "prospect",
-                contacts: [
-                    { name: "Jordan Taylor", role: "VP Strategy", email: "jordan@gfp.com" }
-                ],
-                lastContact: "2024-04-10",
-                dealSize: "$1.2M",
-                notes: "Initial outreach completed"
-            },
-            {
-                id: 4,
-                name: "HealthTech Innovations",
-                industry: "Healthcare",
-                stage: "client",
-                contacts: [
-                    { name: "Dr. Emily Zhang", role: "CEO", email: "emily@healthtech.io" },
-                    { name: "David Park", role: "CFO", email: "david@healthtech.io" }
-                ],
-                lastContact: "2024-04-28",
-                dealSize: "$3.8M",
-                notes: "Ongoing partnership, monthly check-ins"
-            },
-            {
-                id: 5,
-                name: "Strategic Consulting Group",
-                industry: "Consulting",
-                stage: "engaged",
-                contacts: [
-                    { name: "Morgan Williams", role: "Managing Director", email: "morgan@scg.com" }
-                ],
-                lastContact: "2024-04-22",
-                dealSize: "$750K",
-                notes: "Proposal sent, awaiting feedback"
-            },
-            {
-                id: 6,
-                name: "Innovation Labs",
-                industry: "Technology",
-                stage: "client",
-                contacts: [
-                    { name: "Chris Anderson", role: "Founder", email: "chris@innovationlabs.ai" }
-                ],
-                lastContact: "2024-04-25",
-                dealSize: "$1.5M",
-                notes: "Pilot program in progress"
-            }
+            { id: 1, name: "Acme Ventures", industry: "Venture Capital", stage: "client", contacts: [{ name: "Sarah Chen", role: "Partner", email: "sarah@acme.vc" }, { name: "Mike Johnson", role: "Associate", email: "mike@acme.vc" }], lastContact: "2024-04-15", dealSize: 2500000, notes: "Interested in Series A investment" },
+            { id: 2, name: "TechCorp Solutions", industry: "Technology", stage: "engaged", contacts: [{ name: "Alex Rodriguez", role: "CTO", email: "alex@techcorp.com" }], lastContact: "2024-04-20", dealSize: 500000, notes: "Evaluating enterprise solutions" },
+            { id: 3, name: "Global Finance Partners", industry: "Finance", stage: "prospect", contacts: [{ name: "Jordan Taylor", role: "VP Strategy", email: "jordan@gfp.com" }], lastContact: "2024-04-10", dealSize: 1200000, notes: "Initial outreach completed" },
+            { id: 4, name: "HealthTech Innovations", industry: "Healthcare", stage: "client", contacts: [{ name: "Dr. Emily Zhang", role: "CEO", email: "emily@healthtech.io" }, { name: "David Park", role: "CFO", email: "david@healthtech.io" }], lastContact: "2024-04-28", dealSize: 3800000, notes: "Ongoing partnership, monthly check-ins" },
+            { id: 5, name: "Strategic Consulting Group", industry: "Consulting", stage: "engaged", contacts: [{ name: "Morgan Williams", role: "Managing Director", email: "morgan@scg.com" }], lastContact: "2024-04-22", dealSize: 750000, notes: "Proposal sent, awaiting feedback" },
+            { id: 6, name: "Innovation Labs", industry: "Technology", stage: "client", contacts: [{ name: "Chris Anderson", role: "Founder", email: "chris@innovationlabs.ai" }], lastContact: "2024-04-25", dealSize: 1500000, notes: "Pilot program in progress" }
         ];
+
+        let allFirms = [...placeholderFirms];
+        let activeTab = 'all';
+        let spinnerTimer = null;
 
         const stageColors = {
             prospect: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -175,42 +127,16 @@
             client: 'bg-green-500/20 text-green-400 border-green-500/30'
         };
 
-        // IPC Bridge setup
-        window._heliosResponse = function(data) {
-            try {
-                const result = JSON.parse(data);
-                if (result.error) {
-                    console.error('Helios IPC Error:', result.error);
-                    renderFirms(placeholderFirms);
-                } else if (result.data && Array.isArray(result.data)) {
-                    // Parse real firm data from Memgraph
-                    const firms = result.data.map(row => ({
-                        id: row.f.id,
-                        name: row.f.name,
-                        industry: row.f.industry,
-                        stage: row.f.stage || 'prospect',
-                        contacts: row.contacts || [],
-                        lastContact: row.f.lastContact,
-                        dealSize: row.f.dealSize,
-                        notes: row.f.notes
-                    }));
-                    renderFirms(firms);
-                    updateStats(firms);
-                } else {
-                    renderFirms(placeholderFirms);
-                }
-            } catch (e) {
-                console.error('Error parsing Helios response:', e);
-                renderFirms(placeholderFirms);
-            }
-        };
+        function formatNumber(n) {
+            if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
+            if (n >= 1000) return `$${(n / 1000).toFixed(0)}K`;
+            return `$${n}`;
+        }
 
-        function updateStats(firms) {
-            document.getElementById('total-firms').textContent = firms.length;
-            const totalContacts = firms.reduce((sum, f) => sum + (f.contacts?.length || 0), 0);
-            document.getElementById('total-contacts').textContent = totalContacts;
-            const activeDeals = firms.filter(f => f.stage === 'engaged' || f.stage === 'client').length;
-            document.getElementById('active-deals').textContent = activeDeals;
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
         }
 
         function formatDate(dateStr) {
@@ -218,90 +144,132 @@
             const date = new Date(dateStr);
             const now = new Date();
             const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-            
             if (diffDays === 0) return 'Today';
             if (diffDays === 1) return 'Yesterday';
-            if (diffDays < 7) return `${diffDays} days ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
             return date.toLocaleDateString();
+        }
+
+        window._heliosResponse = function(data) {
+            try {
+                const result = JSON.parse(data);
+                if (result.data && Array.isArray(result.data)) {
+                    allFirms = result.data.map(row => ({
+                        id: row.f.id, name: row.f.name, industry: row.f.industry,
+                        stage: row.f.stage || 'prospect', contacts: row.contacts || [],
+                        lastContact: row.f.lastContact, dealSize: row.f.dealSize || 0, notes: row.f.notes
+                    }));
+                }
+            } catch (e) { /* fail-open: keep placeholders */ }
+            renderFirms(filterFirms());
+        };
+
+        function filterFirms() {
+            const search = document.getElementById('search-input').value.toLowerCase();
+            const sortBy = document.getElementById('sort-by').value;
+            let filtered = allFirms;
+
+            if (activeTab !== 'all') filtered = filtered.filter(f => f.stage === activeTab);
+            if (search) {
+                filtered = filtered.filter(f =>
+                    f.name.toLowerCase().includes(search) ||
+                    f.industry.toLowerCase().includes(search) ||
+                    (f.notes || '').toLowerCase().includes(search) ||
+                    f.contacts.some(c => c.name.toLowerCase().includes(search))
+                );
+            }
+
+            filtered.sort((a, b) => {
+                if (sortBy === 'name') return a.name.localeCompare(b.name);
+                if (sortBy === 'dealSize') return (b.dealSize || 0) - (a.dealSize || 0);
+                if (sortBy === 'lastContact') return new Date(b.lastContact || 0) - new Date(a.lastContact || 0);
+                if (sortBy === 'contacts') return (b.contacts?.length || 0) - (a.contacts?.length || 0);
+                return 0;
+            });
+            return filtered;
+        }
+
+        function updateCounts() {
+            document.getElementById('count-all').textContent = allFirms.length;
+            document.getElementById('count-prospect').textContent = allFirms.filter(f => f.stage === 'prospect').length;
+            document.getElementById('count-engaged').textContent = allFirms.filter(f => f.stage === 'engaged').length;
+            document.getElementById('count-client').textContent = allFirms.filter(f => f.stage === 'client').length;
+        }
+
+        function updateStats(firms) {
+            document.getElementById('total-firms').textContent = firms.length;
+            const totalContacts = allFirms.reduce((sum, f) => sum + (f.contacts?.length || 0), 0);
+            document.getElementById('total-contacts').textContent = totalContacts;
+            const activeDeals = allFirms.filter(f => f.stage === 'engaged' || f.stage === 'client').length;
+            document.getElementById('active-deals').textContent = activeDeals;
+            const totalDeal = allFirms.reduce((sum, f) => sum + (f.dealSize || 0), 0);
+            document.getElementById('conversion-rate').textContent = formatNumber(totalDeal);
+            document.getElementById('conversion-rate').closest('.stat-card').querySelector('.text-gray-400').textContent = 'Pipeline Value';
         }
 
         function renderFirms(firms) {
             const grid = document.getElementById('firms-grid');
             const loading = document.getElementById('loading');
             const emptyState = document.getElementById('empty-state');
-
+            clearTimeout(spinnerTimer);
+            document.getElementById('spinner').classList.remove('visible');
             loading.classList.add('hidden');
+
+            updateCounts();
+            updateStats(firms);
+            document.getElementById('result-count').textContent = `${firms.length} firm${firms.length !== 1 ? 's' : ''}`;
 
             if (!firms || firms.length === 0) {
                 grid.innerHTML = '';
                 emptyState.classList.remove('hidden');
                 return;
             }
-
             emptyState.classList.add('hidden');
-            updateStats(firms);
 
             grid.innerHTML = firms.map(firm => `
-                <div class="firm-card bg-gray-800 rounded-lg p-6 border border-gray-700 cursor-pointer transition-all" data-id="${firm.id}">
-                    <!-- Firm Header -->
+                <div class="firm-card bg-gray-800 rounded-lg p-6 border border-gray-700 cursor-pointer transition-all animate-slide-in" data-id="${firm.id}">
                     <div class="flex items-start justify-between mb-4">
                         <div class="flex-1">
-                            <h3 class="text-xl font-bold mb-1">${firm.name}</h3>
-                            <p class="text-sm text-gray-400">${firm.industry}</p>
+                            <h3 class="text-xl font-bold mb-1">${escapeHtml(firm.name)}</h3>
+                            <p class="text-sm text-gray-400">${escapeHtml(firm.industry)}</p>
                         </div>
-                        <span class="px-3 py-1 rounded-full text-xs font-semibold border ${stageColors[firm.stage] || stageColors.prospect}">
-                            ${firm.stage.toUpperCase()}
+                        <span class="px-3 py-1 rounded-full text-xs font-semibold border whitespace-nowrap ${stageColors[firm.stage] || stageColors.prospect}">
+                            ${escapeHtml(firm.stage.toUpperCase())}
                         </span>
                     </div>
-
-                    <!-- Deal Size -->
                     <div class="mb-4 pb-4 border-b border-gray-700">
-                        <div class="text-2xl font-bold text-blue-400">${firm.dealSize}</div>
+                        <div class="text-2xl font-bold text-blue-400 font-mono">${formatNumber(firm.dealSize)}</div>
                         <div class="text-sm text-gray-500">Deal Value</div>
                     </div>
-
-                    <!-- Contacts -->
                     <div class="mb-4">
                         <div class="text-sm text-gray-400 mb-2">Key Contacts</div>
                         <div class="space-y-2">
                             ${firm.contacts.slice(0, 2).map(contact => `
                                 <div class="flex items-center space-x-2">
                                     <div class="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full flex items-center justify-center text-xs font-semibold">
-                                        ${contact.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                        ${escapeHtml(contact.name.split(' ').map(n => n[0]).join('').toUpperCase())}
                                     </div>
                                     <div class="flex-1 min-w-0">
-                                        <div class="text-sm font-medium truncate">${contact.name}</div>
-                                        <div class="text-xs text-gray-500 truncate">${contact.role}</div>
+                                        <div class="text-sm font-medium truncate">${escapeHtml(contact.name)}</div>
+                                        <div class="text-xs text-gray-500 truncate font-mono">${escapeHtml(contact.role)}</div>
                                     </div>
                                 </div>
                             `).join('')}
-                            ${firm.contacts.length > 2 ? `
-                                <div class="text-xs text-gray-500">+${firm.contacts.length - 2} more</div>
-                            ` : ''}
+                            ${firm.contacts.length > 2 ? `<div class="text-xs text-gray-500">+${firm.contacts.length - 2} more</div>` : ''}
                         </div>
                     </div>
-
-                    <!-- Last Contact -->
                     <div class="flex items-center justify-between text-sm">
                         <span class="text-gray-500">Last contact:</span>
-                        <span class="text-gray-300">${formatDate(firm.lastContact)}</span>
+                        <span class="text-gray-300 font-mono whitespace-nowrap">${formatDate(firm.lastContact)}</span>
                     </div>
-
-                    <!-- Notes Preview -->
-                    ${firm.notes ? `
-                        <div class="mt-3 pt-3 border-t border-gray-700">
-                            <p class="text-sm text-gray-400 line-clamp-2">${firm.notes}</p>
-                        </div>
-                    ` : ''}
+                    ${firm.notes ? `<div class="mt-3 pt-3 border-t border-gray-700"><p class="text-sm text-gray-400 line-clamp-2">${escapeHtml(firm.notes)}</p></div>` : ''}
                 </div>
             `).join('');
 
-            // Add click handlers
             document.querySelectorAll('.firm-card').forEach(card => {
                 card.addEventListener('click', function() {
-                    const firmId = this.getAttribute('data-id');
-                    console.log('Firm clicked:', firmId);
-                    // Future: Open firm detail view
+                    console.log('Firm clicked:', this.getAttribute('data-id'));
                 });
             });
         }
@@ -309,42 +277,84 @@
         function queryFirms() {
             const loading = document.getElementById('loading');
             loading.classList.remove('hidden');
+            spinnerTimer = setTimeout(() => {
+                document.getElementById('spinner').classList.add('visible');
+            }, 1000);
 
             if (window.helios && window.helios.postMessage) {
-                window.helios.postMessage(JSON.stringify({
-                    type: "operation",
-                    name: "crm.firms",
-                    params: {limit: 50}
-                }));
+                window.helios.postMessage(JSON.stringify({ type: "operation", name: "crm.firms", params: { limit: 50 } }));
             } else {
-                // IPC not available, use placeholder data
-                console.log('Helios IPC bridge not available, using placeholder data');
-                setTimeout(() => renderFirms(placeholderFirms), 500);
+                setTimeout(() => renderFirms(filterFirms()), 500);
             }
         }
 
-        // Event handlers
+        // Tab click handlers
+        document.querySelectorAll('.tab-item').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.tab-item').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+                this.classList.add('active');
+                this.setAttribute('aria-selected', 'true');
+                activeTab = this.getAttribute('data-tab');
+                renderFirms(filterFirms());
+            });
+        });
+
+        // Search + sort handlers
+        document.getElementById('search-input').addEventListener('input', () => renderFirms(filterFirms()));
+        document.getElementById('sort-by').addEventListener('change', () => renderFirms(filterFirms()));
+
+        // Action buttons
         document.getElementById('refresh-btn').addEventListener('click', queryFirms);
-        document.getElementById('add-firm-btn').addEventListener('click', () => {
-            console.log('Add firm clicked');
-            // Future: Open add firm modal
+        document.getElementById('add-firm-btn').addEventListener('click', () => console.log('Add firm'));
+
+        // Connection status
+        function setStatus(state, text) {
+            const dot = document.getElementById('status-dot');
+            const txt = document.getElementById('status-text');
+            dot.className = 'status-dot ' + state;
+            txt.textContent = text;
+        }
+        function checkConnection() {
+            if (window.helios && window.helios.postMessage) setStatus('connected', 'Memgraph');
+            else setStatus('disconnected', 'No IPC');
+        }
+
+        // Keyboard navigation (j/k on firm cards)
+        let focusedIndex = -1;
+        function focusCard(index) {
+            const cards = document.querySelectorAll('.firm-card');
+            if (index < 0 || index >= cards.length) return;
+            cards.forEach(el => el.classList.remove('row-selected'));
+            focusedIndex = index;
+            cards[index].classList.add('row-selected');
+            cards[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+        document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+            const cards = document.querySelectorAll('.firm-card');
+            const cols = window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1;
+            switch(e.key) {
+                case 'j': focusCard(Math.min(focusedIndex + cols, cards.length - 1)); break;
+                case 'k': focusCard(Math.max(focusedIndex - cols, 0)); break;
+                case 'l': focusCard(Math.min(focusedIndex + 1, cards.length - 1)); break;
+                case 'h': focusCard(Math.max(focusedIndex - 1, 0)); break;
+                case 'r': if (!e.metaKey && !e.ctrlKey) queryFirms(); break;
+                case 'Enter':
+                    if (focusedIndex >= 0 && cards[focusedIndex]) cards[focusedIndex].click();
+                    break;
+                case '/': e.preventDefault(); document.getElementById('search-input').focus(); break;
+            }
         });
 
-        // Filter handlers
-        document.getElementById('filter-industry').addEventListener('change', function() {
-            const industry = this.value;
-            // Future: Filter firms by industry
-            console.log('Filter by industry:', industry);
-        });
-
-        document.getElementById('filter-stage').addEventListener('change', function() {
-            const stage = this.value;
-            // Future: Filter firms by stage
-            console.log('Filter by stage:', stage);
-        });
-
-        // Initial load
         queryFirms();
+        setTimeout(checkConnection, 100);
     </script>
+
+    <div class="shortcut-bar">
+        <span><kbd class="kbd">h</kbd><kbd class="kbd">j</kbd><kbd class="kbd">k</kbd><kbd class="kbd">l</kbd> navigate</span>
+        <span><kbd class="kbd">Enter</kbd> open</span>
+        <span><kbd class="kbd">/</kbd> search</span>
+        <span><kbd class="kbd">r</kbd> refresh</span>
+    </div>
 </body>
 </html>

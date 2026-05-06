@@ -216,14 +216,14 @@ impl CLIAgentSession {
                     .payload
                     .message
                     .clone()
-                    .or_else(|| Some("Waiting for interview response".to_owned())),
+                    .or_else(|| Some("Interview opened — waiting for responses".to_owned())),
             },
             CLIAgentEventType::DecisionRequest => CLIAgentSessionStatus::Blocked {
                 message: event
                     .payload
                     .message
                     .clone()
-                    .or_else(|| Some("Waiting for decision".to_owned())),
+                    .or_else(|| Some("Design deck opened — waiting for selection".to_owned())),
             },
             // ToolResult: the Pi bridge emits this when a tool finishes; treat as
             // unblocking (analogous to ToolComplete) unless a tool error is present.
@@ -255,6 +255,14 @@ pub enum CLIAgentSessionsModelEvent {
         status: CLIAgentSessionStatus,
         session_context: Box<CLIAgentSessionContext>,
     },
+    InterviewRequested {
+        terminal_view_id: EntityId,
+        questions: String,
+    },
+    DesignDeckRequested {
+        terminal_view_id: EntityId,
+        slides: String,
+    },
     InputSessionChanged {
         terminal_view_id: EntityId,
         agent: CLIAgent,
@@ -283,6 +291,12 @@ impl CLIAgentSessionsModelEvent {
                 terminal_view_id, ..
             }
             | CLIAgentSessionsModelEvent::StatusChanged {
+                terminal_view_id, ..
+            }
+            | CLIAgentSessionsModelEvent::InterviewRequested {
+                terminal_view_id, ..
+            }
+            | CLIAgentSessionsModelEvent::DesignDeckRequested {
                 terminal_view_id, ..
             }
             | CLIAgentSessionsModelEvent::InputSessionChanged {
@@ -425,6 +439,26 @@ impl CLIAgentSessionsModel {
                 status: new_status,
                 session_context: Box::new(session.session_context.clone()),
             });
+        }
+
+        // When an InterviewRequest arrives with questions, emit dedicated event
+        // so the workspace can auto-open the Interview webview and forward data.
+        if matches!(event_type, CLIAgentEventType::InterviewRequest) {
+            if let Some(questions) = &event.payload.questions {
+                ctx.emit(CLIAgentSessionsModelEvent::InterviewRequested {
+                    terminal_view_id,
+                    questions: questions.clone(),
+                });
+            }
+        }
+
+        if matches!(event_type, CLIAgentEventType::DecisionRequest) {
+            if let Some(slides) = &event.payload.slides {
+                ctx.emit(CLIAgentSessionsModelEvent::DesignDeckRequested {
+                    terminal_view_id,
+                    slides: slides.clone(),
+                });
+            }
         }
 
         if matches!(

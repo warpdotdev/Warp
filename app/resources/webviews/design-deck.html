@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: file:;">
+    <title>Helios Design Deck</title>
+    <link rel="stylesheet" href="css/helios.css">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; }
+        .slide { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        .option-card { transition: all 200ms; border: 2px solid #374151; }
+        .option-card:hover { border-color: #60a5fa; transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
+        .option-card.selected { border-color: #3b82f6; background-color: rgba(59, 130, 246, 0.05); }
+        .option-card.selected::after { content: '✓'; position: absolute; top: 0.75rem; right: 0.75rem; width: 1.5rem; height: 1.5rem; background: #3b82f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: white; }
+        .preview-container { min-height: 120px; max-height: 400px; overflow: auto; padding: 1rem; background: #1a1a2e; border-radius: 0.5rem; margin-bottom: 0.75rem; }
+        .preview-container pre { margin: 0; white-space: pre-wrap; font-size: 0.8rem; line-height: 1.4; }
+        .aside-text { font-size: 0.8rem; color: #9ca3af; line-height: 1.5; white-space: pre-line; }
+        .recommended-badge { display: inline-block; padding: 0.125rem 0.5rem; background: rgba(34,197,94,0.2); color: #4ade80; border-radius: 9999px; font-size: 0.6875rem; font-weight: 600; }
+        .nav-dots { display: flex; gap: 0.5rem; justify-content: center; }
+        .nav-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: #374151; cursor: pointer; transition: all 150ms; }
+        .nav-dot.active { background: #3b82f6; width: 1.5rem; border-radius: 0.25rem; }
+        .nav-dot.completed { background: #22c55e; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto p-6">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold">Design Deck</h1>
+                <p class="text-sm text-gray-400" id="deck-subtitle">Waiting for options...</p>
+            </div>
+            <div class="flex items-center space-x-3">
+                <div class="status-bar" id="status-bar">
+                    <span class="status-dot connecting" id="status-dot"></span>
+                    <span id="status-text">Connecting...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress -->
+        <div id="progress-section" class="mb-6 hidden">
+            <div class="flex justify-between text-sm text-gray-400 mb-2">
+                <span id="slide-title" class="font-semibold text-white"></span>
+                <span><span id="current-slide">1</span> of <span id="total-slides">1</span></span>
+            </div>
+            <div class="nav-dots" id="nav-dots"></div>
+        </div>
+
+        <!-- Slide Context -->
+        <div id="slide-context" class="text-sm text-gray-400 mb-4 hidden"></div>
+
+        <!-- Options Grid -->
+        <div id="options-grid" class="grid gap-4 mb-6"></div>
+
+        <!-- Navigation -->
+        <div id="nav-bar" class="flex items-center justify-between hidden">
+            <button id="prev-btn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors" disabled>← Previous</button>
+            <button id="next-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">Next →</button>
+            <button id="submit-btn" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 rounded-lg font-semibold transition-colors hidden">Submit Selections</button>
+        </div>
+
+        <!-- Waiting State -->
+        <div id="waiting-state" class="text-center py-16">
+            <div class="spinner-delayed" id="spinner">
+                <div class="inline-block w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <h2 class="text-xl font-semibold mb-2 mt-6">Waiting for design options...</h2>
+            <p class="text-gray-400">The agent will present visual options when ready</p>
+        </div>
+
+        <!-- Success State -->
+        <div id="success-state" class="text-center py-16 hidden">
+            <svg class="w-20 h-20 mx-auto text-green-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <h2 class="text-2xl font-bold mb-2">Selections Submitted!</h2>
+            <p class="text-gray-400">Your choices have been sent to the agent</p>
+        </div>
+    </div>
+
+    <script>
+        let deckData = null;
+        let currentSlideIndex = 0;
+        let selections = {};
+
+        window._heliosDesignDeckData = function(data) {
+            try {
+                const parsed = JSON.parse(data);
+                if (parsed.error) return;
+                loadDeck(parsed);
+            } catch (e) {
+                console.error('Error parsing design deck data:', e);
+            }
+        };
+
+        function loadDeck(data) {
+            deckData = data;
+            selections = {};
+            document.getElementById('waiting-state').classList.add('hidden');
+            document.getElementById('progress-section').classList.remove('hidden');
+            document.getElementById('nav-bar').classList.remove('hidden');
+            document.getElementById('deck-subtitle').textContent = data.title || `${data.slides.length} decision${data.slides.length > 1 ? 's' : ''} to make`;
+            document.getElementById('total-slides').textContent = data.slides.length;
+            renderNavDots();
+            renderSlide(0);
+        }
+
+        function renderNavDots() {
+            const container = document.getElementById('nav-dots');
+            container.innerHTML = deckData.slides.map((_, i) =>
+                `<div class="nav-dot ${i === 0 ? 'active' : ''}" data-index="${i}"></div>`
+            ).join('');
+            container.querySelectorAll('.nav-dot').forEach(dot => {
+                dot.addEventListener('click', function() {
+                    renderSlide(parseInt(this.dataset.index));
+                });
+            });
+        }
+
+        function renderSlide(index) {
+            currentSlideIndex = index;
+            const slide = deckData.slides[index];
+            document.getElementById('current-slide').textContent = index + 1;
+            document.getElementById('slide-title').textContent = slide.title || `Decision ${index + 1}`;
+
+            const ctx = document.getElementById('slide-context');
+            if (slide.context) { ctx.textContent = slide.context; ctx.classList.remove('hidden'); }
+            else { ctx.classList.add('hidden'); }
+
+            const cols = slide.columns || (slide.options.length <= 2 ? 2 : 3);
+            const grid = document.getElementById('options-grid');
+            grid.style.gridTemplateColumns = `repeat(${Math.min(cols, slide.options.length)}, minmax(0, 1fr))`;
+
+            grid.innerHTML = slide.options.map((opt, i) => {
+                const selected = selections[index] === i || (Array.isArray(selections[index]) && selections[index].includes(i));
+                return `
+                <div class="option-card relative bg-gray-800 rounded-lg p-4 cursor-pointer ${selected ? 'selected' : ''}" data-option="${i}">
+                    ${opt.recommended ? '<span class="recommended-badge mb-2">Recommended</span>' : ''}
+                    <h3 class="font-semibold mb-2">${escapeHtml(opt.label)}</h3>
+                    <div class="preview-container">${renderPreview(opt)}</div>
+                    ${opt.aside ? `<div class="aside-text">${escapeHtml(opt.aside)}</div>` : ''}
+                    ${opt.description ? `<p class="text-xs text-gray-500 mt-2">${escapeHtml(opt.description)}</p>` : ''}
+                    <div class="mt-2 text-center"><kbd class="kbd">${i + 1}</kbd></div>
+                </div>`;
+            }).join('');
+
+            grid.querySelectorAll('.option-card').forEach(card => {
+                card.addEventListener('click', function() {
+                    selectOption(parseInt(this.dataset.option));
+                });
+            });
+
+            updateNavDots();
+            updateNavButtons();
+        }
+
+        function renderPreview(opt) {
+            if (opt.previewHtml) return sanitizeHtml(opt.previewHtml);
+            if (opt.previewBlocks) {
+                return opt.previewBlocks.map(block => {
+                    if (block.type === 'html') return sanitizeHtml(block.content);
+                    if (block.type === 'code') return `<pre style="color:#e2e8f0;font-family:ui-monospace,monospace;"><code>${escapeHtml(block.code)}</code></pre>`;
+                    if (block.type === 'mermaid') return `<pre style="color:#a5b4fc;">[Mermaid]\n${escapeHtml(block.content)}</pre>`;
+                    if (block.type === 'image') return `<div style="text-align:center"><img src="${block.src}" alt="${block.alt || ''}" style="max-width:100%;border-radius:0.5rem;"><p style="font-size:0.75rem;color:#6b7280;margin-top:0.5rem;">${block.caption || ''}</p></div>`;
+                    return '';
+                }).join('');
+            }
+            return '<p class="text-gray-500">No preview</p>';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        function sanitizeHtml(html) {
+            if (!html) return '';
+            return html.replace(/\bon\w+\s*=/gi, 'data-blocked=');
+        }
+
+        function selectOption(optionIndex) {
+            const slide = deckData.slides[currentSlideIndex];
+            if (slide.multiSelect) {
+                if (!Array.isArray(selections[currentSlideIndex])) selections[currentSlideIndex] = [];
+                const arr = selections[currentSlideIndex];
+                const idx = arr.indexOf(optionIndex);
+                if (idx >= 0) arr.splice(idx, 1);
+                else arr.push(optionIndex);
+            } else {
+                selections[currentSlideIndex] = optionIndex;
+            }
+            renderSlide(currentSlideIndex);
+        }
+
+        function updateNavDots() {
+            document.querySelectorAll('.nav-dot').forEach((dot, i) => {
+                dot.classList.toggle('active', i === currentSlideIndex);
+                dot.classList.toggle('completed', selections[i] !== undefined);
+            });
+        }
+
+        function updateNavButtons() {
+            document.getElementById('prev-btn').disabled = currentSlideIndex === 0;
+            const isLast = currentSlideIndex === deckData.slides.length - 1;
+            document.getElementById('next-btn').classList.toggle('hidden', isLast);
+            document.getElementById('submit-btn').classList.toggle('hidden', !isLast);
+        }
+
+        document.getElementById('prev-btn').addEventListener('click', () => {
+            if (currentSlideIndex > 0) renderSlide(currentSlideIndex - 1);
+        });
+        document.getElementById('next-btn').addEventListener('click', () => {
+            if (currentSlideIndex < deckData.slides.length - 1) renderSlide(currentSlideIndex + 1);
+        });
+        document.getElementById('submit-btn').addEventListener('click', submitSelections);
+
+        function submitSelections() {
+            const results = {};
+            deckData.slides.forEach((slide, i) => {
+                const sel = selections[i];
+                if (sel === undefined) return;
+                if (Array.isArray(sel)) {
+                    results[slide.title || `slide_${i}`] = sel.map(idx => slide.options[idx]?.label);
+                } else {
+                    results[slide.title || `slide_${i}`] = slide.options[sel]?.label;
+                }
+            });
+
+            if (window.helios && window.helios.postMessage) {
+                window.helios.postMessage(JSON.stringify({
+                    type: "design_deck_response",
+                    deckId: deckData.id || 'deck-' + Date.now(),
+                    selections: results
+                }));
+            } else {
+                console.log('Design deck selections:', results);
+            }
+
+            document.getElementById('options-grid').innerHTML = '';
+            document.getElementById('progress-section').classList.add('hidden');
+            document.getElementById('nav-bar').classList.add('hidden');
+            document.getElementById('slide-context').classList.add('hidden');
+            document.getElementById('success-state').classList.remove('hidden');
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (!deckData) return;
+            const num = parseInt(e.key);
+            if (num >= 1 && num <= 9) {
+                const idx = num - 1;
+                if (idx < deckData.slides[currentSlideIndex].options.length) selectOption(idx);
+                return;
+            }
+            if (e.key === 'ArrowRight' || e.key === 'l') {
+                if (currentSlideIndex < deckData.slides.length - 1) renderSlide(currentSlideIndex + 1);
+            }
+            if (e.key === 'ArrowLeft' || e.key === 'h') {
+                if (currentSlideIndex > 0) renderSlide(currentSlideIndex - 1);
+            }
+            if (e.key === 'Enter' && currentSlideIndex === deckData.slides.length - 1) {
+                submitSelections();
+            }
+        });
+
+        // Connection status
+        function checkConnection() {
+            const dot = document.getElementById('status-dot');
+            const txt = document.getElementById('status-text');
+            if (window.helios && window.helios.postMessage) { dot.className = 'status-dot connected'; txt.textContent = 'Connected'; }
+            else { dot.className = 'status-dot disconnected'; txt.textContent = 'No IPC'; }
+        }
+
+        // Check for pre-pushed data
+        if (window.__pendingDesignDeckData) {
+            try { loadDeck(JSON.parse(window.__pendingDesignDeckData)); window.__pendingDesignDeckData = null; } catch(e) {}
+        }
+
+        // Request data via IPC
+        if (window.helios && window.helios.postMessage) {
+            window.helios.postMessage(JSON.stringify({ type: "operation", name: "design_deck.load", params: {} }));
+        }
+
+        setTimeout(checkConnection, 100);
+        setTimeout(() => document.getElementById('spinner').classList.add('visible'), 1000);
+    </script>
+
+    <div class="shortcut-bar">
+        <span><kbd class="kbd">1</kbd>-<kbd class="kbd">9</kbd> select option</span>
+        <span><kbd class="kbd">h</kbd><kbd class="kbd">l</kbd> prev/next slide</span>
+        <span><kbd class="kbd">Enter</kbd> submit</span>
+    </div>
+</body>
+</html>

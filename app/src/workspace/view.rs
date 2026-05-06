@@ -3357,6 +3357,50 @@ impl Workspace {
         {
             ctx.notify();
         }
+
+        if let CLIAgentSessionsModelEvent::InterviewRequested { questions, .. } = event {
+            let url = Self::webview_resource_url("interview.html");
+            self.add_tab_for_webview("Interview", &url, ctx);
+            #[cfg(target_os = "macos")]
+            {
+                let interview_json = format!(
+                    r#"{{"id":"agent-interview-{}","title":"Agent Interview","questions":{}}}"#,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0),
+                    questions
+                );
+                let escaped = interview_json.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('\r', "\\r");
+                let js = format!(
+                    "window.__pendingInterviewData = '{}'; setTimeout(function() {{ if (window._heliosInterviewData) {{ window._heliosInterviewData(window.__pendingInterviewData); }} }}, 1000);",
+                    escaped
+                );
+                self.evaluate_js_on_active_webview(&js, ctx);
+            }
+        }
+
+        if let CLIAgentSessionsModelEvent::DesignDeckRequested { slides, .. } = event {
+            let url = Self::webview_resource_url("design-deck.html");
+            self.add_tab_for_webview("Design Deck", &url, ctx);
+            #[cfg(target_os = "macos")]
+            {
+                let deck_json = format!(
+                    r#"{{"id":"agent-deck-{}","title":"Agent Design Deck","slides":{}}}"#,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0),
+                    slides
+                );
+                let escaped = deck_json.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('\r', "\\r");
+                let js = format!(
+                    "window.__pendingDesignDeckData = '{}'; setTimeout(function() {{ if (window._heliosDesignDeckData) {{ window._heliosDesignDeckData(window.__pendingDesignDeckData); }} }}, 1000);",
+                    escaped
+                );
+                self.evaluate_js_on_active_webview(&js, ctx);
+            }
+        }
     }
 
     /// Handle session settings changes.
@@ -10929,6 +10973,20 @@ impl Workspace {
         );
         ctx.notify();
     }
+
+    #[cfg(target_os = "macos")]
+    fn evaluate_js_on_active_webview(&self, js: &str, ctx: &ViewContext<Self>) {
+        if let Some(tab) = self.tabs.last() {
+            let pane_group = tab.pane_group.as_ref(ctx);
+            for webview_pane in pane_group.panes_of::<crate::pane_group::pane::webview_pane::WebViewPane>() {
+                webview_pane.evaluate_javascript(js);
+                return;
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn evaluate_js_on_active_webview(&self, _js: &str, _ctx: &ViewContext<Self>) {}
 
     /// Add a tab with a file notebook pane open.
     pub fn add_tab_for_file_notebook(
@@ -19813,6 +19871,10 @@ impl TypedActionView for Workspace {
             OpenInterview => {
                 let url = Self::webview_resource_url("interview.html");
                 self.add_tab_for_webview("Interview", &url, ctx);
+            }
+            OpenDesignDeck => {
+                let url = Self::webview_resource_url("design-deck.html");
+                self.add_tab_for_webview("Design Deck", &url, ctx);
             }
             StartAgentOnboardingTutorial(tutorial) => {
                 self.start_agent_onboarding_tutorial(tutorial.clone(), ctx)

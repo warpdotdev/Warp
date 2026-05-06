@@ -148,3 +148,12 @@ impl PaneContent for WebViewPane {
         self.view.as_ref(ctx).is_being_dragged()
     }
 }
+
+impl WebViewPane {
+    #[cfg(target_os = "macos")]
+    pub fn evaluate_javascript(&self, js: &str) {
+        if let Some(ref webview) = *self.native_webview.borrow() {
+            webview.eval_js(js);
+        }
+    }
+}

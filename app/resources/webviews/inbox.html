@@ -7,105 +7,105 @@
     <title>Helios Inbox</title>
     <link rel="stylesheet" href="css/helios.css">
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-        }
-        .email-item:hover {
-            background-color: rgba(55, 65, 81, 0.5);
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; }
+        .email-item:hover { background-color: rgba(55, 65, 81, 0.5); }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
     <div class="container mx-auto p-6">
         <!-- Header -->
-        <div class="flex items-center justify-between mb-8">
+        <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold">Helios Inbox</h1>
-            <button id="refresh-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
-                Refresh
-            </button>
+            <div class="flex items-center space-x-3">
+                <div class="status-bar" id="status-bar">
+                    <span class="status-dot connecting" id="status-dot"></span>
+                    <span id="status-text">Connecting...</span>
+                </div>
+                <button id="refresh-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors whitespace-nowrap">
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Search -->
+        <div class="relative mb-4">
+            <svg class="absolute inset-y-0 left-3 w-5 h-5 text-gray-500" style="top:50%;transform:translateY(-50%)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+            <input id="search-input" type="text" placeholder="Search messages..." class="search-input">
+        </div>
+
+        <!-- Tabs -->
+        <div class="tab-nav mb-6" role="tablist">
+            <div class="tab-item active" data-tab="all" role="tab" aria-selected="true">All <span class="badge" id="count-all">0</span></div>
+            <div class="tab-item" data-tab="unread" role="tab" aria-selected="false">Unread <span class="badge" id="count-unread">0</span></div>
+            <div class="tab-item" data-tab="important" role="tab" aria-selected="false">Important <span class="badge" id="count-important">0</span></div>
+            <div class="tab-item" data-tab="followup" role="tab" aria-selected="false">Follow-up <span class="badge" id="count-followup">0</span></div>
+        </div>
+
+        <!-- Bulk Actions Bar (hidden until selection) -->
+        <div id="bulk-bar" class="bulk-bar hidden mb-4">
+            <span id="selected-count" class="font-mono text-blue-400">0</span> selected
+            <button id="bulk-read" class="px-3 py-1 bg-gray-700 rounded-lg text-sm hover:bg-gray-600 transition-colors whitespace-nowrap">Mark Read</button>
+            <button id="bulk-archive" class="px-3 py-1 bg-gray-700 rounded-lg text-sm hover:bg-gray-600 transition-colors whitespace-nowrap">Archive</button>
+            <button id="bulk-star" class="px-3 py-1 bg-gray-700 rounded-lg text-sm hover:bg-gray-600 transition-colors whitespace-nowrap">Star</button>
         </div>
 
         <!-- Email List -->
-        <div id="email-list" class="space-y-2">
-            <!-- Placeholder emails will be inserted here -->
-        </div>
+        <div id="email-list" class="space-y-2"></div>
 
         <!-- Loading State -->
         <div id="loading" class="text-center text-gray-400 py-8 hidden">
-            <p>Loading emails...</p>
+            <div class="spinner-delayed" id="spinner">
+                <div class="inline-block w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <p class="mt-3">Loading emails...</p>
         </div>
 
         <!-- Empty State -->
         <div id="empty-state" class="text-center text-gray-400 py-8 hidden">
-            <p>No emails found</p>
+            <p class="font-mono">No messages match your filter.</p>
         </div>
     </div>
 
     <script>
-        // Placeholder email data
         const placeholderEmails = [
-            {
-                id: 1,
-                sender: "Sarah Chen",
-                email: "sarah@techcorp.com",
-                subject: "Q2 Product Roadmap Review",
-                preview: "Hi team, I've attached the updated roadmap for Q2. Please review the timeline and dependencies before our meeting...",
-                time: "2 hours ago",
-                unread: true
-            },
-            {
-                id: 2,
-                sender: "Alex Rodriguez",
-                email: "alex@startup.io",
-                subject: "Partnership Proposal",
-                preview: "Following up on our conversation last week. I think there's a great opportunity for collaboration between our teams...",
-                time: "5 hours ago",
-                unread: true
-            },
-            {
-                id: 3,
-                sender: "Morgan Williams",
-                email: "morgan@venture.capital",
-                subject: "Investment Discussion",
-                preview: "Thank you for the pitch deck. We're impressed with the traction and would like to schedule a follow-up call...",
-                time: "Yesterday",
-                unread: false
-            },
-            {
-                id: 4,
-                sender: "Jordan Park",
-                email: "jordan@consulting.com",
-                subject: "Project Status Update",
-                preview: "All deliverables for Phase 1 are complete. Moving into Phase 2 next week with the updated timeline...",
-                time: "2 days ago",
-                unread: false
-            }
+            { id: 1, sender: "Sarah Chen", email: "sarah@techcorp.com", subject: "Q2 Product Roadmap Review", preview: "Hi team, I've attached the updated roadmap for Q2. Please review the timeline and dependencies before our meeting...", time: "2 hours ago", unread: true, important: true, followup: false },
+            { id: 2, sender: "Alex Rodriguez", email: "alex@startup.io", subject: "Partnership Proposal", preview: "Following up on our conversation last week. I think there's a great opportunity for collaboration between our teams...", time: "5 hours ago", unread: true, important: false, followup: true },
+            { id: 3, sender: "Morgan Williams", email: "morgan@venture.capital", subject: "Investment Discussion", preview: "Thank you for the pitch deck. We're impressed with the traction and would like to schedule a follow-up call...", time: "Yesterday", unread: false, important: true, followup: true },
+            { id: 4, sender: "Jordan Park", email: "jordan@consulting.com", subject: "Project Status Update", preview: "All deliverables for Phase 1 are complete. Moving into Phase 2 next week with the updated timeline...", time: "2 days ago", unread: false, important: false, followup: false },
+            { id: 5, sender: "Taylor Kim", email: "taylor@design.co", subject: "Brand Assets Delivery", preview: "Attached are the final brand guidelines and asset files. Let me know if you need any revisions...", time: "3 days ago", unread: false, important: false, followup: false },
+            { id: 6, sender: "Casey Rivera", email: "casey@enterprise.io", subject: "Contract Review — Q3", preview: "Legal has approved the amendments. Please sign via DocuSign by end of week...", time: "4 days ago", unread: false, important: true, followup: false }
         ];
 
-        // IPC Bridge setup
+        let allEmails = [...placeholderEmails];
+        let activeTab = 'all';
+        let selectedIds = new Set();
+        let spinnerTimer = null;
+
+        // IPC Bridge
         window._heliosResponse = function(data) {
             try {
                 const result = JSON.parse(data);
                 if (result.error) {
-                    console.error('Helios IPC Error:', result.error);
                     renderEmails(placeholderEmails);
                 } else if (result.data && Array.isArray(result.data)) {
-                    // Parse real email data from Memgraph
-                    const emails = result.data.map(row => ({
+                    allEmails = result.data.map(row => ({
                         id: row.e.id,
                         sender: row.e.sender,
                         email: row.e.email,
                         subject: row.e.subject,
                         preview: row.e.preview || row.e.body?.substring(0, 120) + '...',
                         time: formatTime(row.e.date),
-                        unread: row.e.unread || false
+                        unread: row.e.unread || false,
+                        important: row.e.important || false,
+                        followup: row.e.followup || false
                     }));
-                    renderEmails(emails);
+                    renderEmails(filterEmails());
                 } else {
                     renderEmails(placeholderEmails);
                 }
             } catch (e) {
-                console.error('Error parsing Helios response:', e);
                 renderEmails(placeholderEmails);
             }
         };
@@ -117,59 +117,131 @@
             const diffMs = now - date;
             const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
             const diffDays = Math.floor(diffHours / 24);
-
             if (diffHours < 1) return 'Just now';
-            if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
             if (diffDays === 1) return 'Yesterday';
-            if (diffDays < 7) return `${diffDays} days ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
             return date.toLocaleDateString();
+        }
+
+        function formatNumber(n) {
+            if (n >= 1000000) return `${(n / 1000000).toFixed(1)}m`;
+            if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+            return n;
+        }
+
+        function getDateGroup(timeStr) {
+            if (timeStr.includes('h ago') || timeStr === 'Just now') return 'Today';
+            if (timeStr === 'Yesterday') return 'Yesterday';
+            return 'Earlier';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        function filterEmails() {
+            const search = document.getElementById('search-input').value.toLowerCase();
+            let filtered = allEmails;
+            if (activeTab === 'unread') filtered = filtered.filter(e => e.unread);
+            if (activeTab === 'important') filtered = filtered.filter(e => e.important);
+            if (activeTab === 'followup') filtered = filtered.filter(e => e.followup);
+            if (search) {
+                filtered = filtered.filter(e =>
+                    e.sender.toLowerCase().includes(search) ||
+                    e.subject.toLowerCase().includes(search) ||
+                    e.preview.toLowerCase().includes(search)
+                );
+            }
+            return filtered;
+        }
+
+        function updateCounts() {
+            document.getElementById('count-all').textContent = formatNumber(allEmails.length);
+            document.getElementById('count-unread').textContent = formatNumber(allEmails.filter(e => e.unread).length);
+            document.getElementById('count-important').textContent = formatNumber(allEmails.filter(e => e.important).length);
+            document.getElementById('count-followup').textContent = formatNumber(allEmails.filter(e => e.followup).length);
+        }
+
+        function updateBulkBar() {
+            const bar = document.getElementById('bulk-bar');
+            if (selectedIds.size > 0) {
+                bar.classList.remove('hidden');
+                document.getElementById('selected-count').textContent = selectedIds.size;
+            } else {
+                bar.classList.add('hidden');
+            }
         }
 
         function renderEmails(emails) {
             const emailList = document.getElementById('email-list');
             const loading = document.getElementById('loading');
             const emptyState = document.getElementById('empty-state');
-
+            clearTimeout(spinnerTimer);
+            document.getElementById('spinner').classList.remove('visible');
             loading.classList.add('hidden');
 
             if (!emails || emails.length === 0) {
                 emailList.innerHTML = '';
                 emptyState.classList.remove('hidden');
+                updateCounts();
                 return;
             }
 
             emptyState.classList.add('hidden');
-            
-            emailList.innerHTML = emails.map(email => `
-                <div class="email-item bg-gray-800 rounded-lg p-4 cursor-pointer transition-all border border-gray-700 ${email.unread ? 'border-blue-500/50' : ''}" data-id="${email.id}">
+            updateCounts();
+
+            let html = '';
+            let lastGroup = '';
+            emails.forEach(email => {
+                const group = getDateGroup(email.time);
+                if (group !== lastGroup) {
+                    html += `<div class="date-group">${group}</div>`;
+                    lastGroup = group;
+                }
+                const checked = selectedIds.has(email.id) ? 'checked' : '';
+                html += `
+                <div class="email-item bg-gray-800 rounded-lg p-4 cursor-pointer transition-all border border-gray-700 ${email.unread ? 'border-blue-500/50' : ''} animate-slide-in" data-id="${email.id}">
                     <div class="flex items-start justify-between mb-2">
                         <div class="flex items-center space-x-3">
+                            <input type="checkbox" class="checkbox email-check" data-id="${email.id}" ${checked} onclick="event.stopPropagation()">
                             <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                                ${email.sender.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                ${escapeHtml(email.sender.split(' ').map(n => n[0]).join('').toUpperCase())}
                             </div>
                             <div>
-                                <h3 class="font-semibold ${email.unread ? 'text-white' : 'text-gray-300'}">${email.sender}</h3>
-                                <p class="text-sm text-gray-500">${email.email}</p>
+                                <h3 class="font-semibold ${email.unread ? 'text-white' : 'text-gray-300'}">${escapeHtml(email.sender)}</h3>
+                                <p class="text-sm text-gray-500 font-mono">${escapeHtml(email.email)}</p>
                             </div>
                         </div>
                         <div class="flex items-center space-x-2">
+                            ${email.important ? '<span class="text-yellow-400">★</span>' : ''}
                             ${email.unread ? '<span class="w-2 h-2 bg-blue-500 rounded-full"></span>' : ''}
-                            <span class="text-sm text-gray-500">${email.time}</span>
+                            <span class="text-sm text-gray-500 font-mono whitespace-nowrap">${escapeHtml(email.time)}</span>
                         </div>
                     </div>
                     <div class="ml-13">
-                        <h4 class="font-medium mb-1 ${email.unread ? 'text-white' : 'text-gray-400'}">${email.subject}</h4>
-                        <p class="text-sm text-gray-500 line-clamp-2">${email.preview}</p>
+                        <h4 class="font-medium mb-1 ${email.unread ? 'text-white' : 'text-gray-400'}">${escapeHtml(email.subject)}</h4>
+                        <p class="text-sm text-gray-500 line-clamp-2">${escapeHtml(email.preview)}</p>
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            });
+            emailList.innerHTML = html;
 
-            // Add click handlers
+            // Click handlers
             document.querySelectorAll('.email-item').forEach(item => {
                 item.addEventListener('click', function() {
-                    const emailId = this.getAttribute('data-id');
-                    console.log('Email clicked:', emailId);
-                    // Future: Open email detail view
+                    console.log('Email clicked:', this.getAttribute('data-id'));
+                });
+            });
+            // Checkbox handlers
+            document.querySelectorAll('.email-check').forEach(cb => {
+                cb.addEventListener('change', function() {
+                    const id = Number(this.getAttribute('data-id'));
+                    if (this.checked) selectedIds.add(id);
+                    else selectedIds.delete(id);
+                    updateBulkBar();
                 });
             });
         }
@@ -177,25 +249,124 @@
         function queryEmails() {
             const loading = document.getElementById('loading');
             loading.classList.remove('hidden');
+            // Dustin pattern: delayed spinner — only show after 1s
+            spinnerTimer = setTimeout(() => {
+                document.getElementById('spinner').classList.add('visible');
+            }, 1000);
 
             if (window.helios && window.helios.postMessage) {
                 window.helios.postMessage(JSON.stringify({
                     type: "operation",
                     name: "inbox.list",
-                    params: {limit: 50}
+                    params: { limit: 50 }
                 }));
             } else {
-                // IPC not available, use placeholder data
-                console.log('Helios IPC bridge not available, using placeholder data');
-                setTimeout(() => renderEmails(placeholderEmails), 500);
+                setTimeout(() => renderEmails(filterEmails()), 500);
             }
         }
 
-        // Refresh button handler
+        // Tab click handlers
+        document.querySelectorAll('.tab-item').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.tab-item').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+                this.classList.add('active');
+                this.setAttribute('aria-selected', 'true');
+                activeTab = this.getAttribute('data-tab');
+                renderEmails(filterEmails());
+            });
+        });
+
+        // Search handler
+        document.getElementById('search-input').addEventListener('input', function() {
+            renderEmails(filterEmails());
+        });
+
+        // Bulk action handlers
+        document.getElementById('bulk-read').addEventListener('click', () => {
+            selectedIds.forEach(id => {
+                const email = allEmails.find(e => e.id === id);
+                if (email) email.unread = false;
+            });
+            selectedIds.clear();
+            updateBulkBar();
+            renderEmails(filterEmails());
+        });
+        document.getElementById('bulk-archive').addEventListener('click', () => {
+            allEmails = allEmails.filter(e => !selectedIds.has(e.id));
+            selectedIds.clear();
+            updateBulkBar();
+            renderEmails(filterEmails());
+        });
+        document.getElementById('bulk-star').addEventListener('click', () => {
+            selectedIds.forEach(id => {
+                const email = allEmails.find(e => e.id === id);
+                if (email) email.important = !email.important;
+            });
+            selectedIds.clear();
+            updateBulkBar();
+            renderEmails(filterEmails());
+        });
+
+        // Refresh
         document.getElementById('refresh-btn').addEventListener('click', queryEmails);
+
+        // Connection status
+        function setStatus(state, text) {
+            const dot = document.getElementById('status-dot');
+            const txt = document.getElementById('status-text');
+            dot.className = 'status-dot ' + state;
+            txt.textContent = text;
+        }
+
+        function checkConnection() {
+            if (window.helios && window.helios.postMessage) {
+                setStatus('connected', 'Memgraph');
+            } else {
+                setStatus('disconnected', 'No IPC');
+            }
+        }
+
+        // Keyboard navigation (j/k to move, x to select, r to refresh)
+        let focusedIndex = -1;
+
+        function focusEmail(index) {
+            const items = document.querySelectorAll('.email-item');
+            if (index < 0 || index >= items.length) return;
+            items.forEach(el => el.classList.remove('row-selected'));
+            focusedIndex = index;
+            items[index].classList.add('row-selected');
+            items[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const items = document.querySelectorAll('.email-item');
+            switch(e.key) {
+                case 'j': focusEmail(Math.min(focusedIndex + 1, items.length - 1)); break;
+                case 'k': focusEmail(Math.max(focusedIndex - 1, 0)); break;
+                case 'x':
+                    if (focusedIndex >= 0 && items[focusedIndex]) {
+                        const cb = items[focusedIndex].querySelector('.email-check');
+                        if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
+                    }
+                    break;
+                case 'r': if (!e.metaKey && !e.ctrlKey) queryEmails(); break;
+                case 'Enter':
+                    if (focusedIndex >= 0 && items[focusedIndex]) items[focusedIndex].click();
+                    break;
+            }
+        });
 
         // Initial load
         queryEmails();
+        setTimeout(checkConnection, 100);
     </script>
+
+    <div class="shortcut-bar">
+        <span><kbd class="kbd">j</kbd><kbd class="kbd">k</kbd> navigate</span>
+        <span><kbd class="kbd">x</kbd> select</span>
+        <span><kbd class="kbd">Enter</kbd> open</span>
+        <span><kbd class="kbd">r</kbd> refresh</span>
+    </div>
 </body>
 </html>

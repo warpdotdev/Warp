@@ -2130,7 +2130,7 @@ impl PaneGroup {
         self.snapshot_for_node(app, &self.panes.root)
     }
 
-    fn panes_of<T: Any>(&self) -> impl Iterator<Item = &'_ T> {
+    pub(crate) fn panes_of<T: Any>(&self) -> impl Iterator<Item = &'_ T> {
         self.pane_contents
             .values()
             .filter_map(|contents| contents.as_any().downcast_ref::<T>())

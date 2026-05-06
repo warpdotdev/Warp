@@ -155,6 +155,7 @@ pub enum WorkspaceAction {
     OpenInbox,
     OpenCRM,
     OpenInterview,
+    OpenDesignDeck,
     OpenNewSessionMenu {
         position: Vector2F,
     },
@@ -966,7 +967,7 @@ impl WorkspaceAction {
             #[cfg(feature = "local_fs")]
             FileDeleted { .. } => false, // File deletion doesn't change workspace state
             OpenEnvironmentManagementPane => false,
-            OpenWebView { .. } | OpenInbox | OpenCRM | OpenInterview => false,
+            OpenWebView { .. } | OpenInbox | OpenCRM | OpenInterview | OpenDesignDeck => false,
             #[cfg(target_os = "linux")]
             DismissWaylandCrashRecoveryBannerAndOpenLink => false,
             #[cfg(target_family = "wasm")]

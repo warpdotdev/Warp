@@ -6,4 +6,8 @@ pub const PRIORITIZED_KEYBINDINGS: &[&str] = &[
     "input:search_command_history",
     "pane_group:add_right",
     "workspace:open_launch_config_save_modal",
+    "workspace:open_inbox",
+    "workspace:open_crm",
+    "workspace:open_interview",
+    "workspace:open_design_deck",
 ];

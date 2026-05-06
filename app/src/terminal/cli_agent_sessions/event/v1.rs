@@ -78,6 +78,8 @@ pub(super) fn parse(body: &str) -> Option<CLIAgentEvent> {
             source: raw.source,
             severity: raw.severity,
             message: raw.message,
+            questions: raw.questions,
+            slides: raw.slides,
         },
     })
 }
@@ -115,4 +117,7 @@ struct RawEvent {
     source: Option<String>,
     severity: Option<String>,
     message: Option<String>,
+    // Interview/Decision request data
+    questions: Option<String>,
+    slides: Option<String>,
 }
