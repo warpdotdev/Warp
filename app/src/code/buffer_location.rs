@@ -70,6 +70,7 @@ impl SyncClock {
     }
 
     /// Check whether a client edit's expected server version matches our local state.
+    #[allow(dead_code)]
     pub fn client_edit_matches(&self, expected_server_version: ContentVersion) -> bool {
         self.server_version == expected_server_version
     }
