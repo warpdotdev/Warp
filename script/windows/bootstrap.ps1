@@ -72,7 +72,7 @@ if (-not $gitBinDir) {
 }
 $env:PATH = "$gitBinDir;$env:PATH"
 
-function Install-CommonSkills {
+function Install-CommonSkill {
     & "$gitBinDir\bash.exe" "$PWD\script\install_common_skills" --if-needed
 }
 
@@ -133,5 +133,5 @@ if ($identityToken.Trim().Length -eq 0) {
 }
 
 if ($InstallCommonSkills) {
-    Install-CommonSkills
+    Install-CommonSkill
 }
