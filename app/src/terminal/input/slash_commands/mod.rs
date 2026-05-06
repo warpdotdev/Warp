@@ -885,31 +885,29 @@ impl Input {
                 {
                     return false;
                 }
-                // The workspace handler falls through to splitting a fresh cloud-mode
-                // pane when there is no local conversation to hand off.
                 let prompt = argument
                     .map(|argument| argument.trim())
                     .filter(|argument| !argument.is_empty())
                     .map(str::to_owned);
-                let attachments = self.collect_cloud_launch_attachments(ctx);
-                let request = if let Some(prompt) = prompt {
-                    CloudLaunchRequest::auto_submit(
+                if let Some(prompt) = prompt {
+                    // `/move-to-cloud query` auto-submits, same as `& query`.
+                    let attachments = self.collect_cloud_launch_attachments(ctx);
+                    let request = CloudLaunchRequest::auto_submit(
                         prompt,
                         attachments,
                         None,
                         crate::ai::blocklist::handoff::CloudLaunchEntrypoint::SlashCommand,
-                    )
+                    );
+                    self.track_cloud_launch_request(request.id(), ctx);
+                    ctx.dispatch_typed_action_deferred(
+                        WorkspaceAction::OpenLocalToCloudHandoffPane { request },
+                    );
+                    defer_buffer_clear_until_cloud_launch_claim = true;
                 } else {
-                    CloudLaunchRequest::compose(
-                        crate::ai::blocklist::handoff::CloudLaunchEntrypoint::SlashCommand,
-                    )
-                    .with_attachments(attachments)
-                };
-                self.track_cloud_launch_request(request.id(), ctx);
-                ctx.dispatch_typed_action(&WorkspaceAction::OpenLocalToCloudHandoffPane {
-                    request,
-                });
-                defer_buffer_clear_until_cloud_launch_claim = true;
+                    // `/move-to-cloud` with no query enters `&` compose mode,
+                    // same as the footer chip.
+                    self.activate_cloud_handoff_compose(ctx);
+                }
             }
             fork if command.name == commands::FORK.name => {
                 let Some(conversation_id) = self

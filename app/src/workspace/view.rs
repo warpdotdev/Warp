@@ -274,7 +274,7 @@ use crate::terminal::shared_session::SharedSessionActionSource;
 
 use crate::ai::blocklist::agent_view::editor::{AgentToolbarEditorEvent, AgentToolbarEditorModal};
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::blocklist::handoff::{CloudLaunchRequest, CloudLaunchSubmitMode};
+use crate::ai::blocklist::handoff::CloudLaunchRequest;
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -13075,44 +13075,17 @@ impl Workspace {
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn should_hydrate_cloud_launch_draft(request: &CloudLaunchRequest) -> bool {
-        matches!(request.submit_mode, CloudLaunchSubmitMode::Compose)
-    }
-
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn hydrate_cloud_launch_draft(
-        target_view: &ViewHandle<TerminalView>,
-        request: &CloudLaunchRequest,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !Self::should_hydrate_cloud_launch_draft(request) {
-            return;
-        }
-        target_view.update(ctx, |terminal_view, ctx| {
-            let input = terminal_view.input().clone();
-            input.update(ctx, |input, ctx| {
-                input.hydrate_cloud_launch_draft(request, ctx);
-            });
-        });
-    }
-
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn pending_cloud_launch_for_request(
         request: &CloudLaunchRequest,
     ) -> Option<PendingCloudLaunch> {
-        match request.submit_mode {
-            CloudLaunchSubmitMode::Compose => None,
-            CloudLaunchSubmitMode::AutoSubmit => {
-                let prompt = request.prompt()?.to_owned();
-                if prompt.trim().is_empty() {
-                    return None;
-                }
-                Some(PendingCloudLaunch {
-                    prompt,
-                    attachments: request.attachments.clone(),
-                })
-            }
+        let prompt = request.prompt()?.to_owned();
+        if prompt.trim().is_empty() {
+            return None;
         }
+        Some(PendingCloudLaunch {
+            prompt,
+            attachments: request.attachments.clone(),
+        })
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
@@ -13151,13 +13124,7 @@ impl Workspace {
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn maybe_show_handoff_success_toast(
-        request: &CloudLaunchRequest,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !matches!(request.submit_mode, CloudLaunchSubmitMode::AutoSubmit) {
-            return;
-        }
+    fn show_handoff_success_toast(ctx: &mut ViewContext<Self>) {
         let window_id = ctx.window_id();
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
             toast_stack.add_ephemeral_toast(
@@ -13193,9 +13160,8 @@ impl Workspace {
             return;
         };
 
-        Self::hydrate_cloud_launch_draft(&new_pane_view, &request, ctx);
         Self::apply_explicit_cloud_launch_environment(&model_handle, &request, ctx);
-        Self::maybe_show_handoff_success_toast(&request, ctx);
+        Self::show_handoff_success_toast(ctx);
         if !Self::claim_cloud_launch_request(&source_view, &request, ctx) {
             log::warn!("Failed to claim cloud launch request after opening fresh cloud pane");
         }
@@ -13353,7 +13319,6 @@ impl Workspace {
             });
         }
 
-        Self::hydrate_cloud_launch_draft(&new_pane_view, &request, ctx);
         Self::apply_explicit_cloud_launch_environment(&model_handle, &request, ctx);
 
         // Keep handoff state on the cloud model until snapshot prep and submit finish.
@@ -13369,7 +13334,7 @@ impl Workspace {
             model.set_pending_handoff(Some(pending), model_ctx);
         });
 
-        Self::maybe_show_handoff_success_toast(&request, ctx);
+        Self::show_handoff_success_toast(ctx);
         if !Self::claim_cloud_launch_request(&source_view, &request, ctx) {
             log::warn!("Failed to claim cloud launch request after opening handoff pane");
         }

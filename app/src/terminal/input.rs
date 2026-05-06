@@ -105,11 +105,26 @@ use crate::ASSETS;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::agent_sdk::driver::{
+    retry_handoff_snapshot_upload, HandoffSnapshotUploadRetryResult,
+};
 use crate::ai::attachment_utils::MAX_ATTACHMENT_SIZE_BYTES;
 use crate::ai::block_context::BlockContext;
+use crate::ai::blocklist::agent_view::{
+    AgentInputFooter, AgentInputFooterEvent, AgentViewController,
+};
+use crate::ai::blocklist::handoff::{
+    CloudLaunchAttachments, CloudLaunchRequest, CloudLaunchRequestId,
+};
 use crate::ai::blocklist::{AttachmentType, PendingAttachment};
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::server::server_api::ai::{AttachmentFileInfo, AttachmentInput};
+use crate::terminal::view::ambient_agent::{
+    HarnessSelector, HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
+};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::terminal::view::ambient_agent::{PendingCloudLaunch, SnapshotUploadStatus};
 use crate::{
     ai::{
         agent::{AIAgentContext, EntrypointType},
@@ -3704,25 +3719,6 @@ impl Input {
         });
     }
 
-    /// Restores a composed request back into the input draft.
-    pub(crate) fn hydrate_cloud_launch_draft(
-        &mut self,
-        request: &CloudLaunchRequest,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(prompt) = request.prompt().filter(|prompt| !prompt.is_empty()) {
-            self.replace_buffer_content(prompt, ctx);
-        }
-        if !request.attachments.display_attachments.is_empty() {
-            self.ai_context_model.update(ctx, |context_model, ctx| {
-                context_model.append_pending_attachments(
-                    request.attachments.display_attachments.clone(),
-                    ctx,
-                );
-            });
-        }
-    }
-
     /// Restores an auto-submit request that is waiting on handoff setup.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn restore_pending_cloud_launch_draft(
@@ -3969,7 +3965,9 @@ impl Input {
             state.set_active_request_id(request_id, ctx)
         });
 
-        ctx.dispatch_typed_action(&WorkspaceAction::OpenLocalToCloudHandoffPane { request });
+        ctx.dispatch_typed_action_deferred(WorkspaceAction::OpenLocalToCloudHandoffPane {
+            request,
+        });
         true
     }
 

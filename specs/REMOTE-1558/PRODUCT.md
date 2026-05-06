@@ -3,18 +3,18 @@ Linear: [REMOTE-1558](https://linear.app/warpdotdev/issue/REMOTE-1558)
 ## Summary
 Add a fast `&` input entrypoint for local agent users to start a cloud run from their current flow. Typing `&` followed by a prompt lets the user choose a cloud environment from the local agent footer, then pressing Enter either hands off the current local conversation to cloud or starts a fresh cloud run when there is no local conversation history.
 ## Problem
-The existing local-to-cloud handoff flow is discoverable through the footer chip and `/move-to-cloud`, but it is not optimized for keyboard-first use. Users who already know they want the next prompt to run in the cloud need a prefix-style flow that feels as lightweight as `!` shell-mode input while preserving handoff context, environment selection, attachments, and error safety.
+The existing local-to-cloud handoff flow is discoverable through the footer chip and `/handoff`, but it is not optimized for keyboard-first use. Users who already know they want the next prompt to run in the cloud need a prefix-style flow that feels as lightweight as `!` shell-mode input while preserving handoff context, environment selection, attachments, and error safety.
 ## Goals
 - A user in a local fullscreen agent view can type `& query` to start a cloud run without manually opening a handoff pane and pressing Enter again.
 - The `&` flow exposes environment selection before submission by reusing the same visual and interaction patterns as the existing cloud environment selector.
-- `/move-to-cloud query` starts the same auto-run behavior as `& query`; `/move-to-cloud` without a query remains a compose/open action.
+- `/handoff query` starts the same auto-run behavior as `& query`; `/handoff` without a query activates `&` handoff-compose mode, same as the footer chip.
 - While `&` mode is active, the input is explicitly locked in AI mode so autodetection and shell-mode transitions cannot steal the prompt.
 - Auto-run submissions feel instant: once Warp opens and claims the cloud launch surface, the prompt leaves the editable input and the cloud pane shows a queued/starting state immediately, even if local handoff preparation is still finishing.
 - The feature never silently drops the user's prompt or pending file/image attachments when handoff preparation fails.
 - Existing local-to-cloud handoff behavior remains available for users who want to review or edit before submitting.
 ## Non-goals
 - Redesigning the environment selector, environment management, or cloud-mode input UI.
-- Adding an environment argument syntax to `/move-to-cloud`.
+- Adding an environment argument syntax to `/handoff`.
 - Adding new selected text/block/document context serialization for cloud-mode submit. `&` matches current cloud-mode support by carrying prompt text and pending file/image attachments.
 - Changing cloud-to-cloud handoff behavior.
 - Bidirectional sync after handoff. Local and cloud conversations still diverge after the handoff point.
@@ -36,7 +36,7 @@ Figma: none provided.
 6. The exit affordance for handoff-compose mode mirrors `!` shell mode: the Agent View message bar shows Enter + "to hand off to cloud" and Backspace + "to dismiss". When the prompt is empty (Backspace can exit immediately), both labels use Agent/AI magenta. When prompt text is present, the Backspace label follows the same disabled/muted treatment as the `!` shell-mode message, while the Enter label stays active-colored.
 7. When the prompt is empty, the user can press Backspace to exit cloud handoff mode. Exiting this way removes the `&` indicator and hides the transient environment selector.
 8. While handoff-compose mode is active, the agent footer shows a transient environment selector in the existing footer left-side chip area. The selector uses the same visual style, menu behavior, focus behavior, labels, and environment-management affordance as the existing cloud-mode environment selector.
-9. The transient environment selector is shown only for `&` handoff-compose mode. It is not shown for ordinary local agent prompts or `/move-to-cloud query`.
+9. The transient environment selector is shown only for `&` handoff-compose mode. It is not shown for ordinary local agent prompts or `/handoff query`.
 10. If the user selects an environment from the transient selector, that selection applies to the next `&` submission and persists as the user's last selected cloud environment, matching the existing environment selector behavior.
 11. If the user does not explicitly select an environment in the transient selector, submission uses the normal cloud environment defaulting behavior. For a non-empty handoff source, touched-repo overlap may choose a better default after handoff preparation; for an empty source, the run uses the saved/default environment if one exists.
 12. An explicit user selection in the transient selector always wins over any touched-repo overlap default discovered later.
@@ -68,14 +68,13 @@ Figma: none provided.
 26. Warp must not auto-start a non-empty local-to-cloud handoff without the intended local context. If the handoff cannot safely carry the forked conversation and usable prepared snapshot, it falls back to the retryable handoff pane state rather than silently starting a reduced-context cloud run.
 27. Once the destination cloud surface claims an auto-submit launch, the source input no longer shows the submitted prompt or pending attachments. If the launch later fails before the server accepts the cloud run, the prompt and attachments are restored in the destination pane rather than the source input.
 28. Closing a cloud pane while auto-start preparation is still in progress cancels that pending auto-start from the user's perspective. The source local conversation is unaffected.
-### `/move-to-cloud`
-29. `/move-to-cloud` with no query keeps the existing compose behavior for non-empty eligible conversations: it opens a handoff compose pane where the user can review the restored conversation, choose an environment from the pane's existing environment selector, edit the prompt, and press Enter manually.
-30. `/move-to-cloud` with no query from an empty local agent conversation opens a normal fresh cloud compose pane, because there is no local conversation context to hand off.
-31. `/move-to-cloud query` starts the same auto-run behavior as `& query`, including immediate optimistic queueing after the destination cloud surface claims the launch.
-32. `/move-to-cloud query` from an empty local agent conversation starts a normal fresh cloud run.
-33. `/move-to-cloud query` from a non-empty local conversation attempts local-to-cloud handoff with automatic run start, using touched-repo overlap/default environment selection. It does not show the transient `&` environment selector before starting.
-34. `/move-to-cloud query` follows the same blocked and failure behavior as `& query`: running/blocked conversations are blocked with a toast; missing synced cloud conversation identity is blocked with a toast; user input and pending file/image attachments are not silently discarded.
-35. If `/move-to-cloud query` fails before a pane opens, the slash-command text or extracted prompt remains available in the source input so the user can retry or edit it. The exact text representation may follow existing slash-command input conventions, but the user's prompt must not be lost.
+### `/handoff`
+29. `/handoff` with no query activates `&` handoff-compose mode on the local input, the same as clicking the footer chip or typing `&`. The user sees the `&` indicator, transient environment selector, and message bar hints, and must type a prompt and press Enter to proceed.
+30. `/handoff query` starts the same auto-run behavior as `& query`, including immediate optimistic queueing after the destination cloud surface claims the launch.
+31. `/handoff query` from an empty local agent conversation starts a normal fresh cloud run.
+32. `/handoff query` from a non-empty local conversation attempts local-to-cloud handoff with automatic run start, using touched-repo overlap/default environment selection. It does not show the transient `&` environment selector before starting.
+33. `/handoff query` follows the same blocked and failure behavior as `& query`: running/blocked conversations are blocked with a toast; missing synced cloud conversation identity is blocked with a toast; user input and pending file/image attachments are not silently discarded.
+34. If `/handoff query` fails before a pane opens, the slash-command text or extracted prompt remains available in the source input so the user can retry or edit it. The exact text representation may follow existing slash-command input conventions, but the user's prompt must not be lost.
 ### Existing handoff chip
 36. Clicking the "Hand off to cloud" footer chip activates `&` handoff-compose mode, matching the same state as typing `&` as the first character. If the user is already in handoff-compose mode, the chip click is a no-op.
 37. The chip does not auto-start a cloud run or open a cloud pane. It only enters handoff-compose mode; the user must type a prompt and press Enter to proceed.

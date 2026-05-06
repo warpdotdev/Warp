@@ -17,9 +17,8 @@ mod launch;
 
 use crate::features::FeatureFlag;
 
-pub(crate) use launch::CloudLaunchRequest;
 pub(crate) use launch::{
-    CloudLaunchAttachments, CloudLaunchEntrypoint, CloudLaunchRequestId, CloudLaunchSubmitMode,
+    CloudLaunchAttachments, CloudLaunchEntrypoint, CloudLaunchRequest, CloudLaunchRequestId,
 };
 
 pub(crate) fn is_local_to_cloud_handoff_available() -> bool {

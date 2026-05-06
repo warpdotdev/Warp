@@ -140,12 +140,12 @@ pub(crate) struct PendingHandoff {
     pub(crate) explicit_environment_id: Option<SyncId>,
 }
 
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-#[derive(Debug, Clone)]
 /// Carries the auto-submit payload for `& query` and `/move-to-cloud query`.
 /// Serves double duty: `request_attachments` feed the spawn request while
 /// `display_attachments` are restored into the editor if submission fails
 /// before the server accepts the run.
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+#[derive(Debug, Clone)]
 pub(crate) struct PendingCloudLaunch {
     pub(crate) prompt: String,
     pub(crate) attachments: CloudLaunchAttachments,
