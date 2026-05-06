@@ -76,10 +76,19 @@ impl SkillWatcher {
     /// `SkillManager::handle_skills_added`.
     pub fn read_skills_for_repos(repo_paths: &[PathBuf], ctx: &AppContext) -> Vec<ParsedSkill> {
         let repo_metadata = RepoMetadataModel::as_ref(ctx);
-        let skill_dirs: Vec<PathBuf> = repo_paths
-            .iter()
-            .flat_map(|repo_path| find_skill_directories_in_tree(repo_path, repo_metadata, ctx))
-            .collect();
+        // Combine tree-based discovery (catches nested provider paths) with a
+        // filesystem probe of top-level provider paths so degraded repos
+        // (indexed at depth=1 after ExceededMaxFileLimit) still surface their
+        // root-level skills.
+        let mut skill_dirs: HashSet<PathBuf> = HashSet::new();
+        for repo_path in repo_paths {
+            skill_dirs.extend(find_skill_directories_in_tree(
+                repo_path,
+                repo_metadata,
+                ctx,
+            ));
+            skill_dirs.extend(find_top_level_skill_directories_in_filesystem(repo_path));
+        }
 
         read_skills_from_directories(skill_dirs)
     }
