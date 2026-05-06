@@ -24,7 +24,6 @@ message ClientMessage {
     ReadFileContextRequest read_file_context = 10;
     Authenticate authenticate = 11;
     UpdatePreferences update_preferences = 12;
-    ListCodebaseIndexStatuses list_codebase_index_statuses = 13;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -309,8 +308,6 @@ message FileContextProto {
 }
 
 // ── Remote codebase indexing status ───────────────────────────────
-
-message ListCodebaseIndexStatuses {}
 
 enum CodebaseIndexStatusState {
   CODEBASE_INDEX_STATUS_STATE_UNSPECIFIED = 0;

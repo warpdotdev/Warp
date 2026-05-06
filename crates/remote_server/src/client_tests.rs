@@ -47,27 +47,6 @@ fn not_enabled_codebase_status(repo_path: &str) -> CodebaseIndexStatus {
 }
 
 #[tokio::test]
-async fn list_codebase_index_statuses_round_trip() {
-    let (client, _disconnect_rx, _executor) = setup_mock_client(|msg| {
-        match &msg.message {
-            Some(client_message::Message::ListCodebaseIndexStatuses(_)) => {}
-            other => panic!("Expected ListCodebaseIndexStatuses, got {other:?}"),
-        }
-        server_message::Message::CodebaseIndexStatusesSnapshot(CodebaseIndexStatusesSnapshot {
-            statuses: vec![not_enabled_codebase_status("/repo")],
-        })
-    });
-
-    let statuses = client.list_codebase_index_statuses().await.unwrap();
-    assert_eq!(statuses.len(), 1);
-    assert_eq!(statuses[0].repo_path, "/repo");
-    assert_eq!(
-        statuses[0].state,
-        crate::codebase_index_proto::RemoteCodebaseIndexState::NotEnabled
-    );
-}
-
-#[tokio::test]
 async fn codebase_index_push_messages_become_client_events() {
     let (client_stream, server_stream) = tokio::io::duplex(4096);
     let (server_read, server_write) = tokio::io::split(server_stream);

@@ -450,9 +450,6 @@ impl ServerModel {
             Some(client_message::Message::LoadRepoMetadataDirectory(msg)) => {
                 self.handle_load_repo_metadata_directory(msg, &request_id, ctx)
             }
-            Some(client_message::Message::ListCodebaseIndexStatuses(_)) => {
-                self.handle_list_codebase_index_statuses()
-            }
             Some(client_message::Message::WriteFile(msg)) => {
                 self.handle_write_file(msg, &request_id, conn_id, ctx)
             }
@@ -689,11 +686,6 @@ impl ServerModel {
                 crate::crash_reporting::uninit_sentry();
             }
         }
-    }
-    fn handle_list_codebase_index_statuses(&self) -> HandlerOutcome {
-        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusesSnapshot(
-            self.codebase_index_statuses_snapshot(),
-        ))
     }
 
     /// Handles `Authenticate` by replacing the daemon-wide credential.

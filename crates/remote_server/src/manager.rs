@@ -51,6 +51,7 @@ struct ReconnectParams {
 #[cfg(not(target_family = "wasm"))]
 struct InitializeHandshake {
     host_id: HostId,
+    event_rx: async_channel::Receiver<ClientEvent>,
 }
 
 /// Error from [`RemoteServerManager::run_connect_and_handshake`] that
@@ -93,7 +94,6 @@ pub enum RemoteServerInitPhase {
 pub enum RemoteServerOperation {
     NavigateToDirectory,
     LoadRepoMetadataDirectory,
-    ListCodebaseIndexStatuses,
 }
 
 /// Classification of a remote server client error for telemetry.
@@ -200,11 +200,6 @@ pub enum RemoteSessionState {
     /// Server process spawned, client exists, initialize handshake in progress.
     Initializing {
         client: Arc<RemoteServerClient>,
-        /// Push-event stream from the client. Drained only after the
-        /// session transitions to `Connected`, so pushed messages have
-        /// access to the negotiated host and identity metadata.
-        #[cfg(not(target_family = "wasm"))]
-        event_rx: async_channel::Receiver<ClientEvent>,
         /// The transport's owning `Child`. Dropped when the state is
         /// replaced or removed, killing the subprocess via
         /// `kill_on_drop`.
@@ -802,8 +797,7 @@ impl RemoteServerManager {
     /// `attempt_reconnect`.
     ///
     /// 1. Calls `transport.connect()` to establish streams.
-    /// 2. Transitions the session to `Initializing` and stores the event
-    ///    channel until the session is connected.
+    /// 2. Transitions the session to `Initializing` while the handshake runs.
     /// 3. Runs the initialize handshake with the current auth token, if any.
     ///
     /// Returns `Ok(InitializeHandshake)` on success, or a phase-tagged error.
@@ -829,7 +823,7 @@ impl RemoteServerManager {
         let client = Arc::new(client);
         let client_for_init = Arc::clone(&client);
 
-        // Transition to Initializing and retain the event channel.
+        // Transition to Initializing while the initialize request is in flight.
         // Guard: if the session was deregistered during `transport.connect()`,
         // the entry will have been removed; don't re-insert it.
         let was_inserted = spawner
@@ -841,7 +835,6 @@ impl RemoteServerManager {
                     session_id,
                     RemoteSessionState::Initializing {
                         client: client_for_init,
-                        event_rx,
                         _child: child,
                         control_path,
                     },
@@ -910,6 +903,7 @@ impl RemoteServerManager {
 
         Ok(InitializeHandshake {
             host_id: HostId::new(resp.host_id),
+            event_rx,
         })
     }
 
@@ -1099,72 +1093,6 @@ impl RemoteServerManager {
     /// reverse index.
     pub fn sessions_for_host(&self, host_id: &HostId) -> Option<&HashSet<SessionId>> {
         self.host_to_sessions.get(host_id)
-    }
-
-    fn connected_session_for_host(
-        &self,
-        host_id: &HostId,
-    ) -> Option<(SessionId, Arc<RemoteServerClient>, String)> {
-        let sessions = self.host_to_sessions.get(host_id)?;
-        sessions.iter().find_map(|session_id| {
-            let RemoteSessionState::Connected {
-                client,
-                identity_key,
-                ..
-            } = self.sessions.get(session_id)?
-            else {
-                return None;
-            };
-            Some((*session_id, client.clone(), identity_key.clone()))
-        })
-    }
-
-    /// Requests a bulk remote codebase-index status resync for a connected host.
-    pub fn refresh_codebase_index_statuses(
-        &mut self,
-        host_id: HostId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let Some((session_id, client, remote_identity_key)) =
-            self.connected_session_for_host(&host_id)
-        else {
-            log::warn!(
-                "Remote server refresh_codebase_index_statuses: no connected client host={host_id}"
-            );
-            return;
-        };
-
-        let spawner = self.spawner.clone();
-        ctx.background_executor()
-            .spawn(async move {
-                match client.list_codebase_index_statuses().await {
-                    Ok(statuses) => {
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
-                                    remote_identity_key,
-                                    host_id,
-                                    statuses,
-                                });
-                            })
-                            .await;
-                    }
-                    Err(e) => {
-                        log::warn!("Remote server list_codebase_index_statuses failed: session={session_id:?} error={e}");
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation: RemoteServerOperation::ListCodebaseIndexStatuses,
-                                    error_kind,
-                                });
-                            })
-                            .await;
-                    }
-                }
-            })
-            .detach();
     }
 
     /// Sends a `NavigatedToDirectory` request to the remote server for
@@ -1400,13 +1328,12 @@ impl RemoteServerManager {
         transport: Arc<dyn RemoteTransport>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let InitializeHandshake { host_id } = handshake;
+        let InitializeHandshake { host_id, event_rx } = handshake;
         log::info!("Remote server connected: session={session_id:?} host={host_id}");
 
         // Only transition if the session is still in Initializing state.
         let Some(RemoteSessionState::Initializing {
             client,
-            event_rx,
             _child,
             control_path,
         }) = self.sessions.remove(&session_id)

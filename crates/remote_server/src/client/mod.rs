@@ -15,7 +15,7 @@ use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
     client_message, server_message, Abort, Authenticate, ClientMessage, DeleteFile, ErrorCode,
-    Initialize, InitializeResponse, ListCodebaseIndexStatuses, LoadRepoMetadataDirectoryResponse,
+    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
     NavigatedToDirectoryResponse, ReadFileContextRequest, ReadFileContextResponse,
     RunCommandRequest, RunCommandResponse, ServerMessage, SessionBootstrapped, WriteFile,
 };
@@ -224,34 +224,6 @@ impl RemoteServerClient {
                 safe_error!(
                     safe: ("Remote server unexpected response for Initialize"),
                     full: ("Remote server unexpected response for Initialize: response={other:?}")
-                );
-                Err(ClientError::UnexpectedResponse)
-            }
-        }
-    }
-
-    /// Sends a `ListCodebaseIndexStatuses` request and awaits the status snapshot response.
-    pub async fn list_codebase_index_statuses(
-        &self,
-    ) -> Result<Vec<RemoteCodebaseIndexStatus>, ClientError> {
-        let request_id = RequestId::new();
-        let msg = ClientMessage {
-            request_id: request_id.to_string(),
-            message: Some(client_message::Message::ListCodebaseIndexStatuses(
-                ListCodebaseIndexStatuses {},
-            )),
-        };
-
-        let response = self.send_request(request_id, msg).await?;
-
-        match response.message {
-            Some(server_message::Message::CodebaseIndexStatusesSnapshot(snapshot)) => {
-                Ok(proto_to_codebase_index_statuses_snapshot(&snapshot))
-            }
-            other => {
-                safe_error!(
-                    safe: ("Remote server unexpected response for ListCodebaseIndexStatuses"),
-                    full: ("Remote server unexpected response for ListCodebaseIndexStatuses: response={other:?}")
                 );
                 Err(ClientError::UnexpectedResponse)
             }
