@@ -29,8 +29,6 @@ pub use progress::{render_progress, ProgressProps, ProgressStep, ProgressStepSta
 pub use progress_ui_state::AmbientAgentProgressUIState;
 pub use tips::{get_cloud_mode_tips, CloudModeTip};
 
-use parking_lot::FairMutex;
-use std::sync::Arc;
 use warp_core::features::FeatureFlag;
 use warpui::geometry::vector::Vector2F;
 use warpui::{AppContext, ModelHandle, ViewHandle, WindowId};
@@ -132,7 +130,7 @@ pub fn create_cloud_mode_view(
 pub fn is_cloud_agent_pre_first_exchange(
     ambient_agent_view_model: Option<&ModelHandle<AmbientAgentViewModel>>,
     agent_view_controller: &ModelHandle<AgentViewController>,
-    terminal_model: &Arc<FairMutex<TerminalModel>>,
+    terminal_model: &TerminalModel,
     app: &AppContext,
 ) -> bool {
     if !(FeatureFlag::CloudMode.is_enabled() && FeatureFlag::AgentView.is_enabled()) {
@@ -179,7 +177,6 @@ pub fn is_cloud_agent_pre_first_exchange(
     }
 
     terminal_model
-        .lock()
         .block_list()
         .is_executing_oz_environment_startup_commands()
 }
