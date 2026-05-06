@@ -10,6 +10,9 @@ cfg_if::cfg_if! {
 
 pub use ai::skills::SkillReference;
 
+mod global_skills;
+pub use global_skills::resolve_skill_repos;
+
 mod listed_skill;
 pub use listed_skill::SkillDescriptor;
 

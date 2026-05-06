@@ -3875,6 +3875,7 @@ type User {
   - `[]` means that the user is not part of any server-side enabled experiments.
   """
   experiments: [Experiment!]
+  globalSkills: [String!]!
   githubInstallations: UserGithubInstallationsOutput!
   isOnWorkDomain: Boolean!
   isOnboarded: Boolean!

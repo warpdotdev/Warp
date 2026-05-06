@@ -14,11 +14,34 @@ use std::{
     time::Duration,
 };
 
+use anyhow::{anyhow, Context as _};
+use futures::{
+    channel::oneshot,
+    future::{self, join_all, Either},
+    FutureExt as _,
+};
+use itertools::Itertools as _;
+use oneshot::{Canceled, Receiver, Sender};
+use repo_metadata::{local_model::IndexedRepoState, RepoMetadataModel, RepositoryIdentifier};
+use uuid::Uuid;
+
+use ai::skills::ParsedSkill;
+use warp_cli::agent::{Harness, OutputFormat};
+use warp_cli::mcp::MCPSpec;
+use warp_cli::share::ShareRequest;
+use warp_core::{features::FeatureFlag, report_error, report_if_error, safe_debug, safe_info};
+use warp_graphql::ai::AgentTaskState;
+use warp_managed_secrets::ManagedSecretValue;
+use warpui::{
+    r#async::{FutureExt, TimeoutError},
+    AppContext, Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity,
+};
+
 use crate::ai::blocklist::task_status_sync_model::TaskStatusSyncModel;
 use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::ai::mcp::{JSONMCPServer, MCPServerState};
-use crate::ai::skills::{SkillManager, SkillWatcher};
+use crate::ai::skills::{resolve_skill_repos, SkillManager, SkillWatcher};
 use crate::ai::{
     agent::conversation::AIConversationId,
     agent_sdk::driver::harness::{
@@ -49,7 +72,7 @@ use crate::{
             },
             BlocklistAIHistoryEvent, BlocklistAIHistoryModel, BlocklistAIPermissions,
         },
-        cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironment},
+        cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironment, GithubRepo},
         execution_profiles::profiles::AIExecutionProfilesModel,
         mcp::{
             file_based_manager::{FileBasedMCPManager, FileBasedMCPManagerEvent},
@@ -71,25 +94,6 @@ use crate::{
         },
     },
     terminal::view::ConversationRestorationInNewPaneType,
-};
-use ai::skills::ParsedSkill;
-use anyhow::{anyhow, Context as _};
-use futures::{
-    channel::oneshot,
-    future::{self, Either},
-    FutureExt as _,
-};
-use oneshot::{Canceled, Receiver, Sender};
-use uuid::Uuid;
-use warp_cli::agent::{Harness, OutputFormat};
-use warp_cli::mcp::MCPSpec;
-use warp_cli::share::ShareRequest;
-use warp_core::{features::FeatureFlag, report_error, report_if_error, safe_debug, safe_info};
-use warp_graphql::ai::AgentTaskState;
-use warp_managed_secrets::ManagedSecretValue;
-use warpui::{
-    r#async::{FutureExt, TimeoutError},
-    AppContext, Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity,
 };
 
 pub(crate) mod attachments;
@@ -1225,6 +1229,182 @@ impl AgentDriver {
         })
     }
 
+    /// Resolve additional GitHub repositories that should be cloned to provide
+    /// agent skills.
+    async fn resolve_global_skill_repos(
+        foreground: &ModelSpawner<Self>,
+    ) -> Result<Vec<GithubRepo>, AgentDriverError> {
+        if !FeatureFlag::OzPlatformSkills.is_enabled() {
+            return Ok(Vec::new());
+        }
+
+        let global_specs = foreground
+            .spawn(|_, ctx| AuthStateProvider::as_ref(ctx).get().global_skills())
+            .await?;
+        let global_repos = resolve_skill_repos(&global_specs);
+        if !global_repos.is_empty() {
+            log::info!("Resolving {} global skill repo(s)", global_repos.len());
+        }
+        Ok(global_repos)
+    }
+
+    /// Clone all passed-in global skill repositories.
+    async fn clone_global_skill_repos(
+        foreground: &ModelSpawner<Self>,
+        global_skill_repos: &[GithubRepo],
+    ) -> Result<(), AgentDriverError> {
+        for repo in global_skill_repos {
+            let repo = repo.clone();
+            let repo_for_log = repo.clone();
+            let clone_future = foreground
+                .spawn(move |me, ctx| {
+                    let working_dir = me.working_dir.clone();
+                    me.terminal_driver.update(ctx, |_, ctx| {
+                        let spawner = ctx.spawner();
+                        async move {
+                            environment::ensure_repo_cloned(
+                                &repo,
+                                &working_dir,
+                                false, /* is_sandbox */
+                                &spawner,
+                            )
+                            .await
+                        }
+                    })
+                })
+                .await?;
+
+            if let Err(err) = clone_future.await {
+                log::warn!("Failed to clone global-skill repo {repo_for_log}: {err}");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Scan a set of cloned GitHub repositories for their skills.
+    async fn load_skills_from_repos(foreground: &ModelSpawner<Self>, repos: Vec<GithubRepo>) {
+        if repos.is_empty() {
+            log::info!("No repositories found for skill loading");
+            return;
+        }
+        safe_info!(
+            safe: ("Loading skills from {} repositories", repos.len()),
+            full: ("Loading skills from repositories: {}", repos.iter().format(", "))
+        );
+
+        let repo_index_waits = foreground
+            .spawn(move |me, ctx| {
+                let repo_paths = repos
+                    .iter()
+                    .map(|repo| me.working_dir.join(&repo.repo))
+                    .collect::<Vec<_>>();
+                log::debug!(
+                    "Repository paths for skill loading: {}",
+                    repo_paths.iter().map(|p| p.display()).format(", ")
+                );
+                let repo_metadata = RepoMetadataModel::handle(ctx);
+                let mut repo_index_waits = Vec::new();
+                for repo_path in &repo_paths {
+                    let Some(id) = RepositoryIdentifier::try_local(repo_path) else {
+                        log::warn!(
+                            "Cannot wait for repository metadata indexing for non-local path {}",
+                            repo_path.display()
+                        );
+                        continue;
+                    };
+                    let wait = repo_metadata.update(ctx, |repo_metadata, ctx| {
+                        repo_metadata.repository_indexed(&id, ctx)
+                    });
+                    repo_index_waits.push((repo_path.clone(), id, wait));
+                }
+                (repo_paths, repo_index_waits)
+            })
+            .await;
+
+        let (repo_paths, repo_index_waits) = match repo_index_waits {
+            Ok(result) => result,
+            Err(err) => {
+                log::warn!("Failed to prepare repository skill loading: {err}");
+                return;
+            }
+        };
+
+        if !repo_index_waits.is_empty() {
+            log::info!(
+                "Waiting for repository metadata indexing before loading skills from {} repo(s)",
+                repo_index_waits.len()
+            );
+            let (repo_index_targets, wait_futures): (Vec<_>, Vec<_>) = repo_index_waits
+                .into_iter()
+                .map(|(repo_path, id, wait)| ((repo_path, id), wait))
+                .unzip();
+            join_all(wait_futures).await;
+            let repo_index_statuses = foreground
+                .spawn(move |_, ctx| {
+                    let repo_metadata = RepoMetadataModel::handle(ctx);
+                    repo_index_targets
+                        .into_iter()
+                        .map(|(repo_path, id)| {
+                            let repo_id_path = match &id {
+                                RepositoryIdentifier::Local(path) => path,
+                                RepositoryIdentifier::Remote(remote_id) => &remote_id.path,
+                            };
+                            let error = match repo_metadata.as_ref(ctx).repository_state(&id, ctx) {
+                                Some(IndexedRepoState::Indexed(_)) => None,
+                                Some(IndexedRepoState::Pending(_)) => Some(format!(
+                                    "Repository indexing is still pending: {repo_id_path}"
+                                )),
+                                Some(IndexedRepoState::Failed(error)) => {
+                                    Some(format!("Repository indexing failed: {error}"))
+                                }
+                                None => Some(format!("Repository not found: {repo_id_path}")),
+                            };
+                            (repo_path, error)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await;
+
+            let repo_index_statuses = match repo_index_statuses {
+                Ok(repo_index_statuses) => repo_index_statuses,
+                Err(err) => {
+                    log::warn!("Failed to check repository indexing status: {err}");
+                    Vec::new()
+                }
+            };
+            for (repo_path, error) in repo_index_statuses {
+                if let Some(err) = error {
+                    log::warn!(
+                        "Repository metadata indexing was not ready for skill loading in {}: {err}",
+                        repo_path.display()
+                    );
+                }
+            }
+        }
+
+        let load_skills_result = foreground
+            .spawn(move |_, ctx| {
+                let skills = SkillWatcher::read_skills_for_repos(&repo_paths, ctx);
+                if !skills.is_empty() {
+                    log::info!("Loaded {} skill(s) from repositories", skills.len());
+                } else {
+                    log::info!("No repository skills found");
+                }
+                SkillManager::handle(ctx).update(ctx, |manager, _| {
+                    // All repo skills should be in scope regardless of cwd when
+                    // an environment or global skill repo is configured.
+                    manager.set_cloud_environment(true);
+                    manager.handle_skills_added(skills);
+                });
+            })
+            .await;
+
+        if let Err(err) = load_skills_result {
+            log::warn!("Failed to load repository skills: {err}");
+        }
+    }
+
     /// Runs the agent to completion.
     /// Driving the agent mostly requires main-thread UI framework updates, but using `async` and
     /// a `ModelSpawner` lets us express the high-level process linearly rather than in a
@@ -1320,12 +1500,22 @@ impl AgentDriver {
             })
             .await?
             .await?;
+        let mut skill_repos = if matches!(&task.harness, HarnessKind::Oz) {
+            let global_skill_repos = Self::resolve_global_skill_repos(&foreground).await?;
+            // Clone global skill repos before environment prep can change the
+            // terminal's cwd into a single environment repo.
+            Self::clone_global_skill_repos(&foreground, &global_skill_repos).await?;
+            global_skill_repos
+        } else {
+            Vec::new()
+        };
 
         let environment_opt = foreground.spawn(|me, _| me.environment.clone()).await?;
 
         if let Some(environment) = environment_opt {
             log::info!("Loading environment...");
             let environment_github_repos = environment.github_repos.clone();
+            skill_repos.extend(environment_github_repos.clone());
 
             // Subscribe to file-based MCP discovery BEFORE prepare_environment triggers the
             // pipeline so no CloudEnvMcpScanComplete events are missed.
@@ -1403,6 +1593,7 @@ impl AgentDriver {
                         .await;
                 }
             }
+        }
 
             // Skill loading is Oz-only; third-party harnesses have their own skill systems.
             match &task.harness {
