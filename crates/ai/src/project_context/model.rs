@@ -183,6 +183,35 @@ pub struct RulesDelta {
     pub deleted_rules: Vec<PathBuf>,
 }
 
+impl RulesDelta {
+    /// Merge another delta into this one, preserving the ordering of operations.
+    ///
+    /// When the same path appears across sequential deltas the *last* operation
+    /// wins. For example:
+    ///   - (add A, delete A) → net effect is **delete**
+    ///   - (delete A, add A) → net effect is **add**
+    ///
+    /// This is important because consumers (e.g. persistence) apply the delta
+    /// incrementally; a symmetric "cancel both sides" approach would silently
+    /// drop real state changes.
+    fn merge(&mut self, other: RulesDelta) {
+        // Each newly-discovered path supersedes any prior deletion or earlier
+        // discovery of the same path.
+        for discovered in &other.discovered_rules {
+            self.deleted_rules.retain(|p| *p != discovered.path);
+            self.discovered_rules.retain(|r| r.path != discovered.path);
+        }
+        // Each newly-deleted path supersedes any prior discovery or earlier
+        // deletion of the same path.
+        for deleted in &other.deleted_rules {
+            self.discovered_rules.retain(|r| r.path != *deleted);
+            self.deleted_rules.retain(|p| *p != *deleted);
+        }
+        self.discovered_rules.extend(other.discovered_rules);
+        self.deleted_rules.extend(other.deleted_rules);
+    }
+}
+
 /// Events emitted by the ProjectContextModel
 pub enum ProjectContextModelEvent {
     /// Emitted when a path has been indexed
@@ -367,19 +396,30 @@ impl ProjectContextModel {
                 let repo_path = path_clone.clone();
                 let repo_path_for_closure = repo_path.clone();
                 ctx.spawn(
-                    async move {
-                        Self::process_repository_updates(update, rules, repo_path).await
-                    },
+                    async move { Self::process_repository_updates(update, rules, repo_path).await },
                     move |me, (rules, rule_delta), ctx| {
-                        ctx.emit(ProjectContextModelEvent::KnownRulesChanged(rule_delta));
-                        me.path_to_rules.insert(repo_path_for_closure.clone(), rules);
-                        me.drain_pending_updates(&repo_path_for_closure, ctx);
-                        ctx.emit(ProjectContextModelEvent::PathIndexed);
+                        me.apply_update_result(&repo_path_for_closure, rules, rule_delta, ctx);
                     },
                 );
             },
             |_, _| {},
         );
+    }
+
+    /// Called when an async update task completes: emits events, stores the new rules,
+    /// and drains any updates that queued up while the task was in flight.
+    #[cfg(feature = "local_fs")]
+    fn apply_update_result(
+        &mut self,
+        path: &Path,
+        rules: ProjectRules,
+        rule_delta: RulesDelta,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        ctx.emit(ProjectContextModelEvent::KnownRulesChanged(rule_delta));
+        self.path_to_rules.insert(path.to_path_buf(), rules);
+        self.drain_pending_updates(path, ctx);
+        ctx.emit(ProjectContextModelEvent::PathIndexed);
     }
 
     /// Processes any queued updates for a path after the previous async task completes.
@@ -413,18 +453,12 @@ impl ProjectContextModel {
                         Self::process_repository_updates(update, current_rules, repo_path.clone())
                             .await;
                     current_rules = updated_rules;
-                    combined_delta
-                        .discovered_rules
-                        .extend(delta.discovered_rules);
-                    combined_delta.deleted_rules.extend(delta.deleted_rules);
+                    combined_delta.merge(delta);
                 }
                 (current_rules, combined_delta)
             },
             move |me, (rules, rule_delta), ctx| {
-                ctx.emit(ProjectContextModelEvent::KnownRulesChanged(rule_delta));
-                me.path_to_rules.insert(repo_path_for_closure.clone(), rules);
-                me.drain_pending_updates(&repo_path_for_closure, ctx);
-                ctx.emit(ProjectContextModelEvent::PathIndexed);
+                me.apply_update_result(&repo_path_for_closure, rules, rule_delta, ctx);
             },
         );
     }
