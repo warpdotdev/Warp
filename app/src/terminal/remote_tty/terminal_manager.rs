@@ -122,6 +122,7 @@ impl TerminalManager {
                 initial_input_config,
                 None, // conversation_restoration - not used for remote
                 None, // inactive_pty_reads_rx
+                false,
                 ctx,
             )
         });

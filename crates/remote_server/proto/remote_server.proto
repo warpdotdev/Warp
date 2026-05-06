@@ -23,6 +23,7 @@ message ClientMessage {
     RunCommandRequest run_command = 9;
     ReadFileContextRequest read_file_context = 10;
     Authenticate authenticate = 11;
+    UpdatePreferences update_preferences = 12;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -52,6 +53,11 @@ message Initialize {
   // Empty means no credential was available and does not clear an existing
   // daemon credential.
   string auth_token = 1;
+  // User identity for Sentry crash reports. Empty when not logged in.
+  string user_id = 2;
+  string user_email = 3;
+  // Whether the user has enabled crash reporting in their privacy settings.
+  bool crash_reporting_enabled = 4;
 }
 
 // Sent by the client when its bearer credential rotates after initialization.
@@ -61,6 +67,12 @@ message Authenticate {
   // Empty means no credential was available and does not clear an existing
   // daemon credential.
   string auth_token = 1;
+}
+
+// Sent by the client when the user's privacy preferences change.
+// This is a notification (fire-and-forget) — the server does not send a response.
+message UpdatePreferences {
+  bool crash_reporting_enabled = 1;
 }
 
 // Sent by the client to cancel an in-progress request.

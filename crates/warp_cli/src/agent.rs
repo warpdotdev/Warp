@@ -119,7 +119,9 @@ impl HiddenComputerUseArgs {
     }
 }
 /// The execution harness for an agent run.
-#[derive(Debug, Copy, Clone, ValueEnum, Eq, PartialEq, Default)]
+#[derive(
+    Debug, Copy, Clone, ValueEnum, Eq, PartialEq, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum Harness {
     /// Use Warp's built-in MAA infrastructure (default).
     #[default]
@@ -134,6 +136,9 @@ pub enum Harness {
     /// Delegate to the `gemini` CLI.
     #[value(name = "gemini")]
     Gemini,
+    /// Delegate to the `codex` CLI.
+    #[value(name = "codex")]
+    Codex,
     /// A harness produced by a newer client/server that this client doesn't
     /// recognize. Surfaced via deserialization fallbacks (e.g. unknown GraphQL
     /// enum values, unknown `harness_type` strings); never selectable from the
@@ -150,7 +155,7 @@ impl Harness {
 
     pub fn parse_local_child_harness(value: &str) -> Option<Self> {
         match Self::parse_orchestration_harness(value) {
-            Some(harness @ (Self::Claude | Self::OpenCode)) => Some(harness),
+            Some(harness @ (Self::Claude | Self::OpenCode | Self::Codex)) => Some(harness),
             Some(Self::Oz) | Some(Self::Gemini) | Some(Self::Unknown) | None => None,
         }
     }
@@ -161,23 +166,56 @@ impl Harness {
             Self::Claude => "Claude Code",
             Self::OpenCode => "OpenCode",
             Self::Gemini => "Gemini CLI",
+            Self::Codex => "Codex",
             Self::Unknown => "Unknown",
+        }
+    }
+
+    /// Parses a harness config-name string (the lowercase name written into
+    /// `HarnessConfig::harness_type` by the spawner, e.g. `"claude"`, `"gemini"`, `"oz"`)
+    /// into a [`Harness`] variant. Inverse of [`Harness::config_name`]. Returns `None` for
+    /// unrecognized names so callers can distinguish a future-server harness from a
+    /// round-tripped [`Harness::Unknown`]; callers that want to fall back to `Unknown`
+    /// should `.unwrap_or(Harness::Unknown)`. UI surfaces should treat `Unknown` as a
+    /// non-Oz, non-runnable harness.
+    pub fn from_config_name(name: &str) -> Option<Self> {
+        match name {
+            "oz" => Some(Harness::Oz),
+            "claude" => Some(Harness::Claude),
+            "opencode" => Some(Harness::OpenCode),
+            "gemini" => Some(Harness::Gemini),
+            "codex" => Some(Harness::Codex),
+            "unknown" => Some(Harness::Unknown),
+            _ => None,
+        }
+    }
+
+    /// Canonical config name for this harness (the lowercase string written into
+    /// `HarnessConfig::harness_type`). Inverse of [`Harness::from_config_name`].
+    /// The exhaustive match here forces every new [`Harness`] variant to declare a
+    /// canonical name, which prevents `from_config_name` from silently falling back to
+    /// `Unknown` when a new variant is added.
+    pub fn config_name(self) -> &'static str {
+        match self {
+            Harness::Oz => "oz",
+            Harness::Claude => "claude",
+            Harness::OpenCode => "opencode",
+            Harness::Gemini => "gemini",
+            Harness::Codex => "codex",
+            Harness::Unknown => "unknown",
         }
     }
 }
 
 impl fmt::Display for Harness {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
-            Harness::Oz => "oz",
-            Harness::Claude => "claude",
-            Harness::OpenCode => "opencode",
-            Harness::Gemini => "gemini",
-            Harness::Unknown => "unknown",
-        };
-        f.write_str(name)
+        f.write_str(self.config_name())
     }
 }
+
+#[cfg(test)]
+#[path = "agent_tests.rs"]
+mod tests;
 
 /// Profile subcommands.
 #[derive(Debug, Clone, Subcommand)]
@@ -278,6 +316,10 @@ pub struct RunAgentArgs {
     #[command(flatten)]
     pub snapshot: SnapshotArgs,
     /// Identifier for the task that spawned this agent, used to report progress.
+    ///
+    /// When `--conversation` is omitted, the conversation id is read off the server-side
+    /// task metadata. Some worker follow-up call sites still pass both flags, so keep
+    /// accepting the compatibility shape until all producers have been updated.
     #[arg(long = "task-id", hide = true, conflicts_with_all = ["prompt", "saved_prompt", "file"])]
     pub task_id: Option<String>,
 

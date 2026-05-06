@@ -3404,7 +3404,7 @@ impl Element for BlockListElement {
                     });
                     visible_height_px += height_px;
 
-                    // we want to show different text in the seperator if this is an indvidual conversation
+                    // we want to show different text in the separator if this is an individual conversation
                     // restored from the command palette
                     let banner_intro_text = if is_historical_conversation_restoration {
                         "Conversation restored".to_string()
@@ -4430,9 +4430,25 @@ impl Element for BlockListElement {
         app: &AppContext,
     ) -> bool {
         let z_index = self.child_max_z_index.expect("Z-index should exist.");
-        let Some(event_at_z_index) = event.at_z_index(z_index, ctx) else {
-            // Only proceed if there's a relevant event at this z-index.
-            return false;
+
+        // During an active text selection, bypass the z-index coverage check for
+        // drag events. The input/footer area below the block list is painted at a
+        // higher z-index, so `at_z_index` would filter out drags that cross into
+        // that region — breaking selection auto-scroll when dragging downward.
+        // This matches the pattern used by SelectableArea, Draggable, Resizable,
+        // and both Scrollable variants, which all use `raw_event()` for drags.
+        let event_at_z_index = if self.is_terminal_selecting
+            && matches!(
+                event.raw_event(),
+                Event::LeftMouseDragged { .. } | Event::LeftMouseUp { .. }
+            ) {
+            event.raw_event()
+        } else {
+            let Some(e) = event.at_z_index(z_index, ctx) else {
+                // Only proceed if there's a relevant event at this z-index.
+                return false;
+            };
+            e
         };
 
         let mut handled = false;

@@ -483,7 +483,7 @@ fn test_char_indices() -> Result<()> {
     // characters get combined to become a single glyph. At a high level, what this is testing
     // is that after laying out the string, we see some characters get combined into a single
     // glyph. For example, the text "Zapfino" gets combined into a single glyph, which is why
-    // there is a jump from 23 to 30 in in the list of glyph indices below.
+    // there is a jump from 23 to 30 in the list of glyph indices below.
     // See https://docs.google.com/drawings/d/18qOKhzA5rWaMuxKVeWFDXh7ebrDjxongarAckkm0qnE/edit
     // for a full diagram of what's happening here.
     assert_eq!(

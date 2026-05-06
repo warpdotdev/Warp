@@ -317,7 +317,7 @@ impl CodebaseIndexManager {
         });
     }
 
-    /// Remove the gien index snapshots from disk.
+    /// Remove the given index snapshots from disk.
     async fn drop_index_snapshots(to_drop: Vec<PathBuf>) {
         if let Some(snapshot_dir) = snapshot_dir() {
             for codebase_root in &to_drop {

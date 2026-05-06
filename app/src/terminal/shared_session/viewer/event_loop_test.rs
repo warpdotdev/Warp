@@ -1,9 +1,10 @@
 use crate::ai::blocklist::agent_view::AgentViewState;
-use crate::terminal::model::block::SerializedBlock;
+use crate::terminal::model::block::{BlockId, SerializedBlock};
 use crate::terminal::shared_session::tests::terminal_model_for_viewer;
 use crate::terminal::TerminalView;
 use crate::terminal::{
-    event_listener::ChannelEventListener, shared_session::viewer::event_loop::EventLoop,
+    event_listener::ChannelEventListener,
+    shared_session::viewer::event_loop::{EventLoop, SharedSessionInitialLoadMode},
 };
 use crate::test_util::add_window_with_terminal;
 use crate::test_util::terminal::initialize_app_for_terminal_view;
@@ -32,6 +33,32 @@ fn terminal_view(app: &mut App) -> ViewHandle<TerminalView> {
     add_window_with_terminal(app, None)
 }
 
+fn completed_block(command: &str, output: &str) -> SerializedBlock {
+    let mut block =
+        SerializedBlock::new_for_test(command.as_bytes().into(), output.as_bytes().into());
+    block.id = BlockId::new();
+    block
+}
+
+fn active_block() -> SerializedBlock {
+    let mut block = SerializedBlock::new_active_block_for_test();
+    block.id = BlockId::new();
+    block
+}
+
+fn scrollback_block(block: &SerializedBlock) -> ScrollbackBlock {
+    ScrollbackBlock {
+        raw: serde_json::to_vec(block).unwrap(),
+    }
+}
+
+fn empty_scrollback() -> Scrollback {
+    Scrollback {
+        blocks: vec![],
+        is_alt_screen_active: false,
+    }
+}
+
 #[test]
 fn test_terminal_model_is_correct() {
     App::test((), |mut app| async move {
@@ -55,6 +82,7 @@ fn test_terminal_model_is_correct() {
                     is_alt_screen_active: false,
                 },
                 None,
+                SharedSessionInitialLoadMode::ReplaceFromSessionScrollback,
                 ctx,
             )
         });
@@ -74,7 +102,7 @@ fn test_terminal_model_is_correct() {
         ];
         {
             let mut model = model.lock();
-            model.load_shared_session_scrollback(scrollback, false);
+            model.load_shared_session_scrollback(scrollback);
             // A hidden block, a completed scrollback block, then the active block.
             assert_eq!(model.block_list().blocks().len(), 3);
             assert_eq!(
@@ -117,6 +145,237 @@ fn test_terminal_model_is_correct() {
 }
 
 #[test]
+fn test_append_followup_scrollback_skips_duplicates() {
+    App::test((), |mut app| async move {
+        let channel_event_proxy = ChannelEventListener::new_for_test();
+        let model = Arc::new(FairMutex::new(terminal_model_for_viewer(
+            channel_event_proxy.clone(),
+        )));
+
+        let terminal_view = terminal_view(&mut app);
+        let initial_completed = completed_block("initial-command", "initial-output");
+        let initial_active = active_block();
+        app.add_model(|ctx| {
+            EventLoop::new(
+                model.clone(),
+                terminal_view.downgrade(),
+                channel_event_proxy.clone(),
+                WindowSize {
+                    num_rows: 0,
+                    num_cols: 0,
+                },
+                Scrollback {
+                    blocks: vec![
+                        scrollback_block(&initial_completed),
+                        scrollback_block(&initial_active),
+                    ],
+                    is_alt_screen_active: false,
+                },
+                None,
+                SharedSessionInitialLoadMode::ReplaceFromSessionScrollback,
+                ctx,
+            )
+        });
+
+        assert_eq!(model.lock().block_list().blocks().len(), 3);
+
+        let followup_completed = completed_block("followup-command", "followup-output");
+        let followup_active = active_block();
+        app.add_model(|ctx| {
+            EventLoop::new(
+                model.clone(),
+                terminal_view.downgrade(),
+                channel_event_proxy.clone(),
+                WindowSize {
+                    num_rows: 0,
+                    num_cols: 0,
+                },
+                Scrollback {
+                    blocks: vec![
+                        scrollback_block(&initial_completed),
+                        scrollback_block(&followup_completed),
+                        scrollback_block(&followup_active),
+                    ],
+                    is_alt_screen_active: false,
+                },
+                None,
+                SharedSessionInitialLoadMode::AppendFollowupScrollback,
+                ctx,
+            )
+        });
+
+        {
+            let model = model.lock();
+            let commands = model
+                .block_list()
+                .blocks()
+                .iter()
+                .map(|block| block.command_to_string())
+                .collect::<Vec<_>>();
+            assert_eq!(model.block_list().blocks().len(), 5);
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|command| command.as_str() == "initial-command")
+                    .count(),
+                1
+            );
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|command| command.as_str() == "followup-command")
+                    .count(),
+                1
+            );
+        }
+
+        let second_followup_completed =
+            completed_block("second-followup-command", "second-followup-output");
+        let second_followup_active = active_block();
+        app.add_model(|ctx| {
+            EventLoop::new(
+                model.clone(),
+                terminal_view.downgrade(),
+                channel_event_proxy.clone(),
+                WindowSize {
+                    num_rows: 0,
+                    num_cols: 0,
+                },
+                Scrollback {
+                    blocks: vec![
+                        scrollback_block(&initial_completed),
+                        scrollback_block(&followup_completed),
+                        scrollback_block(&second_followup_completed),
+                        scrollback_block(&second_followup_active),
+                    ],
+                    is_alt_screen_active: false,
+                },
+                None,
+                SharedSessionInitialLoadMode::AppendFollowupScrollback,
+                ctx,
+            )
+        });
+
+        let model = model.lock();
+        let commands = model
+            .block_list()
+            .blocks()
+            .iter()
+            .map(|block| block.command_to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(model.block_list().blocks().len(), 7);
+        for command in [
+            "initial-command",
+            "followup-command",
+            "second-followup-command",
+        ] {
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|existing_command| existing_command.as_str() == command)
+                    .count(),
+                1
+            );
+        }
+    })
+}
+
+#[test]
+fn test_append_followup_replay_marks_existing_conversations_suppressible() {
+    App::test((), |mut app| async move {
+        let channel_event_proxy = ChannelEventListener::new_for_test();
+        let model = Arc::new(FairMutex::new(terminal_model_for_viewer(
+            channel_event_proxy.clone(),
+        )));
+
+        let terminal_view = terminal_view(&mut app);
+        let event_loop = app.add_model(|ctx| {
+            EventLoop::new(
+                model.clone(),
+                terminal_view.downgrade(),
+                channel_event_proxy.clone(),
+                WindowSize {
+                    num_rows: 0,
+                    num_cols: 0,
+                },
+                empty_scrollback(),
+                None,
+                SharedSessionInitialLoadMode::AppendFollowupScrollback,
+                ctx,
+            )
+        });
+
+        event_loop.update(&mut app, |event_loop, ctx| {
+            event_loop.process_ordered_terminal_event(
+                OrderedTerminalEvent {
+                    event_no: 0,
+                    event_type: OrderedTerminalEventType::AgentConversationReplayStarted,
+                },
+                ctx,
+            );
+        });
+
+        {
+            let model = model.lock();
+            assert!(model.is_receiving_agent_conversation_replay());
+        }
+
+        event_loop.update(&mut app, |event_loop, ctx| {
+            event_loop.process_ordered_terminal_event(
+                OrderedTerminalEvent {
+                    event_no: 1,
+                    event_type: OrderedTerminalEventType::AgentConversationReplayEnded,
+                },
+                ctx,
+            );
+        });
+
+        let model = model.lock();
+        assert!(!model.is_receiving_agent_conversation_replay());
+    })
+}
+
+#[test]
+fn test_fresh_session_replay_does_not_suppress_existing_conversations() {
+    App::test((), |mut app| async move {
+        let channel_event_proxy = ChannelEventListener::new_for_test();
+        let model = Arc::new(FairMutex::new(terminal_model_for_viewer(
+            channel_event_proxy.clone(),
+        )));
+
+        let terminal_view = terminal_view(&mut app);
+        let event_loop = app.add_model(|ctx| {
+            EventLoop::new(
+                model.clone(),
+                terminal_view.downgrade(),
+                channel_event_proxy.clone(),
+                WindowSize {
+                    num_rows: 0,
+                    num_cols: 0,
+                },
+                empty_scrollback(),
+                None,
+                SharedSessionInitialLoadMode::ReplaceFromSessionScrollback,
+                ctx,
+            )
+        });
+
+        event_loop.update(&mut app, |event_loop, ctx| {
+            event_loop.process_ordered_terminal_event(
+                OrderedTerminalEvent {
+                    event_no: 0,
+                    event_type: OrderedTerminalEventType::AgentConversationReplayStarted,
+                },
+                ctx,
+            );
+        });
+
+        let model = model.lock();
+        assert!(model.is_receiving_agent_conversation_replay());
+    })
+}
+
+#[test]
 fn test_out_of_order_buffering() {
     App::test((), |mut app| async move {
         let channel_event_proxy = ChannelEventListener::new_for_test();
@@ -142,6 +401,7 @@ fn test_out_of_order_buffering() {
                     is_alt_screen_active: false,
                 },
                 None,
+                SharedSessionInitialLoadMode::ReplaceFromSessionScrollback,
                 ctx,
             )
         });
@@ -208,6 +468,7 @@ fn test_pty_bytes_buffered_before_command_execution_started() {
                     is_alt_screen_active: false,
                 },
                 None,
+                SharedSessionInitialLoadMode::ReplaceFromSessionScrollback,
                 ctx,
             )
         });

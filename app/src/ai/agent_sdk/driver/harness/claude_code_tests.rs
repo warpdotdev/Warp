@@ -6,10 +6,14 @@ use std::sync::Arc;
 
 use tempfile::TempDir;
 use uuid::Uuid;
+use warp_cli::{OZ_HARNESS_ENV, OZ_PARENT_RUN_ID_ENV, OZ_RUN_ID_ENV};
 
 use super::*;
 use crate::ai::agent_events::MessageHydrator;
+use crate::ai::agent_sdk::driver::harness::claude_transcript::encode_cwd;
+use crate::ai::agent_sdk::driver::OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY_ENV;
 use crate::server::server_api::ai::{MockAIClient, ReadAgentMessageResponse};
+use crate::server::server_api::ServerApiProvider;
 
 fn sample_parent_bridge_message(
     sequence: i64,
@@ -92,6 +96,32 @@ fn claude_command_pipes_prompt_path() {
 }
 
 #[test]
+fn write_session_index_entry_creates_expected_entry() {
+    let tmp = TempDir::new().unwrap();
+    let cwd = Path::new("/my/project");
+    let session_id = Uuid::new_v4();
+
+    write_session_index_entry(session_id, cwd, tmp.path()).unwrap();
+
+    let index_path = tmp.path().join("sessions-index.json");
+    let index: Value = serde_json::from_slice(&fs::read(index_path).unwrap()).unwrap();
+    let session_key = session_id.to_string();
+    let entry = &index[&session_key];
+    let encoded = encode_cwd(cwd);
+
+    assert_eq!(entry["sessionId"], Value::String(session_key.clone()));
+    assert_eq!(
+        entry["cwd"],
+        Value::String(cwd.to_string_lossy().into_owned())
+    );
+    assert_eq!(entry["projectPath"], Value::String(encoded.clone()));
+    assert_eq!(
+        entry["transcriptPath"],
+        Value::String(format!("projects/{encoded}/{session_id}.jsonl"))
+    );
+}
+
+#[test]
 #[serial_test::serial]
 fn parent_bridge_root_prefers_environment_override() {
     let tmp = TempDir::new().unwrap();
@@ -117,6 +147,77 @@ fn stage_parent_bridge_message_writes_message_record() {
     assert_eq!(staged_record.sequence, 42);
     assert_eq!(staged_record.message_id, "msg-123");
     assert!(staged_record.sender_run_id.is_empty());
+}
+
+#[tokio::test]
+async fn parent_bridge_event_cursor_defaults_to_zero_when_missing() {
+    let tmp = TempDir::new().unwrap();
+    let state_dir = tmp.path().join("session-123");
+    ensure_parent_bridge_state_dir(&state_dir).unwrap();
+
+    assert_eq!(read_parent_bridge_event_cursor(&state_dir).unwrap(), 0);
+    assert!(!parent_bridge_event_cursor_file(&state_dir).exists());
+}
+
+#[tokio::test]
+async fn parent_bridge_event_cursor_round_trips() {
+    let tmp = TempDir::new().unwrap();
+    let state_dir = tmp.path().join("session-123");
+    ensure_parent_bridge_state_dir(&state_dir).unwrap();
+
+    write_parent_bridge_event_cursor(&state_dir, 42).unwrap();
+
+    assert_eq!(read_parent_bridge_event_cursor(&state_dir).unwrap(), 42);
+    assert!(parent_bridge_event_cursor_file(&state_dir).exists());
+}
+
+#[test]
+#[serial_test::serial]
+fn message_bridge_cleanup_preserves_state_for_wakeable_runs() {
+    let tmp = TempDir::new().unwrap();
+    std::env::set_var(OZ_MESSAGE_LISTENER_STATE_ROOT_ENV, tmp.path());
+
+    let session_id = Uuid::new_v4();
+    let bridge = MessageBridge::new("run-123".to_string(), session_id).unwrap();
+    let state_dir = tmp.path().join(session_id.to_string());
+    ensure_parent_bridge_state_dir(&state_dir).unwrap();
+    let record = sample_staged_parent_bridge_message(42, "msg-123");
+    stage_parent_bridge_message(&state_dir, &record).unwrap();
+    write_parent_bridge_event_cursor(&state_dir, 42).unwrap();
+
+    bridge
+        .cleanup(MessageBridgeCleanupDisposition::PreserveState)
+        .unwrap();
+    std::env::remove_var(OZ_MESSAGE_LISTENER_STATE_ROOT_ENV);
+
+    assert!(state_dir.exists());
+    assert!(parent_bridge_staged_message_path(&state_dir, 42, "msg-123").exists());
+    assert_eq!(read_parent_bridge_event_cursor(&state_dir).unwrap(), 42);
+}
+
+#[test]
+#[serial_test::serial]
+fn message_bridge_cleanup_removes_state_for_non_wakeable_runs() {
+    let tmp = TempDir::new().unwrap();
+    std::env::set_var(OZ_MESSAGE_LISTENER_STATE_ROOT_ENV, tmp.path());
+
+    let session_id = Uuid::new_v4();
+    let bridge = MessageBridge::new("run-123".to_string(), session_id).unwrap();
+    let state_dir = tmp.path().join(session_id.to_string());
+    ensure_parent_bridge_state_dir(&state_dir).unwrap();
+    stage_parent_bridge_message(
+        &state_dir,
+        &sample_staged_parent_bridge_message(42, "msg-123"),
+    )
+    .unwrap();
+    write_parent_bridge_event_cursor(&state_dir, 42).unwrap();
+
+    bridge
+        .cleanup(MessageBridgeCleanupDisposition::RemoveState)
+        .unwrap();
+    std::env::remove_var(OZ_MESSAGE_LISTENER_STATE_ROOT_ENV);
+
+    assert!(!state_dir.exists());
 }
 
 #[tokio::test]
@@ -541,6 +642,86 @@ fn resolve_suffix_returns_none_for_short_key() {
         ManagedSecretValue::raw_value("short"),
     )]);
     assert_eq!(resolve_anthropic_api_key_suffix(&secrets), None);
+}
+
+#[test]
+#[serial_test::serial]
+fn prepare_local_wake_command_rehydrates_transcript_with_self_managed_listener() {
+    let home_dir = TempDir::new().unwrap();
+    let claude_config_dir = TempDir::new().unwrap();
+    let bridge_state_root = TempDir::new().unwrap();
+    let working_dir = home_dir.path().join("workspace/project");
+    fs::create_dir_all(&working_dir).unwrap();
+
+    std::env::set_var("HOME", home_dir.path());
+    std::env::set_var("CLAUDE_CONFIG_DIR", claude_config_dir.path());
+    std::env::set_var(OZ_MESSAGE_LISTENER_STATE_ROOT_ENV, bridge_state_root.path());
+
+    let session_id = Uuid::new_v4();
+    let remote = ClaudeWakeRemoteContext {
+        session_id,
+        envelope: ClaudeTranscriptEnvelope {
+            cwd: Path::new("/stale/cwd").to_path_buf(),
+            uuid: session_id,
+            claude_version: None,
+            entries: vec![serde_json::json!({"type": "assistant", "text": "done"})],
+            subagents: HashMap::new(),
+            todos: HashMap::new(),
+        },
+        wake_prompt: "resume prompt\n\nwake prompt".to_string(),
+    };
+    let task_id: AmbientAgentTaskId = "550e8400-e29b-41d4-a716-446655440010".parse().unwrap();
+    let parent_run_id = "parent-run-456".to_string();
+
+    let command = futures::executor::block_on(ClaudeHarness::prepare_local_wake_command(
+        ServerApiProvider::new_for_test().get(),
+        task_id,
+        Some(parent_run_id.clone()),
+        Some(working_dir.clone()),
+        remote,
+    ))
+    .unwrap();
+
+    let state_dir = bridge_state_root.path().join(session_id.to_string());
+    let prompt_path = state_dir.join(CLAUDE_WAKE_PROMPT_FILE_NAME);
+
+    assert!(command.contains("--resume"));
+    assert!(command.starts_with("env "));
+    assert!(command.contains(&session_id.to_string()));
+    assert!(command.contains(CLAUDE_WAKE_PROMPT_FILE_NAME));
+    assert!(command.contains(&format!(
+        "{OZ_RUN_ID_ENV}={}",
+        shell_quote(&task_id.to_string())
+    )));
+    assert!(command.contains(&format!(
+        "{OZ_PARENT_RUN_ID_ENV}={}",
+        shell_quote(&parent_run_id)
+    )));
+    assert!(command.contains(&format!("{OZ_HARNESS_ENV}={}", shell_quote("claude"))));
+    assert!(!command.contains(OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY_ENV));
+    assert!(!command.contains("OZ_PARENT_LISTENER_MANAGED_EXTERNALLY"));
+    assert_eq!(
+        fs::read_to_string(&prompt_path).unwrap(),
+        "resume prompt\n\nwake prompt"
+    );
+    assert!(!parent_bridge_hook_output_file(&state_dir).exists());
+
+    let restored_envelope =
+        read_envelope(session_id, &working_dir, claude_config_dir.path()).unwrap();
+    assert_eq!(restored_envelope.cwd, working_dir);
+    assert_eq!(
+        restored_envelope.entries,
+        vec![serde_json::json!({"type": "assistant", "text": "done"})]
+    );
+    assert!(home_dir.path().join(".claude.json").exists());
+    assert!(claude_config_dir
+        .path()
+        .join(CLAUDE_SETTINGS_FILE_NAME)
+        .exists());
+
+    std::env::remove_var("HOME");
+    std::env::remove_var("CLAUDE_CONFIG_DIR");
+    std::env::remove_var(OZ_MESSAGE_LISTENER_STATE_ROOT_ENV);
 }
 
 #[test]

@@ -244,7 +244,7 @@ fn test_loading_scrollback() {
     ];
     let channel_event_proxy = ChannelEventListener::new_for_test();
     let mut model = terminal_model_for_viewer(channel_event_proxy);
-    model.load_shared_session_scrollback(scrollback_blocks, false);
+    model.load_shared_session_scrollback(scrollback_blocks);
 
     // 4 blocks: first is the bootstrap block, the next two are completed scrollback blocks.
     // The last is the active block, whose prompt came from the last scrollback.
@@ -309,7 +309,8 @@ fn test_loading_scrollback_in_alt_screen() {
     ];
     let channel_event_proxy = ChannelEventListener::new_for_test();
     let mut model = terminal_model_for_viewer(channel_event_proxy);
-    model.load_shared_session_scrollback(scrollback_blocks, true);
+    model.load_shared_session_scrollback(scrollback_blocks);
+    model.enter_alt_screen(true);
 
     // 3 blocks: first is the bootstrap block, the second is the completed scrollback blocks.
     // The last is the active block, whose prompt came from the last scrollback.

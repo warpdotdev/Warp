@@ -36,6 +36,7 @@ query GetWorkspacesMetadataForUser($requestContext: RequestContext!) {
                 isCodeSuggestionsToggleable
                 isPromptSuggestionsToggleable
                 isNextCommandEnabled
+                isGitOperationsAiEnabled
                 isVoiceEnabled
               }
               teamSizePolicy {

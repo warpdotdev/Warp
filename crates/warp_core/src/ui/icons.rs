@@ -279,6 +279,7 @@ pub enum Icon {
     PiLogo,
     AuggieLogo,
     CursorLogo,
+    GooseLogo,
     NLD,
     Oz,
     OzCloud,
@@ -309,12 +310,14 @@ pub enum Icon {
     SwitchHorizontal01,
     HeartHand,
     MessageChatSquare,
+    Pin,
 }
 
 impl From<Icon> for &'static str {
     fn from(icon: Icon) -> &'static str {
         match icon {
             Icon::Menu => "bundled/svg/layout-left.svg",
+            Icon::Pin => "bundled/svg/pin-01.svg",
             Icon::AtSign => "bundled/svg/at-sign.svg",
             Icon::Plus => "bundled/svg/plus.svg",
             Icon::Copy => "bundled/svg/copy.svg",
@@ -586,6 +589,7 @@ impl From<Icon> for &'static str {
             Icon::PiLogo => "bundled/svg/pi.svg",
             Icon::AuggieLogo => "bundled/svg/auggie.svg",
             Icon::CursorLogo => "bundled/svg/cursor.svg",
+            Icon::GooseLogo => "bundled/svg/goose.svg",
             Icon::NLD => "bundled/svg/nld.svg",
             Icon::Oz => "bundled/svg/oz.svg",
             Icon::OzCloud => "bundled/svg/oz-cloud.svg",

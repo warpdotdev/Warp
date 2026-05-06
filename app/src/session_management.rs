@@ -20,7 +20,7 @@ pub struct SessionNavigationData {
     prompt: String,
     /// The various parts of the prompt, like virtual environment and working directory.
     prompt_elements: SessionNavigationPromptElements,
-    /// A running commmand, if there is one.
+    /// A running command, if there is one.
     command_context: CommandContext,
     /// A `PaneViewLocator` to navigate to the session.
     pane_view_locator: PaneViewLocator,
