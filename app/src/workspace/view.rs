@@ -9235,16 +9235,19 @@ impl Workspace {
 
         // Default destination = `~/.warp/worktrees/<root_name>/`. The root is the
         // worktree whose `.git` is a directory rather than a file pointer.
+        // If the user previously picked a custom base in this app session, prefer
+        // that — they almost always want the same base again.
         let root_name = worktrees
             .iter()
             .find(|wt| wt.path.join(".git").is_dir())
             .and_then(|wt| wt.path.file_name().map(|s| s.to_string_lossy().into_owned()));
-        let default_destination_dir = match root_name.as_deref() {
-            Some(name) => dirs::home_dir()
-                .map(|h| h.join(".warp").join("worktrees").join(name))
-                .unwrap_or_else(|| std::path::PathBuf::from(".")),
-            None => dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")),
-        };
+        let default_destination_dir = crate::tab_configs::create_worktree_modal::remembered_destination_base()
+            .unwrap_or_else(|| match root_name.as_deref() {
+                Some(name) => dirs::home_dir()
+                    .map(|h| h.join(".warp").join("worktrees").join(name))
+                    .unwrap_or_else(|| std::path::PathBuf::from(".")),
+                None => dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")),
+            });
 
         let seed = CreateWorktreeModalSeed {
             current_worktree_path,
@@ -9334,6 +9337,13 @@ impl Workspace {
                 },
                 move |me, (dest, result), ctx| match result {
                     Ok(_) => {
+                        // Remember the base dir (parent of the new worktree) so the
+                        // next modal open seeds the destination with the same base.
+                        if let Some(parent) = dest.parent() {
+                            crate::tab_configs::create_worktree_modal::remember_destination_base(
+                                parent.to_path_buf(),
+                            );
+                        }
                         me.open_directory_in_new_tab(dest, ctx);
                         ctx.notify();
                     }
@@ -10033,6 +10043,36 @@ impl Workspace {
                     )
                     .await
                     .unwrap_or_default();
+                    // Resolve the branch the worktree currently has checked out so
+                    // the dialog's "Also delete branch" checkbox shows the right
+                    // name. `--symbolic-full-name HEAD` yields `refs/heads/<branch>`
+                    // for attached HEADs and `HEAD` for detached ones; only the
+                    // former is useful here.
+                    let branch_out = run_git_command(
+                        &path_for_status,
+                        &["rev-parse", "--symbolic-full-name", "HEAD"],
+                    )
+                    .await
+                    .unwrap_or_default();
+                    let branch_name = branch_out
+                        .trim()
+                        .strip_prefix("refs/heads/")
+                        .map(|s| s.to_string());
+                    // Resolve the shared repo root via `--git-common-dir`, which
+                    // points at `<root>/.git` for any worktree. We need this for
+                    // `git branch -D` after removal — the worktree's parent dir
+                    // isn't a git repo, so the command must run from the root.
+                    let common_dir_out = run_git_command(
+                        &path_for_status,
+                        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+                    )
+                    .await
+                    .unwrap_or_default();
+                    let repo_root = common_dir_out
+                        .trim()
+                        .lines()
+                        .next()
+                        .and_then(|s| std::path::Path::new(s).parent().map(|p| p.to_path_buf()));
                     let mut dirty = WorktreeDirtyStatus::default();
                     for line in status_out.lines() {
                         if line.starts_with("??") {
@@ -10044,13 +10084,15 @@ impl Workspace {
                     if let Ok(n) = unpushed_out.trim().parse::<u32>() {
                         dirty.has_unpushed_commits = n > 0;
                     }
-                    dirty
+                    (dirty, branch_name, repo_root)
                 },
-                move |me, dirty_status, ctx| {
+                move |me, (dirty_status, branch_name, repo_root), ctx| {
                     me.show_remove_worktree_confirmation_dialog(
                         RemoveWorktreeDialogSource {
                             path: path.clone(),
                             worktree_name: worktree_name.clone(),
+                            branch_name,
+                            repo_root,
                             tabs_to_close: tabs_to_close.clone(),
                             dirty_status,
                         },
@@ -10066,6 +10108,8 @@ impl Workspace {
                 RemoveWorktreeDialogSource {
                     path,
                     worktree_name,
+                    branch_name: None,
+                    repo_root: None,
                     tabs_to_close,
                     dirty_status: WorktreeDirtyStatus::default(),
                 },
@@ -10080,8 +10124,9 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         self.remove_worktree_confirmation_dialog
-            .update(ctx, |view, _| {
+            .update(ctx, |view, view_ctx| {
                 view.set_source(source);
+                view_ctx.notify();
             });
         self.current_workspace_state
             .is_remove_worktree_confirmation_dialog_open = true;
@@ -10100,10 +10145,13 @@ impl Workspace {
                     .is_remove_worktree_confirmation_dialog_open = false;
                 ctx.notify();
             }
-            RemoveWorktreeConfirmationEvent::Confirm { source } => {
+            RemoveWorktreeConfirmationEvent::Confirm {
+                source,
+                also_delete_branch,
+            } => {
                 self.current_workspace_state
                     .is_remove_worktree_confirmation_dialog_open = false;
-                self.execute_remove_worktree(source.clone(), ctx);
+                self.execute_remove_worktree(source.clone(), *also_delete_branch, ctx);
                 ctx.notify();
             }
         }
@@ -10112,14 +10160,24 @@ impl Workspace {
     /// Closes affected tabs synchronously (instant UI feedback), then spawns
     /// `git worktree remove [--force] <path>`. On failure surfaces a toast — the
     /// tabs stay closed because the user already confirmed the destructive intent.
+    /// When `also_delete_branch` is set and the source carries a branch name,
+    /// follows up with `git branch -D <branch>` after a successful worktree
+    /// remove.
     fn execute_remove_worktree(
         &mut self,
         source: RemoveWorktreeDialogSource,
+        also_delete_branch: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         #[cfg(feature = "local_fs")]
         {
             let path = source.path.clone();
+            let branch_to_delete = if also_delete_branch {
+                source.branch_name.clone()
+            } else {
+                None
+            };
+            let repo_root = source.repo_root.clone();
             let force = !source.dirty_status.is_clean();
 
             // Hint the worktrees chip that its count is about to change so it renders
@@ -10151,9 +10209,27 @@ impl Workspace {
                     let path_str = path.to_string_lossy().into_owned();
                     args.push(path_str.as_str());
                     let result = run_git_command(&path, &args).await;
-                    (path, result)
+                    // If worktree removal succeeded and the user opted in,
+                    // follow up with `git branch -D <branch>` from any worktree
+                    // of the repo. We use the path's parent as cwd because the
+                    // worktree itself was just deleted; `-D` forces deletion
+                    // even on unmerged branches, mirroring `--force` semantics.
+                    let branch_result = if result.is_ok() {
+                        match (branch_to_delete.as_deref(), repo_root.as_ref()) {
+                            (Some(branch), Some(root)) => {
+                                Some(run_git_command(root, &["branch", "-D", branch]).await)
+                            }
+                            (Some(branch), None) => Some(Err(anyhow::anyhow!(
+                                "could not resolve repo root to delete branch '{branch}'"
+                            ))),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    (path, result, branch_result)
                 },
-                move |me, (removed_path, result), ctx| {
+                move |me, (removed_path, result, branch_result), ctx| {
                     if let Err(err) = result {
                         log::error!(
                             "git worktree remove failed for {}: {err}",
@@ -10165,6 +10241,23 @@ impl Workspace {
                             ));
                             toast_stack.add_persistent_toast(toast, ctx);
                         });
+                    } else if let Some(Err(err)) = &branch_result {
+                        // Worktree removed but branch deletion failed — surface a
+                        // toast so the user knows the branch is still around.
+                        log::error!("git branch -D failed: {err}");
+                        me.toast_stack.update(ctx, |toast_stack, ctx| {
+                            let toast = DismissibleToast::error(format!(
+                                "Worktree removed, but failed to delete branch: {err}"
+                            ));
+                            toast_stack.add_persistent_toast(toast, ctx);
+                        });
+                    }
+                    // After a successful branch deletion the .git/refs/heads/<branch>
+                    // file is gone but the watcher debounce may take a moment to
+                    // surface it. Force-refresh every TerminalView's warp prompt so
+                    // the branches chip drops the deleted branch immediately.
+                    if matches!(branch_result, Some(Ok(_))) {
+                        Self::refresh_all_terminal_warp_prompts(ctx);
                     }
                     ctx.notify();
                 },
@@ -10175,6 +10268,25 @@ impl Workspace {
         {
             let _ = source;
             log::warn!("git worktree remove is not supported on this build");
+        }
+    }
+
+    /// Iterate every TerminalView in every open window and ask it to recompute
+    /// its warp-prompt chips (branch, diff stats, …). Called after operations
+    /// that mutate git state outside the watcher's normal path-set so the chip
+    /// row reflects the change without waiting on filesystem debounce.
+    fn refresh_all_terminal_warp_prompts(ctx: &mut ViewContext<Self>) {
+        let window_ids: Vec<_> = ctx.window_ids().collect();
+        for window_id in window_ids {
+            let Some(views) = ctx.views_of_type::<TerminalView>(window_id) else {
+                continue;
+            };
+            let handles: Vec<_> = views.iter().cloned().collect();
+            for handle in handles {
+                handle.update(ctx, |tv, ctx| {
+                    tv.refresh_warp_prompt(ctx);
+                });
+            }
         }
     }
 

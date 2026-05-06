@@ -4,11 +4,15 @@ use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::theme::Fill;
 use warpui::{
     elements::{
-        Align, ChildAnchor, ChildView, Container, OffsetPositioning, ParentAnchor,
-        ParentOffsetBounds, Stack,
+        Align, ChildAnchor, ChildView, Container, MouseStateHandle, OffsetPositioning,
+        ParentAnchor, ParentOffsetBounds, Stack,
     },
     keymap::{FixedBinding, Keystroke},
-    ui_components::components::{UiComponent, UiComponentStyles},
+    platform::Cursor,
+    ui_components::{
+        components::{UiComponent, UiComponentStyles},
+        text::Span,
+    },
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
@@ -75,6 +79,14 @@ impl WorktreeDirtyStatus {
 pub struct RemoveWorktreeDialogSource {
     pub path: PathBuf,
     pub worktree_name: String,
+    /// The branch this worktree currently has checked out, when known. Used by the
+    /// "Also delete branch" checkbox in the dialog so the user can wipe the branch
+    /// at the same time they wipe the worktree (`git branch -D <branch>`).
+    pub branch_name: Option<String>,
+    /// The shared repo root (parent of `.git` common dir). Required to run
+    /// `git branch -D` after the worktree itself is gone — running it from the
+    /// removed worktree's parent dir fails because that path is not a git repo.
+    pub repo_root: Option<PathBuf>,
     /// Names of tabs that will close after removal (their CWD is under the worktree path).
     pub tabs_to_close: Vec<String>,
     pub dirty_status: WorktreeDirtyStatus,
@@ -84,6 +96,9 @@ pub struct RemoveWorktreeConfirmationDialog {
     cancel_button: ViewHandle<ActionButton>,
     remove_button: ViewHandle<ActionButton>,
     source: Option<RemoveWorktreeDialogSource>,
+    /// Whether the "Also delete branch '<name>'" checkbox is checked.
+    also_delete_branch: bool,
+    also_delete_branch_mouse_state: MouseStateHandle,
 }
 
 impl RemoveWorktreeConfirmationDialog {
@@ -107,11 +122,17 @@ impl RemoveWorktreeConfirmationDialog {
             cancel_button,
             remove_button,
             source: None,
+            also_delete_branch: true,
+            also_delete_branch_mouse_state: Default::default(),
         }
     }
 
     pub fn set_source(&mut self, source: RemoveWorktreeDialogSource) {
         self.source = Some(source);
+        // Default the "Also delete branch" checkbox to ON: the typical flow is to
+        // delete the branch alongside the worktree (otherwise the branch lingers as
+        // dead state). User can uncheck it to keep the branch.
+        self.also_delete_branch = true;
     }
 
     fn build_body(&self) -> String {
@@ -120,7 +141,11 @@ impl RemoveWorktreeConfirmationDialog {
         };
 
         let mut sections: Vec<String> = Vec::new();
+        sections.push(format!("Worktree: {}", source.worktree_name));
         sections.push(format!("Path: {}", source.path.display()));
+        if let Some(branch) = source.branch_name.as_deref() {
+            sections.push(format!("Branch: {branch}"));
+        }
 
         if !source.tabs_to_close.is_empty() {
             let count = source.tabs_to_close.len();
@@ -168,7 +193,44 @@ impl View for RemoveWorktreeConfirmationDialog {
             .map(|s| format!("Remove worktree '{}'?", s.worktree_name))
             .unwrap_or_else(|| "Remove worktree?".into());
 
-        let dialog = Dialog::new(
+        // "Also delete branch '<name>'" checkbox in the footer-left slot. Only
+        // rendered when we know the branch name; if the branch is detached or the
+        // porcelain didn't surface it, we skip the option entirely.
+        let branch_name_opt = self
+            .source
+            .as_ref()
+            .and_then(|s| s.branch_name.clone());
+        let dialog_base_styles = dialog_styles(appearance);
+        // Override checkbox label color: by default the checkbox builder uses
+        // `nonactive_ui_text_color` for the label, which renders dimmed on the
+        // dialog's dark surface. We apply the dialog's main text color instead so
+        // the label reads at the same contrast as the body text above.
+        let checkbox_label_override = UiComponentStyles {
+            font_color: dialog_base_styles.font_color,
+            font_family_id: dialog_base_styles.font_family_id,
+            font_size: Some(13.),
+            font_weight: Some(warpui::fonts::Weight::Thin),
+            ..Default::default()
+        };
+        let also_delete_checkbox: Option<Box<dyn Element>> = branch_name_opt.map(|branch| {
+            let label = format!("Also delete branch '{branch}'");
+            appearance
+                .ui_builder()
+                .checkbox(self.also_delete_branch_mouse_state.clone(), Some(14.))
+                .with_style(checkbox_label_override)
+                .with_label(Span::new(label, Default::default()))
+                .check(self.also_delete_branch)
+                .build()
+                .with_cursor(Cursor::PointingHand)
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(
+                        RemoveWorktreeConfirmationAction::ToggleAlsoDeleteBranch,
+                    );
+                })
+                .finish()
+        });
+
+        let mut dialog_builder = Dialog::new(
             title,
             Some(self.build_body()),
             UiComponentStyles {
@@ -177,9 +239,11 @@ impl View for RemoveWorktreeConfirmationDialog {
             },
         )
         .with_bottom_row_child(cancel_button)
-        .with_bottom_row_child(ChildView::new(&self.remove_button).finish())
-        .build()
-        .finish();
+        .with_bottom_row_child(ChildView::new(&self.remove_button).finish());
+        if let Some(checkbox) = also_delete_checkbox {
+            dialog_builder = dialog_builder.with_bottom_row_left_child(checkbox);
+        }
+        let dialog = dialog_builder.build().finish();
 
         let mut stack = Stack::new();
         stack.add_positioned_child(
@@ -202,6 +266,7 @@ impl View for RemoveWorktreeConfirmationDialog {
 pub enum RemoveWorktreeConfirmationEvent {
     Confirm {
         source: RemoveWorktreeDialogSource,
+        also_delete_branch: bool,
     },
     Cancel,
 }
@@ -210,6 +275,7 @@ pub enum RemoveWorktreeConfirmationEvent {
 pub enum RemoveWorktreeConfirmationAction {
     Confirm,
     Cancel,
+    ToggleAlsoDeleteBranch,
 }
 
 impl TypedActionView for RemoveWorktreeConfirmationDialog {
@@ -226,10 +292,17 @@ impl TypedActionView for RemoveWorktreeConfirmationDialog {
                     log::error!("Remove worktree confirm pressed with no source");
                     return;
                 };
-                ctx.emit(RemoveWorktreeConfirmationEvent::Confirm { source });
+                ctx.emit(RemoveWorktreeConfirmationEvent::Confirm {
+                    source,
+                    also_delete_branch: self.also_delete_branch,
+                });
             }
             RemoveWorktreeConfirmationAction::Cancel => {
                 ctx.emit(RemoveWorktreeConfirmationEvent::Cancel);
+            }
+            RemoveWorktreeConfirmationAction::ToggleAlsoDeleteBranch => {
+                self.also_delete_branch = !self.also_delete_branch;
+                ctx.notify();
             }
         }
     }

@@ -16,9 +16,9 @@ use std::path::PathBuf;
 
 use warpui::{
     elements::{
-        Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element,
-        Empty, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, Padding, ParentElement,
-        Radius, Text,
+        Border, ChildView, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+        Element, Empty, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, Padding,
+        ParentElement, Radius, Text,
     },
     fonts::{Properties, Weight},
     keymap::FixedBinding,
@@ -77,6 +77,27 @@ fn is_valid_worktree_name(name: &str) -> bool {
 pub struct CreateWorktreeModalSeed {
     pub current_worktree_path: Option<PathBuf>,
     pub default_destination_dir: PathBuf,
+}
+
+/// Process-lifetime memory of the last destination base directory the user
+/// confirmed in this modal. If they pick a custom location for one worktree, the
+/// next modal open seeds the destination with the same base — they almost always
+/// want it again. Cleared on app restart.
+static REMEMBERED_DESTINATION_BASE: std::sync::OnceLock<std::sync::Mutex<Option<PathBuf>>> =
+    std::sync::OnceLock::new();
+
+fn destination_base_lock() -> &'static std::sync::Mutex<Option<PathBuf>> {
+    REMEMBERED_DESTINATION_BASE.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+pub fn remember_destination_base(base: PathBuf) {
+    if let Ok(mut guard) = destination_base_lock().lock() {
+        *guard = Some(base);
+    }
+}
+
+pub fn remembered_destination_base() -> Option<PathBuf> {
+    destination_base_lock().lock().ok().and_then(|g| g.clone())
 }
 
 pub struct CreateWorktreeModal {
@@ -488,35 +509,57 @@ impl View for CreateWorktreeModal {
         .with_border(Border::top(1.).with_border_fill(internal_colors::neutral_4(theme)))
         .finish();
 
+        // Constrain modal to a fixed width so long destination paths render inside
+        // their input frame instead of overflowing horizontally. 640px fits typical
+        // home-dir paths like `/Users/<name>/.warp/worktrees/<repo>/<branch>`.
         Container::new(
-            Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_child(header)
-                .with_child(body_container)
-                .with_child(footer)
+            ConstrainedBox::new(
+                Container::new(
+                    Flex::column()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                        .with_main_axis_size(MainAxisSize::Min)
+                        .with_child(header)
+                        .with_child(body_container)
+                        .with_child(footer)
+                        .finish(),
+                )
+                .with_background_color(theme.surface_2().into())
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
                 .finish(),
+            )
+            .with_width(MODAL_WIDTH)
+            .finish(),
         )
-        .with_background_color(theme.surface_2().into())
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
         .finish()
     }
 }
 
+const MODAL_WIDTH: f32 = 640.;
+
 /// Wrap a single-line `EditorView` in a styled container so it visually matches
 /// the dropdowns above (border, background, padding, rounded corners). Without
 /// this the editor renders as bare text with no visible boundary.
+///
+/// `Clipped` is required to keep long input text (e.g. deeply-nested destination
+/// paths) from rendering outside the frame on the left when the editor scrolls
+/// horizontally to keep the cursor visible.
 fn input_frame(
     editor_view: Box<dyn Element>,
     theme: &warp_core::ui::theme::WarpTheme,
 ) -> Box<dyn Element> {
-    Container::new(editor_view)
-        .with_horizontal_padding(10.)
-        .with_vertical_padding(8.)
-        .with_background_color(theme.surface_3().into())
-        .with_border(Border::all(1.).with_border_fill(internal_colors::neutral_4(theme)))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-        .finish()
+    Container::new(
+        Clipped::new(
+            Container::new(editor_view)
+                .with_horizontal_padding(10.)
+                .with_vertical_padding(8.)
+                .finish(),
+        )
+        .finish(),
+    )
+    .with_background_color(theme.surface_3().into())
+    .with_border(Border::all(1.).with_border_fill(internal_colors::neutral_4(theme)))
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+    .finish()
 }
 
 fn footer_button(
