@@ -364,12 +364,10 @@ impl ServerModel {
                             me.send_server_message(
                                 Some(conn_id),
                                 Some(&request_id),
-                                server_message::Message::OpenBufferResponse(
-                                    OpenBufferResponse {
-                                        content: content.clone(),
-                                        server_version,
-                                    },
-                                ),
+                                server_message::Message::OpenBufferResponse(OpenBufferResponse {
+                                    content: content.clone(),
+                                    server_version,
+                                }),
                             );
                         }
                     }

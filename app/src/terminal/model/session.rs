@@ -182,8 +182,9 @@ impl Sessions {
                             text: e.text.clone(),
                         })
                         .collect();
-                    crate::code::global_buffer_model::GlobalBufferModel::handle(ctx)
-                        .update(ctx, |gbm, ctx| {
+                    crate::code::global_buffer_model::GlobalBufferModel::handle(ctx).update(
+                        ctx,
+                        |gbm, ctx| {
                             gbm.handle_buffer_updated_push(
                                 host_id,
                                 path,
@@ -192,7 +193,8 @@ impl Sessions {
                                 &line_col_edits,
                                 ctx,
                             );
-                        });
+                        },
+                    );
                 }
                 RemoteServerManagerEvent::SessionConnecting { .. }
                 | RemoteServerManagerEvent::SessionDeregistered { .. }
