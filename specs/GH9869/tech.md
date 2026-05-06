@@ -232,8 +232,19 @@ New module `app/src/settings_view/voice_hotkey_capture_modal.rs`.
 
 - Triggered when the user clicks "Custom key…".
 - Renders a focused modal: title "Press the key for voice input",
-  body with the captured key (initially empty), Cancel + Confirm
-  buttons, an inline error area.
+  body with the captured key shown by **friendly display name**
+  (e.g. "F19", "Caps Lock", "Backslash") and a hover tooltip
+  showing the protocol-level `KeyCode` spelling (e.g.
+  `KeyCode::F19`); initially empty, Cancel + Confirm buttons,
+  an inline error area.
+
+  > **Correction (re-review #10127):** the previous draft showed
+  > "Selected: F19 (KeyCode::F19)" inline in the body — that
+  > inlines the protocol spelling. The resolved decision (Open
+  > Question 4 in the previous round) is friendly-name-only
+  > inline, with `KeyCode` spelling only in the hover tooltip.
+  > Both surfaces (modal body and dropdown "Custom: ..." row)
+  > use the same friendly name.
 - Listens for raw key events at the top level (using whatever modal
   key-event hook the existing settings modals use — verify by
   inspecting one existing modal first).
@@ -385,11 +396,40 @@ enum VoiceInputTomlValue {
     /// for diagnostic surfacing.
     Invalid(toml::Value),
 }
-
-// AISettings::voice_input_toggle_key is internally
-// VoiceInputTomlValue, with a public accessor that returns
-// VoiceInputToggleKey (mapping Invalid -> None on read).
 ```
+
+> **Correction (re-review #10127):** the previous draft introduced
+> the wrapper but didn't reconcile it with the rest of the spec
+> (which still treats `voice_input_toggle_key` as if it had the
+> bare `VoiceInputToggleKey` type — `set_value`, dropdown reads,
+> tests, etc.). The reconciliation below makes the wrapper an
+> internal implementation detail; all external surfaces continue
+> to see the unwrapped type.
+
+**API reconciliation:**
+
+- The `AISettings` struct holds the field internally typed as
+  `VoiceInputTomlValue`, deserialized directly from TOML.
+- Immediately after `AISettings::initialize()` (the post-init pass
+  described below), the field is normalized: any `Invalid` value
+  is logged, the toast is fired, the TOML is rewritten with
+  `VoiceInputToggleKey::None`, and the field is replaced with
+  `Valid(VoiceInputToggleKey::None)`.
+- After post-init, **the field is always `Valid(...)`**. All
+  external accessors are typed as `VoiceInputToggleKey`:
+  - `voice_input_toggle_key.value() -> VoiceInputToggleKey`
+    unwraps the always-`Valid` variant.
+  - `voice_input_toggle_key.set_value(VoiceInputToggleKey, ctx)`
+    wraps in `Valid` before storing.
+- Existing tests, dropdown rendering, and dispatch all continue
+  to use `VoiceInputToggleKey` exactly as documented elsewhere in
+  this spec. The wrapper is a 30-line implementation detail in
+  the field's `Serialize`/`Deserialize` impls + the post-init
+  pass, not a leak into the settings public API.
+
+T1, T2, IT1–IT3 in the test plan continue to assert against
+`VoiceInputToggleKey` values directly — they don't see the
+wrapper.
 
 This works with stock Serde (`#[serde(untagged)]` falls through to
 `Invalid` when none of the `Valid` shapes match) and does not
@@ -487,9 +527,13 @@ disk file is consistent and subsequent launches are quiet.
 
 ## Open questions for maintainer review
 
-1. Does the `SettingsValue` derive macro support enum variants with
-   payloads (`Custom(KeyCode)`), or do we need a manual
-   `Serialize`/`Deserialize` impl?
+1. ~~Does the `SettingsValue` derive macro support enum variants
+   with payloads (`Custom(KeyCode)`), or do we need a manual
+   `Serialize`/`Deserialize` impl?~~ **Resolved (re-review
+   #10127):** committed to the manual impl path in the "Settings
+   serialization" section above (option 2). The `VoiceInputTomlValue`
+   wrapper enum and post-init pass on `AISettings::initialize`
+   are the implementation. No macro extension needed.
 2. For the dropdown sectioning, is there an existing
    `DropdownItem::heading()` constructor, or should we add one?
 3. Confirm the macOS Caps Lock press-to-toggle decision (vs
