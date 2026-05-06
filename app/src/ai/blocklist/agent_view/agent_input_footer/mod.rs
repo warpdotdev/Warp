@@ -6,6 +6,7 @@ pub mod toolbar_item;
 use crate::{
     ai::{
         blocklist::{
+            handoff::is_local_to_cloud_handoff_available,
             history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel},
             prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
             usage::icon_for_context_window_usage,
@@ -2030,7 +2031,7 @@ impl AgentInputFooter {
                 .is_enabled()
                 .then(|| ChildView::new(&self.fast_forward_button).finish()),
             AgentToolbarItemKind::HandoffToCloud => {
-                if !AgentToolbarItemKind::handoff_to_cloud_available() {
+                if !is_local_to_cloud_handoff_available() {
                     return None;
                 }
                 // Render the chip when the native/local handoff surface is available.
@@ -2506,7 +2507,7 @@ impl TypedActionView for AgentInputFooter {
                 });
             }
             AgentInputFooterAction::OpenHandoffPane => {
-                if AgentToolbarItemKind::handoff_to_cloud_available() {
+                if is_local_to_cloud_handoff_available() {
                     ctx.emit(AgentInputFooterEvent::OpenHandoffPane);
                 }
             }

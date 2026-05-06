@@ -91,7 +91,7 @@ Extend `PendingHandoff` with:
 When `complete_local_to_cloud_handoff_open` creates the handoff pane:
 1. Apply `explicit_environment_id` to the pane model immediately when present.
 2. For `Compose`, prefill the handoff pane input and install the pending image/file attachment snapshot as today.
-3. For `AutoSubmit`, do not leave the submitted prompt visible as editable destination input after the pane is pushed. Instead, seed `PendingHandoff` with the spawn payload and restoration draft, clear or avoid hydrating the destination editor/attachment display before the first visible frame, and move the pane into the queued/starting visual state immediately.
+3. For `AutoSubmit`, do not hydrate the submitted prompt or pending attachment display into the destination editor before queueing. Instead, seed `PendingHandoff` with the spawn payload and restoration draft, and move the pane into the queued/starting visual state immediately. If preparation later fails before the server accepts the run, restore that saved draft into the destination editor for manual retry.
 4. Mark the source launch claimed only after the pane has been pushed and the destination model owns the launch payload/restoration draft.
 5. Start touched-workspace derivation and snapshot upload as today.
 When touched-workspace derivation finishes, keep the current overlap selection behavior only if there was no explicit environment id. This enforces the product priority: explicit `&` selection, then touched-repo overlap, then default.
@@ -135,7 +135,8 @@ sequenceDiagram
         API-->>W: forked_conversation_id
         W->>HP: Push handoff pane, restore local fork
         W->>M: set PendingHandoff(auto_submit + restore draft)
-        W->>M: queue auto-submit, clear visible draft, show starting
+        Note over HP: Auto-submit draft is not hydrated into editable input
+        W->>M: queue auto-submit, show starting
         W->>I: Claim launch and clear source draft
         par background prep
             W->>M: set touched workspace

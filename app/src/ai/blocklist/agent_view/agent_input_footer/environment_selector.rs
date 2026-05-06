@@ -30,6 +30,7 @@ use crate::{
     terminal::input::{
         HandoffComposeState, HandoffComposeStateEvent, MenuPositioning, MenuPositioningProvider,
     },
+    terminal::view::ambient_agent::AmbientAgentViewModelEvent,
     ui_components::icons::Icon,
     view_components::action_button::{ActionButton, ActionButtonTheme, ButtonSize},
 };
@@ -41,7 +42,7 @@ pub(crate) enum EnvironmentSelectorTarget {
     Ambient(ModelHandle<AmbientAgentViewModel>),
     Handoff(ModelHandle<HandoffComposeState>),
 }
-
+// Normalizes ambient-agent and handoff compose state behind one selector API.
 impl EnvironmentSelectorTarget {
     fn selected_environment_id(&self, ctx: &AppContext) -> Option<SyncId> {
         match self {
@@ -276,7 +277,6 @@ impl EnvironmentSelector {
         match &target {
             EnvironmentSelectorTarget::Ambient(model) => {
                 ctx.subscribe_to_model(model, |me, _, event, ctx| {
-                    use crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent;
                     if let AmbientAgentViewModelEvent::EnvironmentSelected = event {
                         me.refresh_menu(ctx);
                     }

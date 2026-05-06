@@ -273,6 +273,8 @@ use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::shared_session::SharedSessionActionSource;
 
 use crate::ai::blocklist::agent_view::editor::{AgentToolbarEditorEvent, AgentToolbarEditorModal};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::{CloudLaunchRequest, CloudLaunchSubmitMode};
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -329,8 +331,8 @@ use crate::terminal::settings::{SpacingMode, TerminalSettings};
 use crate::terminal::shell::ShellType;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::terminal::view::ambient_agent::{
-    AmbientAgentViewModel, CloudLaunchRequest, CloudLaunchSubmitMode, HandoffSubmissionState,
-    PendingCloudLaunch, PendingHandoff, SnapshotUploadStatus,
+    AmbientAgentViewModel, HandoffSubmissionState, PendingCloudLaunch, PendingHandoff,
+    SnapshotUploadStatus,
 };
 #[cfg(feature = "local_tty")]
 use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
@@ -13049,9 +13051,6 @@ impl Workspace {
         });
     }
 
-    /// Open a local-to-cloud handoff pane in place over the active local pane.
-    /// Triggered by the `/move-to-cloud` slash command, `&` compose mode, and
-    /// the "Hand off to cloud" footer chip.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn show_handoff_prepare_failed_toast(window_id: WindowId, ctx: &mut ViewContext<Self>) {
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -13076,11 +13075,18 @@ impl Workspace {
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn should_hydrate_cloud_launch_draft(request: &CloudLaunchRequest) -> bool {
+        matches!(request.submit_mode, CloudLaunchSubmitMode::Compose)
+    }
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn hydrate_cloud_launch_draft(
         target_view: &ViewHandle<TerminalView>,
         request: &CloudLaunchRequest,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !Self::should_hydrate_cloud_launch_draft(request) {
+            return;
+        }
         target_view.update(ctx, |terminal_view, ctx| {
             let input = terminal_view.input().clone();
             input.update(ctx, |input, ctx| {
@@ -13142,20 +13148,13 @@ impl Workspace {
     }
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn queue_handoff_auto_submit(
-        target_view: &ViewHandle<TerminalView>,
         model_handle: &ModelHandle<AmbientAgentViewModel>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let queued = model_handle.update(ctx, |model, ctx| model.queue_handoff_auto_submit(ctx));
-        if !queued {
-            return;
-        }
-        target_view.update(ctx, |terminal_view, ctx| {
-            let input = terminal_view.input().clone();
-            input.update(ctx, |input, ctx| input.clear_cloud_launch_draft(ctx));
-        });
+        model_handle.update(ctx, |model, ctx| model.queue_handoff_auto_submit(ctx));
     }
 
+    /// Opens a cloud pane without forking when there is no local conversation to hand off.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn start_fresh_cloud_launch(
         &mut self,
@@ -13163,6 +13162,7 @@ impl Workspace {
         request: CloudLaunchRequest,
         ctx: &mut ViewContext<Self>,
     ) {
+        // Push a cloud-mode pane for the fresh launch.
         let Some((new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
             view.start_local_to_cloud_handoff_pane(view_ctx)
         }) else {
@@ -13188,6 +13188,8 @@ impl Workspace {
         }
     }
 
+    /// Opens a local-to-cloud handoff pane in place over the active local pane.
+    /// Triggered by `/move-to-cloud`, `&` compose mode, and the handoff footer chip.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn start_local_to_cloud_handoff(
         &mut self,
@@ -13234,6 +13236,7 @@ impl Workspace {
 
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         let source_conversation_id = source_token.as_str().to_string();
+        // The server fork must exist before the cloud pane can bind to it.
         ctx.spawn(
             async move { ai_client.fork_conversation(source_conversation_id).await },
             move |me, result, ctx| match result {
@@ -13254,7 +13257,8 @@ impl Workspace {
         );
     }
 
-    /// Finishes the local-to-cloud handoff open after the fork RPC returns.
+    /// Finishes the handoff after the fork RPC returns by restoring the forked
+    /// conversation in a cloud pane and starting snapshot prep.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn complete_local_to_cloud_handoff_open(
         &mut self,
@@ -13265,6 +13269,7 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
+        // Materialize the fork locally so the new pane can restore it.
         let local_fork = match history_model.update(ctx, |history_model, ctx| {
             history_model.fork_conversation(&source_conversation, FORK_PREFIX, true, ctx)
         }) {
@@ -13277,6 +13282,7 @@ impl Workspace {
         };
         let local_fork_id = local_fork.id();
 
+        // Push the cloud-mode pane before attaching the forked conversation.
         let Some((new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
             view.start_local_to_cloud_handoff_pane(view_ctx)
         }) else {
@@ -13284,7 +13290,7 @@ impl Workspace {
             Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
             return;
         };
-
+        // Restore the forked conversation into the newly-created pane.
         new_pane_view.update(ctx, |terminal_view, view_ctx| {
             terminal_view.restore_conversation_after_view_creation(
                 RestoredAIConversation::new(local_fork.clone()),
@@ -13293,6 +13299,7 @@ impl Workspace {
             );
         });
 
+        // Enter fullscreen agent view once restoration has populated history.
         new_pane_view.update(ctx, |terminal_view, view_ctx| {
             terminal_view.enter_agent_view_for_conversation(
                 None,
@@ -13302,6 +13309,7 @@ impl Workspace {
             );
         });
 
+        // Bind the local fork to the server fork token.
         history_model.update(ctx, |history_model, _| {
             history_model.set_server_conversation_token_for_conversation(
                 local_fork_id,
@@ -13316,6 +13324,7 @@ impl Workspace {
             .agent_view_state()
             .is_fullscreen()
         {
+            // Exit the source pane so focus and input move to the cloud pane.
             source_agent_view_controller.update(ctx, |controller, ctx| {
                 controller.exit_agent_view_without_confirmation(ctx);
             });
@@ -13324,6 +13333,7 @@ impl Workspace {
         Self::hydrate_cloud_launch_draft(&new_pane_view, &request, ctx);
         Self::apply_explicit_cloud_launch_environment(&model_handle, &request, ctx);
 
+        // Keep handoff state on the cloud model until snapshot prep and submit finish.
         let pending = PendingHandoff {
             forked_conversation_id: forked_conversation_id.clone(),
             touched_workspace: None,
@@ -13339,13 +13349,14 @@ impl Workspace {
         if !Self::claim_cloud_launch_request(&source_view, &request, ctx) {
             log::warn!("Failed to claim cloud launch request after opening handoff pane");
         }
-        Self::queue_handoff_auto_submit(&new_pane_view, &model_handle, ctx);
+        Self::queue_handoff_auto_submit(&model_handle, ctx);
 
         let async_pane_view = new_pane_view.clone();
         let async_model_handle = model_handle.clone();
         let server_api_provider = ServerApiProvider::as_ref(ctx);
         let ai_client = server_api_provider.get_ai_client();
         let http = server_api_provider.get_http_client();
+        // Derive touched repos and upload the initial snapshot off the UI thread.
         ctx.spawn(
             async move {
                 let paths = extract_paths_from_conversation(&source_conversation);
@@ -13398,6 +13409,7 @@ impl Workspace {
                     }
                 });
                 if let Some(launch) = launch_to_restore {
+                    // Restore auto-submit text if snapshot upload failed and submission was cancelled.
                     async_pane_view.update(ctx, |terminal_view, ctx| {
                         let input = terminal_view.input().clone();
                         input.update(ctx, |input, ctx| {

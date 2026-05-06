@@ -317,6 +317,7 @@ impl View for AgentMessageBar {
 
         let args = AgentMessageArgs {
             active_conversation,
+            ephemeral_message_model,
             agent_view_controller,
             shortcut_view_model,
             input_buffer_model,
@@ -405,19 +406,20 @@ impl View for AgentMessageBar {
 
 /// Arguments for agent message producers.
 #[derive(Copy, Clone)]
-pub(crate) struct AgentMessageArgs<'a> {
-    active_conversation: &'a AIConversation,
-    agent_view_controller: &'a AgentViewController,
-    shortcut_view_model: &'a AgentShortcutViewModel,
-    input_buffer_model: &'a InputBufferModel,
-    input_model: &'a BlocklistAIInputModel,
-    slash_command_model: &'a SlashCommandModel,
-    context_model: &'a BlocklistAIContextModel,
-    handoff_compose_state: &'a HandoffComposeState,
-    terminal_model: &'a TerminalModel,
-    appearance: &'a Appearance,
-    app: &'a AppContext,
-    mouse_states: &'a AgentMessageBarMouseStates,
+pub struct AgentMessageArgs<'a> {
+    pub active_conversation: &'a AIConversation,
+    pub ephemeral_message_model: &'a EphemeralMessageModel,
+    pub agent_view_controller: &'a AgentViewController,
+    pub shortcut_view_model: &'a AgentShortcutViewModel,
+    pub input_buffer_model: &'a InputBufferModel,
+    pub input_model: &'a BlocklistAIInputModel,
+    pub slash_command_model: &'a SlashCommandModel,
+    pub context_model: &'a BlocklistAIContextModel,
+    pub handoff_compose_state: &'a HandoffComposeState,
+    pub terminal_model: &'a TerminalModel,
+    pub appearance: &'a Appearance,
+    pub app: &'a AppContext,
+    pub mouse_states: &'a AgentMessageBarMouseStates,
 }
 
 impl AttachedContextArgs for AgentMessageArgs<'_> {

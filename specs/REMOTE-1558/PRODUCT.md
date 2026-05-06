@@ -46,7 +46,7 @@ Figma: none provided.
 16. Normal prompt editing continues to work while in handoff-compose mode. Pending file/image attachments remain visible and editable until the prompt is submitted or the user removes them.
 ### Submitting `& query`
 17. Pressing Enter in handoff-compose mode with a non-empty prompt starts the cloud path. The user is not required to press Enter again in the cloud pane.
-18. After Warp opens and claims the destination cloud surface, auto-submit is optimistically queued immediately: the destination input does not continue showing the submitted prompt as editable text, and the cloud pane moves into its queued/starting state before slower handoff preparation finishes.
+18. After Warp opens and claims the destination cloud surface, auto-submit is optimistically queued immediately: the submitted prompt is owned by the pending launch state rather than hydrated into the destination editor, and the cloud pane moves into its queued/starting state before slower handoff preparation finishes.
 19. The submitted cloud prompt includes:
    - The prompt text without the leading `&`.
    - Pending file/image attachments.
@@ -60,7 +60,7 @@ Figma: none provided.
    - The cloud pane opens in the same pane stack as the source pane.
    - The source local agent view exits behind the cloud pane, matching the current handoff navigation behavior.
    - The cloud pane shows the source conversation history as the handoff context.
-   - The prompt is optimistically queued as soon as the handoff pane is ready to own it, then the actual cloud run dispatch occurs automatically once the conversation fork, environment selection, and local snapshot preparation are ready.
+   - The prompt is optimistically queued as soon as the handoff pane is ready to own it, without appearing as editable destination input; the actual cloud run dispatch occurs automatically once the conversation fork, environment selection, and local snapshot preparation are ready.
 22. If the active local conversation is non-empty but currently running or blocked, submission is blocked. Warp shows a toast explaining that handoff can only start from an idle conversation, leaves the user in the source local agent view, and preserves the prompt and pending file/image attachments.
 23. If the active local conversation is non-empty and idle but cannot be handed off because it lacks synced cloud conversation identity, submission is blocked. Warp shows a toast, leaves the user in the source local agent view, and preserves the prompt and pending file/image attachments.
 24. If handoff preparation fails before a cloud pane exists, such as a failed conversation fork request, Warp stays in the source local agent view, shows a toast, and preserves the prompt and pending file/image attachments.

@@ -43,6 +43,8 @@ use warpui::r#async::FutureExt as _;
 
 use crate::ai::agent_sdk::retry::with_bounded_retry;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::touched_repos::TouchedWorkspace;
 use crate::server::server_api::ai::{
     AIClient, InitialSnapshotToken, SnapshotUploadFileInfo as AiSnapshotUploadFileInfo,
     UploadLocalHandoffSnapshotRequest,
@@ -859,6 +861,40 @@ pub(crate) async fn upload_snapshot_for_handoff(
     }
 
     Ok(Some(initial_snapshot_token))
+}
+
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+pub(crate) enum HandoffSnapshotUploadRetryResult {
+    Uploaded(InitialSnapshotToken),
+    SkippedEmptyWorkspace,
+    Failed(String),
+}
+
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+pub(crate) async fn retry_handoff_snapshot_upload(
+    workspace: TouchedWorkspace,
+    client: Arc<dyn AIClient>,
+    http: &http_client::Client,
+) -> HandoffSnapshotUploadRetryResult {
+    let workspace_is_empty = workspace.repos.is_empty() && workspace.orphan_files.is_empty();
+    let repo_paths: Vec<_> = workspace
+        .repos
+        .iter()
+        .map(|repo| repo.git_root.clone())
+        .collect();
+    match upload_snapshot_for_handoff(repo_paths, workspace.orphan_files, client, http).await {
+        Ok(Some(initial_snapshot_token)) => {
+            HandoffSnapshotUploadRetryResult::Uploaded(initial_snapshot_token)
+        }
+        Ok(None) if workspace_is_empty => HandoffSnapshotUploadRetryResult::SkippedEmptyWorkspace,
+        Ok(None) => HandoffSnapshotUploadRetryResult::Failed(
+            "Snapshot upload did not produce a usable snapshot.".to_owned(),
+        ),
+        Err(err) => {
+            log::warn!("Handoff snapshot retry failed: {err:#}");
+            HandoffSnapshotUploadRetryResult::Failed(format!("{err}"))
+        }
+    }
 }
 
 /// Core upload pipeline.

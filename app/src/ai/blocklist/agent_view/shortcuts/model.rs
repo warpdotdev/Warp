@@ -52,7 +52,9 @@ impl AgentShortcutViewModel {
             return;
         }
         self.is_shortcut_view_open = is_open;
-        ctx.emit(AgentShortcutEvent::ToggledViewVisibility);
+        ctx.emit(AgentShortcutEvent::ToggledViewVisibility {
+            is_visible: is_open,
+        });
         send_telemetry_from_ctx!(
             TelemetryEvent::AgentShortcutsViewToggled {
                 is_visible: is_open,
@@ -67,5 +69,5 @@ impl Entity for AgentShortcutViewModel {
 }
 
 pub enum AgentShortcutEvent {
-    ToggledViewVisibility,
+    ToggledViewVisibility { is_visible: bool },
 }

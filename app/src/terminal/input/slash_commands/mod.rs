@@ -29,6 +29,7 @@ use crate::ai::agent_management::telemetry::AgentManagementTelemetryEvent;
 use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
+use crate::ai::blocklist::handoff::CloudLaunchRequest;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
@@ -50,7 +51,6 @@ use crate::terminal::input::{
 };
 #[cfg(feature = "local_fs")]
 use crate::terminal::model::session::Session;
-use crate::terminal::view::ambient_agent::CloudLaunchRequest;
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::color_dot;
 use crate::view_components::DismissibleToast;
@@ -885,6 +885,8 @@ impl Input {
                 {
                     return false;
                 }
+                // The workspace handler falls through to splitting a fresh cloud-mode
+                // pane when there is no local conversation to hand off.
                 let prompt = argument
                     .map(|argument| argument.trim())
                     .filter(|argument| !argument.is_empty())

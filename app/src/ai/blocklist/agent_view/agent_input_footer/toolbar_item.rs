@@ -1,9 +1,10 @@
-use serde::{Deserialize, Serialize};
+use crate::ai::blocklist::handoff::is_local_to_cloud_handoff_available;
 
 use crate::context_chips::{agent_footer_available_chips, available_chips, ContextChipKind};
-use crate::features::{is_local_to_cloud_handoff_available, FeatureFlag};
+use crate::features::FeatureFlag;
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::ui_components::icons::Icon;
+use serde::{Deserialize, Serialize};
 
 use super::editor::AgentToolbarEditorMode;
 
@@ -74,9 +75,6 @@ pub enum AgentToolbarItemKind {
 }
 
 impl AgentToolbarItemKind {
-    pub fn handoff_to_cloud_available() -> bool {
-        is_local_to_cloud_handoff_available()
-    }
     pub fn available_in(&self) -> ToolbarAvailability {
         match self {
             Self::ContextChip(_) | Self::VoiceInput | Self::FileAttach | Self::ShareSession => {
@@ -190,7 +188,7 @@ impl AgentToolbarItemKind {
         {
             items.push(Self::ShareSession);
         }
-        if Self::handoff_to_cloud_available() {
+        if is_local_to_cloud_handoff_available() {
             items.push(Self::HandoffToCloud);
         }
         items.push(Self::VoiceInput);
@@ -219,7 +217,7 @@ impl AgentToolbarItemKind {
         {
             items.push(Self::ShareSession);
         }
-        if Self::handoff_to_cloud_available() {
+        if is_local_to_cloud_handoff_available() {
             items.push(Self::HandoffToCloud);
         }
         items

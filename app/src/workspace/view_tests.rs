@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::{CloudLaunchAttachments, CloudLaunchRequest};
 use crate::ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
@@ -278,6 +280,19 @@ fn transferred_tab_workspace(
     workspace
 }
 
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+#[test]
+fn cloud_launch_draft_hydrates_only_for_compose() {
+    let compose = CloudLaunchRequest::compose();
+    assert!(Workspace::should_hydrate_cloud_launch_draft(&compose));
+
+    let auto_submit = CloudLaunchRequest::auto_submit(
+        "handoff prompt".to_owned(),
+        CloudLaunchAttachments::default(),
+        None,
+    );
+    assert!(!Workspace::should_hydrate_cloud_launch_draft(&auto_submit));
+}
 #[cfg(feature = "local_fs")]
 fn open_worktree_sidecar(workspace: &ViewHandle<Workspace>, app: &mut App) {
     workspace.update(app, |workspace, ctx| {

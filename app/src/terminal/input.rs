@@ -26,7 +26,7 @@ mod terminal_message_bar;
 mod universal;
 pub mod user_query;
 
-pub(crate) use self::handoff_compose::{HandoffComposeState, HandoffComposeStateEvent};
+pub use self::handoff_compose::{HandoffComposeState, HandoffComposeStateEvent};
 
 use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
 use crate::ai::agent::conversation::AIConversationId;
@@ -114,6 +114,7 @@ use crate::{
     ai::{
         agent::{AIAgentContext, EntrypointType},
         blocklist::{
+            handoff::is_local_to_cloud_handoff_available,
             prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
             render_ai_agent_mode_icon, render_ai_follow_up_icon,
             telemetry_banner::should_collect_ai_ugc_telemetry,
@@ -160,7 +161,7 @@ use crate::{
         PropagateHorizontalNavigationKeys, ReplicaId, TextColors, TextRun,
         MAX_IMAGES_PER_CONVERSATION,
     },
-    features::{is_local_to_cloud_handoff_available, FeatureFlag},
+    features::FeatureFlag,
     input_suggestions::{
         Event as InputSuggestionsEvent, HistoryInputSuggestion, InputSuggestions,
         TabCompletionsPreselectOption,
@@ -349,14 +350,18 @@ use super::{
     History, HistoryEntry, SizeInfo, TerminalModel, UpArrowHistoryConfig,
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::agent_sdk::driver::upload_snapshot_for_handoff;
+use crate::ai::agent_sdk::driver::{
+    retry_handoff_snapshot_upload, HandoffSnapshotUploadRetryResult,
+};
 use crate::ai::blocklist::agent_view::{
     AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
+use crate::ai::blocklist::handoff::{
+    CloudLaunchAttachments, CloudLaunchRequest, CloudLaunchRequestId,
+};
 use crate::terminal::view::ambient_agent::{
-    AuthSecretFtuxView, AuthSecretSelector, AuthSecretSelectorEvent, CloudLaunchAttachments,
-    CloudLaunchRequest, CloudLaunchRequestId, HarnessSelector, HarnessSelectorEvent, HostSelector,
-    HostSelectorEvent, NakedHeaderButtonTheme,
+    AuthSecretFtuxView, AuthSecretSelector, AuthSecretSelectorEvent, HarnessSelector,
+    HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::terminal::view::ambient_agent::{PendingCloudLaunch, SnapshotUploadStatus};
@@ -400,7 +405,6 @@ pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_BOTTOM_PADDING: f32 = 8.;
 pub(super) const CLI_AGENT_RICH_INPUT_HINT_TEXT: &str = "Tell the agent what to build...";
 
 const CLOUD_MODE_V2_HINT_TEXT: &str = "Kick off a cloud agent";
-const CLOUD_HANDOFF_INPUT_PREFIX: &str = "&";
 const CLOUD_HANDOFF_HINT_TEXT: &str = "Start a cloud run";
 const SHORT_CIRCUIT_HIGHLIGHTING_ACTIONS: [Option<PlainTextEditorViewAction>; 7] = [
     Some(PlainTextEditorViewAction::Space),
@@ -507,6 +511,8 @@ const AI_INPUT_PREFIX: &str = "* ";
 
 /// If the editor buffer matches this prefix, terminal input is enabled and locked.
 const TERMINAL_INPUT_PREFIX: &str = "!";
+/// If the editor buffer matches this prefix, local agent input enters cloud handoff compose mode.
+const CLOUD_HANDOFF_INPUT_PREFIX: &str = "&";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputPrefixMode {
@@ -3675,7 +3681,9 @@ impl Input {
             .clone()
             .update(ctx, |footer, ctx| footer.open_v2_environment_selector(ctx));
     }
+    // Cloud launch draft helpers.
 
+    /// Claims a pending `&` cloud launch request after its handoff pane opens.
     pub(crate) fn claim_cloud_launch_request(
         &mut self,
         request_id: CloudLaunchRequestId,
@@ -3691,6 +3699,7 @@ impl Input {
         true
     }
 
+    /// Clears prompt text and attachments from the handoff compose draft.
     pub(crate) fn clear_cloud_launch_draft(&mut self, ctx: &mut ViewContext<Self>) {
         self.editor.update(ctx, |editor, ctx| {
             editor.clear_buffer(ctx);
@@ -3700,6 +3709,7 @@ impl Input {
         });
     }
 
+    /// Restores a composed request back into the input draft.
     pub(crate) fn hydrate_cloud_launch_draft(
         &mut self,
         request: &CloudLaunchRequest,
@@ -3718,6 +3728,7 @@ impl Input {
         }
     }
 
+    /// Restores an auto-submit request that is waiting on handoff setup.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn restore_pending_cloud_launch_draft(
         &mut self,
@@ -3735,6 +3746,8 @@ impl Input {
             });
         }
     }
+
+    /// Tracks the handoff request currently owned by the compose draft.
     pub(crate) fn track_cloud_launch_request(
         &mut self,
         request_id: CloudLaunchRequestId,
@@ -3744,6 +3757,8 @@ impl Input {
             state.set_active_request_id(request_id, ctx)
         });
     }
+
+    // Prefix mode helpers.
 
     fn current_prefix_mode(&self, ctx: &AppContext) -> InputPrefixMode {
         let is_handoff_active = self.handoff_compose_state.as_ref(ctx).is_active();
@@ -3763,6 +3778,8 @@ impl Input {
     fn is_cloud_handoff_prefix_mode(&self, ctx: &AppContext) -> bool {
         self.current_prefix_mode(ctx) == InputPrefixMode::CloudHandoff
     }
+
+    // Cloud handoff input helpers.
 
     fn exit_cloud_handoff_compose(&mut self, ctx: &mut ViewContext<Self>) {
         if !self.is_cloud_handoff_prefix_mode(ctx) {
@@ -3785,25 +3802,34 @@ impl Input {
         });
     }
 
+    fn can_activate_cloud_handoff_prefix(
+        &self,
+        edit_origin: &EditOrigin,
+        ctx: &AppContext,
+    ) -> bool {
+        *edit_origin == EditOrigin::UserTyped
+            && is_local_to_cloud_handoff_available()
+            && FeatureFlag::AgentView.is_enabled()
+            && self.agent_view_controller.as_ref(ctx).is_fullscreen()
+            && self.ambient_agent_view_model().is_none()
+            && !CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id)
+            && self.current_prefix_mode(ctx) == InputPrefixMode::None
+    }
+
+    fn is_new_cloud_handoff_prefix_edit(&self, ctx: &AppContext) -> bool {
+        let editor = self.editor.as_ref(ctx);
+        editor.buffer_text(ctx) == CLOUD_HANDOFF_INPUT_PREFIX
+            && editor.last_buffer_text(ctx).is_empty()
+    }
+
     fn maybe_activate_cloud_handoff_prefix(
         &mut self,
         edit_origin: &EditOrigin,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        if *edit_origin != EditOrigin::UserTyped
-            || !is_local_to_cloud_handoff_available()
-            || !FeatureFlag::AgentView.is_enabled()
-            || !self.agent_view_controller.as_ref(ctx).is_fullscreen()
-            || self.ambient_agent_view_model().is_some()
-            || CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id)
-            || self.current_prefix_mode(ctx) != InputPrefixMode::None
+        if !self.can_activate_cloud_handoff_prefix(edit_origin, ctx)
+            || !self.is_new_cloud_handoff_prefix_edit(ctx)
         {
-            return false;
-        }
-
-        let buffer_text = self.editor.as_ref(ctx).buffer_text(ctx);
-        let last_buffer_text = self.editor.as_ref(ctx).last_buffer_text(ctx);
-        if buffer_text != CLOUD_HANDOFF_INPUT_PREFIX || !last_buffer_text.is_empty() {
             return false;
         }
 
@@ -3820,31 +3846,13 @@ impl Input {
                 ctx,
             );
         });
+
         self.handoff_compose_state
             .update(ctx, |state, ctx| state.activate(ctx));
+        // The prefix is stripped outside the normal edit-empty transition path.
         self.is_editor_empty_on_last_edit = true;
         ctx.notify();
         true
-    }
-
-    fn maybe_exit_cloud_handoff_after_user_clear(
-        &mut self,
-        edit_origin: &EditOrigin,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !edit_origin.is_user() || !self.is_cloud_handoff_prefix_mode(ctx) {
-            return;
-        }
-
-        let buffer_text = self.editor.as_ref(ctx).buffer_text(ctx);
-        let last_buffer_text = self.editor.as_ref(ctx).last_buffer_text(ctx);
-        if buffer_text.is_empty()
-            && !last_buffer_text.is_empty()
-            && last_buffer_text != CLOUD_HANDOFF_INPUT_PREFIX
-        {
-            self.exit_cloud_handoff_compose(ctx);
-            ctx.notify();
-        }
     }
 
     fn collect_cloud_launch_attachments(
@@ -3966,13 +3974,6 @@ impl Input {
             return false;
         };
 
-        let workspace_is_empty = workspace.repos.is_empty() && workspace.orphan_files.is_empty();
-        let repo_paths: Vec<_> = workspace
-            .repos
-            .iter()
-            .map(|repo| repo.git_root.clone())
-            .collect();
-        let orphan_file_paths = workspace.orphan_files.clone();
         ambient_agent_view_model.update(ctx, |model, ctx| {
             model.set_pending_handoff_snapshot_upload(SnapshotUploadStatus::Pending, ctx);
         });
@@ -3981,29 +3982,18 @@ impl Input {
         let ai_client = server_api_provider.get_ai_client();
         let http = server_api_provider.get_http_client();
         ctx.spawn(
-            async move {
-                upload_snapshot_for_handoff(repo_paths, orphan_file_paths, ai_client, http.as_ref())
-                    .await
-            },
+            async move { retry_handoff_snapshot_upload(workspace, ai_client, http.as_ref()).await },
             move |me, upload_result, ctx| {
                 let snapshot_status = match upload_result {
-                    Ok(Some(initial_snapshot_token)) => {
+                    HandoffSnapshotUploadRetryResult::Uploaded(initial_snapshot_token) => {
                         SnapshotUploadStatus::Uploaded(initial_snapshot_token)
                     }
-                    Ok(None) if workspace_is_empty => SnapshotUploadStatus::SkippedEmptyWorkspace,
-                    Ok(None) => {
-                        ambient_agent_view_model.update(ctx, |model, ctx| {
-                            model.record_handoff_snapshot_upload_failed(
-                                "Snapshot upload did not produce a usable snapshot.".to_owned(),
-                                ctx,
-                            );
-                        });
-                        return;
+                    HandoffSnapshotUploadRetryResult::SkippedEmptyWorkspace => {
+                        SnapshotUploadStatus::SkippedEmptyWorkspace
                     }
-                    Err(err) => {
-                        log::warn!("Handoff snapshot retry failed: {err:#}");
+                    HandoffSnapshotUploadRetryResult::Failed(error_message) => {
                         ambient_agent_view_model.update(ctx, |model, ctx| {
-                            model.record_handoff_snapshot_upload_failed(format!("{err}"), ctx);
+                            model.record_handoff_snapshot_upload_failed(error_message, ctx);
                         });
                         return;
                     }
@@ -6080,7 +6070,7 @@ impl Input {
                 self.toggle_voice_input(from, ctx);
             }
             UniversalDeveloperInputButtonBarEvent::InputTypeSelected(input_type) => {
-                if self.is_input_mode_toggle_disabled() {
+                if self.is_input_mode_toggle_disabled(ctx) {
                     return;
                 }
 
@@ -9320,7 +9310,6 @@ impl Input {
                 if self.maybe_activate_cloud_handoff_prefix(edit_origin, ctx) {
                     return;
                 }
-                self.maybe_exit_cloud_handoff_after_user_clear(edit_origin, ctx);
 
                 if *edit_origin == EditOrigin::UserTyped
                     && !ctx
@@ -10250,13 +10239,17 @@ impl Input {
             })),
             EditorEvent::VimStatusUpdate => ctx.notify(),
             EditorEvent::BackspaceOnEmptyBuffer => {
-                self.maybe_backspace_ai_icon(ctx);
+                if !self.maybe_backspace_prefix_mode(ctx) {
+                    self.maybe_backspace_ai_icon(ctx);
+                }
             }
             EditorEvent::EmacsBindingUsed => {
                 ctx.emit(Event::EmacsBindingUsed);
             }
             EditorEvent::BackspaceAtBeginningOfBuffer => {
-                self.maybe_backspace_ai_icon(ctx);
+                if !self.maybe_backspace_prefix_mode(ctx) {
+                    self.maybe_backspace_ai_icon(ctx);
+                }
             }
             EditorEvent::UpdatePeers { operations } => {
                 self.latest_buffer_operations.extend(operations.to_vec());
@@ -10793,16 +10786,21 @@ impl Input {
         ctx.notify();
     }
 
-    /// If we're in AI input mode, clears the rightmost AI icon. There may be multiple AI icons
-    /// to backspace away in sequence (AI icon and follow up icon)
-    fn maybe_backspace_ai_icon(&mut self, ctx: &mut ViewContext<Self>) {
+    fn maybe_backspace_prefix_mode(&mut self, ctx: &mut ViewContext<Self>) -> bool {
         if self.is_cloud_handoff_prefix_mode(ctx)
             && self.editor.as_ref(ctx).buffer_text(ctx).is_empty()
         {
             self.exit_cloud_handoff_compose(ctx);
             ctx.notify();
-            return;
+            return true;
         }
+
+        false
+    }
+
+    /// If we're in AI input mode, clears the rightmost AI icon. There may be multiple AI icons
+    /// to backspace away in sequence (AI icon and follow up icon)
+    fn maybe_backspace_ai_icon(&mut self, ctx: &mut ViewContext<Self>) {
         // If we're not in AI input mode, do nothing.
         if !self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {
             // If the AI is locked in shell mode in an active agent view or CLI
@@ -12610,72 +12608,9 @@ impl Input {
                     return;
                 }
 
-                // Collect pending images and files, converting to AttachmentInput for the spawn request.
-                // Only include images when CloudModeImageContext is enabled.
-                let attachments: Vec<AttachmentInput> = if FeatureFlag::CloudModeImageContext
-                    .is_enabled()
-                {
-                    let mut inputs: Vec<AttachmentInput> = self
-                        .ai_context_model
-                        .as_ref(ctx)
-                        .pending_images()
-                        .iter()
-                        .map(|image| AttachmentInput {
-                            file_name: image.file_name.clone(),
-                            mime_type: image.mime_type.clone(),
-                            data: image.data.clone(),
-                        })
-                        .collect();
-
-                    let mut skipped_files: Vec<String> = Vec::new();
-                    for file in self.ai_context_model.as_ref(ctx).pending_files() {
-                        match std::fs::read(&file.file_path) {
-                            Ok(bytes) => {
-                                if bytes.len() > MAX_ATTACHMENT_SIZE_BYTES {
-                                    skipped_files.push(file.file_name.clone());
-                                    continue;
-                                }
-                                inputs.push(AttachmentInput {
-                                    file_name: file.file_name.clone(),
-                                    mime_type: file.mime_type.clone(),
-                                    data: base64::engine::general_purpose::STANDARD.encode(&bytes),
-                                });
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to read file {}: {e}",
-                                    file.file_path.display()
-                                );
-                            }
-                        }
-                    }
-
-                    if !skipped_files.is_empty() {
-                        let window_id = ctx.window_id();
-                        let message = if skipped_files.len() == 1 {
-                            format!(
-                                "{} was not attached — exceeds 10MB limit.",
-                                skipped_files[0]
-                            )
-                        } else {
-                            format!(
-                                "{} files were not attached — exceed 10MB limit.",
-                                skipped_files.len()
-                            )
-                        };
-                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
-                            ts.add_ephemeral_toast(
-                                DismissibleToast::error(message),
-                                window_id,
-                                ctx,
-                            );
-                        });
-                    }
-
-                    inputs
-                } else {
-                    vec![]
-                };
+                let attachments = self
+                    .collect_cloud_launch_attachments(ctx)
+                    .request_attachments;
 
                 // For local-to-cloud handoff panes, gate the buffer clear on the
                 // async `derive_touched_workspace` derivation having completed and
@@ -13635,19 +13570,21 @@ impl Input {
     }
 
     /// Returns true if toggling the input mode is disabled.
-    fn is_input_mode_toggle_disabled(&self) -> bool {
+    fn is_input_mode_toggle_disabled(&self, ctx: &ViewContext<Self>) -> bool {
         // Don't allow input mode changes for:
         // - read-only viewers in shared sessions.
         // - long-running commands with an agent tagged in or in control.
+        // - local -> cloud handoff prompts (these must be agent mode prompts)
         let terminal_model = self.model.lock();
         let active_block = terminal_model.block_list().active_block();
         terminal_model.shared_session_status().is_reader()
             || active_block.is_agent_in_control_or_tagged_in()
+            || self.is_cloud_handoff_prefix_mode(ctx)
     }
 
     /// Set input mode to natural language detection (auto-detection)
     pub fn set_input_mode_natural_language_detection(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.is_input_mode_toggle_disabled() {
+        if self.is_input_mode_toggle_disabled(ctx) {
             return;
         }
 
@@ -13752,7 +13689,7 @@ impl Input {
 
     /// Set input mode to Terminal Mode (shell command input)
     pub fn set_input_mode_terminal(&mut self, steal_focus: bool, ctx: &mut ViewContext<Self>) {
-        if self.is_input_mode_toggle_disabled() {
+        if self.is_input_mode_toggle_disabled(ctx) {
             return;
         }
 
@@ -15255,6 +15192,34 @@ impl Autosuggester for Input {
 ///
 /// When Agent View is disabled, this renders the agent mode icon and optional follow-up icon when
 /// classic input is enabled.
+fn render_prefix_mode_indicator(
+    prefix: &'static str,
+    color: ColorU,
+    appearance: &Appearance,
+    em_width: f32,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let indicator_size = ai_indicator_height(app);
+    Container::new(
+        ConstrainedBox::new(
+            Align::new(
+                Text::new(
+                    prefix,
+                    appearance.monospace_font_family(),
+                    appearance.monospace_font_size(),
+                )
+                .with_color(color)
+                .finish(),
+            )
+            .finish(),
+        )
+        .with_height(indicator_size)
+        .with_width(indicator_size)
+        .finish(),
+    )
+    .with_margin_right(em_width)
+    .finish()
+}
 fn maybe_render_ai_input_indicators(
     ai_input_model: &ModelHandle<BlocklistAIInputModel>,
     ai_context_model: &ModelHandle<BlocklistAIContextModel>,
@@ -15281,53 +15246,23 @@ fn maybe_render_ai_input_indicators(
     let is_cli_agent_input_open =
         CLIAgentSessionsModel::as_ref(app).is_input_open(terminal_view_id);
     if handoff_compose_state.as_ref(app).is_active() && is_agent_view_active {
-        let indicator_size = ai_indicator_height(app);
-        return Some(
-            Container::new(
-                ConstrainedBox::new(
-                    Align::new(
-                        Text::new(
-                            CLOUD_HANDOFF_INPUT_PREFIX,
-                            appearance.monospace_font_family(),
-                            appearance.monospace_font_size(),
-                        )
-                        .with_color(ai_brand_color(appearance.theme()))
-                        .finish(),
-                    )
-                    .finish(),
-                )
-                .with_height(indicator_size)
-                .with_width(indicator_size)
-                .finish(),
-            )
-            .with_margin_right(em_width)
-            .finish(),
-        );
+        return Some(render_prefix_mode_indicator(
+            CLOUD_HANDOFF_INPUT_PREFIX,
+            ai_brand_color(appearance.theme()),
+            appearance,
+            em_width,
+            app,
+        ));
     }
 
     if is_locked_shell && (is_agent_view_active || is_cli_agent_input_open) {
-        let indicator_size = ai_indicator_height(app);
-        return Some(
-            Container::new(
-                ConstrainedBox::new(
-                    Align::new(
-                        Text::new(
-                            "!",
-                            appearance.monospace_font_family(),
-                            appearance.monospace_font_size(),
-                        )
-                        .with_color(appearance.theme().ansi_fg_blue())
-                        .finish(),
-                    )
-                    .finish(),
-                )
-                .with_height(indicator_size)
-                .with_width(indicator_size)
-                .finish(),
-            )
-            .with_margin_right(em_width)
-            .finish(),
-        );
+        return Some(render_prefix_mode_indicator(
+            TERMINAL_INPUT_PREFIX,
+            appearance.theme().ansi_fg_blue(),
+            appearance,
+            em_width,
+            app,
+        ));
     }
 
     if is_agent_view_active {

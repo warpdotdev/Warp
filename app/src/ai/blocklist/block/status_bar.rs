@@ -145,7 +145,7 @@ pub struct BlocklistAIStatusBar {
 
 impl BlocklistAIStatusBar {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
+    pub fn new(
         controller: ModelHandle<BlocklistAIController>,
         agent_view_controller: ModelHandle<AgentViewController>,
         cli_subagent_controller: ModelHandle<CLISubagentController>,

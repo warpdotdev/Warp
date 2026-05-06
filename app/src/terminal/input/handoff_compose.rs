@@ -1,16 +1,18 @@
+//! Tracks `&` compose UI state before a cloud pane/model exists.
+use crate::ai::blocklist::handoff::CloudLaunchRequestId;
 use crate::server::ids::SyncId;
-use crate::terminal::view::ambient_agent::CloudLaunchRequestId;
 use warpui::{Entity, ModelContext};
 
 #[derive(Clone)]
-pub(crate) enum HandoffComposeStateEvent {
+pub enum HandoffComposeStateEvent {
     ActiveChanged,
     EnvironmentSelected,
     RequestChanged,
 }
 
+/// Transient state owned by the local input while composing a cloud handoff.
 #[derive(Default)]
-pub(crate) struct HandoffComposeState {
+pub struct HandoffComposeState {
     active: bool,
     selected_environment_id: Option<SyncId>,
     has_explicit_environment_selection: bool,
