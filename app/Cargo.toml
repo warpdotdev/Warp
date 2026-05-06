@@ -28,6 +28,11 @@ path = "src/bin/local.rs"
 test = false
 
 [[bin]]
+name = "integration"
+path = "src/bin/integration.rs"
+test = false
+
+[[bin]]
 name = "stable"
 path = "src/bin/stable.rs"
 test = false
