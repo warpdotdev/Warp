@@ -14,7 +14,7 @@ fn test_model() -> ServerModel {
         executors: HashMap::new(),
         pending_file_ops: PendingFileOps::new(),
         auth: DaemonAuthContext::new(),
-        codebase_index_statuses_by_repo: HashMap::new(),
+        known_codebase_index_statuses_by_repo: HashMap::new(),
     }
 }
 

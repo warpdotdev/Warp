@@ -203,8 +203,10 @@ pub struct ServerModel {
     pending_file_ops: PendingFileOps,
     /// Daemon-wide auth credentials and user identity.
     auth: DaemonAuthContext,
-    /// Remote codebase-index statuses reported to connected clients.
-    codebase_index_statuses_by_repo: HashMap<String, RemoteCodebaseIndexStatus>,
+    /// Temporary PR1 daemon-side status set for repos discovered through
+    /// navigation. This backs protocol snapshots until canonical remote
+    /// indexing state moves into the daemon indexing manager.
+    known_codebase_index_statuses_by_repo: HashMap<String, RemoteCodebaseIndexStatus>,
 }
 
 impl Entity for ServerModel {
@@ -230,7 +232,7 @@ impl ServerModel {
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
             auth: DaemonAuthContext::new(),
-            codebase_index_statuses_by_repo: HashMap::new(),
+            known_codebase_index_statuses_by_repo: HashMap::new(),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -418,8 +420,6 @@ impl ServerModel {
         ctx: &mut ModelContext<Self>,
     ) {
         let request_id = RequestId::from(msg.request_id);
-        let push_codebase_status_snapshot_after_response =
-            matches!(&msg.message, Some(client_message::Message::Initialize(_)));
 
         let outcome = match msg.message {
             Some(client_message::Message::Initialize(msg)) => {
@@ -475,9 +475,11 @@ impl ServerModel {
 
         match outcome {
             HandlerOutcome::Sync(message) => {
+                let push_codebase_status_snapshot_after_response =
+                    matches!(message, server_message::Message::InitializeResponse(_));
                 self.send_server_message(Some(conn_id), Some(&request_id), message);
                 if push_codebase_status_snapshot_after_response {
-                    self.send_codebase_index_statuses_snapshot(Some(conn_id), None);
+                    self.push_codebase_index_statuses_snapshot(conn_id);
                 }
             }
             HandlerOutcome::Async(Some(handle)) => {
@@ -490,42 +492,30 @@ impl ServerModel {
         }
     }
 
-    fn send_codebase_index_statuses_snapshot(
-        &self,
-        conn_id: Option<ConnectionId>,
-        request_id: Option<&RequestId>,
-    ) {
+    fn push_codebase_index_statuses_snapshot(&self, conn_id: ConnectionId) {
         let snapshot = self.codebase_index_statuses_snapshot();
         let status_count = snapshot.statuses.len();
-        let target = conn_id
-            .map(|conn_id| conn_id.to_string())
-            .unwrap_or_else(|| "broadcast".to_string());
-        let message_kind = if request_id.is_some() {
-            "response"
-        } else {
-            "push"
-        };
         log::info!(
-            "Sending codebase index statuses snapshot: target={target} \
-             message_kind={message_kind} status_count={status_count}"
+            "Pushing codebase index statuses snapshot: conn_id={conn_id} \
+             status_count={status_count}"
         );
         self.send_server_message(
-            conn_id,
-            request_id,
+            Some(conn_id),
+            None,
             server_message::Message::CodebaseIndexStatusesSnapshot(snapshot),
         );
     }
 
     fn codebase_index_statuses_snapshot(&self) -> CodebaseIndexStatusesSnapshot {
-        statuses_to_snapshot_proto(self.codebase_index_statuses_by_repo.values())
+        statuses_to_snapshot_proto(self.known_codebase_index_statuses_by_repo.values())
     }
 
-    fn ensure_not_enabled_codebase_index_status(
+    fn ensure_not_enabled_status_for_discovered_repo(
         &mut self,
         repo_path: String,
     ) -> Option<RemoteCodebaseIndexStatus> {
         if self
-            .codebase_index_statuses_by_repo
+            .known_codebase_index_statuses_by_repo
             .contains_key(&repo_path)
         {
             return None;
@@ -540,7 +530,7 @@ impl ServerModel {
             state: RemoteCodebaseIndexState::NotEnabled,
             last_updated_epoch_millis,
         };
-        self.codebase_index_statuses_by_repo
+        self.known_codebase_index_statuses_by_repo
             .insert(repo_path, status.clone());
         Some(status)
     }
@@ -937,11 +927,13 @@ impl ServerModel {
                     ),
                 );
 
-                // Remote codebase indexing is repo-scoped, so only git repo
-                // navigations get a status entry.
+                // Remote codebase indexing is repo-scoped and client-driven.
+                // Navigation only reports an explicit NotEnabled status for a
+                // first-seen git repo; the client decides whether to request
+                // indexing based on its own feature/preference state.
                 if is_git {
                     if let Some(status) =
-                        me.ensure_not_enabled_codebase_index_status(indexed_path.clone())
+                        me.ensure_not_enabled_status_for_discovered_repo(indexed_path.clone())
                     {
                         log::info!(
                             "[Remote codebase indexing] Sending codebase index status update for navigated repo: \
