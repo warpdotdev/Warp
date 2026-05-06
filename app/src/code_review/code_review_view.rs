@@ -3185,10 +3185,10 @@ impl CodeReviewView {
     #[cfg(target_family = "wasm")]
     fn render_no_repo_for_env(
         &self,
-        _app: &AppContext,
+        app: &AppContext,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        Self::render_wsl_state(appearance, None)
+        Self::render_wsl_state(app, appearance, None)
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -3204,7 +3204,7 @@ impl CodeReviewView {
                     CodingPanelEnablementState::RemoteSession { .. }
                 ) =>
             {
-                self.render_remote_state_with_buttons(appearance)
+                self.render_remote_state_with_buttons(app, appearance)
             }
             Some(state)
                 if matches!(
@@ -3212,10 +3212,10 @@ impl CodeReviewView {
                     CodingPanelEnablementState::UnsupportedSession
                 ) =>
             {
-                self.render_wsl_state_with_buttons(appearance)
+                self.render_wsl_state_with_buttons(app, appearance)
             }
-            None => self.render_not_repo_state_with_buttons(appearance),
-            Some(_) => self.render_not_repo_state_with_buttons(appearance),
+            None => self.render_not_repo_state_with_buttons(app, appearance),
+            Some(_) => self.render_not_repo_state_with_buttons(app, appearance),
         }
     }
 
@@ -4193,6 +4193,7 @@ impl CodeReviewView {
     #[cfg(not(target_family = "wasm"))]
     fn render_no_repo_found_state_with_buttons(
         &self,
+        app: &AppContext,
         appearance: &Appearance,
         message: &'static str,
         buttons: InitButtons,
@@ -4221,7 +4222,7 @@ impl CodeReviewView {
             )
             .with_child(
                 Text::new(
-                    "Cannot detect diffs for this folder",
+                    crate::i18n::tr_static(app, "Cannot detect diffs for this folder"),
                     appearance.ui_font_family(),
                     appearance.ui_font_size() + 2.,
                 )
@@ -4232,7 +4233,7 @@ impl CodeReviewView {
             .with_child(
                 Container::new(
                     Text::new(
-                        message,
+                        crate::i18n::tr_static(app, message),
                         appearance.ui_font_family(),
                         appearance.ui_font_size() + 2.,
                     )
@@ -4273,6 +4274,7 @@ impl CodeReviewView {
     }
 
     pub fn render_no_repo_found_state(
+        app: &AppContext,
         appearance: &Appearance,
         message: &'static str,
         open_repo_button: Option<Box<dyn Element>>,
@@ -4301,7 +4303,7 @@ impl CodeReviewView {
             )
             .with_child(
                 Text::new(
-                    "Cannot detect diffs for this folder",
+                    crate::i18n::tr_static(app, "Cannot detect diffs for this folder"),
                     appearance.ui_font_family(),
                     appearance.ui_font_size() + 2.,
                 )
@@ -4312,7 +4314,7 @@ impl CodeReviewView {
             .with_child(
                 Container::new(
                     Text::new(
-                        message,
+                        crate::i18n::tr_static(app, message),
                         appearance.ui_font_family(),
                         appearance.ui_font_size() + 2.,
                     )
@@ -4339,29 +4341,37 @@ impl CodeReviewView {
     }
 
     pub fn render_remote_state(
+        app: &AppContext,
         appearance: &Appearance,
         open_repo_button: Option<Box<dyn Element>>,
     ) -> Box<dyn Element> {
-        Self::render_no_repo_found_state(appearance, REMOTE_TEXT, open_repo_button)
+        Self::render_no_repo_found_state(app, appearance, REMOTE_TEXT, open_repo_button)
     }
 
     pub fn render_wsl_state(
+        app: &AppContext,
         appearance: &Appearance,
         open_repo_button: Option<Box<dyn Element>>,
     ) -> Box<dyn Element> {
-        Self::render_no_repo_found_state(appearance, WSL_TEXT, open_repo_button)
+        Self::render_no_repo_found_state(app, appearance, WSL_TEXT, open_repo_button)
     }
 
     pub fn render_not_repo_state(
+        app: &AppContext,
         appearance: &Appearance,
         open_repo_button: Option<Box<dyn Element>>,
     ) -> Box<dyn Element> {
-        Self::render_no_repo_found_state(appearance, DISABLED_TEXT, open_repo_button)
+        Self::render_no_repo_found_state(app, appearance, DISABLED_TEXT, open_repo_button)
     }
 
     #[cfg(not(target_family = "wasm"))]
-    fn render_remote_state_with_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_remote_state_with_buttons(
+        &self,
+        app: &AppContext,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
         self.render_no_repo_found_state_with_buttons(
+            app,
             appearance,
             REMOTE_TEXT,
             InitButtons::OpenRepository,
@@ -4369,8 +4379,13 @@ impl CodeReviewView {
     }
 
     #[cfg(not(target_family = "wasm"))]
-    fn render_wsl_state_with_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_wsl_state_with_buttons(
+        &self,
+        app: &AppContext,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
         self.render_no_repo_found_state_with_buttons(
+            app,
             appearance,
             WSL_TEXT,
             InitButtons::OpenRepository,
@@ -4378,8 +4393,13 @@ impl CodeReviewView {
     }
 
     #[cfg(not(target_family = "wasm"))]
-    fn render_not_repo_state_with_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_not_repo_state_with_buttons(
+        &self,
+        app: &AppContext,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
         self.render_no_repo_found_state_with_buttons(
+            app,
             appearance,
             DISABLED_TEXT,
             InitButtons::OpenRepository,

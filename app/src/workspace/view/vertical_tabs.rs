@@ -4408,9 +4408,29 @@ pub(super) fn render_settings_popup(
         VerticalTabsResolvedMode::Summary
     );
     let sub_text = theme.sub_text_color(theme.background());
+    let view_as_label = crate::i18n::tr_static(app, "View as");
+    let panes_label = crate::i18n::tr_static(app, "Panes");
+    let tabs_label = crate::i18n::tr_static(app, "Tabs");
+    let tab_item_label = crate::i18n::tr_static(app, "Tab item");
+    let focused_session_label = crate::i18n::tr_static(app, "Focused session");
+    let summary_label = crate::i18n::tr_static(app, "Summary");
+    let density_label = crate::i18n::tr_static(app, "Density");
+    let pane_title_as_label = crate::i18n::tr_static(app, "Pane title as");
+    let command_conversation_label = crate::i18n::tr_static(app, "Command / Conversation");
+    let working_directory_label = crate::i18n::tr_static(app, "Working Directory");
+    let branch_label = crate::i18n::tr_static(app, "Branch");
+    let additional_metadata_label = crate::i18n::tr_static(app, "Additional metadata");
+    let show_label = crate::i18n::tr_static(app, "Show");
+    let github_cli_required_tooltip = crate::i18n::tr_static(
+        app,
+        "Requires the GitHub CLI to be installed and authenticated",
+    );
+    let pr_link_label = crate::i18n::tr_static(app, "PR link");
+    let diff_stats_label = crate::i18n::tr_static(app, "Diff stats");
+    let show_details_on_hover_label = crate::i18n::tr_static(app, "Show details on hover");
     let view_as_header = Container::new(
         Text::new_inline(
-            "View as".to_string(),
+            view_as_label.to_string(),
             appearance.ui_font_family(),
             SETTINGS_POPUP_MENU_ITEM_FONT_SIZE,
         )
@@ -4429,7 +4449,7 @@ pub(super) fn render_settings_popup(
                 Expanded::new(
                     1.,
                     render_popup_text_segment(
-                        "Panes",
+                        panes_label,
                         matches!(current_granularity, VerticalTabsDisplayGranularity::Panes),
                         state.panes_segment_mouse_state.clone(),
                         VerticalTabsDisplayGranularity::Panes,
@@ -4443,7 +4463,7 @@ pub(super) fn render_settings_popup(
                 Expanded::new(
                     1.,
                     render_popup_text_segment(
-                        "Tabs",
+                        tabs_label,
                         matches!(current_granularity, VerticalTabsDisplayGranularity::Tabs),
                         state.tabs_segment_mouse_state.clone(),
                         VerticalTabsDisplayGranularity::Tabs,
@@ -4469,7 +4489,7 @@ pub(super) fn render_settings_popup(
 
     let tab_item_header = Container::new(
         Text::new_inline(
-            "Tab item".to_string(),
+            tab_item_label.to_string(),
             appearance.ui_font_family(),
             SETTINGS_POPUP_MENU_ITEM_FONT_SIZE,
         )
@@ -4481,7 +4501,7 @@ pub(super) fn render_settings_popup(
     .finish();
 
     let focused_session_option = render_tab_item_mode_option(
-        "Focused session",
+        focused_session_label,
         matches!(
             current_tab_item_mode,
             VerticalTabsTabItemMode::FocusedSession
@@ -4494,7 +4514,7 @@ pub(super) fn render_settings_popup(
 
     let summary_option = if FeatureFlag::VerticalTabsSummaryMode.is_enabled() {
         Some(render_tab_item_mode_option(
-            "Summary",
+            summary_label,
             matches!(current_tab_item_mode, VerticalTabsTabItemMode::Summary),
             state.summary_option_mouse_state.clone(),
             VerticalTabsTabItemMode::Summary,
@@ -4507,7 +4527,7 @@ pub(super) fn render_settings_popup(
 
     let density_header = Container::new(
         Text::new_inline(
-            "Density".to_string(),
+            density_label.to_string(),
             appearance.ui_font_family(),
             SETTINGS_POPUP_MENU_ITEM_FONT_SIZE,
         )
@@ -4584,7 +4604,7 @@ pub(super) fn render_settings_popup(
 
     let pane_title_header = Container::new(
         Text::new_inline(
-            "Pane title as".to_string(),
+            pane_title_as_label.to_string(),
             appearance.ui_font_family(),
             SETTINGS_POPUP_MENU_ITEM_FONT_SIZE,
         )
@@ -4596,7 +4616,7 @@ pub(super) fn render_settings_popup(
     .finish();
 
     let command_option = render_primary_info_option(
-        "Command / Conversation",
+        command_conversation_label,
         matches!(current_primary_info, VerticalTabsPrimaryInfo::Command),
         state.command_option_mouse_state.clone(),
         VerticalTabsPrimaryInfo::Command,
@@ -4605,7 +4625,7 @@ pub(super) fn render_settings_popup(
     );
 
     let directory_option = render_primary_info_option(
-        "Working Directory",
+        working_directory_label,
         matches!(
             current_primary_info,
             VerticalTabsPrimaryInfo::WorkingDirectory
@@ -4617,7 +4637,7 @@ pub(super) fn render_settings_popup(
     );
 
     let branch_option = render_primary_info_option(
-        "Branch",
+        branch_label,
         matches!(current_primary_info, VerticalTabsPrimaryInfo::Branch),
         state.branch_option_mouse_state.clone(),
         VerticalTabsPrimaryInfo::Branch,
@@ -4655,7 +4675,7 @@ pub(super) fn render_settings_popup(
 
             let subtitle_header = Container::new(
                 Text::new_inline(
-                    "Additional metadata".to_string(),
+                    additional_metadata_label.to_string(),
                     appearance.ui_font_family(),
                     SETTINGS_POPUP_MENU_ITEM_FONT_SIZE,
                 )
@@ -4674,7 +4694,7 @@ pub(super) fn render_settings_popup(
             ];
             for (i, (value, label)) in options.iter().enumerate() {
                 popup_col.add_child(render_compact_subtitle_option(
-                    label,
+                    crate::i18n::tr_static(app, label),
                     current_subtitle == *value,
                     mouse_states[i].clone(),
                     *value,
@@ -4689,7 +4709,7 @@ pub(super) fn render_settings_popup(
 
             let show_header = Container::new(
                 Text::new_inline(
-                    "Show".to_string(),
+                    show_label.to_string(),
                     appearance.ui_font_family(),
                     SETTINGS_POPUP_MENU_ITEM_FONT_SIZE,
                 )
@@ -4706,14 +4726,14 @@ pub(super) fn render_settings_popup(
             let pr_link_info_tooltip = if show_pr_link && pr_validation_suppressed {
                 Some(ShowToggleInfoTooltip {
                     mouse_state: state.show_pr_link_info_tooltip_mouse_state.clone(),
-                    tooltip_text: "Requires the GitHub CLI to be installed and authenticated",
+                    tooltip_text: github_cli_required_tooltip,
                 })
             } else {
                 None
             };
 
             popup_col.add_child(render_show_toggle_option(
-                "PR link",
+                pr_link_label,
                 show_pr_link,
                 state.show_pr_link_mouse_state.clone(),
                 WorkspaceAction::ToggleVerticalTabsShowPrLink,
@@ -4722,7 +4742,7 @@ pub(super) fn render_settings_popup(
                 theme,
             ));
             popup_col.add_child(render_show_toggle_option(
-                "Diff stats",
+                diff_stats_label,
                 show_diff_stats,
                 state.show_diff_stats_mouse_state.clone(),
                 WorkspaceAction::ToggleVerticalTabsShowDiffStats,
@@ -4735,7 +4755,7 @@ pub(super) fn render_settings_popup(
     popup_col.add_child(make_divider(theme));
 
     popup_col.add_child(render_show_toggle_option(
-        "Show details on hover",
+        show_details_on_hover_label,
         show_details_on_hover,
         state.show_details_on_hover_mouse_state.clone(),
         WorkspaceAction::ToggleVerticalTabsShowDetailsOnHover,

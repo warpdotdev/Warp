@@ -1042,7 +1042,8 @@ pub struct SettingsView {
 
 impl SettingsView {
     pub fn new(page: Option<SettingsSection>, ctx: &mut ViewContext<Self>) -> Self {
-        let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new("Settings"));
+        let pane_configuration =
+            ctx.add_model(|ctx| PaneConfiguration::new(crate::i18n::tr_static(ctx, "Settings")));
 
         let global_resource_handles = GlobalResourceHandlesProvider::as_ref(ctx).get().clone();
         // Main settings page with accounts info
@@ -2707,9 +2708,9 @@ impl BackingView for SettingsView {
     fn render_header_content(
         &self,
         _ctx: &view::HeaderRenderContext<'_>,
-        _app: &AppContext,
+        app: &AppContext,
     ) -> view::HeaderContent {
-        view::HeaderContent::simple("Settings")
+        view::HeaderContent::simple(crate::i18n::tr_static(app, "Settings"))
     }
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {
