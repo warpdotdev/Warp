@@ -8,16 +8,17 @@ Link the GitHub issue this PR addresses. Before opening this PR, please confirm:
 - [ ] The linked issue is labeled `ready-to-spec` or `ready-to-implement`.
 - [ ] Where appropriate, screenshots or a short video of the implementation are included below (especially for user-visible or UI changes).
 
-## Screenshots / Videos
-<!-- Attach screenshots or a short video demonstrating the change, where appropriate. Remove this section if it is not relevant to your PR. -->
-
 ## Testing
 <!--
 How did you test this change? What automated tests did you add? If you didn't add any new tests, what's your justification for not adding any?
-If your change can be manually tested, please do so. You can run the app locally using `./script/run`. Screenshots or videos are appreciated.
+
+Manual testing is required for changes that can be manually tested. Include screenshots or screen recordings that show it working end to end if possible. You can run the app locally using `./script/run` - see WARP.md for more details on how to get set up. 
 -->
 
 - [ ] I have manually tested my changes locally with `./script/run`
+
+### Screenshots / Videos
+<!-- Attach screenshots or a short video demonstrating the change, where appropriate. Remove this section if it is not relevant to your PR. -->
 
 ## Agent Mode
 - [ ] Warp Agent Mode - This PR was created via Warp's AI Agent Mode
