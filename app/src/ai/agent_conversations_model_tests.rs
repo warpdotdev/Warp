@@ -1215,6 +1215,7 @@ fn test_resolve_copy_link_uses_attached_synced_conversation_for_task_without_tok
                 artifacts_json: None,
                 parent_agent_id: None,
                 agent_name: None,
+                orchestration_harness_type: None,
                 parent_conversation_id: None,
                 is_remote_child: false,
                 run_id: Some(task_id.clone()),
