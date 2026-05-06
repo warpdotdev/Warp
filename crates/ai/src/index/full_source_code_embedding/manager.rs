@@ -485,7 +485,7 @@ impl CodebaseIndexManager {
     }
 
     pub fn handle_active_session_changed(&mut self, active_directory: &Path) {
-        if !self.indexing_enabled {
+        if !self.is_indexing_enabled() {
             return;
         }
         let Some(root_path) = self.root_path_for_codebase(active_directory) else {
@@ -543,7 +543,7 @@ impl CodebaseIndexManager {
 
     /// Ensures the current number of indices is below the maximum.
     pub fn can_create_new_indices(&self) -> bool {
-        if !self.indexing_enabled {
+        if !self.is_indexing_enabled() {
             return false;
         }
         self.max_indices
@@ -551,7 +551,7 @@ impl CodebaseIndexManager {
     }
 
     pub fn handle_session_bootstrapped(&mut self, working_directory: &Path) {
-        if !self.indexing_enabled {
+        if !self.is_indexing_enabled() {
             return;
         }
         let Some(root_path) = self.root_path_for_codebase(working_directory) else {
@@ -598,7 +598,7 @@ impl CodebaseIndexManager {
     }
 
     pub fn index_directory(&mut self, directory: PathBuf, ctx: &mut ModelContext<Self>) {
-        if !self.indexing_enabled {
+        if !self.is_indexing_enabled() {
             return;
         }
         let directory = dunce::canonicalize(&directory).unwrap_or(directory);
@@ -647,7 +647,7 @@ impl CodebaseIndexManager {
         build_source: BuildSource,
         ctx: &mut ModelContext<Self>,
     ) {
-        if !self.indexing_enabled {
+        if !self.is_indexing_enabled() {
             return;
         }
         if !self.can_create_new_indices() {
@@ -1016,7 +1016,7 @@ impl CodebaseIndexManager {
         directory_path: &Path,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<()> {
-        if !self.indexing_enabled {
+        if !self.is_indexing_enabled() {
             return Ok(());
         }
         // Find the root path for this directory's codebase
