@@ -150,6 +150,23 @@ impl AgentToolbarItemKind {
         }
     }
 
+    /// Whether this item should remain visible during `&` handoff-compose mode.
+    /// Only items relevant to composing a cloud run are shown.
+    pub(super) fn is_available_during_handoff_compose(&self) -> bool {
+        match self {
+            Self::ModelSelector | Self::VoiceInput | Self::FileAttach => true,
+            Self::ContextChip(_)
+            | Self::NLDToggle
+            | Self::ContextWindowUsage
+            | Self::FastForwardToggle
+            | Self::HandoffToCloud
+            | Self::ShareSession
+            | Self::FileExplorer
+            | Self::RichInput
+            | Self::Settings => false,
+        }
+    }
+
     pub fn is_context_chip(&self) -> bool {
         matches!(self, Self::ContextChip(_))
     }

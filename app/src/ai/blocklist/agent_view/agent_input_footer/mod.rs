@@ -1976,6 +1976,13 @@ impl AgentInputFooter {
         {
             return None;
         }
+
+        if self.handoff_compose_state.as_ref(app).is_active()
+            && !item.is_available_during_handoff_compose()
+        {
+            return None;
+        }
+
         match item {
             AgentToolbarItemKind::ContextChip(chip_kind) => {
                 let chips = match SessionSettings::as_ref(app)
