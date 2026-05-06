@@ -949,17 +949,12 @@ fn render_status_only_card(
         false,
         app,
     );
-    Container::new(
-        Container::new(row)
-            .with_background_color(blended_colors::neutral_2(theme))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-            .finish(),
-    )
-    .with_margin_left(16.)
-    .with_margin_right(16.)
-    .finish()
-    .with_agent_output_item_spacing(app)
-    .finish()
+    Container::new(row)
+        .with_background_color(blended_colors::neutral_2(theme))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        .finish()
+        .with_agent_output_item_spacing(app)
+        .finish()
 }
 
 fn render_editor(
