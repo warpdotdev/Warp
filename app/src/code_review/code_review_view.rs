@@ -2767,12 +2767,14 @@ impl CodeReviewView {
         match self.diff_state(ctx) {
             DiffState::Loading => {
                 if let Some(repo) = self.active_repo.as_mut() {
-                    log::info!(
-                        "Code Review Panel: Setting state to loading after receiving 'loading' message."
-                    );
-                    repo.state = CodeReviewViewState::None;
+                    if !matches!(repo.state, CodeReviewViewState::Loaded(_)) {
+                        log::info!(
+                            "Code Review Panel: Setting state to loading after receiving 'loading' message."
+                        );
+                        repo.state = CodeReviewViewState::None;
+                        ctx.notify();
+                    }
                 }
-                ctx.notify();
                 return;
             }
             DiffState::NotInRepository => {

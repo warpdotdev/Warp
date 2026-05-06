@@ -670,6 +670,11 @@ impl DiffStateModel {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_loading_for_test(&mut self) {
+        self.state = InternalDiffState::Loading;
+    }
+
     pub fn set_diff_mode(
         &mut self,
         mode: DiffMode,

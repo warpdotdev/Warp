@@ -835,6 +835,38 @@ fn test_setup_dropdown_without_branches_only_has_uncommitted_changes() {
 }
 
 #[test]
+fn test_invalidate_all_preserves_loaded_state_while_reloading() {
+    App::test((), |mut app| async move {
+        let TestContext {
+            code_review_view,
+            state,
+            ..
+        } = TestContext::new(
+            &mut app,
+            PathBuf::from("test.txt"),
+            "line 1\nline 2\nline 3",
+        );
+
+        code_review_view.update(&mut app, |view, view_ctx| {
+            let Some(repo) = view.active_repo.as_mut() else {
+                panic!("expected active repo");
+            };
+            repo.state = CodeReviewViewState::Loaded(state);
+
+            view.diff_state_model.update(view_ctx, |model, _| {
+                model.set_loading_for_test();
+            });
+            view.invalidate_all(None, view_ctx);
+
+            assert!(
+                matches!(view.state(), CodeReviewViewState::Loaded(_)),
+                "existing diff content should stay visible while replacement diffs load"
+            );
+        });
+    });
+}
+
+#[test]
 fn test_on_close_then_on_open_reinitializes_repo_state() {
     App::test((), |mut app| async move {
         let ctx = TestContext::new(
