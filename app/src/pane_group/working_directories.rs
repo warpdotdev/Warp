@@ -174,6 +174,8 @@ impl WorkingDirectoriesModel {
 
     /// Get or create a DiffStateModel for a specific repository.
     /// If the model doesn't exist, it will be created.
+    ///
+    /// Returns `None` if `repo_path` is not a tracked git repository.
     pub fn get_or_create_diff_state_model(
         &mut self,
         repo_path: PathBuf,
@@ -183,9 +185,10 @@ impl WorkingDirectoriesModel {
             return Some(model.clone());
         }
 
-        // Create new DiffStateModel for this repo
-        let diff_state_model =
-            ctx.add_model(|ctx| DiffStateModel::new(Some(repo_path.display().to_string()), ctx));
+        let repository =
+            DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(&repo_path, ctx)?;
+
+        let diff_state_model = ctx.add_model(|ctx| DiffStateModel::new(repository, ctx));
 
         self.diff_state_models
             .insert(repo_path.clone(), diff_state_model.clone());
