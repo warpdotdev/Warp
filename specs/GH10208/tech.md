@@ -47,25 +47,36 @@ targets auto-save behavior.
      content changes.
    - Add a focus-change trigger on editor blur.
    - Gate execution by selected mode (`Off` / delay / blur / both).
-   - Reuse existing save path (format-and-save + global buffer save), not a
-     parallel save implementation.
+   - Use a dedicated autosave path that skips format-on-save/LSP formatting and
+     invokes a direct save operation.
    - Guard autosave with:
      - file-backed buffer present
      - unsaved changes present
      - no unresolved version conflict
+   - Re-check conflict/version state immediately before dispatching each autosave
+     (after debounce delay and after blur trigger).
 
-4. Differentiate manual vs automatic save origin.
+4. Enforce conflict safety at final write point in
+   `app/src/code/global_buffer_model.rs`.
+   - Extend save request plumbing to carry an expected file/buffer version from
+     autosave trigger time.
+   - Immediately before writing to disk, verify expected version still matches
+     current model state; if mismatched, abort save as conflict/no-op.
+   - Keep manual save behavior unchanged unless maintainers prefer this same
+     guard to apply uniformly.
+
+5. Differentiate manual vs automatic save origin.
    - Add save-origin metadata to local editor save completion events.
    - Track save origin through local save initiation and global buffer save
      completion callbacks.
    - Preserve existing behavior for manual saves.
 
-5. Toast behavior update in `app/src/code/view.rs`.
+6. Toast behavior update in `app/src/code/view.rs`.
    - Show save success toast only for manual saves.
    - Keep path/title synchronization and error handling unchanged for both
      manual and automatic saves.
 
-6. Keep external auto-reload unchanged.
+7. Keep external auto-reload unchanged.
    - No behavioral changes to `GlobalBufferModel` file-update application logic
      are required by this spec.
 
@@ -73,7 +84,7 @@ targets auto-save behavior.
 
 Map to `product.md` behavior invariants:
 
-- (1, 2, 13, 14) Settings model + UI:
+- (1, 2, 14, 15) Settings model + UI:
   - Add/update settings-view tests asserting:
     - Auto-save dropdown renders in Code Editor and Review page.
     - Setting writes persist and UI reflects current selection.
@@ -98,16 +109,19 @@ Map to `product.md` behavior invariants:
     state.
 
 - (9) Conflict gate:
-  - Unit test: autosave no-ops when version conflict exists.
+  - Unit test: autosave no-ops when version conflict exists at trigger time.
+  - Unit test: autosave aborts when version changes between trigger and final
+    write (debounce/async race window).
 
 - (10, 11) Toast behavior:
   - Code view test(s): manual save shows success toast; auto-save path does not.
 
-- (12) Error behavior:
+- (12, 13) Formatting + error behavior:
+  - Unit/integration test: autosave path does not call format-and-save hooks.
   - Unit/integration test: autosave failure emits existing save failure event and
     surfaces existing error UI.
 
-- (15) Auto-reload unchanged:
+- (16) Auto-reload unchanged:
   - Regression check: existing tests around file update handling continue to pass.
 
 Validation commands:
@@ -135,4 +149,3 @@ Validation commands:
 - If maintainers want explicit user control for existing auto-reload behavior,
   propose a separate issue/spec that builds on current `GlobalBufferModel`
   semantics without coupling to this auto-save feature.
-

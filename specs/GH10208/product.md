@@ -62,14 +62,16 @@ Non-goals:
 11. Successful auto-saves do not show the same manual "File saved" success toast,
     to avoid noisy repeated notifications while typing.
 
-12. Failed auto-saves surface the same error behavior as failed manual saves.
+12. Auto-save does not implicitly run format-on-save/LSP formatting. Explicit
+    manual save and format actions continue to control formatting behavior.
 
-13. Auto-save mode changes in Settings apply to newly opened and currently open
+13. Failed auto-saves surface the same error behavior as failed manual saves.
+
+14. Auto-save mode changes in Settings apply to newly opened and currently open
     code editors without requiring app restart.
 
-14. The auto-save setting participates in normal settings persistence and sync
+15. The auto-save setting participates in normal settings persistence and sync
     semantics for Code settings.
 
-15. Existing external file auto-reload behavior remains available and unchanged
+16. Existing external file auto-reload behavior remains available and unchanged
     by this feature.
-
