@@ -1384,9 +1384,18 @@ impl BlocklistAIController {
             return;
         }
 
-        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
-            history.set_active_conversation_id(conversation_id, self.terminal_view_id, ctx);
-        });
+        // Only update the active conversation pointer if this view still owns
+        // the conversation. Without this guard, the transfer loop inside
+        // set_active_conversation_id can steal the conversation from the view
+        // that is actually processing it when two conversations race.
+        if BlocklistAIHistoryModel::as_ref(ctx)
+            .all_live_conversations_for_terminal_view(self.terminal_view_id)
+            .any(|c| c.id() == conversation_id)
+        {
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+                history.set_active_conversation_id(conversation_id, self.terminal_view_id, ctx);
+            });
+        }
 
         if !FeatureFlag::AgentView.is_enabled() && trigger == FollowUpTrigger::Auto {
             // If `AgentView` is enabled, the conversation is guaranteed to be active while the
@@ -2090,13 +2099,24 @@ impl BlocklistAIController {
             stream_id: response_stream_id.clone(),
         });
         if !is_passive_request {
-            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                history_model.set_active_conversation_id(
-                    conversation_data.id,
-                    self.terminal_view_id,
-                    ctx,
-                )
-            });
+            // Guard: only update the active pointer if this view still owns
+            // the conversation. During parallel conversation processing the
+            // conversation may have been transferred away; calling
+            // set_active_conversation_id in that case would steal it back
+            // and break the other view.
+            if history_model
+                .as_ref(ctx)
+                .all_live_conversations_for_terminal_view(self.terminal_view_id)
+                .any(|c| c.id() == conversation_data.id)
+            {
+                history_model.update(ctx, |history_model, ctx| {
+                    history_model.set_active_conversation_id(
+                        conversation_data.id,
+                        self.terminal_view_id,
+                        ctx,
+                    )
+                });
+            }
         }
 
         // Trigger a snapshot save to persist the agent view state when a user query is sent.

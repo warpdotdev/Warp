@@ -572,21 +572,48 @@ impl BlocklistAIHistoryModel {
 
     /// Returns the conversation ID from the terminal view's history corresponding to the action,
     /// if any.
+    ///
+    /// Prefers conversations in the given terminal view's live list, but falls
+    /// back to a global search across all in-memory conversations. This
+    /// fallback prevents requested commands from being silently dropped when a
+    /// conversation is transferred to another view or removed from the live
+    /// list while actions are still in flight.
     pub fn conversation_id_for_action(
         &self,
         action_id: &AIAgentActionId,
         terminal_view_id: EntityId,
     ) -> Option<AIConversationId> {
-        self.live_conversation_ids_for_terminal_view
-            .get(&terminal_view_id)?
-            .iter()
-            .rev()
-            .find(|conversation_id| {
-                self.conversations_by_id
-                    .get(conversation_id)
-                    .is_some_and(|conversation| conversation.contains_action(action_id))
+        // Fast path: search the terminal view's live conversations.
+        if let Some(id) = self
+            .live_conversation_ids_for_terminal_view
+            .get(&terminal_view_id)
+            .and_then(|ids| {
+                ids.iter().rev().find(|conversation_id| {
+                    self.conversations_by_id
+                        .get(conversation_id)
+                        .is_some_and(|conversation| conversation.contains_action(action_id))
+                })
             })
             .copied()
+        {
+            return Some(id);
+        }
+
+        // Fallback: the conversation may have been transferred to another view
+        // or removed from the live list while the action was executing. Search
+        // all in-memory conversations so the command is not silently dropped.
+        let fallback = self
+            .conversations_by_id
+            .iter()
+            .find(|(_, conversation)| conversation.contains_action(action_id))
+            .map(|(id, _)| *id);
+        if fallback.is_some() {
+            log::warn!(
+                "conversation_id_for_action: action {action_id:?} not found in terminal view \
+                 {terminal_view_id:?} live list, but found via global fallback"
+            );
+        }
+        fallback
     }
 
     pub fn existing_suggestions_for_conversation(
