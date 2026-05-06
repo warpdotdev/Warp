@@ -327,10 +327,10 @@ impl GlobalBufferModel {
 
     fn cleanup_file_id(&mut self, file_id: FileId, _ctx: &mut ModelContext<Self>) {
         // Send didClose before removing the entry.
-        if let Some((location, _)) = self.location_to_id.remove_by_right(&file_id) {
-            if let BufferLocation::Local(path) = &location {
-                self.close_document_with_lsp(path, _ctx);
-            }
+        if let Some((BufferLocation::Local(path), _)) =
+            self.location_to_id.remove_by_right(&file_id)
+        {
+            self.close_document_with_lsp(&path, _ctx);
         }
 
         self.buffers.remove(&file_id);
@@ -734,13 +734,13 @@ impl GlobalBufferModel {
 
     /// Discard any in progress changes and reload the buffer with the canonical version from the file system.
     #[cfg(feature = "local_fs")]
-    pub fn discard_unsaved_changes(&mut self, path: &PathBuf, ctx: &mut ModelContext<Self>) {
+    pub fn discard_unsaved_changes(&mut self, path: &Path, ctx: &mut ModelContext<Self>) {
         if let Some(id) = self
             .location_to_id
-            .get_by_left(&BufferLocation::Local(path.clone()))
+            .get_by_left(&BufferLocation::Local(path.to_path_buf()))
             .cloned()
         {
-            let path_clone = path.clone();
+            let path_clone = path.to_path_buf();
             ctx.spawn(
                 async move { FileModel::read_content_for_file(&path_clone).await },
                 move |me, content, ctx| match content {
@@ -796,10 +796,10 @@ impl GlobalBufferModel {
         // Internal state cleanup is synchronous; only the LSP didClose notification
         // is dispatched asynchronously (with a no-op callback), so there is no race
         // between state removal and the close completing.
-        if let Some((location, _)) = self.location_to_id.remove_by_right(&old_file_id) {
-            if let BufferLocation::Local(old_path) = &location {
-                self.close_document_with_lsp(old_path, ctx);
-            }
+        if let Some((BufferLocation::Local(old_path), _)) =
+            self.location_to_id.remove_by_right(&old_file_id)
+        {
+            self.close_document_with_lsp(&old_path, ctx);
         }
 
         // Cancel + unsubscribe old FileId from FileModel.
@@ -1608,7 +1608,7 @@ impl GlobalBufferModel {
         buffer.update(ctx, |buffer, ctx| {
             let char_edits: Vec<(std::ops::Range<CharOffset>, String)> = edits
                 .iter()
-                .filter_map(|edit| {
+                .map(|edit| {
                     // Convert 0-indexed line/col to CharOffset via the buffer's line_start helper.
                     // line_start takes a 1-indexed LineCount.
                     let start_line = LineCount::from(edit.start_line as usize + 1);
@@ -1617,7 +1617,7 @@ impl GlobalBufferModel {
                         + CharOffset::from(edit.start_column as usize);
                     let end =
                         buffer.line_start(end_line) + CharOffset::from(edit.end_column as usize);
-                    Some((start..end, edit.text.clone()))
+                    (start..end, edit.text.clone())
                 })
                 .collect();
 
@@ -1703,7 +1703,7 @@ impl GlobalBufferModel {
     }
 
     /// Returns whether a buffer is a `ServerLocal` source.
-    #[expect(dead_code)]
+    #[allow(dead_code)]
     pub fn is_server_local(&self, file_id: FileId) -> bool {
         self.buffers
             .get(&file_id)
@@ -1715,7 +1715,7 @@ impl GlobalBufferModel {
     /// Accepts incremental edits (line/column positions) and applies them
     /// to the local buffer via `insert_at_char_offset_ranges`. If the
     /// expected client version doesn't match, a conflict event is emitted.
-    #[expect(dead_code)]
+    #[allow(dead_code)]
     pub fn handle_buffer_updated_push(
         &mut self,
         host_id: &HostId,
