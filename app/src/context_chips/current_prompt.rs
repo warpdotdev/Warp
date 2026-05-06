@@ -982,7 +982,7 @@ impl CurrentPrompt {
                     chip_kind_clone
                 },
                 |me, chip_kind, ctx| {
-                    me.fetch_chip_value_at_interval(&chip_kind, None, None, false, ctx);
+                    me.fetch_chip_value_at_interval(&chip_kind, None, None, true, ctx);
                 },
             );
 
