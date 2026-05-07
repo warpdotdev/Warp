@@ -33,7 +33,6 @@ use warpui::{
     ViewHandle,
 };
 
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_id;
@@ -1747,40 +1746,6 @@ fn pane_group_id_containing_terminal_view(
     None
 }
 
-/// Returns `true` if the active conversation in `agent_view_controller` is a
-/// child agent that has been opened in a *different* terminal view than this
-/// one — i.e. "Open in new pane" or "Open in new tab" was used to split it
-/// off from its orchestrator. We use this to decide whether the pane header
-/// should render breadcrumbs (split-off) vs. the pill bar (same-pane).
-///
-/// Specifically: the active conversation is a child AND the *parent*
-/// (orchestrator) is currently the active conversation in some other
-/// terminal view (per `ActiveAgentViewsModel`). When the orchestrator pane
-/// switches in place to a child, the parent is no longer the active
-/// conversation in any pane, so this returns `false` and the pill bar keeps
-/// rendering with the active child highlighted.
-pub fn is_split_off_child(agent_view_controller: &AgentViewController, app: &AppContext) -> bool {
-    let Some(active_id) = agent_view_controller
-        .agent_view_state()
-        .active_conversation_id()
-    else {
-        return false;
-    };
-    let history = BlocklistAIHistoryModel::as_ref(app);
-    let Some(active_conversation) = history.conversation(&active_id) else {
-        return false;
-    };
-    let Some(parent_id) = parent_conversation_id(active_conversation, app) else {
-        return false;
-    };
-    let Some(parent_view_id) =
-        ActiveAgentViewsModel::as_ref(app).terminal_view_id_for_conversation(parent_id, app)
-    else {
-        return false;
-    };
-    parent_view_id != agent_view_controller.terminal_view_id()
-}
-
 /// Renders a `[Parent Avatar] [Parent Title] > [Child Avatar] [Child Name]`
 /// breadcrumb row when the active conversation is a child agent under an
 /// orchestrator that has been split off into another pane/tab. Returns
@@ -1817,9 +1782,9 @@ pub fn render_orchestration_breadcrumbs(
     // The caller (pane header) decides whether this view should render
     // breadcrumbs vs. the pill bar based on `TerminalView::is_orchestration_split_off`,
     // which is set explicitly by the "Open in new pane" / "Open in new tab"
-    // flows. We deliberately don't gate on `is_split_off_child` here because
-    // that heuristic also matches the swap-target child pane (which should
-    // continue rendering the pill bar).
+    // flows. We deliberately don't try to derive split-off-ness from the
+    // history model here because that heuristic would also match the
+    // swap-target child pane (which should continue rendering the pill bar).
     let active_id = agent_view_controller
         .agent_view_state()
         .active_conversation_id()?;

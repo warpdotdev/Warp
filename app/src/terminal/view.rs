@@ -5025,42 +5025,6 @@ impl TerminalView {
             .unwrap_or(false)
     }
 
-    /// If this terminal view's agent view is currently displaying the given
-    /// child conversation, switch the agent view back to its parent
-    /// orchestrator conversation.
-    ///
-    /// Used after the user picks "Open in new pane"/"Open in new tab" from
-    /// the orchestration pill bar's 3-dot menu. The new pane/tab takes over
-    /// ownership of the child conversation, so this view should silently
-    /// revert to the orchestrator so the user is left looking at the parent
-    /// (and the pill bar's in-place pill click works again).
-    fn revert_agent_view_to_parent_if_displaying_child(
-        &mut self,
-        child_conversation_id: AIConversationId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let active_conversation_id = self
-            .agent_view_controller
-            .as_ref(ctx)
-            .agent_view_state()
-            .active_conversation_id();
-        if active_conversation_id != Some(child_conversation_id) {
-            return;
-        }
-        let parent_conversation_id = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&child_conversation_id)
-            .and_then(|c| c.parent_conversation_id());
-        let Some(parent_conversation_id) = parent_conversation_id else {
-            return;
-        };
-        self.enter_agent_view_for_conversation(
-            None,
-            AgentViewEntryOrigin::OrchestrationPillBar,
-            parent_conversation_id,
-            ctx,
-        );
-    }
-
     fn handle_agent_todos_popup_event(
         &mut self,
         event: &AgentTodosPopupEvent,
@@ -26046,18 +26010,15 @@ impl TypedActionView for TerminalView {
                 // slot) and splits the child pane in next to it. The
                 // child's `TerminalView` is preserved — not recreated —
                 // so in-flight commands keep running and the transcript
-                // stays intact.
+                // stays intact. Note: `self` here is the dedicated
+                // `TerminalView` for the child (the pill-bar swap put it
+                // in the orchestrator's slot), so we deliberately do NOT
+                // touch `self`'s active conversation — doing so would
+                // leave the freshly-split pane showing the orchestrator
+                // instead of the child.
                 ctx.emit(Event::OpenChildAgentInNewPane {
                     conversation_id: *conversation_id,
                 });
-                // Note: we deliberately do NOT call
-                // `revert_agent_view_to_parent_if_displaying_child` here.
-                // `self` is the dedicated `TerminalView` for the child
-                // conversation (we're currently rendering it because the
-                // pill-bar swap put it in the orchestrator's slot).
-                // Reverting `self` to the parent would leave the
-                // freshly-split pane showing the orchestrator instead of
-                // the child.
             }
             OpenChildAgentInNewTab { conversation_id } => {
                 // "Open in new tab": bubble up to the workspace so it can
@@ -26067,14 +26028,13 @@ impl TypedActionView for TerminalView {
                 // active swap (so the orchestrator returns to its slot in
                 // this tab) and detaches the child pane for adoption into
                 // a new tab. The same `TerminalView` survives the move.
+                // As with `OpenChildAgentInNewPane`, `self` is the
+                // dedicated child `TerminalView`; we leave its active
+                // conversation alone so the new tab shows the child, not
+                // the orchestrator.
                 ctx.emit(Event::OpenChildAgentInNewTab {
                     conversation_id: *conversation_id,
                 });
-                // Note: we deliberately do NOT call
-                // `revert_agent_view_to_parent_if_displaying_child` here.
-                // `self` is the dedicated `TerminalView` for the child
-                // conversation; switching it to the parent would surface
-                // the orchestrator in the new tab instead of the child.
             }
             StopAgentConversation { conversation_id } => {
                 // Cancel the ambient task only if the conversation is
