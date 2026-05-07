@@ -141,6 +141,11 @@ pub fn convert_keyboard_input_event(
         return None;
     }
 
+    #[cfg(windows)]
+    let is_composing = window_state.ime_has_marked_text;
+    #[cfg(not(windows))]
+    let is_composing = false;
+
     Some(crate::event::Event::KeyDown {
         keystroke,
         chars,
@@ -149,7 +154,7 @@ pub fn convert_keyboard_input_event(
             right_alt: window_state.right_alt_pressed,
             key_without_modifiers,
         },
-        is_composing: false,
+        is_composing,
     })
 }
 

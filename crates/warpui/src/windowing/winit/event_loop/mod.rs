@@ -176,6 +176,9 @@ struct WindowState {
     /// UI element only requests the keyboard during LeftMouseDown.
     #[cfg(target_family = "wasm")]
     pending_soft_keyboard_request: bool,
+    /// Whether this window currently has IME preedit text owned by winit.
+    #[cfg(windows)]
+    ime_has_marked_text: bool,
 }
 
 impl WindowState {
@@ -195,6 +198,8 @@ impl WindowState {
             momentum_scroll_abort: None,
             #[cfg(target_family = "wasm")]
             pending_soft_keyboard_request: false,
+            #[cfg(windows)]
+            ime_has_marked_text: false,
         }
     }
 
@@ -1336,6 +1341,13 @@ impl EventLoop {
                 } else {
                     self.state.pending_active_window_change = Some(ActiveWindowChange::FocusOut);
                 }
+
+                #[cfg(windows)]
+                if !is_focused {
+                    window_state.ime_has_marked_text = false;
+                    return Some(ConvertedEvent::Event(ClearMarkedText));
+                }
+
                 None
             }
             WindowEvent::DroppedFile(path_buf) => {
@@ -1520,42 +1532,66 @@ impl EventLoop {
                 let Some(window_state) = self.state.windows.get_mut(&winit_window_id) else {
                     return;
                 };
-                let Some(window) = self
-                    .ui_app
-                    .read(|ctx| ctx.windows().platform_window(window_state.window_id))
-                else {
-                    return;
-                };
+                #[cfg(windows)]
+                {
+                    window_state.ime_has_marked_text = !preedit_text.is_empty();
+                }
+                let window_id = window_state.window_id;
 
-                let mut window_callbacks = self.callbacks.for_window(window.as_ref());
-                window_callbacks.dispatch_event(SetMarkedText {
-                    marked_text: preedit_text,
-                    selected_range: cursor_position
-                        .map(|cursor_position| cursor_position.0..cursor_position.1)
-                        .unwrap_or(0..0),
-                });
+                if preedit_text.is_empty() {
+                    self.dispatch_event_to_window(window_id, ClearMarkedText);
+                } else {
+                    self.dispatch_event_to_window(
+                        window_id,
+                        SetMarkedText {
+                            marked_text: preedit_text,
+                            selected_range: cursor_position
+                                .map(|cursor_position| cursor_position.0..cursor_position.1)
+                                .unwrap_or(0..0),
+                        },
+                    );
+                }
             }
             winit::event::Ime::Commit(chars) => {
                 let Some(window_state) = self.state.windows.get_mut(&winit_window_id) else {
                     return;
                 };
-                let Some(window) = self
-                    .ui_app
-                    .read(|ctx| ctx.windows().platform_window(window_state.window_id))
-                else {
-                    return;
-                };
+                #[cfg(windows)]
+                {
+                    window_state.ime_has_marked_text = false;
+                }
+                let window_id = window_state.window_id;
 
-                let mut window_callbacks = self.callbacks.for_window(window.as_ref());
                 // We clear the marked text state before inserting typed characters so that the Vim
                 // FSA knows it can interpret the committed text as a user insertion.
-                window_callbacks.dispatch_event(ClearMarkedText);
-                window_callbacks.dispatch_event(TypedCharacters { chars });
+                self.dispatch_event_to_window(window_id, ClearMarkedText);
+                self.dispatch_event_to_window(window_id, TypedCharacters { chars });
             }
             winit::event::Ime::Disabled => {
+                if let Some(window_state) = self.state.windows.get_mut(&winit_window_id) {
+                    #[cfg(windows)]
+                    {
+                        window_state.ime_has_marked_text = false;
+                    }
+                    let window_id = window_state.window_id;
+                    self.dispatch_event_to_window(window_id, ClearMarkedText);
+                }
                 self.ime_enabled = false;
             }
         };
+    }
+
+    fn dispatch_event_to_window(&mut self, window_id: WindowId, event: crate::Event) {
+        let Some(window) = self
+            .ui_app
+            .read(|ctx| ctx.windows().platform_window(window_id))
+        else {
+            return;
+        };
+
+        self.callbacks
+            .for_window(window.as_ref())
+            .dispatch_event(event);
     }
 
     /// Handle events that may be handled by warpui, or maybe not in some cases, e.g. window
