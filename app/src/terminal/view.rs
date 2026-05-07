@@ -27186,5 +27186,5 @@ fn is_rich_input_chip_in_cli_toolbar(app: &AppContext) -> bool {
 }
 
 #[cfg(test)]
-#[path = "view_test.rs"]
+#[path = "view_tests.rs"]
 mod tests;

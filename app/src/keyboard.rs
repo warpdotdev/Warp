@@ -215,5 +215,5 @@ impl TryFrom<PersistedTrigger> for UserDefinedKeybinding {
 }
 
 #[cfg(test)]
-#[path = "keyboard_test.rs"]
+#[path = "keyboard_tests.rs"]
 mod tests;

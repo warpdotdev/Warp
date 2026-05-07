@@ -1773,5 +1773,5 @@ pub mod testing {
 }
 
 #[cfg(test)]
-#[path = "session_test.rs"]
+#[path = "session_tests.rs"]
 mod test;
