@@ -81,7 +81,7 @@ Hard rules:
 | t2-4 | `Unrecognized` → `Err` globally | `7780d31` | [x] | [x] | [x] |
 | t2-5 | adopt `Error` at artifacts call site | `5a8072a` | [x] | [x] | [x] |
 | t2-6 | animated playback (continuous; pause deferred) | `f077496` | [x] | [x] | [x] |
-| t2-7 | zoom (pan deferred to t2-7-pan) | _pending_ | [x] | [ ] | [ ] |
+| t2-7 | zoom (pan deferred to t2-7-pan) | `6aee220` | [x] | [x] | [x] |
 | t2-8 | status footer | | [ ] | [ ] | [ ] |
 | t2-9 | EXIF orientation + ICC | | [ ] | [ ] | [ ] |
 | t2-FINAL | presubmit | | [ ] | — | — |
@@ -123,6 +123,40 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   natural moment to migrate `Option<Instant>` →
   `enum AnimationState { Off, Playing { started_at: Instant },
   Paused { … } }`. — `reviews/tier2-t2-6-r2.md`.
+- **t2-7-r1.** (a) Renderer's `params.zoom_factor.clamp(MIN, MAX)`
+  does NOT sanitise NaN: `f32::NAN.clamp(0.25, 8.0)` returns NaN
+  (per the f32 spec), which would NaN-poison the `ConstrainedBox`
+  size if any external caller built `Params` with a non-finite
+  zoom. The view's `step_zoom` short-circuits non-finite to 1.0,
+  so the in-tree path is safe; the gap is the public `Params`
+  contract. Replace the renderer-side `f32::clamp` with a helper
+  that mirrors `step_zoom`'s `is_finite` guard, or document the
+  contract on `Params::zoom_factor` so external callers must pass
+  finite values. (b) `ConstrainedBox::layout` caps the constraint
+  at `min(parent_max, self.with_max)`, so zoom-in beyond
+  "fill-window" is a *visual no-op* for any image already filling
+  the window — pressing `=` on a 4K image inside a 1080p window
+  does nothing visible until t2-7-pan ships. Document this on
+  `Params::zoom_factor` so it doesn't read as a regression. —
+  `reviews/tier2-t2-7-r1.md`.
+- **t2-7-r2.** Stylistic / hygiene: (a) `reset_per_image_state` is
+  bypassed in `LightboxView::new` (direct field init), splitting
+  the "what counts as per-image state" definition across four
+  sites; refactor `new` to let-mut-then-call. (b) `MIN_ZOOM_FACTOR`,
+  `MAX_ZOOM_FACTOR`, `ZOOM_STEP` ship as `pub const`s — consider
+  collapsing to a single `pub fn clamp_zoom_factor(f32) -> f32`
+  helper to keep the API surface tight. (c) Add two cheap tests:
+  `step_zoom(0.3, Out) == MIN_ZOOM_FACTOR` (targeted boundary
+  clamp) and `step_zoom(step_zoom(1.0, In), Out) == 1.0`
+  (out-cancels-in round-trip pins the UX expectation). (d) Doc
+  comment on `Params::zoom_factor` should pin the non-finite
+  contract callers must honour. (e) Adding `pan_offset: Vector2F`
+  as a placeholder in `Params` now would make t2-7-pan purely
+  behavioural and avoid a future public-API churn. (f) European-
+  keyboard `+` ergonomics: the same gap as the workspace-level
+  `cmdorctrl-=` zoom — out of scope for t2-7 but worth a
+  codebase-wide future fix. —
+  `reviews/tier2-t2-7-r2.md`.
 - **t2-7-pan.** Drag-to-pan for a zoomed-in image. This GPUI fork has
   no `Translate`/`Offset`/`Transform` primitive that lets us shift an
   element during paint, so applying a `pan_offset: Vector2F` to the
