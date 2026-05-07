@@ -13,16 +13,16 @@ use warpui::r#async::FutureExt as _;
 #[derive(Debug, thiserror::Error)]
 pub enum SshCommandError {
     /// The SSH command or script did not complete within the timeout.
-    #[error("timed out after {timeout:?}")]
+    #[error("Timed out after {timeout:?}")]
     TimedOut { timeout: Duration },
     /// The `ssh` process could not be spawned.
-    #[error("failed to spawn ssh: {0}")]
+    #[error("Failed to spawn ssh: {0}")]
     SpawnFailed(std::io::Error),
-    /// Writing to the SSH process's stdin failed (script piping).
-    #[error("failed to write to ssh stdin: {0}")]
+    /// Writing to the SSH process's stdin failed.
+    #[error("Failed to write to ssh stdin: {0}")]
     StdinWriteFailed(std::io::Error),
     /// The SSH process was spawned but `output()` returned an I/O error.
-    #[error("ssh I/O error: {0}")]
+    #[error("SSH I/O error: {0}")]
     IoError(std::io::Error),
 }
 

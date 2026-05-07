@@ -80,9 +80,7 @@ impl SshTransport {
 
 /// Runs `uname -sm` on the remote host via the ControlMaster socket and
 /// parses the output into a [`RemotePlatform`].
-async fn detect_remote_platform(
-    socket_path: &Path,
-) -> Result<RemotePlatform, DetectPlatformError> {
+async fn detect_remote_platform(socket_path: &Path) -> Result<RemotePlatform, DetectPlatformError> {
     let output = remote_server::ssh::run_ssh_command(
         socket_path,
         "uname -sm",
@@ -91,7 +89,7 @@ async fn detect_remote_platform(
     .await?;
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
-        parse_uname_output(&stdout).map_err(DetectPlatformError::UnsupportedPlatform)
+        parse_uname_output(&stdout)
     } else {
         let code = output.status.code().unwrap_or(-1);
         let stderr = String::from_utf8_lossy(&output.stderr);

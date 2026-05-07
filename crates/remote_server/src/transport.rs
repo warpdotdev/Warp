@@ -28,10 +28,14 @@ pub enum DetectPlatformError {
     /// The platform detection command timed out.
     #[error("platform detection timed out")]
     TimedOut,
-    /// The remote host reported an OS or architecture that is not
+    /// The remote host reported an OS that is not supported by the
+    /// prebuilt remote-server binary.
+    #[error("unsupported OS: {os}")]
+    UnsupportedOs { os: String },
+    /// The remote host reported a CPU architecture that is not
     /// supported by the prebuilt remote-server binary.
-    #[error("unsupported platform")]
-    UnsupportedPlatform(#[source] anyhow::Error),
+    #[error("unsupported architecture: {arch}")]
+    UnsupportedArch { arch: String },
     /// Any other transport-level or unexpected failure.
     #[error(transparent)]
     Other(anyhow::Error),

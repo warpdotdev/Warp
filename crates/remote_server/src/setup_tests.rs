@@ -53,15 +53,23 @@ fn parse_uname_trims_whitespace() {
 #[test]
 fn parse_uname_unsupported_os() {
     let result = parse_uname_output("Windows x86_64");
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("unsupported OS"));
+    match result {
+        Err(crate::transport::DetectPlatformError::UnsupportedOs { os }) => {
+            assert_eq!(os, "Windows");
+        }
+        other => panic!("expected UnsupportedOs, got {other:?}"),
+    }
 }
 
 #[test]
 fn parse_uname_unsupported_arch() {
     let result = parse_uname_output("Linux mips");
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("unsupported arch"));
+    match result {
+        Err(crate::transport::DetectPlatformError::UnsupportedArch { arch }) => {
+            assert_eq!(arch, "mips");
+        }
+        other => panic!("expected UnsupportedArch, got {other:?}"),
+    }
 }
 
 #[test]
