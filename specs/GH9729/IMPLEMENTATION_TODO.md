@@ -127,7 +127,7 @@ Notes are written to `specs/GH9729/reviews/<item>-r<N>.md`.
 | 4-tests-b | animated decoder tests | `57be862` | [x] | [x] |
 | 5a | bounded `LocalFile` asset-cache read | `e338655` | [x] | [x] |
 | 5b | post-load callback rewrites failures to `Error` | `d5fdacc` | [x] | [x] |
-| 5-tests | asset-cache tests | `4ed1e80` | [ ] | [ ] |
+| 5-tests | asset-cache tests | `4ed1e80` | [x] | [x] |
 | 7 | telemetry serialization test | `ec6ffb1` | [ ] | [ ] |
 | FINAL | presubmit (fmt + clippy + nextest) | `3bf5148`, `f743be1`, `8a5c2e6` | [ ] | [ ] |
 
