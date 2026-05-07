@@ -30,6 +30,8 @@ use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
+use crate::view_components::DismissibleToast;
+use crate::workspace::ToastStack;
 
 use crate::ai::auth_secret_types::{
     auth_secret_types_for_harness, build_managed_secret_value, AuthSecretTypeInfo,
@@ -52,9 +54,6 @@ const DESCRIPTION_FONT_SIZE: f32 = 14.;
 
 /// Field label font size (Figma: 10px gray).
 const FIELD_LABEL_FONT_SIZE: f32 = 10.;
-
-/// Skip-link font size (Figma: 12px).
-const SKIP_FONT_SIZE: f32 = 12.;
 
 /// Button label font size (Figma: 14px).
 const BUTTON_FONT_SIZE: f32 = 14.;
@@ -118,11 +117,8 @@ pub struct AuthSecretFtuxView {
     /// Empty when no creation is in progress.
     field_editors: Vec<ViewHandle<EditorView>>,
     creation_state: Option<SecretCreationState>,
-    /// When true, render the "Already logged in? Skip and continue" link.
-    show_skip_link: bool,
     /// Mouse state handles for the bottom buttons. Owned by the view so they
     /// stay stable across renders.
-    skip_mouse_state: MouseStateHandle,
     cancel_mouse_state: MouseStateHandle,
     continue_mouse_state: MouseStateHandle,
 }
@@ -166,6 +162,7 @@ impl AuthSecretFtuxView {
                 CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings.mark_harness_auth_ftux_completed(harness, ctx);
                 });
+                me.clear_all_editor_buffers(ctx);
                 me.creation_state = None;
                 me.field_editors.clear();
                 ctx.notify();
@@ -204,10 +201,19 @@ impl AuthSecretFtuxView {
                 HarnessAvailabilityEvent::AuthSecretCreated { harness, name } => {
                     me.handle_secret_created(*harness, name.clone(), ctx);
                 }
-                HarnessAvailabilityEvent::AuthSecretCreationFailed { .. } => {
+                HarnessAvailabilityEvent::AuthSecretCreationFailed { error } => {
                     if let Some(state) = me.creation_state.as_mut() {
                         state.is_saving = false;
                     }
+                    let window_id = ctx.window_id();
+                    let message = format!("Failed to save API key: {error}");
+                    ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                        ts.add_ephemeral_toast(
+                            DismissibleToast::error(message),
+                            window_id,
+                            ctx,
+                        );
+                    });
                     ctx.notify();
                 }
                 HarnessAvailabilityEvent::Changed
@@ -229,8 +235,6 @@ impl AuthSecretFtuxView {
             name_editor,
             field_editors: Vec::new(),
             creation_state: None,
-            show_skip_link: true,
-            skip_mouse_state: MouseStateHandle::default(),
             cancel_mouse_state: MouseStateHandle::default(),
             continue_mouse_state: MouseStateHandle::default(),
         }
@@ -260,18 +264,7 @@ impl AuthSecretFtuxView {
         });
     }
 
-    /// Sets whether the "Skip and continue" link is rendered. Used by callers
-    /// that re-enter the creation flow from the chip (after FTUX has already
-    /// been completed once for this harness).
-    #[allow(dead_code)]
-    pub fn set_show_skip_link(&mut self, show: bool, ctx: &mut ViewContext<Self>) {
-        if self.show_skip_link != show {
-            self.show_skip_link = show;
-            ctx.notify();
-        }
-    }
-
-    /// Public entry point for entering creation mode from external callers
+    /// Public entry point
     /// (e.g. the top-row chip's "New {type}" sidecar in the non-FTUX path).
     pub fn enter_creation_state_public(
         &mut self,
@@ -385,6 +378,7 @@ impl AuthSecretFtuxView {
         // Clear any in-progress creation state and the dropdown's display
         // label directly — we must NOT call `set_display_label(None)` here
         // because that reopens the menu, which fights with the skip transition.
+        self.clear_all_editor_buffers(ctx);
         self.creation_state = None;
         self.field_editors.clear();
         self.ftux_dropdown.update(ctx, |dropdown, _ctx| {
@@ -462,14 +456,28 @@ impl AuthSecretFtuxView {
         });
     }
 
-    /// Resets creation state and clears the dropdown display text so re-entering
-    /// the FTUX starts with a fresh combobox.
+    /// Resets creation state, clears all editor buffers, and clears the
+    /// dropdown display text so re-entering the FTUX starts fresh.
     fn clear_creation_state(&mut self, ctx: &mut ViewContext<Self>) {
         if self.creation_state.is_some() {
             self.creation_state = None;
+            self.clear_all_editor_buffers(ctx);
             self.field_editors.clear();
             self.ftux_dropdown.update(ctx, |dropdown, ctx| {
                 dropdown.set_display_label(None, ctx);
+            });
+        }
+    }
+
+    /// Clears the buffer of every editor owned by this view (name editor and
+    /// all field editors) so stale values do not persist across FTUX entries.
+    fn clear_all_editor_buffers(&self, ctx: &mut ViewContext<Self>) {
+        self.name_editor.update(ctx, |editor, ctx| {
+            editor.system_clear_buffer(true, ctx);
+        });
+        for editor in &self.field_editors {
+            editor.update(ctx, |editor, ctx| {
+                editor.system_clear_buffer(true, ctx);
             });
         }
     }
@@ -480,6 +488,13 @@ impl AuthSecretFtuxView {
         name: String,
         ctx: &mut ViewContext<Self>,
     ) {
+        // Show a success toast. This lives here rather than on Input so that
+        // only one toast appears regardless of how many terminal panes exist.
+        let window_id = ctx.window_id();
+        let message = format!("API key '{name}' saved.");
+        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+            ts.add_ephemeral_toast(DismissibleToast::default(message), window_id, ctx);
+        });
         // Set the newly-created secret as selected on the view model.
         let vm = self.ambient_agent_model.clone();
         vm.update(ctx, |model, ctx| {
@@ -578,43 +593,6 @@ impl AuthSecretFtuxView {
         column.finish()
     }
 
-    fn render_skip_link(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-        let sub_color = internal_colors::text_sub(theme, theme.surface_1());
-        let link_color = theme.accent().into_solid();
-        let font_family = appearance.ui_font_family();
-
-        let prefix = Text::new_inline(
-            "Already set up authentication in your environment? ".to_string(),
-            font_family,
-            SKIP_FONT_SIZE,
-        )
-        .with_color(sub_color)
-        .finish();
-
-        let click_here = Text::new_inline(
-            "Click here to skip".to_string(),
-            font_family,
-            SKIP_FONT_SIZE,
-        )
-        .with_color(link_color)
-        .finish();
-
-        let row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(prefix)
-            .with_child(click_here)
-            .finish();
-
-        Hoverable::new(self.skip_mouse_state.clone(), move |_| row)
-            .with_cursor(warpui::platform::Cursor::PointingHand)
-            .on_click(|ctx, _, _| {
-                ctx.dispatch_typed_action(AuthSecretFtuxAction::Skip);
-            })
-            .finish()
-    }
-
     fn render_button(
         &self,
         label: &'static str,
@@ -656,10 +634,6 @@ impl AuthSecretFtuxView {
 
     fn render_bottom_row(&self, app: &AppContext) -> Box<dyn Element> {
         let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-
-        if self.show_skip_link {
-            row.add_child(self.render_skip_link(app));
-        }
         row.add_child(Expanded::new(1., Empty::new().finish()).finish());
 
         // Cancel button: switches harness back to Oz.

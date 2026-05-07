@@ -2202,39 +2202,6 @@ impl Input {
             });
         }
 
-        // Show a toast when a new auth secret is created for a harness, and an
-        // error toast when creation fails.
-        ctx.subscribe_to_model(
-            &HarnessAvailabilityModel::handle(ctx),
-            |_me, _, event, ctx| {
-                use crate::ai::harness_availability::HarnessAvailabilityEvent;
-                let window_id = ctx.window_id();
-                match event {
-                    HarnessAvailabilityEvent::AuthSecretCreated { name, .. } => {
-                        let message = format!("API key '{name}' saved.");
-                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
-                            ts.add_ephemeral_toast(
-                                DismissibleToast::default(message),
-                                window_id,
-                                ctx,
-                            );
-                        });
-                    }
-                    HarnessAvailabilityEvent::AuthSecretCreationFailed { error } => {
-                        let message = format!("Failed to save API key: {error}");
-                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
-                            ts.add_ephemeral_toast(
-                                DismissibleToast::error(message),
-                                window_id,
-                                ctx,
-                            );
-                        });
-                    }
-                    HarnessAvailabilityEvent::Changed
-                    | HarnessAvailabilityEvent::AuthSecretsLoaded { .. } => {}
-                }
-            },
-        );
 
         let prompt_selection_state_handle = SelectionHandle::default();
 
