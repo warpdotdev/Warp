@@ -1885,7 +1885,7 @@ impl RichTextEditorView {
             {
                 let scrolled = self
                     .model
-                    .update(ctx, |model, ctx| model.scroll_to_markdown_anchor(&url, ctx));
+                    .update(ctx, |model, ctx| model.scroll_to_matching_header(&url, ctx));
                 if scrolled {
                     self.open_link = None;
                     ctx.notify();

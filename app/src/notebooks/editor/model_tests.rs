@@ -499,15 +499,15 @@ fn test_inline_markdown_double_leading_underscore_not_italic() {
 }
 
 #[test]
-fn test_markdown_anchor_target_matches_heading() {
+fn test_find_matching_header_simple() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
         let editor = model_from_markdown("- [Goal](#goal)\n\n## Goal\nBody", &mut app, true);
 
         editor.read(&app, |editor, ctx| {
             let range = editor
-                .markdown_anchor_target("#goal", ctx)
-                .expect("Anchor should match heading");
+                .find_matching_header("#goal", ctx)
+                .expect("Fragment should match heading");
             let heading = editor
                 .content
                 .as_ref(ctx)
@@ -520,84 +520,60 @@ fn test_markdown_anchor_target_matches_heading() {
 }
 
 #[test]
-fn test_markdown_anchor_target_normalizes_heading_text() {
+fn test_find_matching_header_case_insensitive() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown("## My **Bold** Goal!\nBody", &mut app, true);
+        let editor = model_from_markdown("## My Bold Goal\nBody", &mut app, true);
 
         editor.read(&app, |editor, ctx| {
-            let range = editor
-                .markdown_anchor_target("#my-bold-goal", ctx)
-                .expect("Anchor should match normalized heading");
-            let heading = editor
-                .content
-                .as_ref(ctx)
-                .text_in_range(range.start + 1..range.end)
-                .into_string();
-
-            assert_eq!(heading, "My Bold Goal!");
+            assert!(editor.find_matching_header("#my bold goal", ctx).is_some());
+            assert!(editor.find_matching_header("#MY BOLD GOAL", ctx).is_some());
         });
     })
 }
 
 #[test]
-fn test_markdown_anchor_target_preserves_separator_runs() {
+fn test_find_matching_header_percent_decoded() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown("## A & B\nFirst\n\n## A B\nSecond", &mut app, true);
+        let editor = model_from_markdown("## Hello World\nBody", &mut app, true);
 
         editor.read(&app, |editor, ctx| {
-            let symbol_separated = editor
-                .markdown_anchor_target("#a--b", ctx)
-                .expect("Symbol-separated heading should match double hyphen slug");
-            let space_separated = editor
-                .markdown_anchor_target("#a-b", ctx)
-                .expect("Space-separated heading should match single hyphen slug");
-
-            assert!(space_separated.start > symbol_separated.start);
+            assert!(editor.find_matching_header("#Hello%20World", ctx).is_some());
         });
     })
 }
 
 #[test]
-fn test_markdown_anchor_target_handles_duplicate_headings() {
+fn test_find_matching_header_returns_first_match() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
         let editor = model_from_markdown("## Goal\nFirst\n\n## Goal\nSecond", &mut app, true);
 
         editor.read(&app, |editor, ctx| {
-            let first = editor
-                .markdown_anchor_target("#goal", ctx)
-                .expect("First anchor should match");
-            let second = editor
-                .markdown_anchor_target("#goal-1", ctx)
-                .expect("Duplicate anchor should match");
-
-            assert!(second.start > first.start);
-            assert!(editor.markdown_anchor_target("#goal-2", ctx).is_none());
+            let range = editor
+                .find_matching_header("#goal", ctx)
+                .expect("Should match first heading");
+            let heading_text = editor
+                .content
+                .as_ref(ctx)
+                .text_in_range(range.start + 1..range.end)
+                .into_string();
+            assert_eq!(heading_text, "Goal");
         });
     })
 }
 
 #[test]
-fn test_markdown_anchor_target_avoids_slug_collisions() {
+fn test_find_matching_header_missing_returns_none() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown(
-            "## Goal\nFirst\n\n## Goal\nSecond\n\n## Goal-1\nNatural suffix",
-            &mut app,
-            true,
-        );
+        let editor = model_from_markdown("## Goal\nBody", &mut app, true);
 
         editor.read(&app, |editor, ctx| {
-            let duplicate = editor
-                .markdown_anchor_target("#goal-1", ctx)
-                .expect("Duplicate anchor should match");
-            let natural_suffix = editor
-                .markdown_anchor_target("#goal-1-1", ctx)
-                .expect("Colliding natural suffix should remain reachable");
-
-            assert!(natural_suffix.start > duplicate.start);
+            assert!(editor.find_matching_header("#nonexistent", ctx).is_none());
+            assert!(editor.find_matching_header("#", ctx).is_none());
+            assert!(editor.find_matching_header("", ctx).is_none());
         });
     })
 }

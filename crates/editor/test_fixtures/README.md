@@ -15,8 +15,8 @@ The `images/` directory contains sample images and a test markdown file (`image_
 
 To test image rendering, open `images/image_test.md` in Warp.
 
-## ToC Anchors
+## ToC Navigation
 
-`toc_anchor_test.md` covers manual validation for Markdown table-of-contents fragment links, including punctuation normalization, duplicate headings, natural suffix collisions, separator-run collisions, and long-document scrolling.
+`toc_anchor_test.md` covers manual validation for Markdown fragment link navigation (case-insensitive heading matching and scrolling).
 
-To test anchor navigation, open `toc_anchor_test.md` in Warp's Markdown viewer and click the table-of-contents links.
+To test, open `toc_anchor_test.md` in Warp's Markdown viewer and click the table-of-contents links.

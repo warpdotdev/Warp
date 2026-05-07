@@ -143,7 +143,7 @@ fn link_offset(
     link_url: &str,
     ctx: &warpui::AppContext,
 ) -> CharOffset {
-    let max_offset = editor.markdown(ctx).chars().count() + 10;
+    let max_offset = editor.markdown(ctx).chars().count();
     (0..=max_offset)
         .map(CharOffset::from)
         .find(|offset| {

@@ -1,11 +1,5 @@
 use base64::{prelude::BASE64_STANDARD, Engine as _};
-use std::{
-    any::Any,
-    borrow::Cow,
-    collections::{HashMap, HashSet},
-    ops::Range,
-    time::Duration,
-};
+use std::{any::Any, borrow::Cow, collections::HashMap, ops::Range, time::Duration};
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -1263,12 +1257,12 @@ impl NotebooksEditorModel {
         self.content.as_ref(app).link_url_at_offset(offset)
     }
 
-    pub fn scroll_to_markdown_anchor(
+    pub fn scroll_to_matching_header(
         &mut self,
-        anchor: &str,
+        fragment: &str,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
-        let Some(range) = self.markdown_anchor_target(anchor, ctx) else {
+        let Some(range) = self.find_matching_header(fragment, ctx) else {
             return false;
         };
 
@@ -1279,12 +1273,18 @@ impl NotebooksEditorModel {
         true
     }
 
-    fn markdown_anchor_target(&self, anchor: &str, ctx: &AppContext) -> Option<Range<CharOffset>> {
-        let anchor = Self::normalize_markdown_anchor(anchor)?;
-        let content = self.content.as_ref(ctx);
-        let mut seen_slugs = HashMap::<String, usize>::new();
-        let mut used_slugs = HashSet::<String>::new();
+    fn find_matching_header(&self, fragment: &str, ctx: &AppContext) -> Option<Range<CharOffset>> {
+        let target = fragment.strip_prefix('#')?;
+        if target.is_empty() {
+            return None;
+        }
+        let target = urlencoding::decode(target).ok()?;
+        let target = target.trim().to_lowercase();
+        if target.is_empty() {
+            return None;
+        }
 
+        let content = self.content.as_ref(ctx);
         for outline in content.outline_blocks() {
             if !matches!(
                 &outline.block_type,
@@ -1296,67 +1296,12 @@ impl NotebooksEditorModel {
             let heading = content
                 .text_in_range(outline.start + 1..outline.end)
                 .into_string();
-            let slug = Self::markdown_anchor_slug(&heading);
-            if slug.is_empty() {
-                continue;
-            }
-
-            let unique_slug =
-                Self::unique_markdown_anchor_slug(&slug, &mut seen_slugs, &mut used_slugs);
-
-            if unique_slug == anchor {
+            if heading.trim().to_lowercase() == target {
                 return Some(outline.start..outline.end);
             }
         }
 
         None
-    }
-
-    fn unique_markdown_anchor_slug(
-        slug: &str,
-        seen_slugs: &mut HashMap<String, usize>,
-        used_slugs: &mut HashSet<String>,
-    ) -> String {
-        let suffix = seen_slugs.entry(slug.to_string()).or_insert(0);
-        let mut candidate = if *suffix == 0 {
-            slug.to_string()
-        } else {
-            format!("{slug}-{suffix}")
-        };
-
-        while used_slugs.contains(&candidate) {
-            *suffix += 1;
-            candidate = format!("{slug}-{suffix}");
-        }
-
-        *suffix += 1;
-        used_slugs.insert(candidate.clone());
-        candidate
-    }
-
-    fn normalize_markdown_anchor(anchor: &str) -> Option<String> {
-        let fragment = anchor.strip_prefix('#')?;
-        if fragment.is_empty() {
-            return None;
-        }
-
-        let decoded = urlencoding::decode(fragment).ok()?;
-        let slug = Self::markdown_anchor_slug(decoded.as_ref());
-        (!slug.is_empty()).then_some(slug)
-    }
-
-    fn markdown_anchor_slug(text: &str) -> String {
-        let mut slug = String::new();
-
-        for ch in text.trim().to_lowercase().chars() {
-            if ch.is_whitespace() {
-                slug.push('-');
-            } else if ch.is_alphanumeric() || ch == '_' || ch == '-' {
-                slug.push(ch);
-            }
-        }
-
-        slug
     }
 
     /// Whether or not there's an active command block selection.
