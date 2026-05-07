@@ -15,15 +15,12 @@ use std::{
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
-        use futures::future::Either;
         use std::fs;
-        use std::future;
-        use std::future::Future;
     }
 }
 #[cfg(not(target_arch = "wasm32"))]
 use warpui::AppContext;
-use warpui::{r#async::SpawnedFutureHandle, ModelContext};
+use warpui::{r#async::SpawnedFutureHandle, ModelContext, ModelHandle};
 
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::features::FeatureFlag;
@@ -34,7 +31,7 @@ use crate::util::git::{
     PrInfo,
 };
 
-use super::diff_size_limits::compute_diff_size;
+use crate::code_review::diff_size_limits::compute_diff_size;
 
 use crate::code_review::CodeReviewTelemetryEvent;
 #[cfg(feature = "local_fs")]
@@ -48,20 +45,22 @@ use warp_core::{safe_warn, send_telemetry_from_ctx};
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
         use std::collections::HashSet;
-        use super::file_invalidation_queue::{FileInvalidationError, FileInvalidationTask};
+        use crate::code_review::file_invalidation_queue::{FileInvalidationError, FileInvalidationTask};
         use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
         use repo_metadata::{
             repository::{RepositorySubscriber, SubscriberId},
             RepoMetadataError, Repository, RepositoryUpdate,
         };
         use async_channel::Sender;
-        use warpui::{ModelHandle, SingletonEntity};
+        use warpui::SingletonEntity;
+    }
+    else {
+        // ModelHandle already imported unconditionally above;
+        // warpui::ModelHandle used by LocalDiffStateModel fields on all targets.
     }
 }
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
 use crate::terminal::local_shell::LocalShellState;
-
-const UNCOMMITTED_CHANGES: &str = "Uncommitted changes";
 
 /// Represents a parsed unified diff header
 /// Format: @@ -old_start,old_count +new_start,new_count @@ [optional context]
@@ -308,7 +307,7 @@ pub enum DiffState {
     NotInRepository,
     Loading,
     Error(String),
-    Loaded(GitDiffData),
+    Loaded,
 }
 
 #[derive(Clone)]
@@ -425,7 +424,10 @@ impl PendingFileUpdate {
 }
 
 /// Model that contains all state related to the current pane's open git repository.
-pub struct DiffStateModel {
+///
+/// This is the local-only implementation. Consumers should use [`DiffStateModel`] (the wrapper)
+/// rather than this type directly.
+pub struct LocalDiffStateModel {
     #[cfg(feature = "local_fs")]
     repository: Option<ModelHandle<Repository>>,
     #[cfg(feature = "local_fs")]
@@ -467,14 +469,6 @@ impl DiffStats {
     }
 }
 
-/// Comprehensive git diff information including uncommitted changes, main branch comparison, and main branch name
-#[derive(Debug, Clone)]
-pub struct GitDiffInfo {
-    pub uncommitted_stats: Option<DiffStats>,
-    pub main_branch_stats: Option<DiffStats>,
-    pub main_branch_name: Option<String>,
-}
-
 #[derive(Debug, Clone, Copy)]
 struct GitNumStatMetadata {
     lines_added: usize,
@@ -482,7 +476,7 @@ struct GitNumStatMetadata {
     is_binary_file: bool,
 }
 
-impl DiffStateModel {
+impl LocalDiffStateModel {
     #[cfg(feature = "local_fs")]
     pub fn new(repo_path: Option<String>, ctx: &mut ModelContext<Self>) -> Self {
         // Set up file invalidation queue and subscribe to results
@@ -578,20 +572,10 @@ impl DiffStateModel {
             InternalDiffState::NotInRepository => DiffState::NotInRepository,
             InternalDiffState::Loading => DiffState::Loading,
             InternalDiffState::Loaded(diffs) => match &diffs.changes {
-                Ok(git_diff_data) => DiffState::Loaded(git_diff_data.clone()),
+                Ok(_) => DiffState::Loaded,
                 Err(err) => DiffState::Error(err.clone()),
             },
         }
-    }
-
-    pub fn get_metadata(&self) -> Option<&DiffMetadataAgainstBase> {
-        self.metadata
-            .as_ref()
-            .and_then(|metadata| match &self.mode {
-                DiffMode::Head => Some(&metadata.against_head),
-                DiffMode::MainBranch => metadata.against_base_branch.as_ref(),
-                DiffMode::OtherBranch(_) => None, // TODO: implement caching for arbitrary branches
-            })
     }
 
     pub fn diff_mode(&self) -> DiffMode {
@@ -604,34 +588,11 @@ impl DiffStateModel {
             .map(|metadata| metadata.against_head.aggregate_stats)
     }
 
-    pub fn get_main_branch_stats(&self) -> Option<DiffStats> {
-        self.metadata.as_ref().and_then(|metadata| {
-            metadata
-                .against_base_branch
-                .as_ref()
-                .map(|base| base.aggregate_stats)
-        })
-    }
-
     /// Get the name of the main branch being used for comparison
     pub fn get_main_branch_name(&self) -> Option<String> {
         self.metadata
             .as_ref()
             .map(|metadata| metadata.main_branch_name.clone())
-    }
-
-    /// Converts an optional base branch name into a `DiffMode`.
-    /// Falls back to `DiffMode::MainBranch` when no branch is specified.
-    pub fn diff_mode_for_base_branch(&self, base_branch: Option<&str>) -> DiffMode {
-        match base_branch {
-            Some(branch) => {
-                let main_branch = self
-                    .get_main_branch_name()
-                    .and_then(|main_branch| main_branch.strip_prefix("origin/").map(String::from));
-                DiffMode::from_branch(branch, main_branch.as_deref())
-            }
-            None => DiffMode::MainBranch,
-        }
     }
 
     /// Get the name of the current checked-out branch or commit.
@@ -711,16 +672,6 @@ impl DiffStateModel {
     pub fn is_git_operation_blocked(&self, _app: &warpui::AppContext) -> bool {
         false
     }
-    /// Get comprehensive git diff information including uncommitted stats, main branch stats, and main branch name
-    /// This is a utility function that combines all diff-related information in a single call
-    pub fn get_diff_stats(&self) -> GitDiffInfo {
-        GitDiffInfo {
-            uncommitted_stats: self.get_uncommitted_stats(),
-            main_branch_stats: self.get_main_branch_stats(),
-            main_branch_name: self.get_main_branch_name(),
-        }
-    }
-
     /// Returns `true` once the repository has at least one commit.
     pub(super) fn has_head(&self) -> bool {
         cfg_if::cfg_if! {
@@ -837,10 +788,6 @@ impl DiffStateModel {
             stash_args.push(path.as_str());
         }
 
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs stash_uncommitted_changes git {}",
-            stash_args.join(" ")
-        );
         let stash_res = run_git_command(repo_path, &stash_args).await;
 
         match stash_res {
@@ -885,10 +832,6 @@ impl DiffStateModel {
             restore_args.push(path.as_str());
         }
 
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs git_restore_and_clean git {}",
-            restore_args.join(" ")
-        );
         let restore_res = run_git_command(repo_path, &restore_args).await;
 
         match restore_res {
@@ -898,10 +841,6 @@ impl DiffStateModel {
                 for path in relative_paths {
                     clean_args.push(path.as_str());
                 }
-                log::debug!(
-                    "[GIT OPERATION] diff_state.rs git_restore_and_clean git {}",
-                    clean_args.join(" ")
-                );
                 let clean_res = run_git_command(repo_path, &clean_args).await;
 
                 match clean_res {
@@ -919,10 +858,6 @@ impl DiffStateModel {
                     for path in relative_paths {
                         clean_args.push(path.as_str());
                     }
-                    log::debug!(
-                        "[GIT OPERATION] diff_state.rs git_restore_and_clean git {}",
-                        clean_args.join(" ")
-                    );
                     let clean_res = run_git_command(repo_path, &clean_args).await;
                     if let Err(err) = clean_res {
                         log::warn!("Failed to clean untracked files: {err}");
@@ -931,9 +866,6 @@ impl DiffStateModel {
                 } else if err_msg.contains("did not match any file(s) known to git") {
                     // If some files don't exist in the branch, we need to remove them
                     for file_path in relative_paths {
-                        log::debug!(
-                            "[GIT OPERATION] diff_state.rs git_restore_and_clean git rm -f -- {file_path}"
-                        );
                         let rm_res =
                             run_git_command(repo_path, &["rm", "-f", "--", file_path.as_str()])
                                 .await;
@@ -943,9 +875,6 @@ impl DiffStateModel {
                             if rm_err_msg.contains("did not match any files") {
                                 // if the file was staged but it isn't in the working directory,
                                 // e.g. it was locally deleted
-                                log::debug!(
-                                    "[GIT OPERATION] diff_state.rs git_restore_and_clean git reset -- {file_path}"
-                                );
                                 if let Err(e) =
                                     run_git_command(repo_path, &["reset", "--", file_path.as_str()])
                                         .await
@@ -1006,9 +935,6 @@ impl DiffStateModel {
 
                 for info in &renamed_file_infos {
                     if let GitFileStatus::Renamed { old_path } = &info.status {
-                        log::debug!(
-                            "[GIT OPERATION] diff_state.rs discard_files_impl git restore --staged --worktree -- {old_path}"
-                        );
                         let _ = run_git_command(
                             repo_path,
                             &["restore", "--staged", "--worktree", "--", old_path],
@@ -1025,9 +951,6 @@ impl DiffStateModel {
                         };
 
                         // Remove the new file
-                        log::debug!(
-                            "[GIT OPERATION] diff_state.rs discard_files_impl git rm -f -- {relative_new_path}"
-                        );
                         if let Err(e) =
                             run_git_command(repo_path, &["rm", "-f", "--", &relative_new_path])
                                 .await
@@ -1038,9 +961,6 @@ impl DiffStateModel {
                         // Restore the old file from the branch using git checkout
                         // We use checkout instead of restore because the old path doesn't exist in the
                         // working directory yet, and git restore requires the path to exist
-                        log::debug!(
-                            "[GIT OPERATION] diff_state.rs discard_files_impl git checkout {branch} -- {old_path}"
-                        );
                         if let Err(e) =
                             run_git_command(repo_path, &["checkout", branch, "--", old_path]).await
                         {
@@ -1212,7 +1132,7 @@ impl DiffStateModel {
             async_channel::unbounded();
         let start = new_repository.update(ctx, |new_repository, ctx| {
             new_repository.start_watching(
-                Box::new(DiffStateModelRepositorySubscriber {
+                Box::new(LocalDiffStateModelRepositorySubscriber {
                     repository_update_tx,
                 }),
                 ctx,
@@ -1226,7 +1146,6 @@ impl DiffStateModel {
             move |me, item, ctx| match item {
                 DiffStateRepositoryUpdate::Invalidation(update) => {
                     if me.handle_file_update(update, ctx) {
-                        log::debug!("[GIT OPERATION] handle_file_update found changes");
                         let throttled_repository_update_tx_clone =
                             throttled_repository_update_tx.clone();
                         ctx.background_executor()
@@ -1234,8 +1153,6 @@ impl DiffStateModel {
                                 let _ = throttled_repository_update_tx_clone.send(()).await;
                             })
                             .detach();
-                    } else {
-                        log::debug!("[GIT OPERATION] No changes found no metadata update.");
                     }
                 }
                 DiffStateRepositoryUpdate::InvalidationWithLockedIndex => {
@@ -1488,7 +1405,6 @@ impl DiffStateModel {
 
     /// Gets the merge base between HEAD and the specified branch
     async fn get_merge_base(repo_path: &Path, branch: &str) -> Result<String> {
-        log::debug!("[GIT OPERATION] diff_state.rs get_merge_base git merge-base HEAD {branch}");
         let output = run_git_command(repo_path, &["merge-base", "HEAD", branch]).await?;
         Ok(output.trim().to_string())
     }
@@ -1543,7 +1459,6 @@ impl DiffStateModel {
         let main_branch_name = detect_main_branch(&repo_path).await?;
         let current_branch_name = detect_current_branch(&repo_path).await?;
 
-        log::debug!("[GIT OPERATION] diff_state.rs load_metadata_for_repo git rev-parse HEAD");
         let has_head_commit = run_git_command(&repo_path, &["rev-parse", "HEAD"])
             .await
             .is_ok();
@@ -1586,33 +1501,6 @@ impl DiffStateModel {
             unpushed_commits,
             upstream_ref,
             pr_info: None,
-        })
-    }
-
-    /// Gets diff data for the specified mode, checking the model's internal state first.
-    ///
-    /// This should rarely be used, because this does not cache the result.
-    /// Normally, you should use DiffStateModel.get() to get the current diff state.
-    /// This is useful to read a specific mode that might not be the current mode.
-    #[cfg(feature = "local_fs")]
-    pub fn get_diff_data_for_mode(
-        &self,
-        mode: DiffMode,
-        repo_path: PathBuf,
-    ) -> impl Future<Output = Option<GitDiffData>> {
-        // Check if we have the data already loaded for this mode
-        if let InternalDiffState::Loaded(diffs) = &self.state {
-            if self.mode == mode {
-                if let Ok(data) = &diffs.changes {
-                    return Either::Left(future::ready(Some(data.clone())));
-                }
-            }
-        }
-
-        // Data not cached - need to load it
-        Either::Right(async {
-            let diffs = Self::load_diffs_for_repo(repo_path, mode, false).await;
-            diffs.changes.ok().map(|diff| diff.into())
         })
     }
 
@@ -1733,7 +1621,9 @@ impl DiffStateModel {
         self.state = InternalDiffState::Loaded((&diffs).into());
         // Compute merge base and flush deferred invalidations before emitting.
         self.recompute_merge_base_and_flush(ctx);
-        ctx.emit(DiffStateModelEvent::NewDiffsComputed(diffs.changes.ok()));
+        ctx.emit(DiffStateModelEvent::NewDiffsComputed(
+            diffs.changes.ok().map(Arc::new),
+        ));
     }
 
     /// Returns the number of lines in a given file. Returns `None` if the file is a binary file
@@ -1789,9 +1679,6 @@ impl DiffStateModel {
         repo_path: &Path,
     ) -> Result<DiffMetadataAgainstBase> {
         // First, get the list of changed files with their status
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs diff_metadata_against_head git --no-optional-locks status --untracked-files=all --branch --porcelain=2 -z"
-        );
         let status_output = run_git_command(
             repo_path,
             &[
@@ -1833,9 +1720,6 @@ impl DiffStateModel {
 
     async fn file_statuses_against_head(repo_path: &Path) -> Result<Vec<(PathBuf, GitFileStatus)>> {
         // First, get the list of changed files with their status
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs file_statuses_against_head git --no-optional-locks status --untracked-files=all --branch --porcelain=2 -z"
-        );
         let status_output = run_git_command(
             repo_path,
             &[
@@ -1871,7 +1755,7 @@ impl DiffStateModel {
                 Self::get_file_content_at_head(repo_path, &file_path, &status).await;
 
             file_diff.is_autogenerated =
-                super::is_file_autogenerated(&file_path, content_at_head.as_deref());
+                crate::code_review::is_file_autogenerated(&file_path, content_at_head.as_deref());
 
             total_additions += file_diff.additions();
             total_deletions += file_diff.deletions();
@@ -1916,9 +1800,6 @@ impl DiffStateModel {
 
         match (mode, merge_base) {
             (DiffMode::Head, _) => {
-                log::debug!(
-                    "[GIT OPERATION] diff_state.rs file_status_for_path git status -- {rel_str}"
-                );
                 let output = run_git_command(
                     repo_path,
                     &[
@@ -1935,9 +1816,6 @@ impl DiffStateModel {
                 Ok(statuses.into_iter().find(|(p, _)| *p == relative))
             }
             (_, Some(base)) => {
-                log::debug!(
-                    "[GIT OPERATION] diff_state.rs file_status_for_path git diff --name-status -z {base} -- {rel_str}"
-                );
                 let diff_output = run_git_command(
                     repo_path,
                     &["diff", "--name-status", "-z", base, "--", rel_str],
@@ -1953,9 +1831,6 @@ impl DiffStateModel {
 
                 // The file may be untracked (not in the base diff). Fall back to
                 // `git status` scoped to this path to detect untracked files.
-                log::debug!(
-                    "[GIT OPERATION] diff_state.rs file_status_for_path git status -- {rel_str} (untracked fallback)"
-                );
                 let status_output =
                     run_git_command(repo_path, &["status", "--porcelain=2", "-z", "--", rel_str])
                         .await?;
@@ -1977,9 +1852,6 @@ impl DiffStateModel {
             .unwrap_or_else(|_| file.to_path_buf());
         let rel_str = relative.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?;
 
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs is_file_binary git diff --numstat {commit} -- {rel_str}"
-        );
         let output =
             match run_git_command(repo_path, &["diff", "--numstat", commit, "--", rel_str]).await {
                 Ok(o) => o,
@@ -2074,7 +1946,7 @@ impl DiffStateModel {
         };
 
         file_diff.is_autogenerated =
-            super::is_file_autogenerated(file_path, content_at_head.as_deref());
+            crate::code_review::is_file_autogenerated(file_path, content_at_head.as_deref());
 
         Ok(Some(FileDiffAndContent {
             file_diff,
@@ -2086,9 +1958,6 @@ impl DiffStateModel {
         repo_path: &Path,
         merge_base: &str,
     ) -> Result<Vec<(PathBuf, GitFileStatus)>> {
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs file_statuses_against_base git diff --name-status -z {merge_base}"
-        );
         let diff_output =
             run_git_command(repo_path, &["diff", "--name-status", "-z", merge_base]).await?;
 
@@ -2100,9 +1969,6 @@ impl DiffStateModel {
         };
 
         // Also get untracked files, as they should be included in branch comparisons
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs file_statuses_against_base git status --untracked-files=all --porcelain=2 -z"
-        );
         let status_output = run_git_command(
             repo_path,
             &["status", "--untracked-files=all", "--porcelain=2", "-z"],
@@ -2206,9 +2072,6 @@ impl DiffStateModel {
         };
 
         // Get the diff between working directory and merge base with full patch output
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs diff_metadata_against_specific_branch git diff --name-status -z {merge_base}"
-        );
         let diff_output =
             run_git_command(repo_path, &["diff", "--name-status", "-z", &merge_base]).await?;
 
@@ -2220,9 +2083,6 @@ impl DiffStateModel {
         };
 
         // Also get untracked files, as they should be included in branch comparisons
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs diff_metadata_against_specific_branch git status --untracked-files=all --porcelain=2 -z"
-        );
         let status_output = run_git_command(
             repo_path,
             &["status", "--untracked-files=all", "--porcelain=2", "-z"],
@@ -2333,10 +2193,6 @@ impl DiffStateModel {
         }
         // Get branches sorted by commit date, limited to 100 most recent for performance
         // Using git's --count option to limit at the git command level for efficiency
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs get_all_branches git {}",
-            args.join(" ")
-        );
         let output = run_git_command(repo_path, args.as_slice()).await?;
 
         let mut branches = Vec::new();
@@ -2527,18 +2383,12 @@ impl DiffStateModel {
                 // all content as additions, which is the correct representation.
                 Some(String::new())
             }
-            _ => {
-                log::debug!(
-                    "[GIT OPERATION] diff_state.rs get_file_content_at_head git show HEAD:{}",
-                    file_path.display()
-                );
-                (run_git_command(
-                    repo_path,
-                    &["show", &format!("HEAD:{}", file_path.to_str()?)],
-                )
-                .await)
-                    .ok()
-            }
+            _ => (run_git_command(
+                repo_path,
+                &["show", &format!("HEAD:{}", file_path.to_str()?)],
+            )
+            .await)
+                .ok(),
         }
     }
 
@@ -2665,10 +2515,6 @@ impl DiffStateModel {
             }
         };
 
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs get_file_diff git {}",
-            diff_args.join(" ")
-        );
         let diff_output = match run_git_command(repo_path, &diff_args).await {
             Ok(output) => output,
             Err(error) => {
@@ -2969,9 +2815,6 @@ impl DiffStateModel {
         repo_path: &Path,
         commit: &str,
     ) -> Result<HashMap<PathBuf, GitNumStatMetadata>> {
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs get_diff_metadata_using_numstat git diff --numstat {commit}"
-        );
         let numstat_output = match run_git_command(repo_path, &["diff", "--numstat", commit]).await
         {
             Ok(output) => output,
@@ -3028,9 +2871,6 @@ impl DiffStateModel {
         file_path: &str,
         commit: &str,
     ) -> Option<String> {
-        log::debug!(
-            "[GIT OPERATION] diff_state.rs get_file_content_at_commit git show {commit}:{file_path}"
-        );
         run_git_command(repo_path, &["show", &format!("{commit}:{file_path}")])
             .await
             .ok()
@@ -3041,24 +2881,7 @@ impl DiffStateModel {
         GitFileStatus::try_from(status_code)
     }
 
-    fn changes_vs_main_branch_label(&self) -> String {
-        let main_branch_name = self.get_main_branch_name().unwrap_or("main".to_string());
-        format!("Changes vs. {main_branch_name}")
-    }
-
-    fn changes_vs_head_label(&self) -> String {
-        UNCOMMITTED_CHANGES.to_string()
-    }
-
-    pub fn label_text(&self, mode: DiffMode) -> String {
-        match mode {
-            DiffMode::Head => self.changes_vs_head_label(),
-            DiffMode::MainBranch => self.changes_vs_main_branch_label(),
-            DiffMode::OtherBranch(branch) => format!("Changes vs. {branch}"),
-        }
-    }
-
-    /// Fetches PR info for the current branch via `gh pr view` (network call).
+    /// Fetches PR info
     /// Call this on branch change or after push — not on every metadata refresh.
     #[cfg(feature = "local_fs")]
     pub fn refresh_pr_info(&mut self, ctx: &mut ModelContext<Self>) {
@@ -3108,7 +2931,7 @@ pub enum DiffStateModelEvent {
     /// Event dispatched when the current branch changes.
     CurrentBranchChanged,
     /// Event dispatched when new diffs are computed (full reload).
-    NewDiffsComputed(Option<GitDiffWithBaseContent>),
+    NewDiffsComputed(Option<Arc<GitDiffWithBaseContent>>),
     /// Event dispatched when a single file's diff is updated incrementally.
     SingleFileUpdated {
         path: PathBuf,
@@ -3118,7 +2941,7 @@ pub enum DiffStateModelEvent {
     MetadataRefreshed(DiffMetadata),
 }
 
-impl warpui::Entity for DiffStateModel {
+impl warpui::Entity for LocalDiffStateModel {
     type Event = DiffStateModelEvent;
 }
 
@@ -3133,12 +2956,12 @@ enum DiffStateRepositoryUpdate {
 }
 
 #[cfg(feature = "local_fs")]
-struct DiffStateModelRepositorySubscriber {
+struct LocalDiffStateModelRepositorySubscriber {
     repository_update_tx: Sender<DiffStateRepositoryUpdate>,
 }
 
 #[cfg(feature = "local_fs")]
-impl RepositorySubscriber for DiffStateModelRepositorySubscriber {
+impl RepositorySubscriber for LocalDiffStateModelRepositorySubscriber {
     fn on_scan(
         &mut self,
         _repository: &Repository,
@@ -3175,7 +2998,7 @@ impl RepositorySubscriber for DiffStateModelRepositorySubscriber {
 }
 
 #[cfg(test)]
-impl DiffStateModel {
+impl LocalDiffStateModel {
     /// Test-only constructor that creates a bare model without a repository.
     pub fn new_for_test(ctx: &mut ModelContext<Self>) -> Self {
         Self {
@@ -3202,5 +3025,5 @@ impl DiffStateModel {
 }
 
 #[cfg(test)]
-#[path = "diff_state_tests.rs"]
+#[path = "../diff_state_tests.rs"]
 mod tests;
