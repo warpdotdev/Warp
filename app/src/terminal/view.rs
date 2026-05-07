@@ -26039,36 +26039,42 @@ impl TypedActionView for TerminalView {
                 });
             }
             OpenChildAgentInNewPane { conversation_id } => {
-                // "Open in new pane": split a fresh terminal pane to the
-                // right and load the child conversation into it. We do
-                // *not* reveal the orchestrator's hidden child pane here
-                // — that pane's terminal model has no rendered AI blocks
-                // for the conversation (they live in whichever pane last
-                // hosted the in-place agent view via
-                // `SwitchAgentViewToConversation`), so revealing it would
-                // show an empty transcript. Going through a fresh view
-                // forces the cloud load+restore path in
-                // `enter_agent_view_for_conversation`, which mirrors what
-                // "Open in new tab" does and gives a fully populated
-                // history view.
+                // "Open in new pane": reveal the existing dedicated child
+                // agent pane as a sibling of the orchestrator. The pane
+                // group's `unhide_child_agent_pane_for_split_off` reverts
+                // any active swap (so the orchestrator returns to its
+                // slot) and splits the child pane in next to it. The
+                // child's `TerminalView` is preserved — not recreated —
+                // so in-flight commands keep running and the transcript
+                // stays intact.
                 ctx.emit(Event::OpenChildAgentInNewPane {
                     conversation_id: *conversation_id,
                 });
-                self.revert_agent_view_to_parent_if_displaying_child(*conversation_id, ctx);
+                // Note: we deliberately do NOT call
+                // `revert_agent_view_to_parent_if_displaying_child` here.
+                // `self` is the dedicated `TerminalView` for the child
+                // conversation (we're currently rendering it because the
+                // pill-bar swap put it in the orchestrator's slot).
+                // Reverting `self` to the parent would leave the
+                // freshly-split pane showing the orchestrator instead of
+                // the child.
             }
             OpenChildAgentInNewTab { conversation_id } => {
-                // "Open in new tab": bubble up to the workspace, which is
-                // the only layer that can add a new tab. The workspace will
-                // create a fresh session tab and call
-                // `enter_agent_view_for_conversation` with this id so the
-                // new tab opens directly into the child's agent view (not
-                // the orchestrator's). The current tab stays where it is
-                // and the workspace switches focus to the new tab as part
-                // of `add_new_session_tab_with_default_mode`.
+                // "Open in new tab": bubble up to the workspace so it can
+                // wrap the child's existing pane in a fresh tab. The
+                // workspace's handler calls
+                // `take_child_agent_pane_for_split_off` which reverts any
+                // active swap (so the orchestrator returns to its slot in
+                // this tab) and detaches the child pane for adoption into
+                // a new tab. The same `TerminalView` survives the move.
                 ctx.emit(Event::OpenChildAgentInNewTab {
                     conversation_id: *conversation_id,
                 });
-                self.revert_agent_view_to_parent_if_displaying_child(*conversation_id, ctx);
+                // Note: we deliberately do NOT call
+                // `revert_agent_view_to_parent_if_displaying_child` here.
+                // `self` is the dedicated `TerminalView` for the child
+                // conversation; switching it to the parent would surface
+                // the orchestrator in the new tab instead of the child.
             }
             StopAgentConversation { conversation_id } => {
                 // Cancel the ambient task only if the conversation is
