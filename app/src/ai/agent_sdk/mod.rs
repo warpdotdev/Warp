@@ -999,6 +999,9 @@ impl AgentDriverRunner {
         let git_creds_ai_client = ai_client.clone();
         let git_creds_task_id = task_id_str.clone();
         let git_credentials = async move {
+            if !FeatureFlag::GitCredentialRefresh.is_enabled() {
+                return Ok(vec![]);
+            }
             let workload_token = match warp_isolation_platform::issue_workload_token(Some(
                 std::time::Duration::from_mins(5),
             ))
@@ -1056,21 +1059,23 @@ impl AgentDriverRunner {
             }
         }
 
-        match git_credentials_result {
-            Ok(credentials) if !credentials.is_empty() => {
-                driver::git_credentials::setup_git_config(&credentials);
-                driver::git_credentials::configure_git_identity(&credentials);
-                if let Err(e) = driver::git_credentials::write_git_credentials(&credentials) {
-                    log::warn!("Failed to write git credentials: {e:#}");
-                } else {
-                    log::info!("Git credentials configured from taskGitCredentials");
+        if FeatureFlag::GitCredentialRefresh.is_enabled() {
+            match git_credentials_result {
+                Ok(credentials) if !credentials.is_empty() => {
+                    driver::git_credentials::setup_git_config(&credentials);
+                    driver::git_credentials::configure_git_identity(&credentials);
+                    if let Err(e) = driver::git_credentials::write_git_credentials(&credentials) {
+                        log::warn!("Failed to write git credentials: {e:#}");
+                    } else {
+                        log::info!("Git credentials configured from taskGitCredentials");
+                    }
                 }
-            }
-            Ok(_) => {
-                log::debug!("No git credentials returned; skipping credential file setup");
-            }
-            Err(e) => {
-                log::warn!("Failed to fetch git credentials: {e:#}");
+                Ok(_) => {
+                    log::debug!("No git credentials returned; skipping credential file setup");
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch git credentials: {e:#}");
+                }
             }
         }
 

@@ -2901,6 +2901,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ConfigurableContextWindow,
         #[cfg(feature = "handoff_cloud_cloud")]
         FeatureFlag::HandoffCloudCloud,
+        #[cfg(feature = "git_credential_refresh")]
+        FeatureFlag::GitCredentialRefresh,
     ]);
 
     flags

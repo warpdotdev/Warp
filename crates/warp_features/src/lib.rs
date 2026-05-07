@@ -859,6 +859,11 @@ pub enum FeatureFlag {
     /// conversation into a fresh cloud agent run with the current workspace
     /// snapshot attached. Requires `OzHandoff` to also be enabled.
     HandoffLocalCloud,
+
+    /// Gates the driver behavior that writes GitHub credentials to disk
+    /// (`~/.git-credentials`, `~/.config/gh/hosts.yaml`) and runs the
+    /// background refresh loop that keeps them fresh during a task run.
+    GitCredentialRefresh,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -940,6 +945,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::CloudModeInputV2,
     FeatureFlag::HandoffLocalCloud,
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::GitCredentialRefresh,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
