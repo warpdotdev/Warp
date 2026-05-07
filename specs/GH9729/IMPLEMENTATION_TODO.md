@@ -65,7 +65,11 @@ The original 2a / 2c bullets are struck through and superseded.
        — `tech.md` §259 (Animated WebP / GIF, under §217)
 - [x] 4c. SVG content-sanity prefix check + intrinsic-dimension cap —
        `tech.md` §321
-- [ ] 4-tests. Decoder tests per `tech.md` §613 (lines 640-652).
+- [x] 4-tests-a. Static-raster + SVG decoder tests per `tech.md` §613
+       (lines 640-642 and 647-652): 3 static + 6 SVG = 9 tests.
+- [ ] 4-tests-b. Animated decoder tests per `tech.md` §613 (lines 643-646):
+       4 tests (frame-count, total-pixel, GIF roundtrip, WebP roundtrip).
+       Split out because animated-WebP fixture synthesis is non-trivial.
 - [ ] 5a. Bound the `LocalFile` asset-cache read with content-keyed cap
        (raster vs SVG by 1 KB content peek), post-open `is_file()` check,
        and `O_NONBLOCK` regression guard — `tech.md` §400 (`### 5.`)

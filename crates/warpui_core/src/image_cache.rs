@@ -401,6 +401,27 @@ fn decode_animated_with_limits(
     Ok(frames)
 }
 
+/// Inner static-decode entry point that takes its limits and pixel cap as
+/// parameters. Lets unit tests exercise the decode path with small fixtures
+/// against small caps without having to materialize 8192-pixel-wide PNGs.
+/// Production callers go through `decode_static_with_limits` which threads
+/// the GH9729 production constants.
+fn decode_static_with_limits_inner(
+    data: &[u8],
+    format: image::ImageFormat,
+    limits: image::Limits,
+    max_pixels: u64,
+) -> anyhow::Result<image::RgbaImage> {
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(data), format);
+    reader.limits(limits);
+    let img = reader.decode()?;
+    let pixels = (img.width() as u64).saturating_mul(img.height() as u64);
+    if pixels > max_pixels {
+        anyhow::bail!("image is too large to preview");
+    }
+    Ok(img.into_rgba8())
+}
+
 /// Decode a static-raster image (PNG, JPEG, WebP-static) under the
 /// GH9729 size envelope. Returns the decoded `RgbaImage` or an error if the
 /// input would breach `decode_limits()` or the post-decode pixel cap.
@@ -412,14 +433,7 @@ fn decode_static_with_limits(
     data: &[u8],
     format: image::ImageFormat,
 ) -> anyhow::Result<image::RgbaImage> {
-    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(data), format);
-    reader.limits(decode_limits());
-    let img = reader.decode()?;
-    let pixels = (img.width() as u64).saturating_mul(img.height() as u64);
-    if pixels > MAX_DECODE_PIXELS {
-        anyhow::bail!("image is too large to preview");
-    }
-    Ok(img.into_rgba8())
+    decode_static_with_limits_inner(data, format, decode_limits(), MAX_DECODE_PIXELS)
 }
 
 impl Asset for ImageType {
