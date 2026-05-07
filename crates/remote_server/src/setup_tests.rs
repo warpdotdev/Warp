@@ -181,10 +181,13 @@ fn parse_preinstall_unsupported_non_glibc() {
 /// nothing, and reported "no such file or directory" → "Response
 /// channel closed".
 ///
-/// Running the materialised script under `/bin/bash` ensures the
-/// expansion is correct on the bash version we actually invoke at
-/// install time (`run_ssh_script` pipes into `bash -s`, which on macOS
-/// is bash 3.2).
+/// This test drives the *actual* production script (via
+/// [`install_script`]) rather than a hand-copied snippet so a future
+/// change that reintroduces the quoted form can't slip past by being
+/// dissimilar enough to dodge the static-grep check below. We
+/// truncate just before `mkdir -p` so no filesystem side effects leak
+/// out of the test, and append a marker `printf` to capture the
+/// resolved `install_dir`.
 #[test]
 fn install_script_tilde_expansion_works_in_bash_3_2() {
     use std::process::{Command, Stdio};
@@ -195,20 +198,22 @@ fn install_script_tilde_expansion_works_in_bash_3_2() {
         "bash"
     };
 
-    // Inline only the lines from install_remote_server.sh that resolve
-    // the install directory, then echo the result. Keeps the test
-    // independent of the network-bound steps further down the script.
-    let snippet = r#"
-        set -e
-        install_dir="~/.warp/remote-server"
-        install_dir="${install_dir/#\~/$HOME}"
-        printf '%s' "$install_dir"
-    "#;
+    let script = install_script(None);
+    let cutoff = script.find("mkdir -p \"$install_dir\"").expect(
+        "install script no longer contains the `mkdir -p \"$install_dir\"` \
+         checkpoint this test relies on; update the test alongside the \
+         script change",
+    );
+    let probe = format!(
+        "{prefix}\nprintf '%s' \"$install_dir\"\nexit 0\n",
+        prefix = &script[..cutoff],
+    );
 
+    let fake_home = "/Users/test";
     let output = Command::new(bash)
         .arg("-c")
-        .arg(snippet)
-        .env("HOME", "/Users/test")
+        .arg(&probe)
+        .env("HOME", fake_home)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -222,33 +227,60 @@ fn install_script_tilde_expansion_works_in_bash_3_2() {
     );
 
     let install_dir = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(
-        install_dir, "/Users/test/.warp/remote-server",
-        "tilde expansion produced wrong path; \
-         likely a regression of the bash-3.2 quote-literal bug",
-    );
     assert!(
         !install_dir.contains('"'),
         "install_dir contains literal quote characters \
          (bash 3.2 quote-literal regression): {install_dir:?}",
     );
+
+    // Cross-check against the production layout: tilde must resolve
+    // to HOME, so the result equals `remote_server_dir()` with the
+    // leading `~` replaced.
+    let expected = remote_server_dir().replacen('~', fake_home, 1);
+    assert_eq!(install_dir, expected);
 }
 
-/// Regression: guards against re-introducing the literal-quotes form
-/// of the tilde substitution by scanning the script source itself.
-/// Complements `install_script_tilde_expansion_works_in_bash_3_2` —
+/// Regression: guards against re-introducing any quoted form of the
+/// tilde substitution by scanning the script source itself.
+/// Complements [`install_script_tilde_expansion_works_in_bash_3_2`] —
 /// the live bash test catches behavioural regressions, this static
-/// check catches them earlier and explains *why* in the failure
-/// message.
+/// check catches them earlier and rules out variants the live test
+/// might miss (`"${HOME}"`, `'$HOME'`, etc.).
+///
+/// The rule: every `${var/#\~/...}` occurrence in the script must
+/// have its replacement start with `$` (i.e. `$HOME` or `${HOME}`
+/// directly). Anything else is a quoted form that bash 3.2 will
+/// preserve as literal characters.
 #[test]
 fn install_script_does_not_quote_home_in_tilde_substitution() {
     let template = INSTALL_SCRIPT_TEMPLATE;
+    let needle = r"/#\~/";
+    let mut hits = 0;
+    let mut search_from = 0;
+    while let Some(off) = template[search_from..].find(needle) {
+        let abs = search_from + off;
+        let after = &template[abs + needle.len()..];
+        let next = after.chars().next();
+        let context_end = abs + needle.len() + after.len().min(16);
+        let context = &template[abs..context_end];
+        assert_eq!(
+            next,
+            Some('$'),
+            "install_remote_server.sh has tilde substitution `{context}` \
+             at byte {abs}; the replacement must start with `$` (i.e. \
+             `$HOME` or `${{HOME}}`) — not a quote, single quote, or \
+             anything else — because bash 3.2 (macOS /bin/bash) keeps \
+             the surrounding characters literal in the replacement of \
+             `${{var/pattern/replacement}}`",
+        );
+        hits += 1;
+        search_from = abs + needle.len();
+    }
     assert!(
-        !template.contains("/#\\~/\"$HOME\""),
-        "install_remote_server.sh uses `${{var/#\\~/\"$HOME\"}}`, \
-         which on bash 3.2 (macOS /bin/bash) substitutes the literal \
-         characters `\"$HOME\"` instead of the expanded value. Use \
-         `${{var/#\\~/$HOME}}` (no inner quotes) instead.",
+        hits >= 1,
+        "no `/#\\~/...` substitutions found in install_remote_server.sh \
+         — has the script changed shape such that this test is no \
+         longer guarding what it claims to?",
     );
 }
 
