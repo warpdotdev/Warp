@@ -2,7 +2,10 @@ use warp_core::ui::appearance::Appearance;
 use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::{Fill, WarpTheme};
 use warpui::color::ColorU;
-use warpui::elements::{ConstrainedBox, Container, CornerRadius, Radius};
+use warpui::elements::{
+    ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, MainAxisSize, ParentElement,
+    Radius, Shrinkable,
+};
 use warpui::Element;
 
 use crate::ai::agent::conversation::ConversationStatus;
@@ -47,4 +50,22 @@ pub fn render_status_element(
     .with_background(coloru_with_opacity(color, 10))
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
     .finish()
+}
+
+/// Prefix row for title content: optional leading element (status pill or spacer), 4px gap,
+/// then a shrinkable title. Returns `title` unchanged when `prefix` is `None`.
+pub fn render_status_title_prefix_row(
+    title: Box<dyn Element>,
+    prefix: Option<Box<dyn Element>>,
+) -> Box<dyn Element> {
+    let Some(prefix) = prefix else {
+        return title;
+    };
+    Flex::row()
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_spacing(4.)
+        .with_child(prefix)
+        .with_child(Shrinkable::new(1., title).finish())
+        .finish()
 }

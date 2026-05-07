@@ -2,7 +2,9 @@ pub mod telemetry;
 
 use crate::ai::agent::conversation::ConversationStatus;
 use crate::ai::agent_management::AgentNotificationsModel;
-use crate::ai::conversation_status_ui::render_status_element;
+use crate::ai::conversation_status_ui::{
+    render_status_element, render_status_title_prefix_row, STATUS_ELEMENT_PADDING,
+};
 use crate::code::editor::{add_color, remove_color};
 use crate::code::icon_from_file_path;
 use crate::safe_triangle::SafeTriangle;
@@ -263,20 +265,10 @@ fn prefix_with_status_pill(
     status: Option<ConversationStatus>,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
-    let Some(status) = status else {
-        return element;
-    };
-    Flex::row()
-        .with_main_axis_size(MainAxisSize::Max)
-        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_spacing(4.)
-        .with_child(render_status_element(
-            &status,
-            VERTICAL_TABS_SUMMARY_STATUS_ICON_SIZE,
-            appearance,
-        ))
-        .with_child(Shrinkable::new(1., element).finish())
-        .finish()
+    let prefix = status
+        .as_ref()
+        .map(|s| render_status_element(s, VERTICAL_TABS_SUMMARY_STATUS_ICON_SIZE, appearance));
+    render_status_title_prefix_row(element, prefix)
 }
 
 #[derive(Clone, Default)]
@@ -3763,10 +3755,9 @@ fn render_summary_primary_label_line(
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     // Reserve a slot wide enough for the status pill so non-conversation lines align with
-    // conversation lines in the same region. STATUS_ELEMENT_PADDING is the 2px padding inside
-    // the pill from `render_status_element`.
-    const STATUS_ELEMENT_PADDING: f32 = 2.;
-    let prefix_slot_size = VERTICAL_TABS_SUMMARY_STATUS_ICON_SIZE + STATUS_ELEMENT_PADDING * 2.;
+    // conversation lines in the same region.
+    let prefix_slot_size =
+        VERTICAL_TABS_SUMMARY_STATUS_ICON_SIZE + STATUS_ELEMENT_PADDING * 2.;
     let text = render_text_line(&label.text, text_color, ClipConfig::end(), appearance);
 
     let prefix: Option<Box<dyn Element>> = match (label.status.as_ref(), reserve_prefix_slot) {
@@ -3784,16 +3775,7 @@ fn render_summary_primary_label_line(
         (None, false) => None,
     };
 
-    let Some(prefix) = prefix else {
-        return text;
-    };
-    Flex::row()
-        .with_main_axis_size(MainAxisSize::Max)
-        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_spacing(4.)
-        .with_child(prefix)
-        .with_child(Shrinkable::new(1., text).finish())
-        .finish()
+    render_status_title_prefix_row(text, prefix)
 }
 
 fn render_summary_overflow_line(
