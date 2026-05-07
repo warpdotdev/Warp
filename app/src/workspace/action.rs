@@ -970,6 +970,8 @@ impl WorkspaceAction {
             #[cfg(target_os = "macos")]
             SampleProcess => false,
             #[cfg(target_os = "macos")]
+            RevealInFinder => false,
+            #[cfg(target_os = "macos")]
             InstallCLI | UninstallCLI => false,
             #[cfg(feature = "local_fs")]
             FileRenamed { .. } => false, // File rename doesn't change workspace state
