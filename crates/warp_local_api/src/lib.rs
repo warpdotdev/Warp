@@ -32,15 +32,22 @@ pub enum SplitDir {
 pub enum LocalApiRequest {
     Ping,
     /// Split the active pane in `dir`; reply contains the new pane's id.
-    Split { dir: SplitDir },
+    Split {
+        dir: SplitDir,
+    },
     /// Write `text` to the PTY of the named terminal pane (or active if None).
-    SendText { pane: Option<String>, text: String },
+    SendText {
+        pane: Option<String>,
+        text: String,
+    },
     /// Returns the ids of all terminal panes in the active workspace.
     ListPanes,
     /// Returns the id of the focused terminal pane in the active workspace.
     ActivePane,
     /// Closes the named terminal pane.
-    ClosePane { pane: String },
+    ClosePane {
+        pane: String,
+    },
 }
 
 /// Wire envelope: every request carries the per-session cookie, validated
@@ -71,11 +78,34 @@ impl ipc::Service for LocalApiService {
 /// Filesystem path where the running Warp publishes its current connection
 /// address + cookie. The `wp` CLI reads this file to find the live socket.
 /// Created with mode 0600.
+///
+/// Resolution order:
+/// 1. `WARP_LOCAL_API_ADDRESS` — full path override. The running Warp sets
+///    this in the env of every spawned shell so child `wp` invocations land
+///    on the same instance even when several Warp variants run side-by-side.
+/// 2. `<data-local-dir>/<WARP_LOCAL_API_DOMAIN or default>/local-api.address`
+///    — default for ad-hoc invocations from outside a Warp shell.
+///
+/// The default domain is the production app id `dev.warp.Warp`; dev / preview
+/// / oss instances each publish under their own domain so they don't clobber
+/// each other's address files.
 pub fn address_publish_path() -> PathBuf {
+    if let Some(p) = std::env::var_os("WARP_LOCAL_API_ADDRESS") {
+        return PathBuf::from(p);
+    }
+    let domain =
+        std::env::var("WARP_LOCAL_API_DOMAIN").unwrap_or_else(|_| "dev.warp.Warp".to_owned());
+    address_publish_path_for(&domain)
+}
+
+/// Build the default address-file path for a specific data domain. Used by
+/// the running Warp app to publish under its own channel/installation
+/// namespace.
+pub fn address_publish_path_for(domain: &str) -> PathBuf {
     let base = dirs::data_local_dir()
         .or_else(dirs::data_dir)
         .unwrap_or_else(std::env::temp_dir);
-    base.join("dev.warp.Warp").join("local-api.address")
+    base.join(domain).join("local-api.address")
 }
 
 /// Format the address-file body. Two lines:

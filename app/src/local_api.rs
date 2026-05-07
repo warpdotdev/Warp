@@ -27,9 +27,10 @@ use async_trait::async_trait;
 use futures::channel::oneshot;
 use ipc::{ConnectionAddress, ServerBuilder};
 use rand::RngCore as _;
+use warp_core::channel::ChannelState;
 use warp_local_api::{
-    address_publish_path, format_address_file, LocalApiEnvelope, LocalApiRequest, LocalApiResponse,
-    LocalApiService, SplitDir, MAX_SEND_TEXT_BYTES,
+    address_publish_path_for, format_address_file, LocalApiEnvelope, LocalApiRequest,
+    LocalApiResponse, LocalApiService, SplitDir, MAX_SEND_TEXT_BYTES,
 };
 use warpui::windowing::WindowManager;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, ViewHandle};
@@ -165,14 +166,29 @@ fn generate_cookie() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Per-user socket path. On macOS, `$TMPDIR` resolves to a per-user
-/// `/var/folders/.../T/` directory with mode 0700, which is the ideal
-/// location for a UDS that shouldn't be visible to other accounts.
+/// Per-user, per-instance socket path. On macOS, `$TMPDIR` resolves to a
+/// per-user `/var/folders/.../T/` directory with mode 0700, which is the
+/// ideal location for a UDS that shouldn't be visible to other accounts.
+///
+/// The filename embeds:
+///   - `ChannelState::data_domain()` so dev / preview / stable / oss
+///     installations bind distinct sockets even when launched concurrently;
+///   - the current PID so multiple instances of the same channel cohabit
+///     without removing each other's bind path on startup.
 fn per_user_socket_path() -> PathBuf {
     let dir = std::env::var_os("TMPDIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/tmp"));
-    dir.join("dev.warp.WarpOss-local-api.sock")
+    let domain = ChannelState::data_domain();
+    let pid = std::process::id();
+    dir.join(format!("{domain}-local-api-{pid}.sock"))
+}
+
+/// Address-file path for the running app — namespaced by `data_domain` so
+/// concurrently running Warp channels don't clobber each other's address
+/// file.
+fn address_publish_path() -> PathBuf {
+    address_publish_path_for(&ChannelState::data_domain())
 }
 
 fn harden_socket(addr: &ConnectionAddress) -> std::io::Result<()> {

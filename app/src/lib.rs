@@ -44,6 +44,7 @@ mod gpu_state;
 mod input_classifier;
 mod interval_timer;
 mod linear;
+#[cfg(unix)]
 mod local_api;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod login_item;
@@ -1036,7 +1037,15 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             plugin::PluginHost::new(ctx).expect("Could not instantiate PluginHost")
         });
 
-        ctx.add_singleton_model(local_api::LocalApiServer::new);
+        // Local control API is opt-in: it exposes mutating operations
+        // (PTY writes, pane close) over a same-UID socket, so we keep it
+        // dormant by default and let the user/OS-integrator turn it on
+        // explicitly via `WARP_ENABLE_LOCAL_API=1`. Unix-only — the IPC
+        // transport and 0600 permission model use UDS + chmod.
+        #[cfg(unix)]
+        if std::env::var_os("WARP_ENABLE_LOCAL_API").is_some() {
+            ctx.add_singleton_model(local_api::LocalApiServer::new);
+        }
         let app_state = initialize_app(
             &launch_mode,
             timer,
