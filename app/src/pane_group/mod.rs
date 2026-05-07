@@ -6885,6 +6885,30 @@ impl PaneGroup {
     ) -> Option<PaneId> {
         let child_pane_id = self.child_agent_panes.get(&conversation_id).copied()?;
 
+        // Split-off-then-swapped-over case: the child was previously split
+        // off as a sibling, then a sibling pill was clicked from the
+        // child's pill bar — `replace_pane(child, sibling, true)` recorded
+        // the child as the *original* of an active TempRepl. The child is
+        // off-tree but still listed in `hidden_panes` with that role, and
+        // the sibling occupies the child's old tree slot.
+        //
+        // Splitting the child back into the tree without first clearing
+        // that entry would corrupt the layout: the tree would hold the
+        // child as a fresh sibling AND the sibling at the child's old
+        // slot, while the TempRepl entry still says "child is hidden,
+        // sibling replaces it." A later revert of the surviving sibling
+        // (e.g. on close) would call `root.replace_pane(sibling, child)`
+        // and produce a duplicate-leaf tree.
+        //
+        // Reverting the swap is the right answer for "Open in new pane":
+        // the child *was* already split off, just temporarily hidden
+        // behind a swap. After reverting, the child is back in its old
+        // slot and the early-return below focuses it.
+        if let Some(replacement_pane_id) = self.panes.replacement_pane_for_original(child_pane_id) {
+            self.revert_swap_clearing_split_off(replacement_pane_id, ctx);
+            self.handle_pane_count_change(ctx);
+        }
+
         // If the child pane is already a visible sibling in the tree (e.g.
         // user already split it off), just focus it.
         if self.panes.is_pane_in_tree(child_pane_id)
