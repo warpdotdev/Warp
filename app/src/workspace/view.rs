@@ -5916,56 +5916,14 @@ impl Workspace {
             }
             FileTarget::ImagePreview => {
                 // GH9729: route image clicks through the existing Lightbox overlay.
-                // See specs/GH9729/tech.md §119.
-                //
-                // 64 MB cap is one unified pre-read envelope for raster and SVG.
-                // The SVG-specific allocation surface is bounded separately by the
-                // SVG intrinsic-dimension cap added in item 4c of this branch.
-                const MAX_PREVIEW_FILE_BYTES: u64 = 64 * 1024 * 1024;
-                const MAX_ERROR_MESSAGE_LEN: usize = 256;
-
-                let filename = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned());
-
-                // Synchronous metadata-only check before any read so an oversize
-                // file never enters memory. `metadata` follows symlinks, and
-                // `is_file()` rejects sym-resolved character devices, FIFOs,
-                // sockets, and directories. The original OS error is logged for
-                // the operator and collapsed to a sanitized constant here so
-                // absolute paths never reach the UI panel.
-                let size_check: Result<(), &'static str> = match std::fs::metadata(&path) {
-                    Ok(meta) if !meta.is_file() => Err("not a regular file"),
-                    Ok(meta) if meta.len() > MAX_PREVIEW_FILE_BYTES => {
-                        Err("image is too large to preview")
-                    }
-                    Ok(_) => Ok(()),
-                    Err(err) => {
-                        log::warn!(
-                            "GH9729: could not stat image preview path: {}",
-                            err
-                        );
-                        Err("could not read image")
-                    }
-                };
-
-                let image = match size_check {
-                    Ok(()) => LightboxImage {
-                        source: LightboxImageSource::Resolved {
-                            asset_source: AssetSource::LocalFile {
-                                path: path.to_string_lossy().into_owned(),
-                            },
-                        },
-                        description: filename,
-                    },
-                    Err(message) => LightboxImage {
-                        source: LightboxImageSource::Error {
-                            message: truncate_message(message, MAX_ERROR_MESSAGE_LEN),
-                        },
-                        description: filename,
-                    },
-                };
-
+                // See specs/GH9729/tech.md §119. Construction of the entry lives
+                // in `build_image_preview_entry` so it can be unit-tested without
+                // a `ViewContext`.
+                let image = build_image_preview_entry(
+                    &path,
+                    MAX_PREVIEW_FILE_BYTES,
+                    MAX_ERROR_MESSAGE_LEN,
+                );
                 ctx.dispatch_typed_action(&WorkspaceAction::OpenLightbox {
                     images: vec![image],
                     initial_index: 0,
@@ -24651,6 +24609,69 @@ fn should_reserve_traffic_light_space_in_tab_bar(side: TrafficLightSide) -> bool
 }
 
 /// Returns every tab-bar-equivalent rect laid out in `window_id` (horizontal
+/// One unified pre-read cap for raster and SVG image previews
+/// (specs/GH9729/tech.md §119). The SVG-specific allocation surface is
+/// bounded separately by the SVG intrinsic-dimension cap (item 4c).
+const MAX_PREVIEW_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Maximum number of Unicode scalar values rendered in the Lightbox error
+/// panel before truncation. Keeps a long message from occluding the close
+/// button or triggering expensive text shaping.
+const MAX_ERROR_MESSAGE_LEN: usize = 256;
+
+/// Build the single Lightbox entry for a `FileTarget::ImagePreview` click.
+///
+/// Performs a synchronous `metadata` stat to decide between
+/// `LightboxImageSource::Resolved` and `LightboxImageSource::Error`. The stat
+/// happens before any byte is read so an oversize file never enters memory.
+///
+/// Errors are sanitized here: the underlying OS error is logged via
+/// `log::warn!` for the operator, and the user-facing string is collapsed to
+/// one of three categorical constants so absolute paths and platform-specific
+/// error syntax never reach the UI panel (specs/GH9729/tech.md §119).
+///
+/// `metadata` follows symlinks, and `is_file()` rejects sym-resolved
+/// character devices, FIFOs, sockets, and directories.
+fn build_image_preview_entry(
+    path: &Path,
+    max_bytes: u64,
+    max_message_len: usize,
+) -> LightboxImage {
+    let filename = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned());
+
+    let size_check: Result<(), &'static str> = match std::fs::metadata(path) {
+        Ok(meta) if !meta.is_file() => Err("not a regular file"),
+        Ok(meta) if meta.len() > max_bytes => Err("image is too large to preview"),
+        Ok(_) => Ok(()),
+        Err(err) => {
+            log::warn!(
+                "GH9729: could not stat image preview path: {}",
+                err
+            );
+            Err("could not read image")
+        }
+    };
+
+    match size_check {
+        Ok(()) => LightboxImage {
+            source: LightboxImageSource::Resolved {
+                asset_source: AssetSource::LocalFile {
+                    path: path.to_string_lossy().into_owned(),
+                },
+            },
+            description: filename,
+        },
+        Err(message) => LightboxImage {
+            source: LightboxImageSource::Error {
+                message: truncate_message(message, max_message_len),
+            },
+            description: filename,
+        },
+    }
+}
+
 /// Truncate an error message to at most `max_len` Unicode scalar values,
 /// appending an ellipsis when truncation occurs. Used by the
 /// `FileTarget::ImagePreview` arm to bound the message length so a long

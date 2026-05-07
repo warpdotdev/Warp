@@ -3058,3 +3058,103 @@ fn test_tab_mru_order() {
         });
     });
 }
+
+// GH9729: image-preview arm tests (specs/GH9729/tech.md §613:621-626).
+// These exercise `build_image_preview_entry` directly rather than the full
+// `Workspace::open_file_with_target` arm; per the spec, "a small extracted
+// helper module to avoid pulling the whole view crate into a test." The
+// dispatch line in the arm itself is a one-liner that wraps the helper's
+// output in a single-element Vec and calls `dispatch_typed_action`.
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn image_preview_arm_dispatches_resolved_when_under_size_cap() {
+    use std::io::Write as _;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("photo.png");
+    std::fs::File::create(&path)
+        .unwrap()
+        .write_all(&[0u8; 1024])
+        .unwrap();
+
+    let entry = super::build_image_preview_entry(&path, /* max_bytes */ 4096, /* max_message_len */ 256);
+
+    match entry.source {
+        ui_components::lightbox::LightboxImageSource::Resolved {
+            asset_source: warpui::assets::asset_cache::AssetSource::LocalFile { path: actual },
+        } => {
+            assert_eq!(actual, path.to_string_lossy());
+        }
+        other => panic!("expected Resolved with LocalFile, got {other:?}"),
+    }
+    assert_eq!(entry.description.as_deref(), Some("photo.png"));
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn image_preview_arm_dispatches_error_when_over_size_cap() {
+    use std::io::Write as _;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("huge.png");
+    // Write 200 bytes against a 100-byte cap; matches the spec's intent (file
+    // size > cap) without materializing the production 64 MB envelope.
+    std::fs::File::create(&path)
+        .unwrap()
+        .write_all(&[0u8; 200])
+        .unwrap();
+
+    let entry = super::build_image_preview_entry(&path, /* max_bytes */ 100, /* max_message_len */ 256);
+
+    match entry.source {
+        ui_components::lightbox::LightboxImageSource::Error { message } => {
+            assert_eq!(message, "image is too large to preview");
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+    assert_eq!(entry.description.as_deref(), Some("huge.png"));
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn image_preview_arm_dispatches_error_when_metadata_fails() {
+    let dir = tempfile::TempDir::new().unwrap();
+    // Path under a real temp dir but the file is never created.
+    let path = dir.path().join("does_not_exist.png");
+
+    let entry = super::build_image_preview_entry(&path, /* max_bytes */ 4096, /* max_message_len */ 256);
+
+    match entry.source {
+        ui_components::lightbox::LightboxImageSource::Error { message } => {
+            // Sanitized constant; the underlying io::ErrorKind::NotFound is
+            // logged via log::warn! and never interpolated here.
+            assert_eq!(message, "could not read image");
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+    assert_eq!(entry.description.as_deref(), Some("does_not_exist.png"));
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn image_preview_arm_dispatches_error_for_non_regular_file() {
+    // The temp directory itself is a regular *directory*, not a regular
+    // file, so `metadata().is_file()` returns false. This exercises the
+    // `is_file()` rejection without needing platform-specific FIFO support
+    // in the test runner (FIFO coverage is enumerated separately under
+    // tech.md §613:633 for the asset-cache layer).
+    let dir = tempfile::TempDir::new().unwrap();
+    let entry = super::build_image_preview_entry(
+        dir.path(),
+        /* max_bytes */ 4096,
+        /* max_message_len */ 256,
+    );
+
+    match entry.source {
+        ui_components::lightbox::LightboxImageSource::Error { message } => {
+            assert_eq!(message, "not a regular file");
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+}

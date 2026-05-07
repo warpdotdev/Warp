@@ -49,7 +49,7 @@ The original 2a / 2c bullets are struck through and superseded.
        `metadata` size/regular-file check (`MAX_PREVIEW_FILE_BYTES = 64 MB`),
        `truncate_message` helper (`MAX_ERROR_MESSAGE_LEN = 256`), single-element
        `OpenLightbox` dispatch — `tech.md` §119
-- [ ] 2-tests. Workspace-arm tests per `tech.md` §613 (lines 623-626):
+- [x] 2-tests. Workspace-arm tests per `tech.md` §613 (lines 623-626):
        `image_preview_arm_dispatches_resolved_when_under_size_cap`,
        `image_preview_arm_dispatches_error_when_over_size_cap`,
        `image_preview_arm_dispatches_error_when_metadata_fails`,
