@@ -41,13 +41,25 @@ Required sections:
    Reference `PRODUCT.md` for user-visible behavior rather than restating it.
 2. **Proposed changes** — The implementation plan: which modules change, new types/APIs/state being introduced, data flow, ownership boundaries, and how the design follows existing patterns. Call out tradeoffs when there is more than one reasonable path.
 3. **Testing and validation** — How the implementation will be verified against the product behavior. Owns everything about proving the feature works: unit tests, integration tests, manual steps, screenshots, videos, and any other verification. Reference the numbered Behavior invariants from `PRODUCT.md` directly rather than restating them; each important invariant should map to a concrete test or verification step. This section is where validation lives — `PRODUCT.md` intentionally does not have a Validation section.
+4. **Parallelization** — Actively evaluate whether parallel sub-agents (launched via `run_agents`) would meaningfully reduce wall-clock time or isolate work. Skip this section if `run_agents` is not available. When the spec proposes using sub-agents, include for each proposed agent:
+   - A short name/role and the subtask it owns.
+   - Execution mode (`local` or `remote`) with a one-line rationale.
+   - For local agents: the working directory or git worktree it should use, so parallel agents do not collide on the same checkout or files.
+   - For remote agents: which environment to use or an explicit note that the agent will run in an empty environment.
+   - Branch and PR strategy: which branch each agent works on, the worktree path each agent will use, and how their work lands (one PR per agent, a single combined PR, etc.).
+   - Coordination boundaries: which files/services each agent owns and how it syncs with sibling agents (messaging, merge points, validation ownership).
+
+   Distinguish which steps can run in parallel and which must run sequentially. When the dependency graph is non-trivial, consider a short Mermaid diagram (`graph TD` or `flowchart LR`) so the reader can see fan-out and merge points at a glance.
+
+   When parallelization is NOT proposed, briefly note why it isn't beneficial (e.g. the task is small, or subtasks are tightly coupled) so reviewers can challenge that judgment.
+
+   Propose concrete defaults for worktrees, branch names, and execution mode rather than leaving them open-ended.
 
 Optional sections — include only when they add signal. Omit the heading entirely if empty; do not write "None" as a placeholder.
 
 - **End-to-end flow** — Include only when tracing the path through the system tells you something the Proposed changes list doesn't.
 - **Diagram** — Include a Mermaid diagram only when a visual will explain the design faster than prose (data flow, state transitions, sequence across layers). Prefer one or two focused diagrams over decorative ones.
 - **Risks and mitigations** — Include when there are real failure modes, regressions, migration concerns, or rollout hazards worth calling out.
-- **Parallelization** — Include when work can cleanly split across multiple agents and that split is non-obvious.
 - **Follow-ups** — Include when there is deferred cleanup or future work worth naming.
 
 ## Length heuristic
