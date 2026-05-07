@@ -88,8 +88,14 @@ fn parse_forcekill_exit_code(contents_lowercase: &[u8]) -> Option<i32> {
     let after_failed = &contents_lowercase[failed_pos..];
     let marker_pos = memchr::memmem::find(after_failed, EXIT_CODE_MARKER)?;
     let after_marker = &after_failed[marker_pos + EXIT_CODE_MARKER.len()..];
-    let digit_len = after_marker.iter().take_while(|b| b.is_ascii_digit()).count();
-    std::str::from_utf8(&after_marker[..digit_len]).ok()?.parse().ok()
+    let digit_len = after_marker
+        .iter()
+        .take_while(|b| b.is_ascii_digit())
+        .count();
+    std::str::from_utf8(&after_marker[..digit_len])
+        .ok()?
+        .parse()
+        .ok()
 }
 
 /// Checks the autoupdate log file from a previous update attempt.
