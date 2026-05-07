@@ -723,6 +723,12 @@ impl ansi::Handler for BlockGrid {
         self.ansi_handler().input(c);
     }
 
+    fn set_hyperlink(&mut self, hyperlink: Option<warp_terminal::model::ansi::Hyperlink>) {
+        // Delegate to the inner `GridHandler` — that's where the active id
+        // is stored and where `input(c)` reads it. See `specs/GH6393/tech.md` §3c.
+        self.ansi_handler().set_hyperlink(hyperlink);
+    }
+
     fn goto(&mut self, row: VisibleRow, col: usize) {
         self.ansi_handler().goto(row, col);
     }

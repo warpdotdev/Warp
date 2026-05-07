@@ -2938,6 +2938,11 @@ impl ansi::Handler for Block {
         delegate!(self.input(c));
     }
 
+    fn set_hyperlink(&mut self, hyperlink: Option<warp_terminal::model::ansi::Hyperlink>) {
+        // Delegate to BlockGrid -> GridHandler. See `specs/GH6393/tech.md` §3c.
+        delegate!(self.set_hyperlink(hyperlink));
+    }
+
     fn goto(&mut self, row: VisibleRow, column: usize) {
         // Only apply this correction for ConPTY.
         #[cfg(windows)]

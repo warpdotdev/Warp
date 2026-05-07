@@ -25,6 +25,7 @@ use onboarding::callout::{FinalState, OnboardingCalloutViewEvent, OnboardingQuer
 use onboarding::{OnboardingCalloutView, OnboardingKeybindings};
 pub(crate) mod docker_sandbox;
 mod link_detection;
+mod link_security;
 mod open_in_warp;
 mod pane_impl;
 mod passive_suggestions;
@@ -15573,6 +15574,22 @@ impl TerminalView {
                         })
                         .unwrap_or_default()
                     }
+                    GridHighlightedLink::Hyperlink { uri, .. } => {
+                        // OSC 8 hyperlink right-click: "Copy link" copies the
+                        // URI verbatim, regardless of scheme — copying isn't
+                        // navigating, so the allow-list does not gate it
+                        // (product invariant 13). The "Open link" affordance
+                        // is reachable via the existing OpenGridLink action,
+                        // which routes through link_security; we don't add
+                        // it here to keep the menu focused on copy.
+                        vec![MenuItemFields::new("Copy link")
+                            .with_on_select_action(TerminalAction::ContextMenu(
+                                ContextMenuAction::CopyUrl {
+                                    url_content: uri.clone(),
+                                },
+                            ))
+                            .into_item()]
+                    }
                 }
             }
             (
@@ -17619,9 +17636,33 @@ impl TerminalView {
                 }
             }
             GridHighlightedLink::Url(url) if url.contains(position) => {
-                let model = self.model.lock();
+                let uri = self
+                    .model
+                    .lock()
+                    .link_at_range(url, RespectObfuscatedSecrets::No);
                 ctx.notify();
-                ctx.open_url(&model.link_at_range(url, RespectObfuscatedSecrets::No));
+                // Route through the centralized scheme allow-list (Layer 5a).
+                if matches!(
+                    crate::terminal::view::link_security::check_open_scheme(
+                        &uri,
+                        crate::terminal::view::link_security::LinkSource::AutoDetected,
+                    ),
+                    crate::terminal::view::link_security::SchemeCheck::Allowed
+                ) {
+                    ctx.open_url(&uri);
+                }
+            }
+            GridHighlightedLink::Hyperlink { link, uri } if link.contains(position) => {
+                ctx.notify();
+                if matches!(
+                    crate::terminal::view::link_security::check_open_scheme(
+                        uri,
+                        crate::terminal::view::link_security::LinkSource::OscHyperlink,
+                    ),
+                    crate::terminal::view::link_security::SchemeCheck::Allowed
+                ) {
+                    ctx.open_url(uri);
+                }
             }
             _ => (),
         }
