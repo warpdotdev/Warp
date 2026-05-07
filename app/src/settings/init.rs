@@ -38,8 +38,8 @@ use super::{
     AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, ChangelogSettings,
     CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent,
     GPUSettings, InputBoxType, InputModeSettings, InputSettings, PaneSettings,
-    SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings, ThemeSettings,
-    VimBannerSettings, WarpDrivePrivacySettings,
+    SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, ShellHistorySyncSettings,
+    SshSettings, ThemeSettings, VimBannerSettings, WarpDrivePrivacySettings,
 };
 
 pub struct UserDefaultsOnStartup {
@@ -91,6 +91,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     AltScreenReporting::register(ctx);
     UndoCloseSettings::register(ctx);
     SshSettings::register(ctx);
+    ShellHistorySyncSettings::register(ctx);
     VimBannerSettings::register(ctx);
     SharedSessionSettings::register(ctx);
     WarpDriveSettings::register(ctx);

@@ -3759,6 +3759,7 @@ fn test_first_onboarding_block_exists() {
                 HistoryEvent::Initialized(_) => {
                     assert!(me.onboarding_agentic_suggestions_block.is_some());
                 }
+                HistoryEvent::ExternalHistoryUpdated { .. } => {}
             });
         });
     })

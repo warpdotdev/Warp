@@ -339,6 +339,12 @@ impl CommandSearchView {
                                 ctx.notify();
                             }
                         }
+                        HistoryEvent::ExternalHistoryUpdated { .. } => {
+                            // Live OS-shell-history sync (GH-3422). The mixer's
+                            // history source re-queries on its own debounce, so
+                            // we just trigger a notify to refresh visible state.
+                            ctx.notify();
+                        }
                     }
                 });
             }
