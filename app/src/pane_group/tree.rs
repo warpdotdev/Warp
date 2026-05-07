@@ -217,13 +217,8 @@ impl PaneData {
     }
 
     pub fn visible_pane_count(&self) -> usize {
-        // `visible_pane_ids` does the right "is in tree AND not hidden"
-        // filter. Computing `pane_ids().len() - num_hidden_panes()` gives
-        // the wrong answer for `TemporaryReplacement`: the original is
-        // recorded in `hidden_panes` but is NOT in the tree (its slot now
-        // holds the replacement), so subtracting the hidden count
-        // double-counts that pane and produces values like 0 visible panes
-        // when there's actually 1 (the replacement).
+        // Use `visible_pane_ids` directly; subtracting hidden count would
+        // double-count temporary-replacement originals (hidden but off-tree).
         self.visible_pane_ids().len()
     }
 
@@ -329,9 +324,7 @@ impl PaneData {
         }
     }
 
-    /// Returns true if `id` is currently hidden because it is a child
-    /// agent pane. Mirrors `is_pane_hidden_for_orchestration_swap` so
-    /// callers can branch on the right show/hide helper.
+    /// Returns true if `id` is hidden as a child agent pane.
     pub fn is_pane_hidden_for_child_agent(&self, id: PaneId) -> bool {
         pane_hidden_for_child_agent(&self.hidden_panes, &id)
     }
@@ -387,13 +380,9 @@ impl PaneData {
         })
     }
 
-    /// Inverse of [`Self::original_pane_for_replacement`]: given an
-    /// `original_pane_id` that may currently be swapped out (i.e. it sits
-    /// in `hidden_panes` as the original of some active
-    /// `TemporaryReplacement`), return the replacement pane that took its
-    /// slot. Used by callers that want to revert a swap from the
-    /// original's side (e.g. "navigate back to this conversation" when
-    /// the conversation's pane is currently swapped out by another).
+    /// Inverse of [`Self::original_pane_for_replacement`]: given a pane
+    /// currently swapped out as a temporary replacement's original,
+    /// return the replacement that took its slot.
     pub fn replacement_pane_for_original(&self, original_pane_id: PaneId) -> Option<PaneId> {
         self.hidden_panes.iter().find_map(|hidden_pane| {
             if hidden_pane.pane_id != original_pane_id {
@@ -516,8 +505,6 @@ impl PaneData {
     }
 
     /// Returns true if `pane_id` is currently a leaf in the layout tree.
-    /// A pane that lives only in `pane_contents` (e.g. an off-tree child
-    /// agent pane) returns false.
     pub fn is_pane_in_tree(&self, pane_id: PaneId) -> bool {
         self.root.contains_pane(pane_id)
     }

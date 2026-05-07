@@ -537,11 +537,8 @@ impl BlocklistAIController {
                 return;
             };
 
-            // When the controller is just swapping the active conversation in place
-            // (e.g. clicking a pill in the orchestration pill bar), the synthetic
-            // ExitedAgentView is part of a switch — not a real exit. Cancelling the
-            // previously-active conversation here would kill its in-flight response
-            // stream / pending actions every time the user navigates between agents.
+            // Skip if this exit is part of an in-place switch — cancelling here
+            // would kill an in-flight stream every time the user navigates.
             if *is_exit_before_new_entrance {
                 return;
             }

@@ -180,13 +180,8 @@ impl ActiveAgentViewsModel {
                 is_exit_before_new_entrance,
                 ..
             } => {
-                // When the controller is just swapping the active conversation in place
-                // (e.g. clicking a pill in the orchestration pill bar), the synthetic
-                // ExitedAgentView is part of a switch — not a real exit. Tearing down
-                // the streamer consumer here would close the SSE for the conversation
-                // we're navigating away from when no other consumer remains, dropping
-                // events for an in-progress conversation. The follow-up EnteredAgentView
-                // will register the new conversation's consumer.
+                // Skip if this exit is part of an in-place switch — the follow-up
+                // entrance will register the new conversation's consumer.
                 if *is_exit_before_new_entrance {
                     return;
                 }

@@ -1123,40 +1123,23 @@ fn handle_terminal_view_event(
                 ctx.emit(pane_group::Event::FreeTierLimitCheckTriggered);
             }
             Event::RevealChildAgent { conversation_id } => {
-                // Route through the swap mechanism: it handles all the
-                // cases (already-visible split-off, off-tree child agent
-                // pane, currently swapped target) uniformly.
+                // Routed through the swap mechanism to land all reveal cases in one path.
                 group.swap_active_pane_to_conversation(pane_id, *conversation_id, ctx);
             }
             Event::SwapPaneToConversation { conversation_id } => {
-                // Pill-bar navigation: instead of cloning the conversation
-                // into the active pane (which produces stale
-                // `LongRunningCommandSnapshot` results), make the pane
-                // that already owns this conversation's `TerminalView`
-                // the visible one in the active slot. The orchestrator's
-                // pane and each child's hidden pane stay in place; only
-                // their visibility flips.
+                // Swap visibility instead of cloning so in-flight state in the
+                // target pane is preserved.
                 group.swap_active_pane_to_conversation(pane_id, *conversation_id, ctx);
             }
             Event::OpenChildAgentInNewTab { conversation_id } => {
-                // The pane group can't add a new tab — only the workspace
-                // can. Forward the request upward so `WorkspaceView` can
-                // create a fresh tab and switch its agent view to this
-                // child conversation.
+                // Pane group can't add tabs; forward to the workspace.
                 ctx.emit(pane_group::Event::OpenChildAgentInNewTab {
                     conversation_id: *conversation_id,
                 });
             }
             Event::OpenChildAgentInNewPane { conversation_id } => {
-                // Reuse the existing hidden child agent pane: it already hosts
-                // the live `TerminalView` for this conversation. Creating a new
-                // pane and calling `enter_agent_view_for_conversation` on it
-                // would clone the conversation into a second view, cancelling
-                // any in-flight commands running in the original view and
-                // briefly leaking the child's transcript into the orchestrator
-                // pane while ownership shuffles between views. Just unhide the
-                // pane we already have so it becomes a visible sibling of the
-                // orchestrator pane.
+                // Reuse the existing hidden child pane to preserve in-flight
+                // state and the live transcript instead of creating a new view.
                 if group
                     .unhide_child_agent_pane_for_split_off(*conversation_id, ctx)
                     .is_none()

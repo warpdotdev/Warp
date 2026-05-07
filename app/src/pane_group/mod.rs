@@ -915,27 +915,19 @@ pub struct PaneGroup {
     /// be revealed from the parent's status card.
     child_agent_panes: HashMap<AIConversationId, PaneId>,
 
-    /// Set on a pane group that was created by splitting off a child agent
-    /// pane into a new tab via `OpenChildAgentInNewTab`. Holds a weak handle
-    /// to the source pane group along with the child conversation id, so
-    /// that closing this tab can re-adopt the live pane back into the
-    /// source instead of letting the `TerminalView` be dropped.
+    /// Set when this pane group hosts a split-off child agent pane that
+    /// should be re-adopted by its source group on tab close.
     child_agent_origin: Option<ChildAgentOrigin>,
 
     /// Tab-level custom title set via the rename-tab flow.
     custom_title: Option<String>,
 }
 
-/// Origin metadata stamped on a pane group whose sole pane is a child agent
-/// `TerminalView` that was split off from another pane group via
-/// `OpenChildAgentInNewTab`. Used at tab-close time to re-adopt the pane
-/// back to its source so the live conversation view survives the tab
-/// dismissal.
+/// Origin metadata for a split-off child agent tab; used to re-adopt the
+/// pane back to its source on tab close.
 #[derive(Clone)]
 pub struct ChildAgentOrigin {
-    /// Pane group the child agent pane originally lived in (as a hidden
-    /// pane registered in `child_agent_panes`). A weak handle so we don't
-    /// keep the source tab alive past its own close.
+    /// Source pane group; weak so we don't keep the source tab alive.
     pub source_pane_group: WeakViewHandle<PaneGroup>,
     /// The child agent conversation hosted in this tab's lone pane.
     pub conversation_id: AIConversationId,
@@ -2101,32 +2093,18 @@ impl PaneGroup {
                 })
             }
             PaneNode::Leaf(pane_id) => {
-                // If this leaf is the *replacement* of an active
-                // `TemporaryReplacement` (i.e. a child agent pane was
-                // pill-swapped into the orchestrator's slot), persist the
-                // *original* pane's contents instead of the transient
-                // replacement. The swap is a UX-only state, not a
-                // structural change to the user's tab layout. Without
-                // this substitution the snapshot would record the child
-                // as the canonical leaf and lose the orchestrator
-                // entirely — child agent panes are intentionally excluded
-                // from snapshots and rebuilt on startup from the
-                // parent→child index, so on the next launch the tab
-                // would either come back with a stale child terminal as
-                // its root or fail to recreate the orchestrator pane at
-                // all.
+                // If this leaf is the replacement side of an active swap,
+                // persist the original instead. The swap is UX-only and
+                // the replacement (a child agent pane) is rebuilt off-tree
+                // on restart.
                 let snapshot_pane_id = self
                     .panes
                     .original_pane_for_replacement(*pane_id)
                     .unwrap_or(*pane_id);
                 let is_substituted = snapshot_pane_id != *pane_id;
-                // Whether the user-visible tree slot is the active
-                // terminal session. During an active swap, this is the
-                // replacement (e.g. a child agent). On restart the child
-                // is rebuilt off-tree and the orchestrator becomes the
-                // new visible leaf, so the orchestrator's snapshot
-                // should carry the active-session marker the user last
-                // saw — not whatever its own pane reported in isolation.
+                // Did the visible leaf hold the active session at snapshot
+                // time? On restore the original takes the slot, so it
+                // should inherit the active-session marker.
                 let visible_leaf_is_active_session =
                     pane_id.as_terminal_pane_id() == self.active_session_id(app);
                 let mut contents = match self.pane_contents.get(&snapshot_pane_id) {
@@ -2151,14 +2129,8 @@ impl PaneGroup {
                     }
                 };
 
-                // After substitution, override `is_active` so the
-                // restored tab marks the right pane as the active
-                // terminal. Without this override the orchestrator's
-                // snapshot would carry `is_active = false` (because the
-                // child was the active session at snapshot time), and
-                // restore would either silently fall back to the
-                // leftmost terminal pane or, in multi-pane tabs, focus
-                // a different terminal than the user last saw.
+                // After substitution, propagate the visible leaf's
+                // active-session bit so restore focuses the right pane.
                 if is_substituted && visible_leaf_is_active_session {
                     if let LeafContents::Terminal(ref mut snapshot) = contents {
                         snapshot.is_active = true;
@@ -2173,10 +2145,8 @@ impl PaneGroup {
                             .map(str::to_owned)
                     });
                 PaneNodeSnapshot::Leaf(LeafSnapshot {
-                    // Whether the user-visible tree slot is focused is
-                    // tracked against the replacement's pane id, so test
-                    // against the leaf id rather than the substituted
-                    // original.
+                    // Focus is tracked against the visible leaf, not the
+                    // substituted original.
                     is_focused: *pane_id == self.focused_pane_id(app),
                     custom_vertical_tabs_title,
                     contents,
@@ -4500,15 +4470,8 @@ impl PaneGroup {
     /// Definitively close the pane. This does not go through the undo close check where we might hide the pane instead of
     /// discarding it.
     fn discard_pane(&mut self, pane_id: PaneId, ctx: &mut ViewContext<Self>) {
-        // Same ownership-transfer rationale as `close_pane`: a hard discard
-        // (e.g. via the undo stack expiring) also needs to relinquish any
-        // child agent conversations back to their parents so the
-        // orchestrator's pill bar keeps working in-place.
-        //
-        // Skip the transfer when the pane being discarded is itself a
-        // child agent pane: the child's `TerminalView` canonically owns
-        // its conversation, and transferring ownership away would orphan
-        // the conversation while the pane is being torn down.
+        // Skip ownership transfer for child agent panes (their view
+        // canonically owns the conversation).
         if !self.is_child_agent_pane(pane_id) {
             self.transfer_child_agent_conversations_to_parents_on_close(pane_id, ctx);
         }
@@ -4528,25 +4491,10 @@ impl PaneGroup {
         self.cleanup_closed_pane(pane_id, ctx);
     }
 
-    /// Best-effort: for each child agent conversation currently live in
-    /// the closing pane's terminal view, ask the history model to
-    /// re-bind the child to whichever pane owns its parent
-    /// (orchestrator) conversation. This is defensive plumbing rather
-    /// than a true ownership transfer:
-    /// [`BlocklistAIHistoryModel::set_active_conversation_id`] requires
-    /// the destination view's live conversation list to already contain
-    /// the child, and in the typical orchestrator+child pane scenario
-    /// the parent's view does *not* own the child — the child has its
-    /// own dedicated `TerminalView`. In that case the call logs an
-    /// error inside the history model and no-ops, which is the correct
-    /// behavior.
-    ///
-    /// The call is still worth keeping as a hook for the rare paths
-    /// (e.g. a future split-off route that loads the child onto the
-    /// parent's view) where the parent's live list does include the
-    /// child. For non-child conversations and for child conversations
-    /// whose parent has no resolvable owning view, this method is a
-    /// silent no-op.
+    /// Best-effort: re-bind each live child agent conversation on the
+    /// closing view to the pane that owns its parent. Defensive plumbing
+    /// for paths where the parent's view actually contains the child;
+    /// no-ops otherwise.
     fn transfer_child_agent_conversations_to_parents_on_close(
         &mut self,
         pane_id: PaneId,
@@ -4671,53 +4619,26 @@ impl PaneGroup {
             return;
         }
 
-        // If this pane is a child agent, return it to its off-tree state
-        // instead of destroying it — future pill clicks will swap it back
-        // into the user's anchor.
-        //
-        // The transfer-conversations-on-close step below is intentionally
-        // skipped for child agent panes: the child's `TerminalView` is
-        // being preserved in `pane_contents` + `child_agent_panes`, so it
-        // must keep canonical ownership of its conversation. Transferring
-        // ownership to the parent's view here would leave the preserved
-        // child pane stale — a subsequent pill click would resolve to it
-        // (via `child_agent_panes`) but its blocks are now being routed to
-        // the parent's view, breaking the pill UX.
+        // Child agent panes return to off-tree state instead of being
+        // destroyed; future pill clicks re-host the same view. The view
+        // keeps ownership of its conversation, so we skip the
+        // transfer-on-close step below.
         if self.is_child_agent_pane(pane_id) {
-            // Case A: the child is currently the active swap target (in
-            // the anchor's tree slot via temporary replacement). Revert
-            // the swap so the anchor pane returns to its slot.
+            // Revert the swap if the child is currently swapped in.
             if self.panes.original_pane_for_replacement(pane_id).is_some() {
                 self.panes.revert_temporary_replacement(pane_id);
             }
-            // Case B: the child is in the tree as a real sibling (split
-            // off via "Open in new pane"). Remove it from the tree.
+            // Or remove the child from the tree if it was split off.
             else if self.panes.is_pane_in_tree(pane_id) && !self.panes.remove(pane_id) {
-                log::error!(
-                    "close_pane: failed to remove split-off child pane {pane_id:?} from tree"
-                );
+                log::error!("close_pane: failed to remove split-off child pane from tree");
             }
-            // Case C (split-off, then swapped over): the child was a
-            // visible split-off sibling, then a sibling pill was clicked
-            // from the child's pill bar — `replace_pane(child, sibling,
-            // true)` recorded the child as the *original* of an active
-            // TempRepl. Cases A and B don't touch that entry, so drop
-            // any hidden-pane record naming this child as the *original*
-            // side of a swap. (Replacement-side cleanup is already
-            // handled by Case A's explicit `revert_temporary_replacement`
-            // call, which removes the entry whose replacement matches
-            // the closing child.) Without this, a future revert of the
-            // surviving sibling — e.g. when the user closes the sibling
-            // — would splice the (off-tree but still live) child back
-            // into the tree and resurrect the just-closed pane as a
-            // visible leaf, which is not what the user asked for.
+            // Drop any leftover swap entry recording this child as the
+            // original side. Otherwise a later revert of the surviving
+            // sibling could resurrect the just-closed pane.
             self.panes.remove_hidden_pane(pane_id);
-            // The pane stays in `pane_contents` and `child_agent_panes`
-            // — it just goes back to off-tree state.
 
-            // Clear the split-off marker on the child's terminal view so
-            // a subsequent reveal via the swap path renders pills (in-place
-            // context) instead of breadcrumbs (split-off context).
+            // Clear the split-off marker so the next reveal renders pills
+            // rather than breadcrumbs.
             if let Some(terminal_view) = self.terminal_view_from_pane_id(pane_id, ctx) {
                 terminal_view.update(ctx, |view, ctx| {
                     view.clear_orchestration_split_off(ctx);
@@ -4734,13 +4655,9 @@ impl PaneGroup {
             return;
         }
 
-        // For non-child-agent closes, transfer ownership of any child agent
-        // conversations live in this view back to the pane that owns each
-        // child's parent conversation. This keeps the orchestrator pane's
-        // orchestration pill bar in-place click working after the split-off
-        // pane that took over the child's transcript closes. Safe to run
-        // even for hide-for-undo: re-opening the closed pane would re-restore
-        // the conversation into the (visible) view via the normal load path.
+        // Best-effort: re-bind any child conversations on this view back
+        // to the pane that owns their parent so the pill bar keeps
+        // working after this pane closes.
         self.transfer_child_agent_conversations_to_parents_on_close(pane_id, ctx);
 
         // If this is a parent with child agents, discard the children first.
@@ -4848,11 +4765,9 @@ impl PaneGroup {
         pane_to_focus: PaneId,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Child agent panes route through `close_pane` so that closing them
-        // reverts the swap (or removes the split-off) without destroying
-        // the underlying `TerminalView`. The default temporary-replacement
-        // close path destroys the replacement pane, which would tear down
-        // the child's `TerminalView` — not what we want.
+        // Child agent panes go through the normal close path so the
+        // underlying view is preserved (the temp-replacement close path
+        // would destroy it).
         if self.is_child_agent_pane(pane_id) {
             self.close_pane(pane_id, ctx);
             ctx.emit(Event::FocusPane { pane_to_focus });
@@ -4876,15 +4791,9 @@ impl PaneGroup {
         }
     }
 
-    /// Revert the temporary-replacement entry whose replacement pane is
-    /// `replacement_id` and clear any orchestration split-off marker on
-    /// the replacement's `TerminalView`. The split-off marker clear is
-    /// defensive: it is normally set only on panes split off via "Open
-    /// in new pane", but the Case-C scenario described in
-    /// [`Self::close_pane`] (a split-off pane that was later swapped
-    /// over by a sibling pill click) can leave it set on a pane that is
-    /// about to return to off-tree state, where it would otherwise
-    /// cause future reveals to render breadcrumbs instead of pills.
+    /// Revert a temporary-replacement swap and clear the orchestration
+    /// split-off marker on the replacement's view, so a later reveal
+    /// renders pills rather than breadcrumbs.
     fn revert_swap_clearing_split_off(
         &mut self,
         replacement_id: PaneId,
@@ -4898,36 +4807,17 @@ impl PaneGroup {
         self.panes.revert_temporary_replacement(replacement_id);
     }
 
-    /// Reveal `pane_id` if it's currently the *original* of an active
-    /// `TemporaryReplacement` (i.e. another pane is occupying its tree
-    /// slot via swap), then focus it. Used by cross-tab navigation paths
-    /// that resolve a target pane via [`Self::find_pane_id_for_terminal_view`]
-    /// — which iterates `pane_contents` and can hand back a hidden
-    /// original pane id whose terminal slot is currently rendering the
-    /// replacement instead. Without reverting the swap first,
-    /// [`Self::focus_pane_by_id`] would set focus/active session on the
-    /// off-tree original and leave the user staring at the (still
-    /// visible) replacement, with focus stuck on a pane the user can't
-    /// see or reach.
-    ///
-    /// If `pane_id` is neither in the layout tree nor the original of an
-    /// active swap, this method falls through to `focus_pane_by_id` and
-    /// logs a warning: focus will land on a pane that has no visible
-    /// slot, which is a bug in the caller (cross-tab paths should only
-    /// resolve to in-tree or swap-hidden panes).
+    /// Reveal `pane_id` if it's currently the original of an active swap,
+    /// then focus it. Used by cross-tab navigation paths that may resolve
+    /// to a swapped-out pane; without the reveal, focus would land on an
+    /// off-tree pane the user can't see. Logs a warning if the pane is
+    /// neither in the tree nor swap-hidden.
     pub fn reveal_and_focus_pane(&mut self, pane_id: PaneId, ctx: &mut ViewContext<Self>) {
         if let Some(replacement_id) = self.panes.replacement_pane_for_original(pane_id) {
             self.revert_swap_clearing_split_off(replacement_id, ctx);
             self.handle_pane_count_change(ctx);
-            // The visible content of this tree slot just changed from
-            // the replacement back to the original. Refresh the
-            // agent-view back-button label on both panes — its label
-            // depends on whether the active conversation is a child
-            // agent and is normally only computed when the pane enters
-            // agent view, so a stale label would otherwise persist on
-            // the now-visible original until something else triggers a
-            // refresh. Mirrors the explicit refresh in
-            // [`Self::swap_active_pane_to_conversation`].
+            // The visible content of this slot changed; refresh agent-view
+            // back-button labels on both sides.
             for refresh_pane_id in [pane_id, replacement_id] {
                 if let Some(terminal_view) = self.terminal_view_from_pane_id(refresh_pane_id, ctx) {
                     terminal_view.update(ctx, |view, ctx| {
@@ -4939,7 +4829,7 @@ impl PaneGroup {
             ctx.emit(Event::AppStateChanged);
         } else if !self.panes.is_pane_in_tree(pane_id) {
             log::warn!(
-                "reveal_and_focus_pane: pane {pane_id:?} is off-tree and is not the original of an active TemporaryReplacement; focus will land on a non-visible pane"
+                "reveal_and_focus_pane: pane {pane_id:?} is off-tree; focus will land on a non-visible pane"
             );
         }
         self.focus_pane_by_id(pane_id, ctx);
@@ -6689,23 +6579,9 @@ impl PaneGroup {
         None
     }
 
-    /// Make the pane that owns `conversation_id`'s `TerminalView` the visible
-    /// one in the slot currently occupied by `focused_pane_id` (the swap
-    /// anchor).
-    ///
-    /// Implementation: uses `PaneData::replace_pane(anchor, target, true)` to
-    /// substitute the target pane into the anchor's tree slot. The anchor is
-    /// recorded as the temporary-replacement original so a subsequent revert
-    /// (back-button, ESC, pill-click on the anchor's conversation, close,
-    /// split-off, etc.) restores it to its slot.
-    ///
-    /// Resolution order for the target pane:
-    /// 1. `child_agent_panes.get(&conversation_id)` for child agents.
-    /// 2. `find_visible_terminal_pane_for_conversation` if the conversation is
-    ///    already showing in some pane (e.g. "Open in new pane" was already
-    ///    used).
-    /// 3. `pane_id_for_conversation_owner` to fall back on the history model
-    ///    for the orchestrator (or any non-child) conversation.
+    /// Make the pane that owns `conversation_id` the visible one in the
+    /// focused pane's slot via temporary replacement. The previous occupant
+    /// is restored on revert (back-button, ESC, pill-click, close, split-off).
     pub fn swap_active_pane_to_conversation(
         &mut self,
         focused_pane_id: PaneId,
@@ -6720,14 +6596,8 @@ impl PaneGroup {
         let target_pane_id = from_child_panes.or(from_visible_pane).or(from_owner_lookup);
 
         let Some(target_pane_id) = target_pane_id else {
-            // The conversation isn't owned by any pane in this pane group
-            // (typical case: the child was opened via "Open in new tab"
-            // and now lives in a different tab's pane group, or the user
-            // is pressing ESC on a split-off-tab child whose orchestrator
-            // is in the source tab). Fall back to workspace-level
-            // navigation so the workspace can walk all tabs/windows and
-            // activate the containing tab as needed. Mirrors the
-            // breadcrumb parent-crumb click's cross-pane-group fallback.
+            // No owning pane in this group (e.g. the conversation lives
+            // in another tab). Fall back to workspace-level navigation.
             if let Some(owner_view_id) = BlocklistAIHistoryModel::as_ref(ctx)
                 .terminal_view_id_for_conversation(&conversation_id)
             {
@@ -6745,27 +6615,11 @@ impl PaneGroup {
             return;
         }
 
-        // If the *target* pane is currently the original of an active
-        // temporary replacement (i.e. some other pane is swapped into the
-        // target's slot right now), revert that replacement so the target
-        // returns to its slot and we can just focus it. Skipping this
-        // check would cause `replace_pane(anchor, target, true)` below to
-        // place `target` in `anchor`'s slot while `target` is also still
-        // recorded as the original of the existing replacement, leaving
-        // two `HiddenPane` entries pointing at the same pane and a tree
-        // node that subsequently corrupts on revert (duplicate leaf id).
-        //
-        // Concretely: child A is split off as a sibling of orchestrator
-        // O, child C is swapped into O's slot, user presses ESC on A
-        // (which emits `SwapPaneToConversation(O)`). Without this branch,
-        // we'd run `replace_pane(A, O, true)` even though O is currently
-        // hidden as the original of `TemporaryReplacement(C)`.
+        // If the target is currently swapped out (some other pane sits in
+        // its slot), revert that swap and just focus the target. Skipping
+        // this would put the target in two tree positions and corrupt the
+        // layout on a later revert.
         if let Some(replacement_id) = self.panes.replacement_pane_for_original(target_pane_id) {
-            // The replacement currently sitting in target's slot is
-            // (always, in practice) a child agent pane swapped in via
-            // the pill bar. The helper also clears its split-off marker
-            // so the next reveal renders pills, matching what the
-            // regular anchor revert below does.
             self.revert_swap_clearing_split_off(replacement_id, ctx);
             self.handle_pane_count_change(ctx);
             self.focus_pane(target_pane_id, true, ctx);
@@ -6781,23 +6635,17 @@ impl PaneGroup {
             return;
         }
 
-        // If the anchor is currently a temporary-replacement target (i.e.
-        // some swap is already active in this slot), revert that swap first
-        // so the original pane returns to its tree slot. The anchor for the
-        // new operation becomes that original pane.
+        // If a swap is already active in this slot, revert it first; the
+        // anchor for the new operation becomes the original pane.
         let anchor =
             if let Some(original) = self.panes.original_pane_for_replacement(focused_pane_id) {
-                // The helper also clears the split-off marker on the
-                // child we're swapping away from so it renders pills
-                // (not breadcrumbs) next time it becomes visible.
                 self.revert_swap_clearing_split_off(focused_pane_id, ctx);
                 original
             } else {
                 focused_pane_id
             };
 
-        // After revert, if we landed on the target itself, the user just
-        // clicked back to the orchestrator; just focus and return.
+        // If revert landed us on the target, just focus and return.
         if anchor == target_pane_id {
             self.handle_pane_count_change(ctx);
             self.focus_pane(anchor, true, ctx);
@@ -6811,9 +6659,7 @@ impl PaneGroup {
             return;
         }
 
-        // If the target pane is already visible in the tree (e.g. user split
-        // the child off into a sibling pane), just focus it. Don't call
-        // `replace_pane` — it would put the target in two tree positions.
+        // If the target is already a visible sibling, just focus it.
         if self.panes.is_pane_in_tree(target_pane_id) && !self.panes.is_pane_hidden(&target_pane_id)
         {
             self.handle_pane_count_change(ctx);
@@ -6828,9 +6674,8 @@ impl PaneGroup {
             return;
         }
 
-        // Place the target pane into the anchor's tree slot via temporary
-        // replacement. The anchor stays in `pane_contents` and is recorded
-        // as the original; revert returns it to its slot.
+        // Substitute the target into the anchor's slot via temporary
+        // replacement; revert restores the anchor.
         let success = self.panes.replace_pane(anchor, target_pane_id, true);
         if !success {
             log::warn!(
@@ -6842,13 +6687,8 @@ impl PaneGroup {
         self.handle_pane_count_change(ctx);
         self.focus_pane(target_pane_id, true, ctx);
 
-        // Refresh the agent-view back button label/disabled state on both
-        // panes involved in the swap. The label depends on whether the
-        // active conversation is a child agent ("for Orchestrator") or
-        // not ("for terminal"), and is normally only computed when the
-        // pane enters agent view. Without this refresh, a pane that was
-        // already in agent view from earlier would carry a stale label
-        // until something else triggers a refresh.
+        // Refresh the back-button label on both swapped panes; otherwise
+        // a stale label would persist until the next agent-view entry.
         for pane_id in [anchor, target_pane_id] {
             if let Some(terminal_view) = self.terminal_view_from_pane_id(pane_id, ctx) {
                 terminal_view.update(ctx, |view, ctx| {
@@ -6861,23 +6701,11 @@ impl PaneGroup {
         ctx.emit(Event::AppStateChanged);
     }
 
-    /// Reveal the existing child agent pane for `conversation_id` as a
-    /// visible sibling next to the orchestrator's pane ("Open in new
-    /// pane"). Reuses the existing `TerminalView` — creating a fresh view
-    /// and reloading the conversation into it would cancel in-flight
-    /// commands and briefly leak the child transcript into the orchestrator
-    /// pane while ownership shuffles.
-    ///
-    /// If the orchestrator's pane is currently swapped out (i.e. some
-    /// child of the same orchestrator sits in the orchestrator's slot via
-    /// `TemporaryReplacement`), revert that specific swap first so the
-    /// orchestrator returns to its tree slot, then split the target child
-    /// in next to it. We deliberately do NOT touch swaps owned by other
-    /// orchestrators in the same pane group: with two orchestrators each
-    /// hosting an active swap, reverting an unrelated swap and then
-    /// splitting the target next to that unrelated original would leave
-    /// the target's own slot untouched and produce duplicate leaves in
-    /// the tree.
+    /// Reveal the child agent pane for `conversation_id` as a visible
+    /// sibling of its orchestrator ("Open in new pane"). Reuses the
+    /// existing view to avoid cancelling in-flight commands. Reverts any
+    /// swap on the target's orchestrator first; swaps belonging to other
+    /// orchestrators in the same group are left alone.
     pub fn unhide_child_agent_pane_for_split_off(
         &mut self,
         conversation_id: AIConversationId,
@@ -6885,32 +6713,16 @@ impl PaneGroup {
     ) -> Option<PaneId> {
         let child_pane_id = self.child_agent_panes.get(&conversation_id).copied()?;
 
-        // Split-off-then-swapped-over case: the child was previously split
-        // off as a sibling, then a sibling pill was clicked from the
-        // child's pill bar — `replace_pane(child, sibling, true)` recorded
-        // the child as the *original* of an active TempRepl. The child is
-        // off-tree but still listed in `hidden_panes` with that role, and
-        // the sibling occupies the child's old tree slot.
-        //
-        // Splitting the child back into the tree without first clearing
-        // that entry would corrupt the layout: the tree would hold the
-        // child as a fresh sibling AND the sibling at the child's old
-        // slot, while the TempRepl entry still says "child is hidden,
-        // sibling replaces it." A later revert of the surviving sibling
-        // (e.g. on close) would call `root.replace_pane(sibling, child)`
-        // and produce a duplicate-leaf tree.
-        //
-        // Reverting the swap is the right answer for "Open in new pane":
-        // the child *was* already split off, just temporarily hidden
-        // behind a swap. After reverting, the child is back in its old
-        // slot and the early-return below focuses it.
+        // If the child was previously split off and then swapped over,
+        // it's recorded as the original of an active swap. Revert that
+        // swap first — the child returns to its old slot — so we don't
+        // splice it into the tree a second time.
         if let Some(replacement_pane_id) = self.panes.replacement_pane_for_original(child_pane_id) {
             self.revert_swap_clearing_split_off(replacement_pane_id, ctx);
             self.handle_pane_count_change(ctx);
         }
 
-        // If the child pane is already a visible sibling in the tree (e.g.
-        // user already split it off), just focus it.
+        // If the child is already a visible sibling, just focus it.
         if self.panes.is_pane_in_tree(child_pane_id)
             && !self.panes.is_pane_hidden(&child_pane_id)
             && self
@@ -6922,24 +6734,15 @@ impl PaneGroup {
             return Some(child_pane_id);
         }
 
-        // Resolve the orchestrator (parent) pane for this child in this
-        // pane group, if any. Used both to decide what to split next to
-        // and to scope swap-reverts to the correct orchestrator — we
-        // must not revert swaps belonging to a *different* orchestrator
-        // that happens to share this pane group.
+        // Resolve the target child's orchestrator. Used to scope swap
+        // reverts so we don't disturb swaps owned by other orchestrators.
         let parent_pane_id = BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&conversation_id)
             .and_then(|c| c.parent_conversation_id())
             .and_then(|parent_conv_id| self.pane_id_for_conversation_owner(parent_conv_id, ctx));
 
-        // If the orchestrator's pane is currently the original of an
-        // active swap (i.e. one of its children is sitting in its slot),
-        // revert that swap so the orchestrator returns to its tree slot.
-        // The replacement we revert may be the target child itself (the
-        // pre-existing single-orchestrator scenario) or a sibling child
-        // (the multi-children-of-same-orchestrator scenario). Either
-        // way, the swap we touch is scoped to the target's own
-        // orchestrator.
+        // If the orchestrator is swapped out, revert it so it returns to
+        // its slot before we split next to it.
         let split_base = if let Some(parent_pane_id) = parent_pane_id {
             if let Some(replacement_pane_id) =
                 self.panes.replacement_pane_for_original(parent_pane_id)
@@ -6963,8 +6766,7 @@ impl PaneGroup {
             });
         }
 
-        // Refresh the back-button label on the orchestrator pane (its
-        // visible content just changed from child to orchestrator).
+        // Refresh the back-button label on the orchestrator pane.
         if let Some(terminal_view) = self.terminal_view_from_pane_id(split_base, ctx) {
             terminal_view.update(ctx, |view, ctx| {
                 view.update_agent_view_back_button_state(ctx);
@@ -6978,13 +6780,9 @@ impl PaneGroup {
         Some(child_pane_id)
     }
 
-    /// Detach the existing child agent pane for `conversation_id` from
-    /// this pane group so it can be re-parented into a new tab's pane group
-    /// ("Open in new tab"). Reuses the existing `TerminalView` rather than
-    /// creating a fresh one for the same reasons documented on
-    /// [`unhide_child_agent_pane_for_split_off`]. The caller is responsible
-    /// for adopting the returned pane content into a new pane group via
-    /// `Workspace::add_tab_from_existing_pane`.
+    /// Detach the child agent pane for `conversation_id` so it can be
+    /// re-parented into a new tab ("Open in new tab"). Reuses the
+    /// existing view to avoid cancelling in-flight commands.
     pub fn take_child_agent_pane_for_split_off(
         &mut self,
         conversation_id: AIConversationId,
@@ -6992,17 +6790,11 @@ impl PaneGroup {
     ) -> Option<Box<dyn AnyPaneContent>> {
         let child_pane_id = self.child_agent_panes.remove(&conversation_id)?;
 
-        // Capture focus state before any tree mutation so we can shift
-        // focus to a sane neighbour regardless of whether the child
-        // leaves the tree via swap revert (Case A) or pane removal
-        // (Case B). Reading after the mutation would miss the swap-revert
-        // case because `is_pane_focused(child)` would still report true
-        // even though the child is no longer in the tree.
+        // Capture focus before mutating the tree so we can shift focus
+        // correctly afterwards regardless of how the child leaves it.
         let was_focused = self.focus_state.as_ref(ctx).is_pane_focused(child_pane_id);
 
-        // If the child is currently the active swap target, revert the swap
-        // so the orchestrator returns to its slot. After this, the child
-        // pane is off-tree.
+        // Revert the swap if the child is currently swapped in.
         if self
             .panes
             .original_pane_for_replacement(child_pane_id)
@@ -7011,30 +6803,17 @@ impl PaneGroup {
             self.panes.revert_temporary_replacement(child_pane_id);
         }
 
-        // If the child is in the tree as a real sibling (split off), remove
-        // it from the tree. Off-tree panes (after revert above, or if the
-        // child was never split) are already not in the tree.
+        // Remove the child from the tree if it was a real sibling.
         if self.panes.is_pane_in_tree(child_pane_id) && !self.panes.remove(child_pane_id) {
-            log::error!(
-                "take_child_agent_pane_for_split_off: failed to remove pane {child_pane_id:?} from tree"
-            );
+            log::error!("take_child_agent_pane_for_split_off: failed to remove pane from tree");
         }
 
-        // Drop any leftover hidden-pane entry naming the child. Covers
-        // the split-off-then-swapped-over case where the child sits in
-        // `hidden_panes` as the *original* of an active TempRepl (a
-        // sibling was swapped into the child's slot from its pill bar).
-        // The branches above don't clear that entry, and leaving it in
-        // place would let a future revert of the surviving sibling
-        // splice the (now-detached) child back into the tree, leaving
-        // a leaf that points to a pane this group no longer owns.
+        // Drop any leftover swap entry naming this child as the original
+        // side. Otherwise a later revert of a surviving sibling would
+        // splice the now-detached child back into this group's tree.
         self.panes.remove_hidden_pane(child_pane_id);
 
-        // Shift focus and active session away from the child pane if it
-        // held either, regardless of which path took it out of the tree.
-        // Without this, the source pane group can be left with
-        // `focused_pane_id` / `active_session_id` pointing at a pane that
-        // is about to be removed from `pane_contents` entirely.
+        // Shift focus and active session away from the departing child.
         self.focus_next_terminal_pane_and_activate_session(
             child_pane_id,
             PaneRemovalReason::Move,
@@ -7054,8 +6833,7 @@ impl PaneGroup {
             });
         }
 
-        // Detach the pane (DetachType::Moved) so the destination pane
-        // group can re-attach it cleanly.
+        // Detach so the destination group can re-attach cleanly.
         if let Some(pane_data) = self.pane_contents.get(&child_pane_id) {
             let pane = pane_data.as_pane();
             pane.detach(self, DetachType::Moved, ctx);
@@ -7068,35 +6846,22 @@ impl PaneGroup {
         pane_content
     }
 
-    /// Stamp this pane group as the destination of a split-off child agent
-    /// pane. Workspace plumbing calls this immediately after wrapping the
-    /// detached pane in a fresh tab so that closing the tab can re-adopt
-    /// the live `TerminalView` back to the source group instead of
-    /// dropping it.
+    /// Stamp this pane group as the destination of a split-off child
+    /// agent pane, so closing the tab re-adopts the live view back to
+    /// the source group.
     pub fn set_child_agent_origin(&mut self, origin: ChildAgentOrigin) {
         self.child_agent_origin = Some(origin);
     }
 
-    /// Returns the [`ChildAgentOrigin`] stamped on this pane group via
-    /// [`Self::set_child_agent_origin`], if any. Used by the workspace tab
-    /// close path to detect split-off child agent tabs and route them
-    /// through the re-adoption flow.
+    /// Returns the origin metadata if this group is hosting a split-off
+    /// child agent tab.
     pub fn child_agent_origin(&self) -> Option<&ChildAgentOrigin> {
         self.child_agent_origin.as_ref()
     }
 
-    /// Re-adopt a child agent pane that was previously detached for a
-    /// split-off tab via [`Self::take_child_agent_pane_for_split_off`].
-    /// Re-inserts the pane into this group's `pane_contents` and
-    /// `child_agent_panes` **off-tree**, and clears the split-off marker
-    /// on its `TerminalView` so a subsequent reveal via the orchestration
-    /// pill bar renders the full pill bar rather than breadcrumbs.
-    ///
-    /// Used by the workspace tab close path when the closing tab is the
-    /// destination of a split-off child agent: the live `TerminalView` is
-    /// preserved by moving it back to its source group rather than being
-    /// torn down with the closing pane group. Subsequent pill clicks will
-    /// swap it into the user's anchor as needed.
+    /// Re-adopt a previously detached child agent pane back into this
+    /// group as off-tree, and clear its split-off marker so the next
+    /// reveal renders pills instead of breadcrumbs.
     pub fn re_adopt_child_agent_pane(
         &mut self,
         pane_content: Box<dyn AnyPaneContent>,
