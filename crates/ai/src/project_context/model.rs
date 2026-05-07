@@ -254,9 +254,6 @@ impl ProjectContextModel {
         root_path: PathBuf,
         ctx: &mut ModelContext<Self>,
     ) -> Result<()> {
-        if self.path_to_rules.contains_key(&root_path) {
-            return Ok(());
-        }
         #[cfg(feature = "local_fs")]
         {
             let root_clone = root_path.clone();
@@ -571,6 +568,10 @@ impl ProjectContextModel {
                     match async_fs::read_to_string(&target_file.path).await {
                         Ok(content) => {
                             existing_rules.upsert_rule(&target_file.path, content);
+                            rules_delta.discovered_rules.push(ProjectRulePath {
+                                path: target_file.path.clone(),
+                                project_root: project_root.clone(),
+                            });
                         }
                         Err(e) => {
                             log::warn!(
