@@ -3,7 +3,7 @@
 //! Some of the code in this module is adapted from GitHub Desktop, which is licensed under the MIT license,
 //! Copyright (c) GitHub, Inc.  See GITHUB-DESKTOP-LICENSE in this directory.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "local_fs")]
 use std::time::Duration;
@@ -25,15 +25,15 @@ cfg_if::cfg_if! {
 }
 #[cfg(not(target_arch = "wasm32"))]
 use warpui::AppContext;
-use warpui::{r#async::SpawnedFutureHandle, ModelContext};
+use warpui::{ModelContext, r#async::SpawnedFutureHandle};
 
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::features::FeatureFlag;
 #[cfg(feature = "local_fs")]
 use crate::util::git::get_pr_for_branch;
 use crate::util::git::{
-    detect_current_branch, detect_main_branch, get_unpushed_commits, run_git_command, Commit,
-    PrInfo,
+    Commit, PrInfo, detect_current_branch, detect_main_branch, get_unpushed_commits,
+    run_git_command,
 };
 
 use super::diff_size_limits::compute_diff_size;
@@ -49,7 +49,7 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
         use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
         use repo_metadata::{
-            repository::{RepositorySubscriber, SubscriberId},
+            repository::{BufferingRepositorySubscriber, RepositorySubscriber, SubscriberId},
             RepoMetadataError, Repository, RepositoryUpdate,
         };
         use async_channel::Sender;
@@ -60,6 +60,8 @@ cfg_if::cfg_if! {
 use crate::terminal::local_shell::LocalShellState;
 
 const UNCOMMITTED_CHANGES: &str = "Uncommitted changes";
+#[cfg(feature = "local_fs")]
+const REPOSITORY_UPDATE_DEBOUNCE: Duration = Duration::from_millis(300);
 
 /// Represents a parsed unified diff header
 /// Format: @@ -old_start,old_count +new_start,new_count @@ [optional context]
@@ -1107,10 +1109,14 @@ impl DiffStateModel {
         let (throttled_repository_update_tx, throttled_repository_update_rx) =
             async_channel::unbounded();
         let start = new_repository.update(ctx, |new_repository, ctx| {
+            let subscriber = DiffStateModelRepositorySubscriber {
+                repository_update_tx,
+            };
             new_repository.start_watching(
-                Box::new(DiffStateModelRepositorySubscriber {
-                    repository_update_tx,
-                }),
+                Box::new(BufferingRepositorySubscriber::new(
+                    subscriber,
+                    REPOSITORY_UPDATE_DEBOUNCE,
+                )),
                 ctx,
             )
         });
@@ -2191,7 +2197,10 @@ impl DiffStateModel {
                         })?;
                         files.push((PathBuf::from(path), status));
                     } else {
-                        log::warn!("Invalid format for changed entry: '{token}' - expected at least 9 parts, got {}", parts.len());
+                        log::warn!(
+                            "Invalid format for changed entry: '{token}' - expected at least 9 parts, got {}",
+                            parts.len()
+                        );
                     }
                 }
                 '2' => {
@@ -2228,7 +2237,10 @@ impl DiffStateModel {
                         files.push((PathBuf::from(path), status));
                         i += 1; // Skip the old path token
                     } else {
-                        log::warn!("Invalid format for renamed/copied entry: '{token}' - expected at least 10 parts, got {}", parts.len());
+                        log::warn!(
+                            "Invalid format for renamed/copied entry: '{token}' - expected at least 10 parts, got {}",
+                            parts.len()
+                        );
                     }
                 }
                 'u' => {
@@ -2239,7 +2251,11 @@ impl DiffStateModel {
                         let path = parts[10];
                         files.push((PathBuf::from(path), GitFileStatus::Conflicted));
                     } else {
-                        log::warn!("Invalid format for unmerged entry: '{}' - expected at least 11 parts, got {}", token, parts.len());
+                        log::warn!(
+                            "Invalid format for unmerged entry: '{}' - expected at least 11 parts, got {}",
+                            token,
+                            parts.len()
+                        );
                     }
                 }
                 '?' => {
@@ -2248,7 +2264,9 @@ impl DiffStateModel {
                         let path = &token[2..]; // Skip "? "
                         files.push((PathBuf::from(path), GitFileStatus::Untracked));
                     } else {
-                        log::warn!("Invalid format for untracked entry: '{token}' - expected path after '? '");
+                        log::warn!(
+                            "Invalid format for untracked entry: '{token}' - expected path after '? '"
+                        );
                     }
                 }
                 '!' => {
