@@ -1072,6 +1072,22 @@ fn test_possible_file_paths() {
 }
 
 #[test]
+fn test_possible_file_paths_with_cjk_fullwidth_separator() {
+    let blockgrid = mock_blockgrid("路径：/tmp/foo.md");
+    let possible_paths = blockgrid
+        .grid_handler
+        .possible_file_paths_at_point(Point { row: 0, col: 6 });
+
+    assert!(possible_paths.contains(&PossiblePath {
+        path: CleanPathResult {
+            path: "/tmp/foo.md".into(),
+            line_and_column_num: None,
+        },
+        range: Point { row: 0, col: 6 }..=Point { row: 0, col: 16 },
+    }));
+}
+
+#[test]
 fn test_fragment_boundary_at_point() {
     let assert_fragment_boundary =
         |blockgrid: &BlockGrid,
@@ -1112,6 +1128,9 @@ fn test_fragment_boundary_at_point() {
     let blockgrid = mock_blockgrid("line one\r\nline two");
     assert_fragment_boundary(&blockgrid, (0, 6), (0, 5)..(0, 8)); // Should give boundary of fragment "one"
     assert_fragment_boundary(&blockgrid, (1, 3), (1, 0)..(1, 4)); // Should give boundary of fragment "line"
+
+    let blockgrid = mock_blockgrid("路径：/tmp/foo.md");
+    assert_fragment_boundary(&blockgrid, (0, 6), (0, 6)..(0, 17)); // Should give boundary of fragment "/tmp/foo.md"
 
     // The `ls` command performs indenting via a tab '\t' followed by a series of null characters '\0'
     let blockgrid = mock_blockgrid("migrations\t\0\0\0resources");

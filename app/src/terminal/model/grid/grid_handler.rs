@@ -25,6 +25,7 @@ use std::{
 use bounded_vec_deque::BoundedVecDeque;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use unicode_general_category::{get_general_category, GeneralCategory};
 use unicode_width::UnicodeWidthChar;
 use urlocator::{UrlLocation, UrlLocator};
 use warp_core::features::FeatureFlag;
@@ -165,20 +166,41 @@ pub fn is_file_link_separator(c: char) -> bool {
     ) {
         return true;
     }
-    use unicode_general_category::{get_general_category, GeneralCategory};
-    matches!(
-        get_general_category(c),
+    match get_general_category(c) {
         GeneralCategory::ConnectorPunctuation
-            | GeneralCategory::DashPunctuation
-            | GeneralCategory::OpenPunctuation
-            | GeneralCategory::ClosePunctuation
-            | GeneralCategory::InitialPunctuation
-            | GeneralCategory::FinalPunctuation
-            | GeneralCategory::OtherPunctuation
-            | GeneralCategory::SpaceSeparator
-            | GeneralCategory::LineSeparator
-            | GeneralCategory::ParagraphSeparator
-    )
+        | GeneralCategory::DashPunctuation
+        | GeneralCategory::OpenPunctuation
+        | GeneralCategory::ClosePunctuation
+        | GeneralCategory::InitialPunctuation
+        | GeneralCategory::FinalPunctuation
+        | GeneralCategory::OtherPunctuation
+        | GeneralCategory::SpaceSeparator
+        | GeneralCategory::LineSeparator
+        | GeneralCategory::ParagraphSeparator => true,
+        GeneralCategory::Control
+        | GeneralCategory::CurrencySymbol
+        | GeneralCategory::DecimalNumber
+        | GeneralCategory::EnclosingMark
+        | GeneralCategory::Format
+        | GeneralCategory::LetterNumber
+        | GeneralCategory::LowercaseLetter
+        | GeneralCategory::MathSymbol
+        | GeneralCategory::ModifierLetter
+        | GeneralCategory::ModifierSymbol
+        | GeneralCategory::NonspacingMark
+        | GeneralCategory::OtherLetter
+        | GeneralCategory::OtherNumber
+        | GeneralCategory::OtherSymbol
+        | GeneralCategory::PrivateUse
+        | GeneralCategory::SpacingMark
+        | GeneralCategory::Surrogate
+        | GeneralCategory::TitlecaseLetter
+        | GeneralCategory::Unassigned
+        | GeneralCategory::UppercaseLetter => false,
+        // `GeneralCategory` is non-exhaustive. Future Unicode categories
+        // should remain non-separating until intentionally supported here.
+        _ => false,
+    }
 }
 
 /// Represents a range of cells with information on their combined content and total
