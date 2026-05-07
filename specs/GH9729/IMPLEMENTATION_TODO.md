@@ -31,24 +31,46 @@ stops. The next iteration sees the updated state and picks the next item.
        — `tech.md` §74
 - [x] 1c. Unit tests for resolver: each supported extension, precedence over
        markdown, non-image binary still `SystemGeneric` — `tech.md` §613
-- [ ] 2a. `list_sibling_images_natural_sorted` helper + `MAX_SIBLING_IMAGES`
-       cap (1024) + hidden-file filter mirroring the clicked file —
-       `tech.md` §119 (`### 2.`)
-- [ ] 2b. `Workspace::open_file_with_target` arm: build `Vec<LightboxImage>`
-       and dispatch `WorkspaceAction::OpenLightbox` — `tech.md` §119
-- [ ] 2c. Unit tests for natural sort, hidden-file filter, sibling cap —
-       `tech.md` §613
+**Spec narrowing note (commit `112e581`).** v1 is single-image, no sibling
+navigation. The `list_sibling_images_natural_sorted` helper, `MAX_SIBLING_IMAGES`
+cap, hidden-file filter, and natural-sort tests that the original PR body
+mentioned are explicitly out of scope per `tech.md` §119 ("Single-element Vec...
+v1 always passes a one-element vec") and the descope listed in `product.md`.
+The original 2a / 2c bullets are struck through and superseded.
+
 - [ ] 3a. `LightboxImageSource::Error { message }` variant in
-       `crates/ui_components/src/lightbox.rs` — `tech.md` §182 (`### 3.`)
-- [ ] 3b. Render the new variant inline; drop the
+       `crates/ui_components/src/lightbox.rs` — `tech.md` §182 (`### 3.`).
+       Promoted ahead of the workspace arm because §119 references it.
+- [ ] 3b. Render the `Error` variant inline; drop the
        `app/src/ai/artifacts/mod.rs:362-365` "Failed to load" workaround —
        `tech.md` §182
-- [ ] 4a. `image::Limits` (max dimension, max alloc) + `MAX_DECODED_PIXELS`
-       cap in `ImageType::try_from_bytes` — `tech.md` §217 (`### 4.`)
-- [ ] 4b. `MAX_SVG_BYTES` input cap — `tech.md` §321
-- [ ] 4c. Unit tests: huge dimension rejected, normal photo accepted,
-       garbage returns `Unrecognized`, oversize SVG rejected — `tech.md` §613
-- [ ] 5.  Bound the `LocalFile` asset-cache read — `tech.md` §400 (`### 5.`)
+- [ ] 2-arm. Workspace `FileTarget::ImagePreview` arm: synchronous
+       `metadata` size/regular-file check (`MAX_PREVIEW_FILE_BYTES = 64 MB`),
+       `truncate_message` helper (`MAX_ERROR_MESSAGE_LEN = 256`), single-element
+       `OpenLightbox` dispatch — `tech.md` §119
+- [ ] 2-tests. Workspace-arm tests per `tech.md` §613 (lines 623-626):
+       `image_preview_arm_dispatches_resolved_when_under_size_cap`,
+       `image_preview_arm_dispatches_error_when_over_size_cap`,
+       `image_preview_arm_dispatches_error_when_metadata_fails`,
+       `image_preview_arm_dispatches_error_for_non_regular_file`
+- ~~[ ] 2a. `list_sibling_images_natural_sorted` helper + `MAX_SIBLING_IMAGES`
+       cap (1024) + hidden-file filter — out of scope (single-image v1)~~
+- ~~[ ] 2c. Unit tests for natural sort, hidden-file filter, sibling cap —
+       out of scope (single-image v1)~~
+- [ ] 4a. Static-decode caps in `ImageType::try_from_bytes`:
+       `image::Limits` (max dimension, max alloc) + `MAX_DECODE_PIXELS = 67M`
+       — `tech.md` §234 (Static raster, under §217)
+- [ ] 4b. Animated decode caps: `MAX_ANIMATED_FRAMES`, `MAX_ANIMATED_TOTAL_PIXELS`
+       — `tech.md` §259 (Animated WebP / GIF, under §217)
+- [ ] 4c. SVG content-sanity prefix check + intrinsic-dimension cap —
+       `tech.md` §321
+- [ ] 4-tests. Decoder tests per `tech.md` §613 (lines 640-652).
+- [ ] 5a. Bound the `LocalFile` asset-cache read with content-keyed cap
+       (raster vs SVG by 1 KB content peek), post-open `is_file()` check,
+       and `O_NONBLOCK` regression guard — `tech.md` §400 (`### 5.`)
+- [ ] 5b. `lightbox_view.rs` post-load callback rewrites `FailedToLoad` /
+       `Unrecognized` to `Error` — `tech.md` §613 (lines 660-661)
+- [ ] 5-tests. Asset-cache tests per `tech.md` §613 (lines 628-636).
 - [ ] 7.  Telemetry events for image-preview open / error / cap-hit —
        `tech.md` §517 (`### 7.`)
 - [ ] FINAL. Run `cargo fmt --check`, `cargo clippy --workspace --all-targets
