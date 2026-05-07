@@ -1,4 +1,4 @@
-use crate::elements::{Fill, DEFAULT_UI_LINE_HEIGHT_RATIO};
+use crate::elements::{DEFAULT_UI_LINE_HEIGHT_RATIO, Fill};
 use crate::fonts::{
     Cache as FontCache, FamilyId, Properties, RequestedFallbackFontSource, TextLayoutSystem,
 };
@@ -7,9 +7,9 @@ use crate::geometry::vector::vec2f;
 use crate::platform::LineStyle;
 use crate::scene::{Border, CornerRadius, Dash};
 use crate::{
+    Scene,
     fonts::{FontId, GlyphId},
     scene::GlyphFade,
-    Scene,
 };
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -25,7 +25,7 @@ use std::{
     ops::Range,
     sync::Arc,
 };
-use vec1::{vec1, Vec1};
+use vec1::{Vec1, vec1};
 
 type StyleRun = (Range<usize>, StyleAndFont);
 
@@ -828,10 +828,10 @@ impl TextFrame {
     /// index of the below line.
     pub fn row_within_frame(&self, index: usize, clamp_above: bool) -> usize {
         for (i, line) in self.lines.iter().enumerate() {
-            if let Some(last_glyph) = line.last_glyph() {
+            if !line.caret_positions.is_empty() || line.last_glyph().is_some() {
                 let last_index_in_row = match clamp_above {
-                    true => last_glyph.index + 1,
-                    false => last_glyph.index,
+                    true => line.end_index(),
+                    false => line.last_index(),
                 };
                 if last_index_in_row >= index {
                     return i;
@@ -1122,14 +1122,18 @@ impl Line {
     pub fn first_index(&self) -> usize {
         self.caret_positions
             .first()
-            .map_or(0, |caret| caret.start_offset)
+            .map(|caret| caret.start_offset)
+            .or_else(|| self.first_glyph().map(|glyph| glyph.index))
+            .unwrap_or(0)
     }
 
     /// The last character index that's within this line (inclusive).
     pub fn last_index(&self) -> usize {
         self.caret_positions
             .last()
-            .map_or(0, |caret| caret.last_offset)
+            .map(|caret| caret.last_offset)
+            .or_else(|| self.last_glyph().map(|glyph| glyph.index))
+            .unwrap_or(0)
     }
 
     /// The first character index that's after this line.

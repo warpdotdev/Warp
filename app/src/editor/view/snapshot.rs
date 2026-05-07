@@ -12,7 +12,7 @@ use crate::editor::soft_wrap::FrameLayouts;
 use crate::terminal::grid_size_util::grid_compute_baseline_position_fn;
 
 use parking_lot::Mutex;
-use pathfinder_geometry::vector::{vec2f, Vector2F};
+use pathfinder_geometry::vector::{Vector2F, vec2f};
 
 use anyhow::Result;
 use core::f32;
@@ -31,17 +31,17 @@ use warpui::text::point::Point;
 
 use string_offset::ByteOffset;
 
+use warpui::EntityId;
 use warpui::fonts::{FamilyId, Properties};
 use warpui::platform::LineStyle;
 use warpui::text_layout::{
-    default_compute_baseline_position_fn, ClipConfig, ComputeBaselinePositionFn, StyleAndFont,
-    TextAlignment, TextStyle, DEFAULT_TOP_BOTTOM_RATIO,
+    ClipConfig, ComputeBaselinePositionFn, DEFAULT_TOP_BOTTOM_RATIO, StyleAndFont, TextAlignment,
+    TextStyle, default_compute_baseline_position_fn,
 };
-use warpui::EntityId;
 use warpui::{
+    AppContext, ModelHandle,
     fonts::Cache as FontCache,
     text_layout::{self, LayoutCache},
-    AppContext, ModelHandle,
 };
 
 /// Ratio to calculate font size of cursor avatar.
@@ -369,11 +369,11 @@ impl ViewSnapshot {
             let end_column = cmp::min(map.line_len(head.row(), app).unwrap(), head.column() + 3);
 
             if let Some(line) = layouts.get((head.row() - start_row) as usize) {
-                target_left = target_left.min(line.x_for_index(start_column as usize));
+                target_left = target_left.min(line.caret_position_for_index(start_column as usize));
             }
             if let Some(line) = layouts.get((head.row() - start_row) as usize) {
-                target_right =
-                    target_right.max(line.x_for_index(end_column as usize) + max_glyph_width);
+                target_right = target_right
+                    .max(line.caret_position_for_index(end_column as usize) + max_glyph_width);
             }
         }
         target_right = target_right.min(scroll_width);

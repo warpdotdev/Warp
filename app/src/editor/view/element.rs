@@ -4,13 +4,13 @@ use super::super::soft_wrap::{
 use super::model::MarkedTextState;
 use super::snapshot::VOICE_INPUT_ICON_CURSOR_GAP;
 use super::{
-    position_id_for_cached_point, snapshot::ViewSnapshot, CursorColors, DisplayPoint,
-    DrawableSelection, EditorAction, ScrollState, SelectAction,
+    CursorColors, DisplayPoint, DrawableSelection, EditorAction, ScrollState, SelectAction,
+    position_id_for_cached_point, snapshot::ViewSnapshot,
 };
-use super::{position_id_for_cursor, LocalDrawableSelectionData, ReplicaId};
+use super::{LocalDrawableSelectionData, ReplicaId, position_id_for_cursor};
 use crate::appearance::Appearance;
 use crate::editor::accept_autosuggestion_keybinding_view::{
-    AcceptAutosuggestionKeybinding, AUTOSUGGESTION_HINT_MINIMUM_HEIGHT,
+    AUTOSUGGESTION_HINT_MINIMUM_HEIGHT, AcceptAutosuggestionKeybinding,
 };
 use crate::editor::autosuggestion_ignore_view::AutosuggestionIgnore;
 use crate::editor::position_id_for_first_cursor;
@@ -20,18 +20,18 @@ use crate::ui_components::icons::Icon;
 use itertools::Itertools;
 use pathfinder_geometry::{
     rect::RectF,
-    vector::{vec2f, Vector2F},
+    vector::{Vector2F, vec2f},
 };
 use vim::vim::{MotionType, VimMode};
 use warp_core::features::FeatureFlag;
 use warp_core::ui::appearance::DEFAULT_UI_FONT_SIZE;
 use warp_util::user_input::UserInput;
+use warpui::ViewHandle;
 use warpui::event::KeyState;
 use warpui::text_selection_utils::{
-    calculate_tick_width, create_newline_tick_rect, selection_crosses_newline_row_based,
-    NewlineTickParams,
+    NewlineTickParams, calculate_tick_width, create_newline_tick_rect,
+    selection_crosses_newline_row_based,
 };
-use warpui::ViewHandle;
 use warpui::{event::ModifiersState, text_layout::ComputeBaselinePositionArgs};
 
 use crate::editor::view::AutosuggestionLocation;
@@ -45,15 +45,15 @@ use std::{
     time::Duration,
 };
 use warpui::{
+    AppContext, SingletonEntity, TaskId,
     elements::{
         AfterLayoutContext, CornerRadius, Element, Event, EventContext, LayoutContext,
         PaintContext, Point, SizeConstraint,
     },
     event::DispatchedEvent,
     keymap::Keystroke,
-    text_layout::{self, LayoutCache, DEFAULT_TOP_BOTTOM_RATIO},
+    text_layout::{self, DEFAULT_TOP_BOTTOM_RATIO, LayoutCache},
     ui_components::components::UiComponent,
-    AppContext, SingletonEntity, TaskId,
 };
 
 use warpui::elements::{
@@ -62,7 +62,7 @@ use warpui::elements::{
 use warpui::platform::keyboard::KeyCode;
 
 use instant::Instant;
-use warpui::elements::{Radius, DEFAULT_UI_LINE_HEIGHT_RATIO};
+use warpui::elements::{DEFAULT_UI_LINE_HEIGHT_RATIO, Radius};
 
 // Similar to the terminal::model::ansi::CursorShape, this Editor Element has different cursor
 // shapes. However, this element doesn't implement all the same variants, so we don't share that
@@ -774,12 +774,12 @@ impl EditorElement {
         };
 
         let start_x = if row == selection.start.row() {
-            line_layout.x_for_index(selection.start.column() as usize)
+            line_layout.caret_position_for_index(selection.start.column() as usize)
         } else {
             0.
         };
         let end_x = if row == selection.end.row() {
-            line_layout.x_for_index(selection.end.column() as usize)
+            line_layout.caret_position_for_index(selection.end.column() as usize)
         } else {
             line_layout.width
         };
@@ -1005,7 +1005,9 @@ impl EditorElement {
                     let cursor_row_layout = match layout.frame_layouts.get_line(index) {
                         Some(layout) => layout,
                         None => {
-                            log::warn!("Attempting to access line {index}, but there are fewer lines in the layout.");
+                            log::warn!(
+                                "Attempting to access line {index}, but there are fewer lines in the layout."
+                            );
                             continue;
                         }
                     };
@@ -1047,15 +1049,21 @@ impl EditorElement {
                                 .max(0.0),
                         )
                         + vec2f(
-                            cursor_row_layout.x_for_index(cursor_x_index),
+                            cursor_row_layout.caret_position_for_index(cursor_x_index),
                             (selection.end.row() - first_visible_row) as f32
                                 * line_parameters.line_height,
                         );
 
-                    let block_cursor_width = cursor_row_layout
-                        .width_for_index(selection.end.column() as usize)
-                        .filter(|value| *value > 0.)
-                        .unwrap_or(fallback_block_cursor_width);
+                    let cursor_start_x =
+                        cursor_row_layout.caret_position_for_index(selection.end.column() as usize);
+                    let cursor_end_x = cursor_row_layout
+                        .caret_position_for_index(selection.end.column() as usize + 1);
+                    let caret_width = (cursor_end_x - cursor_start_x).abs();
+                    let block_cursor_width = if caret_width > 0. {
+                        caret_width
+                    } else {
+                        fallback_block_cursor_width
+                    };
 
                     // `should_draw_cursors` is set differently for local and remote cursors:
                     // * remote cursors are drawn based on their block selections
@@ -1302,7 +1310,7 @@ impl EditorElement {
             if let Some(point) =
                 x_ray_display_point.filter(|point| point.row() == first_visible_row + ix as u32)
             {
-                let x = line.x_for_index(point.column() as usize);
+                let x = line.caret_position_for_index(point.column() as usize);
                 ctx.position_cache.cache_position_indefinitely(
                     self.x_ray_position_id(),
                     RectF::new(
@@ -2058,7 +2066,7 @@ impl Element for EditorElement {
                     content_origin
                 };
 
-                let x_offset = line.x_for_index(soft_wrap_point.column() as usize);
+                let x_offset = line.caret_position_for_index(soft_wrap_point.column() as usize);
                 let bounds = text_content_origin + vec2f(x_offset, y_offset);
 
                 ctx.position_cache.cache_position_indefinitely(
@@ -2361,18 +2369,15 @@ impl PaintState {
 
         let x = shifted_position.x() + (scroll_position.x() * view_snapshot.em_width);
 
-        let col = if let Some(col) = line.index_for_x(x).map(|ix| ix as u32) {
+        let col = if let Some(col) = line.caret_index_for_x(x).map(|ix| ix as u32) {
             col
         } else {
             // Clamp to the left or right if the x pos is before or after the buffer text, respectively.
             is_clamped = true;
             if x >= 0. {
-                // If the line has no glyphs, the index is zero. Otherwise, we take one more index
-                // beyond the last start index in the line to get the last position.
-                line.last_glyph()
-                    .map_or(0, |glyph| (glyph.index + 1) as u32)
+                line.end_index() as u32
             } else {
-                0
+                line.first_index() as u32
             }
         };
         // Now convert from SoftWrapPoint to DisplayPoint.

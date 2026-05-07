@@ -114,7 +114,7 @@ impl DisplayMap {
                 .context("Should have current line as it should not be possible for it to be beyond bounds, but was not able to retrieve it")?;
             // Note that the index here will correspond to that of the original text so if
             // this line is soft wrapped, it will be higher than 0.
-            let line_first_index = line.first_glyph().map_or(0, |glyph| glyph.index);
+            let line_first_index = line.first_index();
 
             let relative_index = point.column() - line_first_index as u32;
 
@@ -130,13 +130,12 @@ impl DisplayMap {
                 let prev_line = frame_layouts
                     .get_line(point.row() as usize - 1)
                     .context("Should have next line based on max point bounds check, but was not able to retrieve it")?;
-                let prev_line_first_column = prev_line.first_glyph().map_or(0, |glyph| glyph.index as u32);
+                let prev_line_first_column = prev_line.first_index() as u32;
                 // Note that goal column is a relative value, rather than based
                 // on the original string.
                 let new_column = prev_line_first_column + goal_column;
 
-                let last_index_in_line = prev_line.last_glyph().map(|glyph| glyph.index as u32 + 1)
-                    .unwrap_or(0);
+                let last_index_in_line = prev_line.end_index() as u32;
 
                 (SoftWrapPoint::new(
                     point.row() - 1,
@@ -176,7 +175,7 @@ impl DisplayMap {
                 .context("Should have current line as it should not be possible for it to be beyond bounds, but was not able to retrieve it")?;
             // Note that the index here will correspond to that of the original text so if
             // this line is soft wrapped, it will be higher than 0.
-            let line_first_index = line.first_glyph().map_or(0, |glyph| glyph.index);
+            let line_first_index = line.first_index();
 
             let relative_index = point.column() - line_first_index as u32;
 
@@ -191,20 +190,19 @@ impl DisplayMap {
             let max_row = frame_layouts.num_lines() - 1;
             let max_col = frame_layouts
                 .get_line(max_row)
-                .and_then(|line| line.last_glyph().map(|glyph| glyph.index + 1))
+                .map(|line| line.end_index())
                 .unwrap_or(0);
             let max_point = SoftWrapPoint::new(max_row as u32, max_col as u32);
             let (point, is_same_row) = if point.row() < max_point.row() {
                 let next_line = frame_layouts
                     .get_line(point.row() as usize + 1)
                     .context("Should have next line based on max point bounds check, but was not able to retrieve it")?;
-                let next_line_first_column = next_line.first_glyph().map_or(0, |glyph| glyph.index as u32);
+                let next_line_first_column = next_line.first_index() as u32;
                 // Note that goal column is a relative value, rather than based
                 // on the original string.
                 let new_column = next_line_first_column + goal_column;
 
-                let last_index_in_line = next_line.last_glyph().map(|glyph| glyph.index as u32 + 1)
-                    .unwrap_or(0);
+                let last_index_in_line = next_line.end_index() as u32;
 
                 (SoftWrapPoint::new(
                     point.row() + 1,
