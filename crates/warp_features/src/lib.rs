@@ -171,6 +171,9 @@ pub enum FeatureFlag {
     /// See plan here: https://docs.google.com/document/d/1TBPSWNfh4KylkEgL5o5xyYgK_KQzUQk1oxjuIx2ipXw
     RemoveAltScreenPadding,
 
+    /// Enables smart Warp-vs-PTY mouse routing for SGR mouse mode in the alt-screen.
+    SmartAltScreenMouseHandling,
+
     /// Enables the full-screen "zen mode" setting, where we hide the tab bar if there's only one
     /// tab.
     FullScreenZenMode,

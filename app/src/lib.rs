@@ -2516,6 +2516,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::MinimalistUI,
         #[cfg(feature = "remove_alt_screen_padding")]
         FeatureFlag::RemoveAltScreenPadding,
+        #[cfg(feature = "smart_alt_screen_mouse_handling")]
+        FeatureFlag::SmartAltScreenMouseHandling,
         #[cfg(feature = "avatar_in_tab_bar")]
         FeatureFlag::AvatarInTabBar,
         #[cfg(feature = "workflow_aliases")]
