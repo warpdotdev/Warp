@@ -202,6 +202,11 @@ impl AutoupdateState {
 
     /// After queueing the request, immediately try executing it.
     fn enqueue_request(&mut self, request_type: RequestType, ctx: &mut ModelContext<Self>) {
+        // WASM cannot execute any update requests; skip enqueuing entirely so the
+        // queue never grows with work that can never be consumed.
+        if cfg!(target_family = "wasm") {
+            return;
+        }
         self.request_queue.push_back(request_type);
         self.try_execute_request(ctx);
     }
