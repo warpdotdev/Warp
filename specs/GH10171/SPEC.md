@@ -22,31 +22,50 @@ the agent profile to apply when the pane opens.
   type = "agent"
   profile = "Coder devbox"
   ```
-- B2. When the tab config opens, the named profile is applied to
-  the pane before any agent input is dispatched. The profile
-  lookup is by display name; if no matching profile exists, the
-  pane opens with the default profile and a one-time toast warns
-  the user.
+- B2. When the tab config opens, profile lookup is by trimmed,
+  case-sensitive display name. If the profile exists and the agent
+  pane has no initial input to auto-dispatch, the named profile is
+  applied before the pane is shown.
+- B2a. If the profile exists and the agent pane has initial input
+  that would be dispatched on open, Warp must show a confirmation
+  before dispatch. The confirmation discloses the profile name and
+  that the initial input will run under that profile's autonomy and
+  environment settings. Until the user confirms, no agent input is
+  dispatched. Confirming applies the named profile and dispatches
+  the initial input. Choosing the default profile applies the
+  default profile and dispatches the initial input. Cancelling opens
+  the pane with the initial input preserved as an editable draft and
+  dispatches nothing.
+- B2b. If no matching profile exists, the pane opens with the
+  default profile. Missing-profile warnings are scoped per
+  tab-config open and per missing profile name: if multiple panes in
+  the same tab-config open reference the same missing profile, show
+  one toast for that name and mention the number of affected panes;
+  if different profile names are missing, show one toast per missing
+  name. Opening the same tab config again may show the toast again.
 - B3. `profile` is optional — omitting it preserves today's
   behavior (default profile).
 - B4. The setting roundtrips through tab-config import/export.
 - B5. The Tab Configs settings UI gets a profile picker on the
   agent-pane row. Picker shows current profile names from
   `Settings → Agents → Profiles`.
-- B6. Profile name resolution is case-sensitive and trimmed (no
-  partial matching). Renaming a profile breaks the binding —
-  that's the same staleness model as missing-profile, with the
-  same toast.
+- B6. Profile name resolution does not use partial matching.
+  Renaming a profile breaks the binding — that's the same staleness
+  model as missing-profile, with the same toast behavior.
 
 ## Acceptance criteria
 
 - A1. A tab config with `profile = "Coder devbox"` opens an
-  Agent Mode pane already on that profile.
+  Agent Mode pane already on that profile when there is no initial
+  input, and does so after confirmation when initial input exists.
 - A2. With `profile` omitted, behavior is identical to today.
-- A3. With `profile = "Nonexistent"`, pane opens on default,
-  toast warns of the missing profile name.
+- A3. With `profile = "Nonexistent"`, pane opens on default, and
+  the missing-profile toast follows the B2b coalescing scope.
 - A4. Tab-config TOML round-trips the `profile` field through
   import/export.
+- A5. If a tab config has both `profile = "Coder devbox"` and
+  initial agent input, the initial input is not dispatched until
+  the user confirms which profile should run it.
 
 ## Implementation pointers
 
@@ -64,6 +83,12 @@ the agent profile to apply when the pane opens.
 - T2. Open path applies the named profile when present.
 - T3. Open path defaults + toasts on missing profile.
 - T4. UI picker shows current profile list.
+- T5. An agent pane with initial input applies the selected profile
+  before dispatch only after the confirmation path completes; the
+  cancel path leaves the input as a draft and dispatches nothing.
+- T6. Multiple panes referencing the same missing profile during
+  one tab-config open produce one coalesced toast; reopening the
+  tab config can show it again.
 
 ## Out of scope
 
