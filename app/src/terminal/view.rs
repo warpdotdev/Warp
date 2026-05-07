@@ -225,7 +225,7 @@ use crate::ai::{
         ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
         ATTACH_AS_AGENT_MODE_CONTEXT_TEXT, PRE_REWIND_PREFIX,
     },
-    execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId},
+    execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId, ProfileLookupError},
     get_relevant_files::controller::GetRelevantFilesController,
 };
 use crate::auth::auth_manager::AuthManager;
@@ -2519,6 +2519,12 @@ pub struct TerminalView {
     /// `pane_tree_from_template_recursive` when a tab config has both
     /// commands and `PaneMode::Agent`.
     enter_agent_view_after_pending_commands: bool,
+    /// Optional AI execution profile name to apply (by display name) just
+    /// before the deferred agent-view entry triggered by
+    /// `enter_agent_view_after_pending_commands`. Populated by
+    /// `pane_tree_from_template_recursive` when a tab config supplies both
+    /// `commands = [...]` and a `profile = "..."` for an agent pane.
+    pending_agent_profile_name: Option<String>,
     slow_bootstrap_banner: ViewHandle<Banner<TerminalAction>>,
     is_slow_bootstrap_banner_open: bool,
 
@@ -4141,6 +4147,7 @@ impl TerminalView {
             is_login_shell_bootstrapped: false,
             awaiting_pending_command_completion: false,
             enter_agent_view_after_pending_commands: false,
+            pending_agent_profile_name: None,
             slow_bootstrap_banner,
             is_slow_bootstrap_banner_open: false,
             incompatible_configuration_banner,
@@ -10953,13 +10960,26 @@ impl TerminalView {
                     // finished, enter it now (unless suppressed by onboarding).
                     if self.enter_agent_view_after_pending_commands {
                         self.enter_agent_view_after_pending_commands = false;
-                        self.enter_agent_view_for_new_conversation(
-                            None,
-                            AgentViewEntryOrigin::Input {
-                                was_prompt_autodetected: false,
-                            },
-                            ctx,
-                        );
+                        // Apply any tab-config-supplied profile before entering
+                        // agent mode, mirroring the immediate-launch path in
+                        // `pane_group::PaneGroup::apply_tab_config_agent_profile`.
+                        // Ambiguous matches abort agent entry; missing matches
+                        // fall back to the default profile with a warning toast.
+                        let pending_profile = self.pending_agent_profile_name.take();
+                        let mut should_enter_agent = true;
+                        if let Some(profile_name) = pending_profile {
+                            should_enter_agent =
+                                self.apply_pending_agent_profile(&profile_name, ctx);
+                        }
+                        if should_enter_agent {
+                            self.enter_agent_view_for_new_conversation(
+                                None,
+                                AgentViewEntryOrigin::Input {
+                                    was_prompt_autodetected: false,
+                                },
+                                ctx,
+                            );
+                        }
                     }
                 }
 
@@ -14798,6 +14818,62 @@ impl TerminalView {
     /// guided tutorial.
     pub fn clear_enter_agent_view_after_pending_commands(&mut self) {
         self.enter_agent_view_after_pending_commands = false;
+        self.pending_agent_profile_name = None;
+    }
+
+    /// Stash the AI execution profile name to apply right before the
+    /// deferred agent-view entry runs. Called from
+    /// `pane_tree_from_template_recursive` when a tab config has a
+    /// `profile = "..."` on an agent pane that also has setup commands.
+    pub fn set_pending_agent_profile_name(&mut self, name: Option<String>) {
+        self.pending_agent_profile_name = name;
+    }
+
+    /// Resolve the deferred-launch tab-config profile name and apply it to
+    /// this terminal view. Mirrors
+    /// `pane_group::PaneGroup::apply_tab_config_agent_profile`.
+    ///
+    /// Returns `true` when agent-mode entry should proceed and `false` when
+    /// it should be aborted (i.e. ambiguous profile name).
+    fn apply_pending_agent_profile(
+        &mut self,
+        profile_name: &str,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let profiles_model = AIExecutionProfilesModel::handle(ctx);
+        let view_id = ctx.view_id();
+        let lookup = profiles_model
+            .as_ref(ctx)
+            .find_profile_by_display_name(profile_name, ctx);
+        match lookup {
+            Ok(profile_id) => {
+                profiles_model.update(ctx, |model, ctx| {
+                    model.set_active_profile(view_id, profile_id, ctx);
+                });
+                true
+            }
+            Err(ProfileLookupError::NotFound(name)) => {
+                ctx.emit(Event::ShowToast {
+                    message: format!(
+                        "Agent profile '{name}' not found in tab config; using Default."
+                    ),
+                    // `ToastFlavor` has no Warning variant; Default is the
+                    // closest match for an informational fall-back notice.
+                    flavor: ToastFlavor::Default,
+                });
+                true
+            }
+            Err(ProfileLookupError::Ambiguous { name, count }) => {
+                ctx.emit(Event::ShowToast {
+                    message: format!(
+                        "Multiple agent profiles named '{name}' exist ({count}); rename one in \
+                         Settings → Agents → Profiles. Agent mode not entered."
+                    ),
+                    flavor: ToastFlavor::Error,
+                });
+                false
+            }
+        }
     }
 
     #[cfg(not(target_family = "wasm"))]

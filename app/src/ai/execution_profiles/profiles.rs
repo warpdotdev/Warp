@@ -29,6 +29,7 @@ use crate::{
 use super::{
     AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel, WriteToPtyPermission,
 };
+use crate::cloud_object::model::generic_string_model::StringModel;
 
 /// ExecutionProfileId is the identifier that users of the AIExecutionProfilesModel use
 /// to refer back to a specific profile. These are unique across the lifespan of the app.
@@ -454,6 +455,42 @@ impl AIExecutionProfilesModel {
             sync_id: Some(*sync_id),
             data,
         })
+    }
+
+    /// Look up a profile by its display name (the same string shown in the
+    /// agent input footer and Settings → Agents → Profiles). Trims input.
+    ///
+    /// Per moirahuang's binding direction in #10171, duplicate display names
+    /// resolve to [`ProfileLookupError::Ambiguous`] rather than silently
+    /// picking one. Note: profiles whose stored name is empty all display as
+    /// "Untitled" (see `AIExecutionProfile::display_name`), so two such
+    /// profiles will collide into `Ambiguous` when looked up by "Untitled".
+    pub fn find_profile_by_display_name(
+        &self,
+        name: &str,
+        ctx: &AppContext,
+    ) -> Result<ClientProfileId, ProfileLookupError> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(ProfileLookupError::NotFound(name.to_string()));
+        }
+        let matches: Vec<ClientProfileId> = self
+            .get_all_profile_ids()
+            .into_iter()
+            .filter(|id| {
+                self.get_profile_by_id(*id, ctx)
+                    .map(|info| info.data().display_name() == trimmed)
+                    .unwrap_or(false)
+            })
+            .collect();
+        match matches.len() {
+            0 => Err(ProfileLookupError::NotFound(trimmed.to_string())),
+            1 => Ok(matches[0]),
+            n => Err(ProfileLookupError::Ambiguous {
+                name: trimmed.to_string(),
+                count: n,
+            }),
+        }
     }
 
     pub fn get_all_profile_ids(&self) -> Vec<ClientProfileId> {
@@ -1582,6 +1619,20 @@ pub enum AIExecutionProfilesModelEvent {
     ProfileCreated,
     ProfileDeleted,
     UpdatedActiveProfile { terminal_view_id: EntityId },
+}
+
+/// Errors returned by [`AIExecutionProfilesModel::find_profile_by_display_name`].
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum ProfileLookupError {
+    /// No profile with the requested display name exists.
+    #[error("No agent profile named '{0}' found")]
+    NotFound(String),
+    /// Multiple profiles share the requested display name.
+    #[error(
+        "Multiple agent profiles named '{name}' exist ({count}); rename one in \
+         Settings → Agents → Profiles"
+    )]
+    Ambiguous { name: String, count: usize },
 }
 
 impl Entity for AIExecutionProfilesModel {
