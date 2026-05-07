@@ -44,7 +44,7 @@ Hard rules:
 - [x] **t2-4.** Convert `ImageType::Unrecognized` to `Err` globally — audit
        every `try_from_bytes` caller, remove the variant, route the error
        through `Result`, update callers to handle the `Err` arm. — `tech.md` §695
-- [ ] **t2-5.** Adopt `LightboxImageSource::Error` at the artifacts call
+- [x] **t2-5.** Adopt `LightboxImageSource::Error` at the artifacts call
        site (`app/src/ai/artifacts/mod.rs:362-365`) so screenshot fetch
        failures use `Error` instead of `Loading + "Failed to load"`. —
        `tech.md` §696
@@ -73,7 +73,7 @@ Hard rules:
 | # | Item | Impl commit | Impl | R1 | R2 |
 |---|------|-------------|------|----|----|
 | t2-4 | `Unrecognized` → `Err` globally | `7780d31` | [x] | [x] | [x] |
-| t2-5 | adopt `Error` at artifacts call site | | [ ] | [ ] | [ ] |
+| t2-5 | adopt `Error` at artifacts call site | `6cb2fc6` | [x] | [ ] | [ ] |
 | t2-6 | animated playback (+ play/pause) | | [ ] | [ ] | [ ] |
 | t2-7 | zoom and pan | | [ ] | [ ] | [ ] |
 | t2-8 | status footer | | [ ] | [ ] | [ ] |
