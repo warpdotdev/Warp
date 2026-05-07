@@ -10307,7 +10307,15 @@ impl Workspace {
         // close. When this succeeds, the tab's pane group becomes empty
         // and we skip the regular detach-for-close path — there are no
         // panes left to detach.
-        let re_adopted = self.try_re_adopt_split_off_child_agent_tab(index, ctx);
+        //
+        // Only run for actual close paths. `remove_tab_without_undo`
+        // (used by cross-window tab transfers / drag-to-other-window)
+        // calls us with `detach_panes_for_close = false` — the pane
+        // group is being moved, not torn down, and re-adoption would
+        // yank the child pane back to its source orchestrator,
+        // stranding the user's drag target with an empty pane group.
+        let re_adopted =
+            detach_panes_for_close && self.try_re_adopt_split_off_child_agent_tab(index, ctx);
 
         if !re_adopted && detach_panes_for_close {
             let working_directories_model = self.working_directories_model.clone();
