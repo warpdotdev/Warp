@@ -108,6 +108,7 @@ mod teams_page;
 mod telemetry;
 mod transfer_ownership_confirmation_modal;
 pub mod update_environment_form;
+pub(crate) mod handoff_environment_creation_modal;
 mod warp_drive_page;
 mod warpify_page;
 

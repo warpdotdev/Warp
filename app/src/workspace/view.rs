@@ -13111,6 +13111,61 @@ impl Workspace {
         });
     }
 
+    fn show_handoff_environment_creation_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        use crate::settings_view::handoff_environment_creation_modal::{
+            HandoffEnvironmentCreationModal, HandoffEnvironmentCreationModalEvent,
+        };
+
+        let modal = ctx.add_typed_action_view(HandoffEnvironmentCreationModal::new);
+        ctx.subscribe_to_view(&modal, |me, _, event, ctx| match event {
+            HandoffEnvironmentCreationModalEvent::Created { env_id } => {
+                let env_id = *env_id;
+                // Read the prompt and attachments from the active input's `&` compose state,
+                // build a PendingCloudLaunch, clear the input, and dispatch the handoff.
+                #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+                {
+                    use crate::ai::blocklist::handoff::PendingCloudLaunch;
+
+                    if let Some(source_view) = me
+                        .active_tab_pane_group()
+                        .as_ref(ctx)
+                        .active_session_view(ctx)
+                    {
+                        let launch = source_view.update(ctx, |view, ctx| {
+                            let input = view.input().clone();
+                            input.update(ctx, |input, ctx| {
+                                let prompt =
+                                    input.editor().as_ref(ctx).buffer_text(ctx).trim().to_owned();
+                                let attachments = input.collect_cloud_launch_attachments(ctx);
+                                input.exit_cloud_handoff_compose_and_clear(ctx);
+                                if prompt.is_empty() {
+                                    None
+                                } else {
+                                    Some(PendingCloudLaunch { prompt, attachments })
+                                }
+                            })
+                        });
+                        ctx.dispatch_typed_action_deferred(
+                            WorkspaceAction::OpenLocalToCloudHandoffPane {
+                                launch,
+                                explicit_environment_id: Some(env_id),
+                            },
+                        );
+                    }
+                }
+                #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+                {
+                    let _ = env_id;
+                }
+            }
+            HandoffEnvironmentCreationModalEvent::Cancelled => {
+                me.focus_active_tab(ctx);
+            }
+        });
+        modal.update(ctx, |modal, ctx| modal.show(ctx));
+        ctx.focus(&modal);
+    }
+
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn show_handoff_prepare_failed_toast(window_id: WindowId, ctx: &mut ViewContext<Self>) {
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -20741,6 +20796,9 @@ impl TypedActionView for Workspace {
                 {
                     let _ = (launch, explicit_environment_id);
                 }
+            }
+            ShowHandoffEnvironmentCreationModal => {
+                self.show_handoff_environment_creation_modal(ctx);
             }
             OpenNetworkLogPane => {
                 self.open_network_log_pane(ctx);
