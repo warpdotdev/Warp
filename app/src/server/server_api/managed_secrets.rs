@@ -14,6 +14,10 @@ use warp_graphql::queries::list_managed_secrets::{
 use warp_graphql::queries::managed_secret_config::{
     GetManagedSecretConfig, GetManagedSecretConfigVariables, UserResult,
 };
+use warp_graphql::queries::list_harness_auth_secrets::{
+    ListHarnessAuthSecrets, ListHarnessAuthSecretsInput, ListHarnessAuthSecretsResult,
+    ListHarnessAuthSecretsVariables,
+};
 use warp_graphql::queries::task_secrets::{
     ManagedSecretValue, TaskSecrets, TaskSecretsInput, TaskSecretsResult, TaskSecretsVariables,
 };
@@ -198,6 +202,33 @@ impl ManagedSecretsClient for ServerApi {
             }
             UpdateManagedSecretResult::Unknown => {
                 Err(anyhow!("Unknown error while updating managed secret"))
+            }
+        }
+    }
+
+    async fn list_harness_auth_secrets(
+        &self,
+        harness: warp_graphql::ai::AgentHarness,
+    ) -> Result<Vec<ManagedSecret>> {
+        let Some(harness_input) = Option::<warp_graphql::queries::list_harness_auth_secrets::AgentHarnessInput>::from(harness) else {
+            return Ok(vec![]);
+        };
+        let variables = ListHarnessAuthSecretsVariables {
+            input: ListHarnessAuthSecretsInput { harness: harness_input },
+            request_context: get_request_context(),
+        };
+        let operation = ListHarnessAuthSecrets::build(variables);
+        let response = self.send_graphql_request(operation, None).await?;
+
+        match response.harness_auth_secrets {
+            ListHarnessAuthSecretsResult::HarnessAuthSecretsOutput(output) => {
+                Ok(output.managed_secrets)
+            }
+            ListHarnessAuthSecretsResult::UserFacingError(error) => {
+                Err(anyhow!(get_user_facing_error_message(error)))
+            }
+            ListHarnessAuthSecretsResult::Unknown => {
+                Err(anyhow!("Unknown error while listing harness auth secrets"))
             }
         }
     }

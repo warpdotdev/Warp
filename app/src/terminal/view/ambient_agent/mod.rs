@@ -119,7 +119,8 @@ pub fn create_cloud_mode_view(
                 | AmbientAgentViewModelEvent::HarnessCommandStarted { .. }
                 | AmbientAgentViewModelEvent::PendingHandoffChanged
                 | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
-                | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => {}
+                | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility
+                | AmbientAgentViewModelEvent::AuthSecretSelected => {}
             }
         });
     });
