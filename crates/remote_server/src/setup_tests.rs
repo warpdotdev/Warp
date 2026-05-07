@@ -193,6 +193,11 @@ fn parse_preinstall_unsupported_non_glibc() {
 /// well as the quote-literal trap. We truncate just before `mkdir -p`
 /// so no filesystem side effects leak out of the test, and append a
 /// marker `printf` to capture the resolved `install_dir`.
+///
+/// Gated to Unix because the test invokes `/bin/bash` (or `bash` from
+/// PATH) directly. The bug only matters on Unix remotes anyway —
+/// Warp's remote-server SSH wrapper doesn't target Windows hosts.
+#[cfg(unix)]
 #[test]
 fn install_script_tilde_expansion_resolves_correctly() {
     use command::blocking::Command;
