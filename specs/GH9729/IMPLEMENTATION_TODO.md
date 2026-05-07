@@ -45,7 +45,7 @@ The original 2a / 2c bullets are struck through and superseded.
        on one line, message on the next; non-blocking, dismissal still works)
        — `tech.md` §182. Adopting `Error` at `app/src/ai/artifacts/mod.rs:362-365`
        is explicitly a follow-up per §182 and is NOT in this bullet.
-- [ ] 2-arm. Workspace `FileTarget::ImagePreview` arm: synchronous
+- [x] 2-arm. Workspace `FileTarget::ImagePreview` arm: synchronous
        `metadata` size/regular-file check (`MAX_PREVIEW_FILE_BYTES = 64 MB`),
        `truncate_message` helper (`MAX_ERROR_MESSAGE_LEN = 256`), single-element
        `OpenLightbox` dispatch — `tech.md` §119

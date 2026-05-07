@@ -166,6 +166,9 @@ use super::hoa_onboarding::{
 use super::lightbox_view::{LightboxParams, LightboxView, LightboxViewEvent};
 use super::util;
 use super::WorkspaceRegistry;
+// GH9729: image-preview Lightbox dispatch (see specs/GH9729/tech.md §119).
+use ui_components::lightbox::{LightboxImage, LightboxImageSource};
+use warpui::assets::asset_cache::AssetSource;
 use crate::ai::execution_profiles::editor::ExecutionProfileEditorManager;
 use crate::ai::execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId};
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
@@ -5912,11 +5915,61 @@ impl Workspace {
                 ctx.open_file_path(&path);
             }
             FileTarget::ImagePreview => {
-                // Wired up in GH9729 implementation TODO item 2b
-                // (`Workspace::open_file_with_target` arm dispatching `OpenLightbox`).
-                // Until then no resolver produces this variant — see TODO 1b — so this
-                // arm is unreachable in practice; the explicit no-op keeps `match`
-                // exhaustive.
+                // GH9729: route image clicks through the existing Lightbox overlay.
+                // See specs/GH9729/tech.md §119.
+                //
+                // 64 MB cap is one unified pre-read envelope for raster and SVG.
+                // The SVG-specific allocation surface is bounded separately by the
+                // SVG intrinsic-dimension cap added in item 4c of this branch.
+                const MAX_PREVIEW_FILE_BYTES: u64 = 64 * 1024 * 1024;
+                const MAX_ERROR_MESSAGE_LEN: usize = 256;
+
+                let filename = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned());
+
+                // Synchronous metadata-only check before any read so an oversize
+                // file never enters memory. `metadata` follows symlinks, and
+                // `is_file()` rejects sym-resolved character devices, FIFOs,
+                // sockets, and directories. The original OS error is logged for
+                // the operator and collapsed to a sanitized constant here so
+                // absolute paths never reach the UI panel.
+                let size_check: Result<(), &'static str> = match std::fs::metadata(&path) {
+                    Ok(meta) if !meta.is_file() => Err("not a regular file"),
+                    Ok(meta) if meta.len() > MAX_PREVIEW_FILE_BYTES => {
+                        Err("image is too large to preview")
+                    }
+                    Ok(_) => Ok(()),
+                    Err(err) => {
+                        log::warn!(
+                            "GH9729: could not stat image preview path: {}",
+                            err
+                        );
+                        Err("could not read image")
+                    }
+                };
+
+                let image = match size_check {
+                    Ok(()) => LightboxImage {
+                        source: LightboxImageSource::Resolved {
+                            asset_source: AssetSource::LocalFile {
+                                path: path.to_string_lossy().into_owned(),
+                            },
+                        },
+                        description: filename,
+                    },
+                    Err(message) => LightboxImage {
+                        source: LightboxImageSource::Error {
+                            message: truncate_message(message, MAX_ERROR_MESSAGE_LEN),
+                        },
+                        description: filename,
+                    },
+                };
+
+                ctx.dispatch_typed_action(&WorkspaceAction::OpenLightbox {
+                    images: vec![image],
+                    initial_index: 0,
+                });
             }
         }
     }
@@ -24598,6 +24651,27 @@ fn should_reserve_traffic_light_space_in_tab_bar(side: TrafficLightSide) -> bool
 }
 
 /// Returns every tab-bar-equivalent rect laid out in `window_id` (horizontal
+/// Truncate an error message to at most `max_len` Unicode scalar values,
+/// appending an ellipsis when truncation occurs. Used by the
+/// `FileTarget::ImagePreview` arm to bound the message length so a long
+/// error string cannot occlude the close button or trigger expensive text
+/// shaping (specs/GH9729/tech.md §119).
+///
+/// The current callers pass short categorical constants so this rarely
+/// truncates in practice; it exists as a defensive bound.
+fn truncate_message(message: &str, max_len: usize) -> String {
+    if message.chars().count() <= max_len {
+        message.to_string()
+    } else if max_len <= 1 {
+        // Degenerate cap; avoid producing a longer string than `max_len` chars.
+        message.chars().take(max_len).collect()
+    } else {
+        // Reserve one char for the ellipsis ("…" is one Unicode scalar value).
+        let prefix: String = message.chars().take(max_len - 1).collect();
+        format!("{prefix}…")
+    }
+}
+
 /// tab bar and/or vertical tabs panel). Both must be considered because a
 /// window with vertical tabs still renders the horizontal bar at the top.
 pub(crate) fn tab_bar_rects_for_window(window_id: WindowId, app: &AppContext) -> Vec<RectF> {
