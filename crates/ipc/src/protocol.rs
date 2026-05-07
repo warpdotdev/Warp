@@ -161,7 +161,16 @@ where
 }
 
 /// Reads the next message from the given `reader`.
-pub(super) async fn receive_message<M, R>(reader: &mut BufReader<R>) -> Result<M, ProtocolError>
+///
+/// `max_payload_len`, when set, caps the announced frame size before any
+/// allocation. Frames whose declared payload exceeds the cap are rejected
+/// without reading the payload bytes off the wire. This is the only place a
+/// remote peer's untrusted length header drives a buffer allocation, so the
+/// cap is the right enforcement point.
+pub(super) async fn receive_message<M, R>(
+    reader: &mut BufReader<R>,
+    max_payload_len: Option<usize>,
+) -> Result<M, ProtocolError>
 where
     M: Message,
     R: AsyncRead + Unpin,
@@ -175,10 +184,16 @@ where
     reader.read_exact(&mut header_buf[..]).await?;
 
     // Parse the message header - we convert the bytes back into a usize, which
-    // tells us the size of the serialized message, in bytes.  We add the size
-    // of a usize to get the total number of bytes we expect to read off the
-    // wire.
+    // tells us the size of the serialized message, in bytes.
     let payload_len = usize::from_be_bytes(header_buf);
+
+    if let Some(cap) = max_payload_len {
+        if payload_len > cap {
+            return Err(ProtocolError::Other(format!(
+                "frame payload {payload_len}B exceeds {cap}B cap"
+            )));
+        }
+    }
 
     // Grow the initial buffer to a sufficient size and read the rest of the
     // message from the socket.

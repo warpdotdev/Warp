@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use ipc::{service_caller, ConnectionAddress};
 use warp_local_api::{
-    address_publish_path, parse_address_file, LocalApiEnvelope, LocalApiRequest, LocalApiResponse,
-    LocalApiService, SplitDir,
+    parse_address_file, resolve_address_path, AddressResolution, LocalApiEnvelope, LocalApiRequest,
+    LocalApiResponse, LocalApiService, SplitDir,
 };
 
 #[derive(Debug, Parser)]
@@ -69,10 +69,23 @@ fn main() -> Result<()> {
     let executor_for_block = executor.clone();
 
     let result: Result<LocalApiResponse> = warpui::r#async::block_on(async move {
-        let addr_path = address_publish_path();
+        let addr_path = match resolve_address_path() {
+            AddressResolution::Single(p) => p,
+            AddressResolution::Ambiguous(paths) => {
+                let listing = paths
+                    .iter()
+                    .map(|p| format!("  {}", p.display()))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(anyhow!(
+                    "multiple Warp instances are publishing local-api address files:\n{listing}\n\
+                     set WARP_LOCAL_API_DOMAIN=<channel> or WARP_LOCAL_API_ADDRESS=<path> to disambiguate"
+                ));
+            }
+        };
         let body = std::fs::read_to_string(&addr_path).with_context(|| {
             format!(
-                "could not read socket address from {} — is Warp running?",
+                "could not read socket address from {} — is Warp running with WARP_ENABLE_LOCAL_API=1?",
                 addr_path.display()
             )
         })?;

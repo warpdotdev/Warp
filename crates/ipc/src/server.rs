@@ -116,6 +116,7 @@ impl Connection {
 pub struct ServerBuilder {
     services: HashMap<ServiceId, Box<dyn AnyServiceImpl>>,
     fixed_connection_address: Option<ConnectionAddress>,
+    max_request_bytes: Option<usize>,
 }
 
 impl ServerBuilder {
@@ -128,6 +129,17 @@ impl ServerBuilder {
     /// Use a fixed address name instead of a randomly generated one.
     pub fn with_fixed_address(mut self, fixed_address: String) -> Self {
         self.fixed_connection_address = Some(ConnectionAddress::from(fixed_address));
+        self
+    }
+
+    /// Cap the size (in bytes) of inbound request frames. Frames whose
+    /// length header exceeds the cap are rejected by the framing layer
+    /// before any payload is read or deserialized, so an unauthenticated
+    /// peer cannot force a large allocation by lying about its size.
+    ///
+    /// Defaults to unbounded for callers that don't set it.
+    pub fn with_max_request_bytes(mut self, max_request_bytes: usize) -> Self {
+        self.max_request_bytes = Some(max_request_bytes);
         self
     }
 
@@ -147,6 +159,7 @@ impl ServerBuilder {
         Server::run(
             connection_address.clone(),
             self.services,
+            self.max_request_bytes,
             background_executor,
         )
         .map(|server| (server, connection_address))
@@ -171,6 +184,7 @@ impl Server {
     fn run(
         connection_address: ConnectionAddress,
         services: HashMap<ServiceId, Box<dyn AnyServiceImpl>>,
+        max_request_bytes: Option<usize>,
         background_executor: Arc<Background>,
     ) -> Result<Self> {
         let listener = ConnectionListener::new(connection_address)?;
@@ -188,6 +202,7 @@ impl Server {
             )),
             background_executor.spawn(Self::accept_new_connections(
                 services,
+                max_request_bytes,
                 new_connection_rx,
                 background_executor.clone(),
             )),
@@ -220,6 +235,7 @@ impl Server {
     /// for processing incoming request messages and outgoing response messages.
     async fn accept_new_connections(
         services: HashMap<ServiceId, Box<dyn AnyServiceImpl>>,
+        max_request_bytes: Option<usize>,
         new_connection_rx: Receiver<Connection>,
         background_executor: Arc<Background>,
     ) {
@@ -239,6 +255,7 @@ impl Server {
             tasks.push(background_executor.spawn(Self::handle_incoming_requests(
                 reader,
                 services.clone(),
+                max_request_bytes,
                 response_tx,
             )));
             tasks.push(
@@ -258,11 +275,12 @@ impl Server {
     async fn handle_incoming_requests(
         reader: impl AsyncRead + Unpin,
         services: HashMap<ServiceId, Box<dyn AnyServiceImpl>>,
+        max_request_bytes: Option<usize>,
         response_tx: Sender<Response>,
     ) {
         let mut reader = BufReader::new(reader);
         loop {
-            match receive_message(&mut reader).await {
+            match receive_message(&mut reader, max_request_bytes).await {
                 Ok(Request {
                     id,
                     service_id,

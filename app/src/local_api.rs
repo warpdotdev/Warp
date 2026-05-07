@@ -30,7 +30,7 @@ use rand::RngCore as _;
 use warp_core::channel::ChannelState;
 use warp_local_api::{
     address_publish_path_for, format_address_file, LocalApiEnvelope, LocalApiRequest,
-    LocalApiResponse, LocalApiService, SplitDir, MAX_SEND_TEXT_BYTES,
+    LocalApiResponse, LocalApiService, SplitDir, MAX_REQUEST_BYTES, MAX_SEND_TEXT_BYTES,
 };
 use warpui::windowing::WindowManager;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, ViewHandle};
@@ -128,7 +128,8 @@ impl LocalApiServer {
 
         let builder = ServerBuilder::default()
             .with_service(service_impl)
-            .with_fixed_address(socket_path.to_string_lossy().to_string());
+            .with_fixed_address(socket_path.to_string_lossy().to_string())
+            .with_max_request_bytes(MAX_REQUEST_BYTES);
 
         let server = match builder.build_and_run(ctx.background_executor()) {
             Ok((server, addr)) => {

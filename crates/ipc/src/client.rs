@@ -189,7 +189,7 @@ impl Client {
 
                     }
                 }
-                response = receive_message(&mut reader).fuse() => {
+                response = receive_message(&mut reader, None).fuse() => {
                     match response {
                         Ok(response) => {
                             let (request_id, response_result) = match response {

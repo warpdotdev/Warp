@@ -20,6 +20,14 @@ use std::path::PathBuf;
 /// against unbounded payloads from a same-UID local client.
 pub const MAX_SEND_TEXT_BYTES: usize = 256 * 1024;
 
+/// Hard cap on inbound IPC frame size, enforced by the framing layer
+/// before any payload is read off the wire or deserialized. Sized to fit
+/// `MAX_SEND_TEXT_BYTES` plus bincode envelope/cookie overhead with margin
+/// for future fields. An unauthenticated peer that announces a frame
+/// larger than this is rejected before allocation, so the cookie check
+/// can't be bypassed by exhausting memory first.
+pub const MAX_REQUEST_BYTES: usize = MAX_SEND_TEXT_BYTES + 4 * 1024;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum SplitDir {
     Left,
@@ -75,37 +83,93 @@ impl ipc::Service for LocalApiService {
     type Response = LocalApiResponse;
 }
 
-/// Filesystem path where the running Warp publishes its current connection
-/// address + cookie. The `wp` CLI reads this file to find the live socket.
-/// Created with mode 0600.
+/// Default app-id domain used when no override is set and exactly one
+/// channel cannot be inferred.
+pub const DEFAULT_DATA_DOMAIN: &str = "dev.warp.Warp";
+
+/// Filename Warp uses for the published address file inside its
+/// per-channel data directory.
+pub const ADDRESS_FILE_NAME: &str = "local-api.address";
+
+/// Outcome of resolving which Warp instance a CLI invocation should target.
+pub enum AddressResolution {
+    /// A single address-file path was selected.
+    Single(PathBuf),
+    /// More than one channel currently publishes an address file. Caller must
+    /// disambiguate via `WARP_LOCAL_API_DOMAIN` / `WARP_LOCAL_API_ADDRESS`.
+    Ambiguous(Vec<PathBuf>),
+}
+
+/// Resolve the address-file path that the `wp` CLI should read.
 ///
 /// Resolution order:
-/// 1. `WARP_LOCAL_API_ADDRESS` — full path override. The running Warp sets
-///    this in the env of every spawned shell so child `wp` invocations land
-///    on the same instance even when several Warp variants run side-by-side.
-/// 2. `<data-local-dir>/<WARP_LOCAL_API_DOMAIN or default>/local-api.address`
-///    — default for ad-hoc invocations from outside a Warp shell.
-///
-/// The default domain is the production app id `dev.warp.Warp`; dev / preview
-/// / oss instances each publish under their own domain so they don't clobber
-/// each other's address files.
-pub fn address_publish_path() -> PathBuf {
+/// 1. `WARP_LOCAL_API_ADDRESS` — full-path override (e.g. set by an
+///    integration script that already knows the target instance).
+/// 2. `WARP_LOCAL_API_DOMAIN` — domain-only override; resolved through
+///    [`address_publish_path_for`].
+/// 3. Auto-discovery: scan `<data-local-dir>/*/{ADDRESS_FILE_NAME}` and
+///    return the single existing match, or `Ambiguous` if multiple
+///    channels are running.
+/// 4. Fall back to the default domain (`DEFAULT_DATA_DOMAIN`) so callers
+///    still get a deterministic path to surface in error messages.
+pub fn resolve_address_path() -> AddressResolution {
     if let Some(p) = std::env::var_os("WARP_LOCAL_API_ADDRESS") {
-        return PathBuf::from(p);
+        return AddressResolution::Single(PathBuf::from(p));
     }
-    let domain =
-        std::env::var("WARP_LOCAL_API_DOMAIN").unwrap_or_else(|_| "dev.warp.Warp".to_owned());
-    address_publish_path_for(&domain)
+    if let Ok(domain) = std::env::var("WARP_LOCAL_API_DOMAIN") {
+        return AddressResolution::Single(address_publish_path_for(&domain));
+    }
+    let candidates = discover_address_files();
+    match candidates.len() {
+        0 => AddressResolution::Single(address_publish_path_for(DEFAULT_DATA_DOMAIN)),
+        1 => AddressResolution::Single(candidates.into_iter().next().unwrap()),
+        _ => AddressResolution::Ambiguous(candidates),
+    }
+}
+
+/// Backwards-compatible accessor for the default address path. Prefer
+/// [`resolve_address_path`] in callers that want auto-discovery.
+pub fn address_publish_path() -> PathBuf {
+    match resolve_address_path() {
+        AddressResolution::Single(p) => p,
+        AddressResolution::Ambiguous(mut v) => {
+            v.sort();
+            v.into_iter()
+                .next()
+                .unwrap_or_else(|| address_publish_path_for(DEFAULT_DATA_DOMAIN))
+        }
+    }
 }
 
 /// Build the default address-file path for a specific data domain. Used by
 /// the running Warp app to publish under its own channel/installation
 /// namespace.
 pub fn address_publish_path_for(domain: &str) -> PathBuf {
-    let base = dirs::data_local_dir()
+    address_publish_root().join(domain).join(ADDRESS_FILE_NAME)
+}
+
+fn address_publish_root() -> PathBuf {
+    dirs::data_local_dir()
         .or_else(dirs::data_dir)
-        .unwrap_or_else(std::env::temp_dir);
-    base.join(domain).join("local-api.address")
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+/// Walk the address-publish root one level deep and return every existing
+/// `<domain>/local-api.address` file. Read-only; no side effects.
+fn discover_address_files() -> Vec<PathBuf> {
+    let root = address_publish_root();
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let candidate = entry.path().join(ADDRESS_FILE_NAME);
+        if candidate.is_file() {
+            out.push(candidate);
+        }
+    }
+    out.sort();
+    out
 }
 
 /// Format the address-file body. Two lines:
