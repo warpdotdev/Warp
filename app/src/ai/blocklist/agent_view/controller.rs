@@ -776,8 +776,19 @@ impl AgentViewController {
             });
             (id, 0)
         };
+        // Use the non-transferring `mark_active_conversation_id` here so that
+        // entering the agent view for a conversation that is also live in
+        // another terminal view (e.g. a child agent's hidden pane viewed via
+        // the orchestration pill bar) does not rip the conversation out of
+        // that other view's live list. Transferring would invalidate
+        // `conversation_id_for_action` lookups on the original owner and
+        // cause its in-flight requested commands to be silently dropped —
+        // the same class of bug PR #10241 fixed for the follow-up paths.
+        // Explicit cross-view navigation that should transfer ownership is
+        // handled by callers that invoke `set_active_conversation_id`
+        // directly (e.g. workspace history palette navigation).
         history_model.update(ctx, |history_model, ctx| {
-            history_model.set_active_conversation_id(conversation_id, self.terminal_view_id, ctx)
+            history_model.mark_active_conversation_id(conversation_id, self.terminal_view_id, ctx)
         });
 
         self.agent_view_state = AgentViewState::Active {

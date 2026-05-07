@@ -1986,6 +1986,16 @@ pub enum Event {
     RevealChildAgent {
         conversation_id: AIConversationId,
     },
+    /// Emitted when the user clicks a pill in the orchestration pill bar.
+    /// The pane group swaps the currently focused pane's visible content
+    /// with the pane that already owns the target conversation's
+    /// `TerminalView` (the orchestrator's pane for the orchestrator
+    /// conversation, or the child's hidden pane for a child conversation).
+    /// This avoids cloning a child's `AIConversation` into the
+    /// orchestrator pane and the staleness that comes with it.
+    SwapPaneToConversation {
+        conversation_id: AIConversationId,
+    },
     /// Emitted when the user picks "Open in new tab" from a child pill's 3-dot
     /// menu in the orchestration pill bar. Bubbles up through `PaneGroup` to
     /// `Workspace`, which creates a new tab and switches its agent view to
@@ -2776,6 +2786,13 @@ pub struct TerminalView {
     /// child agents. Gated by `FeatureFlag::OrchestrationPillBar`. The view is
     /// always constructed; render-time guards control whether it draws anything.
     orchestration_pill_bar: ViewHandle<OrchestrationPillBar>,
+    /// `true` when this terminal view was created (or repurposed) to host
+    /// an orchestration child agent that has been split off from its
+    /// orchestrator via "Open in new pane" or "Open in new tab". Used at
+    /// render time to swap the orchestration pill bar for a parent → child
+    /// breadcrumb row in the pane header. Always false on the orchestrator
+    /// pane and on the child agent's hidden swap-target pane.
+    is_orchestration_split_off: bool,
     is_using_conversation_for_pane_header_title: bool,
 
     ambient_agent_view_model: Option<ModelHandle<ambient_agent::AmbientAgentViewModel>>,
@@ -4244,6 +4261,7 @@ impl TerminalView {
             agent_view_controller,
             agent_view_back_button,
             orchestration_pill_bar,
+            is_orchestration_split_off: false,
             is_using_conversation_for_pane_header_title: false,
             ambient_agent_view_model,
             conversation_details_panel,
@@ -4961,6 +4979,37 @@ impl TerminalView {
             input.append_to_buffer(content.as_str(), ctx);
             ctx.notify();
         });
+    }
+
+    /// Marks this terminal view as hosting a split-off orchestration child
+    /// ("Open in new pane" / "Open in new tab"). The pane header swaps the
+    /// orchestration pill bar for a parent → child breadcrumb row so the
+    /// user has a clear way to navigate back to the orchestrator without
+    /// rendering the full sibling pill list a second time alongside the
+    /// orchestrator's own pill bar.
+    pub fn mark_as_orchestration_split_off(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.is_orchestration_split_off {
+            self.is_orchestration_split_off = true;
+            ctx.notify();
+        }
+    }
+
+    /// Clears the split-off marker so this view goes back to rendering the
+    /// full orchestration pill bar (rather than the parent→child
+    /// breadcrumbs). Called by the pane group whenever a child agent pane
+    /// is re-hidden (close, swap-away) so a subsequent reveal via the pill
+    /// bar's swap path renders pills, not breadcrumbs.
+    pub fn clear_orchestration_split_off(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.is_orchestration_split_off {
+            self.is_orchestration_split_off = false;
+            ctx.notify();
+        }
+    }
+
+    /// Whether this terminal view should render the orchestration breadcrumb
+    /// row instead of the orchestration pill bar in its pane header.
+    pub fn is_orchestration_split_off(&self) -> bool {
+        self.is_orchestration_split_off
     }
 
     /// Returns true if the given conversation is currently selected in this terminal.
@@ -10373,15 +10422,46 @@ impl TerminalView {
         }
     }
 
-    /// Updates the agent view back button's disabled state and tooltip based on whether
-    /// the user can exit agent mode, and shows a tooltip explaining when exiting is blocked.
-    fn update_agent_view_back_button_state(&mut self, ctx: &mut ViewContext<Self>) {
-        let disabled_reason = self
-            .can_exit_agent_view_for_terminal_view(ctx)
-            .err()
-            .map(|e| e.to_string());
+    /// Updates the agent view back button's disabled state, tooltip, and
+    /// label based on the active conversation. For a child agent (a
+    /// conversation with a `parent_conversation_id`), ESC swaps back to
+    /// the orchestrator rather than exiting agent view in place — the
+    /// child's terminal view has no useful shell to fall back into — so
+    /// we relabel the back button to "for Orchestrator" so the affordance
+    /// matches the actual behavior. A second ESC on the orchestrator then
+    /// runs the normal exit-agent-view path.
+    pub(crate) fn update_agent_view_back_button_state(&mut self, ctx: &mut ViewContext<Self>) {
+        let active_conv_id = self
+            .agent_view_controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .active_conversation_id();
+        let is_child_agent = active_conv_id
+            .and_then(|id| BlocklistAIHistoryModel::as_ref(ctx).conversation(&id))
+            .and_then(|c| c.parent_conversation_id())
+            .is_some();
+
+        // Child agents always swap back to the parent on ESC — no
+        // exit-agent-view check applies, and the swap path itself never
+        // gets blocked by an in-progress conversation. So the button is
+        // never disabled in the child agent case, regardless of what
+        // `can_exit_agent_view_for_terminal_view` would say about the
+        // child's own conversation.
+        let disabled_reason = if is_child_agent {
+            None
+        } else {
+            self.can_exit_agent_view_for_terminal_view(ctx)
+                .err()
+                .map(|e| e.to_string())
+        };
+        let label = if is_child_agent {
+            "for Orchestrator"
+        } else {
+            "for terminal"
+        };
 
         self.agent_view_back_button.update(ctx, |button, ctx| {
+            button.set_label(label, ctx);
             button.set_disabled(disabled_reason.is_some(), ctx);
             button.set_tooltip(disabled_reason, ctx);
         });
@@ -20307,6 +20387,34 @@ impl TerminalView {
                         return;
                     }
 
+                    // If the active conversation is a child agent (has a
+                    // parent_conversation_id), ESC navigates back to the
+                    // parent (orchestrator) instead of trying to exit agent
+                    // view in place. The child's terminal view has no
+                    // meaningful shell session to fall back into — it was
+                    // spun up purely as a vehicle for the child's AI
+                    // conversation — so dropping the user there would land
+                    // them in an empty/blank pane. The orchestrator pane is
+                    // their real working context. Once on the parent, a
+                    // second ESC does the normal exit-agent-view dance and
+                    // returns the user to the parent's terminal mode.
+                    let active_conv_id = self
+                        .agent_view_controller
+                        .as_ref(ctx)
+                        .agent_view_state()
+                        .active_conversation_id();
+                    if let Some(active_conv_id) = active_conv_id {
+                        let parent_id = BlocklistAIHistoryModel::as_ref(ctx)
+                            .conversation(&active_conv_id)
+                            .and_then(|c| c.parent_conversation_id());
+                        if let Some(parent_id) = parent_id {
+                            ctx.emit(Event::SwapPaneToConversation {
+                                conversation_id: parent_id,
+                            });
+                            return;
+                        }
+                    }
+
                     let is_long_running = self
                         .model
                         .lock()
@@ -25920,12 +26028,15 @@ impl TypedActionView for TerminalView {
                 });
             }
             SwitchAgentViewToConversation { conversation_id } => {
-                self.enter_agent_view_for_conversation(
-                    None,
-                    AgentViewEntryOrigin::OrchestrationPillBar,
-                    *conversation_id,
-                    ctx,
-                );
+                // Pill-bar navigation: emit a swap event so the pane group
+                // can switch the visible content to the pane that already
+                // owns this conversation's `TerminalView`. Cloning the
+                // conversation into this pane (the old behavior) produces
+                // stale `LongRunningCommandSnapshot` results that render as
+                // `⊘` even when the conversation is still in progress.
+                ctx.emit(Event::SwapPaneToConversation {
+                    conversation_id: *conversation_id,
+                });
             }
             OpenChildAgentInNewPane { conversation_id } => {
                 // "Open in new pane": split a fresh terminal pane to the

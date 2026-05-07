@@ -472,20 +472,15 @@ impl OrchestrationPillBar {
         let history = BlocklistAIHistoryModel::as_ref(app);
         let active_conversation = history.conversation(&active_id)?;
 
-        // V2 same-pane semantics: render pills for both the orchestrator and
-        // any same-pane child. When the active conversation is a child,
-        // resolve its orchestrator (parent) so the pill set is anchored on
-        // the orchestrator regardless of which conversation is selected.
-        //
-        // Split-off child views render breadcrumbs only (no pill bar). Bail
-        // here so the pane header renders just the breadcrumbs returned by
-        // `render_orchestration_breadcrumbs` and not a redundant pill row
-        // below it. Without this short-circuit, the breadcrumbs in the title
-        // and the pill bar in the column would both render, producing
-        // duplicate orchestration chrome in the split-off pane/tab.
-        if is_split_off_child(self.agent_view_controller.as_ref(app), app) {
-            return None;
-        }
+        // Render pills for every conversation in the orchestration tree:
+        // the orchestrator pane and every child pane share the same pill
+        // bar, so navigating between them via pill clicks is symmetric.
+        // Walk the parent chain to find the orchestrator root, then render
+        // the bar anchored on it regardless of which conversation is
+        // currently active. The breadcrumb path (`render_orchestration_breadcrumbs`)
+        // is no longer wired up at the pane-header call site since pills
+        // already encode the same navigation affordance and would otherwise
+        // double-render alongside this bar on swapped-in child views.
         let orchestrator_id = parent_conversation_id(active_conversation, app).unwrap_or(active_id);
         let orchestrator = history.conversation(&orchestrator_id)?;
 
@@ -1819,11 +1814,12 @@ pub fn render_orchestration_breadcrumbs(
     if !agent_view_controller.is_fullscreen() {
         return None;
     }
-    // V2: only render breadcrumbs from a *split-off* pane/tab. Same-pane
-    // child views render the pill bar with the active child highlighted.
-    if !is_split_off_child(agent_view_controller, app) {
-        return None;
-    }
+    // The caller (pane header) decides whether this view should render
+    // breadcrumbs vs. the pill bar based on `TerminalView::is_orchestration_split_off`,
+    // which is set explicitly by the "Open in new pane" / "Open in new tab"
+    // flows. We deliberately don't gate on `is_split_off_child` here because
+    // that heuristic also matches the swap-target child pane (which should
+    // continue rendering the pill bar).
     let active_id = agent_view_controller
         .agent_view_state()
         .active_conversation_id()?;

@@ -75,6 +75,12 @@ pub enum HiddenPaneReason {
     // Pane is a child agent spawned by an orchestrator. It stays hidden
     // until the user explicitly reveals it from the status card.
     ChildAgent,
+
+    // Pane was hidden because the orchestration pill bar swapped it out
+    // for another conversation's pane in the same pane group. The
+    // pane stays in the tree at its original position so it can be
+    // re-shown by clicking back to it.
+    OrchestrationSwap,
 }
 
 impl HiddenPane {
@@ -106,6 +112,12 @@ impl HiddenPane {
         Self {
             pane_id,
             reason: HiddenPaneReason::ChildAgent,
+        }
+    }
+    pub fn from_orchestration_swap(pane_id: PaneId) -> Self {
+        Self {
+            pane_id,
+            reason: HiddenPaneReason::OrchestrationSwap,
         }
     }
 }
@@ -322,6 +334,39 @@ impl PaneData {
         } else {
             log::error!("Attempted to show child agent pane but couldn't find it.")
         }
+    }
+
+    pub fn hide_pane_for_orchestration_swap(&mut self, id: PaneId) {
+        if !self.is_pane_hidden(&id) {
+            self.hidden_panes
+                .push(HiddenPane::from_orchestration_swap(id));
+        }
+    }
+
+    pub fn show_pane_for_orchestration_swap(&mut self, id: PaneId) {
+        if let Some(pos) = self.hidden_panes.iter().position(|pane| {
+            pane.pane_id == id && pane.reason == HiddenPaneReason::OrchestrationSwap
+        }) {
+            self.hidden_panes.remove(pos);
+        } else {
+            log::error!("Attempted to show orchestration-swap pane but couldn't find it.")
+        }
+    }
+
+    /// Returns true if `id` is currently hidden because of an orchestration
+    /// pill-bar swap (i.e. another conversation's pane is showing in its
+    /// place in the same pane group).
+    pub fn is_pane_hidden_for_orchestration_swap(&self, id: PaneId) -> bool {
+        self.hidden_panes
+            .iter()
+            .any(|pane| pane.pane_id == id && pane.reason == HiddenPaneReason::OrchestrationSwap)
+    }
+
+    /// Returns true if `id` is currently hidden because it is a child
+    /// agent pane. Mirrors `is_pane_hidden_for_orchestration_swap` so
+    /// callers can branch on the right show/hide helper.
+    pub fn is_pane_hidden_for_child_agent(&self, id: PaneId) -> bool {
+        pane_hidden_for_child_agent(&self.hidden_panes, &id)
     }
 
     pub fn toggle_pane_visibility_for_job(&mut self, id: PaneId) -> bool {
@@ -593,6 +638,7 @@ impl PaneNode {
                     && !pane_hidden_for_undo(hidden_panes, pane_id)
                     && !pane_hidden_for_move(hidden_panes, pane_id)
                     && !pane_hidden_for_child_agent(hidden_panes, pane_id)
+                    && !pane_hidden_for_orchestration_swap(hidden_panes, pane_id)
             }
             PaneNode::Branch(branch) => branch.has_visible_children(hidden_panes),
         }
@@ -1292,6 +1338,12 @@ fn pane_hidden_for_child_agent(hidden_panes: &[HiddenPane], id: &PaneId) -> bool
     hidden_panes
         .iter()
         .any(|pane| pane.reason == HiddenPaneReason::ChildAgent && pane.pane_id == *id)
+}
+
+fn pane_hidden_for_orchestration_swap(hidden_panes: &[HiddenPane], id: &PaneId) -> bool {
+    hidden_panes
+        .iter()
+        .any(|pane| pane.reason == HiddenPaneReason::OrchestrationSwap && pane.pane_id == *id)
 }
 
 impl FindPaneByDirection for PaneBranch {

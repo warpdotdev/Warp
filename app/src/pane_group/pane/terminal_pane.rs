@@ -1149,6 +1149,16 @@ fn handle_terminal_view_event(
                     log::warn!("No pane found for child conversation {conversation_id:?}");
                 }
             }
+            Event::SwapPaneToConversation { conversation_id } => {
+                // Pill-bar navigation: instead of cloning the conversation
+                // into the active pane (which produces stale
+                // `LongRunningCommandSnapshot` results), make the pane
+                // that already owns this conversation's `TerminalView`
+                // the visible one in the active slot. The orchestrator's
+                // pane and each child's hidden pane stay in place; only
+                // their visibility flips.
+                group.swap_active_pane_to_conversation(pane_id, *conversation_id, ctx);
+            }
             Event::OpenChildAgentInNewTab { conversation_id } => {
                 // The pane group can't add a new tab — only the workspace
                 // can. Forward the request upward so `WorkspaceView` can
@@ -1159,33 +1169,21 @@ fn handle_terminal_view_event(
                 });
             }
             Event::OpenChildAgentInNewPane { conversation_id } => {
-                // Split a fresh terminal pane to the right and load the
-                // child conversation into it via
-                // `enter_agent_view_for_conversation`. We deliberately do
-                // *not* reveal the orchestrator's hidden child pane here:
-                // its terminal model never accumulated rendered AI blocks
-                // for the conversation (those go into whichever pane was
-                // last hosting the in-place agent view via
-                // `SwitchAgentViewToConversation`), so revealing it would
-                // show an empty transcript. Going through a fresh terminal
-                // view forces the cloud load+restore path, which mirrors
-                // what "Open in new tab" already does.
-                let new_pane_id =
-                    group.add_terminal_pane(Direction::Right, None /* chosen_shell */, ctx);
-                if let Some(new_terminal_view) = group.terminal_view_from_pane_id(new_pane_id, ctx)
+                // Reuse the existing hidden child agent pane: it already hosts
+                // the live `TerminalView` for this conversation. Creating a new
+                // pane and calling `enter_agent_view_for_conversation` on it
+                // would clone the conversation into a second view, cancelling
+                // any in-flight commands running in the original view and
+                // briefly leaking the child's transcript into the orchestrator
+                // pane while ownership shuffles between views. Just unhide the
+                // pane we already have so it becomes a visible sibling of the
+                // orchestrator pane.
+                if group
+                    .unhide_child_agent_pane_for_split_off(*conversation_id, ctx)
+                    .is_none()
                 {
-                    let conversation_id = *conversation_id;
-                    new_terminal_view.update(ctx, |terminal_view, ctx| {
-                        terminal_view.enter_agent_view_for_conversation(
-                            None,
-                            AgentViewEntryOrigin::OrchestrationPillBar,
-                            conversation_id,
-                            ctx,
-                        );
-                    });
-                } else {
                     log::warn!(
-                        "OpenChildAgentInNewPane: failed to resolve terminal view for newly created pane (conversation {conversation_id:?})"
+                        "OpenChildAgentInNewPane: no hidden child pane registered for conversation {conversation_id:?}"
                     );
                 }
             }

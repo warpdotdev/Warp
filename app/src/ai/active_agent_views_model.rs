@@ -176,8 +176,21 @@ impl ActiveAgentViewsModel {
                 ctx.emit(ActiveAgentViewsEvent::TerminalViewFocused);
             }
             AgentViewControllerEvent::ExitedAgentView {
-                conversation_id, ..
+                conversation_id,
+                is_exit_before_new_entrance,
+                ..
             } => {
+                // When the controller is just swapping the active conversation in place
+                // (e.g. clicking a pill in the orchestration pill bar), the synthetic
+                // ExitedAgentView is part of a switch — not a real exit. Tearing down
+                // the streamer consumer here would close the SSE for the conversation
+                // we're navigating away from when no other consumer remains, dropping
+                // events for an in-progress conversation. The follow-up EnteredAgentView
+                // will register the new conversation's consumer.
+                if *is_exit_before_new_entrance {
+                    return;
+                }
+
                 model
                     .last_opened_times
                     .remove(&ConversationOrTaskId::ConversationId(*conversation_id));
