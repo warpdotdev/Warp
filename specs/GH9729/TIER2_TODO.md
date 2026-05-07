@@ -61,9 +61,12 @@ Hard rules:
        Zoom shipped in this row; drag-to-pan deferred (no
        `Translate`/`Offset` primitive in this GPUI fork — see
        `t2-7-pan` below). — `tech.md` §698
-- [ ] **t2-8.** Status footer. Extend `lightbox::Params` with an optional
+- [x] **t2-8.** Status footer. Extend `lightbox::Params` with an optional
        metadata strip (filename, dimensions, file size, format string)
-       rendered below the image. — `tech.md` §699
+       rendered below the image. v1 ships dimensions only; filename
+       lives in the existing `description` field already, format
+       string and file size are deferred (see `t2-8-r2` follow-up). —
+       `tech.md` §699
 - [ ] **t2-9.** EXIF orientation + ICC color profile. Extend the agent-mode
        decoder in `app/src/util/image.rs` and wire into
        `ImageType::try_from_bytes`. — `tech.md` §700
@@ -82,7 +85,7 @@ Hard rules:
 | t2-5 | adopt `Error` at artifacts call site | `5a8072a` | [x] | [x] | [x] |
 | t2-6 | animated playback (continuous; pause deferred) | `f077496` | [x] | [x] | [x] |
 | t2-7 | zoom (pan deferred to t2-7-pan) | `6aee220` | [x] | [x] | [x] |
-| t2-8 | status footer | | [ ] | [ ] | [ ] |
+| t2-8 | status footer (dimensions only) | _pending_ | [x] | [ ] | [ ] |
 | t2-9 | EXIF orientation + ICC | | [ ] | [ ] | [ ] |
 | t2-FINAL | presubmit | | [ ] | — | — |
 

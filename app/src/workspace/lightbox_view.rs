@@ -333,6 +333,18 @@ impl View for LightboxView {
                 current_image_native_size,
                 animation_start_time: Some(self.animation_start_time),
                 zoom_factor: self.zoom_factor,
+                // GH9729 §699: surface the loaded image's intrinsic
+                // dimensions as the status footer. Format string and
+                // file size are deferred — the format isn't carried on
+                // `ImageType` (post-decode the original codec is lost
+                // and would have to be sniffed from the asset-source
+                // path), and `std::fs::metadata` for size is the same
+                // foreground-stat that v1 §694 explicitly avoids
+                // extending. See `TIER2_TODO::t2-8-r2` for the plumbing
+                // follow-up.
+                metadata_line: current_image_native_size.map(|size| {
+                    format!("{} × {} px", size.x() as i32, size.y() as i32)
+                }),
                 options: lightbox::Options {
                     dismiss_keystroke: Keystroke::parse("escape").ok(),
                     on_navigate: Some(Arc::new(|direction, ctx, _| match direction {

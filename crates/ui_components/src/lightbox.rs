@@ -15,6 +15,24 @@ use crate::{Component, Options as _, button};
 /// Padding between the scrim edge and the image.
 const SCRIM_PADDING: f32 = 48.;
 
+/// GH9729 §699: how much smaller the metadata strip is than the
+/// description. The metadata strip carries secondary information
+/// (dimensions, format, size) and should read as supporting detail,
+/// not a peer of the description.
+const METADATA_TEXT_SIZE_REDUCTION: f32 = 2.;
+
+/// GH9729 §699: alpha for the metadata strip's foreground colour.
+/// 0.7 keeps it legible while making clear it's secondary.
+const METADATA_TEXT_ALPHA: u8 = 178; // 255 * 0.7
+
+fn metadata_text_size(appearance: &Appearance) -> f32 {
+    (lightbox_text_size(appearance) - METADATA_TEXT_SIZE_REDUCTION).max(8.0)
+}
+
+fn metadata_text_color() -> ColorU {
+    ColorU::new(255, 255, 255, METADATA_TEXT_ALPHA)
+}
+
 /// GH9729 §698: minimum zoom factor — below this the image becomes too
 /// small to be useful and the controls feel runaway.
 pub const MIN_ZOOM_FACTOR: f32 = 0.25;
@@ -115,6 +133,15 @@ pub struct Params<'a> {
     ///
     /// Static images ignore this field entirely.
     pub animation_start_time: Option<Instant>,
+
+    /// GH9729 §699: optional pre-formatted metadata strip rendered
+    /// below the description in a smaller, dimmer font (filename
+    /// already lives in `description`, so the strip typically carries
+    /// `"<width>×<height>"` plus format / size when the caller knows
+    /// them). `None` hides the strip entirely. The string is rendered
+    /// verbatim — the caller is responsible for sanitising and
+    /// localising it.
+    pub metadata_line: Option<String>,
 
     /// GH9729 §698: zoom factor applied to the image's bounding box.
     /// `1.0` renders at native size (the v1 default). Values `> 1.0`
@@ -260,6 +287,9 @@ impl Component for Lightbox {
             };
 
         // Show the description only when the image is fully loaded (native size known).
+        // GH9729 §699: also append the optional metadata strip (smaller,
+        // dimmer text) under the description on the same gating, so the
+        // footer never appears next to a half-loaded spinner.
         let content_with_description = if let (Some(description), Some(_)) =
             (current_description, params.current_image_native_size)
         {
@@ -267,12 +297,24 @@ impl Component for Lightbox {
                 .with_color(ColorU::white())
                 .finish();
 
-            Flex::column()
+            let mut column = Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(DESCRIPTION_SPACING)
                 .with_child(Shrinkable::new(1.0, central_content).finish())
-                .with_child(description_text)
-                .finish()
+                .with_child(description_text);
+
+            if let Some(metadata_line) = params.metadata_line {
+                let metadata_text = Text::new(
+                    metadata_line,
+                    appearance.ui_font_family(),
+                    metadata_text_size(appearance),
+                )
+                .with_color(metadata_text_color())
+                .finish();
+                column = column.with_child(metadata_text);
+            }
+
+            column.finish()
         } else {
             central_content
         };
