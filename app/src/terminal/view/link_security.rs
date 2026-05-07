@@ -78,7 +78,7 @@ pub fn check_open_scheme(uri: &str, source: LinkSource) -> SchemeCheck {
         LinkSource::OscHyperlink => OSC8_ALLOWED_SCHEMES,
         LinkSource::AutoDetected => AUTO_DETECTED_ALLOWED_SCHEMES,
     };
-    if allow_list.iter().any(|allowed| *allowed == scheme.as_str()) {
+    if allow_list.contains(&scheme.as_str()) {
         SchemeCheck::Allowed
     } else {
         SchemeCheck::Rejected {
