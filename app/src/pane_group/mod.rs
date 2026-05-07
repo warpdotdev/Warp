@@ -1274,10 +1274,6 @@ impl PaneGroup {
         view_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
     ) -> (PaneData, InitialFocus) {
-        // Track which "agent profile not found" warnings we've already emitted
-        // for this launch so a tab config that references the same missing
-        // profile from multiple panes only produces one toast.
-        let mut launch_warned_missing_profiles: HashSet<String> = HashSet::new();
         let (leftmost_pane_id, pane_data, initial_focus) =
             PaneGroup::pane_tree_from_template_recursive(
                 root,
@@ -1288,7 +1284,6 @@ impl PaneGroup {
                 user_default_shell_unsupported_banner_model_handle,
                 view_size,
                 model_event_sender,
-                &mut launch_warned_missing_profiles,
             );
         if initial_focus.focused_pane.is_some() && initial_focus.active_session.is_some() {
             (pane_data, initial_focus)
@@ -1314,7 +1309,6 @@ impl PaneGroup {
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         view_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
-        launch_warned_missing_profiles: &mut HashSet<String>,
     ) -> (Option<LeftmostPaneId>, PaneData, InitialFocus) {
         match root {
             PaneTemplateType::PaneTemplate {
@@ -1379,12 +1373,8 @@ impl PaneGroup {
                     // after `PendingCommandCompleted`.
                     if let Some(profile_name) = agent_profile_name.as_ref() {
                         if commands.is_empty() {
-                            should_enter_agent = Self::apply_tab_config_agent_profile(
-                                &view,
-                                profile_name,
-                                launch_warned_missing_profiles,
-                                ctx,
-                            );
+                            should_enter_agent =
+                                Self::apply_tab_config_agent_profile(&view, profile_name, ctx);
                         }
                     }
 
@@ -1472,7 +1462,6 @@ impl PaneGroup {
                             user_default_shell_unsupported_banner_model_handle.clone(),
                             view_size,
                             model_event_sender.clone(),
-                            launch_warned_missing_profiles,
                         );
                     len += child.len();
                     nodes.push((PaneFlex(pane_flex), child.root));
@@ -1501,7 +1490,6 @@ impl PaneGroup {
     fn apply_tab_config_agent_profile(
         view: &ViewHandle<TerminalView>,
         profile_name: &str,
-        launch_warned_missing_profiles: &mut HashSet<String>,
         ctx: &mut ViewContext<PaneGroup>,
     ) -> bool {
         let profiles_model = AIExecutionProfilesModel::handle(ctx);
@@ -1517,9 +1505,14 @@ impl PaneGroup {
                 true
             }
             Err(ProfileLookupError::NotFound(name)) => {
-                // Per-launch dedup: only one toast per missing-name even if
-                // multiple panes in the same tab config reference it.
-                if launch_warned_missing_profiles.insert(name.clone()) {
+                // Per-app-session dedup: the model carries a HashSet of names
+                // already warned about, shared across the immediate path
+                // (here) and the deferred path
+                // (`TerminalView::apply_pending_agent_profile`).
+                let should_warn = profiles_model.update(ctx, |model, _| {
+                    model.note_missing_tab_config_profile(name.clone())
+                });
+                if should_warn {
                     ctx.emit(Event::ShowToast {
                         message: format!(
                             "Agent profile '{name}' not found in tab config; using Default."

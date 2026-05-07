@@ -14853,14 +14853,22 @@ impl TerminalView {
                 true
             }
             Err(ProfileLookupError::NotFound(name)) => {
-                ctx.emit(Event::ShowToast {
-                    message: format!(
-                        "Agent profile '{name}' not found in tab config; using Default."
-                    ),
-                    // `ToastFlavor` has no Warning variant; Default is the
-                    // closest match for an informational fall-back notice.
-                    flavor: ToastFlavor::Default,
+                // Per-app-session dedup: the model carries a HashSet of names
+                // already warned about, shared with the immediate path in
+                // `pane_group::PaneGroup::apply_tab_config_agent_profile`.
+                let should_warn = profiles_model.update(ctx, |model, _| {
+                    model.note_missing_tab_config_profile(name.clone())
                 });
+                if should_warn {
+                    ctx.emit(Event::ShowToast {
+                        message: format!(
+                            "Agent profile '{name}' not found in tab config; using Default."
+                        ),
+                        // `ToastFlavor` has no Warning variant; Default is the
+                        // closest match for an informational fall-back notice.
+                        flavor: ToastFlavor::Default,
+                    });
+                }
                 true
             }
             Err(ProfileLookupError::Ambiguous { name, count }) => {

@@ -1,5 +1,5 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -128,6 +128,12 @@ pub struct AIExecutionProfilesModel {
     profile_id_to_sync_id: HashMap<ClientProfileId, SyncId>,
     /// Only contains entries for non-default profiles.
     active_profiles_per_session: HashMap<EntityId, ClientProfileId>,
+    /// Display names of agent profiles that have already produced a
+    /// "not found in tab config; using Default" toast in this app session.
+    /// Used to dedup the missing-profile fallback notice across both the
+    /// immediate (`pane_group::PaneGroup`) and deferred (`TerminalView`)
+    /// tab-config launch paths. Resets on app restart.
+    tab_config_warned_missing_profiles: HashSet<String>,
 }
 
 impl AIExecutionProfilesModel {
@@ -243,6 +249,7 @@ impl AIExecutionProfilesModel {
             default_profile_state,
             profile_id_to_sync_id,
             active_profiles_per_session,
+            tab_config_warned_missing_profiles: HashSet::new(),
         };
 
         model.maybe_inherit_from_legacy_settings(ctx);
@@ -491,6 +498,19 @@ impl AIExecutionProfilesModel {
                 count: n,
             }),
         }
+    }
+
+    /// Record that a missing tab-config agent profile name has been surfaced
+    /// to the user via a "not found; using Default" toast. Returns `true` if
+    /// this is the first time this name has been warned about in the current
+    /// app session (caller should emit the toast); returns `false` if a toast
+    /// has already been emitted for this name (caller should suppress to
+    /// avoid duplicate notices across the immediate and deferred tab-config
+    /// launch paths).
+    ///
+    /// Dedup scope is per app session; resets on restart.
+    pub fn note_missing_tab_config_profile(&mut self, name: String) -> bool {
+        self.tab_config_warned_missing_profiles.insert(name)
     }
 
     pub fn get_all_profile_ids(&self) -> Vec<ClientProfileId> {
