@@ -718,7 +718,7 @@ impl AgentManagementView {
         app: &AppContext,
     ) -> Vec<MenuItem<DropdownAction<AgentManagementViewAction>>> {
         let mut items = vec![MenuItem::Item(
-            MenuItemFields::new(crate::i18n::tr_static(ctx, "All")).with_on_select_action(
+            MenuItemFields::new(crate::i18n::tr_static(app, "All")).with_on_select_action(
                 DropdownAction::SelectActionAndClose(AgentManagementViewAction::SetHarnessFilter(
                     HarnessFilter::All,
                 )),

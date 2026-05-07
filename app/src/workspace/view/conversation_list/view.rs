@@ -942,26 +942,6 @@ impl TypedActionView for ConversationListView {
                         ));
                     }
 
-                    // Check if conversation is shareable:
-                    // - For tasks: check if there's an associated conversation_id
-                    // - For conversations: check if synced to cloud
-                    let is_shareable = match conversation_id {
-                        ConversationOrTaskId::TaskId(task_id) => {
-                            if let Some(ConversationOrTask::Task(task)) =
-                                AgentConversationsModel::as_ref(ctx).get_task(&task_id)
-                            {
-                                task.conversation_id.is_some()
-                            } else {
-                                false
-                            }
-                        }
-                        ConversationOrTaskId::ConversationId(conv_id) => {
-                            BlocklistAIHistoryModel::as_ref(ctx)
-                                .can_conversation_be_shared(&conv_id)
-                        }
-                    };
-
-                    // Only show share item if the conversation is shareable
                     let share_item = if entry.capabilities.can_share {
                         Some(
                             MenuItemFields::new(crate::i18n::tr_static(ctx, "Share conversation"))
