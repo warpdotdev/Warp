@@ -44,9 +44,6 @@ const FONT_SIZE: f32 = 14.;
 /// Font size for the helper text below the select (Figma: 12px).
 const HELPER_FONT_SIZE: f32 = 12.;
 
-/// Font size for the field label above the select (Figma: 10px).
-const FIELD_LABEL_FONT_SIZE: f32 = 10.;
-
 /// Horizontal padding inside the select container (Figma: 12px).
 const SELECT_HORIZONTAL_PADDING: f32 = 12.;
 
@@ -133,7 +130,7 @@ impl AuthSecretFtuxDropdown {
                 },
                 ctx,
             );
-            editor.set_placeholder_text("Search secrets or enter value", ctx);
+            editor.set_placeholder_text("Search secrets or create a new one", ctx);
             editor
         });
 
@@ -393,27 +390,6 @@ impl AuthSecretFtuxDropdown {
         });
     }
 
-    /// Renders the "ANTHROPIC_API_KEY" field label above the select container.
-    fn render_field_label(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-        let color = internal_colors::text_sub(theme, theme.surface_1());
-        let harness = self.ambient_agent_model.as_ref(app).selected_harness();
-        // Use the first field label of the first secret type as the header label.
-        let label = auth_secret_types_for_harness(harness)
-            .first()
-            .and_then(|info| info.fields.first())
-            .map(|f| f.label)
-            .unwrap_or("API_KEY");
-        Text::new_inline(
-            label.to_string(),
-            appearance.ui_font_family(),
-            FIELD_LABEL_FONT_SIZE,
-        )
-        .with_color(color)
-        .finish()
-    }
-
     /// Renders the select container: `[search_icon | editor_or_label | right_icon]`.
     fn render_select_container(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
@@ -561,20 +537,6 @@ impl View for AuthSecretFtuxDropdown {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
-        let mut column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min);
-
-        // Field label (e.g. "ANTHROPIC_API_KEY").
-        column.add_child(self.render_field_label(app));
-
-        // Small gap between label and select.
-        let mut select_section = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(LABEL_TO_SELECT_SPACING);
-        // Spacer element is implicit via the parent column spacing.
-
         // Select container + dropdown overlay.
         let mut stack = Stack::new();
         stack.add_child(self.render_select_container(app));
@@ -585,20 +547,17 @@ impl View for AuthSecretFtuxDropdown {
                 self.menu_positioning(),
             );
         }
-        select_section.add_child(stack.finish());
 
-        // Helper text (only when search has no matches).
-        let helper = self.render_helper_text(app);
-        select_section.add_child(helper);
-
-        // Combine label + select section with the label-to-select spacing.
-        let mut outer = Flex::column()
+        let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(LABEL_TO_SELECT_SPACING);
-        outer.add_child(self.render_field_label(app));
-        outer.add_child(select_section.finish());
+        column.add_child(stack.finish());
 
-        outer.finish()
+        // Helper text (only when search has no matches).
+        let helper = self.render_helper_text(app);
+        column.add_child(helper);
+
+        column.finish()
     }
 }

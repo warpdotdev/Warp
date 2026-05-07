@@ -385,8 +385,8 @@ impl AuthSecretFtuxView {
         let harness = self.ambient_agent_model.as_ref(app).selected_harness();
         let display_name = harness_display::display_name(harness);
         let description = format!(
-            "Please enter your {display_name} API key to use it as a remote agent. \
-             Search your Warp Drive or pass the raw value and save it as a secret."
+            "Please select an authentication secret or create a new one to use \
+             {display_name} as a cloud agent."
         );
         Text::new_inline(
             description,
@@ -467,19 +467,38 @@ impl AuthSecretFtuxView {
     fn render_skip_link(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let color = internal_colors::text_sub(theme, theme.surface_1());
+        let sub_color = internal_colors::text_sub(theme, theme.surface_1());
+        let link_color = theme.accent().into_solid();
         let font_family = appearance.ui_font_family();
-        let label_text = "Already logged in? Skip and continue";
-        Hoverable::new(self.skip_mouse_state.clone(), move |_| {
-            Text::new_inline(label_text.to_string(), font_family, SKIP_FONT_SIZE)
-                .with_color(color)
-                .finish()
-        })
-        .with_cursor(warpui::platform::Cursor::PointingHand)
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action(AuthSecretFtuxAction::Skip);
-        })
-        .finish()
+
+        let prefix = Text::new_inline(
+            "Already set up authentication in your environment? ".to_string(),
+            font_family,
+            SKIP_FONT_SIZE,
+        )
+        .with_color(sub_color)
+        .finish();
+
+        let click_here = Text::new_inline(
+            "Click here to skip".to_string(),
+            font_family,
+            SKIP_FONT_SIZE,
+        )
+        .with_color(link_color)
+        .finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(prefix)
+            .with_child(click_here)
+            .finish();
+
+        Hoverable::new(self.skip_mouse_state.clone(), move |_| row)
+            .with_cursor(warpui::platform::Cursor::PointingHand)
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(AuthSecretFtuxAction::Skip);
+            })
+            .finish()
     }
 
     fn render_button(
