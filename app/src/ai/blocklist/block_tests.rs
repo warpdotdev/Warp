@@ -1,4 +1,4 @@
-use super::{CollapsibleElementState, CollapsibleExpansionState};
+use super::{CollapsibleElementState, CollapsibleExpansionState, ImportedCommentElementState};
 use crate::ai::agent::StartAgentExecutionMode;
 use crate::ai::blocklist::action_model::{
     compose_run_agents_child_prompt, run_agents_to_start_agent_mode,
@@ -8,7 +8,7 @@ use crate::test_util::settings::initialize_settings_for_tests;
 use ai::agent::action::{RunAgentsAgentRunConfig, RunAgentsExecutionMode};
 use ai::skills::SkillReference;
 use settings::Setting;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use warpui::{App, SingletonEntity};
 
 #[test]
@@ -208,4 +208,52 @@ fn remote_arm_rejects_opencode() {
     )
     .expect_err("Remote+opencode must be rejected");
     assert!(err.to_lowercase().contains("opencode"));
+}
+
+#[test]
+fn imported_comment_code_review_button_is_enabled_without_repo_disable() {
+    let (label, disabled, tooltip) =
+        ImportedCommentElementState::open_in_code_review_button_state(false, false, None);
+
+    assert_eq!(label, "Open in code review");
+    assert!(!disabled);
+    assert_eq!(tooltip, None);
+}
+
+#[test]
+fn imported_comment_code_review_button_uses_repo_tooltip_when_repo_disabled() {
+    let repo_path = Path::new("/tmp/repo");
+    let (label, disabled, tooltip) =
+        ImportedCommentElementState::open_in_code_review_button_state(false, true, Some(repo_path));
+
+    assert_eq!(label, "Open in code review");
+    assert!(disabled);
+    assert_eq!(
+        tooltip,
+        Some(format!(
+            "Navigate to {} to open these comments",
+            repo_path.display()
+        ))
+    );
+}
+
+#[test]
+fn imported_comment_code_review_button_handles_repo_disable_without_path() {
+    let (label, disabled, tooltip) =
+        ImportedCommentElementState::open_in_code_review_button_state(false, true, None);
+
+    assert_eq!(label, "Open in code review");
+    assert!(disabled);
+    assert_eq!(tooltip, None);
+}
+
+#[test]
+fn imported_comment_code_review_button_prefers_added_state_over_repo_disable() {
+    let repo_path = Path::new("/tmp/repo");
+    let (label, disabled, tooltip) =
+        ImportedCommentElementState::open_in_code_review_button_state(true, true, Some(repo_path));
+
+    assert_eq!(label, "Added to code review");
+    assert!(disabled);
+    assert_eq!(tooltip, None);
 }
