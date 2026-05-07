@@ -570,9 +570,13 @@ fn meta_keystroke_to_escape_sequence(
     _mode_provider: &impl ModeProvider,
 ) -> Option<Vec<u8>> {
     // On mac, we have a setting that allows users to map the Option keys to
-    // meta.
+    // meta. When that setting is off, Option+letter produces special glyphs
+    // (Option+E = é, etc.), so we don't treat alt as meta by default. The
+    // exception is Enter, which never has an Option-modified glyph — TUIs like
+    // claude/vim/fish expect Option+Enter to arrive as ESC+CR (xterm
+    // convention), so we let alt-enter through here too.
     if OperatingSystem::get().is_mac() {
-        if !keystroke.meta {
+        if !keystroke.meta && !(keystroke.alt && keystroke.key == "enter") {
             return None;
         }
     } else {
