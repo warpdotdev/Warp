@@ -42,11 +42,12 @@ message ServerMessage {
     DeleteFileResponse delete_file_response = 9;
     RunCommandResponse run_command_response = 10;
     ReadFileContextResponse read_file_context_response = 11;
+    CodebaseIndexStatusesSnapshot codebase_index_statuses_snapshot = 12;
+    CodebaseIndexStatusUpdated codebase_index_status_updated = 13;
   }
 }
 
 // ── Initialize handshake
-
 // Sent by the client immediately after connecting to negotiate the protocol.
 message Initialize {
   // Optional bearer token used by the daemon for Warp-server requests.
@@ -304,6 +305,28 @@ message FileContextProto {
   optional uint32 line_range_end = 5;
   optional uint64 last_modified_epoch_millis = 6;
   uint32 line_count = 7;
+}
+
+// ── Remote codebase indexing status ───────────────────────────────
+
+enum CodebaseIndexStatusState {
+  CODEBASE_INDEX_STATUS_STATE_UNSPECIFIED = 0;
+  CODEBASE_INDEX_STATUS_STATE_NOT_ENABLED = 1;
+  CODEBASE_INDEX_STATUS_STATE_UNAVAILABLE = 2;
+}
+
+message CodebaseIndexStatus {
+  string repo_path = 1;
+  CodebaseIndexStatusState state = 2;
+  optional uint64 last_updated_epoch_millis = 3;
+}
+
+message CodebaseIndexStatusesSnapshot {
+  repeated CodebaseIndexStatus statuses = 1;
+}
+
+message CodebaseIndexStatusUpdated {
+  CodebaseIndexStatus status = 1;
 }
 
 // ── Server → client push messages ─────────────────────────────────

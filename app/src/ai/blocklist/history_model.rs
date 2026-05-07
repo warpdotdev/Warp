@@ -2593,5 +2593,5 @@ pub const FORK_PREFIX: &str = "(Fork) ";
 pub const PRE_REWIND_PREFIX: &str = "(Pre-Rewind) ";
 
 #[cfg(test)]
-#[path = "history_model_test.rs"]
+#[path = "history_model_tests.rs"]
 mod tests;

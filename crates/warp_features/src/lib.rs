@@ -938,7 +938,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
-    FeatureFlag::ConfigurableContextWindow,
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
@@ -1203,5 +1202,5 @@ impl From<TriState> for Option<bool> {
 }
 
 #[cfg(test)]
-#[path = "features_test.rs"]
+#[path = "features_tests.rs"]
 mod tests;

@@ -3,9 +3,9 @@
 </a>
 &nbsp;
 <p align="center">
-  <a href="https://www.warp.dev"><img height="20" alt="Built with Warp" src="./images/Built-With-Warp-Export@2x.png" /></a>
+  <a href="https://www.warp.dev"><img height="20" alt="Built with Warp" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Built-With-Warp-Export@2x.png" /></a>
   &nbsp;
-  <a href="https://oz.warp.dev"><img height="20" alt="Powered by Oz" src="./images/Powered-By-Oz-Export@2x.png" /></a>
+  <a href="https://oz.warp.dev"><img height="20" alt="Powered by Oz" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Powered-By-Oz-Export@2x.png" /></a>
 </p>
 
 <p align="center">

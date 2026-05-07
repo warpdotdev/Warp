@@ -418,5 +418,5 @@ pub(crate) fn decode_scrollback(scrollback: &Scrollback) -> Vec<SerializedBlock>
 }
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

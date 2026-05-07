@@ -396,8 +396,8 @@ const INSTALL_SCRIPT_TEMPLATE: &str = include_str!("install_remote_server.sh");
 /// the unversioned path used by `script/deploy_remote_server`); pinned to
 /// `&version={v}` / `-{v}` on every other channel, where `v` falls back
 /// to `CARGO_PKG_VERSION` when no release tag is baked in.
-pub fn install_script() -> String {
-    let (version_query, version_suffix) = match ChannelState::channel() {
+pub fn install_script(staging_tarball_path: Option<&str>) -> String {
+    let (vq, version_suffix) = match ChannelState::channel() {
         Channel::Local | Channel::Oss => (String::new(), String::new()),
         Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
             let v = pinned_version();
@@ -409,8 +409,13 @@ pub fn install_script() -> String {
         .replace("{channel}", download_channel())
         .replace("{install_dir}", &remote_server_dir())
         .replace("{binary_name}", binary_name())
-        .replace("{version_query}", &version_query)
+        .replace("{version_query}", &vq)
         .replace("{version_suffix}", &version_suffix)
+        .replace(
+            "{no_http_client_exit_code}",
+            &NO_HTTP_CLIENT_EXIT_CODE.to_string(),
+        )
+        .replace("{staging_tarball_path}", staging_tarball_path.unwrap_or(""))
 }
 
 /// Construct the download URL from the server root URL.
@@ -440,11 +445,47 @@ fn download_channel() -> &'static str {
     }
 }
 
+/// Returns the version query string for the download URL (e.g.
+/// `"&version=v0.2026.01.01"` on release channels, empty on Local/Oss).
+fn version_query() -> String {
+    match ChannelState::channel() {
+        Channel::Local | Channel::Oss => String::new(),
+        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
+            format!("&version={}", pinned_version())
+        }
+    }
+}
+
+/// Returns the full download URL for the remote server tarball,
+/// parameterized by the remote platform. Used by the SCP upload
+/// fallback to download the same artifact the shell script would fetch.
+pub fn download_tarball_url(platform: &RemotePlatform) -> String {
+    format!(
+        "{}?package=tar&os={}&arch={}&channel={}{}",
+        download_url(),
+        platform.os.as_str(),
+        platform.arch.as_str(),
+        download_channel(),
+        version_query(),
+    )
+}
+
+/// Exit code the install script uses when neither curl nor wget is
+/// available on the remote host. The Rust side matches on this to
+/// trigger the SCP upload fallback.
+pub const NO_HTTP_CLIENT_EXIT_CODE: i32 = 3;
+
 /// Timeout for the binary existence check.
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Timeout for the install script.
+/// Timeout for the install script (curl/wget path).
 pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Timeout for the SCP upload fallback path (local download + SCP +
+/// extraction). Longer than [`INSTALL_TIMEOUT`] because SCP transfers
+/// the tarball over the user's SSH link, which is typically slower than
+/// the remote host's direct internet connection.
+pub const SCP_INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[cfg(test)]
 #[path = "setup_tests.rs"]

@@ -19,9 +19,9 @@ use warp_util::file::FileId;
 
 use super::proto::{
     client_message, delete_file_response, run_command_response, server_message,
-    write_file_response, Abort, Authenticate, ClientMessage, DeleteFile, DeleteFileResponse,
-    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
-    FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
+    write_file_response, Abort, Authenticate, ClientMessage, CodebaseIndexStatusesSnapshot,
+    DeleteFile, DeleteFileResponse, DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead,
+    FileContextProto, FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
     NavigatedToDirectoryResponse, ReadFileContextResponse, RunCommandError, RunCommandErrorCode,
     RunCommandRequest, RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped,
     WriteFile, WriteFileResponse, WriteFileSuccess,
@@ -461,6 +461,14 @@ impl ServerModel {
         };
 
         match outcome {
+            HandlerOutcome::Sync(server_message::Message::InitializeResponse(response)) => {
+                self.send_server_message(
+                    Some(conn_id),
+                    Some(&request_id),
+                    server_message::Message::InitializeResponse(response),
+                );
+                self.push_codebase_index_statuses_snapshot(conn_id);
+            }
             HandlerOutcome::Sync(message) => {
                 self.send_server_message(Some(conn_id), Some(&request_id), message);
             }
@@ -471,6 +479,30 @@ impl ServerModel {
                 // Async work tracked elsewhere (e.g. `pending_file_ops`);
                 // the response will be sent via an event subscription.
             }
+        }
+    }
+
+    fn push_codebase_index_statuses_snapshot(&self, conn_id: ConnectionId) {
+        let snapshot = self.codebase_index_statuses_snapshot();
+        let status_count = snapshot.statuses.len();
+        log::info!(
+            "Pushing codebase index statuses snapshot: conn_id={conn_id} \
+             status_count={status_count}"
+        );
+        self.send_server_message(
+            Some(conn_id),
+            None,
+            server_message::Message::CodebaseIndexStatusesSnapshot(snapshot),
+        );
+    }
+
+    fn codebase_index_statuses_snapshot(&self) -> CodebaseIndexStatusesSnapshot {
+        // PR1 has no canonical daemon-side codebase-indexing state yet, so
+        // the bootstrap snapshot is empty. Later PRs will populate this from
+        // the remote indexing manager rather than deriving status from
+        // navigation events.
+        CodebaseIndexStatusesSnapshot {
+            statuses: Vec::new(),
         }
     }
 
@@ -860,7 +892,6 @@ impl ServerModel {
                         },
                     ),
                 );
-
                 // After responding, push a snapshot if metadata is available.
                 //
                 // For git repos this is an opportunistic push for the case
