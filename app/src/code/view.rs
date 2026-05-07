@@ -19,6 +19,8 @@ use crate::terminal::cli_agent::{
     build_selection_line_range_prompt, build_selection_substring_prompt,
 };
 use crate::terminal::view::CliAgentRouting;
+#[cfg(feature = "local_fs")]
+use crate::util::bindings::keybinding_name_to_keystroke;
 use crate::workspace::util::get_context_target_terminal_view;
 use crate::workspace::TabBarDropTargetData;
 use crate::{code::EditorTabBarDropTargetData, pane_group::pane::ActionOrigin};
@@ -93,6 +95,8 @@ const TAB_PADDING: f32 = 2.;
 // Keybinding constants - exported so AI document view can reuse
 pub const SAVE_FILE_BINDING_NAME: &str = "code_view:save";
 pub const SAVE_FILE_BINDING_DESCRIPTION: &str = "Save file";
+#[cfg(feature = "local_fs")]
+pub const REVEAL_IN_FINDER_BINDING_NAME: &str = "code_view:reveal_in_finder";
 
 pub fn init(app: &mut AppContext) {
     super::editor::view::init(app);
@@ -128,6 +132,14 @@ pub fn init(app: &mut AppContext) {
         )
         .with_context_predicate(id!("CodeEditorView"))
         .with_key_binding("cmdorctrl-r u"),
+        #[cfg(feature = "local_fs")]
+        EditableBinding::new(
+            REVEAL_IN_FINDER_BINDING_NAME,
+            "Reveal in Finder",
+            CodeViewAction::RevealInFinder,
+        )
+        .with_context_predicate(id!("CodeEditorView"))
+        .with_mac_key_binding("cmd-alt-r"),
     ]);
 }
 
@@ -1965,12 +1977,18 @@ impl CodeView {
             } else {
                 "Reveal in file manager"
             };
+            // Look up the current keybinding so the label tracks any user
+            // overrides set via Settings → Keybindings (and renders empty when
+            // the action has no binding on the current platform).
+            let reveal_shortcut = keybinding_name_to_keystroke(REVEAL_IN_FINDER_BINDING_NAME, ctx)
+                .map(|k| k.displayed())
+                .unwrap_or_default();
             items.extend([
                 MenuItem::Separator,
                 MenuItemFields::new("Copy file path")
                     .with_on_select_action(CodeViewAction::CopyFilePath)
                     .into_item(),
-                MenuItemFields::new(reveal_label)
+                MenuItemFields::new_with_label(reveal_label, reveal_shortcut.as_str())
                     .with_on_select_action(CodeViewAction::RevealInFinder)
                     .into_item(),
             ]);
