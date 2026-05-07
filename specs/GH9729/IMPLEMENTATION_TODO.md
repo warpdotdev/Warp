@@ -97,3 +97,40 @@ The original 2a / 2c bullets are struck through and superseded.
 - If a step's tests reveal the change is too large, split it into smaller
   follow-up commits but keep the checkbox unchecked until all sub-changes
   for that bullet land.
+
+## Reviews
+
+Driven by a separate Ralph loop (see `specs/GH9729/REVIEW_LOOP_PROMPT.md`).
+Each implementation bullet above gets **two parallel reviews** per iteration:
+
+- **R1 — Correctness lens:** spec-fidelity vs `tech.md`/`product.md`, edge
+  cases, error paths, security/DoS/resource caps (decode bombs, SVG sanity,
+  size caps, allocator limits).
+- **R2 — Quality lens:** idiomatic Rust, naming, structure, test rigor,
+  dead code, comment quality.
+
+Notes are written to `specs/GH9729/reviews/<item>-r<N>.md`.
+
+| # | Item | Commit | R1 | R2 |
+|---|------|--------|----|----|
+| 1a | `FileTarget::ImagePreview` variant | `fa5336b` | [ ] | [ ] |
+| 1b | resolver short-circuit | `c15c1be` | [ ] | [ ] |
+| 1c | resolver unit tests | `256d31d` | [ ] | [ ] |
+| 3a | `LightboxImageSource::Error` variant | `c0b5a7c` | [ ] | [ ] |
+| 3b | render `Error` inline in `Lightbox::render` | `328c333` | [ ] | [ ] |
+| 2-arm | workspace `FileTarget::ImagePreview` arm | `38aec6e` | [ ] | [ ] |
+| 2-tests | workspace-arm tests | `32cee73` | [ ] | [ ] |
+| 4a | static-decode caps in `ImageType::try_from_bytes` | `926dedf` | [ ] | [ ] |
+| 4b | animated-decode caps (WebP, GIF) | `a6aaf00` | [ ] | [ ] |
+| 4c | SVG content-sanity gate + intrinsic-dimension cap | `294fa95` | [ ] | [ ] |
+| 4-tests-a | static-raster + SVG decoder tests | `abab042` | [ ] | [ ] |
+| 4-tests-b | animated decoder tests | `57be862` | [ ] | [ ] |
+| 5a | bounded `LocalFile` asset-cache read | `e338655` | [ ] | [ ] |
+| 5b | post-load callback rewrites failures to `Error` | `d5fdacc` | [ ] | [ ] |
+| 5-tests | asset-cache tests | `4ed1e80` | [ ] | [ ] |
+| 7 | telemetry serialization test | `ec6ffb1` | [ ] | [ ] |
+| FINAL | presubmit (fmt + clippy + nextest) | `3bf5148`, `f743be1`, `8a5c2e6` | [ ] | [ ] |
+
+Tick `[x]` only after the corresponding `reviews/<item>-r<N>.md` exists and
+contains real findings (or an explicit "no issues found, here's what I
+checked" sign-off — empty stubs do not count).
