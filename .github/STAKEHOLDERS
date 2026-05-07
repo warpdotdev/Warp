@@ -78,6 +78,7 @@
 /app/src/ai/mcp/ @peicodes @vkodithala
 /app/src/ai/skills/ @peicodes @vkodithala
 /crates/mcp/ @peicodes @vkodithala
+/resources/bundled/skills/feedback/ @captainsafia
 
 # File-based MCP (overrides MCP and skills above)
 /app/src/ai/mcp/file_based_manager.rs @vkodithala
@@ -156,6 +157,15 @@
 
 # Long-running shell commands
 /app/src/ai/blocklist/action_model/execute/shell_command.rs @vkodithala
+
+# Vim
+/crates/vim/ @liliwilson
+/app/src/vim_registers.rs @liliwilson
+/app/src/code/editor/view/vim_handler.rs @liliwilson
+/app/src/code/editor/view/vim_handler_tests.rs @liliwilson
+/app/src/editor/view/vim_handler_test.rs @liliwilson
+/app/src/terminal/view/inline_banner/vim_mode.rs @liliwilson
+/app/src/settings/vim_banner.rs @liliwilson
 
 ###########################################################################
 # Team: Platform

@@ -2164,18 +2164,10 @@ impl Input {
                         });
                     }
                 });
-                // REMOTE-1486: prep+upload failures arrive here so we can
-                // repopulate the editor with the user's original prompt (the
-                // submit path cleared it before the orchestrator started) and
-                // surface the error as a toast. Without this branch the user is
-                // left staring at a blank composing pane after a silent log
-                // line.
-                if let AmbientAgentViewModelEvent::HandoffSubmissionFailed {
-                    prompt,
-                    error_message,
-                } = event
+                // Surface async snapshot upload failures as a toast.
+                if let AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { error_message } =
+                    event
                 {
-                    me.replace_buffer_content(prompt, ctx);
                     let window_id = ctx.window_id();
                     let toast_message = format!("Failed to prepare cloud handoff: {error_message}");
                     ToastStack::handle(ctx).update(ctx, |ts, ctx| {
@@ -2186,13 +2178,8 @@ impl Input {
                         );
                     });
                 }
-                // Re-render on status-footer transitions (V1 cloud-mode setup) and on the
-                // status-affecting events that decide whether the input is in its composing
-                // shape. The composing-shape transitions matter for the V1 handoff path:
-                // its submit goes through `submit_handoff` which only flips the model to
-                // `WaitingForSession` after the async prep+upload completes, so the input
-                // would otherwise keep rendering the composing chrome (harness selector,
-                // attachment chips) until something else triggers a notify.
+                // Re-render on status-footer transitions and on status-affecting events that
+                // decide whether the input is in its composing shape.
                 let should_notify = handle.as_ref(ctx).should_show_status_footer()
                     || matches!(
                         event,
@@ -2204,7 +2191,7 @@ impl Input {
                             | AmbientAgentViewModelEvent::Cancelled
                             | AmbientAgentViewModelEvent::NeedsGithubAuth
                             | AmbientAgentViewModelEvent::HarnessSelected
-                            | AmbientAgentViewModelEvent::HandoffSubmissionFailed { .. }
+                            | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
                     );
                 if should_notify {
                     ctx.notify();
@@ -2370,19 +2357,19 @@ impl Input {
                 AgentInputFooterEvent::SelectFile => {
                     me.select_image(ctx);
                 }
-                AgentInputFooterEvent::OpenRichInput | AgentInputFooterEvent::HideRichInput => {
-                    ctx.emit(Event::Escape);
-                }
                 AgentInputFooterEvent::StartRemoteControl
                 | AgentInputFooterEvent::StopRemoteControl => {
                     // Handled by UseAgentToolbar's subscription, not here.
                 }
-                // WriteToPty, InsertIntoCLIRichInput, ToggleCodeReviewPane, and ToggleFileExplorer
-                // are handled by UseAgentToolbar's subscription, not here.
+                // These events are handled by UseAgentToolbar's subscription.
+                // The UseAgentToolbar shares this same AgentInputFooter instance,
+                // so its subscriber always fires alongside ours for every chip click.
                 AgentInputFooterEvent::WriteToPty(_)
                 | AgentInputFooterEvent::InsertIntoCLIRichInput(_)
                 | AgentInputFooterEvent::ToggleCodeReviewPane(_)
-                | AgentInputFooterEvent::ToggleFileExplorer(_) => {}
+                | AgentInputFooterEvent::ToggleFileExplorer(_)
+                | AgentInputFooterEvent::OpenRichInput
+                | AgentInputFooterEvent::HideRichInput => {}
                 AgentInputFooterEvent::ToggledChipMenu { open } => {
                     me.handle_prompt_event(&PromptDisplayEvent::ToggleMenu { open: *open }, ctx);
                 }
@@ -14886,5 +14873,5 @@ impl Input {
 }
 
 #[cfg(test)]
-#[path = "input_test.rs"]
+#[path = "input_tests.rs"]
 mod tests;

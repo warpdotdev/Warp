@@ -10,13 +10,22 @@
 //!
 //! Adding a new canonical state is a one-enum-variant + one `expected` arm + one `*_inputs`
 //! arm change; the table test below enforces every surface agrees.
+use chrono::Utc;
 use warp_cli::agent::Harness;
 
 use super::{
-    agent_icon_variant_for_run, agent_icon_variant_from_terminal_inputs, CLISessionInputs,
-    TerminalIconInputs,
+    agent_conversation_entry_icon_variant, agent_icon_variant_for_run,
+    agent_icon_variant_from_terminal_inputs, CLISessionInputs, TerminalIconInputs,
 };
-use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
+use crate::ai::agent_conversations_model::entry::{
+    AgentConversationBackingData, AgentConversationCapabilities, AgentConversationCreator,
+    AgentConversationDisplayData, AgentConversationIdentity,
+};
+use crate::ai::agent_conversations_model::{
+    AgentConversationEntry, AgentConversationEntryId, AgentConversationProvenance,
+    AgentRunDisplayStatus,
+};
 use crate::terminal::CLIAgent;
 use crate::ui_components::icon_with_status::IconWithStatusVariant;
 
@@ -371,4 +380,60 @@ fn local_claude_vs_cloud_claude_differ_only_by_is_ambient() {
     assert_eq!(local.cli_agent, Some(CLIAgent::Claude));
     assert!(!local.is_ambient);
     assert!(cloud.is_ambient);
+}
+
+#[test]
+fn non_ambient_entry_uses_display_harness() {
+    let conversation_id = AIConversationId::new();
+    let entry = AgentConversationEntry {
+        id: AgentConversationEntryId::Conversation(conversation_id),
+        identity: AgentConversationIdentity {
+            local_conversation_id: Some(conversation_id),
+            ambient_agent_task_id: None,
+            server_conversation_token: None,
+            session_id: None,
+        },
+        provenance: AgentConversationProvenance::CloudSyncedConversation,
+        display: AgentConversationDisplayData {
+            title: "Codex conversation".to_string(),
+            initial_query: None,
+            created_at: Utc::now(),
+            last_updated: Utc::now(),
+            status: AgentRunDisplayStatus::ConversationSucceeded,
+            creator: AgentConversationCreator::default(),
+            request_usage: None,
+            run_time: None,
+            session_status: None,
+            source: None,
+            working_directory: None,
+            environment_id: None,
+            harness: Some(Harness::Codex),
+            artifacts: Vec::new(),
+        },
+        backing: AgentConversationBackingData {
+            has_loaded_conversation: true,
+            has_local_persisted_data: true,
+            has_cloud_data: true,
+            has_ambient_run: false,
+        },
+        capabilities: AgentConversationCapabilities {
+            can_open: true,
+            can_copy_link: false,
+            can_share: false,
+            can_delete: false,
+            can_fork_locally: false,
+            can_cancel: false,
+        },
+    };
+
+    let variant = agent_conversation_entry_icon_variant(&entry).unwrap();
+    assert_eq!(
+        AgentIconFields::from_variant(&variant).unwrap(),
+        AgentIconFields {
+            is_cli: true,
+            cli_agent: Some(CLIAgent::Codex),
+            status: Some(ConversationStatus::Success),
+            is_ambient: false,
+        }
+    );
 }

@@ -569,7 +569,7 @@ impl AgentInputFooter {
         );
 
         let start_remote_control_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("/remote-control", AgentInputButtonTheme)
+            ActionButton::new("/remote-control", RemoteControlButtonTheme)
                 .with_icon(Icon::Phone01)
                 .with_tooltip(START_REMOTE_CONTROL_TOOLTIP)
                 .with_size(cli_button_size)
@@ -580,7 +580,7 @@ impl AgentInputFooter {
         });
 
         let stop_remote_control_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Stop sharing", AgentInputButtonTheme)
+            ActionButton::new("Stop sharing", RemoteControlButtonTheme)
                 .with_icon(Icon::StopFilled)
                 .with_icon_ansi_color(AnsiColorIdentifier::Red)
                 .with_tooltip("Stop sharing")
@@ -982,10 +982,10 @@ impl AgentInputFooter {
         }
         #[cfg(not(target_family = "wasm"))]
         {
-            if self.plugin_operation_in_progress {
-                return None;
-            }
-            if !FeatureFlag::HOANotifications.is_enabled() {
+            if self.plugin_operation_in_progress
+                || self.terminal_model.lock().is_shared_ambient_agent_session()
+                || !FeatureFlag::HOANotifications.is_enabled()
+            {
                 return None;
             }
 
@@ -1978,7 +1978,7 @@ impl AgentInputFooter {
                 // Render the chip when the native/local handoff surface is available.
                 // Per-conversation eligibility (synced server token, non-empty
                 // history) is enforced by `Workspace::start_local_to_cloud_handoff`,
-                // which falls through to splitting a fresh cloud-mode pane when
+                // which surfaces an error toast and does not open a pane when
                 // the active conversation isn't handoff-able.
                 Some(ChildView::new(&self.handoff_to_cloud_button).finish())
             }
@@ -2556,6 +2556,31 @@ impl ActionButtonTheme for AgentInputButtonTheme {
         } else {
             None
         }
+    }
+}
+
+struct RemoteControlButtonTheme;
+
+impl ActionButtonTheme for RemoteControlButtonTheme {
+    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {
+        AgentInputButtonTheme.background(hovered, appearance)
+    }
+
+    fn text_color(
+        &self,
+        hovered: bool,
+        background: Option<Fill>,
+        appearance: &Appearance,
+    ) -> ColorU {
+        AgentInputButtonTheme.text_color(hovered, background, appearance)
+    }
+
+    fn border(&self, appearance: &Appearance) -> Option<ColorU> {
+        AgentInputButtonTheme.border(appearance)
+    }
+
+    fn should_opt_out_of_contrast_adjustment(&self) -> bool {
+        AgentInputButtonTheme.should_opt_out_of_contrast_adjustment()
     }
 }
 

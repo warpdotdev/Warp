@@ -1,4 +1,4 @@
-use std::{ffi::OsString, sync::Arc, time::Duration};
+use std::{collections::HashMap, ffi::OsString, sync::Arc, time::Duration};
 
 use futures::channel::oneshot;
 use warp_cli::agent::Harness;
@@ -9,7 +9,7 @@ use warp_cli::{
 use warp_core::channel::ChannelState;
 
 use super::{
-    IdleTimeoutSender, LEGACY_OZ_PARENT_LISTENER_MANAGED_EXTERNALLY_ENV,
+    build_secret_env_vars, IdleTimeoutSender, LEGACY_OZ_PARENT_LISTENER_MANAGED_EXTERNALLY_ENV,
     LEGACY_OZ_PARENT_STATE_ROOT_ENV, OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY_ENV,
     OZ_MESSAGE_LISTENER_STATE_ROOT_ENV,
 };
@@ -19,6 +19,7 @@ use crate::ai::agent::{
 };
 use crate::ai::mcp::parsing::normalize_mcp_json;
 use crate::ai::{agent_sdk::task_env_vars, ambient_agents::AmbientAgentTaskId};
+use warp_managed_secrets::ManagedSecretValue;
 
 #[test]
 fn test_normalize_single_cli_server() {
@@ -385,4 +386,188 @@ fn json_format_input_omits_filepath_and_description_for_proto_upload_result() {
     assert_eq!(value["size_bytes"], 42);
     assert!(value.get("filepath").is_none());
     assert!(value.get("description").is_none());
+}
+
+// ── build_secret_env_vars tests ──────────────────────────────────────────────
+
+#[test]
+#[serial_test::serial]
+fn raw_value_only_writes_under_secret_name() {
+    std::env::remove_var("MY_SECRET");
+    let secrets = HashMap::from([(
+        "MY_SECRET".to_string(),
+        ManagedSecretValue::raw_value("s3cret"),
+    )]);
+    let env_vars = build_secret_env_vars(&secrets);
+    assert_eq!(
+        env_vars.get(&OsString::from("MY_SECRET")),
+        Some(&OsString::from("s3cret"))
+    );
+    assert_eq!(env_vars.len(), 1);
+}
+
+#[test]
+#[serial_test::serial]
+fn anthropic_api_key_writes_anthropic_env_var() {
+    std::env::remove_var("ANTHROPIC_API_KEY");
+    let secrets = HashMap::from([(
+        "my-custom-name".to_string(),
+        ManagedSecretValue::anthropic_api_key("sk-ant-test-key"),
+    )]);
+    let env_vars = build_secret_env_vars(&secrets);
+    assert_eq!(
+        env_vars.get(&OsString::from("ANTHROPIC_API_KEY")),
+        Some(&OsString::from("sk-ant-test-key"))
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn typed_secret_overrides_raw_value_with_same_env_name() {
+    std::env::remove_var("ANTHROPIC_API_KEY");
+    let typed_key = "sk-ant-typed-key-abcdef";
+    let raw_key = "sk-ant-raw-key-ghijkl";
+    let secrets = HashMap::from([
+        (
+            "my-auth".to_string(),
+            ManagedSecretValue::anthropic_api_key(typed_key),
+        ),
+        (
+            "ANTHROPIC_API_KEY".to_string(),
+            ManagedSecretValue::raw_value(raw_key),
+        ),
+    ]);
+    // Run multiple times to defeat HashMap iteration order flakiness.
+    for _ in 0..20 {
+        let env_vars = build_secret_env_vars(&secrets);
+        assert_eq!(
+            env_vars.get(&OsString::from("ANTHROPIC_API_KEY")),
+            Some(&OsString::from(typed_key)),
+            "Typed secret must always override RawValue with the same env name"
+        );
+    }
+}
+
+#[test]
+#[serial_test::serial]
+fn bedrock_api_key_writes_all_bedrock_env_vars() {
+    std::env::remove_var("AWS_BEARER_TOKEN_BEDROCK");
+    std::env::remove_var("CLAUDE_CODE_USE_BEDROCK");
+    std::env::remove_var("AWS_REGION");
+    let secrets = HashMap::from([
+        (
+            "bedrock-secret".to_string(),
+            ManagedSecretValue::anthropic_bedrock_api_key("token-123", "us-west-2"),
+        ),
+        (
+            "AWS_REGION".to_string(),
+            ManagedSecretValue::raw_value("eu-west-1"),
+        ),
+    ]);
+    let env_vars = build_secret_env_vars(&secrets);
+    assert_eq!(
+        env_vars.get(&OsString::from("AWS_BEARER_TOKEN_BEDROCK")),
+        Some(&OsString::from("token-123"))
+    );
+    assert_eq!(
+        env_vars.get(&OsString::from("CLAUDE_CODE_USE_BEDROCK")),
+        Some(&OsString::from("1"))
+    );
+    assert_eq!(
+        env_vars.get(&OsString::from("AWS_REGION")),
+        Some(&OsString::from("us-west-2")),
+        "Typed Bedrock secret should win over RawValue for AWS_REGION"
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn bedrock_access_key_writes_all_aws_env_vars() {
+    std::env::remove_var("AWS_ACCESS_KEY_ID");
+    std::env::remove_var("AWS_SECRET_ACCESS_KEY");
+    std::env::remove_var("AWS_SESSION_TOKEN");
+    std::env::remove_var("CLAUDE_CODE_USE_BEDROCK");
+    std::env::remove_var("AWS_REGION");
+    let secrets = HashMap::from([(
+        "bedrock-access".to_string(),
+        ManagedSecretValue::anthropic_bedrock_access_key(
+            "AKID",
+            "secret-key",
+            Some("session-tok".to_string()),
+            "ap-southeast-1",
+        ),
+    )]);
+    let env_vars = build_secret_env_vars(&secrets);
+    assert_eq!(
+        env_vars.get(&OsString::from("AWS_ACCESS_KEY_ID")),
+        Some(&OsString::from("AKID"))
+    );
+    assert_eq!(
+        env_vars.get(&OsString::from("AWS_SECRET_ACCESS_KEY")),
+        Some(&OsString::from("secret-key"))
+    );
+    assert_eq!(
+        env_vars.get(&OsString::from("AWS_SESSION_TOKEN")),
+        Some(&OsString::from("session-tok"))
+    );
+    assert_eq!(
+        env_vars.get(&OsString::from("CLAUDE_CODE_USE_BEDROCK")),
+        Some(&OsString::from("1"))
+    );
+    assert_eq!(
+        env_vars.get(&OsString::from("AWS_REGION")),
+        Some(&OsString::from("ap-southeast-1"))
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn raw_value_skipped_when_process_env_already_set() {
+    std::env::set_var("WORKER_TOKEN", "injected-value");
+    let secrets = HashMap::from([(
+        "WORKER_TOKEN".to_string(),
+        ManagedSecretValue::raw_value("managed-value"),
+    )]);
+    let env_vars = build_secret_env_vars(&secrets);
+    // The worker-injected env var wins; env_vars should NOT contain it
+    // because the child inherits the process env directly.
+    assert!(!env_vars.contains_key(&OsString::from("WORKER_TOKEN")));
+    std::env::remove_var("WORKER_TOKEN");
+}
+
+#[test]
+#[serial_test::serial]
+fn worker_injected_env_wins_over_typed_secret() {
+    std::env::set_var("ANTHROPIC_API_KEY", "worker-key");
+    let secrets = HashMap::from([(
+        "my-auth".to_string(),
+        ManagedSecretValue::anthropic_api_key("managed-key"),
+    )]);
+    let env_vars = build_secret_env_vars(&secrets);
+    // The typed secret should be skipped entirely; the child inherits
+    // ANTHROPIC_API_KEY from the process env.
+    assert!(!env_vars.contains_key(&OsString::from("ANTHROPIC_API_KEY")));
+    std::env::remove_var("ANTHROPIC_API_KEY");
+}
+
+#[test]
+#[serial_test::serial]
+fn worker_injected_env_skips_entire_bedrock_secret() {
+    // Only AWS_REGION is worker-injected; the entire Bedrock secret should
+    // be atomically skipped — no partial insertion.
+    std::env::set_var("AWS_REGION", "us-east-1");
+    std::env::remove_var("AWS_BEARER_TOKEN_BEDROCK");
+    std::env::remove_var("CLAUDE_CODE_USE_BEDROCK");
+    let secrets = HashMap::from([(
+        "bedrock-secret".to_string(),
+        ManagedSecretValue::anthropic_bedrock_api_key("token-456", "eu-central-1"),
+    )]);
+    let env_vars = build_secret_env_vars(&secrets);
+    assert!(
+        !env_vars.contains_key(&OsString::from("AWS_BEARER_TOKEN_BEDROCK")),
+        "Entire Bedrock secret must be skipped when any field is worker-injected"
+    );
+    assert!(!env_vars.contains_key(&OsString::from("CLAUDE_CODE_USE_BEDROCK")));
+    assert!(!env_vars.contains_key(&OsString::from("AWS_REGION")));
+    std::env::remove_var("AWS_REGION");
 }

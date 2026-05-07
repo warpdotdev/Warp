@@ -5,7 +5,7 @@
 //! whose stdin/stdout become the protocol channel.
 use std::fmt;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -75,30 +75,34 @@ impl SshTransport {
     }
 }
 
+/// Runs `uname -sm` on the remote host via the ControlMaster socket and
+/// parses the output into a [`RemotePlatform`].
+async fn detect_remote_platform(socket_path: &Path) -> anyhow::Result<RemotePlatform> {
+    let output = remote_server::ssh::run_ssh_command(
+        socket_path,
+        "uname -sm",
+        remote_server::setup::CHECK_TIMEOUT,
+    )
+    .await?;
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_uname_output(&stdout)?)
+    } else {
+        let code = output.status.code().unwrap_or(-1);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("uname -sm exited with code {code}: {stderr}")
+    }
+}
+
 impl RemoteTransport for SshTransport {
     fn detect_platform(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<RemotePlatform, String>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
-            match remote_server::ssh::run_ssh_command(
-                &socket_path,
-                "uname -sm",
-                remote_server::setup::CHECK_TIMEOUT,
-            )
-            .await
-            {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    parse_uname_output(&stdout).map_err(|e| format!("{e:#}"))
-                }
-                Ok(output) => {
-                    let code = output.status.code().unwrap_or(-1);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    Err(format!("uname -sm exited with code {code}: {stderr}"))
-                }
-                Err(e) => Err(format!("{e:#}")),
-            }
+            detect_remote_platform(&socket_path)
+                .await
+                .map_err(|e| format!("{e:#}"))
         })
     }
 
@@ -194,7 +198,7 @@ impl RemoteTransport for SshTransport {
     fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
-            let script = remote_server::setup::install_script();
+            let script = remote_server::setup::install_script(None);
             log::info!(
                 "Installing remote server binary to {}",
                 remote_server::setup::remote_server_binary()
@@ -207,6 +211,15 @@ impl RemoteTransport for SshTransport {
             .await
             {
                 Ok(output) if output.status.success() => Ok(()),
+                Ok(output)
+                    if output.status.code()
+                        == Some(remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE) =>
+                {
+                    log::info!("Remote server has no curl/wget, falling back to SCP upload");
+                    scp_install_fallback(&socket_path)
+                        .await
+                        .map_err(|e| format!("{e:#}"))
+                }
                 Ok(output) => {
                     let code = output.status.code().unwrap_or(-1);
                     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -300,27 +313,86 @@ impl RemoteTransport for SshTransport {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use warpui::r#async::BoxFuture;
-    fn static_auth_context() -> Arc<RemoteServerAuthContext> {
-        Arc::new(RemoteServerAuthContext::new(
-            || -> BoxFuture<'static, Option<String>> { Box::pin(async { None }) },
-            || "user id/with spaces".to_string(),
+/// SCP install fallback: downloads the tarball locally, uploads it to
+/// the remote via SCP, then re-invokes the install script with the
+/// staging path baked in so the shared extraction tail runs.
+async fn scp_install_fallback(socket_path: &Path) -> anyhow::Result<()> {
+    use std::process::Stdio;
+
+    // Detect the remote platform so we can construct the correct download URL.
+    // This is a redundant uname call (the manager already ran detect_platform
+    // earlier), but it only happens on the rare SCP fallback path and avoids
+    // threading the platform through the trait.
+    let platform = detect_remote_platform(socket_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("SCP fallback: {e:#}"))?;
+
+    let url = remote_server::setup::download_tarball_url(&platform);
+    let remote_tarball_path = format!(
+        "{}/oz-upload.tar.gz",
+        remote_server::setup::remote_server_dir()
+    );
+    let timeout = remote_server::setup::SCP_INSTALL_TIMEOUT;
+
+    // 1. Download the tarball locally into a temp directory.
+    let tmp_dir =
+        tempfile::tempdir().map_err(|e| anyhow::anyhow!("Failed to create local temp dir: {e}"))?;
+    let temp_client_tarball_path = tmp_dir.path().join("oz.tar.gz");
+
+    log::info!("Downloading tarball locally from {url}");
+    let output = command::r#async::Command::new("curl")
+        // -f: fail silently on HTTP errors (non-zero exit instead of HTML error page)
+        // -S: show errors even when -f is used
+        // -L: follow redirects (the CDN may 302 to a regional edge)
+        .arg("-fSL")
+        .arg("--connect-timeout")
+        .arg("15")
+        .arg(&url)
+        .arg("-o")
+        .arg(&temp_client_tarball_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to spawn local curl: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!(
+            "Local curl failed (exit {:?}): {stderr}",
+            output.status.code()
+        ));
+    }
+
+    // 2. Upload to the remote via SCP.
+    log::info!("Uploading tarball to remote at {remote_tarball_path}");
+    remote_server::ssh::scp_upload(
+        socket_path,
+        &temp_client_tarball_path,
+        &remote_tarball_path,
+        timeout,
+    )
+    .await?;
+
+    // 3. Run the install script with the staging path baked in.
+    //    The script's `staging_tarball_path` variable is non-empty, so it
+    //    skips the download and extracts from the uploaded tarball.
+    log::info!("Running extraction via install script with tarball at {remote_tarball_path}");
+
+    let script = remote_server::setup::install_script(Some(&remote_tarball_path));
+
+    let output = remote_server::ssh::run_ssh_script(socket_path, &script, timeout).await?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let code = output.status.code().unwrap_or(-1);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(anyhow::anyhow!(
+            "Extraction script failed (exit {code}): {stderr}"
         ))
     }
-
-    #[test]
-    fn remote_proxy_command_quotes_identity_key() {
-        let transport = SshTransport::new(
-            PathBuf::from("/tmp/control-master.sock"),
-            static_auth_context(),
-        );
-
-        let command = transport.remote_proxy_command();
-
-        assert!(command.contains("remote-server-proxy --identity-key"));
-        assert!(command.contains("'user id/with spaces'"));
-    }
 }
+
+#[cfg(test)]
+#[path = "ssh_transport_tests.rs"]
+mod tests;

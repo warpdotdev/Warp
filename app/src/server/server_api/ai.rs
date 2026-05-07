@@ -232,10 +232,11 @@ pub struct SpawnAgentRequest {
     /// Base64-encoded `warp.multi_agent.v1.Attachment` payloads to restore as referenced attachments.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub referenced_attachments: Vec<String>,
-    /// When set, instructs the server to fork the named conversation and use the resulting
-    /// fork id as `task.AgentConversationID`. Used by the local-to-cloud handoff flow.
+    /// Server-side conversation id to resume against (sets `task.AgentConversationID`).
+    /// For local-to-cloud handoff this is the forked conversation id returned by
+    /// `POST /agent/conversations/{conversation_id}/fork` at chip-click time.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fork_from_conversation_id: Option<String>,
+    pub conversation_id: Option<String>,
     /// References a batch of files previously uploaded to handoff/{token}/
     /// via `POST /agent/handoff/upload-snapshot`. The server stores the token on the new run's
     /// queued execution input and resolves the prefix in place at rehydration time.
@@ -257,8 +258,8 @@ impl InitialSnapshotToken {
 }
 
 /// Request body for `POST /agent/handoff/upload-snapshot`. Used by the local-to-cloud
-/// handoff flow (REMOTE-1486) to allocate a token and presigned upload URLs
-/// scoped to `handoff/{token}/` before any task exists.
+/// handoff flow to allocate a token and presigned upload URLs scoped to
+/// `handoff/{token}/` before any task exists.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct UploadLocalHandoffSnapshotRequest {
     pub files: Vec<SnapshotUploadFileInfo>,
@@ -281,6 +282,13 @@ pub struct UploadLocalHandoffSnapshotResponse {
     pub initial_snapshot_token: InitialSnapshotToken,
     pub expires_at: String,
     pub uploads: Vec<UploadTarget>,
+}
+
+/// Response body for `POST /agent/conversations/{conversation_id}/fork`. The returned id is sent
+/// on the subsequent `POST /agent/runs` request under `conversation_id` (resume semantics).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ForkConversationResponse {
+    pub forked_conversation_id: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -754,6 +762,12 @@ pub(crate) fn build_list_agent_runs_url(limit: i32, filter: &TaskListFilter) -> 
 pub(crate) fn build_run_followup_url(run_id: &AmbientAgentTaskId) -> String {
     format!("agent/runs/{run_id}/followups")
 }
+pub(crate) fn build_fork_conversation_url(conversation_id: &str) -> String {
+    format!(
+        "agent/conversations/{}/fork",
+        urlencoding::encode(conversation_id)
+    )
+}
 
 struct ListRunsResponse {
     runs: Vec<AmbientAgentTask>,
@@ -907,6 +921,12 @@ pub trait AIClient: 'static + Send + Sync {
         &self,
         request: UploadLocalHandoffSnapshotRequest,
     ) -> anyhow::Result<UploadLocalHandoffSnapshotResponse, anyhow::Error>;
+
+    /// Materialize a server-side fork of a conversation.
+    async fn fork_conversation(
+        &self,
+        conversation_id: String,
+    ) -> anyhow::Result<ForkConversationResponse, anyhow::Error>;
 
     async fn list_ambient_agent_tasks(
         &self,
@@ -1633,6 +1653,16 @@ impl AIClient for ServerApi {
     ) -> anyhow::Result<UploadLocalHandoffSnapshotResponse, anyhow::Error> {
         let response: UploadLocalHandoffSnapshotResponse = self
             .post_public_api("agent/handoff/upload-snapshot", &request)
+            .await?;
+        Ok(response)
+    }
+
+    async fn fork_conversation(
+        &self,
+        conversation_id: String,
+    ) -> anyhow::Result<ForkConversationResponse, anyhow::Error> {
+        let response: ForkConversationResponse = self
+            .post_public_api(&build_fork_conversation_url(&conversation_id), &())
             .await?;
         Ok(response)
     }
@@ -2829,5 +2859,5 @@ impl StoreClient for ServerApi {
 }
 
 #[cfg(test)]
-#[path = "ai_test.rs"]
+#[path = "ai_tests.rs"]
 mod tests;

@@ -198,7 +198,7 @@ fn execute_returns_error_when_local_harness_child_requires_orchestration_v2() {
         });
         let action = build_start_agent_action(
             StartAgentVersion::V2,
-            StartAgentExecutionMode::local_harness("claude".to_string()),
+            StartAgentExecutionMode::local_harness("codex".to_string()),
         );
 
         let execution = executor.update(&mut app, |executor, ctx| {
@@ -235,7 +235,7 @@ fn execute_rejects_invalid_local_harness_names_before_pane_creation() {
         });
         let action = build_start_agent_action(
             StartAgentVersion::V2,
-            StartAgentExecutionMode::local_harness("codex".to_string()),
+            StartAgentExecutionMode::local_harness("gemini".to_string()),
         );
 
         let execution = executor.update(&mut app, |executor, ctx| {
@@ -254,7 +254,7 @@ fn execute_rejects_invalid_local_harness_names_before_pane_creation() {
         assert!(matches!(
             result,
             AIAgentActionResultType::StartAgent(StartAgentResult::Error { error, version })
-                if error == "Unsupported local child harness 'codex'."
+                if error == "Unsupported local child harness 'gemini'."
                     && version == StartAgentVersion::V2
         ));
     });

@@ -1,20 +1,21 @@
 use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::Arc};
 
-use shell_words::quote as shell_quote;
-use uuid::Uuid;
-use warp_cli::agent::Harness;
-use warp_managed_secrets::ManagedSecretValue;
-
 use crate::ai::{
     agent_sdk::{
-        driver::AgentDriverError, task_env_vars, validate_cli_installed, ClaudeHarness,
-        ThirdPartyHarness,
+        driver::{
+            harness::{harness_kind, HarnessKind},
+            AgentDriverError,
+        },
+        task_env_vars, validate_cli_installed,
     },
     ambient_agents::{task::HarnessConfig, AgentConfigSnapshot, AmbientAgentTaskId},
 };
 use crate::server::server_api::ai::AIClient;
 use crate::terminal::cli_agent_sessions::plugin_manager::plugin_manager_for;
 use crate::terminal::shell::ShellType;
+use shell_words::quote as shell_quote;
+use uuid::Uuid;
+use warp_cli::agent::Harness;
 
 #[derive(Clone)]
 pub(super) struct PreparedLocalHarnessLaunch {
@@ -56,16 +57,20 @@ pub(super) fn build_local_opencode_child_command(prompt: &str) -> String {
     let quoted_prompt = shell_quote(prompt);
     format!("opencode --prompt {quoted_prompt}")
 }
+pub(super) fn build_local_codex_child_command(prompt: &str) -> String {
+    let quoted_prompt = shell_quote(prompt);
+    format!("codex --dangerously-bypass-approvals-and-sandbox {quoted_prompt}")
+}
 
 fn local_child_task_config(harness: Harness) -> Option<AgentConfigSnapshot> {
     match harness {
-        Harness::Oz | Harness::OpenCode | Harness::Gemini | Harness::Codex | Harness::Unknown => {
-            None
+        Harness::Oz | Harness::Unknown => None,
+        Harness::Claude | Harness::OpenCode | Harness::Gemini | Harness::Codex => {
+            Some(AgentConfigSnapshot {
+                harness: Some(HarnessConfig::from_harness_type(harness)),
+                ..Default::default()
+            })
         }
-        Harness::Claude => Some(AgentConfigSnapshot {
-            harness: Some(HarnessConfig::from_harness_type(harness)),
-            ..Default::default()
-        }),
     }
 }
 
@@ -93,21 +98,28 @@ pub(super) async fn prepare_local_harness_child_launch(
             let working_dir = startup_directory
                 .or_else(|| std::env::current_dir().ok())
                 .ok_or_else(|| {
-                    "Could not resolve a working directory for the local Claude child.".to_string()
+                    format!(
+                        "Could not resolve a working directory for the local {} child.",
+                        harness.display_name()
+                    )
                 })?;
-            let claude_harness = ClaudeHarness;
-            claude_harness
+            let HarnessKind::ThirdParty(third_party_harness) =
+                harness_kind(harness).map_err(|error: AgentDriverError| error.to_string())?
+            else {
+                unreachable!("Claude resolves to a third-party harness")
+            };
+            third_party_harness
                 .validate()
                 .map_err(|error: AgentDriverError| error.to_string())?;
-            // Local child harness panes inherit the user's existing local Claude
-            // auth/session state. We still prepare Claude's config files here,
+            // Local child harness panes inherit the user's existing local
+            // auth/session state. We still prepare harness config files here,
             // but there are no Warp-managed secrets to materialize into the
             // hidden child pane.
-            let managed_secrets: HashMap<String, ManagedSecretValue> = HashMap::new();
-            claude_harness
-                .prepare_environment_config(&working_dir, None, &managed_secrets)
+            let resolved_env_vars: HashMap<OsString, OsString> = HashMap::new();
+            third_party_harness
+                .prepare_environment_config(&working_dir, None, &resolved_env_vars)
                 .map_err(|error: AgentDriverError| error.to_string())?;
-            if let Some(manager) = plugin_manager_for(claude_harness.cli_agent()) {
+            if let Some(manager) = plugin_manager_for(third_party_harness.cli_agent()) {
                 if let Err(error) = manager.install().await {
                     log::warn!("Claude plugin installation failed for child harness: {error}");
                 }
@@ -120,12 +132,27 @@ pub(super) async fn prepare_local_harness_child_launch(
 
             build_local_claude_child_command(&prompt)
         }
+        Harness::Codex => {
+            let HarnessKind::ThirdParty(third_party_harness) =
+                harness_kind(harness).map_err(|error: AgentDriverError| error.to_string())?
+            else {
+                unreachable!("Codex resolves to a third-party harness")
+            };
+            third_party_harness
+                .validate()
+                .map_err(|error: AgentDriverError| error.to_string())?;
+
+            // Local Codex child panes must rely on the user's existing local
+            // auth/session state. Do not run the shared Codex environment prep
+            // here: it can seed OPENAI_API_KEY into ~/.codex/auth.json and
+            // rewrite ~/.codex/config.toml for the whole machine.
+            build_local_codex_child_command(&prompt)
+        }
         Harness::OpenCode => {
             validate_cli_installed("opencode", Some("https://opencode.ai/docs"))
                 .map_err(|error: AgentDriverError| error.to_string())?;
             build_local_opencode_child_command(&prompt)
         }
-        Harness::Codex => unreachable!("normalize_local_child_harness filters out Codex"),
         Harness::Gemini => unreachable!("normalize_local_child_harness filters out Gemini"),
     };
 

@@ -949,5 +949,5 @@ pub enum MintCustomTokenError {
 }
 
 #[cfg(test)]
-#[path = "auth_test.rs"]
+#[path = "auth_tests.rs"]
 mod tests;

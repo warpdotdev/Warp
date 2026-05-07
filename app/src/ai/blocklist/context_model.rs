@@ -1027,5 +1027,5 @@ impl Entity for BlocklistAIContextModel {
 }
 
 #[cfg(test)]
-#[path = "context_model_test.rs"]
+#[path = "context_model_tests.rs"]
 mod tests;

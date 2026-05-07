@@ -1154,9 +1154,11 @@ impl View for BlocklistAIStatusBar {
                     .ambient_agent_view_model
                     .as_ref()
                     .is_some_and(|ambient_agent_view_model| {
+                        let terminal_model = self.terminal_model.lock();
                         is_cloud_agent_pre_first_exchange(
                             Some(ambient_agent_view_model),
                             &self.agent_view_controller,
+                            &terminal_model,
                             app,
                         )
                     })

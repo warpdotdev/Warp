@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs;
 use std::sync::Arc;
 
@@ -85,13 +86,13 @@ fn prepare_codex_auth_writes_with_0600_perms() {
 }
 
 #[test]
-fn resolve_openai_api_key_returns_value_from_raw_value_secret() {
-    let secrets = HashMap::from([(
-        "OPENAI_API_KEY".to_string(),
-        ManagedSecretValue::raw_value("sk-from-secret"),
+fn resolve_openai_api_key_returns_value_from_resolved_map() {
+    let resolved = HashMap::from([(
+        OsString::from("OPENAI_API_KEY"),
+        OsString::from("sk-from-secret"),
     )]);
     assert_eq!(
-        resolve_openai_api_key(&secrets).as_deref(),
+        resolve_openai_api_key(&resolved).as_deref(),
         Some("sk-from-secret")
     );
 }
@@ -113,7 +114,7 @@ fn resolve_openai_api_key_falls_back_to_env_var() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_openai_api_key_returns_none_when_secrets_and_env_empty() {
+fn resolve_openai_api_key_returns_none_when_map_and_env_empty() {
     let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
     std::env::remove_var(OPENAI_API_KEY_ENV);
 
@@ -127,17 +128,17 @@ fn resolve_openai_api_key_returns_none_when_secrets_and_env_empty() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_openai_api_key_prefers_env_over_secret() {
-    // Mirrors `AgentDriver::new`'s precedence: an existing `OPENAI_API_KEY` env var
-    // wins over a managed secret so `auth.json` matches the launched process's env.
+fn resolve_openai_api_key_prefers_env_over_resolved_map() {
+    // Worker-injected env var wins over the resolved secret map because
+    // build_secret_env_vars skips secrets that collide with process env.
     let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
     std::env::set_var(OPENAI_API_KEY_ENV, "sk-from-env");
-    let secrets = HashMap::from([(
-        "OPENAI_API_KEY".to_string(),
-        ManagedSecretValue::raw_value("sk-from-secret"),
+    let resolved = HashMap::from([(
+        OsString::from("OPENAI_API_KEY"),
+        OsString::from("sk-from-secret"),
     )]);
 
-    let result = resolve_openai_api_key(&secrets);
+    let result = resolve_openai_api_key(&resolved);
 
     match prev {
         Some(v) => std::env::set_var(OPENAI_API_KEY_ENV, v),
@@ -148,15 +149,15 @@ fn resolve_openai_api_key_prefers_env_over_secret() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_openai_api_key_uses_secret_when_env_empty() {
+fn resolve_openai_api_key_uses_resolved_map_when_env_empty() {
     let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
     std::env::set_var(OPENAI_API_KEY_ENV, "   ");
-    let secrets = HashMap::from([(
-        "OPENAI_API_KEY".to_string(),
-        ManagedSecretValue::raw_value("sk-from-secret"),
+    let resolved = HashMap::from([(
+        OsString::from("OPENAI_API_KEY"),
+        OsString::from("sk-from-secret"),
     )]);
 
-    let result = resolve_openai_api_key(&secrets);
+    let result = resolve_openai_api_key(&resolved);
 
     match prev {
         Some(v) => std::env::set_var(OPENAI_API_KEY_ENV, v),
