@@ -3791,15 +3791,25 @@ impl Input {
     ) -> bool {
         let is_new_handoff_prefix = {
             let editor = self.editor.as_ref(ctx);
-            editor.buffer_text(ctx) == CLOUD_HANDOFF_INPUT_PREFIX
-                && editor.last_buffer_text(ctx).is_empty()
+            editor
+                .buffer_text(ctx)
+                .starts_with(CLOUD_HANDOFF_INPUT_PREFIX)
+                && !editor
+                    .last_buffer_text(ctx)
+                    .starts_with(CLOUD_HANDOFF_INPUT_PREFIX)
         };
         if !self.can_activate_cloud_handoff_prefix(edit_origin, ctx) || !is_new_handoff_prefix {
             return false;
         }
 
-        self.editor.update(ctx, |editor, ctx| {
-            editor.set_buffer_text("", ctx);
+        let is_input_buffer_empty = self.editor.update(ctx, |editor, ctx| {
+            if let Some(rest) = editor
+                .buffer_text(ctx)
+                .strip_prefix(CLOUD_HANDOFF_INPUT_PREFIX)
+            {
+                editor.set_buffer_text(rest, ctx);
+            }
+            editor.buffer_text(ctx).is_empty()
         });
         self.ai_input_model.update(ctx, |ai_input_model, ctx| {
             ai_input_model.set_input_config(
@@ -3807,15 +3817,14 @@ impl Input {
                     input_type: InputType::AI,
                     is_locked: true,
                 },
-                true,
+                is_input_buffer_empty,
                 ctx,
             );
         });
 
         self.handoff_compose_state
             .update(ctx, |state, ctx| state.activate(ctx));
-        // The prefix is stripped outside the normal edit-empty transition path.
-        self.is_editor_empty_on_last_edit = true;
+        self.is_editor_empty_on_last_edit = is_input_buffer_empty;
         ctx.notify();
         true
     }
