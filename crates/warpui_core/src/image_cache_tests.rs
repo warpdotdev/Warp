@@ -678,3 +678,74 @@ fn decode_svg_rejects_intrinsic_dimensions_over_cap() {
         "expected SVG intrinsic-dimension cap to reject 200000x200000",
     );
 }
+
+// GH9729: animated decoder tests (specs/GH9729/tech.md §613:643-646).
+// Reuses the existing animated.webp and numbers-1000ms.gif fixtures that
+// the asset-loading tests above already include via the `Assets` impl.
+
+const ANIMATED_GIF_BYTES: &[u8] =
+    include_bytes!("../../warpui/examples/assets/numbers-1000ms.gif");
+const ANIMATED_WEBP_BYTES: &[u8] = include_bytes!("../test_data/animated.webp");
+
+#[test]
+fn decode_animated_rejects_too_many_frames() {
+    // Cap frames at 1; a multi-frame GIF must trip the count cap on the
+    // second frame iteration BEFORE that frame is appended to the output.
+    let limits = image::Limits::default();
+    let result = super::decode_animated_with_limits_inner(
+        ANIMATED_GIF_BYTES,
+        image::ImageFormat::Gif,
+        limits,
+        /* max_frames */ 1,
+        /* max_total_pixels */ u64::MAX,
+    );
+    let err = result.err().expect("expected frame-count cap to fire");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("too many frames"),
+        "expected frame-count error, got: {msg}",
+    );
+}
+
+#[test]
+fn decode_animated_rejects_total_pixel_budget() {
+    // Cap total pixels at 1; the very first frame's pixel count exceeds the
+    // budget, so the helper bails before the frame Vec ever grows past 0
+    // entries (the iteration accumulates into total_pixels and then bails
+    // BEFORE pushing the frame; the empty-frames branch catches it).
+    let limits = image::Limits::default();
+    let result = super::decode_animated_with_limits_inner(
+        ANIMATED_WEBP_BYTES,
+        image::ImageFormat::WebP,
+        limits,
+        /* max_frames */ usize::MAX,
+        /* max_total_pixels */ 1,
+    );
+    assert!(result.is_err(), "expected total-pixel cap to fire");
+}
+
+#[test]
+fn decode_animated_constructs_bitmap_for_legitimate_input() {
+    // GIF roundtrip: production caps accept the existing fixture and return
+    // every frame the decoder yielded (regression check against item 4b
+    // accidentally truncating frame collection to one frame).
+    let frames = super::decode_animated_with_limits(ANIMATED_GIF_BYTES, image::ImageFormat::Gif)
+        .expect("legitimate animated GIF should decode");
+    assert!(
+        frames.len() > 1,
+        "fixture is animated; expected > 1 frame, got {}",
+        frames.len(),
+    );
+}
+
+#[test]
+fn decode_animated_constructs_bitmap_for_legitimate_webp() {
+    // Animated WebP roundtrip; same shape as the GIF roundtrip above.
+    let frames = super::decode_animated_with_limits(ANIMATED_WEBP_BYTES, image::ImageFormat::WebP)
+        .expect("legitimate animated WebP should decode");
+    assert!(
+        frames.len() > 1,
+        "fixture is animated; expected > 1 frame, got {}",
+        frames.len(),
+    );
+}

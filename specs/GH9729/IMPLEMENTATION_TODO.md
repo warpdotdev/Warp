@@ -67,7 +67,7 @@ The original 2a / 2c bullets are struck through and superseded.
        `tech.md` §321
 - [x] 4-tests-a. Static-raster + SVG decoder tests per `tech.md` §613
        (lines 640-642 and 647-652): 3 static + 6 SVG = 9 tests.
-- [ ] 4-tests-b. Animated decoder tests per `tech.md` §613 (lines 643-646):
+- [x] 4-tests-b. Animated decoder tests per `tech.md` §613 (lines 643-646):
        4 tests (frame-count, total-pixel, GIF roundtrip, WebP roundtrip).
        Split out because animated-WebP fixture synthesis is non-trivial.
 - [ ] 5a. Bound the `LocalFile` asset-cache read with content-keyed cap

@@ -348,6 +348,58 @@ fn decode_limits() -> image::Limits {
     limits
 }
 
+/// Inner animated-decode entry point that takes its decoder limits, frame
+/// count cap, and total-pixel cap as parameters. Lets unit tests exercise
+/// the rejection paths against modest fixtures with small caps without
+/// having to synthesize pathological animated WebPs at runtime. Production
+/// callers go through `decode_animated_with_limits` which threads the
+/// GH9729 production constants.
+fn decode_animated_with_limits_inner(
+    data: &[u8],
+    format: image::ImageFormat,
+    limits: image::Limits,
+    max_frames: usize,
+    max_total_pixels: u64,
+) -> anyhow::Result<Vec<image::Frame>> {
+    let mut frames = Vec::new();
+    let mut total_pixels: u64 = 0;
+
+    let frame_iter = match format {
+        image::ImageFormat::Gif => {
+            let mut dec = GifDecoder::new(std::io::Cursor::new(data))?;
+            dec.set_limits(limits)?;
+            dec.into_frames()
+        }
+        image::ImageFormat::WebP => {
+            let mut dec = WebPDecoder::new(std::io::Cursor::new(data))?;
+            dec.set_limits(limits)?;
+            dec.into_frames()
+        }
+        _ => {
+            anyhow::bail!("decode_animated_with_limits called with non-animated format")
+        }
+    };
+
+    for (i, frame) in frame_iter.enumerate() {
+        if i >= max_frames {
+            anyhow::bail!("animated image has too many frames");
+        }
+        let frame = frame?;
+        let buf = frame.buffer();
+        let pixels = (buf.width() as u64).saturating_mul(buf.height() as u64);
+        total_pixels = total_pixels.saturating_add(pixels);
+        if total_pixels > max_total_pixels {
+            anyhow::bail!("animated image exceeds total pixel budget");
+        }
+        frames.push(frame);
+    }
+
+    if frames.is_empty() {
+        anyhow::bail!("animated image has no frames");
+    }
+    Ok(frames)
+}
+
 /// Decode an animated image (GIF, animated WebP) under the GH9729 size
 /// envelope. Iterates frames and bails as soon as `MAX_ANIMATED_FRAMES`
 /// or `MAX_ANIMATED_TOTAL_PIXELS` is breached, before the pathological
@@ -362,43 +414,13 @@ fn decode_animated_with_limits(
     data: &[u8],
     format: image::ImageFormat,
 ) -> anyhow::Result<Vec<image::Frame>> {
-    let mut frames = Vec::new();
-    let mut total_pixels: u64 = 0;
-
-    let frame_iter = match format {
-        image::ImageFormat::Gif => {
-            let mut dec = GifDecoder::new(std::io::Cursor::new(data))?;
-            dec.set_limits(decode_limits())?;
-            dec.into_frames()
-        }
-        image::ImageFormat::WebP => {
-            let mut dec = WebPDecoder::new(std::io::Cursor::new(data))?;
-            dec.set_limits(decode_limits())?;
-            dec.into_frames()
-        }
-        _ => {
-            anyhow::bail!("decode_animated_with_limits called with non-animated format")
-        }
-    };
-
-    for (i, frame) in frame_iter.enumerate() {
-        if i >= MAX_ANIMATED_FRAMES {
-            anyhow::bail!("animated image has too many frames");
-        }
-        let frame = frame?;
-        let buf = frame.buffer();
-        let pixels = (buf.width() as u64).saturating_mul(buf.height() as u64);
-        total_pixels = total_pixels.saturating_add(pixels);
-        if total_pixels > MAX_ANIMATED_TOTAL_PIXELS {
-            anyhow::bail!("animated image exceeds total pixel budget");
-        }
-        frames.push(frame);
-    }
-
-    if frames.is_empty() {
-        anyhow::bail!("animated image has no frames");
-    }
-    Ok(frames)
+    decode_animated_with_limits_inner(
+        data,
+        format,
+        decode_limits(),
+        MAX_ANIMATED_FRAMES,
+        MAX_ANIMATED_TOTAL_PIXELS,
+    )
 }
 
 /// Inner static-decode entry point that takes its limits and pixel cap as
