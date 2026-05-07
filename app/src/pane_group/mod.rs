@@ -4627,6 +4627,17 @@ impl PaneGroup {
                     );
                 }
             }
+            // Case C (split-off, then swapped over): the child was a
+            // visible split-off sibling, then a sibling pill was clicked
+            // from the child's pill bar — `replace_pane(child, sibling,
+            // true)` recorded the child as the *original* of an active
+            // TempRepl. Cases A and B don't touch that entry, so drop
+            // any hidden-pane record naming this child as either side
+            // of a swap. Without this, a future revert of the surviving
+            // sibling would try to splice the (now off-tree) child back
+            // into the tree, leaving a leaf that points to a stale
+            // pane.
+            self.panes.remove_hidden_pane(pane_id);
             // The pane stays in `pane_contents` and `child_agent_panes`
             // — it just goes back to off-tree state.
 
@@ -6862,6 +6873,16 @@ impl PaneGroup {
                 );
             }
         }
+
+        // Drop any leftover hidden-pane entry naming the child. Covers
+        // the split-off-then-swapped-over case where the child sits in
+        // `hidden_panes` as the *original* of an active TempRepl (a
+        // sibling was swapped into the child's slot from its pill bar).
+        // The branches above don't clear that entry, and leaving it in
+        // place would let a future revert of the surviving sibling
+        // splice the (now-detached) child back into the tree, leaving
+        // a leaf that points to a pane this group no longer owns.
+        self.panes.remove_hidden_pane(child_pane_id);
 
         // Shift focus and active session away from the child pane if it
         // held either, regardless of which path took it out of the tree.

@@ -406,21 +406,6 @@ impl PaneData {
         })
     }
 
-    /// Returns the `(original_pane_id, replacement_pane_id)` of any active
-    /// `TemporaryReplacement` in this pane group's hidden-pane list, or
-    /// `None` if no swap is currently active. Used by the orchestration
-    /// split-off paths to revert any in-flight swap before re-arranging
-    /// the tree, regardless of which child is the current swap target.
-    pub fn any_temporary_replacement(&self) -> Option<(PaneId, PaneId)> {
-        self.hidden_panes.iter().find_map(|hidden_pane| {
-            if let HiddenPaneReason::TemporaryReplacement(replacement_id) = hidden_pane.reason {
-                Some((hidden_pane.pane_id, replacement_id))
-            } else {
-                None
-            }
-        })
-    }
-
     pub fn is_hidden_closed_pane(&self, pane_id: &PaneId) -> bool {
         self.hidden_panes
             .iter()
