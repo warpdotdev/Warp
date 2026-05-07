@@ -25,7 +25,7 @@ use super::{
 /// implementation.
 #[async_trait]
 pub(super) trait AnyServiceImpl: Send + Sync {
-    async fn handle_request(&self, request: &[u8]) -> Vec<u8>;
+    async fn handle_request(&self, request: &[u8]) -> std::result::Result<Vec<u8>, String>;
 
     fn clone_service(&self) -> Box<dyn AnyServiceImpl>;
 }
@@ -36,11 +36,16 @@ where
     S: Service,
     I: ServiceImpl<Service = S> + Clone + Sized,
 {
-    async fn handle_request(&self, request_bytes: &[u8]) -> Vec<u8> {
-        let request: S::Request =
-            bincode::deserialize(request_bytes).expect("Failed to deserialize request bytes.");
+    async fn handle_request(&self, request_bytes: &[u8]) -> std::result::Result<Vec<u8>, String> {
+        // The framing layer can hand us arbitrary bytes from any same-host
+        // peer that opened the socket. Failing to typed-deserialize those
+        // bytes is a peer-input error, not a programmer bug, so we surface
+        // it as a framework-level `Response::Failure` instead of panicking
+        // the connection task.
+        let request: S::Request = bincode::deserialize(request_bytes)
+            .map_err(|e| format!("failed to deserialize request: {e}"))?;
         bincode::serialize::<S::Response>(&I::handle_request(self, request).await)
-            .expect("Should be able to serialize response.")
+            .map_err(|e| format!("failed to serialize response: {e}"))
     }
 
     fn clone_service(&self) -> Box<dyn AnyServiceImpl> {
@@ -116,6 +121,7 @@ impl Connection {
 pub struct ServerBuilder {
     services: HashMap<ServiceId, Box<dyn AnyServiceImpl>>,
     fixed_connection_address: Option<ConnectionAddress>,
+    max_request_bytes: Option<usize>,
 }
 
 impl ServerBuilder {
@@ -128,6 +134,17 @@ impl ServerBuilder {
     /// Use a fixed address name instead of a randomly generated one.
     pub fn with_fixed_address(mut self, fixed_address: String) -> Self {
         self.fixed_connection_address = Some(ConnectionAddress::from(fixed_address));
+        self
+    }
+
+    /// Cap the size (in bytes) of inbound request frames. Frames whose
+    /// length header exceeds the cap are rejected by the framing layer
+    /// before any payload is read or deserialized, so an unauthenticated
+    /// peer cannot force a large allocation by lying about its size.
+    ///
+    /// Defaults to unbounded for callers that don't set it.
+    pub fn with_max_request_bytes(mut self, max_request_bytes: usize) -> Self {
+        self.max_request_bytes = Some(max_request_bytes);
         self
     }
 
@@ -147,6 +164,7 @@ impl ServerBuilder {
         Server::run(
             connection_address.clone(),
             self.services,
+            self.max_request_bytes,
             background_executor,
         )
         .map(|server| (server, connection_address))
@@ -171,6 +189,7 @@ impl Server {
     fn run(
         connection_address: ConnectionAddress,
         services: HashMap<ServiceId, Box<dyn AnyServiceImpl>>,
+        max_request_bytes: Option<usize>,
         background_executor: Arc<Background>,
     ) -> Result<Self> {
         let listener = ConnectionListener::new(connection_address)?;
@@ -188,6 +207,7 @@ impl Server {
             )),
             background_executor.spawn(Self::accept_new_connections(
                 services,
+                max_request_bytes,
                 new_connection_rx,
                 background_executor.clone(),
             )),
@@ -220,6 +240,7 @@ impl Server {
     /// for processing incoming request messages and outgoing response messages.
     async fn accept_new_connections(
         services: HashMap<ServiceId, Box<dyn AnyServiceImpl>>,
+        max_request_bytes: Option<usize>,
         new_connection_rx: Receiver<Connection>,
         background_executor: Arc<Background>,
     ) {
@@ -239,6 +260,7 @@ impl Server {
             tasks.push(background_executor.spawn(Self::handle_incoming_requests(
                 reader,
                 services.clone(),
+                max_request_bytes,
                 response_tx,
             )));
             tasks.push(
@@ -258,21 +280,22 @@ impl Server {
     async fn handle_incoming_requests(
         reader: impl AsyncRead + Unpin,
         services: HashMap<ServiceId, Box<dyn AnyServiceImpl>>,
+        max_request_bytes: Option<usize>,
         response_tx: Sender<Response>,
     ) {
         let mut reader = BufReader::new(reader);
         loop {
-            match receive_message(&mut reader).await {
+            match receive_message(&mut reader, max_request_bytes).await {
                 Ok(Request {
                     id,
                     service_id,
                     bytes,
                 }) => {
                     let response_message = match services.get(&service_id) {
-                        Some(service) => {
-                            let response_bytes = service.handle_request(&bytes[..]).await;
-                            Response::success(id, service_id, response_bytes)
-                        }
+                        Some(service) => match service.handle_request(&bytes[..]).await {
+                            Ok(response_bytes) => Response::success(id, service_id, response_bytes),
+                            Err(error_message) => Response::failure(id, error_message),
+                        },
                         None => {
                             Response::failure(id, format!("No such service (ID: {service_id})"))
                         }
@@ -288,11 +311,26 @@ impl Server {
                 Err(e) => {
                     match e {
                         ProtocolError::Serialization(e) => {
+                            // The framing layer already consumed the
+                            // announced payload, so the stream is aligned
+                            // for the next frame. Skip this frame and
+                            // continue serving the connection.
                             log::warn!("Failed to deserialize request: {e:?}");
                         }
                         ProtocolError::Disconnected(_) => {
                             // The socket is disconnected, so exit.
                             log::warn!("IPC server disconnected unexpectedly.");
+                            break;
+                        }
+                        ProtocolError::FrameTooLarge { announced, cap } => {
+                            // The announced bytes were never read off the
+                            // wire, so the stream is now misaligned —
+                            // continuing would let the unread payload be
+                            // re-interpreted as the next frame's header.
+                            // Close the connection.
+                            log::warn!(
+                                "IPC peer announced oversized frame ({announced}B > {cap}B cap); closing connection"
+                            );
                             break;
                         }
                         e => {

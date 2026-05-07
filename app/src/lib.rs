@@ -44,6 +44,8 @@ mod gpu_state;
 mod input_classifier;
 mod interval_timer;
 mod linear;
+#[cfg(unix)]
+mod local_api;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod login_item;
 mod menu;
@@ -322,6 +324,17 @@ use warpui::{AppContext, SingletonEntity, WindowId};
 pub struct Assets;
 
 pub static ASSETS: Assets = Assets;
+
+#[cfg(unix)]
+fn local_api_opt_in_enabled() -> bool {
+    let Ok(raw) = std::env::var("WARP_ENABLE_LOCAL_API") else {
+        return false;
+    };
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
 
 fn determine_agent_source(
     launch_mode: &LaunchMode,
@@ -1034,6 +1047,18 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         ctx.add_singleton_model(move |ctx| {
             plugin::PluginHost::new(ctx).expect("Could not instantiate PluginHost")
         });
+
+        // Local control API is opt-in: it exposes mutating operations
+        // (PTY writes, pane close) over a same-UID socket, so we keep it
+        // dormant by default and let the user/OS-integrator turn it on
+        // explicitly via a truthy `WARP_ENABLE_LOCAL_API` (1/true/yes/on).
+        // Anything else — including `0`, `false`, or empty — leaves it off.
+        // Unix-only — the IPC transport and 0600 permission model use UDS
+        // + chmod.
+        #[cfg(unix)]
+        if local_api_opt_in_enabled() {
+            ctx.add_singleton_model(local_api::LocalApiServer::new);
+        }
         let app_state = initialize_app(
             &launch_mode,
             timer,

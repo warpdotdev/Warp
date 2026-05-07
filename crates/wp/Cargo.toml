@@ -1,0 +1,19 @@
+[package]
+authors.workspace = true
+edition = "2021"
+license.workspace = true
+name = "wp"
+version = "0.1.0"
+publish.workspace = true
+
+[[bin]]
+name = "wp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive"] }
+futures.workspace = true
+ipc.workspace = true
+warp_local_api = { path = "../warp_local_api" }
+warpui = { workspace = true }
