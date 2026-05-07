@@ -50,6 +50,34 @@ Out of scope for this spec:
 
 ## Behavior
 
+### Motivating cases
+
+The bindings users actually care about in 2025 are dominated by
+external tools that ship `bindkey` / `bind` / `bind` snippets in their
+init scripts and overlay an interactive UI on top of the shell's line
+editor. The spec below is written so these work first; built-in widget
+mapping (`backward-kill-word` and friends) is a secondary success
+criterion. The driving examples:
+
+- **atuin** binds `Ctrl-R` (history search) and Up arrow to its own
+  zsh widget / bash `bind -x` command / fish function. Pressing the
+  bound key opens atuin's TUI, the user fuzzy-searches their history,
+  selects a command, atuin writes the result to the shell's
+  `$BUFFER` / `$READLINE_LINE` / fish `commandline` and exits. The
+  user is then back at the prompt with that command in the editor.
+- **fzf** binds `Ctrl-R` (history fuzzy-find), `Ctrl-T` (file
+  fuzzy-find), and `Alt-C` (directory fuzzy-cd) to similar shell
+  widgets that invoke the `fzf` binary as a TUI.
+- **zsh-vi-mode** (jeffreytse/zsh-vi-mode and similar) rebinds
+  large parts of the keymap and switches modes dynamically.
+- **Editor-launching macros** like the canonical
+  `bindkey '^X^E' edit-command-line` (open `$EDITOR` to edit the
+  current command).
+
+These bindings are user-defined shell-function widgets, not built-in
+ZLE / readline / fish input functions. The spec must honor them as a
+primary use case; "v1 ships without atuin/fzf" is not acceptable.
+
 ### Discovery and lifecycle
 
 1. When a Warp tab starts a supported shell (zsh, bash, fish), Warp queries
@@ -152,8 +180,31 @@ Out of scope for this spec:
    Plain `self-insert` (no string macro) inserts the literal key
    character at the cursor as expected.
 
-10. The full set of widgets / functions whose semantics Warp must honor when
-    bound includes, at minimum:
+10. Bindings fall into three categories that Warp handles differently;
+    the user does not need to think about which is which, but the spec
+    must be precise about each.
+
+    **Category A — built-in widgets** (the bound action is a well-known
+    ZLE / readline / fish input function — `backward-kill-word`,
+    `kill-line`, `up-history`, etc.). Warp translates these to its own
+    `InputAction` and executes them natively in its block-mode editor.
+    Fast, no shell roundtrip.
+
+    **Category B — string macros** (`bindkey -s` / readline string
+    bindings). Handled per #9: injected back through the input
+    pipeline so newlines submit and control characters trigger their
+    actions.
+
+    **Category C — external shell-function widgets** (the bound
+    action is a user-defined zsh widget declared via `zle -N`, a bash
+    `bind -x` shell command, or a fish function — including atuin's
+    `atuin-search`, fzf's `fzf-history-widget`, custom user widgets,
+    plugin-provided widgets, and `edit-command-line`). These are
+    honored via pass-through: see #11.5 for the user experience.
+
+    The full set of Category A widgets Warp must honor when bound
+    includes, at minimum:
+
     - Cursor motion: `forward-char`, `backward-char`, `forward-word`,
       `backward-word`, `beginning-of-line`, `end-of-line`,
       `beginning-of-buffer-or-history`, `end-of-buffer-or-history`.
@@ -183,30 +234,70 @@ Out of scope for this spec:
       from whichever key the user has bound them to. Behavior of the
       completion UI itself is unchanged by this spec.
 
-11. Widgets that have no Warp equivalent (examples: `quoted-insert` in some
-    edge cases, `redisplay`, `clear-screen` if Warp already binds it
-    differently, user-defined named widgets / functions whose body is shell
-    code) are handled as follows:
-    - If the widget has a documented behavior Warp can replicate cheaply,
-      Warp replicates it.
-    - Otherwise the keystroke falls through to Warp's default handling for
-      that key, and Warp emits a one-time-per-session diagnostic noting
-      the unsupported widget. The diagnostic uses the same redaction
-      policy as telemetry: the widget name is included verbatim only if
-      it is in the documented shell-vocabulary allowlist (the well-known
-      ZLE/readline/fish input function names enumerated in #10);
-      user-defined or otherwise unknown names are written as
-      `user-defined`. The bound key sequence is not included in the
-      diagnostic. Telemetry records unsupported-widget hits under the
-      same rule; user-defined or otherwise unknown widget names are reported as
-      the bucket `user-defined` with no further identifying information,
-      since user-defined widget names can be arbitrary or private. Key
-      contents, key sequences, and binding bodies are never recorded.
-    - **Open question:** for user-defined shell-function widgets (e.g. zsh
-      `zle -N my-widget; bindkey '^X' my-widget`), v1 treats these as
-      unsupported. A future iteration could forward the keystroke to the
-      shell to let it execute the widget. Confirm v1 = unsupported is
-      acceptable.
+11. Category A widgets that have no clean Warp equivalent (`redisplay`,
+    `quoted-insert` in edge cases, etc.) are handled as follows:
+
+    - If the widget has a documented behavior Warp can replicate
+      cheaply, Warp replicates it.
+    - Otherwise the keystroke falls through to Warp's default handling
+      for that key, and Warp emits a one-time-per-session diagnostic
+      noting the unsupported widget. The diagnostic uses the same
+      redaction policy as telemetry: widget name verbatim only when in
+      the documented shell-vocabulary allowlist; user-defined or
+      otherwise unknown names are written as `user-defined`. Key
+      sequences and binding bodies are never included.
+    - This rule does not apply to Category C (external shell-function
+      widgets) — those go through pass-through, never the
+      "unsupported" path.
+
+11.5. **External widget pass-through (Category C).** When a key is
+    bound to an external shell-function widget, pressing that key:
+
+    - Briefly hands input control to the shell. Warp's block-mode
+      input editor yields; the shell's line editor (ZLE / readline /
+      fish-line-editor) takes over the prompt with the user's
+      currently-typed buffer pre-populated as `$BUFFER` /
+      `$READLINE_LINE` / `commandline` and the cursor at the same
+      position the user had in Warp's editor.
+    - The widget runs natively. If it draws a TUI (atuin, fzf,
+      `edit-command-line` opening `$EDITOR`, etc.), the alt-screen
+      handling Warp already uses for `vim` / `less` / `htop` applies —
+      the widget gets full terminal control until it exits.
+    - When the widget exits, the new buffer state (whatever the
+      widget wrote into `$BUFFER` / `$READLINE_LINE` / `commandline`)
+      is synced back into Warp's input editor and the user is
+      returned to block-mode editing. The cursor position the widget
+      left behind is preserved.
+    - If the widget calls `accept-line` (i.e. submits the command
+      itself, as some atuin configurations do), Warp treats the
+      submission the same as if the user had pressed Enter in
+      block mode — the resulting command is run as a Warp block.
+    - The widget's stderr / stdout (anything it writes outside its
+      alt-screen) renders as terminal output, like any other
+      command. It does not appear in Warp's input editor.
+    - Cancellation: if the widget exits without writing to the
+      buffer (the user presses Esc inside atuin), Warp's editor
+      content is restored to whatever it was before the binding
+      fired. The user did not lose their in-progress typing.
+
+    **Failure modes.** If the shell errors during widget invocation
+    (the widget is undefined, the bound function exits non-zero, the
+    shell crashes), Warp restores the user's pre-invocation buffer
+    and surfaces a one-time diagnostic naming the widget. The
+    keystroke is not silently swallowed and the user is never left
+    with a dead prompt.
+
+    **Latency.** Pass-through introduces a small round-trip: typically
+    50–150 ms before the widget's TUI appears. This is not a hard
+    invariant but the spec calls it out so the implementation budgets
+    appropriately. atuin's own latency measured outside Warp is the
+    floor.
+
+    **Concurrent input.** Once Warp has yielded for the widget,
+    subsequent keystrokes reach the shell directly (this is what
+    makes atuin's UI navigable). Warp does not buffer or re-intercept
+    keystrokes during pass-through. Returning focus to Warp's
+    block-mode editor happens when the widget signals completion.
 
 12. `clear-screen` (typically `^L`) clears Warp's block list to the current
     prompt, matching the user's expectation from a real terminal — even if
@@ -343,10 +434,18 @@ Out of scope for this spec:
     read-only view of the bindings Warp has imported for the active tab —
     enough that a user debugging "why didn't my binding work" can see what
     Warp received from the shell and which entries Warp marked unsupported.
-    Format: a list of `key → action (status)` rows where status is one of
-    `honored`, `shadowed-by-warp-user`, `unsupported`. The exact UI is left
-    to the tech spec; the behavioral requirement is that the information is
-    discoverable without enabling debug logging.
+    Format: a list of `key → action (status)` rows where status is one
+    of `honored-builtin` (Category A — translated to a Warp action),
+    `honored-macro` (Category B — string macro re-injected per #9),
+    `honored-passthrough` (Category C — external widget routed through
+    pass-through per #11.5), `shadowed-by-warp-user` (a user-customized
+    Warp keybinding wins for this key), `reserved-by-warp` (one of the
+    structurally reserved keys from #14), or `unsupported` (Category A
+    widget Warp cannot replicate; user-defined-shell-function widgets
+    do not appear in this status — they are always
+    `honored-passthrough`). The exact UI is left to the tech spec; the
+    behavioral requirement is that the information is discoverable
+    without enabling debug logging.
 
 ### Performance and correctness invariants
 

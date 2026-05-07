@@ -341,10 +341,31 @@ distinguishes:
   per-macro-character limit prevents bind-cycle infinite loops; the
   input pipeline rejects further macro expansion once the limit is
   reached and emits a diagnostic).
-- `Action(InputAction)` — every other widget. The dispatcher fires the
-  mapped `InputAction` directly.
-- `Unsupported(name)` — returns a sentinel that tells the matcher to
-  fall through (PRODUCT #11, #16).
+- `Action(InputAction)` — every other Category A built-in widget. The
+  dispatcher fires the mapped `InputAction` directly.
+- `External(widget_name: String)` — Category C external shell-function
+  widgets (atuin, fzf, custom user widgets, plugin widgets,
+  `edit-command-line`, etc.). The dispatcher routes to the
+  pass-through path described in §6 below.
+- `Unsupported(name)` — Category A widgets without a Warp equivalent
+  only. Returns a sentinel that tells the matcher to fall through
+  (PRODUCT #11, #16). Category C widgets never land here.
+
+**Detection of External widgets** (the parser's job):
+
+- **zsh:** the widget name in `bindkey -L` output is matched against
+  the documented ZLE built-in widget list. Anything not in that list
+  is treated as `External(widget_name)`. The list is colocated in
+  `crates/warp_terminal/src/shell/bindings.rs` so it serves both the
+  parser and the redaction allowlist.
+- **bash:** `bind -p` lists readline-function bindings (Category A
+  candidates); `bind -X` lists `bind -x` shell-command bindings —
+  those are always `External("__bind_x_<key>")` (the bound shell
+  command is what runs).
+- **fish:** `bind` output's right-hand side is either a built-in fish
+  input function (well-known list) or a fish function name —
+  user-defined or plugin-defined. Anything not in the built-in list
+  is `External(function_name)`.
 
 ### 4. Keymap matcher integration
 
@@ -533,14 +554,165 @@ them).
     `crates/warp_terminal/src/shell/bindings.rs` so it is the same
     source of truth used by the parser.
   - `ShellBindkeysApplied { shell_type, honored_count,
-    unsupported_count }` once per tab on first apply.
+    unsupported_count, external_count }` once per tab on first apply.
+  - `ShellWidgetPassthroughInvoked { shell_type, widget_name,
+    completed_ok }` per pass-through invocation. `widget_name` is
+    redacted via the same allowlist policy.
+
+### 6. External widget pass-through dispatch
+
+Pass-through is the v1 mechanism for Category C widgets — atuin,
+fzf, zsh-vi-mode, `edit-command-line`, and any other user-defined
+shell-function widget. It composes existing Warp primitives rather
+than introducing new ones for keystroke routing or alt-screen
+handling; what is genuinely new is a **buffer-bearing app→shell
+trigger** and the **shell-side helper** that consumes it.
+
+**Composed primitives** (already exist; established by the explore
+of the codebase):
+
+- `Message::Input(bytes)` (`app/src/terminal/writeable_pty/message.rs`
+  ~line 4-22) writes raw bytes to the PTY. Today only used to send
+  fully-formed commands at Enter. Pass-through reuses it to deliver a
+  short shell command that triggers the helper.
+- `InputBuffer` DCS hook (`app/src/terminal/model/ansi/dcs_hooks.rs`)
+  + `send_input_buffer_to_terminal_editor()`
+  (`app/src/terminal/input.rs` ~line 2014-2022) already plumbs
+  shell→Warp buffer sync, currently used for vim-mode and `fc`-driven
+  external edits. Pass-through reuses both ends to receive the
+  widget's resulting buffer.
+- `enter_alt_screen()` / `exit_alt_screen()`
+  (`app/src/terminal/model/terminal_model.rs` ~line 2021-2090) auto
+  yields rendering when the widget's TUI sets DEC mode 1049. No
+  changes needed.
+
+**What's new:** one DCS variant in the app-to-shell direction (the
+first such — today everything is shell→app), one shell-side helper
+function per supported shell, and a small per-tab state machine that
+correlates "we triggered widget X" with "the new buffer arrived".
+
+#### Dispatch flow
+
+1. The matcher resolves a keystroke to a `ShellWidget::External(name)`
+   binding (§3 above).
+2. The terminal layer fires
+   `ModelEvent::ShellWidgetInvocationRequested { tab_id, widget_name,
+   buffer, cursor }`. Warp's input editor enters `PassthroughPending`
+   state for that tab — keystrokes are not intercepted; they pass
+   straight through to the PTY exactly as in alt-screen mode (the
+   existing `TerminalInputState::AltScreen` path is reused).
+3. Warp writes a single short command to the PTY (via
+   `Message::Input`) that invokes the shell-side helper:
+
+   ```
+   warp_invoke_widget <widget_name> <hex(buffer)> <cursor>\n
+   ```
+
+   This line is sent with `WARP_SUPPRESS_BLOCK=1` set (an env var
+   prefix already used by Warp for internal commands) so Warp's
+   block-list renderer does not draw a block for it. The helper
+   line is consumed by the shell as a normal command, but the
+   shell's `precmd` will report this block as suppressed and Warp
+   drops it from the visible scrollback.
+4. The shell-side helper (defined in each bootstrap script):
+
+   **zsh** (`bundled/bootstrap/zsh.sh`):
+
+   ```sh
+   warp_invoke_widget() {
+       local widget="$1" buf cursor="$3"
+       buf=$(printf '%b' "\\x$(echo "$2" | sed 's/../&\\x/g')")
+       BUFFER="$buf"
+       CURSOR="$cursor"
+       zle "$widget"           # runs natively; alt-screen if needed
+       local rc=$?
+       warp_report_input       # emits InputBuffer DCS w/ new BUFFER
+       warp_emit_widget_done "$widget" "$rc"
+       return $rc
+   }
+   ```
+
+   **bash** (`bundled/bootstrap/bash_body.sh`): bash can't invoke a
+   `bind -x` body programmatically the same way zsh does `zle`, so
+   the helper does the next best thing — sets `READLINE_LINE` /
+   `READLINE_POINT`, then sends the bound key on the input queue
+   via the readline `\C-r`-style trick documented in
+   `script/readline-invoke.sh` (TODO: implement). For
+   `bind -x`-bound keys we can directly `eval` the bound command
+   string after fetching it via `bind -X`.
+
+   **fish** (`bundled/bootstrap/fish.sh`): `commandline "$buffer"`
+   sets the input, then the helper invokes the bound function via
+   `eval $function_name`, then `commandline` reads back the result
+   and `warp_report_input` reports it.
+
+5. While the helper runs, the widget has full terminal control. If
+   it draws a TUI it switches to alt screen; Warp's existing
+   alt-screen handling renders it. If it just edits the line, the
+   shell's line editor handles redraw.
+6. On widget completion the shell sends a new `InputBuffer` DCS hook
+   carrying the resulting buffer + cursor. A new
+   `WidgetInvocationDone { tab_id, widget_name, exit_code }` DCS
+   hook is also sent so Warp knows pass-through is over.
+7. Warp consumes both: `send_input_buffer_to_terminal_editor`
+   populates the input editor with the new buffer; the tab leaves
+   `PassthroughPending` and re-enters block mode. If `exit_code !=
+   0`, Warp restores the pre-invocation buffer (cached at step 2)
+   and emits the failure diagnostic.
+
+#### Cancellation, timeout, and accept-line
+
+- **Cancel.** If the widget exits without writing a different buffer
+  (atuin Esc, fzf Ctrl-C), the helper still calls
+  `warp_report_input` with whatever the buffer is now; if it is
+  unchanged Warp's editor is restored to that exact state. The pre-
+  invocation buffer cached at step 2 is the safety net for crashes.
+- **Widget calls `accept-line`.** Some atuin configs submit
+  immediately. ZLE / readline / fish-line-editor all process
+  `accept-line` synchronously, so the helper returns *after* the
+  command has run; by the time `warp_report_input` fires, the new
+  buffer is empty and the user's selected command has already
+  produced output. Warp treats the resulting block (the command
+  output) as a normal block. The empty-buffer report leaves Warp's
+  editor empty — the right state for "command was run."
+- **Timeout.** If `WidgetInvocationDone` does not arrive within 60 s
+  Warp restores the pre-invocation buffer and exits
+  `PassthroughPending`. The keystrokes the user typed in the
+  meantime have gone to the shell (it's still in alt-screen or at
+  the prompt), so this is a recoverable state — the user can press
+  Esc to bail out of any TUI that's still up.
+- **Tab close mid-passthrough.** Standard tab-teardown: the PTY is
+  killed, `PassthroughPending` is dropped with the rest of the tab
+  state, no special handling.
+
+#### Trust boundary
+
+The new app→shell DCS direction (`WARP_SUPPRESS_BLOCK` + helper
+invocation) does not need a nonce going outbound — Warp owns the
+PTY write side; nothing else can. The shell-side helpers carry the
+existing `WARP_BOOTSTRAP_NONCE` (or fish tempfile equivalent) on the
+returned `InputBuffer` and `WidgetInvocationDone` payloads, same as
+every other shell→app DCS.
+
+#### What this does NOT require
+
+- No keystroke-by-keystroke forwarding. Once Warp has yielded for
+  the widget, the existing alt-screen path already routes
+  keystrokes to the PTY.
+- No new rendering mode. `TerminalInputState::AltScreen` already
+  handles "TUI takes over"; pass-through reuses it.
+- No new shell-detection plumbing. The helper is shell-typed via
+  the existing `Shell::shell_type`.
 
 ### Open questions carried from PRODUCT.md
 
-- **#11 (user-defined named widgets)** — v1 marks them `Unsupported` and
-  falls through. Forwarding the keystroke to the shell so it can run
-  the widget is feasible (write the key on the PTY) but introduces
-  ordering hazards with Warp's input editor; deferred.
+- **#11 (Category A widgets without Warp equivalent)** — v1 marks
+  them `Unsupported` and falls through to Warp's default. This open
+  question is now scoped to Category A only (`redisplay`,
+  `quoted-insert` edge cases, etc.). Category C external
+  shell-function widgets — atuin, fzf, custom user widgets,
+  `edit-command-line` — are honored via pass-through (§6) and never
+  land here.
 - **#13 (vi-mode signal)** — vi mode is tracked by an in-app state
   machine, not by polling the shell. Reading the shell's mode only at
   `precmd` would miss every transition that fires inside the input
@@ -631,9 +803,12 @@ Tests are organized to map to numbered PRODUCT invariants. Use
 - **Vi mode** — integration test that runs `bindkey -v`, switches to
   command mode, presses `gg`, asserts cursor at buffer start. Covers
   PRODUCT #13.
-- **Unsupported widget fallthrough** — integration test binding a key
-  to a user-defined named widget; assert Warp default fires on that
-  key and a telemetry event is recorded. Covers PRODUCT #11, #16.
+- **Category A unsupported fallthrough** — integration test binding
+  a key to a Category A widget Warp does not implement (e.g.
+  `redisplay`); assert Warp default fires on that key and a
+  telemetry event is recorded. Covers PRODUCT #11, #16. (Note:
+  user-defined shell-function widgets are tested separately under
+  the pass-through tests below — they do not fall through.)
 - **Conflict precedence with user Warp keybinding** — set a Warp
   keybinding for `^A`, also have shell `bindkey '^A' kill-whole-line`,
   assert Warp keybinding wins. Covers PRODUCT #14 #1.
@@ -650,15 +825,51 @@ Tests are organized to map to numbered PRODUCT invariants. Use
   query is issued from the toggle), and (b) the next `precmd` payload
   on each tab refreshes that table if anything changed. Covers PRODUCT
   #24.
-- **Manual** — run Warp against a developer's real zsh+oh-my-zsh
-  config, a real bash with a populated `~/.inputrc`, and a real fish
-  with `bind` declarations in `~/.config/fish/`. Capture a short loom
-  walkthrough showing each shell's bindings honored.
+- **External widget pass-through (atuin)** — integration test that
+  boots zsh with atuin installed (`eval "$(atuin init zsh)"`) and a
+  seeded history database, presses Ctrl-R from Warp's input editor
+  (with "kub" in the buffer), waits for atuin's TUI, types a search
+  refinement, presses Enter on a result, and asserts the selected
+  command lands in Warp's input editor and the buffer is the
+  expected text. Covers PRODUCT #11.5 happy path on zsh. Repeat for
+  bash (with `eval "$(atuin init bash)"`) and fish.
+- **External widget pass-through (fzf)** — same shape as the atuin
+  test: install fzf, source `key-bindings.zsh`/`key-bindings.bash`/
+  `key-bindings.fish`, press Ctrl-R, drive the TUI, assert the
+  command is in Warp's editor on exit. Repeat per shell. Covers
+  PRODUCT #11.5 with a different widget that uses a different TUI
+  binary.
+- **Pass-through cancel** — integration test pressing Ctrl-R for
+  atuin then Esc (cancel without selecting). Asserts (a) Warp's
+  input editor restored to the pre-invocation content, (b) no new
+  block in scrollback, (c) cursor at the same position the user
+  had pre-invocation. Covers PRODUCT #11.5 cancel path.
+- **Pass-through with widget calling `accept-line`** —
+  integration test where the widget submits the command directly
+  (an atuin config with `enter_accept = true`). Asserts the command
+  ran (block in scrollback), Warp's editor is empty, and the user
+  is at a fresh prompt. Covers PRODUCT #11.5 accept-line path.
+- **Pass-through timeout** — integration test that triggers a
+  pass-through then kills the shell-side helper before completion
+  (`pkill -STOP` to simulate a hang). Assert: after 60 s Warp
+  restores the pre-invocation buffer, exits `PassthroughPending`,
+  emits a diagnostic. Covers PRODUCT #11.5 failure mode.
+- **External widget detection** — unit test that
+  `crates/warp_terminal/src/shell/bindings.rs` correctly classifies
+  zsh `bindkey '^R' atuin-search` as `External("atuin-search")`,
+  bash `bind -X` output for atuin's `__atuin_history` as
+  `External(...)`, fish `bind \cr __atuin_search` as
+  `External("__atuin_search")`. Plus negative cases — built-ins
+  stay `Action(...)`.
+- **Manual** — run Warp against a developer's real zsh+oh-my-zsh +
+  atuin + fzf, a real bash with `~/.inputrc` + `bind -x` widgets +
+  atuin + fzf, and a real fish with `~/.config/fish/` bindings +
+  atuin + fzf. Capture a short loom walkthrough showing each
+  shell's bindings honored, including a real atuin search and a
+  real fzf history fuzzy-find.
 
 ## Follow-ups
 
-- Forward unsupported user-defined widgets back to the shell (PRODUCT
-  #11 follow-up).
 - Honor remote-shell bindings over SSH (PRODUCT #18).
 - Re-query on subshell transitions (PRODUCT #19).
 - Optional opt-in: honor shell bindings in the AI prompt input
