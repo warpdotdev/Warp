@@ -122,14 +122,19 @@ fn assert_remote_server_setup_ready(tab_idx: usize) -> AssertionCallback {
     Box::new(move |app, window_id| {
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
         terminal_view.read(app, |view, ctx| {
-            let Some(session_id) = view.active_block_session_id() else {
-                return AssertionOutcome::PreconditionFailed("No active session ID".into());
+            let session_id = view
+                .model
+                .lock()
+                .pending_session_id()
+                .or_else(|| view.active_block_session_id());
+            let Some(session_id) = session_id else {
+                return AssertionOutcome::failure("No pending or active session ID yet".into());
             };
             let sessions = view.sessions(ctx);
             let Some(state) = sessions.remote_server_setup_state(session_id) else {
-                return AssertionOutcome::PreconditionFailed(
-                    "No remote server setup state for session".into(),
-                );
+                return AssertionOutcome::failure(format!(
+                    "No remote server setup state for session {session_id:?} yet"
+                ));
             };
             async_assert!(
                 state.is_ready(),
