@@ -1881,5 +1881,5 @@ pub fn udi_icon_size(appearance: &Appearance, app: &AppContext) -> f32 {
 }
 
 #[cfg(test)]
-#[path = "display_chip_test.rs"]
+#[path = "display_chip_tests.rs"]
 mod tests;

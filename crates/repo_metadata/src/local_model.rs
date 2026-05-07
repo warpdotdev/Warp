@@ -1100,5 +1100,5 @@ impl LocalRepoMetadataModel {
 }
 
 #[cfg(test)]
-#[path = "local_model_test.rs"]
+#[path = "local_model_tests.rs"]
 mod tests;

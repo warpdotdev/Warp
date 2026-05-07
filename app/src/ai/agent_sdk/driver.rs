@@ -96,6 +96,7 @@ pub(crate) mod attachments;
 pub(crate) mod cloud_provider;
 pub(crate) mod environment;
 mod error_classification;
+pub(crate) mod git_credentials;
 pub(crate) mod harness;
 pub(super) mod output;
 mod snapshot;
@@ -1392,17 +1393,40 @@ impl AgentDriver {
             }
         }
 
-        // Run the harness with a prompt
+        let (task_id_for_refresh, ai_client_for_refresh) = foreground
+            .spawn(|me, ctx| {
+                let task_id = me.task_id.map(|id| id.to_string());
+                let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client().clone();
+                (task_id, ai_client)
+            })
+            .await?;
+
+        // Run the harness with a prompt, racing it against an infinite git-credentials
+        // refresh loop. The refresh future never resolves on its own — it is dropped
+        // automatically when `select!` resolves on the harness result.
         match task.harness {
             HarnessKind::Oz => {
-                let conversation_status = foreground
+                let status_rx = foreground
                     .spawn(move |me, ctx| me.execute_run(task.prompt, ctx))
-                    .await?
-                    .await
-                    .map_err(|_| {
+                    .await?;
+
+                let conversation_status = if let Some(task_id) = task_id_for_refresh {
+                    let refresh =
+                        git_credentials::refresh_loop(task_id, ai_client_for_refresh).fuse();
+                    futures::pin_mut!(refresh);
+                    futures::select! {
+                        result = status_rx.fuse() => result.map_err(|_| {
+                            log::error!("Subscription dropped before agent finished");
+                            AgentDriverError::InvalidRuntimeState
+                        })?,
+                        _ = refresh => unreachable!("git credentials refresh loop resolved unexpectedly"),
+                    }
+                } else {
+                    status_rx.await.map_err(|_| {
                         log::error!("Subscription dropped before agent finished");
                         AgentDriverError::InvalidRuntimeState
-                    })?;
+                    })?
+                };
 
                 // Pause before returning to make sure that all conversation events are transmitted before the session is closed.
                 // TODO: This is a bit of a bandaid fix, and it would be better if we explicitly waited for the session to end before terminating.
@@ -1418,7 +1442,20 @@ impl AgentDriver {
                 let harness_exit_rx = Self::setup_harness(harness.as_ref(), &foreground).await?;
                 let runner =
                     Self::prepare_harness(&task.prompt, harness.as_ref(), &foreground).await?;
-                Self::run_harness(runner, &foreground, harness_exit_rx).await
+
+                if let Some(task_id) = task_id_for_refresh {
+                    let harness_fut =
+                        Self::run_harness(runner, &foreground, harness_exit_rx).fuse();
+                    let refresh =
+                        git_credentials::refresh_loop(task_id, ai_client_for_refresh).fuse();
+                    futures::pin_mut!(harness_fut, refresh);
+                    futures::select! {
+                        result = harness_fut => result,
+                        _ = refresh => unreachable!("git credentials refresh loop resolved unexpectedly"),
+                    }
+                } else {
+                    Self::run_harness(runner, &foreground, harness_exit_rx).await
+                }
             }
             HarnessKind::Unsupported(harness) => Err(AgentDriverError::HarnessSetupFailed {
                 harness: harness.to_string(),

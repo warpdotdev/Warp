@@ -8,7 +8,6 @@ use crate::ai::agent::conversation::{
 };
 use crate::ai::blocklist::agent_view::agent_view_bg_fill;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
-use crate::ai::blocklist::agent_view::render_orchestration_breadcrumbs;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
 use crate::drive::sharing::ShareableObject;
@@ -41,8 +40,8 @@ use crate::workspace::tab_settings::TabSettings;
 use settings::Setting as _;
 use warp_core::context_flag::ContextFlag;
 use warpui::elements::{
-    ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize, ParentElement,
-    Shrinkable,
+    ConstrainedBox, CrossAxisAlignment, Empty, Flex, MainAxisAlignment, MainAxisSize,
+    ParentElement, Shrinkable,
 };
 use warpui::prelude::{ChildView, Container};
 use warpui::text_layout::ClipConfig;
@@ -280,27 +279,14 @@ impl TerminalView {
         header_ctx: &view::HeaderRenderContext,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        // When viewing a child agent under an orchestrator, replace the
-        // regular conversation title with a breadcrumb path: [Parent] / [Child].
-        // Clicking the parent crumb navigates the current pane back to the
-        // orchestrator (which then shows the pill bar again).
-        //
-        // Return the breadcrumbs element directly. `render_three_column_header`
-        // wraps the title in `Shrinkable + Clipped` which gives the inner
-        // breadcrumbs Flex (whose crumbs are themselves Shrinkable) a finite
-        // main-axis constraint. Wrapping it in our own `MainAxisSize::Min`
-        // Flex here would forward an infinite constraint and panic.
-        // Pass our persistent `parent_conversation_header_link` mouse state
-        // to the breadcrumb's parent crumb so hover and click events work
-        // (a fresh `MouseStateHandle::default()` per render would not).
-        if let Some(breadcrumbs) = render_orchestration_breadcrumbs(
-            self.agent_view_controller.as_ref(app),
-            self.mouse_states.parent_conversation_header_link.clone(),
-            self.mouse_states.breadcrumbs_horizontal_scroll.clone(),
-            app,
-        ) {
-            return breadcrumbs;
-        }
+        // V2 swap-panes semantics: every conversation in the orchestration
+        // tree (orchestrator + each child) gets the orchestration pill bar
+        // rendered above the agent view header, so the pane title here
+        // falls back to the regular conversation title. Breadcrumbs used
+        // to render here for split-off child views, but the swap-panes
+        // refactor removed the split-off code path — the pill bar is now
+        // shown on every view, so a breadcrumb row alongside it would
+        // double-render the same navigation affordance.
 
         let appearance = Appearance::as_ref(app);
         let pane_config = self.pane_configuration.as_ref(app);
@@ -522,7 +508,11 @@ impl TerminalView {
     ) -> Box<dyn Element> {
         // When `OrchestrationPillBar` is on, the pill bar takes the place of the
         // parent navigation card (the parent pill is the "back to parent" link)
-        // and is shown for the orchestrator and all its children.
+        // and is shown for the orchestrator and the swap-target child panes.
+        // Split-off panes ("Open in new pane" / "Open in new tab") instead
+        // render a parent→child breadcrumb row so the user has a clear way
+        // back to the orchestrator without rendering the full sibling pill
+        // list a second time alongside the orchestrator's own pill bar.
         if FeatureFlag::OrchestrationPillBar.is_enabled()
             && FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(app).is_fullscreen()
@@ -536,15 +526,26 @@ impl TerminalView {
             // title to the top of the row. Pinning the header to its
             // standard `PANE_HEADER_HEIGHT` here restores the finite
             // vertical constraint the centering logic relies on, while
-            // letting the pill bar sit immediately below at its own height.
+            // letting the pill bar / breadcrumb row sit immediately below
+            // at its own height.
             let pinned_header = ConstrainedBox::new(header)
                 .with_height(PANE_HEADER_HEIGHT)
                 .finish();
-            let pill_bar = ChildView::new(&self.orchestration_pill_bar).finish();
+            let secondary_row: Box<dyn Element> = if self.is_orchestration_split_off() {
+                crate::ai::blocklist::agent_view::render_orchestration_breadcrumbs(
+                    self.agent_view_controller.as_ref(app),
+                    self.mouse_states.parent_conversation_header_link.clone(),
+                    self.mouse_states.breadcrumbs_horizontal_scroll.clone(),
+                    app,
+                )
+                .unwrap_or_else(|| Empty::new().finish())
+            } else {
+                ChildView::new(&self.orchestration_pill_bar).finish()
+            };
             return Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_child(pinned_header)
-                .with_child(pill_bar)
+                .with_child(secondary_row)
                 .finish();
         }
 

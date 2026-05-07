@@ -269,3 +269,6 @@ fn format_for_copy_preserves_visual_markdown_sections() {
         "Intro\n![Diagram](./diagram.png)\n```mermaid\ngraph TD\nA --> B\n```"
     );
 }
+
+#[path = "suggestions_tests.rs"]
+mod suggestions;

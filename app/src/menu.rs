@@ -2730,5 +2730,5 @@ impl<A: Action + Clone> MenuItem<A> {
 }
 
 #[cfg(test)]
-#[path = "menu_test.rs"]
+#[path = "menu_tests.rs"]
 mod tests;

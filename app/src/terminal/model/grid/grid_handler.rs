@@ -89,7 +89,12 @@ const BG_SGR_PARAM: u8 = 48;
 
 lazy_static! {
     pub static ref FILE_LINK_SEPARATORS: HashSet<char> =
-        HashSet::from(['\0', '\t', ' ', '(', ')', ':', '\\', ',', '"', '\'', '[', ']', '{', '}', '<', '>', ';', '|', '`', '=']);
+        HashSet::from([
+            '\0', '\t', ' ', '(', ')', ':', '\\', ',', '"', '\'', '[', ']', '{', '}', '<', '>',
+            ';', '|', '`', '=',
+            // Box-drawing characters used by tree-style directory listers.
+            '│', '├', '└', '─', '┬', '┴', '┼', '║', '╠', '╚', '═', '╦', '╩', '╬',
+        ]);
 
     /// The set of characters where, if we encounter them, we have a high degree of confidence that
     /// we're not in a valid URL. Other characters (e.g. '%') might be used in such a way that they
@@ -2669,5 +2674,5 @@ impl Dimensions for GridHandler {
 }
 
 #[cfg(test)]
-#[path = "grid_handler_test.rs"]
+#[path = "grid_handler_tests.rs"]
 mod tests;
