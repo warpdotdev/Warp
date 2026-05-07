@@ -25,6 +25,7 @@ use std::{
 use bounded_vec_deque::BoundedVecDeque;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use unicode_general_category::{get_general_category, GeneralCategory};
 use unicode_width::UnicodeWidthChar;
 use urlocator::{UrlLocation, UrlLocator};
 use warp_core::features::FeatureFlag;
@@ -103,6 +104,35 @@ lazy_static! {
     static ref URL_SEPARATORS: HashSet<char> = HashSet::from([' ', '<', '>', '"', '{', '}', '|', '\\', '^', '`']);
 }
 
+/// Returns true when `c` should terminate a clickable file path.
+///
+/// Beyond the explicit set in [`FILE_LINK_SEPARATORS`] (ASCII punctuation
+/// plus the box-drawing glyphs used by tree-style listers), any non-ASCII
+/// Unicode whitespace or punctuation also acts as a boundary. This lets paths
+/// preceded by CJK / full-width punctuation such as `：` (U+FF1A) or `（`
+/// (U+FF08) be detected when no ASCII whitespace separates them. Connectors
+/// (`Pc`) and dashes (`Pd`) are excluded since they commonly appear inside
+/// identifiers and filenames.
+pub fn is_file_link_separator(c: char) -> bool {
+    if FILE_LINK_SEPARATORS.contains(&c) {
+        return true;
+    }
+    if c.is_ascii() {
+        return false;
+    }
+    if c.is_whitespace() {
+        return true;
+    }
+    matches!(
+        get_general_category(c),
+        GeneralCategory::OpenPunctuation
+            | GeneralCategory::ClosePunctuation
+            | GeneralCategory::InitialPunctuation
+            | GeneralCategory::FinalPunctuation
+            | GeneralCategory::OtherPunctuation
+    )
+}
+
 /// Represents a range of cells with information on their combined content and total
 /// cell width.
 #[derive(Debug, PartialEq, Eq)]
@@ -113,9 +143,7 @@ struct Fragment {
 
 impl Fragment {
     fn has_separator(&self) -> bool {
-        self.content
-            .chars()
-            .any(|c| FILE_LINK_SEPARATORS.contains(&c))
+        self.content.chars().any(is_file_link_separator)
     }
 }
 
@@ -1081,7 +1109,7 @@ impl GridHandler {
     /// Words are separated by the file link separators.
     pub fn fragment_boundary_at_point(&self, point: &Point) -> FragmentBoundary {
         fn is_at_boundary(cell: &Cell) -> bool {
-            FILE_LINK_SEPARATORS.contains(&cell.c)
+            is_file_link_separator(cell.c)
         }
 
         // Start by scanning backward.
@@ -1240,7 +1268,7 @@ impl GridHandler {
                 .content
                 .chars()
                 .next()
-                .map(|c| FILE_LINK_SEPARATORS.contains(&c))
+                .map(is_file_link_separator)
                 .unwrap_or(false),
             None => true,
         };
@@ -1420,7 +1448,7 @@ impl GridHandler {
             {
                 // If is a separator, we push the last fragment to the vector and push
                 // the separator as its own fragment.
-                if FILE_LINK_SEPARATORS.contains(&cell.c) {
+                if is_file_link_separator(cell.c) {
                     if !last_fragment.is_empty() {
                         let mut fragment_text = String::new();
                         mem::swap(&mut fragment_text, &mut last_fragment);
@@ -1436,7 +1464,7 @@ impl GridHandler {
 
                     fragments.push(Fragment {
                         content: cell.c.into(),
-                        total_cell_width: 1,
+                        total_cell_width: UnicodeWidthChar::width(cell.c).unwrap_or(1),
                     });
                 // Otherwise we append the current cell to the last fragment
                 } else {

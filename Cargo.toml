@@ -298,6 +298,7 @@ arborium = { version = "2", default-features = false, features = [
   "lang-vue",
   "lang-dockerfile",
 ] }
+unicode-general-category = "1.1.0"
 unicode-width = "0.1.12"
 uuid = { version = "1.1.2", features = ["v4", "serde", "js"] }
 vec1 = { version = "1.8.0", features = ["serde"] }
