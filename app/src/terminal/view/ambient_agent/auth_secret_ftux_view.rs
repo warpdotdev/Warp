@@ -167,14 +167,23 @@ impl AuthSecretFtuxView {
         });
 
         // When a new type is selected from the dropdown, enter creation mode.
-        ctx.subscribe_to_view(&ftux_dropdown, |me, _, event, ctx| {
-            if let FtuxDropdownEvent::NewTypeSelected {
+        // When the display label is clicked, keep the current form fields
+        // visible so the layout doesn't shift while the user browses options.
+        // The form is only replaced when a different type is selected, or
+        // cleared when an existing secret is picked.
+        ctx.subscribe_to_view(&ftux_dropdown, |me, _, event, ctx| match event {
+            FtuxDropdownEvent::NewTypeSelected {
                 harness,
                 type_index,
-            } = event
-            {
+            } => {
                 me.enter_creation_state(*harness, *type_index, ctx);
             }
+            FtuxDropdownEvent::DisplayLabelCleared => {
+                // Keep creation_state and field_editors intact so the form
+                // stays visible while the dropdown is re-opened.
+                ctx.notify();
+            }
+            _ => {}
         });
 
         // When auth secret creation succeeds, finalize the FTUX (set the new
@@ -200,8 +209,7 @@ impl AuthSecretFtuxView {
         // When the harness changes, reset any in-progress creation state.
         ctx.subscribe_to_model(&ambient_agent_model, |me, _, event, ctx| {
             if matches!(event, AmbientAgentViewModelEvent::HarnessSelected) {
-                me.creation_state = None;
-                me.field_editors.clear();
+                me.clear_creation_state(ctx);
                 ctx.notify();
             }
         });
@@ -251,6 +259,11 @@ impl AuthSecretFtuxView {
             secret_type_index: type_index,
             is_saving: false,
         });
+        // Show the selected type name in the dropdown so the user sees what
+        // was picked while the creation form fields are visible below.
+        self.ftux_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_display_label(Some(info.display_name.to_string()), ctx);
+        });
         ctx.notify();
     }
 
@@ -264,9 +277,7 @@ impl AuthSecretFtuxView {
         CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
             settings.mark_harness_auth_ftux_completed(harness, ctx);
         });
-        // Clear any in-progress creation state so re-entering the FTUX is clean.
-        self.creation_state = None;
-        self.field_editors.clear();
+        self.clear_creation_state(ctx);
         ctx.notify();
     }
 
@@ -337,6 +348,18 @@ impl AuthSecretFtuxView {
         });
     }
 
+    /// Resets creation state and clears the dropdown display text so re-entering
+    /// the FTUX starts with a fresh combobox.
+    fn clear_creation_state(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.creation_state.is_some() {
+            self.creation_state = None;
+            self.field_editors.clear();
+            self.ftux_dropdown.update(ctx, |dropdown, ctx| {
+                dropdown.set_display_label(None, ctx);
+            });
+        }
+    }
+
     fn handle_secret_created(
         &mut self,
         harness: Harness,
@@ -352,9 +375,7 @@ impl AuthSecretFtuxView {
         CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
             settings.mark_harness_auth_ftux_completed(harness, ctx);
         });
-        // Clear creation state so the next FTUX entry starts fresh.
-        self.creation_state = None;
-        self.field_editors.clear();
+        self.clear_creation_state(ctx);
         ctx.notify();
     }
 

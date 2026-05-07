@@ -14,8 +14,8 @@ use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
 use warpui::elements::{
     Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-    Empty, Expanded, Flex, MainAxisSize, OffsetPositioning, ParentAnchor, ParentElement as _,
-    ParentOffsetBounds, Radius, Stack, Text,
+    Empty, Expanded, Flex, Hoverable, MainAxisSize, MouseStateHandle, OffsetPositioning,
+    ParentAnchor, ParentElement as _, ParentOffsetBounds, Radius, Stack, Text,
 };
 use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
@@ -78,6 +78,8 @@ pub enum FtuxDropdownAction {
     SelectSecret(String),
     /// Select a new secret type by index into `auth_secret_types_for_harness()`.
     SelectNewType(usize),
+    /// Clear the display label and reopen the dropdown.
+    ClearDisplayLabel,
 }
 
 /// Events emitted to the parent [`AuthSecretFtuxView`].
@@ -90,6 +92,8 @@ pub enum FtuxDropdownEvent {
     Opened,
     /// The dropdown was closed.
     Closed,
+    /// The user clicked the display label to dismiss creation mode.
+    DisplayLabelCleared,
 }
 
 /// Full-width combobox for the FTUX auth secret selection flow.
@@ -101,6 +105,13 @@ pub struct AuthSecretFtuxDropdown {
     menu: ViewHandle<Menu<FtuxDropdownAction>>,
     is_menu_open: bool,
     ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
+    /// When set, the select container renders a static text label instead of
+    /// the search editor. Clicking the container clears the label and reopens
+    /// the dropdown. Used to show the selected "New {type}" name while the
+    /// creation form is visible.
+    display_label: Option<String>,
+    /// Mouse state for the select container when in label mode (hover + click).
+    label_mouse_state: MouseStateHandle,
 }
 
 impl AuthSecretFtuxDropdown {
@@ -189,6 +200,8 @@ impl AuthSecretFtuxDropdown {
             menu,
             is_menu_open: false,
             ambient_agent_model,
+            display_label: None,
+            label_mouse_state: MouseStateHandle::default(),
         };
         me.refresh_menu(ctx);
         // Auto-focus the editor and open the dropdown on construction so the
@@ -214,6 +227,28 @@ impl AuthSecretFtuxDropdown {
                 self.refresh_menu(ctx);
             }
             ctx.emit(FtuxDropdownEvent::Closed);
+        }
+        ctx.notify();
+    }
+
+    /// Sets or clears the static display label. When `Some`, the select
+    /// container shows a non-editable label and the dropdown is closed. When
+    /// `None`, the editor is restored and the dropdown reopens.
+    pub fn set_display_label(
+        &mut self,
+        label: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.display_label = label;
+        if self.display_label.is_some() {
+            self.set_menu_visibility(false, ctx);
+        } else {
+            self.search_editor.update(ctx, |editor, ctx| {
+                editor.system_clear_buffer(true, ctx);
+            });
+            self.search_query.clear();
+            self.refresh_menu(ctx);
+            self.set_menu_visibility(true, ctx);
         }
         ctx.notify();
     }
@@ -379,7 +414,7 @@ impl AuthSecretFtuxDropdown {
         .finish()
     }
 
-    /// Renders the select container: `[search_icon | editor | right_icon]`.
+    /// Renders the select container: `[search_icon | editor_or_label | right_icon]`.
     fn render_select_container(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
@@ -412,24 +447,53 @@ impl AuthSecretFtuxDropdown {
         .with_width(SELECT_ICON_SIZE)
         .finish();
 
-        let editor = Expanded::new(1., ChildView::new(&self.search_editor).finish()).finish();
+        // When a display label is set (creation mode), show a static text
+        // label instead of the interactive search editor.
+        let center: Box<dyn Element> = if let Some(label) = &self.display_label {
+            Expanded::new(
+                1.,
+                Text::new_inline(
+                    label.clone(),
+                    appearance.ui_font_family(),
+                    FONT_SIZE,
+                )
+                .with_color(theme.foreground().into())
+                .finish(),
+            )
+            .finish()
+        } else {
+            Expanded::new(1., ChildView::new(&self.search_editor).finish()).finish()
+        };
 
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(SELECT_GAP)
             .with_child(search_icon)
-            .with_child(editor)
+            .with_child(center)
             .with_child(right_icon_element)
             .finish();
 
-        Container::new(row)
+        let container = Container::new(row)
             .with_padding_left(SELECT_HORIZONTAL_PADDING)
             .with_padding_right(SELECT_HORIZONTAL_PADDING)
             .with_padding_top(SELECT_VERTICAL_PADDING)
             .with_padding_bottom(SELECT_VERTICAL_PADDING)
             .with_border(Border::all(1.).with_border_color(border_color))
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(SELECT_CORNER_RADIUS)))
-            .finish()
+            .finish();
+
+        // When in label mode, wrap in a Hoverable so clicking the container
+        // clears the label and reopens the dropdown.
+        if self.display_label.is_some() {
+            Hoverable::new(self.label_mouse_state.clone(), move |_| container)
+                .with_cursor(warpui::platform::Cursor::PointingHand)
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(FtuxDropdownAction::ClearDisplayLabel);
+                })
+                .finish()
+        } else {
+            container
+        }
     }
 
     /// Renders the helper text below the select, shown when the search query
@@ -482,6 +546,10 @@ impl TypedActionView for AuthSecretFtuxDropdown {
                     type_index: *type_index,
                 });
                 self.set_menu_visibility(false, ctx);
+            }
+            FtuxDropdownAction::ClearDisplayLabel => {
+                self.set_display_label(None, ctx);
+                ctx.emit(FtuxDropdownEvent::DisplayLabelCleared);
             }
         }
     }
