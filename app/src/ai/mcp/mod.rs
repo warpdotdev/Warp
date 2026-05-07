@@ -140,23 +140,6 @@ pub fn mcp_provider_from_file_path(file_path: &Path) -> Option<MCPProvider> {
     best.map(|(p, _)| p)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{mcp_provider_from_file_path, MCPProvider};
-
-    #[test]
-    fn mcp_provider_from_file_path_recognizes_warp_home_path() {
-        if let Some(warp_home_mcp_config_file_path) =
-            warp_core::paths::warp_home_mcp_config_file_path()
-        {
-            assert_eq!(
-                mcp_provider_from_file_path(&warp_home_mcp_config_file_path),
-                Some(MCPProvider::Warp)
-            );
-        }
-    }
-}
-
 pub mod gallery;
 pub use gallery::MCPGalleryManager;
 use warpui::{AppContext, SingletonEntity as _};
@@ -710,4 +693,5 @@ pub enum MCPServerUpdate {
 }
 
 #[cfg(test)]
-mod mod_test;
+#[path = "mod_tests.rs"]
+mod tests;
