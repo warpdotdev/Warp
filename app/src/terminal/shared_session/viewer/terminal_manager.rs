@@ -1001,12 +1001,15 @@ impl TerminalManager {
                     // sync reflects environment setup commands. Skip applying remote edits so
                     // the visible input isn't populated with setup-command text.
                     if FeatureFlag::CloudModeSetupV2.is_enabled()
-                        && is_cloud_agent_pre_first_exchange(
-                            view.ambient_agent_view_model(),
-                            view.agent_view_controller(),
-                            &view.model,
-                            ctx,
-                        )
+                        && {
+                            let model = view.model.lock();
+                            is_cloud_agent_pre_first_exchange(
+                                view.ambient_agent_view_model(),
+                                view.agent_view_controller(),
+                                &model,
+                                ctx,
+                            )
+                        }
                     {
                         return;
                     }
@@ -1317,10 +1320,11 @@ impl TerminalManager {
         // and ignore remote shell/ai mode toggles from session-sharing context sync.
         let is_pre_first_exchange = FeatureFlag::CloudModeSetupV2.is_enabled() && {
             let view_ref = view.as_ref(ctx);
+            let model = view_ref.model.lock();
             is_cloud_agent_pre_first_exchange(
                 view_ref.ambient_agent_view_model(),
                 view_ref.agent_view_controller(),
-                &view_ref.model,
+                &model,
                 ctx,
             )
         };

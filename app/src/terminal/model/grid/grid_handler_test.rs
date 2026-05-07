@@ -2205,3 +2205,110 @@ fn content_len_equals_len_when_no_trailing_blanks() {
     let expected = grid.grid_storage().max_cursor_point.row.0 + grid.history_size() + 1;
     assert_eq!(grid.content_len(), expected);
 }
+
+// ─── FullGridClearBehavior::Clear resize + scroll desync ─────────────
+
+#[test]
+fn test_full_grid_clear_resize_then_scroll_does_not_panic_on_row_iteration() {
+    // Regression test for issue with `FullGridClearBehavior`: make sure that
+    // when FullGridClearBehavior::Clear is active, resize_storage
+    // resizes the active GridStorage and the flat storage correctly.
+    // Before, we didn't set 'flat_storage.set_columns(), and subsequent scrolls pushed
+    // wider rows into the narrower flat storage, corrupting the index. Iterating
+    // those rows then panicked.
+    let old_cols = 10;
+    let new_cols = 20;
+    let num_rows = 3;
+
+    let mut grid =
+        GridHandler::new_for_test_with_scroll_limit(num_rows, old_cols, MAX_SCROLL_LIMIT);
+    grid.enable_full_grid_clear_behavior();
+
+    // Resize grid wider.
+    grid.resize(SizeInfo::new_without_font_metrics(num_rows, new_cols));
+
+    // Fill visible rows with new-width content and trigger a scroll so
+    // a wide row gets pushed into narrow flat storage.
+    for _ in 0..num_rows {
+        for c in "abcdefghijklmnopqrst".chars() {
+            grid.input(c);
+        }
+        grid.carriage_return();
+        grid.linefeed();
+    }
+
+    // Iterating flat storage rows should not panic.
+    for row_idx in 0..grid.flat_storage.total_rows() {
+        let _ = grid.flat_storage.rows_from(row_idx).next();
+    }
+}
+
+#[test]
+fn test_full_grid_clear_resize_narrower_then_scroll_does_not_panic() {
+    // Same scenario but resizing to a narrower width.
+    let old_cols = 20;
+    let new_cols = 10;
+    let num_rows = 3;
+
+    let mut grid =
+        GridHandler::new_for_test_with_scroll_limit(num_rows, old_cols, MAX_SCROLL_LIMIT);
+
+    // Fill grid with wide content before enabling Clear behavior.
+    for _ in 0..num_rows {
+        for c in "abcdefghijklmnopqrst".chars() {
+            grid.input(c);
+        }
+        grid.carriage_return();
+        grid.linefeed();
+    }
+
+    grid.enable_full_grid_clear_behavior();
+    grid.resize(SizeInfo::new_without_font_metrics(num_rows, new_cols));
+
+    // Trigger more scrolling with narrow content.
+    for _ in 0..num_rows {
+        for c in "abcdefghij".chars() {
+            grid.input(c);
+        }
+        grid.carriage_return();
+        grid.linefeed();
+    }
+
+    for row_idx in 0..grid.flat_storage.total_rows() {
+        let _ = grid.flat_storage.rows_from(row_idx).next();
+    }
+}
+
+#[test]
+fn test_full_grid_clear_resize_then_bounds_to_string_does_not_panic() {
+    // End-to-end repro via the same code path as block_snapshot:
+    // bounds_to_string → line_to_string → row() → RowIterator::next.
+    let old_cols = 10;
+    let new_cols = 20;
+    let num_rows = 3;
+
+    let mut grid =
+        GridHandler::new_for_test_with_scroll_limit(num_rows, old_cols, MAX_SCROLL_LIMIT);
+    grid.enable_full_grid_clear_behavior();
+    grid.resize(SizeInfo::new_without_font_metrics(num_rows, new_cols));
+
+    for _ in 0..num_rows {
+        for c in "abcdefghijklmnopqrst".chars() {
+            grid.input(c);
+        }
+        grid.carriage_return();
+        grid.linefeed();
+    }
+
+    let total = grid.total_rows();
+    if total > 0 {
+        let _ = grid.bounds_to_string(
+            Point::new(0, 0),
+            Point::new(total - 1, grid.columns().saturating_sub(1)),
+            false,
+            RespectObfuscatedSecrets::No,
+            false,
+            RespectDisplayedOutput::No,
+        );
+    }
+}

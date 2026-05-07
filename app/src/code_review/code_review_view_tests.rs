@@ -260,7 +260,7 @@ impl TestContext {
         let (window_id, _) = app.add_window(WindowStyle::NotStealFocus, |_| TestView);
         let state = create_loaded_state_with_editors(app, window_id, vec![(file_path, editor)]);
 
-        let diff_state_model = app.add_model(|ctx| DiffStateModel::new(None, ctx));
+        let diff_state_model = app.add_model(DiffStateModel::new_for_test);
 
         let working_directories_model = app.add_model(|_| WorkingDirectoriesModel::new());
         let code_review_comment_batch =

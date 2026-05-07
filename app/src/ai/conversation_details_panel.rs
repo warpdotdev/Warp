@@ -29,7 +29,7 @@ use warpui::{
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversation;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
-use crate::ai::agent_conversations_model::AgentRunDisplayStatus;
+use crate::ai::agent_conversations_model::{AgentConversationEntry, AgentRunDisplayStatus};
 use crate::ai::agent_management::details_action_buttons::{
     ActionButtonsConfig, AgentDetailsButtonEvent, ConversationActionButtonsRow,
 };
@@ -370,6 +370,97 @@ impl ConversationDetailsData {
         }
     }
 
+    pub fn from_agent_conversation_entry(
+        entry: &AgentConversationEntry,
+        task: Option<&AmbientAgentTask>,
+        open_action: Option<WorkspaceAction>,
+        copy_link_url: Option<String>,
+    ) -> Self {
+        let creator = entry
+            .display
+            .creator
+            .name
+            .clone()
+            .map(|name| CreatorInfo::new(name, None));
+        let created_at = Some(entry.display.created_at.with_timezone(&Local));
+        let source_prompt = entry.display.initial_query.clone();
+        let harness = entry.display.harness;
+
+        if let Some(task_id) = entry.identity.ambient_agent_task_id {
+            let error_message = task.and_then(|task| {
+                task.state
+                    .is_failure_like()
+                    .then(|| task.status_message.as_ref().map(|m| m.message.clone()))
+                    .flatten()
+            });
+            let credits = task.and_then(|task| {
+                task.active_run_execution().request_usage.and_then(|u| {
+                    Some(CreditsInfo::AmbientConversation {
+                        inference: u.inference_cost? as f32,
+                        compute: u.compute_cost? as f32,
+                    })
+                })
+            });
+            let skill_spec = task
+                .and_then(|task| task.agent_config_snapshot.as_ref())
+                .and_then(|config| config.skill_spec.as_ref())
+                .and_then(|spec_str| SkillSpec::from_str(spec_str).ok());
+
+            return ConversationDetailsData {
+                mode: PanelMode::Task {
+                    task_id: Some(task_id),
+                    directory: entry.display.working_directory.clone(),
+                    display_status: Some(entry.display.status.clone()),
+                    error_message,
+                    environment_id: entry.display.environment_id.clone(),
+                    conversation_id: entry
+                        .identity
+                        .server_conversation_token
+                        .as_ref()
+                        .map(|token| token.as_str().to_string()),
+                },
+                title: entry.display.title.clone(),
+                creator,
+                created_at,
+                credits,
+                run_time: task.and_then(AmbientAgentTask::run_time),
+                artifacts: entry.display.artifacts.clone(),
+                open_action,
+                source_prompt,
+                copy_link_url,
+                skill_spec,
+                harness,
+            };
+        }
+
+        ConversationDetailsData {
+            mode: PanelMode::Conversation {
+                directory: entry.display.working_directory.clone(),
+                server_conversation_id: entry
+                    .identity
+                    .server_conversation_token
+                    .as_ref()
+                    .map(|token| token.as_str().to_string()),
+                ai_conversation_id: entry.identity.local_conversation_id,
+                status: Some(entry.display.status.to_conversation_status()),
+            },
+            title: entry.display.title.clone(),
+            creator,
+            created_at,
+            credits: entry
+                .display
+                .request_usage
+                .map(CreditsInfo::LocalConversation),
+            run_time: None,
+            artifacts: entry.display.artifacts.clone(),
+            open_action,
+            source_prompt,
+            copy_link_url,
+            skill_spec: None,
+            harness,
+        }
+    }
+
     /// Minimal details data for when we only know the task id (e.g. shared sessions)
     /// but have not loaded the full `AmbientAgentTask` yet.
     pub fn from_task_id(task_id: AmbientAgentTaskId) -> Self {
@@ -397,6 +488,7 @@ impl ConversationDetailsData {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
     /// Used to populate the details panel from the management view, where we don't always have access
     /// to the full `AIConversation`.
     pub fn from_conversation_metadata(

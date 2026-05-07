@@ -310,6 +310,228 @@ fn run_id() -> crate::ai::ambient_agents::AmbientAgentTaskId {
     "550e8400-e29b-41d4-a716-446655440000".parse().unwrap()
 }
 
+fn transient_http_error() -> anyhow::Error {
+    use crate::server::server_api::presigned_upload::HttpStatusError;
+    anyhow::Error::new(HttpStatusError {
+        status: 429,
+        body: "Too Many Requests".to_string(),
+    })
+    .context("API request failed with status 429 Too Many Requests")
+}
+
+fn permanent_http_error() -> anyhow::Error {
+    use crate::server::server_api::presigned_upload::HttpStatusError;
+    anyhow::Error::new(HttpStatusError {
+        status: 403,
+        body: "Forbidden".to_string(),
+    })
+    .context("API request failed with status 403 Forbidden")
+}
+
+#[tokio::test]
+async fn poll_retries_transient_429_errors() {
+    use crate::server::retry_strategies::MAX_ATTEMPTS;
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+    let call_count = Arc::new(AtomicUsize::new(0));
+
+    mock.expect_spawn_agent().returning(|_| {
+        Ok(SpawnAgentResponse {
+            task_id: "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            run_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            at_capacity: false,
+        })
+    });
+
+    // First (MAX_ATTEMPTS - 1) calls return 429, then succeed.
+    mock.expect_get_ambient_agent_task().returning({
+        let call_count = call_count.clone();
+        move |_task_id| {
+            let idx = call_count.fetch_add(1, Ordering::SeqCst);
+            if idx < MAX_ATTEMPTS - 1 {
+                Err(transient_http_error())
+            } else {
+                Ok(task_with(AmbientAgentTaskState::Succeeded, None, None))
+            }
+        }
+    });
+
+    let ai_client = Arc::new(mock);
+    let request = crate::server::server_api::ai::SpawnAgentRequest {
+        prompt: "test".to_string(),
+        mode: crate::ai::agent::UserQueryMode::Normal,
+        config: None,
+        title: None,
+        team: None,
+        skill: None,
+        attachments: vec![],
+        interactive: None,
+        parent_run_id: None,
+        runtime_skills: vec![],
+        referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
+    };
+
+    let mut stream = Box::pin(spawn_task(request, ai_client, None));
+
+    // First event: TaskSpawned
+    let event = stream
+        .next()
+        .await
+        .expect("expected event")
+        .expect("expected ok");
+    assert!(matches!(event, AmbientAgentEvent::TaskSpawned { .. }));
+
+    // After retrying through the 429s, we should get a StateChanged(Succeeded)
+    let event = stream
+        .next()
+        .await
+        .expect("expected event")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::Succeeded,
+            ..
+        }
+    ));
+
+    // Stream should end (no more events)
+    assert!(stream.next().await.is_none());
+    // Verify we made MAX_ATTEMPTS calls ((MAX_ATTEMPTS - 1) failed + 1 succeeded)
+    assert_eq!(call_count.load(Ordering::SeqCst), MAX_ATTEMPTS);
+}
+
+#[tokio::test]
+async fn poll_fails_on_permanent_http_error() {
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+
+    mock.expect_spawn_agent().returning(|_| {
+        Ok(SpawnAgentResponse {
+            task_id: "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            run_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            at_capacity: false,
+        })
+    });
+
+    // Return a 403, which is not transient and should fail immediately.
+    mock.expect_get_ambient_agent_task()
+        .times(1)
+        .returning(|_task_id| Err(permanent_http_error()));
+
+    let ai_client = Arc::new(mock);
+    let request = crate::server::server_api::ai::SpawnAgentRequest {
+        prompt: "test".to_string(),
+        mode: crate::ai::agent::UserQueryMode::Normal,
+        config: None,
+        title: None,
+        team: None,
+        skill: None,
+        attachments: vec![],
+        interactive: None,
+        parent_run_id: None,
+        runtime_skills: vec![],
+        referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
+    };
+
+    let mut stream = Box::pin(spawn_task(request, ai_client, None));
+
+    // First event: TaskSpawned
+    let event = stream
+        .next()
+        .await
+        .expect("expected event")
+        .expect("expected ok");
+    assert!(matches!(event, AmbientAgentEvent::TaskSpawned { .. }));
+
+    // Next event should be an error (no retry for 403)
+    let err = stream
+        .next()
+        .await
+        .expect("expected error")
+        .expect_err("expected permanent error");
+    assert!(
+        err.to_string().contains("403"),
+        "error should mention 403: {err}"
+    );
+
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn poll_gives_up_after_max_transient_retries() {
+    use crate::server::retry_strategies::MAX_ATTEMPTS;
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+    let call_count = Arc::new(AtomicUsize::new(0));
+
+    mock.expect_spawn_agent().returning(|_| {
+        Ok(SpawnAgentResponse {
+            task_id: "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            run_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            at_capacity: false,
+        })
+    });
+
+    // Always return 429 - should give up after MAX_ATTEMPTS.
+    mock.expect_get_ambient_agent_task().returning({
+        let call_count = call_count.clone();
+        move |_task_id| {
+            call_count.fetch_add(1, Ordering::SeqCst);
+            Err(transient_http_error())
+        }
+    });
+
+    let ai_client = Arc::new(mock);
+    let request = crate::server::server_api::ai::SpawnAgentRequest {
+        prompt: "test".to_string(),
+        mode: crate::ai::agent::UserQueryMode::Normal,
+        config: None,
+        title: None,
+        team: None,
+        skill: None,
+        attachments: vec![],
+        interactive: None,
+        parent_run_id: None,
+        runtime_skills: vec![],
+        referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
+    };
+
+    let mut stream = Box::pin(spawn_task(request, ai_client, None));
+
+    // First event: TaskSpawned
+    let event = stream
+        .next()
+        .await
+        .expect("expected event")
+        .expect("expected ok");
+    assert!(matches!(event, AmbientAgentEvent::TaskSpawned { .. }));
+
+    // Should eventually fail after exhausting retries
+    let err = stream
+        .next()
+        .await
+        .expect("expected error")
+        .expect_err("expected error after max retries");
+    assert!(
+        err.to_string().contains("429"),
+        "error should mention 429: {err}"
+    );
+
+    assert!(stream.next().await.is_none());
+    // with_bounded_retry makes exactly MAX_ATTEMPTS calls before giving up.
+    assert_eq!(call_count.load(Ordering::SeqCst), MAX_ATTEMPTS);
+}
+
 #[tokio::test]
 async fn poll_stops_on_terminal_failure_like_state() {
     use futures::StreamExt;
