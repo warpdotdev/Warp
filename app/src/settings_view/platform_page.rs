@@ -315,6 +315,10 @@ struct APIKeyProperties {
 enum ApiKeyScope {
     Personal,
     Team,
+    /// Not yet constructed — the server doesn't distinguish agent-scoped keys
+    /// from team keys yet, but the create modal already supports the Agent
+    /// type and the render path needs this variant for display.
+    #[allow(dead_code)]
     Agent,
 }
 
