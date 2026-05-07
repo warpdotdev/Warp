@@ -3,8 +3,9 @@ use std::path::Path;
 
 use anyhow::{anyhow, Result};
 use warp_core::safe_warn;
+use warp_util::git::run_git_command;
 #[cfg(feature = "local_fs")]
-use warp_util::git::{run_git_command, run_git_command_with_env};
+use warp_util::git::run_git_command_with_env;
 
 #[cfg(test)]
 #[path = "git_tests.rs"]

@@ -14,7 +14,7 @@ use warp_util::standardized_path::StandardizedPath;
 use warpui::r#async::{BoxFuture, SpawnedFutureHandle};
 #[cfg(feature = "local_fs")]
 use warpui::SingletonEntity;
-use warpui::{Entity, ModelContext, ModelHandle, WeakModelHandle};
+use warpui::{Entity, ModelContext, ModelHandle};
 
 #[cfg(feature = "local_fs")]
 use crate::watcher::DirectoryWatcher;
@@ -86,6 +86,7 @@ pub struct Repository {
 pub(crate) struct TrackedRemoteRef {
     full_ref_name: String,
 }
+
 #[cfg(feature = "local_fs")]
 impl TrackedRemoteRef {
     pub(crate) fn from_full_ref_name(full_ref_name: impl Into<String>) -> Option<Self> {
@@ -241,38 +242,41 @@ impl Repository {
 
     #[cfg(feature = "local_fs")]
     pub(crate) fn refresh_tracked_remote_ref(
-        &self,
-        repository: WeakModelHandle<Repository>,
+        &mut self,
+        notify: bool,
         ctx: &mut ModelContext<Self>,
-    ) -> Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>> {
+    ) {
         let root_dir = self.root_dir().to_local_path_lossy();
-        let repository_spawner = ctx.spawner();
-        Some(Box::pin(async move {
-            let tracked_remote_ref = Repository::resolve_tracked_remote_ref(root_dir).await;
-            let _ = repository_spawner
-                .spawn(move |repository_model, ctx| {
-                    if !repository_model.update_tracked_remote_ref(tracked_remote_ref) {
-                        return;
-                    }
+        ctx.spawn(
+            Repository::resolve_tracked_remote_ref(root_dir),
+            move |repository, tracked_remote_ref, ctx| {
+                let tracked_remote_ref_changed =
+                    repository.update_tracked_remote_ref(tracked_remote_ref);
+                if notify && tracked_remote_ref_changed {
+                    repository.enqueue_remote_ref_update(ctx);
+                }
+            },
+        );
+    }
 
-                    let subscriber_ids = repository_model.get_subscriber_ids();
-                    let task_queue = repository_model.task_queue.clone();
-                    task_queue.update(ctx, |queue, ctx| {
-                        for subscriber_id in subscriber_ids {
-                            queue.enqueue_incremental_update(
-                                repository.clone(),
-                                subscriber_id,
-                                RepositoryUpdate {
-                                    remote_ref_updated: true,
-                                    ..Default::default()
-                                },
-                                ctx,
-                            );
-                        }
-                    });
-                })
-                .await;
-        }))
+    #[cfg(feature = "local_fs")]
+    fn enqueue_remote_ref_update(&mut self, ctx: &mut ModelContext<Self>) {
+        let repository_handle = ctx.handle();
+        let subscriber_ids = self.get_subscriber_ids();
+        let update = RepositoryUpdate {
+            remote_ref_updated: true,
+            ..Default::default()
+        };
+        self.task_queue.update(ctx, |queue, ctx| {
+            for subscriber_id in subscriber_ids {
+                queue.enqueue_incremental_update(
+                    repository_handle.clone(),
+                    subscriber_id,
+                    update.clone(),
+                    ctx,
+                );
+            }
+        });
     }
 
     #[cfg(feature = "local_fs")]
@@ -338,10 +342,10 @@ impl Repository {
 
         let self_handle = ctx.handle();
         self.task_queue.update(ctx, |queue, ctx| {
-            queue.enqueue_scan(self_handle.clone(), subscriber_id, ctx);
-            #[cfg(feature = "local_fs")]
-            queue.enqueue_tracked_remote_ref_refresh(self_handle, ctx);
+            queue.enqueue_scan(self_handle, subscriber_id, ctx);
         });
+        #[cfg(feature = "local_fs")]
+        self.refresh_tracked_remote_ref(false, ctx);
 
         StartWatching {
             subscriber_id,

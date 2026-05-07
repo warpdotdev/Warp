@@ -583,9 +583,6 @@ impl DirectoryWatcher {
         }
 
         self.processing_queue.update(ctx, |queue, ctx| {
-            for repo_handle in repos_to_refresh_tracked_remote_ref {
-                queue.enqueue_tracked_remote_ref_refresh(repo_handle.downgrade(), ctx);
-            }
             for (repo_handle, repo_update) in repo_updates {
                 let subscriber_ids = repo_handle.read(ctx, |repo, _| repo.get_subscriber_ids());
                 for subscriber_id in subscriber_ids {
@@ -598,6 +595,11 @@ impl DirectoryWatcher {
                 }
             }
         });
+        for repo_handle in repos_to_refresh_tracked_remote_ref {
+            repo_handle.update(ctx, |repo, ctx| {
+                repo.refresh_tracked_remote_ref(true, ctx);
+            });
+        }
     }
 }
 
@@ -718,10 +720,6 @@ enum Task {
         subscriber_id: SubscriberId,
         update: RepositoryUpdate,
     },
-    #[cfg(feature = "local_fs")]
-    RefreshTrackedRemoteRef {
-        repository: WeakModelHandle<Repository>,
-    },
 }
 
 impl Task {
@@ -755,14 +753,6 @@ impl Task {
                 } else {
                     None
                 }
-            }
-            #[cfg(feature = "local_fs")]
-            Task::RefreshTrackedRemoteRef { repository } => {
-                let repository_handle = repository.upgrade(ctx)?;
-                let weak_repository = repository_handle.downgrade();
-                repository_handle.update(ctx, |repository, ctx| {
-                    repository.refresh_tracked_remote_ref(weak_repository, ctx)
-                })
             }
         }
     }
@@ -849,15 +839,6 @@ impl TaskQueue {
             },
             ctx,
         );
-    }
-
-    #[cfg(feature = "local_fs")]
-    pub(crate) fn enqueue_tracked_remote_ref_refresh(
-        &mut self,
-        repository: WeakModelHandle<Repository>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.enqueue(Task::RefreshTrackedRemoteRef { repository }, ctx);
     }
 }
 
