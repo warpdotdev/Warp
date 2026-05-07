@@ -44,6 +44,7 @@ impl HandoffComposeState {
         self.selected_environment_id.as_ref()
     }
 
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn explicit_environment_id(&self) -> Option<SyncId> {
         self.has_explicit_environment_selection
             .then_some(self.selected_environment_id)

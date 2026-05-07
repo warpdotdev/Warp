@@ -112,9 +112,13 @@ use crate::ai::blocklist::agent_view::{
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, PendingCloudLaunch};
-use crate::ai::blocklist::{AttachmentType, PendingAttachment};
+use crate::ai::blocklist::AttachmentType;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::PendingAttachment;
 use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::server::server_api::ai::{AttachmentFileInfo, AttachmentInput};
+use crate::server::server_api::ai::AttachmentFileInfo;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::server::server_api::ai::AttachmentInput;
 use crate::terminal::view::ambient_agent::{
     HarnessSelector, HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
 };
@@ -3686,6 +3690,7 @@ impl Input {
     }
 
     /// Restores the `&` handoff compose draft after a workspace failure.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn restore_cloud_handoff_draft(
         &mut self,
         launch: PendingCloudLaunch,
@@ -3829,6 +3834,7 @@ impl Input {
         true
     }
 
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn collect_cloud_launch_attachments(
         &self,
         ctx: &mut ViewContext<Self>,
@@ -3899,6 +3905,7 @@ impl Input {
         }
     }
 
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn maybe_launch_cloud_handoff_request(&mut self, ctx: &mut ViewContext<Self>) -> bool {
         if !is_local_to_cloud_handoff_available()
             || self.prefix_mode(ctx) != InputPrefixMode::CloudHandoff
@@ -3934,6 +3941,11 @@ impl Input {
             explicit_environment_id,
         });
         true
+    }
+
+    #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+    fn maybe_launch_cloud_handoff_request(&mut self, _ctx: &mut ViewContext<Self>) -> bool {
+        false
     }
 
     /// Update the at button's disabled state based on whether AI context menu should render
@@ -12541,9 +12553,12 @@ impl Input {
                     return;
                 }
 
+                #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
                 let attachments = self
                     .collect_cloud_launch_attachments(ctx)
                     .request_attachments;
+                #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+                let attachments = vec![];
 
                 // For local-to-cloud handoff panes, gate the buffer clear on the
                 // async `derive_touched_workspace` derivation having completed and

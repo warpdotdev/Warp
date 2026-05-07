@@ -29,6 +29,7 @@ use crate::ai::agent_management::telemetry::AgentManagementTelemetryEvent;
 use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::PendingCloudLaunch;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
 use crate::cloud_object::model::persistence::CloudModel;

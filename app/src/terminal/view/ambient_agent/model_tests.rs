@@ -1,6 +1,7 @@
 use warpui::{App, EntityId};
 
 use super::*;
+use crate::ai::blocklist::handoff::HandoffLaunchAttachments;
 use crate::test_util::terminal::initialize_app_for_terminal_view;
 
 fn attachment() -> AttachmentInput {

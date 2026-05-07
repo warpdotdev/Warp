@@ -5735,7 +5735,7 @@ fn test_cloud_handoff_prefix_remains_text_when_handoff_flag_disabled() {
 
         input.read(&app, |input, ctx| {
             assert_eq!(input.buffer_text(ctx), CLOUD_HANDOFF_INPUT_PREFIX);
-            assert_eq!(input.current_prefix_mode(ctx), InputPrefixMode::None);
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::None);
             assert!(!input.handoff_compose_state.as_ref(ctx).is_active());
         });
     });
@@ -5759,10 +5759,7 @@ fn test_cloud_handoff_prefix_activates_when_handoff_flags_enabled() {
 
         input.read(&app, |input, ctx| {
             assert!(input.buffer_text(ctx).is_empty());
-            assert_eq!(
-                input.current_prefix_mode(ctx),
-                InputPrefixMode::CloudHandoff
-            );
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::CloudHandoff);
             assert!(input.handoff_compose_state.as_ref(ctx).is_active());
             app.read_model(input.ai_input_model(), |input_model, _| {
                 assert_eq!(input_model.input_type(), InputType::AI);
@@ -5800,10 +5797,7 @@ fn test_cloud_handoff_prefix_exits_only_when_backspacing_empty_input() {
 
         input.read(&app, |input, ctx| {
             assert!(input.buffer_text(ctx).is_empty());
-            assert_eq!(
-                input.current_prefix_mode(ctx),
-                InputPrefixMode::CloudHandoff
-            );
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::CloudHandoff);
             assert!(input.handoff_compose_state.as_ref(ctx).is_active());
         });
 
@@ -5815,7 +5809,7 @@ fn test_cloud_handoff_prefix_exits_only_when_backspacing_empty_input() {
 
         input.read(&app, |input, ctx| {
             assert!(input.buffer_text(ctx).is_empty());
-            assert_eq!(input.current_prefix_mode(ctx), InputPrefixMode::None);
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::None);
             assert!(!input.handoff_compose_state.as_ref(ctx).is_active());
         });
     });
@@ -5842,10 +5836,7 @@ fn test_cloud_handoff_prefix_keeps_shell_prefix_as_query_text() {
 
         input.read(&app, |input, ctx| {
             assert_eq!(input.buffer_text(ctx), super::TERMINAL_INPUT_PREFIX);
-            assert_eq!(
-                input.current_prefix_mode(ctx),
-                InputPrefixMode::CloudHandoff
-            );
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::CloudHandoff);
             assert!(input.handoff_compose_state.as_ref(ctx).is_active());
             app.read_model(input.ai_input_model(), |input_model, _| {
                 assert_eq!(input_model.input_type(), InputType::AI);
@@ -5869,24 +5860,23 @@ fn test_cloud_handoff_prefix_escape_exits_mode_preserving_prompt_text() {
 
         input.update(&mut app, |input, ctx| {
             input.user_insert(CLOUD_HANDOFF_INPUT_PREFIX, ctx);
+        });
+        input.update(&mut app, |input, ctx| {
             input.user_insert("fix tests", ctx);
         });
 
         input.read(&app, |input, ctx| {
             assert_eq!(input.buffer_text(ctx), "fix tests");
-            assert_eq!(
-                input.current_prefix_mode(ctx),
-                InputPrefixMode::CloudHandoff
-            );
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::CloudHandoff);
         });
 
         input.update(&mut app, |input, ctx| {
-            input.handle_escape(ctx);
+            input.editor_escape(ctx);
         });
 
         input.read(&app, |input, ctx| {
             assert_eq!(input.buffer_text(ctx), "fix tests");
-            assert_eq!(input.current_prefix_mode(ctx), InputPrefixMode::None);
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::None);
             assert!(!input.handoff_compose_state.as_ref(ctx).is_active());
         });
     });
@@ -5906,16 +5896,15 @@ fn test_cloud_handoff_prefix_ignores_terminal_input_mode_toggle() {
 
         input.update(&mut app, |input, ctx| {
             input.user_insert(CLOUD_HANDOFF_INPUT_PREFIX, ctx);
+        });
+        input.update(&mut app, |input, ctx| {
             input.user_insert("run tests", ctx);
             input.set_input_mode_terminal(true, ctx);
         });
 
         input.read(&app, |input, ctx| {
             assert_eq!(input.buffer_text(ctx), "run tests");
-            assert_eq!(
-                input.current_prefix_mode(ctx),
-                InputPrefixMode::CloudHandoff
-            );
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::CloudHandoff);
             assert!(input.handoff_compose_state.as_ref(ctx).is_active());
             app.read_model(input.ai_input_model(), |input_model, _| {
                 assert_eq!(input_model.input_type(), InputType::AI);
