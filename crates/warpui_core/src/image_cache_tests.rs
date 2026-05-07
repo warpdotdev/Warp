@@ -597,7 +597,10 @@ fn decode_static_rejects_dimensions_over_cap() {
         limits,
         super::MAX_DECODE_PIXELS,
     );
-    assert!(result.is_err(), "expected dimension cap to reject 200x100 PNG");
+    assert!(
+        result.is_err(),
+        "expected dimension cap to reject 200x100 PNG"
+    );
 }
 
 #[test]
@@ -614,7 +617,10 @@ fn decode_static_rejects_pixels_over_cap() {
         limits,
         /* max_pixels */ 10_000,
     );
-    assert!(result.is_err(), "expected pixel cap to reject 20k-pixel PNG");
+    assert!(
+        result.is_err(),
+        "expected pixel cap to reject 20k-pixel PNG"
+    );
 }
 
 #[test]
@@ -638,7 +644,9 @@ fn decode_svg_rejects_non_xml_prefix() {
 #[test]
 fn decode_svg_accepts_xml_prelude_with_bom_and_whitespace() {
     let mut buf: Vec<u8> = vec![0xEF, 0xBB, 0xBF]; // UTF-8 BOM
-    buf.extend_from_slice(b"\n  <?xml version=\"1.0\"?><svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+    buf.extend_from_slice(
+        b"\n  <?xml version=\"1.0\"?><svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+    );
     assert!(super::looks_like_svg_xml(&buf));
 }
 
@@ -671,7 +679,8 @@ fn decode_svg_rejects_intrinsic_dimensions_over_cap() {
     // Tiny byte payload but declares 200000 x 200000 - the renderer would
     // OOM trying to materialize this. The intrinsic-dimension cap fires
     // after `usvg::Tree::from_data` returns and before any rasterization.
-    let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200000\" height=\"200000\"><g/></svg>";
+    let svg =
+        b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200000\" height=\"200000\"><g/></svg>";
     let result = super::ImageType::try_from_bytes(svg);
     assert!(
         result.is_err(),
@@ -683,8 +692,7 @@ fn decode_svg_rejects_intrinsic_dimensions_over_cap() {
 // Reuses the existing animated.webp and numbers-1000ms.gif fixtures that
 // the asset-loading tests above already include via the `Assets` impl.
 
-const ANIMATED_GIF_BYTES: &[u8] =
-    include_bytes!("../../warpui/examples/assets/numbers-1000ms.gif");
+const ANIMATED_GIF_BYTES: &[u8] = include_bytes!("../../warpui/examples/assets/numbers-1000ms.gif");
 const ANIMATED_WEBP_BYTES: &[u8] = include_bytes!("../test_data/animated.webp");
 
 #[test]

@@ -311,8 +311,7 @@ mod tests {
             "io error: failed to read /home/secret/path/to/image.png: permission denied"
         );
         let state: AssetState<ImageType> = AssetState::FailedToLoad(Rc::new(err));
-        let rewritten =
-            rewrite_image_for_load_state(&state).expect("FailedToLoad must rewrite");
+        let rewritten = rewrite_image_for_load_state(&state).expect("FailedToLoad must rewrite");
         match rewritten {
             lightbox::LightboxImageSource::Error { message } => {
                 assert_eq!(
@@ -341,8 +340,7 @@ mod tests {
         let state: AssetState<ImageType> = AssetState::Loaded {
             data: Rc::new(ImageType::Unrecognized),
         };
-        let rewritten =
-            rewrite_image_for_load_state(&state).expect("Unrecognized must rewrite");
+        let rewritten = rewrite_image_for_load_state(&state).expect("Unrecognized must rewrite");
         match rewritten {
             lightbox::LightboxImageSource::Error { message } => {
                 assert_eq!(message, "could not detect image format");
@@ -354,7 +352,10 @@ mod tests {
     #[test]
     fn sanitize_load_error_picks_too_large_category() {
         let err = anyhow::anyhow!("local asset exceeds size cap");
-        assert_eq!(super::sanitize_load_error(&err), "image is too large to preview");
+        assert_eq!(
+            super::sanitize_load_error(&err),
+            "image is too large to preview"
+        );
     }
 
     #[test]

@@ -3078,7 +3078,9 @@ fn image_preview_arm_dispatches_resolved_when_under_size_cap() {
         .write_all(&[0u8; 1024])
         .unwrap();
 
-    let entry = super::build_image_preview_entry(&path, /* max_bytes */ 4096, /* max_message_len */ 256);
+    let entry = super::build_image_preview_entry(
+        &path, /* max_bytes */ 4096, /* max_message_len */ 256,
+    );
 
     match entry.source {
         ui_components::lightbox::LightboxImageSource::Resolved {
@@ -3105,7 +3107,9 @@ fn image_preview_arm_dispatches_error_when_over_size_cap() {
         .write_all(&[0u8; 200])
         .unwrap();
 
-    let entry = super::build_image_preview_entry(&path, /* max_bytes */ 100, /* max_message_len */ 256);
+    let entry = super::build_image_preview_entry(
+        &path, /* max_bytes */ 100, /* max_message_len */ 256,
+    );
 
     match entry.source {
         ui_components::lightbox::LightboxImageSource::Error { message } => {
@@ -3123,7 +3127,9 @@ fn image_preview_arm_dispatches_error_when_metadata_fails() {
     // Path under a real temp dir but the file is never created.
     let path = dir.path().join("does_not_exist.png");
 
-    let entry = super::build_image_preview_entry(&path, /* max_bytes */ 4096, /* max_message_len */ 256);
+    let entry = super::build_image_preview_entry(
+        &path, /* max_bytes */ 4096, /* max_message_len */ 256,
+    );
 
     match entry.source {
         ui_components::lightbox::LightboxImageSource::Error { message } => {

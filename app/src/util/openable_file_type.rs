@@ -339,8 +339,7 @@ mod tests {
         // `prefer_markdown_viewer` and `editor_choice`. We sweep both casings
         // and a representative cross-product of the orthogonal flags.
         let extensions = [
-            "png", "PNG", "jpg", "JPG", "jpeg", "JPEG", "gif", "GIF", "webp", "WEBP", "svg",
-            "SVG",
+            "png", "PNG", "jpg", "JPG", "jpeg", "JPEG", "gif", "GIF", "webp", "WEBP", "svg", "SVG",
         ];
         let editor_choices = [
             EditorChoice::Warp,

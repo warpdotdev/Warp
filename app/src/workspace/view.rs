@@ -167,8 +167,6 @@ use super::lightbox_view::{LightboxParams, LightboxView, LightboxViewEvent};
 use super::util;
 use super::WorkspaceRegistry;
 // GH9729: image-preview Lightbox dispatch (see specs/GH9729/tech.md §119).
-use ui_components::lightbox::{LightboxImage, LightboxImageSource};
-use warpui::assets::asset_cache::AssetSource;
 use crate::ai::execution_profiles::editor::ExecutionProfileEditorManager;
 use crate::ai::execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId};
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
@@ -211,6 +209,8 @@ use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::ligature_settings::should_use_ligature_rendering;
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::ui_components::avatar::{Avatar, AvatarContent, StatusElementTypes};
+use ui_components::lightbox::{LightboxImage, LightboxImageSource};
+use warpui::assets::asset_cache::AssetSource;
 
 #[cfg(target_family = "wasm")]
 use crate::ai::agent_conversations_model::AgentConversationsModelEvent;
@@ -5919,11 +5919,8 @@ impl Workspace {
                 // See specs/GH9729/tech.md §119. Construction of the entry lives
                 // in `build_image_preview_entry` so it can be unit-tested without
                 // a `ViewContext`.
-                let image = build_image_preview_entry(
-                    &path,
-                    MAX_PREVIEW_FILE_BYTES,
-                    MAX_ERROR_MESSAGE_LEN,
-                );
+                let image =
+                    build_image_preview_entry(&path, MAX_PREVIEW_FILE_BYTES, MAX_ERROR_MESSAGE_LEN);
                 ctx.dispatch_typed_action(&WorkspaceAction::OpenLightbox {
                     images: vec![image],
                     initial_index: 0,
@@ -24632,24 +24629,15 @@ const MAX_ERROR_MESSAGE_LEN: usize = 256;
 ///
 /// `metadata` follows symlinks, and `is_file()` rejects sym-resolved
 /// character devices, FIFOs, sockets, and directories.
-fn build_image_preview_entry(
-    path: &Path,
-    max_bytes: u64,
-    max_message_len: usize,
-) -> LightboxImage {
-    let filename = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned());
+fn build_image_preview_entry(path: &Path, max_bytes: u64, max_message_len: usize) -> LightboxImage {
+    let filename = path.file_name().map(|n| n.to_string_lossy().into_owned());
 
     let size_check: Result<(), &'static str> = match std::fs::metadata(path) {
         Ok(meta) if !meta.is_file() => Err("not a regular file"),
         Ok(meta) if meta.len() > max_bytes => Err("image is too large to preview"),
         Ok(_) => Ok(()),
         Err(err) => {
-            log::warn!(
-                "GH9729: could not stat image preview path: {}",
-                err
-            );
+            log::warn!("GH9729: could not stat image preview path: {}", err);
             Err("could not read image")
         }
     };
