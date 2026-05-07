@@ -5911,6 +5911,13 @@ impl Workspace {
             FileTarget::SystemGeneric => {
                 ctx.open_file_path(&path);
             }
+            FileTarget::ImagePreview => {
+                // Wired up in GH9729 implementation TODO item 2b
+                // (`Workspace::open_file_with_target` arm dispatching `OpenLightbox`).
+                // Until then no resolver produces this variant — see TODO 1b — so this
+                // arm is unreachable in practice; the explicit no-op keeps `match`
+                // exhaustive.
+            }
         }
     }
 

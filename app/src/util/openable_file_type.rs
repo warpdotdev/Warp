@@ -45,6 +45,11 @@ pub enum FileTarget {
     MarkdownViewer(EditorLayout),
     /// Open in Warp's Code Editor.
     CodeEditor(EditorLayout),
+    /// Open in Warp's image-preview Lightbox overlay.
+    ///
+    /// Unit variant; no `EditorLayout` payload because the Lightbox is an
+    /// overlay over the active pane rather than a pane itself.
+    ImagePreview,
     /// Open in an external editor (e.g. VS Code, Emacs).
     #[cfg(feature = "local_fs")]
     ExternalEditor(Editor),
