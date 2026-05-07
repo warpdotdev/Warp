@@ -113,7 +113,7 @@ Notes are written to `specs/GH9729/reviews/<item>-r<N>.md`.
 
 | # | Item | Commit | R1 | R2 |
 |---|------|--------|----|----|
-| 1a | `FileTarget::ImagePreview` variant | `fa5336b` | [ ] | [ ] |
+| 1a | `FileTarget::ImagePreview` variant | `fa5336b` | [x] | [x] |
 | 1b | resolver short-circuit | `c15c1be` | [ ] | [ ] |
 | 1c | resolver unit tests | `256d31d` | [ ] | [ ] |
 | 3a | `LightboxImageSource::Error` variant | `c0b5a7c` | [ ] | [ ] |
