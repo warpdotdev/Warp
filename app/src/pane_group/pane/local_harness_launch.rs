@@ -1,7 +1,5 @@
 use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::Arc};
 
-use warp_managed_secrets::ManagedSecretValue;
-
 use crate::ai::{
     agent_sdk::{
         driver::{
@@ -118,16 +116,9 @@ pub(super) async fn prepare_local_harness_child_launch(
             // but there are no Warp-managed secrets to materialize into the
             // hidden child pane.
             let empty_env_vars = HashMap::new();
-            let managed_secrets: HashMap<String, ManagedSecretValue> = HashMap::new();
             let empty_mcp_servers = HashMap::new();
             third_party_harness
-                .prepare_environment_config(
-                    &working_dir,
-                    None,
-                    &empty_env_vars,
-                    &managed_secrets,
-                    &empty_mcp_servers,
-                )
+                .prepare_environment_config(&working_dir, None, &empty_env_vars, &empty_mcp_servers)
                 .map_err(|error: AgentDriverError| error.to_string())?;
             if let Some(manager) = plugin_manager_for(third_party_harness.cli_agent()) {
                 if let Err(error) = manager.install().await {

@@ -164,7 +164,7 @@ fn serialize_claude_mcp_config_sse_server() {
     let json = serialize_claude_mcp_config(&servers).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     let server = &parsed["mcpServers"]["remote"];
-    assert_eq!(server["type"], "sse");
+    assert_eq!(server["type"], "http");
     assert_eq!(server["url"], "https://mcp.example.com");
     assert_eq!(server["headers"]["Authorization"], "Bearer tok");
 }
@@ -631,16 +631,11 @@ fn prepare_claude_config_none_suffix_preserves_existing_responses() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_suffix_from_raw_value_secret() {
+fn resolve_suffix_from_resolved_env_vars() {
     std::env::remove_var(ANTHROPIC_API_KEY_ENV);
     let key = "sk-ant-api03-abcdefghij1234567890ABCDEFGHIJ1234567890abcdefghij1234567890QLWn-dUnuwQ-hIhDiAAA";
-    let secrets = HashMap::from([(
-        "ANTHROPIC_API_KEY".to_string(),
-        ManagedSecretValue::RawValue {
-            value: key.to_string(),
-        },
-    )]);
-    let suffix = resolve_anthropic_api_key_suffix(&secrets);
+    let resolved = HashMap::from([(OsString::from("ANTHROPIC_API_KEY"), OsString::from(key))]);
+    let suffix = resolve_anthropic_api_key_suffix(&resolved);
     assert_eq!(suffix.as_deref(), Some("QLWn-dUnuwQ-hIhDiAAA"));
 }
 
@@ -648,13 +643,8 @@ fn resolve_suffix_from_raw_value_secret() {
 #[serial_test::serial]
 fn resolve_suffix_returns_none_for_short_key() {
     std::env::remove_var(ANTHROPIC_API_KEY_ENV);
-    let secrets = HashMap::from([(
-        "ANTHROPIC_API_KEY".to_string(),
-        ManagedSecretValue::RawValue {
-            value: "short".to_string(),
-        },
-    )]);
-    assert_eq!(resolve_anthropic_api_key_suffix(&secrets), None);
+    let resolved = HashMap::from([(OsString::from("ANTHROPIC_API_KEY"), OsString::from("short"))]);
+    assert_eq!(resolve_anthropic_api_key_suffix(&resolved), None);
 }
 
 #[test]
@@ -749,15 +739,14 @@ fn prepare_local_wake_command_rehydrates_transcript_with_self_managed_listener()
 fn suffix_uses_worker_injected_env_when_present() {
     let worker_key = "sk-ant-api03-WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW-worker-suffix!";
     std::env::set_var(ANTHROPIC_API_KEY_ENV, worker_key);
-    // Even when the secrets map has a different value, the env var wins.
-    let secrets = HashMap::from([(
-        "ANTHROPIC_API_KEY".to_string(),
-        ManagedSecretValue::RawValue {
-            value: "sk-ant-api03-RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR-resolved-val!"
-                .to_string(),
-        },
+    // Even when the resolved map has a different value, the worker env wins.
+    let resolved = HashMap::from([(
+        OsString::from("ANTHROPIC_API_KEY"),
+        OsString::from(
+            "sk-ant-api03-RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR-resolved-val!",
+        ),
     )]);
-    let suffix = resolve_anthropic_api_key_suffix(&secrets);
+    let suffix = resolve_anthropic_api_key_suffix(&resolved);
     let expected = &worker_key[worker_key.len() - 20..];
     assert_eq!(suffix.as_deref(), Some(expected));
     std::env::remove_var(ANTHROPIC_API_KEY_ENV);

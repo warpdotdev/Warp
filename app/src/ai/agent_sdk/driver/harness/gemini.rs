@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
 use warp_cli::agent::Harness;
-use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner};
 
 use crate::ai::agent::conversation::AIConversationId;
@@ -55,7 +54,6 @@ impl ThirdPartyHarness for GeminiHarness {
         working_dir: &Path,
         system_prompt: Option<&str>,
         _resolved_env_vars: &HashMap<OsString, OsString>,
-        _secrets: &HashMap<String, ManagedSecretValue>,
         _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<(), AgentDriverError> {
         prepare_gemini_environment_config(working_dir, system_prompt).map_err(|error| {
@@ -127,7 +125,7 @@ impl GeminiHarnessRunner {
         client: Arc<dyn HarnessSupportClient>,
         terminal_driver: ModelHandle<TerminalDriver>,
     ) -> Result<Self, AgentDriverError> {
-        let temp_file = write_temp_file("oz_prompt_", prompt)?;
+        let temp_file = write_temp_file("oz_prompt_", prompt, ".txt")?;
         let prompt_path = temp_file.path().display().to_string();
 
         Ok(Self {

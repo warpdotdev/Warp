@@ -26,7 +26,6 @@ use warp_cli::{
     SESSION_SHARING_SERVER_URL_OVERRIDE_ENV, WS_SERVER_URL_OVERRIDE_ENV,
 };
 use warp_core::channel::ChannelState;
-use warp_managed_secrets::ManagedSecretValue;
 
 use super::terminal::{CommandHandle, TerminalDriver};
 use super::{
@@ -139,12 +138,16 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
     }
 
     /// Prepare CLI-specific config files before launching the harness command.
+    ///
+    /// `resolved_env_vars` contains the already-resolved secret env vars produced by
+    /// `build_secret_env_vars`. Precedence (worker env > typed secrets > raw values)
+    /// has already been applied, so harnesses can look up values directly without
+    /// re-deriving which secret won.
     fn prepare_environment_config(
         &self,
         _working_dir: &Path,
         _system_prompt: Option<&str>,
         _resolved_env_vars: &HashMap<OsString, OsString>,
-        _secrets: &HashMap<String, ManagedSecretValue>,
         _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<(), AgentDriverError> {
         Ok(())
@@ -483,10 +486,11 @@ pub(crate) async fn cli_agent_session_status(
 pub(super) fn write_temp_file(
     prefix: &str,
     content: &str,
+    suffix: &str,
 ) -> Result<NamedTempFile, AgentDriverError> {
     let mut file = tempfile::Builder::new()
         .prefix(prefix)
-        .suffix(".txt")
+        .suffix(suffix)
         .tempfile()
         .map_err(|e| {
             AgentDriverError::ConfigBuildFailed(anyhow::anyhow!(

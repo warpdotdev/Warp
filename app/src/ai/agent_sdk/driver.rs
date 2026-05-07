@@ -1614,9 +1614,8 @@ impl AgentDriver {
 
         // Resolve MCP specs into harness-native JSON format.
         let mcp_specs = mcp_specs.to_vec();
-        let secrets_for_mcp = Arc::clone(&secrets);
         let resolved_mcp_servers = foreground
-            .spawn(move |_, ctx| Self::resolve_mcp_specs_to_json(&mcp_specs, &secrets_for_mcp, ctx))
+            .spawn(move |_, ctx| Self::resolve_mcp_specs_to_json(&mcp_specs, &secrets, ctx))
             .await
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
         let resolved_mcp_servers = resolved_mcp_servers?;
@@ -1628,7 +1627,7 @@ impl AgentDriver {
         }
 
         // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
-        // `resolved_env_vars` carries the full env for the terminal session so harnesses
+        // Pass the terminal env vars (which include the resolved secrets) so harnesses
         // can look up auth keys without re-deriving precedence.
         let resolved_env_vars = foreground
             .spawn(|me, _| Arc::clone(&me.resolved_env_vars))
@@ -1638,14 +1637,8 @@ impl AgentDriver {
             &working_dir,
             system_prompt.as_deref(),
             &resolved_env_vars,
-            &secrets,
             &resolved_mcp_servers,
         )?;
-
-        // Pull the resume payload off the driver so the harness runner can rehydrate any
-        // existing session/conversation state before launching its CLI. The payload variant
-        // is harness-specific; harnesses match on their own [`ResumePayload`] variant and
-        // ignore others.
         let resume = foreground
             .spawn(|me, _| me.resume_payload.take())
             .await

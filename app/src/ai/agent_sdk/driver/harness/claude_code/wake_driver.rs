@@ -193,7 +193,7 @@ impl ClaudeHarness {
         mut remote: ClaudeWakeRemoteContext,
     ) -> Result<String> {
         let working_dir = working_dir.unwrap_or_else(|| remote.envelope.cwd.clone());
-        prepare_claude_environment_config(&working_dir, &HashMap::<OsString, OsString>::new())
+        prepare_claude_environment_config(&working_dir, &HashMap::new())
             .context("Failed to prepare Claude environment for wake")?;
 
         remote.envelope.cwd = working_dir.clone();

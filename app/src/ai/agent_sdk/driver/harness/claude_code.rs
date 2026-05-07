@@ -32,7 +32,7 @@ use super::claude_transcript::{
 use super::json_utils::{read_json_file_or_default, write_json_file};
 use super::{
     cli_agent_session_status, write_temp_file, HarnessCleanupDisposition, HarnessRunner,
-    JSONMCPServer, ManagedSecretValue, ResumePayload, SavePoint, ThirdPartyHarness,
+    JSONMCPServer, ResumePayload, SavePoint, ThirdPartyHarness,
 };
 mod parent_bridge;
 mod wake_driver;
@@ -76,7 +76,6 @@ impl ThirdPartyHarness for ClaudeHarness {
         working_dir: &Path,
         _system_prompt: Option<&str>,
         resolved_env_vars: &HashMap<OsString, OsString>,
-        _secrets: &HashMap<String, ManagedSecretValue>,
         _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<(), AgentDriverError> {
         prepare_claude_environment_config(working_dir, resolved_env_vars).map_err(|error| {
@@ -223,7 +222,7 @@ impl ClaudeHarnessRunner {
     ) -> Result<Self, AgentDriverError> {
         // Write the prompt to a temp file so we can feed it via stdin redirect,
         // avoiding shell-quoting issues with complex content (e.g. skill instructions).
-        let temp_file = write_temp_file("oz_prompt_", prompt)?;
+        let temp_file = write_temp_file("oz_prompt_", prompt, ".txt")?;
         let prompt_path = temp_file.path().display().to_string();
 
         let (session_id, preexisting_conversation_id) = match resume {
@@ -258,18 +257,19 @@ impl ClaudeHarnessRunner {
         };
 
         let temp_system_prompt_file = system_prompt
-            .map(|sp| write_temp_file("oz_system_prompt_", sp))
+            .map(|sp| write_temp_file("oz_system_prompt_", sp, ".txt"))
             .transpose()?;
         let system_prompt_path = temp_system_prompt_file
             .as_ref()
             .map(|f| f.path().display().to_string());
-        let temp_mcp_config_file = if resolved_mcp_servers.is_empty() {
-            None
-        } else {
-            let mcp_json = serialize_claude_mcp_config(resolved_mcp_servers)
-                .map_err(AgentDriverError::ConfigBuildFailed)?;
-            Some(write_temp_file("oz_mcp_config_", &mcp_json)?)
-        };
+
+        let temp_mcp_config_file = (!resolved_mcp_servers.is_empty())
+            .then(|| {
+                let mcp_json = serialize_claude_mcp_config(resolved_mcp_servers)
+                    .map_err(AgentDriverError::ConfigBuildFailed)?;
+                write_temp_file("oz_mcp_config_", &mcp_json, ".json")
+            })
+            .transpose()?;
         let mcp_config_path = temp_mcp_config_file
             .as_ref()
             .map(|f| f.path().display().to_string());
@@ -720,8 +720,8 @@ enum ClaudeMcpServerEntry {
         #[serde(skip_serializing_if = "HashMap::is_empty")]
         env: HashMap<String, String>,
     },
-    #[serde(rename = "sse")]
-    Sse {
+    #[serde(rename = "http")]
+    Http {
         url: String,
         #[serde(skip_serializing_if = "HashMap::is_empty")]
         headers: HashMap<String, String>,
@@ -738,7 +738,7 @@ impl ClaudeMcpServerEntry {
                 args: args.clone(),
                 env: env.clone(),
             },
-            JSONTransportType::SSEServer { url, headers } => Self::Sse {
+            JSONTransportType::SSEServer { url, headers } => Self::Http {
                 url: url.clone(),
                 headers: headers.clone(),
             },
@@ -748,7 +748,7 @@ impl ClaudeMcpServerEntry {
 
 /// Serialize resolved MCP servers into Claude Code's `--mcp-config` JSON format.
 ///
-/// Produces `{ "mcpServers": { "name": { "type": "stdio"|"sse", ... }, ... } }`.
+/// Produces `{ "mcpServers": { "name": { "type": "stdio"|"http", ... }, ... } }`.
 pub(crate) fn serialize_claude_mcp_config(
     servers: &HashMap<String, JSONMCPServer>,
 ) -> Result<String> {
