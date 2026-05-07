@@ -170,6 +170,88 @@ fn parse_preinstall_unsupported_non_glibc() {
     assert!(!result.is_supported());
 }
 
+/// Regression: the install script's tilde-expansion line must work in
+/// macOS's stock `/bin/bash` 3.2.57. In bash 3.2, `"$HOME"` inside the
+/// replacement of `${var/pattern/replacement}` is treated as 6 literal
+/// characters (the quotes are not stripped), which turned
+/// `~/.warp/remote-server` into the *relative* path
+/// `"/Users/<user>"/.warp/remote-server` and silently steered the
+/// install into a directory tree literally named `"`. The launch step
+/// then looked at the real `$HOME/.warp/remote-server/oz-...`, found
+/// nothing, and reported "no such file or directory" → "Response
+/// channel closed".
+///
+/// Running the materialised script under `/bin/bash` ensures the
+/// expansion is correct on the bash version we actually invoke at
+/// install time (`run_ssh_script` pipes into `bash -s`, which on macOS
+/// is bash 3.2).
+#[test]
+fn install_script_tilde_expansion_works_in_bash_3_2() {
+    use std::process::{Command, Stdio};
+
+    let bash = if std::path::Path::new("/bin/bash").exists() {
+        "/bin/bash"
+    } else {
+        "bash"
+    };
+
+    // Inline only the lines from install_remote_server.sh that resolve
+    // the install directory, then echo the result. Keeps the test
+    // independent of the network-bound steps further down the script.
+    let snippet = r#"
+        set -e
+        install_dir="~/.warp/remote-server"
+        install_dir="${install_dir/#\~/$HOME}"
+        printf '%s' "$install_dir"
+    "#;
+
+    let output = Command::new(bash)
+        .arg("-c")
+        .arg(snippet)
+        .env("HOME", "/Users/test")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("failed to spawn bash");
+
+    assert!(
+        output.status.success(),
+        "bash exited with {:?}: stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let install_dir = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        install_dir, "/Users/test/.warp/remote-server",
+        "tilde expansion produced wrong path; \
+         likely a regression of the bash-3.2 quote-literal bug",
+    );
+    assert!(
+        !install_dir.contains('"'),
+        "install_dir contains literal quote characters \
+         (bash 3.2 quote-literal regression): {install_dir:?}",
+    );
+}
+
+/// Regression: guards against re-introducing the literal-quotes form
+/// of the tilde substitution by scanning the script source itself.
+/// Complements `install_script_tilde_expansion_works_in_bash_3_2` —
+/// the live bash test catches behavioural regressions, this static
+/// check catches them earlier and explains *why* in the failure
+/// message.
+#[test]
+fn install_script_does_not_quote_home_in_tilde_substitution() {
+    let template = INSTALL_SCRIPT_TEMPLATE;
+    assert!(
+        !template.contains("/#\\~/\"$HOME\""),
+        "install_remote_server.sh uses `${{var/#\\~/\"$HOME\"}}`, \
+         which on bash 3.2 (macOS /bin/bash) substitutes the literal \
+         characters `\"$HOME\"` instead of the expanded value. Use \
+         `${{var/#\\~/$HOME}}` (no inner quotes) instead.",
+    );
+}
+
 #[test]
 fn parse_preinstall_missing_status_falls_open() {
     // Garbled / partial script output — missing status field. Confirms

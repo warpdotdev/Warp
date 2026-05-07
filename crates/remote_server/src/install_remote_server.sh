@@ -27,7 +27,12 @@ case "$os_kernel" in
 esac
 
 install_dir="{install_dir}"
-install_dir="${install_dir/#\~/"$HOME"}"
+# Inner quotes around `$HOME` would be safe on bash 4+, but on macOS's
+# stock /bin/bash 3.2 they are taken as literal characters in the
+# replacement, producing a path like `"/Users/<user>"/.warp/...` and
+# silently steering the install into a directory tree literally named
+# `"`. Pipe the script through bash 3.2 before changing this line.
+install_dir="${install_dir/#\~/$HOME}"
 mkdir -p "$install_dir"
 
 tmpdir=$(mktemp -d "$install_dir/.install.XXXXXX")
