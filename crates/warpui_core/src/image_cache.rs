@@ -297,6 +297,47 @@ const MAX_ANIMATED_FRAMES: usize = 256;
 /// specs/GH9729/tech.md §259.
 const MAX_ANIMATED_TOTAL_PIXELS: u64 = 67_108_864;
 
+/// Maximum width or height in CSS pixels declared by an SVG's intrinsic size
+/// before the renderer is asked to materialize it. Caps the
+/// "tiny-byte-payload claims 200000x200000" attack on `resvg`. See
+/// specs/GH9729/tech.md §321.
+const MAX_SVG_RENDER_DIMENSION: u32 = 8_192;
+
+/// Coarse content-sniff predicate that returns `true` when `data` begins with
+/// a UTF-8 prefix consistent with XML or SVG: an optional UTF-8 BOM, optional
+/// ASCII whitespace bounded to the first 1 KB, then one of the supported
+/// prelude tokens (`<?xml`, `<svg`, `<!--`, `<!DOCTYPE`).
+///
+/// Two callers:
+///   1. The asset-cache `LocalFile` read picks `MAX_SVG_BYTES` (4 MB) over
+///      `MAX_PREVIEW_FILE_BYTES` (64 MB) when the on-disk content peek looks
+///      like SVG, so a `.png` carrying SVG XML is still tightened to 4 MB.
+///      (Implemented in GH9729 item 5a.)
+///   2. `ImageType::try_from_bytes` gates `usvg::Tree::from_data` on the same
+///      predicate so a binary blob renamed to `.svg` is rejected before
+///      `usvg` does the work.
+///
+/// The predicate is intentionally a coarse sniff, not a full XML lexer; the
+/// actual XML/SVG validation is `usvg`'s job. XML is case-sensitive and the
+/// standard form of these tokens is fixed-case, so case-insensitive matching
+/// is not attempted. See specs/GH9729/tech.md §321.
+pub(crate) fn looks_like_svg_xml(data: &[u8]) -> bool {
+    // Strip optional UTF-8 BOM.
+    let bytes = data.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(data);
+    // Skip leading ASCII whitespace, bounded to the first 1 KB to keep the
+    // scan O(1) and to refuse pathological "1 GB of whitespace" inputs.
+    let scan_end = bytes.len().min(1024);
+    let after_ws = bytes[..scan_end]
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .map(|i| &bytes[i..])
+        .unwrap_or(&[]);
+    after_ws.starts_with(b"<?xml")
+        || after_ws.starts_with(b"<svg")
+        || after_ws.starts_with(b"<!--")
+        || after_ws.starts_with(b"<!DOCTYPE")
+}
+
 /// Build the `image::Limits` envelope used by the static-raster decode path
 /// (PNG, JPEG, WebP-static). See specs/GH9729/tech.md §234.
 fn decode_limits() -> image::Limits {
@@ -383,14 +424,31 @@ fn decode_static_with_limits(
 
 impl Asset for ImageType {
     fn try_from_bytes(data: &[u8]) -> anyhow::Result<ImageType> {
-        // SVGs are not handled by the guess_format helper function, so we have to manually check
-        // if it's an SVG ourselves.
-        if data.first() == Some(&b'<') {
+        // SVGs are not handled by the guess_format helper, so we sniff the
+        // prefix ourselves. `looks_like_svg_xml` is a coarse content gate
+        // shared with the asset-cache byte-cap selection (see specs/GH9729
+        // tech.md §321) and rejects the "binary blob renamed to .svg" case
+        // before `usvg` is asked to parse.
+        if looks_like_svg_xml(data) {
             let options = usvg::Options {
                 fontdb: SVG_FONT_DB.clone(),
                 ..Default::default()
             };
-            let svg = Rc::new(usvg::Tree::from_data(data, &options)?);
+            let tree = usvg::Tree::from_data(data, &options)?;
+            // GH9729 §321 intrinsic-dimension cap: a tiny-byte payload can
+            // declare width/height in the millions and OOM the renderer.
+            // Reject before any rasterization is attempted.
+            let size = tree.size();
+            let w = size.width() as u32;
+            let h = size.height() as u32;
+            if w > MAX_SVG_RENDER_DIMENSION || h > MAX_SVG_RENDER_DIMENSION {
+                anyhow::bail!("svg dimensions exceed render budget");
+            }
+            let pixels = (w as u64).saturating_mul(h as u64);
+            if pixels > MAX_DECODE_PIXELS {
+                anyhow::bail!("svg dimensions exceed render budget");
+            }
+            let svg = Rc::new(tree);
             return Ok(ImageType::Svg { svg });
         }
 

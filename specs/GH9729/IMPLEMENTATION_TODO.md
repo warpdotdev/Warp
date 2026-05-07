@@ -63,7 +63,7 @@ The original 2a / 2c bullets are struck through and superseded.
        — `tech.md` §234 (Static raster, under §217)
 - [x] 4b. Animated decode caps: `MAX_ANIMATED_FRAMES`, `MAX_ANIMATED_TOTAL_PIXELS`
        — `tech.md` §259 (Animated WebP / GIF, under §217)
-- [ ] 4c. SVG content-sanity prefix check + intrinsic-dimension cap —
+- [x] 4c. SVG content-sanity prefix check + intrinsic-dimension cap —
        `tech.md` §321
 - [ ] 4-tests. Decoder tests per `tech.md` §613 (lines 640-652).
 - [ ] 5a. Bound the `LocalFile` asset-cache read with content-keyed cap
