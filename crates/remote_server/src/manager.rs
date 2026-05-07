@@ -172,6 +172,7 @@ fn client_event_kind(event: &ClientEvent) -> &'static str {
             "codebase_index_statuses_snapshot"
         }
         ClientEvent::CodebaseIndexStatusUpdated { .. } => "codebase_index_status_updated",
+        ClientEvent::BufferUpdated { .. } => "buffer_updated",
         ClientEvent::MessageDecodingError => "message_decoding_error",
     }
 }

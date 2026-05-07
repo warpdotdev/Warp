@@ -21,23 +21,13 @@ use warp_util::file::FileId;
 use super::proto::{
     client_message, delete_file_response, run_command_response, save_buffer_response,
     server_message, write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush,
-<<<<<<< HEAD
-    CloseBuffer, ClientMessage, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
+    ClientMessage, CloseBuffer, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
     DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
     FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
     NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
     ResolveConflict, RunCommandError, RunCommandErrorCode, RunCommandRequest, RunCommandResponse,
     RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess, ServerMessage,
     SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
-=======
-    ClientMessage, CloseBuffer, DeleteFile, DeleteFileResponse, DeleteFileSuccess, ErrorCode,
-    ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, Initialize,
-    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextResponse, ResolveConflict, RunCommandError,
-    RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
-    SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
-    WriteFileResponse, WriteFileSuccess,
->>>>>>> a484543 (fmt)
 };
 use super::server_buffer_tracker::ServerBufferTracker;
 
