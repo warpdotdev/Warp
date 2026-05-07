@@ -2095,7 +2095,25 @@ impl PaneGroup {
                 })
             }
             PaneNode::Leaf(pane_id) => {
-                let contents = match self.pane_contents.get(pane_id) {
+                // If this leaf is the *replacement* of an active
+                // `TemporaryReplacement` (i.e. a child agent pane was
+                // pill-swapped into the orchestrator's slot), persist the
+                // *original* pane's contents instead of the transient
+                // replacement. The swap is a UX-only state, not a
+                // structural change to the user's tab layout. Without
+                // this substitution the snapshot would record the child
+                // as the canonical leaf and lose the orchestrator
+                // entirely — child agent panes are intentionally excluded
+                // from snapshots and rebuilt on startup from the
+                // parent→child index, so on the next launch the tab
+                // would either come back with a stale child terminal as
+                // its root or fail to recreate the orchestrator pane at
+                // all.
+                let snapshot_pane_id = self
+                    .panes
+                    .original_pane_for_replacement(*pane_id)
+                    .unwrap_or(*pane_id);
+                let contents = match self.pane_contents.get(&snapshot_pane_id) {
                     Some(pane) => pane.as_pane().snapshot(app),
                     None => {
                         // Create a new pane uuid if we have a bug where we didn't save it
@@ -2105,7 +2123,8 @@ impl PaneGroup {
                         LeafContents::Terminal(TerminalPaneSnapshot {
                             uuid: Uuid::new_v4().as_bytes().to_vec(),
                             cwd: None,
-                            is_active: pane_id.as_terminal_pane_id() == self.active_session_id(app),
+                            is_active: snapshot_pane_id.as_terminal_pane_id()
+                                == self.active_session_id(app),
                             is_read_only: false,
                             shell_launch_data: None,
                             input_config: Some(InputConfig::new(app)),
@@ -2116,14 +2135,19 @@ impl PaneGroup {
                         })
                     }
                 };
-                let custom_vertical_tabs_title = self.pane_contents.get(pane_id).and_then(|pane| {
-                    pane.as_pane()
-                        .pane_configuration()
-                        .as_ref(app)
-                        .custom_vertical_tabs_title()
-                        .map(str::to_owned)
-                });
+                let custom_vertical_tabs_title =
+                    self.pane_contents.get(&snapshot_pane_id).and_then(|pane| {
+                        pane.as_pane()
+                            .pane_configuration()
+                            .as_ref(app)
+                            .custom_vertical_tabs_title()
+                            .map(str::to_owned)
+                    });
                 PaneNodeSnapshot::Leaf(LeafSnapshot {
+                    // Whether the user-visible tree slot is focused is
+                    // tracked against the replacement's pane id, so test
+                    // against the leaf id rather than the substituted
+                    // original.
                     is_focused: *pane_id == self.focused_pane_id(app),
                     custom_vertical_tabs_title,
                     contents,
@@ -4800,6 +4824,34 @@ impl PaneGroup {
             self.close_pane(pane_id, ctx);
             ctx.emit(Event::FocusPane { pane_to_focus });
         }
+    }
+
+    /// Reveal `pane_id` if it's currently the *original* of an active
+    /// `TemporaryReplacement` (i.e. another pane is occupying its tree
+    /// slot via swap), then focus it. Used by cross-tab navigation paths
+    /// that resolve a target pane via [`Self::find_pane_id_for_terminal_view`]
+    /// — which iterates `pane_contents` and can hand back a hidden
+    /// original pane id whose terminal slot is currently rendering the
+    /// replacement instead. Without reverting the swap first,
+    /// [`Self::focus_pane_by_id`] would set focus/active session on the
+    /// off-tree original and leave the user staring at the (still
+    /// visible) replacement, with focus stuck on a pane the user can't
+    /// see or reach.
+    pub fn reveal_and_focus_pane(&mut self, pane_id: PaneId, ctx: &mut ViewContext<Self>) {
+        if let Some(replacement_id) = self.panes.replacement_pane_for_original(pane_id) {
+            // Clear the split-off marker on whatever was swapped in so
+            // a subsequent reveal renders pills rather than breadcrumbs.
+            if let Some(terminal_view) = self.terminal_view_from_pane_id(replacement_id, ctx) {
+                terminal_view.update(ctx, |view, ctx| {
+                    view.clear_orchestration_split_off(ctx);
+                });
+            }
+            self.panes.revert_temporary_replacement(replacement_id);
+            self.handle_pane_count_change(ctx);
+            ctx.emit(Event::TerminalViewStateChanged);
+            ctx.emit(Event::AppStateChanged);
+        }
+        self.focus_pane_by_id(pane_id, ctx);
     }
 
     /// Temporarily replace a pane with another pane.

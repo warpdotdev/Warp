@@ -5328,6 +5328,14 @@ impl Workspace {
     }
 
     /// Focuses the given pane within the pane group.
+    ///
+    /// Routes through [`PaneGroup::reveal_and_focus_pane`] so cross-tab
+    /// navigation (e.g. the orchestration breadcrumb's parent crumb,
+    /// jump-to-toast, conversation history palette) can target a pane
+    /// that is currently swapped out of the tree as the original of an
+    /// active `TemporaryReplacement`. Without the reveal step, focus
+    /// would silently land on an off-tree pane and the user's view
+    /// wouldn't actually change.
     pub fn focus_pane(&mut self, pane_view_locator: PaneViewLocator, ctx: &mut ViewContext<Self>) {
         if let Some((index, tab)) = self
             .tabs
@@ -5342,7 +5350,7 @@ impl Workspace {
             // remain focused (as opposed to the pane with pane_id) since its
             // input would remain focused.
             tab.pane_group.update(ctx, |view, ctx| {
-                view.focus_pane_by_id(pane_view_locator.pane_id, ctx);
+                view.reveal_and_focus_pane(pane_view_locator.pane_id, ctx);
             });
             self.activate_tab_internal(index, ctx);
             ctx.notify();
@@ -10274,7 +10282,16 @@ impl Workspace {
 
         let tab_data = self.tabs.remove(index);
 
-        if add_to_undo_stack {
+        // Skip the undo-close stack when the tab was re-adopted: its pane
+        // group is now empty (the lone pane moved back to the source
+        // group), but `panes.root` still points at the (now-departed)
+        // pane id since `PaneNode::remove` cannot remove a root leaf.
+        // Stashing that broken `tab_data` would let "reopen closed tab"
+        // restore a tab whose root references a pane no longer in
+        // `pane_contents`, producing a blank/error pane. The live
+        // `TerminalView` is preserved by the re-adoption itself, so
+        // there's nothing meaningful to undo here.
+        if add_to_undo_stack && !re_adopted {
             let handle = ctx.handle();
             UndoCloseStack::handle(ctx).update(ctx, |stack, ctx| {
                 log::info!("storing data for closed tab");

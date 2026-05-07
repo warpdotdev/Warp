@@ -2004,15 +2004,16 @@ pub enum Event {
         conversation_id: AIConversationId,
     },
     /// Emitted when the user picks "Open in new pane" from a child pill's
-    /// 3-dot menu in the orchestration pill bar. Bubbles up to `PaneGroup`,
-    /// which splits a fresh terminal pane to the right and loads the child
-    /// conversation into it via `enter_agent_view_for_conversation`. We
-    /// can't reuse the orchestrator's hidden child pane here — its
-    /// terminal model never received the rendered AI blocks for the
-    /// conversation (those are inserted into whichever pane was last
-    /// hosting the agent view in place), so revealing it would show a
-    /// blank transcript. Going through a fresh view + the cloud
-    /// load+restore path mirrors what "Open in new tab" already does.
+    /// 3-dot menu in the orchestration pill bar. Bubbles up to
+    /// `PaneGroup`, which reuses the existing dedicated child agent pane
+    /// (see [`PaneGroup::unhide_child_agent_pane_for_split_off`]) instead
+    /// of creating a fresh one: the child's `TerminalView` has been
+    /// receiving its own block stream all along (it was created up front
+    /// when the orchestrator spawned the child), so revealing it as a
+    /// sibling of the orchestrator preserves in-flight commands and the
+    /// full transcript. Creating a fresh view here would clone the
+    /// conversation into a second pane and cancel any in-flight commands
+    /// running in the original.
     OpenChildAgentInNewPane {
         conversation_id: AIConversationId,
     },
@@ -4605,6 +4606,47 @@ impl TerminalView {
             }
             result => result,
         }
+    }
+
+    /// If the active conversation is a child agent (has a
+    /// `parent_conversation_id`), emit a `SwapPaneToConversation` event
+    /// targeting the parent and return `true`. The pane group then makes
+    /// the parent's pane visible in the focused slot rather than exiting
+    /// agent view in place — a child agent's `TerminalView` is just a
+    /// vehicle for the AI conversation and has no meaningful shell to
+    /// fall back into. Both the ESC keypress and the agent-view back
+    /// button ("for Orchestrator") route through here so the visible
+    /// affordance and the action match. Returns `false` for
+    /// non-child-agent conversations so the caller can run the normal
+    /// exit-agent-view flow.
+    ///
+    /// Importantly, this check runs *before* `can_exit_agent_view_for_terminal_view`
+    /// gating: a long-running child agent cannot "exit" in place anyway,
+    /// but the user still expects ESC / the back button to navigate them
+    /// to the orchestrator. Gating on `can_exit` first would silently
+    /// turn both into no-ops in the common case.
+    fn try_navigate_to_parent_conversation(&self, ctx: &mut ViewContext<Self>) -> bool {
+        if !FeatureFlag::AgentView.is_enabled() {
+            return false;
+        }
+        let active_conv_id = self
+            .agent_view_controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .active_conversation_id();
+        let Some(active_conv_id) = active_conv_id else {
+            return false;
+        };
+        let parent_id = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&active_conv_id)
+            .and_then(|c| c.parent_conversation_id());
+        let Some(parent_id) = parent_id else {
+            return false;
+        };
+        ctx.emit(Event::SwapPaneToConversation {
+            conversation_id: parent_id,
+        });
+        true
     }
 
     fn can_pop_nested_cloud_agent_view(&self, ctx: &AppContext) -> bool {
@@ -20346,37 +20388,22 @@ impl TerminalView {
                 if FeatureFlag::AgentView.is_enabled()
                     && self.agent_view_controller.as_ref(ctx).is_active()
                 {
-                    // Disable escape completely for ambient agents without a parent terminal.
-                    if self.can_exit_agent_view_for_terminal_view(ctx).is_err() {
+                    // For child agents, ESC navigates back to the orchestrator
+                    // regardless of whether we could exit agent view here —
+                    // the child's `TerminalView` is just a vehicle for the
+                    // AI conversation and has no meaningful shell session
+                    // to fall back into. Run this *before* the
+                    // `can_exit_agent_view_for_terminal_view` gate so a
+                    // long-running child agent can still navigate back to
+                    // its parent. Once on the parent, a second ESC runs
+                    // the normal exit-agent-view path.
+                    if self.try_navigate_to_parent_conversation(ctx) {
                         return;
                     }
 
-                    // If the active conversation is a child agent (has a
-                    // parent_conversation_id), ESC navigates back to the
-                    // parent (orchestrator) instead of trying to exit agent
-                    // view in place. The child's terminal view has no
-                    // meaningful shell session to fall back into — it was
-                    // spun up purely as a vehicle for the child's AI
-                    // conversation — so dropping the user there would land
-                    // them in an empty/blank pane. The orchestrator pane is
-                    // their real working context. Once on the parent, a
-                    // second ESC does the normal exit-agent-view dance and
-                    // returns the user to the parent's terminal mode.
-                    let active_conv_id = self
-                        .agent_view_controller
-                        .as_ref(ctx)
-                        .agent_view_state()
-                        .active_conversation_id();
-                    if let Some(active_conv_id) = active_conv_id {
-                        let parent_id = BlocklistAIHistoryModel::as_ref(ctx)
-                            .conversation(&active_conv_id)
-                            .and_then(|c| c.parent_conversation_id());
-                        if let Some(parent_id) = parent_id {
-                            ctx.emit(Event::SwapPaneToConversation {
-                                conversation_id: parent_id,
-                            });
-                            return;
-                        }
+                    // Disable escape completely for ambient agents without a parent terminal.
+                    if self.can_exit_agent_view_for_terminal_view(ctx).is_err() {
+                        return;
                     }
 
                     let is_long_running = self
@@ -25932,7 +25959,18 @@ impl TypedActionView for TerminalView {
                 ctx.notify();
             }
             ExitAgentView => {
-                if self.can_exit_agent_view_for_terminal_view(ctx).is_ok() {
+                // The agent-view back button labels itself "for Orchestrator"
+                // when a child agent is active (see
+                // `update_agent_view_back_button_state`). Match that
+                // affordance: navigate child → parent before falling back
+                // to the in-place exit-agent-view flow. Without this, a
+                // visible "for Orchestrator" button would still call
+                // `exit_agent_view` and either drop the user into the
+                // child's empty terminal (bad) or no-op silently if the
+                // child's run is long-running (also bad).
+                if self.try_navigate_to_parent_conversation(ctx) {
+                    ctx.notify();
+                } else if self.can_exit_agent_view_for_terminal_view(ctx).is_ok() {
                     self.exit_agent_view(ctx);
                     ctx.notify();
                 }
