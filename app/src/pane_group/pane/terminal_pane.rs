@@ -1170,8 +1170,11 @@ fn handle_terminal_view_event(
                 // show an empty transcript. Going through a fresh terminal
                 // view forces the cloud load+restore path, which mirrors
                 // what "Open in new tab" already does.
-                let new_pane_id =
-                    group.add_terminal_pane(Direction::Right, None /* chosen_shell */, ctx);
+                let new_pane_id = group.add_terminal_pane_ignoring_default_session_mode(
+                    Direction::Right,
+                    None, /* chosen_shell */
+                    ctx,
+                );
                 if let Some(new_terminal_view) = group.terminal_view_from_pane_id(new_pane_id, ctx)
                 {
                     let conversation_id = *conversation_id;

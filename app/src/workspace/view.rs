@@ -13841,12 +13841,13 @@ impl Workspace {
                 // `enter_agent_view_for_conversation` on it.
                 let conversation_id = *conversation_id;
                 let window_id = ctx.window_id();
-                self.add_new_session_tab_with_default_mode(
+                self.add_new_session_tab_internal_with_default_session_mode_behavior(
                     NewSessionSource::Tab,
                     Some(window_id),
                     None, /* chosen_shell */
                     None, /* conversation_restoration */
                     true, /* hide_homepage */
+                    DefaultSessionModeBehavior::Ignore,
                     ctx,
                 );
                 if let Some(terminal_view) = self

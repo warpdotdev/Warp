@@ -992,6 +992,70 @@ fn test_workspace_sessions_retrieves_tabs() {
 }
 
 #[test]
+fn test_open_child_agent_in_new_tab_ignores_default_agent_mode() {
+    let _agent_view_guard = FeatureFlag::AgentView.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        app.update(|ctx| {
+            AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                settings
+                    .default_session_mode_internal
+                    .set_value(DefaultSessionMode::Agent, ctx)
+                    .expect("can set default session mode");
+            });
+        });
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            let source_terminal_view_id = workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .focused_session_view(ctx)
+                .expect("source terminal exists")
+                .id();
+            let child_conversation_id =
+                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                    history_model.start_new_conversation(
+                        source_terminal_view_id,
+                        true,  /* is_autoexecute_override */
+                        false, /* is_viewing_shared_session */
+                        ctx,
+                    )
+                });
+            let source_pane_group = workspace.active_tab_pane_group().clone();
+
+            workspace.handle_file_tree_event(
+                source_pane_group,
+                &pane_group::Event::OpenChildAgentInNewTab {
+                    conversation_id: child_conversation_id,
+                },
+                ctx,
+            );
+
+            assert_eq!(workspace.tab_count(), 2);
+            let new_tab_terminal_view = workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .active_session_view(ctx)
+                .expect("new tab terminal exists");
+
+            // Opening a child conversation hosts that conversation in a new tab. It must not first
+            // apply the user's default Agent session mode and create a transient unrelated
+            // conversation in the new tab.
+            assert_eq!(
+                new_tab_terminal_view
+                    .as_ref(ctx)
+                    .active_conversation_id(ctx),
+                None
+            );
+        });
+    });
+}
+
+#[test]
 fn test_workspace_sessions_retrieves_panes() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
