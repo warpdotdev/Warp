@@ -18,7 +18,7 @@ use crate::{
 use image::{
     codecs::{gif::GifDecoder, webp::WebPDecoder},
     imageops::FilterType,
-    AnimationDecoder, DynamicImage, Frame, ImageBuffer, ImageFormat,
+    AnimationDecoder, DynamicImage, Frame, ImageBuffer, ImageDecoder, ImageFormat,
 };
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use pathfinder_geometry::vector::Vector2I;
@@ -285,6 +285,18 @@ const MAX_DECODE_PIXELS: u64 = 67_108_864;
 /// See specs/GH9729/tech.md §221.
 const MAX_DECODE_ALLOC: u64 = 256 * 1024 * 1024;
 
+/// Maximum number of frames accepted from an animated decoder before bailing.
+/// `image` 0.25.x animated decoders do not enforce frame counts via
+/// `image::Limits`; this cap is applied during frame iteration. See
+/// specs/GH9729/tech.md §259.
+const MAX_ANIMATED_FRAMES: usize = 256;
+
+/// Total pixel budget summed across all frames of an animated image. With the
+/// per-frame allocation reaching ~4 bytes per pixel (RGBA), this caps peak
+/// frame-collection memory at ~256 MB regardless of decoder honesty. See
+/// specs/GH9729/tech.md §259.
+const MAX_ANIMATED_TOTAL_PIXELS: u64 = 67_108_864;
+
 /// Build the `image::Limits` envelope used by the static-raster decode path
 /// (PNG, JPEG, WebP-static). See specs/GH9729/tech.md §234.
 fn decode_limits() -> image::Limits {
@@ -293,6 +305,59 @@ fn decode_limits() -> image::Limits {
     limits.max_image_height = Some(MAX_DECODE_DIMENSION);
     limits.max_alloc = Some(MAX_DECODE_ALLOC);
     limits
+}
+
+/// Decode an animated image (GIF, animated WebP) under the GH9729 size
+/// envelope. Iterates frames and bails as soon as `MAX_ANIMATED_FRAMES`
+/// or `MAX_ANIMATED_TOTAL_PIXELS` is breached, before the pathological
+/// frame is collected into the output `Vec`.
+///
+/// `image` 0.25.x animated decoders are weaker than the static path
+/// (`GifDecoder` ignores `max_alloc` per frame; `WebPDecoder` does not
+/// override `set_limits` at all), so this explicit budget — applied during
+/// iteration — is what actually bounds the animated decode envelope.
+/// See specs/GH9729/tech.md §259.
+fn decode_animated_with_limits(
+    data: &[u8],
+    format: image::ImageFormat,
+) -> anyhow::Result<Vec<image::Frame>> {
+    let mut frames = Vec::new();
+    let mut total_pixels: u64 = 0;
+
+    let frame_iter = match format {
+        image::ImageFormat::Gif => {
+            let mut dec = GifDecoder::new(std::io::Cursor::new(data))?;
+            dec.set_limits(decode_limits())?;
+            dec.into_frames()
+        }
+        image::ImageFormat::WebP => {
+            let mut dec = WebPDecoder::new(std::io::Cursor::new(data))?;
+            dec.set_limits(decode_limits())?;
+            dec.into_frames()
+        }
+        _ => {
+            anyhow::bail!("decode_animated_with_limits called with non-animated format")
+        }
+    };
+
+    for (i, frame) in frame_iter.enumerate() {
+        if i >= MAX_ANIMATED_FRAMES {
+            anyhow::bail!("animated image has too many frames");
+        }
+        let frame = frame?;
+        let buf = frame.buffer();
+        let pixels = (buf.width() as u64).saturating_mul(buf.height() as u64);
+        total_pixels = total_pixels.saturating_add(pixels);
+        if total_pixels > MAX_ANIMATED_TOTAL_PIXELS {
+            anyhow::bail!("animated image exceeds total pixel budget");
+        }
+        frames.push(frame);
+    }
+
+    if frames.is_empty() {
+        anyhow::bail!("animated image has no frames");
+    }
+    Ok(frames)
 }
 
 /// Decode a static-raster image (PNG, JPEG, WebP-static) under the
@@ -383,9 +448,9 @@ impl Asset for ImageType {
             Ok(ImageFormat::WebP) => {
                 let decoder = WebPDecoder::new(std::io::Cursor::new(data))?;
                 if decoder.has_animation() {
-                    // Animated WebP path is hardened in GH9729 item 4b
-                    // (frame-count + total-pixel caps). Untouched here.
-                    let frames = decoder.into_frames().collect_frames()?;
+                    // GH9729 §259: bound frame count and total pixels.
+                    drop(decoder);
+                    let frames = decode_animated_with_limits(data, image::ImageFormat::WebP)?;
                     Ok(ImageType::AnimatedBitmap {
                         image: Arc::new(AnimatedImage::from(frames)),
                     })
@@ -402,8 +467,8 @@ impl Asset for ImageType {
                 }
             }
             Ok(ImageFormat::Gif) => {
-                let decoder = GifDecoder::new(std::io::Cursor::new(data))?;
-                let frames = decoder.into_frames().collect_frames()?;
+                // GH9729 §259: bound frame count and total pixels.
+                let frames = decode_animated_with_limits(data, image::ImageFormat::Gif)?;
                 Ok(ImageType::AnimatedBitmap {
                     image: Arc::new(AnimatedImage::from(frames)),
                 })
