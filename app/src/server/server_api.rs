@@ -387,21 +387,6 @@ impl fmt::Debug for ServerApiEvent {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TokenRefreshPolicy {
-    Allowed,
-    Disabled,
-}
-
-impl TokenRefreshPolicy {
-    pub fn allowed_to_refresh_token(self) -> bool {
-        match self {
-            TokenRefreshPolicy::Allowed => true,
-            TokenRefreshPolicy::Disabled => false,
-        }
-    }
-}
-
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum ServerApiAuthError {
     #[error("missing authentication credentials")]
@@ -419,9 +404,7 @@ pub enum ServerApiAuthError {
 /// with disparate types of calls, and allows you to mock methods in tests.
 pub struct ServerApi {
     client: Arc<http_client::Client>,
-    auth_state: Option<Arc<AuthState>>,
-    bearer_token: Option<String>,
-    token_refresh_policy: TokenRefreshPolicy,
+    auth_state: Arc<AuthState>,
     event_sender: async_channel::Sender<ServerApiEvent>,
     // TODO(jeff): Make `TelemetryApi` another type of client, and move it off `ServerApi`.
     telemetry_api: TelemetryApi,
@@ -446,36 +429,12 @@ impl ServerApi {
         agent_source: Option<ai::AgentSource>,
     ) -> Self {
         let client = Arc::new(http_client::Client::new());
-        Self::new_with_parts(
-            client,
-            Some(auth_state),
-            None,
-            TokenRefreshPolicy::Allowed,
-            event_sender,
-            agent_source,
-        )
-    }
-
-    pub fn new_with_bearer_token(
-        bearer_token: impl Into<String>,
-        agent_source: Option<ai::AgentSource>,
-    ) -> Self {
-        let (event_sender, _) = async_channel::bounded(10);
-        Self::new_with_parts(
-            Arc::new(http_client::Client::new()),
-            None,
-            Some(bearer_token.into()).filter(|token| !token.is_empty()),
-            TokenRefreshPolicy::Disabled,
-            event_sender,
-            agent_source,
-        )
+        Self::new_with_parts(client, auth_state, event_sender, agent_source)
     }
 
     fn new_with_parts(
         client: Arc<http_client::Client>,
-        auth_state: Option<Arc<AuthState>>,
-        bearer_token: Option<String>,
-        token_refresh_policy: TokenRefreshPolicy,
+        auth_state: Arc<AuthState>,
         event_sender: async_channel::Sender<ServerApiEvent>,
         agent_source: Option<ai::AgentSource>,
     ) -> Self {
@@ -491,8 +450,6 @@ impl ServerApi {
         Self {
             client,
             auth_state,
-            bearer_token,
-            token_refresh_policy,
             event_sender,
             telemetry_api: TelemetryApi::new(),
             last_server_time: Arc::new(Mutex::new(None)),
@@ -511,14 +468,7 @@ impl ServerApi {
         let auth_state = Arc::new(AuthState::new_for_test());
         let client = Arc::new(http_client::Client::new_for_test());
 
-        Self::new_with_parts(
-            client,
-            Some(auth_state),
-            None,
-            TokenRefreshPolicy::Allowed,
-            tx,
-            None,
-        )
+        Self::new_with_parts(client, auth_state, tx, None)
     }
 
     #[cfg(test)]
@@ -526,39 +476,34 @@ impl ServerApi {
         bearer_token: Option<String>,
         event_sender: async_channel::Sender<ServerApiEvent>,
     ) -> Self {
+        let auth_state = Arc::new(AuthState::new_logged_out_for_test());
+        if let Some(bearer_token) = bearer_token {
+            auth_state.set_remote_server_bearer_token(bearer_token);
+        }
         Self::new_with_parts(
             Arc::new(http_client::Client::new_for_test()),
-            None,
-            bearer_token.filter(|token| !token.is_empty()),
-            TokenRefreshPolicy::Disabled,
+            auth_state,
             event_sender,
             None,
         )
     }
 
     pub fn allowed_to_refresh_token(&self) -> bool {
-        self.token_refresh_policy.allowed_to_refresh_token()
+        self.auth_state
+            .credentials()
+            .is_none_or(|credentials| !credentials.is_externally_managed())
     }
 
     fn access_token_ignoring_validity(&self) -> Option<String> {
-        self.bearer_token.clone().or_else(|| {
-            self.auth_state
-                .as_ref()
-                .and_then(|auth_state| auth_state.get_access_token_ignoring_validity())
-        })
+        self.auth_state.get_access_token_ignoring_validity()
     }
 
     pub(super) fn anonymous_id(&self) -> String {
-        self.auth_state
-            .as_ref()
-            .map(|auth_state| auth_state.anonymous_id())
-            .unwrap_or_default()
+        self.auth_state.anonymous_id()
     }
 
     fn user_id(&self) -> Option<UserUid> {
-        self.auth_state
-            .as_ref()
-            .and_then(|auth_state| auth_state.user_id())
+        self.auth_state.user_id()
     }
 
     /// Sets the ambient agent task ID to be sent with all subsequent requests.

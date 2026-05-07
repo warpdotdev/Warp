@@ -20,7 +20,10 @@ use super::{
     anonymous_id::get_or_create_anonymous_id,
     auth_manager::user_persistence::PersistedUser,
     credentials::Credentials,
-    user::{AnonymousUserType, FirebaseAuthTokens, PersonalObjectLimits, PrincipalType, User},
+    user::{
+        AnonymousUserType, FirebaseAuthTokens, PersonalObjectLimits, PrincipalType, User,
+        UserMetadata,
+    },
     UserUid, API_KEY_PREFIX,
 };
 
@@ -70,6 +73,15 @@ impl AuthState {
             anonymous_id: Uuid::new_v4(),
             needs_reauth: AtomicBool::new(false),
             credentials: RwLock::new(Some(Credentials::Test)),
+        }
+    }
+    #[cfg(test)]
+    pub fn new_logged_out_for_test() -> Self {
+        Self {
+            user: RwLock::new(None),
+            anonymous_id: Uuid::new_v4(),
+            needs_reauth: AtomicBool::new(false),
+            credentials: RwLock::new(None),
         }
     }
 
@@ -167,6 +179,7 @@ impl AuthState {
             (None, None) => PersistAction::Remove,
             // Do not persist if using API keys, session cookies, or test credentials.
             (Some(_), Some(Credentials::ApiKey { .. })) => PersistAction::DoNothing,
+            (Some(_), Some(Credentials::Bearer(_))) => PersistAction::DoNothing,
             (Some(_), Some(Credentials::SessionCookie)) => PersistAction::DoNothing,
             #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             (Some(_), Some(Credentials::Test)) => PersistAction::DoNothing,
@@ -213,6 +226,75 @@ impl AuthState {
     /// Sets the credentials. Should only be called within the auth module.
     pub(super) fn set_credentials(&self, credentials: Option<Credentials>) {
         *self.credentials.write() = credentials;
+    }
+    /// Applies auth data received by the remote server daemon handshake.
+    ///
+    /// Empty fields are intentionally ignored so reconnects or token-rotation messages can update
+    /// one part of the auth context without clearing the rest.
+    pub(crate) fn apply_remote_server_auth_context(
+        &self,
+        auth_token: Option<String>,
+        user_id: Option<String>,
+        user_email: Option<String>,
+    ) {
+        if let Some(auth_token) = auth_token.filter(|token| !token.is_empty()) {
+            self.set_remote_server_bearer_token(auth_token);
+        }
+
+        let Some(user_id) = user_id.filter(|user_id| !user_id.is_empty()) else {
+            return;
+        };
+
+        let existing_user = self.user.read().clone();
+        let user_email = user_email
+            .filter(|email| !email.is_empty())
+            .or_else(|| {
+                existing_user
+                    .as_ref()
+                    .map(|user| user.metadata.email.clone())
+            })
+            .unwrap_or_default();
+
+        let existing_metadata = existing_user.as_ref().map(|user| &user.metadata);
+        let user = User {
+            local_id: UserUid::new(user_id),
+            metadata: UserMetadata {
+                email: user_email,
+                display_name: existing_metadata.and_then(|metadata| metadata.display_name.clone()),
+                photo_url: existing_metadata.and_then(|metadata| metadata.photo_url.clone()),
+            },
+            is_onboarded: existing_user
+                .as_ref()
+                .map(|user| user.is_onboarded)
+                .unwrap_or_default(),
+            needs_sso_link: existing_user
+                .as_ref()
+                .map(|user| user.needs_sso_link)
+                .unwrap_or_default(),
+            anonymous_user_type: existing_user
+                .as_ref()
+                .and_then(|user| user.anonymous_user_type),
+            is_on_work_domain: existing_user
+                .as_ref()
+                .map(|user| user.is_on_work_domain)
+                .unwrap_or_default(),
+            linked_at: existing_user.as_ref().and_then(|user| user.linked_at),
+            personal_object_limits: existing_user
+                .as_ref()
+                .and_then(|user| user.personal_object_limits),
+            principal_type: existing_user
+                .as_ref()
+                .map(|user| user.principal_type)
+                .unwrap_or_default(),
+        };
+        self.set_user(Some(user));
+    }
+
+    pub(crate) fn set_remote_server_bearer_token(&self, auth_token: String) {
+        if auth_token.is_empty() {
+            return;
+        }
+        self.set_credentials(Some(Credentials::Bearer(auth_token)));
     }
 
     /// Updates the Firebase auth tokens within the current credentials.
@@ -497,12 +579,7 @@ impl AuthStateProvider {
     #[cfg(test)]
     pub fn new_logged_out_for_test() -> Self {
         Self {
-            auth_state: Arc::new(AuthState {
-                user: RwLock::new(None),
-                anonymous_id: Uuid::new_v4(),
-                needs_reauth: AtomicBool::new(false),
-                credentials: RwLock::new(None),
-            }),
+            auth_state: Arc::new(AuthState::new_logged_out_for_test()),
         }
     }
 

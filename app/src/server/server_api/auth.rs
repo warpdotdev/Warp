@@ -214,24 +214,17 @@ pub trait AuthClient: 'static + Send + Sync {
 
 impl ServerApi {
     pub(super) async fn access_token(&self) -> Result<AuthToken> {
-
         if cfg!(feature = "skip_login") {
             bail!("skip_login enabled; failing all authenticated requests");
         }
-        if let Some(token) = self.bearer_token.clone() {
-            return Ok(AuthToken::Bearer(token));
-        }
 
-        let Some(auth_state) = self.auth_state.as_ref() else {
-            return Err(ServerApiAuthError::MissingCredentials.into());
-        };
-
-        let Some(credentials) = auth_state.credentials() else {
+        let Some(credentials) = self.auth_state.credentials() else {
             return Err(ServerApiAuthError::MissingCredentials.into());
         };
 
         match credentials {
             Credentials::ApiKey { key, .. } => Ok(AuthToken::ApiKey(key)),
+            Credentials::Bearer(token) => Ok(AuthToken::Bearer(token)),
             Credentials::Firebase(auth_tokens) => {
                 let expiration_time = auth_tokens.expiration_time;
 
@@ -251,7 +244,8 @@ impl ServerApi {
                         let _ = self.event_sender.send(ServerApiEvent::NeedsReauth).await;
                     }
                     let new_firebase_token_info = result?;
-                    auth_state.update_firebase_tokens(new_firebase_token_info.clone());
+                    self.auth_state
+                        .update_firebase_tokens(new_firebase_token_info.clone());
                     let _ = self
                         .event_sender
                         .send(ServerApiEvent::AccessTokenRefreshed {
