@@ -4,6 +4,7 @@ use crate::workspace::tab_settings::{
     VerticalTabsDisplayGranularity, VerticalTabsPrimaryInfo, VerticalTabsTabItemMode,
     VerticalTabsViewMode,
 };
+use crate::workspace::view::PanelPosition;
 use crate::workspace::PaneViewLocator;
 use warpui::EntityId;
 
@@ -23,6 +24,17 @@ fn vertical_tabs_panel_toggle_still_saves_workspace_state() {
 #[test]
 fn settings_popup_toggle_does_not_save_workspace_state() {
     assert!(!WorkspaceAction::ToggleVerticalTabsSettingsPopup.should_save_app_state_on_action());
+}
+#[test]
+fn vertical_tabs_panel_position_change_does_not_save_workspace_state() {
+    assert!(
+        !WorkspaceAction::SetVerticalTabsPanelPosition(PanelPosition::Left)
+            .should_save_app_state_on_action()
+    );
+    assert!(
+        !WorkspaceAction::SetVerticalTabsPanelPosition(PanelPosition::Right)
+            .should_save_app_state_on_action()
+    );
 }
 
 #[test]
