@@ -780,9 +780,9 @@ impl ServerModel {
     /// Extracted so unit tests can call it without a `ModelContext`.
     fn apply_initialize_auth(&mut self, msg: &Initialize) {
         self.auth_state.apply_remote_server_auth_context(
-            Some(msg.auth_token.clone()),
-            Some(msg.user_id.clone()),
-            Some(msg.user_email.clone()),
+            msg.auth_token.clone(),
+            msg.user_id.clone(),
+            msg.user_email.clone(),
         );
     }
 
@@ -823,10 +823,6 @@ impl ServerModel {
     /// Handles `Authenticate` by replacing the daemon-wide credential.
     /// This is a notification — no response is sent.
     fn handle_authenticate(&mut self, msg: Authenticate) {
-        if msg.auth_token.is_empty() {
-            log::warn!("Received Authenticate notification with empty auth token; ignoring");
-            return;
-        }
         self.auth_state
             .set_remote_server_bearer_token(msg.auth_token);
     }

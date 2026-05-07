@@ -387,16 +387,6 @@ impl fmt::Debug for ServerApiEvent {
     }
 }
 
-#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
-pub enum ServerApiAuthError {
-    #[error("missing authentication credentials")]
-    MissingCredentials,
-    #[error("authentication token is expired and token refresh is disabled")]
-    ExpiredRefreshDisabled,
-    #[error("server rejected authentication credentials")]
-    CredentialsRejected,
-}
-
 /// An API wrapper struct with methods to requests to warp-server.
 ///
 /// Prefer NOT adding new methods directly on this struct; instead, add to one of the existing
@@ -610,7 +600,7 @@ impl ServerApi {
                 }
                 Err(err) => {
                     if !self.allowed_to_refresh_token() && Self::is_graphql_auth_rejection(&err) {
-                        anyhow::bail!(ServerApiAuthError::CredentialsRejected);
+                        anyhow::bail!("server rejected authentication credentials");
                     }
                     anyhow::bail!(err)
                 }
@@ -634,7 +624,7 @@ impl ServerApi {
                         log::error!("GraphQL request failed due to unauthenticated user");
                         let _ = event_sender.try_send(ServerApiEvent::UserAccountDisabled);
                     } else {
-                        anyhow::bail!(ServerApiAuthError::CredentialsRejected);
+                        anyhow::bail!("server rejected authentication credentials");
                     }
                 }
             }
@@ -1632,10 +1622,8 @@ mod tests {
         }
     }
 
-    fn has_auth_error(error: &anyhow::Error, expected: ServerApiAuthError) -> bool {
-        error
-            .chain()
-            .any(|cause| cause.downcast_ref::<ServerApiAuthError>() == Some(&expected))
+    fn has_error_message(error: &anyhow::Error, expected: &str) -> bool {
+        error.chain().any(|cause| cause.to_string() == expected)
     }
 
     #[test]
@@ -1684,9 +1672,9 @@ mod tests {
         ))
         .unwrap_err();
 
-        assert!(has_auth_error(
+        assert!(has_error_message(
             &error,
-            ServerApiAuthError::MissingCredentials
+            "missing authentication credentials"
         ));
         assert_eq!(send_count.load(Ordering::SeqCst), 0);
         assert!(event_receiver.try_recv().is_err());
@@ -1711,9 +1699,9 @@ mod tests {
         ))
         .unwrap_err();
 
-        assert!(has_auth_error(
+        assert!(has_error_message(
             &error,
-            ServerApiAuthError::CredentialsRejected
+            "server rejected authentication credentials"
         ));
         assert_eq!(send_count.load(Ordering::SeqCst), 1);
         assert!(event_receiver.try_recv().is_err());
@@ -1738,9 +1726,9 @@ mod tests {
         ))
         .unwrap_err();
 
-        assert!(has_auth_error(
+        assert!(has_error_message(
             &error,
-            ServerApiAuthError::CredentialsRejected
+            "server rejected authentication credentials"
         ));
         assert_eq!(send_count.load(Ordering::SeqCst), 1);
         assert!(event_receiver.try_recv().is_err());

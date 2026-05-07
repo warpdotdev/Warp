@@ -64,7 +64,7 @@ use crate::{
     },
 };
 
-use super::{ServerApi, ServerApiAuthError};
+use super::ServerApi;
 
 /// Error messages returned from the Firebase REST API when attempting to convert a refresh token
 /// into an access token that indicate the user's token is in an errored state.
@@ -219,7 +219,7 @@ impl ServerApi {
         }
 
         let Some(credentials) = self.auth_state.credentials() else {
-            return Err(ServerApiAuthError::MissingCredentials.into());
+            bail!("missing authentication credentials");
         };
 
         match credentials {
@@ -231,10 +231,6 @@ impl ServerApi {
                 // Generate a new ID token if the token has expired or will expire in the
                 // next five minutes. This matches the behavior of the Firebase Auth SDK.
                 if chrono::DateTime::now() + chrono::Duration::minutes(5) >= expiration_time {
-                    if !self.allowed_to_refresh_token() {
-                        return Err(ServerApiAuthError::ExpiredRefreshDisabled.into());
-                    }
-
                     let refresh_token = auth_tokens.refresh_token.clone();
                     let firebase_token = FirebaseToken::Refresh(RefreshToken::new(refresh_token));
 

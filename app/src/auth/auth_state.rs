@@ -229,72 +229,56 @@ impl AuthState {
     }
     /// Applies auth data received by the remote server daemon handshake.
     ///
-    /// Empty fields are intentionally ignored so reconnects or token-rotation messages can update
-    /// one part of the auth context without clearing the rest.
+    /// Empty values are authoritative: an empty token clears bearer credentials, and an empty user
+    /// ID clears the daemon user identity.
     pub(crate) fn apply_remote_server_auth_context(
         &self,
-        auth_token: Option<String>,
-        user_id: Option<String>,
-        user_email: Option<String>,
+        auth_token: String,
+        user_id: String,
+        user_email: String,
     ) {
-        if let Some(auth_token) = auth_token.filter(|token| !token.is_empty()) {
-            self.set_remote_server_bearer_token(auth_token);
-        }
-
-        let Some(user_id) = user_id.filter(|user_id| !user_id.is_empty()) else {
-            return;
-        };
-
-        let existing_user = self.user.read().clone();
-        let user_email = user_email
-            .filter(|email| !email.is_empty())
-            .or_else(|| {
-                existing_user
-                    .as_ref()
-                    .map(|user| user.metadata.email.clone())
-            })
-            .unwrap_or_default();
-
-        let existing_metadata = existing_user.as_ref().map(|user| &user.metadata);
-        let user = User {
-            local_id: UserUid::new(user_id),
-            metadata: UserMetadata {
-                email: user_email,
-                display_name: existing_metadata.and_then(|metadata| metadata.display_name.clone()),
-                photo_url: existing_metadata.and_then(|metadata| metadata.photo_url.clone()),
-            },
-            is_onboarded: existing_user
-                .as_ref()
-                .map(|user| user.is_onboarded)
-                .unwrap_or_default(),
-            needs_sso_link: existing_user
-                .as_ref()
-                .map(|user| user.needs_sso_link)
-                .unwrap_or_default(),
-            anonymous_user_type: existing_user
-                .as_ref()
-                .and_then(|user| user.anonymous_user_type),
-            is_on_work_domain: existing_user
-                .as_ref()
-                .map(|user| user.is_on_work_domain)
-                .unwrap_or_default(),
-            linked_at: existing_user.as_ref().and_then(|user| user.linked_at),
-            personal_object_limits: existing_user
-                .as_ref()
-                .and_then(|user| user.personal_object_limits),
-            principal_type: existing_user
-                .as_ref()
-                .map(|user| user.principal_type)
-                .unwrap_or_default(),
-        };
-        self.set_user(Some(user));
+        self.set_remote_server_bearer_token(auth_token);
+        self.set_remote_server_user(user_id, user_email);
     }
 
     pub(crate) fn set_remote_server_bearer_token(&self, auth_token: String) {
         if auth_token.is_empty() {
+            self.set_credentials(None);
             return;
         }
         self.set_credentials(Some(Credentials::Bearer(auth_token)));
+    }
+
+    fn set_remote_server_user(&self, user_id: String, user_email: String) {
+        let mut user = self.user.write();
+        if user_id.is_empty() {
+            *user = None;
+            return;
+        }
+
+        match user.as_mut() {
+            Some(user) => {
+                user.local_id = UserUid::new(&user_id);
+                user.metadata.email = user_email;
+            }
+            None => {
+                *user = Some(User {
+                    local_id: UserUid::new(&user_id),
+                    metadata: UserMetadata {
+                        email: user_email,
+                        display_name: None,
+                        photo_url: None,
+                    },
+                    is_onboarded: false,
+                    needs_sso_link: false,
+                    anonymous_user_type: None,
+                    is_on_work_domain: false,
+                    linked_at: None,
+                    personal_object_limits: None,
+                    principal_type: PrincipalType::default(),
+                });
+            }
+        }
     }
 
     /// Updates the Firebase auth tokens within the current credentials.
