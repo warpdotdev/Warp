@@ -2345,7 +2345,7 @@ pub enum TelemetryEvent {
     #[cfg(windows)]
     AutoupdateMutexTimeout,
     #[cfg(windows)]
-    AutoupdateForcekillFailed,
+    AutoupdateForcekillFailed { exit_code: i32 },
     ExecutedWarpDrivePrompt {
         id: Option<WorkflowId>,
         selection_source: WorkflowSelectionSource,
@@ -4314,8 +4314,11 @@ impl TelemetryEvent {
             TelemetryEvent::WSLRegistryError
             | TelemetryEvent::AutoupdateUnableToCloseApplications
             | TelemetryEvent::AutoupdateFileInUse
-            | TelemetryEvent::AutoupdateMutexTimeout
-            | TelemetryEvent::AutoupdateForcekillFailed => None,
+            | TelemetryEvent::AutoupdateMutexTimeout => None,
+            #[cfg(windows)]
+            TelemetryEvent::AutoupdateForcekillFailed { exit_code } => Some(json!({
+                "exit_code": exit_code,
+            })),
             TelemetryEvent::InputBufferSubmitted {
                 input_type,
                 is_locked,
@@ -5052,7 +5055,7 @@ impl TelemetryEvent {
             | TelemetryEvent::AutoupdateUnableToCloseApplications
             | TelemetryEvent::AutoupdateFileInUse
             | TelemetryEvent::AutoupdateMutexTimeout
-            | TelemetryEvent::AutoupdateForcekillFailed => false,
+            | TelemetryEvent::AutoupdateForcekillFailed { .. } => false,
         }
     }
 
@@ -5498,7 +5501,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::AutoupdateUnableToCloseApplications
             | Self::AutoupdateFileInUse
             | Self::AutoupdateMutexTimeout
-            | Self::AutoupdateForcekillFailed => EnablementState::Always,
+            | Self::AutoupdateForcekillFailed { .. } => EnablementState::Always,
             Self::ToggleCodebaseContext => EnablementState::Always,
             Self::ToggleAutoIndexing => EnablementState::Always,
             Self::AgentModeRatedResponse => {
@@ -6028,7 +6031,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             #[cfg(windows)]
             Self::AutoupdateMutexTimeout => "Windows Autoupdate: Mutex Timeout",
             #[cfg(windows)]
-            Self::AutoupdateForcekillFailed => "Windows Autoupdate: Forcekill Failed",
+            Self::AutoupdateForcekillFailed { .. } => "Windows Autoupdate: Forcekill Failed",
             Self::ToggleCodebaseContext => "Toggle Agent Mode Codebase Context",
             Self::ToggleAutoIndexing => "Toggle Codebase Context Autoindexing",
             Self::ActiveIndexedReposChanged => "Active Indexed Repos Changed",
@@ -6846,7 +6849,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "The Windows auto-update installer timed out waiting for Warp to release its mutex; a force-kill was attempted"
             }
             #[cfg(windows)]
-            Self::AutoupdateForcekillFailed => {
+            Self::AutoupdateForcekillFailed { .. } => {
                 "The Windows auto-update installer failed to force-kill Warp after the mutex timeout"
             }
             Self::ToggleCodebaseContext => {
