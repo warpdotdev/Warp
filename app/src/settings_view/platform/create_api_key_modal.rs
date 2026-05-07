@@ -285,9 +285,18 @@ impl CreateApiKeyModal {
             async move { server_api.list_agent_identities().await },
             |me, res, ctx| {
                 me.is_loading_agents = false;
-                if let Ok(agents) = res {
-                    me.agents = agents;
-                    me.populate_agent_dropdown(ctx);
+                match res {
+                    Ok(agents) => {
+                        me.agents = agents;
+                        me.populate_agent_dropdown(ctx);
+                    }
+                    Err(err) => {
+                        log::error!("Failed to load agent identities: {err}");
+                        ctx.emit(CreateApiKeyModalEvent::Error {
+                            message: "Failed to load agents. Please close and try again."
+                                .to_string(),
+                        });
+                    }
                 }
                 ctx.notify();
             },

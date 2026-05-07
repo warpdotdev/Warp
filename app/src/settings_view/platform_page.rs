@@ -89,11 +89,7 @@ impl PlatformPageView {
                                         ApiKeyScope::Personal
                                     }
                                     warp_graphql::object_permissions::OwnerType::Team => {
-                                        if FeatureFlag::NamedAgents.is_enabled() {
-                                            ApiKeyScope::Agent
-                                        } else {
-                                            ApiKeyScope::Team
-                                        }
+                                        ApiKeyScope::Team
                                     }
                                 };
                                 APIKeyProperties::new(
@@ -217,13 +213,7 @@ impl PlatformPageView {
 
                 let scope = match api_key.owner_type {
                     warp_graphql::object_permissions::OwnerType::User => ApiKeyScope::Personal,
-                    warp_graphql::object_permissions::OwnerType::Team => {
-                        if FeatureFlag::NamedAgents.is_enabled() {
-                            ApiKeyScope::Agent
-                        } else {
-                            ApiKeyScope::Team
-                        }
-                    }
+                    warp_graphql::object_permissions::OwnerType::Team => ApiKeyScope::Team,
                 };
                 let ui_key = APIKeyProperties::new(
                     uid,
