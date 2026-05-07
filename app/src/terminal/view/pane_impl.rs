@@ -10,6 +10,7 @@ use crate::ai::blocklist::agent_view::agent_view_bg_fill;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
 use crate::ai::blocklist::agent_view::render_orchestration_breadcrumbs;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
+use crate::ai::conversation_status_ui::render_status_element;
 use crate::appearance::Appearance;
 use crate::drive::sharing::ShareableObject;
 use crate::features::FeatureFlag;
@@ -35,7 +36,9 @@ use crate::terminal::TerminalView;
 use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;
-use crate::ui_components::icon_with_status::render_icon_with_status;
+use crate::ui_components::icon_with_status::{
+    render_icon_without_status, split_status_from_variant, IconWithStatusVariant,
+};
 use crate::ui_components::icons;
 use crate::workspace::tab_settings::TabSettings;
 use settings::Setting as _;
@@ -52,11 +55,21 @@ use warpui::ui_components::components::UiComponentStyles;
 use warpui::WeakModelHandle;
 use warpui::{AppContext, Element, ModelHandle, SingletonEntity, TypedActionView, ViewContext};
 
-/// Total size of the agent icon-with-status component rendered in the pane header.
-/// Sub-components (circle, badge, cloud) are derived inside `render_icon_with_status`.
-/// Sized so the component fits comfortably within `PANE_HEADER_HEIGHT` (34px) with a
-/// few pixels of vertical buffer.
-const PANE_HEADER_AGENT_SIZE: f32 = 26.;
+const PANE_HEADER_AGENT_SIZE: f32 = 24.;
+const PANE_HEADER_AGENT_STATUS_ICON_SIZE: f32 = 10.;
+
+fn resolve_pane_agent_icon_and_status(
+    variant: IconWithStatusVariant,
+    appearance: &Appearance,
+) -> (Box<dyn Element>, Option<ConversationStatus>) {
+    let (variant_without_status, status) = split_status_from_variant(variant);
+    let icon = render_icon_without_status(
+        variant_without_status,
+        PANE_HEADER_AGENT_SIZE,
+        appearance.theme(),
+    );
+    (icon, status)
+}
 
 impl TerminalView {
     /// Returns a reference to the focus handle if one has been set.
@@ -319,41 +332,41 @@ impl TerminalView {
                     Some(ConversationTranscriptViewerStatus::ViewingAmbientConversation(_))
                 )
         };
-        let theme = appearance.theme();
-        let render_agent_circle = |variant| {
-            render_icon_with_status(
-                variant,
-                PANE_HEADER_AGENT_SIZE,
-                0.,
-                theme,
-                theme.background(),
-            )
-        };
-        let pane_indicator = if should_render_ambient_agent_indicator {
-            // Shared/viewed ambient session: route through the shared helper so the pane header
-            // renders the same brand-color circle + cloud lobe + status as the vertical tab.
-            terminal_view_agent_icon_variant(self, app).map(render_agent_circle)
+        let (pane_indicator, agent_status) = if should_render_ambient_agent_indicator {
+            match terminal_view_agent_icon_variant(self, app) {
+                Some(variant) => {
+                    let (icon, status) = resolve_pane_agent_icon_and_status(variant, appearance);
+                    (Some(icon), status)
+                }
+                None => (None, None),
+            }
         } else if let Some(shared_session) = self.shared_session.as_ref() {
             if let Some(Viewer {
                 sharer: Some(sharer),
                 ..
             }) = shared_session.kind().as_viewer()
             {
-                Some(
-                    Container::new(ChildView::new(&sharer.avatar).finish())
-                        .with_margin_right(4.)
-                        .finish(),
+                (
+                    Some(
+                        Container::new(ChildView::new(&sharer.avatar).finish())
+                            .with_margin_right(4.)
+                            .finish(),
+                    ),
+                    None,
                 )
             } else {
-                Some(
-                    ConstrainedBox::new(
-                        icons::Icon::Sharing
-                            .to_warpui_icon(shared_session_indicator_color(appearance).into())
-                            .finish(),
-                    )
-                    .with_height(appearance.ui_font_size())
-                    .with_width(appearance.ui_font_size())
-                    .finish(),
+                (
+                    Some(
+                        ConstrainedBox::new(
+                            icons::Icon::Sharing
+                                .to_warpui_icon(shared_session_indicator_color(appearance).into())
+                                .finish(),
+                        )
+                        .with_height(appearance.ui_font_size())
+                        .with_width(appearance.ui_font_size())
+                        .finish(),
+                    ),
+                    None,
                 )
             }
         } else if self.is_using_conversation_for_pane_header_title
@@ -364,11 +377,15 @@ impl TerminalView {
                     .selected_conversation(app)
                     .is_some())
         {
-            // Conversation-bound terminal: same shared helper — produces an OzAgent variant for
-            // local conversations and a CLIAgent variant for the (rare) CLI-backed terminal.
-            terminal_view_agent_icon_variant(self, app).map(render_agent_circle)
+            match terminal_view_agent_icon_variant(self, app) {
+                Some(variant) => {
+                    let (icon, status) = resolve_pane_agent_icon_and_status(variant, appearance);
+                    (Some(icon), status)
+                }
+                None => (None, None),
+            }
         } else {
-            self.render_terminal_mode_indicator(app)
+            (self.render_terminal_mode_indicator(app), None)
         };
 
         let is_pane_dragging = header_ctx.draggable_state.is_dragging();
@@ -378,6 +395,17 @@ impl TerminalView {
             .with_main_axis_size(MainAxisSize::Min);
         if let Some(indicator) = pane_indicator {
             center_row.add_child(Container::new(indicator).with_margin_right(4.).finish());
+        }
+        if let Some(status) = agent_status {
+            center_row.add_child(
+                Container::new(render_status_element(
+                    &status,
+                    PANE_HEADER_AGENT_STATUS_ICON_SIZE,
+                    appearance,
+                ))
+                .with_margin_right(4.)
+                .finish(),
+            );
         }
         let title_text = render_pane_header_title_text(title, appearance, clip_config);
         if is_pane_dragging {

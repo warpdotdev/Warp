@@ -115,6 +115,90 @@ pub(crate) enum IconWithStatusVariant {
     },
 }
 
+pub(crate) fn split_status_from_variant(
+    variant: IconWithStatusVariant,
+) -> (IconWithStatusVariant, Option<ConversationStatus>) {
+    match variant {
+        IconWithStatusVariant::OzAgent { status, is_ambient } => (
+            IconWithStatusVariant::OzAgent {
+                status: None,
+                is_ambient,
+            },
+            status,
+        ),
+        IconWithStatusVariant::CLIAgent {
+            agent,
+            status,
+            is_ambient,
+        } => (
+            IconWithStatusVariant::CLIAgent {
+                agent,
+                status: None,
+                is_ambient,
+            },
+            status,
+        ),
+        variant => (variant, None),
+    }
+}
+
+pub(crate) fn render_icon_without_status(
+    variant: IconWithStatusVariant,
+    total_size: f32,
+    theme: &WarpTheme,
+) -> Box<dyn Element> {
+    let sub_text = theme.sub_text_color(theme.background());
+
+    match variant {
+        IconWithStatusVariant::Neutral { icon, icon_color } => render_neutral_circle(
+            icon.to_warpui_icon(icon_color).finish(),
+            internal_colors::fg_overlay_2(theme),
+            total_size,
+        ),
+        IconWithStatusVariant::NeutralElement { icon_element } => render_neutral_circle(
+            icon_element,
+            internal_colors::fg_overlay_2(theme),
+            total_size,
+        ),
+        IconWithStatusVariant::OzAgent { is_ambient, .. } => {
+            let background = if is_ambient {
+                ThemeFill::Solid(OZ_AMBIENT_BACKGROUND_COLOR)
+            } else {
+                theme.background()
+            };
+            let glyph = if is_ambient {
+                WarpIcon::OzCloud
+            } else {
+                WarpIcon::Oz
+            };
+            let glyph_color = if is_ambient {
+                WarpThemeFill::Solid(ColorU::black())
+            } else {
+                theme.main_text_color(theme.background())
+            };
+            render_neutral_circle(
+                glyph.to_warpui_icon(glyph_color).finish(),
+                background,
+                total_size,
+            )
+        }
+        IconWithStatusVariant::CLIAgent { agent, .. } => {
+            let brand_color = agent
+                .brand_color()
+                .unwrap_or(ColorU::new(100, 100, 100, 255));
+            let icon_color = agent.brand_icon_color();
+            let icon_element = agent
+                .icon()
+                .map(|icon| {
+                    icon.to_warpui_icon(WarpThemeFill::Solid(icon_color))
+                        .finish()
+                })
+                .unwrap_or_else(|| WarpIcon::Terminal.to_warpui_icon(sub_text).finish());
+            render_neutral_circle(icon_element, ThemeFill::Solid(brand_color), total_size)
+        }
+    }
+}
+
 /// Renders an icon-with-status component sized entirely from a single `total_size`. All
 /// sub-components (brand circle, status badge, cloud lobe) are derived proportionally,
 /// so callers only need to pick the size they want.

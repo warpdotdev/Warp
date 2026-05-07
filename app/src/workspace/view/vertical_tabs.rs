@@ -12,7 +12,10 @@ use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::view::TerminalViewState;
 use crate::terminal::CLIAgent;
 use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
-use crate::ui_components::icon_with_status::{render_icon_with_status, IconWithStatusVariant};
+use crate::ui_components::icon_with_status::{
+    render_icon_with_status, render_icon_without_status, split_status_from_variant,
+    IconWithStatusVariant,
+};
 use crate::workspace::view::vertical_tabs::telemetry::{
     VerticalTabsChipEntrypoint, VerticalTabsTelemetryEvent,
 };
@@ -247,17 +250,33 @@ fn oz_icon_fill(theme: &WarpTheme) -> WarpThemeFill {
     theme.main_text_color(theme.background())
 }
 
-fn render_pane_icon_with_status(
+fn render_pane_icon_without_status(
     variant: IconWithStatusVariant,
     theme: &WarpTheme,
 ) -> Box<dyn Element> {
-    render_icon_with_status(
-        variant,
-        VERTICAL_TABS_ICON_SIZE,
-        0.,
-        theme,
-        theme.background(),
-    )
+    let (variant_without_status, _) = split_status_from_variant(variant);
+    render_icon_without_status(variant_without_status, VERTICAL_TABS_ICON_SIZE, theme)
+}
+
+fn prefix_with_status_pill(
+    element: Box<dyn Element>,
+    status: Option<ConversationStatus>,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let Some(status) = status else {
+        return element;
+    };
+    Flex::row()
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_spacing(4.)
+        .with_child(render_status_element(
+            &status,
+            VERTICAL_TABS_SUMMARY_STATUS_ICON_SIZE,
+            appearance,
+        ))
+        .with_child(Shrinkable::new(1., element).finish())
+        .finish()
 }
 
 #[derive(Clone, Default)]
@@ -2462,10 +2481,9 @@ fn render_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn Element> {
     let theme = appearance.theme();
     let font_family = appearance.ui_font_family();
 
-    let icon = render_pane_icon_with_status(
-        resolve_icon_with_status_variant(&props.typed, &props.title, appearance, app),
-        theme,
-    );
+    let variant = resolve_icon_with_status_variant(&props.typed, &props.title, appearance, app);
+    let (variant_without_status, status) = split_status_from_variant(variant);
+    let icon = render_icon_without_status(variant_without_status, VERTICAL_TABS_ICON_SIZE, theme);
 
     // Top-align the icon when there are multiple lines of content so it sits next to
     // the first line; center it for single-line rows (Settings, Notebook with no subtitle, etc.).
@@ -2480,36 +2498,34 @@ fn render_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn Element> {
         render_terminal_row_content(
             &props,
             terminal_pane.terminal_view(app).as_ref(app),
+            status,
             appearance,
             app,
         )
     } else {
         let has_indicator =
             props.typed.badge(app).is_some() || has_unread_activity(&props.typed, app);
+        let title_slot = render_pane_title_slot(
+            &props,
+            || {
+                Text::new_inline(props.displayed_title().to_string(), font_family, 12.)
+                    .with_clip(ClipConfig::ellipsis())
+                    .with_color(theme.main_text_color(theme.background()).into())
+                    .finish()
+            },
+            12.,
+            theme.main_text_color(theme.background()),
+            ClipConfig::ellipsis(),
+            appearance,
+            app,
+        );
+        let title_with_status = prefix_with_status_pill(title_slot, status, appearance);
+
         let mut title_row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        title_row.add_child(
-            Shrinkable::new(
-                1.,
-                render_pane_title_slot(
-                    &props,
-                    || {
-                        Text::new_inline(props.displayed_title().to_string(), font_family, 12.)
-                            .with_clip(ClipConfig::ellipsis())
-                            .with_color(theme.main_text_color(theme.background()).into())
-                            .finish()
-                    },
-                    12.,
-                    theme.main_text_color(theme.background()),
-                    ClipConfig::ellipsis(),
-                    appearance,
-                    app,
-                ),
-            )
-            .finish(),
-        );
+        title_row.add_child(Shrinkable::new(1., title_with_status).finish());
         if has_indicator {
             title_row.add_child(
                 Container::new(render_title_indicator(theme))
@@ -3262,6 +3278,7 @@ impl PaneGroup {
 fn render_terminal_row_content(
     props: &PaneProps<'_>,
     terminal_view: &TerminalView,
+    status: Option<ConversationStatus>,
     appearance: &Appearance,
     app: &AppContext,
 ) -> Box<dyn Element> {
@@ -3367,12 +3384,13 @@ fn render_terminal_row_content(
         }
     };
 
+    let first_line_with_status = prefix_with_status_pill(first_line, status, appearance);
     let first_line_element = if has_unread_activity(&props.typed, app) {
         Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_child(Shrinkable::new(1., first_line).finish())
+            .with_child(Shrinkable::new(1., first_line_with_status).finish())
             .with_child(
                 Container::new(render_title_indicator(theme))
                     .with_margin_left(4.)
@@ -3380,7 +3398,7 @@ fn render_terminal_row_content(
             )
             .finish()
     } else {
-        first_line
+        first_line_with_status
     };
 
     let mut content = Flex::column()
@@ -3589,7 +3607,7 @@ fn render_summary_tab_item(
     let icon = summary_pane_kind_icons
         .map(|icons| render_summary_pane_kind_icons(icons, appearance))
         .unwrap_or_else(|| {
-            render_pane_icon_with_status(
+            render_pane_icon_without_status(
                 resolve_icon_with_status_variant(&props.typed, &props.title, appearance, app),
                 theme,
             )
@@ -6041,10 +6059,9 @@ fn render_compact_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn El
     let font_family = appearance.ui_font_family();
     let has_indicator = props.typed.badge(app).is_some() || has_unread_activity(&props.typed, app);
 
-    let icon = render_pane_icon_with_status(
-        resolve_icon_with_status_variant(&props.typed, &props.title, appearance, app),
-        theme,
-    );
+    let variant = resolve_icon_with_status_variant(&props.typed, &props.title, appearance, app);
+    let (variant_without_status, status) = split_status_from_variant(variant);
+    let icon = render_icon_without_status(variant_without_status, VERTICAL_TABS_ICON_SIZE, theme);
 
     let primary_info = *TabSettings::as_ref(app).vertical_tabs_primary_info.value();
     let compact_subtitle = resolve_compact_subtitle(
@@ -6186,13 +6203,14 @@ fn render_compact_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn El
             (title, subtitle)
         };
 
-    // Title row with optional indicator
+    // Title row with optional status prefix and indicator
+    let title_with_status = prefix_with_status_pill(title_element, status, appearance);
     let title_row = if has_indicator {
         Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(Shrinkable::new(1., title_element).finish())
+            .with_child(Shrinkable::new(1., title_with_status).finish())
             .with_child(
                 Container::new(render_title_indicator(theme))
                     .with_margin_left(4.)
@@ -6200,7 +6218,7 @@ fn render_compact_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn El
             )
             .finish()
     } else {
-        title_element
+        title_with_status
     };
 
     // Assemble text column: title + optional subtitle
