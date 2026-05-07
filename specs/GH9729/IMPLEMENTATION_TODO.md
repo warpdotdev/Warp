@@ -128,7 +128,7 @@ Notes are written to `specs/GH9729/reviews/<item>-r<N>.md`.
 | 5a | bounded `LocalFile` asset-cache read | `e338655` | [x] | [x] |
 | 5b | post-load callback rewrites failures to `Error` | `d5fdacc` | [x] | [x] |
 | 5-tests | asset-cache tests | `4ed1e80` | [x] | [x] |
-| 7 | telemetry serialization test | `ec6ffb1` | [ ] | [ ] |
+| 7 | telemetry serialization test | `ec6ffb1` | [x] | [x] |
 | FINAL | presubmit (fmt + clippy + nextest) | `3bf5148`, `f743be1`, `8a5c2e6` | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding `reviews/<item>-r<N>.md` exists and
