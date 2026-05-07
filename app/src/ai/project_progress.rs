@@ -61,22 +61,32 @@ pub struct ProjectProgressContext {
 }
 
 impl ProjectProgressContext {
-    /// Loads progress context for `project_path`.
+    /// Maximum number of ancestor directories to walk when looking for
+    /// `.ai/progress.md`. Bounds the I/O for pathological deep paths.
+    const MAX_ANCESTOR_WALK: usize = 30;
+
+    /// Loads progress context, starting at `start_dir` and walking up its
+    /// ancestors until a directory containing `.ai/progress.md` is found.
     ///
-    /// Returns `None` when `.ai/progress.md` does not exist, so callers can
+    /// Returns `None` when no ancestor contains `.ai/progress.md`, or when
+    /// the file exists but contains no parseable task entries — callers can
     /// cheaply skip the feature for projects that haven't opted in.
-    pub fn load(project_path: &Path) -> Option<Self> {
+    pub fn load(start_dir: &Path) -> Option<Self> {
+        let project_path = Self::find_project_root(start_dir)?;
         let progress_path = project_path.join(PROGRESS_FILE);
-        if !progress_path.exists() {
-            return None;
-        }
 
         let content = std::fs::read_to_string(&progress_path).ok()?;
         let mut tasks = Self::parse_progress(&content);
 
         // Best-effort: update task statuses from git history.
-        if let Some(git_log) = Self::read_git_log_sync(project_path) {
+        if let Some(git_log) = Self::read_git_log_sync(&project_path) {
             Self::derive_status_from_git(&mut tasks, &git_log);
+        }
+
+        // No parseable tasks → skip injection entirely. The feature is opt-in,
+        // so an empty / malformed file shouldn't surface placeholder context.
+        if tasks.is_empty() {
+            return None;
         }
 
         let current_task = tasks
@@ -92,7 +102,7 @@ impl ProjectProgressContext {
         let global_ctx_dir = dirs::home_dir().map(|h| h.join(GLOBAL_CTX_SUBDIR));
 
         Some(ProjectProgressContext {
-            project_path: project_path.to_path_buf(),
+            project_path,
             current_task,
             next_task,
             goal: Self::read_ctx_head(&ctx_dir, global_ctx_dir.as_deref(), "00_goal.md", 15),
@@ -110,6 +120,16 @@ impl ProjectProgressContext {
                 3,
             ),
         })
+    }
+
+    /// Walks ancestors of `start_dir` (including `start_dir` itself) and
+    /// returns the first one containing `.ai/progress.md`.
+    fn find_project_root(start_dir: &Path) -> Option<PathBuf> {
+        start_dir
+            .ancestors()
+            .take(Self::MAX_ANCESTOR_WALK)
+            .find(|dir| dir.join(PROGRESS_FILE).exists())
+            .map(Path::to_path_buf)
     }
 
     /// Formats the context as a concise block (< 100 lines) suitable for
@@ -386,6 +406,57 @@ mod tests {
         assert_eq!(tasks[0].status, TaskStatus::Done);
         assert_eq!(tasks[1].status, TaskStatus::Doing);
         assert_eq!(tasks[2].status, TaskStatus::Todo);
+    }
+
+    #[test]
+    fn load_walks_ancestors_to_find_progress_file() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".ai")).unwrap();
+        std::fs::write(
+            root.join(".ai/progress.md"),
+            "[1] Setup  doing\n[2] Build  todo\n",
+        )
+        .unwrap();
+
+        let nested = root.join("a/b/c");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        let ctx = ProjectProgressContext::load(&nested).expect("should resolve from subdir");
+        // The resolved root must be an ancestor of the starting directory and
+        // must itself contain `.ai/progress.md`.
+        assert!(
+            nested.starts_with(&ctx.project_path),
+            "resolved project_path must be an ancestor of the start dir"
+        );
+        assert!(ctx.project_path.join(".ai/progress.md").exists());
+        assert!(ctx.current_task.is_some());
+    }
+
+    #[test]
+    fn load_returns_none_when_no_progress_file_in_any_ancestor() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let nested = tmp.path().join("a/b");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert!(ProjectProgressContext::load(&nested).is_none());
+    }
+
+    #[test]
+    fn load_returns_none_when_progress_file_has_no_parseable_tasks() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".ai")).unwrap();
+        // Only comments / blank lines / malformed lines — no valid task entries.
+        std::fs::write(
+            root.join(".ai/progress.md"),
+            "# my project\n\nnot a task line\n[abc] bad number  doing\n",
+        )
+        .unwrap();
+
+        assert!(
+            ProjectProgressContext::load(root).is_none(),
+            "empty / unparseable progress.md must not inject placeholder context"
+        );
     }
 
     #[test]
