@@ -5369,15 +5369,8 @@ impl Workspace {
             .collect::<Vec<_>>()
     }
 
-    /// Focuses the given pane within the pane group.
-    ///
-    /// Routes through [`PaneGroup::reveal_and_focus_pane`] so cross-tab
-    /// navigation (e.g. the orchestration breadcrumb's parent crumb,
-    /// jump-to-toast, conversation history palette) can target a pane
-    /// that is currently swapped out of the tree as the original of an
-    /// active `TemporaryReplacement`. Without the reveal step, focus
-    /// would silently land on an off-tree pane and the user's view
-    /// wouldn't actually change.
+    /// Focuses the given pane, revealing it first if it is hidden behind a
+    /// temporary swap.
     pub fn focus_pane(&mut self, pane_view_locator: PaneViewLocator, ctx: &mut ViewContext<Self>) {
         if let Some((index, tab)) = self
             .tabs
@@ -10223,12 +10216,9 @@ impl Workspace {
         }
     }
 
-    /// If the tab at `index` was created by [`pane_group::Event::OpenChildAgentInNewTab`]
-    /// and still contains the lone child agent pane it was split off with,
-    /// move that pane back to the origin pane group as a hidden child agent
-    /// instead of letting the close path tear down its `TerminalView`.
-    /// Returns `true` if the re-adoption ran (the tab's pane group is now
-    /// empty) so the caller can skip the regular detach-for-close path.
+    /// If a closing tab is an untouched split-off child-agent tab, move its
+    /// pane back to the original tab instead of closing it. Returns true if
+    /// handled.
     fn try_re_adopt_split_off_child_agent_tab(
         &mut self,
         index: usize,
@@ -10250,10 +10240,8 @@ impl Workspace {
         };
 
         let pane_group = tab_data.pane_group.clone();
-        // Expect a single pane in the split-off tab — the child agent's
-        // `TerminalView` we want to preserve. Bail if the layout has
-        // changed (e.g. the user split additional panes into the tab) so
-        // we don't accidentally disturb unrelated state.
+        // Only re-adopt untouched split-off tabs; changed layouts use normal
+        // close handling.
         let pane_ids: Vec<PaneId> = pane_group.as_ref(ctx).pane_ids().collect();
         if pane_ids.len() != 1 {
             return false;
@@ -10285,10 +10273,7 @@ impl Workspace {
             return;
         };
 
-        // If the vertical-tabs detail sidecar is anchored to this tab's pane group, clear it.
-        // Otherwise it will try to position itself against a pane row that is about to disappear
-        // (either because the tab is being removed from `self.tabs`, or because we're about to
-        // close the window for the last tab).
+        // Clear a detail sidecar anchored to this tab before the tab disappears.
         self.vertical_tabs_panel
             .clear_detail_sidecar_if_for_pane_group(pane_group.id());
 
@@ -10301,19 +10286,9 @@ impl Workspace {
             return;
         }
 
-        // If this tab is a split-off child agent tab (created via
-        // `OpenChildAgentInNewTab`), re-adopt its lone pane back into the
-        // source pane group so the live `TerminalView` survives the tab
-        // close. When this succeeds, the tab's pane group becomes empty
-        // and we skip the regular detach-for-close path — there are no
-        // panes left to detach.
-        //
-        // Only run for actual close paths. `remove_tab_without_undo`
-        // (used by cross-window tab transfers / drag-to-other-window)
-        // calls us with `detach_panes_for_close = false` — the pane
-        // group is being moved, not torn down, and re-adoption would
-        // yank the child pane back to its source orchestrator,
-        // stranding the user's drag target with an empty pane group.
+        // Preserve split-off child-agent tabs by moving their lone pane back
+        // before close cleanup. Skip tab moves so the destination keeps the
+        // pane.
         let re_adopted =
             detach_panes_for_close && self.try_re_adopt_split_off_child_agent_tab(index, ctx);
 
@@ -10344,15 +10319,8 @@ impl Workspace {
         let removed_pane_group_id = tab_data.pane_group.id();
         self.tab_mru_order.retain(|id| *id != removed_pane_group_id);
 
-        // Skip the undo-close stack when the tab was re-adopted: its pane
-        // group is now empty (the lone pane moved back to the source
-        // group), but `panes.root` still points at the (now-departed)
-        // pane id since `PaneNode::remove` cannot remove a root leaf.
-        // Stashing that broken `tab_data` would let "reopen closed tab"
-        // restore a tab whose root references a pane no longer in
-        // `pane_contents`, producing a blank/error pane. The live
-        // `TerminalView` is preserved by the re-adoption itself, so
-        // there's nothing meaningful to undo here.
+        // Re-adopted child tabs leave no useful tab contents to restore; the
+        // live pane already moved back.
         if add_to_undo_stack && !re_adopted {
             let handle = ctx.handle();
             UndoCloseStack::handle(ctx).update(ctx, |stack, ctx| {
@@ -13917,17 +13885,8 @@ impl Workspace {
             #[cfg(not(feature = "local_fs"))]
             pane_group::Event::RemoteRepoNavigated { .. } => {}
             pane_group::Event::OpenChildAgentInNewTab { conversation_id } => {
-                // "Open in new tab" from the orchestration pill bar's 3-dot
-                // menu. Reuse the existing hidden child agent pane that
-                // already hosts the live `TerminalView` for this conversation
-                // by detaching it from the orchestrator's pane group and
-                // adopting it into a new tab's pane group. Creating a fresh
-                // tab with a new terminal view and calling
-                // `enter_agent_view_for_conversation` on it would clone the
-                // conversation into a second view, cancelling any in-flight
-                // commands running in the original view and briefly leaking
-                // the child transcript into the orchestrator pane while
-                // ownership shuffles between views.
+                // Move the existing child pane into a new tab so the live
+                // session stays intact.
                 let conversation_id = *conversation_id;
                 let removed_pane = pane_group.update(ctx, |pg, ctx| {
                     pg.take_child_agent_pane_for_split_off(conversation_id, ctx)
@@ -13944,10 +13903,7 @@ impl Workspace {
                 };
                 let source_pane_group = pane_group.downgrade();
                 self.add_tab_from_existing_pane(removed_pane, new_tab_index, ctx);
-                // Stamp the new tab's pane group with the source origin so
-                // closing the tab can re-adopt the live `TerminalView` back
-                // to the source instead of dropping it. The new tab is
-                // active after `add_tab_from_existing_pane`.
+                // Mark the new tab so closing it can move the pane back.
                 if let Some(new_pane_group) =
                     self.get_pane_group_view(self.active_tab_index).cloned()
                 {
