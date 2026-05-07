@@ -15725,12 +15725,6 @@ impl TerminalView {
                         ))
                         .with_disabled(is_copy_both_disabled)
                         .into_item(),
-                    MenuItemFields::new("Copy as markdown")
-                        .with_on_select_action(TerminalAction::ContextMenu(
-                            ContextMenuAction::CopyBlocksAsMarkdown,
-                        ))
-                        .with_disabled(is_copy_both_disabled)
-                        .into_item(),
                     MenuItemFields::new(copy_commands_str)
                         .with_on_select_action(TerminalAction::ContextMenu(
                             ContextMenuAction::CopyBlockCommands,
@@ -15740,6 +15734,16 @@ impl TerminalView {
                             ctx,
                         ))
                         .with_disabled(is_copy_commands_disabled)
+                        .into_item(),
+                    // "Copy as markdown" sits after the Copy/Copy commands items
+                    // (rather than between them) so existing integration tests
+                    // that arrow-down to "Copy commands" still land on the
+                    // right item. See `specs/GH6393/product.md` invariant 13.
+                    MenuItemFields::new("Copy as markdown")
+                        .with_on_select_action(TerminalAction::ContextMenu(
+                            ContextMenuAction::CopyBlocksAsMarkdown,
+                        ))
+                        .with_disabled(is_copy_both_disabled)
                         .into_item(),
                     MenuItemFields::new(share_block_label)
                         .with_on_select_action(TerminalAction::ContextMenu(
