@@ -872,11 +872,11 @@ impl AmbientAgentViewModel {
         });
 
         let harness_auth_secrets =
-            self.harness_auth_secret_name.as_ref().map(|name| {
-                HarnessAuthSecretsConfig {
+            self.harness_auth_secret_name
+                .as_ref()
+                .map(|name| HarnessAuthSecretsConfig {
                     claude_auth_secret_name: Some(name.clone()),
-                }
-            });
+                });
 
         AgentConfigSnapshot {
             environment_id: self.environment_id.as_ref().map(|id| id.to_string()),

@@ -1,6 +1,5 @@
 use crate::{
-    error::UserFacingError, managed_secrets::ManagedSecret, request_context::RequestContext,
-    schema,
+    error::UserFacingError, managed_secrets::ManagedSecret, request_context::RequestContext, schema,
 };
 
 /// Input-side `AgentHarness` enum without fallback, required by cynic for input objects.
@@ -29,7 +28,10 @@ impl From<crate::ai::AgentHarness> for Option<AgentHarnessInput> {
 
 /// A GraphQL query to list managed secrets that authenticate the given harness.
 #[derive(cynic::QueryFragment, Debug)]
-#[cynic(graphql_type = "RootQuery", variables = "ListHarnessAuthSecretsVariables")]
+#[cynic(
+    graphql_type = "RootQuery",
+    variables = "ListHarnessAuthSecretsVariables"
+)]
 pub struct ListHarnessAuthSecrets {
     #[arguments(input: $input, requestContext: $request_context)]
     pub harness_auth_secrets: HarnessAuthSecretsResult,

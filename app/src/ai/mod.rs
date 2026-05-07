@@ -13,6 +13,7 @@ pub mod ambient_agents;
 pub(crate) mod artifact_download;
 pub mod artifacts;
 pub(crate) mod attachment_utils;
+pub mod auth_secret_types;
 #[cfg(not(target_family = "wasm"))]
 pub mod aws_credentials;
 pub(crate) mod block_context;
@@ -24,7 +25,6 @@ pub(crate) mod conversation_status_ui;
 pub(crate) mod conversation_utils;
 pub(crate) mod document;
 pub(crate) mod get_relevant_files;
-pub mod auth_secret_types;
 pub mod harness_availability;
 pub(crate) mod harness_display;
 pub(crate) mod llms;

@@ -110,8 +110,8 @@ Today the Warp desktop client has no way to associate an auth secret with a thir
 - **Compile check**: `cargo check` passes with the V2 feature flag on and off.
 - **Unit tests**: FTUX setting read/write helpers round-trip correctly. Auth secret type metadata returns the correct fields for each type.
 
-## Open Questions
+## Resolved Decisions
 
-- Should the "Skip" link also mark FTUX as completed, or only successful secret selection/creation?
-- When a user has no secrets and no way to create one (e.g. network failure), what should the FTUX show? Currently the dropdown would show a loading/error state.
-- Should we auto-select the first available secret when FTUX is shown, or always start with nothing selected?
+- **Skip behavior**: "Skip" marks the per-harness FTUX as completed, just like a successful selection or creation. The user is not re-prompted on subsequent harness reselections.
+- **Empty / failure state**: The dropdown always shows the "New" item with the sidecar of secret types. When the fetch fails (network error or `Failed` state), the existing-secrets section shows a single disabled "Unable to load secrets" row but the "New" item remains so the user can still create. When secret creation fails, an error toast is shown via `ToastStack`.
+- **Initial selection**: The FTUX always starts with no secret selected. The user must explicitly pick an existing secret or create a new one (or use Skip / Cancel).

@@ -26,13 +26,13 @@ use crate::{
     terminal::{settings::TerminalSettings, view::TerminalAction},
     BlocklistAIHistoryModel,
 };
+use warp_cli::agent::Harness;
 use warp_core::settings::Setting;
 use warp_core::ui::theme::color::internal_colors;
-use warpui::elements::Expanded;
 use warpui::{
     elements::{
         Align, AnchorPair, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-        DispatchEventResult, DropTarget, Element, Empty, EventHandler, Flex, Hoverable,
+        DispatchEventResult, DropTarget, Element, Empty, EventHandler, Expanded, Flex, Hoverable,
         MainAxisSize, OffsetPositioning, OffsetType, ParentElement, PositionedElementOffsetBounds,
         PositioningAxis, Radius, SavePosition, Stack, XAxisAnchor, YAxisAnchor,
     },
@@ -504,6 +504,27 @@ impl Input {
         SavePosition::new(outer_stack.finish(), &self.save_position_id()).finish()
     }
 
+    /// Returns true when the auth secret FTUX flow should be shown instead of the
+    /// normal input container.
+    fn should_show_auth_secret_ftux(&self, app: &AppContext) -> bool {
+        let Some(view_model) = self.ambient_agent_view_model() else {
+            return false;
+        };
+        let vm = view_model.as_ref(app);
+        let harness = vm.selected_harness();
+        if harness == Harness::Oz {
+            return false;
+        }
+        // If FTUX has already been completed for this harness, skip it.
+        if crate::ai::cloud_agent_settings::CloudAgentSettings::as_ref(app)
+            .is_harness_auth_ftux_completed(harness)
+        {
+            return false;
+        }
+        // Show FTUX when no auth secret is selected for this harness.
+        vm.selected_harness_auth_secret_name().is_none()
+    }
+
     fn render_cloud_mode_v2_content(
         &self,
         appearance: &Appearance,
@@ -515,13 +536,33 @@ impl Input {
             .with_spacing(CLOUD_MODE_V2_TOP_ROW_GAP);
 
         column.add_child(self.render_cloud_mode_v2_top_row(app));
-        column.add_child(self.render_cloud_mode_v2_input_container(appearance, app));
+
+        if self.should_show_auth_secret_ftux(app) {
+            column.add_child(self.render_auth_secret_ftux_content(appearance, app));
+        } else {
+            column.add_child(self.render_cloud_mode_v2_input_container(appearance, app));
+        }
+
         Align::new(
             ConstrainedBox::new(column.finish())
                 .with_max_width(CLOUD_MODE_V2_MAX_WIDTH)
                 .finish(),
         )
         .finish()
+    }
+
+    /// Renders the auth secret FTUX content via [`ChildView`] of the
+    /// [`AuthSecretFtuxView`] that owns the form state. When the FTUX view is
+    /// not constructed (V2 disabled), returns an empty element.
+    fn render_auth_secret_ftux_content(
+        &self,
+        _appearance: &Appearance,
+        _app: &AppContext,
+    ) -> Box<dyn Element> {
+        match self.auth_secret_ftux_view() {
+            Some(view) => ChildView::new(view).finish(),
+            None => Empty::new().finish(),
+        }
     }
 
     fn render_cloud_mode_v2_history_menu(&self, app: &AppContext) -> Option<Box<dyn Element>> {

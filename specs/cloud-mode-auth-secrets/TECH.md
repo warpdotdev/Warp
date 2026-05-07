@@ -89,6 +89,8 @@ pub enum AuthSecretFetchState {
     NotFetched,
     Loading,
     Loaded(Vec<AuthSecretEntry>),
+    /// Surfaced as "Unable to load secrets" in the dropdown; subsequent
+    /// `ensure_auth_secrets_fetched` retries.
     Failed(String),
 }
 
@@ -111,9 +113,9 @@ pub enum HarnessAvailabilityEvent {
 Key new methods:
 
 - `auth_secrets_for(&self, harness) -> &AuthSecretFetchState` — returns current state for the harness.
-- `ensure_auth_secrets_fetched(&mut self, harness, ctx)` — if `NotFetched`, fires async `list_harness_auth_secrets` and transitions to `Loading`. On success, stores `Loaded(entries)` and emits `AuthSecretsLoaded`.
-- `create_auth_secret(&self, harness, name, secret_type, field_values, ctx)` — encrypts value JSON, calls `create_managed_secret`, appends to cached list, emits `AuthSecretCreated`.
-- `invalidate_auth_secrets(&mut self, harness)` — resets to `NotFetched`.
+- `ensure_auth_secrets_fetched(&mut self, harness, ctx)` — if `NotFetched` or `Failed`, fires async `list_harness_auth_secrets` and transitions to `Loading`. On success, stores `Loaded(entries)` and emits `AuthSecretsLoaded`.
+- `create_auth_secret(&mut self, harness, name, value, ctx)` where `value: ManagedSecretValue` — calls `ManagedSecretManager::create_secret(SecretOwner::CurrentUser, name, value, None)`. On success, appends a new `AuthSecretEntry` to the cached `Loaded` list (or transitions `NotFetched`/`Failed` directly to `Loaded(vec![entry])`) and emits `AuthSecretCreated { harness, name }`. On error, emits `AuthSecretCreationFailed { error }` and leaves the cache untouched.
+- `invalidate_auth_secrets(&mut self, harness)` — resets to `NotFetched`. Called when the user signs out (subscription on `AuthManager`'s `AuthComplete` already exists; we extend it to clear the per-harness cache).
 
 ### 3. Auth secret type metadata
 
@@ -206,51 +208,138 @@ let harness_auth_secrets = self.harness_auth_secret_name.as_ref().map(|name| {
 
 Add getter/setter and new event `AuthSecretSelected`.
 
-### 6. Auth Secret FTUX View
+### 6. Auth Secret Selector — single shared dropdown with sidecar submenu
 
-**New file**: `app/src/terminal/view/ambient_agent/auth_secret_ftux_view.rs`
+**File**: `app/src/terminal/view/ambient_agent/auth_secret_selector.rs` (already exists, will be extended).
 
-A `TypedActionView` that renders the FTUX content. Owns the creation sub-flow UI state:
+The selector is the single source of truth for the dropdown UX. It is rendered both as the top-row chip (returning users) and as the FTUX dropdown (FTUX flow), so the menu items are defined in exactly one place.
+
+#### Dropdown structure
+
+The `Menu<AuthSecretSelectorAction>` shows:
+
+1. A non-clickable header (`MenuItem::Header`) labeled "Auth secret".
+2. The list of existing secrets for the harness, each as a `MenuItem::Item` with `SelectSecret(name)` as its on-select action. When the fetch state is `Loaded` and empty, this section is omitted (per the design decision that the empty-state dropdown shows only the "New" parent).
+3. A `MenuItem::Item` labeled "New" with a `+` icon and a chevron-right indicator on the right side, with `OpenNewTypeSidecar` as its on-select action. Hovering this item opens the sidecar.
+4. While `Loading`, replace the secrets list with a single disabled "Loading…" item; while `Failed`/`NotFetched`, show a disabled "Unable to load secrets" item but **still show the "New" item** so the user can always create a secret even when listing fails.
+
+#### Sidecar pattern (for "New" expansion)
+
+Following the precedent set by `app/src/terminal/profile_model_selector.rs` (`ModelSpecSidecar`) and the new-session menu in `workspace/view.rs` (`update_new_session_sidecar` / `configure_worktree_new_session_sidecar`), the "New" item is *not* a `MenuItem::Submenu` (which is deprecated and unused). Instead:
+
+- The selector owns a second `Menu<AuthSecretSelectorAction>` view (`new_type_sidecar`).
+- Hovering the "New" item triggers `OpenNewTypeSidecar`, which sets `is_new_type_sidecar_open = true` on the selector and calls `set_safe_zone_target` + `set_submenu_being_shown_for_item_index` on the main menu (mirroring the worktree-config sidecar in `view.rs:8800-8814`).
+- The render method adds the sidecar as a positioned overlay child next to the main menu, using `OffsetPositioning::offset_from_save_position_element` with the main menu's save-position id (same approach as `profile_model_selector.rs:1972-1984`). When it would overflow the right window edge, it renders to the left.
+- The sidecar menu items are built from `auth_secret_types_for_harness(harness)`: one `MenuItem::Item` per `AuthSecretTypeInfo`, with `SelectNewType(type_index)` as the on-select action and an icon (`Icon::Key`) on the left.
+- Selecting a type fires `SelectNewType(type_index)`, which:
+  - Closes the sidecar and the main menu.
+  - Emits `AuthSecretSelectorEvent::NewTypeSelected { harness, type_index }` so the FTUX view can swap into creation mode.
+
+#### Updated action and event enums
 
 ```rust
-pub struct AuthSecretFtuxView {
-    ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
-    /// Dropdown + menu for selecting existing secrets or "New" types.
-    dropdown: ViewHandle<...>,
-    /// Current creation state, if user selected "New {type}".
-    creation_state: Option<SecretCreationState>,
-    /// Whether to show the "Click here to skip" link.
-    show_skip_link: bool,
+#[derive(Clone, Debug, PartialEq)]
+pub enum AuthSecretSelectorAction {
+    ToggleMenu,
+    SelectSecret(String),
+    /// Hovering the "New" parent item opens the sidecar.
+    OpenNewTypeSidecar,
+    /// User picked one of the new-secret types from the sidecar.
+    SelectNewType(usize),
 }
 
-pub struct SecretCreationState {
-    pub secret_type_index: usize,
-    pub field_values: Vec<String>,
-    pub is_saving: bool,
+pub enum AuthSecretSelectorEvent {
+    MenuVisibilityChanged { open: bool },
+    /// Emitted when the user picks "New {type}" from the sidecar.
+    NewTypeSelected {
+        harness: Harness,
+        type_index: usize,
+    },
 }
 ```
 
-Subscribes to `HarnessAvailabilityModel` for `AuthSecretsLoaded` to populate the dropdown. Calls `ensure_auth_secrets_fetched` on construction.
-
-Actions: `Cancel`, `Continue`, `Skip`, `SelectSecret(String)`, `SelectNewType(usize)`, `UpdateField { index, value }`.
-
-### 7. Auth Secret Selector Chip
-
-**New file**: `app/src/terminal/view/ambient_agent/auth_secret_selector.rs`
-
-Mirrors `HarnessSelector`: `ActionButton` + `Menu<A>` + `MenuPositioningProvider`.
+#### Selector struct
 
 ```rust
 pub struct AuthSecretSelector {
     button: ViewHandle<ActionButton>,
     menu: ViewHandle<Menu<AuthSecretSelectorAction>>,
+    new_type_sidecar: ViewHandle<Menu<AuthSecretSelectorAction>>,
     is_menu_open: bool,
+    is_new_type_sidecar_open: bool,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
 }
 ```
 
-Subscribes to `HarnessAvailabilityModel` for `AuthSecretsLoaded` / `AuthSecretCreated` to refresh menu items. Uses `NakedHeaderButtonTheme`. Shows key icon + secret name + chevron-down.
+Subscribes to `HarnessAvailabilityModel` for `AuthSecretsLoaded` / `AuthSecretCreated` (refresh both menus) and to `AmbientAgentViewModel` for `HarnessSelected` (rebuild menus when the harness changes).
+
+### 7. Auth Secret FTUX View
+
+**New file**: `app/src/terminal/view/ambient_agent/auth_secret_ftux_view.rs`
+
+A `TypedActionView` that owns the FTUX content. The FTUX view *embeds* the existing `AuthSecretSelector` rather than building its own dropdown — this is the single-source-of-truth requirement.
+
+```rust
+pub struct AuthSecretFtuxView {
+    ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
+    /// Shared dropdown view; same one rendered as the top-row chip when FTUX is
+    /// already completed. The FTUX view subscribes to its events.
+    auth_secret_selector: ViewHandle<AuthSecretSelector>,
+    /// Single-line editors, one per field of the currently-selected new type.
+    /// Empty when no "New {type}" has been selected.
+    field_editors: Vec<ViewHandle<EditorView>>,
+    creation_state: Option<SecretCreationState>,
+    /// Whether to show the "Click here to skip" link. Always true for the
+    /// initial FTUX entry; false when the FTUX is re-entered from the chip's
+    /// "New {type}" path (since the user has already completed FTUX once).
+    show_skip_link: bool,
+}
+
+pub struct SecretCreationState {
+    pub harness: Harness,
+    pub secret_type_index: usize,
+    /// Per-field name for the secret being created. Server requires this.
+    pub secret_name: String,
+    pub is_saving: bool,
+}
+```
+
+#### Field input model
+
+For each `AuthSecretTypeField` of the selected type, the FTUX view constructs a single-line `EditorView` (using `EditorView::single_line` with `SingleLineEditorOptions`, mirroring `model_selector.rs`'s search input). The editor's buffer text is the field value; the FTUX view reads them on Continue without needing per-keystroke `UpdateField` actions.
+
+The view also constructs a name-of-secret editor (the user must name the saved secret); this is a required field that the server uses as the unique key.
+
+#### Actions
+
+```rust
+#[derive(Clone, Debug, PartialEq)]
+pub enum AuthSecretFtuxAction {
+    Cancel,
+    Continue,
+    Skip,
+}
+```
+
+No per-field `UpdateField` action is needed — the editors hold their own state and `Continue` reads them.
+
+#### Behavior
+
+- On construction: calls `HarnessAvailabilityModel::ensure_auth_secrets_fetched(harness, ctx)`.
+- Subscribes to the embedded `auth_secret_selector` for `NewTypeSelected { harness, type_index }`. On that event, populates `creation_state` and rebuilds `field_editors` to match `auth_secret_types_for_harness(harness)[type_index].fields`.
+- Subscribes to `HarnessAvailabilityModel` for `AuthSecretCreated` (transition out of saving state, set the secret as selected on `AmbientAgentViewModel`, mark FTUX completed) and `AuthSecretCreationFailed` (transition out of saving, surface error toast via `Input`'s existing toast subscription).
+- Continue button:
+  - If a secret is already selected on the view model (from clicking an existing item in the dropdown), mark FTUX completed and `ctx.notify()`.
+  - If `creation_state` is `Some`, validate that all non-optional fields are filled, build the matching `ManagedSecretValue` (e.g. `anthropic_api_key`, `anthropic_bedrock_api_key`, `anthropic_bedrock_access_key`), set `is_saving = true`, and call `HarnessAvailabilityModel::create_auth_secret(harness, name, value, ctx)`. Disable the button while `is_saving`.
+- Cancel button: switches harness back to Oz via `AmbientAgentViewModel::set_harness(Harness::Oz, ctx)`. (Same as the existing `CancelAuthSecretFtux` action.)
+- Skip button: marks FTUX completed via `CloudAgentSettings::mark_harness_auth_ftux_completed(harness, ctx)`. (Same as the existing `SkipAuthSecretFtux` action.)
+
+#### Wiring in `Input`
+
+The FTUX view is constructed in `Input::new` alongside the existing `AuthSecretSelector` and stored on `AmbientAgentViewState`. The `agent.rs` rendering of `render_auth_secret_ftux_content` is replaced by `ChildView::new(&self.auth_secret_ftux_view)`.
+
+The inline `SkipAuthSecretFtux` / `CancelAuthSecretFtux` `InputAction` variants and their handlers in `input.rs` are removed in favor of the FTUX view dispatching `AuthSecretFtuxAction` directly to itself.
 
 ### 8. Rendering tree integration
 

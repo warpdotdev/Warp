@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
+use settings::{macros::define_settings_group, Setting as _, SupportedPlatforms, SyncToCloud};
 use warp_cli::agent::Harness;
 
 use crate::server::ids::SyncId;
@@ -18,13 +18,11 @@ define_settings_group!(CloudAgentSettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: true,
     },
-    /// Tracks which harnesses have had their auth secret FTUX completed.
-    /// Key = harness config name (e.g. "claude"), value = true.
     harness_auth_ftux_completed: HarnessAuthFtuxCompleted {
         type: HashMap<String, bool>,
         default: HashMap::new(),
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::PerUser,
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
 ]);
@@ -37,5 +35,16 @@ impl CloudAgentSettings {
             .get(harness.config_name())
             .copied()
             .unwrap_or(false)
+    }
+
+    /// Marks the auth secret FTUX as completed for the given harness.
+    pub fn mark_harness_auth_ftux_completed(
+        &mut self,
+        harness: Harness,
+        ctx: &mut warpui::ModelContext<Self>,
+    ) {
+        let mut map = self.harness_auth_ftux_completed.value().clone();
+        map.insert(harness.config_name().to_string(), true);
+        let _ = self.harness_auth_ftux_completed.set_value(map, ctx);
     }
 }

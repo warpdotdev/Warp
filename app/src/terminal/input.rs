@@ -347,8 +347,8 @@ use crate::ai::blocklist::agent_view::{
     AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
 use crate::terminal::view::ambient_agent::{
-    AuthSecretSelector, AuthSecretSelectorEvent, HarnessSelector, HarnessSelectorEvent,
-    HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
+    AuthSecretFtuxView, AuthSecretSelector, AuthSecretSelectorEvent, HarnessSelector,
+    HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 use async_channel::Sender;
 use futures::stream::AbortHandle;
@@ -1689,6 +1689,7 @@ struct AmbientAgentViewState {
     harness_selector: ViewHandle<HarnessSelector>,
     host_selector: Option<ViewHandle<HostSelector>>,
     auth_secret_selector: Option<ViewHandle<AuthSecretSelector>>,
+    auth_secret_ftux_view: Option<ViewHandle<AuthSecretFtuxView>>,
 }
 
 impl AmbientAgentViewState {
@@ -2201,6 +2202,40 @@ impl Input {
             });
         }
 
+        // Show a toast when a new auth secret is created for a harness, and an
+        // error toast when creation fails.
+        ctx.subscribe_to_model(
+            &HarnessAvailabilityModel::handle(ctx),
+            |_me, _, event, ctx| {
+                use crate::ai::harness_availability::HarnessAvailabilityEvent;
+                let window_id = ctx.window_id();
+                match event {
+                    HarnessAvailabilityEvent::AuthSecretCreated { name, .. } => {
+                        let message = format!("API key '{name}' saved.");
+                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                            ts.add_ephemeral_toast(
+                                DismissibleToast::default(message),
+                                window_id,
+                                ctx,
+                            );
+                        });
+                    }
+                    HarnessAvailabilityEvent::AuthSecretCreationFailed { error } => {
+                        let message = format!("Failed to save API key: {error}");
+                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                            ts.add_ephemeral_toast(
+                                DismissibleToast::error(message),
+                                window_id,
+                                ctx,
+                            );
+                        });
+                    }
+                    HarnessAvailabilityEvent::Changed
+                    | HarnessAvailabilityEvent::AuthSecretsLoaded { .. } => {}
+                }
+            },
+        );
+
         let prompt_selection_state_handle = SelectionHandle::default();
 
         let view_id = ctx.view_id();
@@ -2238,7 +2273,7 @@ impl Input {
             )
         });
 
-        let ambient_agent_view_state =
+        let mut ambient_agent_view_state =
             ambient_agent_view_model
                 .as_ref()
                 .map(|view_model| AmbientAgentViewState {
@@ -2349,27 +2384,40 @@ impl Input {
                     } else {
                         None
                     },
-                    auth_secret_selector: if FeatureFlag::CloudModeInputV2.is_enabled() {
-                        let selector = ctx.add_typed_action_view(|ctx| {
-                            AuthSecretSelector::new(
-                                menu_positioning_provider.clone(),
-                                view_model.clone(),
-                                ctx,
-                            )
-                        });
-                        ctx.subscribe_to_view(&selector, |me, _, event, ctx| {
-                            if matches!(
-                                event,
-                                AuthSecretSelectorEvent::MenuVisibilityChanged { open: false }
-                            ) {
-                                me.focus_input_box(ctx);
-                            }
-                        });
-                        Some(selector)
-                    } else {
-                        None
-                    },
+                    auth_secret_selector: None,
+                    auth_secret_ftux_view: None,
                 });
+        // Build the AuthSecretSelector + AuthSecretFtuxView and store on the
+        // ambient state. We do this in a second pass so the FTUX view can take
+        // ownership of the selector handle.
+        if let Some(state) = ambient_agent_view_state.as_mut() {
+            if FeatureFlag::CloudModeInputV2.is_enabled() {
+                let selector = ctx.add_typed_action_view(|ctx| {
+                    AuthSecretSelector::new(
+                        menu_positioning_provider.clone(),
+                        state.view_model.clone(),
+                        ctx,
+                    )
+                });
+                ctx.subscribe_to_view(&selector, |me, _, event, ctx| {
+                    if matches!(
+                        event,
+                        AuthSecretSelectorEvent::MenuVisibilityChanged { open: false }
+                    ) {
+                        me.focus_input_box(ctx);
+                    }
+                });
+                let ftux_view = {
+                    let selector_for_ftux = selector.clone();
+                    let view_model_for_ftux = state.view_model.clone();
+                    ctx.add_typed_action_view(|ctx| {
+                        AuthSecretFtuxView::new(view_model_for_ftux, selector_for_ftux, ctx)
+                    })
+                };
+                state.auth_secret_selector = Some(selector);
+                state.auth_secret_ftux_view = Some(ftux_view);
+            }
+        }
         ctx.subscribe_to_view(&agent_input_footer, |me, _, event, ctx| {
             match event {
                 #[cfg(feature = "voice_input")]
@@ -3590,6 +3638,12 @@ impl Input {
         self.ambient_agent_view_state
             .as_ref()
             .and_then(|state| state.auth_secret_selector.as_ref())
+    }
+
+    pub(super) fn auth_secret_ftux_view(&self) -> Option<&ViewHandle<AuthSecretFtuxView>> {
+        self.ambient_agent_view_state
+            .as_ref()
+            .and_then(|state| state.auth_secret_ftux_view.as_ref())
     }
 
     /// Opens the V2 cloud-mode host selector popover, if the feature is enabled and the
