@@ -347,7 +347,8 @@ use crate::ai::blocklist::agent_view::{
     AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
 use crate::terminal::view::ambient_agent::{
-    HarnessSelector, HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
+    AuthSecretSelector, AuthSecretSelectorEvent, HarnessSelector, HarnessSelectorEvent,
+    HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 use async_channel::Sender;
 use futures::stream::AbortHandle;
@@ -1687,6 +1688,7 @@ struct AmbientAgentViewState {
     #[allow(dead_code)]
     harness_selector: ViewHandle<HarnessSelector>,
     host_selector: Option<ViewHandle<HostSelector>>,
+    auth_secret_selector: Option<ViewHandle<AuthSecretSelector>>,
 }
 
 impl AmbientAgentViewState {
@@ -2344,6 +2346,26 @@ impl Input {
                             },
                         );
                         Some(view)
+                    } else {
+                        None
+                    },
+                    auth_secret_selector: if FeatureFlag::CloudModeInputV2.is_enabled() {
+                        let selector = ctx.add_typed_action_view(|ctx| {
+                            AuthSecretSelector::new(
+                                menu_positioning_provider.clone(),
+                                view_model.clone(),
+                                ctx,
+                            )
+                        });
+                        ctx.subscribe_to_view(&selector, |me, _, event, ctx| {
+                            if matches!(
+                                event,
+                                AuthSecretSelectorEvent::MenuVisibilityChanged { open: false }
+                            ) {
+                                me.focus_input_box(ctx);
+                            }
+                        });
+                        Some(selector)
                     } else {
                         None
                     },
@@ -3562,6 +3584,12 @@ impl Input {
         self.ambient_agent_view_state
             .as_ref()
             .and_then(|state| state.host_selector.as_ref())
+    }
+
+    fn auth_secret_selector(&self) -> Option<&ViewHandle<AuthSecretSelector>> {
+        self.ambient_agent_view_state
+            .as_ref()
+            .and_then(|state| state.auth_secret_selector.as_ref())
     }
 
     /// Opens the V2 cloud-mode host selector popover, if the feature is enabled and the
