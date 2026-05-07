@@ -341,21 +341,21 @@ struct DiffsWithBaseContent {
     changes: Result<GitDiffWithBaseContent, String>,
 }
 
-#[derive(Default)]
-struct DiffMetadata {
-    main_branch_name: String,
-    current_branch_name: String,
-    against_head: DiffMetadataAgainstBase,
-    against_base_branch: Option<DiffMetadataAgainstBase>,
-    has_head_commit: bool,
-    unpushed_commits: Vec<Commit>,
-    upstream_ref: Option<String>,
-    pr_info: Option<PrInfo>,
+#[derive(Clone, Debug, Default)]
+pub struct DiffMetadata {
+    pub main_branch_name: String,
+    pub current_branch_name: String,
+    pub against_head: DiffMetadataAgainstBase,
+    pub against_base_branch: Option<DiffMetadataAgainstBase>,
+    pub has_head_commit: bool,
+    pub unpushed_commits: Vec<Commit>,
+    pub upstream_ref: Option<String>,
+    pub pr_info: Option<PrInfo>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct DiffMetadataAgainstBase {
-    pub(super) aggregate_stats: DiffStats,
+    pub aggregate_stats: DiffStats,
 }
 
 impl DiffMetadataAgainstBase {
@@ -503,14 +503,13 @@ impl DiffStateModel {
                         ctx.emit(DiffStateModelEvent::SingleFileUpdated { path, diff });
                     }
                     Err(err) => {
-                        log::error!("File invalidation error: {err}. Falling back to full reload.");
+                        log::error!("File invalidation error: {err}");
                         send_telemetry_from_ctx!(
                             CodeReviewTelemetryEvent::LoadDiffFailed {
                                 error: err.to_string(),
                             },
                             ctx
                         );
-                        me.load_diffs_for_current_repo(false, ctx);
                     }
                 }
             },
@@ -714,22 +713,6 @@ impl DiffStateModel {
         }
     }
 
-    pub fn get_stats_for_current_mode(&self) -> Option<DiffStats> {
-        self.get_stats_for_mode(self.mode.clone())
-    }
-
-    pub fn get_stats_for_mode(&self, mode: DiffMode) -> Option<DiffStats> {
-        let metadata = self.metadata.as_ref()?;
-        match mode {
-            DiffMode::Head => Some(metadata.against_head.aggregate_stats),
-            DiffMode::MainBranch => metadata
-                .against_base_branch
-                .as_ref()
-                .map(|base| base.aggregate_stats),
-            DiffMode::OtherBranch(_) => None, // TODO: implement caching for arbitrary branches
-        }
-    }
-
     /// Returns `true` once the repository has at least one commit.
     pub(super) fn has_head(&self) -> bool {
         cfg_if::cfg_if! {
@@ -761,12 +744,8 @@ impl DiffStateModel {
     /// Cancels in-flight per-file invalidation tasks and marks a full
     /// invalidation pending so that stale queue results are suppressed
     /// until the reload completes.
-    ///
-    /// Called automatically by [`Self::load_diffs_for_current_repo`]. The
-    /// only standalone use is [`DiffStateRepositoryUpdate::InvalidationWithLockedIndex`],
-    /// which needs to suppress the queue without starting a reload.
     #[cfg(feature = "local_fs")]
-    fn prepare_full_reload(&mut self) {
+    fn queue_full_invalidation(&mut self) {
         self.file_invalidation.cancel_all();
         self.file_invalidation.invalidate_all_pending = true;
     }
@@ -780,7 +759,6 @@ impl DiffStateModel {
         if self.mode != mode {
             self.mode = mode;
             self.load_diffs_for_current_repo(should_fetch_base, ctx);
-            ctx.emit(DiffStateModelEvent::DiffModeChanged);
         }
     }
 
@@ -802,7 +780,7 @@ impl DiffStateModel {
     ) {
         // Cancels in-flight per-file invalidation tasks so that stale queue results cannot
         // race with the new full reload.
-        self.prepare_full_reload();
+        self.queue_full_invalidation();
 
         // Abort any previous diff loading operations before spawning a new one.
         if let Some(handle) = self.computing_diffs_abort_handle.take() {
@@ -1253,7 +1231,7 @@ impl DiffStateModel {
                     }
                 }
                 DiffStateRepositoryUpdate::InvalidationWithLockedIndex => {
-                    me.prepare_full_reload();
+                    me.queue_full_invalidation();
                 }
             },
             |_, _| {},
@@ -1271,9 +1249,8 @@ impl DiffStateModel {
     }
 
     #[cfg(feature = "local_fs")]
-    /// Processes a repository file-system update. Instead of emitting raw
-    /// invalidation signals, the model now acts on the decision directly:
-    /// full reloads or per-file invalidation queue.
+    /// Processes a repository file-system update and
+    /// decides whether to trigger a full reload or a per-file invalidation queue.
     ///
     /// Returns `true` if a metadata refresh should be triggered.
     fn handle_file_update(
@@ -1303,10 +1280,14 @@ impl DiffStateModel {
             // MetadataRefreshed with fresh stats/git-operations data.
             return true;
         } else if index_lock_detected {
-            // Index lock appeared/disappeared without a commit change.
-            // Suppress the per-file queue (data may be stale while lock is held)
-            // but don't start a reload — wait for the lock-release event.
-            self.prepare_full_reload();
+            if self.file_invalidation.invalidate_all_pending {
+                // Lock was released while a full invalidation was pending — reload now.
+                self.load_diffs_for_current_repo(false, ctx);
+                return true;
+            }
+            // Lock just appeared — suppress the per-file queue (data may be stale
+            // while the lock is held) and wait for the lock-release event.
+            self.queue_full_invalidation();
             return false;
         }
 
@@ -1361,7 +1342,8 @@ impl DiffStateModel {
         };
 
         if self.file_invalidation.invalidate_all_pending {
-            // Defer — a full reload will supersede these.
+            // TODO: Remove pending file invalidations — pause the queue instead.
+            // Defer file invalidation if a full reload is in-flight or the diff is still loading.
             match &mut self.pending_file_updates {
                 Some(pending) => {
                     pending.update_with_file_invalidation(repo_path, files);
@@ -1406,8 +1388,21 @@ impl DiffStateModel {
         }
     }
 
-    /// Recomputes the merge base for the current diff mode, then flushes
-    /// any deferred file invalidations.
+    /// Recomputes the merge base commit for the current diff mode after a full
+    /// reload, then flushes any file invalidations that were deferred while the
+    /// reload was in-flight.
+    ///
+    /// We cache the merge base on [`FileInvalidationState`] so that individual
+    /// file invalidations (triggered by the file watcher) can diff against the
+    /// correct base without re-running `git merge-base` on every file change.
+    /// The cache is invalidated by [`FileInvalidationState::cancel_all`] at the
+    /// start of every full reload, so it is always fresh by the time
+    /// watcher-driven invalidations resume.
+    ///
+    /// For non-Head diff modes the computation is async (it shells out to git),
+    /// so we keep the `invalidate_all_pending` flag set until it completes.
+    /// This ensures watcher-driven file invalidations are deferred rather than
+    /// enqueued without a merge base.
     #[cfg(feature = "local_fs")]
     fn recompute_merge_base_and_flush(&mut self, ctx: &mut ModelContext<Self>) {
         let diff_mode = self.mode.clone();
@@ -1701,7 +1696,9 @@ impl DiffStateModel {
         if should_reload_diffs {
             self.load_diffs_for_current_repo(false, ctx);
         }
-        ctx.emit(DiffStateModelEvent::MetadataRefreshed);
+        if let Some(metadata) = self.metadata.clone() {
+            ctx.emit(DiffStateModelEvent::MetadataRefreshed(metadata));
+        }
     }
 
     #[cfg(feature = "local_fs")]
@@ -3077,7 +3074,7 @@ impl DiffStateModel {
                 me.refreshing_pr_info_handle = None;
                 if let Some(metadata) = &mut me.metadata {
                     metadata.pr_info = pr_info;
-                    ctx.emit(DiffStateModelEvent::MetadataRefreshed);
+                    ctx.emit(DiffStateModelEvent::MetadataRefreshed(metadata.clone()));
                 }
             },
         );
@@ -3100,10 +3097,7 @@ pub enum DiffStateModelEvent {
         diff: Option<Arc<FileDiffAndContent>>,
     },
     /// Event dispatched when diff metadata (stats, branch info) is refreshed.
-    MetadataRefreshed,
-    /// Event dispatched when new diff mode is set. The model handles the
-    /// diff reload internally; the view only needs to update UI state.
-    DiffModeChanged,
+    MetadataRefreshed(DiffMetadata),
 }
 
 impl warpui::Entity for DiffStateModel {

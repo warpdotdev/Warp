@@ -1616,6 +1616,8 @@ impl CodeReviewView {
         self.diff_state_model.update(ctx, |model, ctx| {
             model.set_diff_mode(mode, false, ctx);
         });
+        self.update_diff_selector_selection(ctx);
+        self.invalidate_all(None, ctx);
     }
 
     fn handle_find_event(
@@ -2312,10 +2314,6 @@ impl CodeReviewView {
                 self.fetch_branches_and_setup_dropdown(ctx);
                 self.update_diff_selector_selection(ctx);
             }
-            DiffStateModelEvent::DiffModeChanged => {
-                self.update_diff_selector_selection(ctx);
-                self.invalidate_all(None, ctx);
-            }
             DiffStateModelEvent::NewDiffsComputed(diffs) => {
                 self.invalidate_all(diffs.as_ref(), ctx);
                 if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
@@ -2328,11 +2326,27 @@ impl CodeReviewView {
                     self.update_git_operations_ui(ctx);
                 }
             }
-            DiffStateModelEvent::MetadataRefreshed => {
-                self.update_aggregate_stats(ctx);
+            DiffStateModelEvent::MetadataRefreshed(metadata) => {
+                let mode = self.diff_state_model.as_ref(ctx).diff_mode();
+                if let Some(CodeReviewViewState::Loaded(loaded_state)) = self.state_mut() {
+                    let stats = match mode {
+                        DiffMode::Head => Some(metadata.against_head.aggregate_stats),
+                        DiffMode::MainBranch => metadata
+                            .against_base_branch
+                            .as_ref()
+                            .map(|base| base.aggregate_stats),
+                        DiffMode::OtherBranch(_) => None,
+                    };
+                    if let Some(stats) = stats {
+                        loaded_state.total_additions = stats.total_additions;
+                        loaded_state.total_deletions = stats.total_deletions;
+                        loaded_state.files_changed = stats.files_changed;
+                    }
+                }
                 if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
                     self.update_git_operations_ui(ctx);
                 }
+                ctx.notify();
             }
         }
     }
@@ -2420,26 +2434,6 @@ impl CodeReviewView {
         GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
             model.remove_deallocated_buffers(ctx);
         });
-        ctx.notify();
-    }
-
-    fn update_aggregate_stats(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(diff_stats) = self
-            .diff_state_model
-            .as_ref(ctx)
-            .get_stats_for_current_mode()
-        else {
-            return;
-        };
-
-        let Some(CodeReviewViewState::Loaded(loaded_state)) = self.state_mut() else {
-            return;
-        };
-
-        loaded_state.total_additions = diff_stats.total_additions;
-        loaded_state.total_deletions = diff_stats.total_deletions;
-        loaded_state.files_changed = diff_stats.files_changed;
-
         ctx.notify();
     }
 
@@ -5979,7 +5973,9 @@ impl CodeReviewView {
     pub(crate) fn set_diff_base(&mut self, diff_mode: DiffMode, ctx: &mut ViewContext<Self>) {
         self.diff_state_model.update(ctx, |diff_state_model, ctx| {
             diff_state_model.set_diff_mode_and_fetch_base(diff_mode, ctx);
-        })
+        });
+        self.update_diff_selector_selection(ctx);
+        self.invalidate_all(None, ctx);
     }
 
     /// Insert diff hunk as an inline attachment in the terminal input
