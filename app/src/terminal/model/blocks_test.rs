@@ -160,6 +160,24 @@ fn advance_to_bootstrapped(block_list: &mut BlockList, data: BootstrappedValue) 
     );
 }
 
+#[test]
+fn insert_restored_block_skips_unfinished_previous_day_claude_snapshot() {
+    let mut block_list =
+        new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
+    let original_len = block_list.blocks().len();
+    let original_active_block_id = block_list.active_block().id().clone();
+
+    let mut stale_claude_block =
+        SerializedBlock::new_for_test(b"claude".to_vec(), b"restored tui output".to_vec());
+    stale_claude_block.start_ts = Some(Local::now() - chrono::Duration::days(1));
+    stale_claude_block.completed_ts = None;
+
+    block_list.insert_restored_block(&stale_claude_block);
+
+    assert_eq!(block_list.blocks().len(), original_len);
+    assert_eq!(block_list.active_block().id(), &original_active_block_id);
+}
+
 // This test covers the case where sometimes sumtree could have inconsistency
 // where its internal node holds a larger summary than all its children nodes' summary combined
 // due to floating point precision error. SumTree should be able to handle this case

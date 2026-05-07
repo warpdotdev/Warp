@@ -546,6 +546,10 @@ enum BlockHeightUpdate {
 }
 
 impl BlockList {
+    fn should_restore_completed_block(block: &SerializedBlock) -> bool {
+        block.start_ts.is_some() && block.completed_ts.is_some()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         restored_blocks: Option<&[SerializedBlockListItem]>,
@@ -657,8 +661,13 @@ impl BlockList {
 
             let mut processor = Processor::new();
 
-            self.restored_session_ts = restored_blocks.last().and_then(|item| match item {
-                SerializedBlockListItem::Command { block } => block.completed_ts,
+            self.restored_session_ts = restored_blocks.iter().rev().find_map(|item| match item {
+                SerializedBlockListItem::Command { block }
+                    if Self::should_restore_completed_block(block) =>
+                {
+                    block.completed_ts
+                }
+                SerializedBlockListItem::Command { .. } => None,
             });
 
             for block in restored_blocks {
@@ -666,7 +675,7 @@ impl BlockList {
                     SerializedBlockListItem::Command { block } => {
                         // For session-restoration, we only want to restore blocks
                         // that were completed.
-                        if block.start_ts.is_some() && block.completed_ts.is_some() {
+                        if Self::should_restore_completed_block(block) {
                             self.restore_block(
                                 block,
                                 BootstrapStage::RestoreBlocks,
@@ -2628,6 +2637,11 @@ impl BlockList {
     /// This is used to insert a block snapshot from a CLI agent conversation
     /// into an already-initialized block list.
     pub fn insert_restored_block(&mut self, block: &SerializedBlock) {
+        if !Self::should_restore_completed_block(block) {
+            log::warn!("Tried to restore a block that was either not started or not completed");
+            return;
+        }
+
         let did_active_block_receive_precmd = self.active_block().has_received_precmd();
         let mut processor = Processor::new();
         self.restore_block(block, BootstrapStage::PostBootstrapPrecmd, &mut processor);
