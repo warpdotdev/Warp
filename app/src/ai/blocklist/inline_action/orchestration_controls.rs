@@ -11,9 +11,8 @@ use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationExecutio
 use pathfinder_color::ColorU;
 use std::fmt::Debug;
 use warpui::elements::{
-    ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-    Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement,
-    PositionedElementAnchor, Radius, Text,
+    ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Expanded, Flex,
+    Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
 };
 use warpui::platform::Cursor;
 use warpui::ui_components::button::ButtonVariant;
@@ -33,7 +32,7 @@ use crate::appearance::Appearance;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::ui_components::blended_colors;
 use crate::view_components::dropdown::{Dropdown, DropdownAction, DropdownStyle};
-use crate::view_components::{FilterableDropdown, FilterableDropdownOrientation};
+use crate::view_components::FilterableDropdown;
 use crate::LLMPreferences;
 
 // ── Shared constants ────────────────────────────────────────────────
@@ -282,12 +281,6 @@ pub fn new_standard_picker_dropdown<A: OrchestrationControlAction, V: View>(
         dropdown.set_border_width(ORCHESTRATION_PICKER_BORDER_WIDTH, ctx_dropdown);
         dropdown.set_font_size(ORCHESTRATION_PICKER_FONT_SIZE, ctx_dropdown);
         dropdown.set_font_color(font_color, ctx_dropdown);
-        // Open menus above the trigger to avoid overlapping the input box.
-        dropdown.set_menu_position(
-            PositionedElementAnchor::TopLeft,
-            ChildAnchor::BottomLeft,
-            ctx_dropdown,
-        );
         dropdown
     })
 }
@@ -436,8 +429,6 @@ pub fn create_environment_picker<A: OrchestrationControlAction, V: View>(
         dropdown.set_style(styles);
         dropdown.set_top_bar_height(ORCHESTRATION_PICKER_HEIGHT, ctx_dropdown);
         dropdown.set_top_bar_max_width(f32::INFINITY);
-        // Open menu above the trigger to avoid overlapping the input box.
-        dropdown.set_orientation(FilterableDropdownOrientation::Up);
         dropdown
     });
     dropdown_handle.update(ctx, |dropdown, ctx_dropdown| {

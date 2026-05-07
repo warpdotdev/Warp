@@ -50,7 +50,7 @@ use crate::view_components::compactible_action_button::{
 };
 use crate::view_components::compactible_split_action_button::CompactibleSplitActionButton;
 use crate::view_components::dropdown::DropdownEvent;
-use crate::view_components::FilterableDropdownEvent;
+use crate::view_components::{FilterableDropdownEvent, FilterableDropdownOrientation};
 
 const RUN_AGENTS_CARD_TITLE: &str = "Can I start additional agents for this task?";
 
@@ -503,6 +503,7 @@ impl RunAgentsCardView {
                 state.orch.model_id.clone()
             };
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
+            Self::set_upward_menu_position(&handle, ctx);
             oc::populate_model_picker_for_harness(
                 &handle,
                 &initial_model_id,
@@ -515,6 +516,7 @@ impl RunAgentsCardView {
 
         if self.handles.pickers.harness_picker.is_none() {
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
+            Self::set_upward_menu_position(&handle, ctx);
             oc::populate_harness_picker(&handle, &state.orch.harness_type, ctx);
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.harness_picker = Some(handle);
@@ -526,6 +528,9 @@ impl RunAgentsCardView {
                 RunAgentsExecutionMode::Local => "",
             };
             let handle = oc::create_environment_picker(initial_env, &styles, ctx);
+            handle.update(ctx, |d, _| {
+                d.set_orientation(FilterableDropdownOrientation::Up)
+            });
             ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
                 if let FilterableDropdownEvent::Close = event {
                     me.refocus_after_picker_close(ctx);
@@ -540,12 +545,31 @@ impl RunAgentsCardView {
                 RunAgentsExecutionMode::Local => oc::ORCHESTRATION_WARP_WORKER_HOST,
             };
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
+            Self::set_upward_menu_position(&handle, ctx);
             oc::populate_host_picker(&handle, initial_host, ctx);
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.host_picker = Some(handle);
         }
 
         self.sync_picker_selections(ctx);
+    }
+
+    /// Opens the dropdown menu above the trigger to avoid overlapping
+    /// the input box. Only used by the confirmation card — the plan
+    /// config card renders higher up where downward menus are fine.
+    fn set_upward_menu_position(
+        dropdown_handle: &ViewHandle<
+            crate::view_components::dropdown::Dropdown<RunAgentsCardViewAction>,
+        >,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        dropdown_handle.update(ctx, |dropdown, ctx| {
+            dropdown.set_menu_position(
+                warpui::elements::PositionedElementAnchor::TopLeft,
+                warpui::elements::ChildAnchor::BottomLeft,
+                ctx,
+            );
+        });
     }
 
     fn subscribe_picker_close(
