@@ -135,10 +135,13 @@ impl LightboxView {
     ///
     /// The spawn callback also re-queries the asset cache for the post-load
     /// state and rewrites `self.params.images[index].source` to
-    /// `LightboxImageSource::Error` on `FailedToLoad` or
-    /// `Loaded { ImageType::Unrecognized }`. Without this, a load failure or
-    /// a mislabeled file would render a permanent spinner. See
-    /// specs/GH9729/tech.md §182.
+    /// `LightboxImageSource::Error` on `FailedToLoad` (which after the
+    /// §695 refactor also covers the previous `Loaded { Unrecognized }`
+    /// path: `try_from_bytes` now returns `Err("could not detect image
+    /// format")` for mislabeled bytes, and the asset cache stores that
+    /// as `FailedToLoad`). Without this, a load failure or a mislabeled
+    /// file would render a permanent spinner. See specs/GH9729/tech.md
+    /// §182 and §695.
     fn start_asset_load(
         &mut self,
         index: usize,
@@ -168,11 +171,17 @@ impl LightboxView {
 /// Sanitize a per-asset-cache load error into a small set of categorical
 /// strings that never interpolate raw OS errors or filesystem paths. The
 /// underlying error is logged via `log::warn!` for the operator.
-/// See specs/GH9729/tech.md §182.
+/// See specs/GH9729/tech.md §182 and §695.
 fn sanitize_load_error(err: &anyhow::Error) -> &'static str {
     let s = format!("{err}").to_lowercase();
     if s.contains("too large") || s.contains("exceeds") {
         "image is too large to preview"
+    } else if s.contains("could not detect") {
+        // GH9729 §695: `ImageType::try_from_bytes` returns this exact
+        // string for unrecognized-format bytes (e.g. a `.png` containing
+        // tarball bytes). Preserve the user-visible "detect" wording
+        // rather than collapsing it into the generic "decode" bucket.
+        "could not detect image format"
     } else if s.contains("decode") || s.contains("format") {
         "could not decode image"
     } else {
@@ -185,20 +194,16 @@ fn sanitize_load_error(err: &anyhow::Error) -> &'static str {
 /// Returns `Some(new_source)` if a rewrite is warranted, or `None` to
 /// leave the entry unchanged.
 ///
-/// Two states trigger a rewrite per `tech.md` §182:
-///   * `Loaded { ImageType::Unrecognized }` (mislabeled or unsupported
-///     bytes — would otherwise spin forever).
-///   * `FailedToLoad(err)` (open / read / decode error — would otherwise
-///     spin forever).
+/// Per `tech.md` §182 + §695, only `FailedToLoad` triggers a rewrite:
+///   * After the §695 refactor, every `Loaded { data }` carries a
+///     successfully decoded image (`Svg` / `StaticBitmap` /
+///     `AnimatedBitmap`). Mislabeled-or-unsupported bytes now surface as
+///     `try_from_bytes` returning `Err`, which the asset cache stores as
+///     `FailedToLoad` — handled here by `sanitize_load_error`.
 fn rewrite_image_for_load_state(
     state: &AssetState<ImageType>,
 ) -> Option<lightbox::LightboxImageSource> {
     match state {
-        AssetState::Loaded { data } if matches!(**data, ImageType::Unrecognized) => {
-            Some(lightbox::LightboxImageSource::Error {
-                message: "could not detect image format".to_string(),
-            })
-        }
         AssetState::FailedToLoad(err) => {
             log::warn!("GH9729: image preview load failed: {}", err);
             Some(lightbox::LightboxImageSource::Error {
@@ -333,14 +338,18 @@ mod tests {
 
     #[test]
     fn post_load_callback_rewrites_unrecognized_to_error() {
-        // Simulate the asset cache reporting `Loaded` with the Unrecognized
-        // image-type variant (mislabeled file: e.g. a .png containing
-        // tarball bytes). The rewrite helper must produce the specific
-        // "could not detect image format" message.
-        let state: AssetState<ImageType> = AssetState::Loaded {
-            data: Rc::new(ImageType::Unrecognized),
-        };
-        let rewritten = rewrite_image_for_load_state(&state).expect("Unrecognized must rewrite");
+        // GH9729 §695: mislabeled / unsupported bytes (e.g. a `.png`
+        // containing tarball bytes) now surface as `try_from_bytes`
+        // returning `Err("could not detect image format")`, which the
+        // asset cache stores as `FailedToLoad`. The rewrite helper must
+        // surface the specific "detect" category, not collapse it into
+        // the generic "could not decode image" bucket — `sanitize_load_error`
+        // matches the "could not detect" prefix before the generic
+        // "decode/format" branch.
+        let err = anyhow::anyhow!("could not detect image format");
+        let state: AssetState<ImageType> = AssetState::FailedToLoad(Rc::new(err));
+        let rewritten = rewrite_image_for_load_state(&state)
+            .expect("FailedToLoad on unrecognized format must rewrite");
         match rewritten {
             lightbox::LightboxImageSource::Error { message } => {
                 assert_eq!(message, "could not detect image format");

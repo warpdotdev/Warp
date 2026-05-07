@@ -41,7 +41,7 @@ Hard rules:
 
 ## Steps (priority order from `tech.md` §688-713)
 
-- [ ] **t2-4.** Convert `ImageType::Unrecognized` to `Err` globally — audit
+- [x] **t2-4.** Convert `ImageType::Unrecognized` to `Err` globally — audit
        every `try_from_bytes` caller, remove the variant, route the error
        through `Result`, update callers to handle the `Err` arm. — `tech.md` §695
 - [ ] **t2-5.** Adopt `LightboxImageSource::Error` at the artifacts call
@@ -72,7 +72,7 @@ Hard rules:
 
 | # | Item | Impl commit | Impl | R1 | R2 |
 |---|------|-------------|------|----|----|
-| t2-4 | `Unrecognized` → `Err` globally | | [ ] | [ ] | [ ] |
+| t2-4 | `Unrecognized` → `Err` globally | (see commit message) | [x] | [ ] | [ ] |
 | t2-5 | adopt `Error` at artifacts call site | | [ ] | [ ] | [ ] |
 | t2-6 | animated playback (+ play/pause) | | [ ] | [ ] | [ ] |
 | t2-7 | zoom and pan | | [ ] | [ ] | [ ] |

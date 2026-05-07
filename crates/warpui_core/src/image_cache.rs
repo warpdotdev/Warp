@@ -567,7 +567,11 @@ impl Asset for ImageType {
                     image: Arc::new(AnimatedImage::from(frames)),
                 })
             }
-            _ => Ok(ImageType::Unrecognized),
+            // GH9729 §695: every unrecognized format is now an error rather
+            // than a sentinel `Ok(Unrecognized)` value. Callers (asset cache,
+            // kitty, terminal model) already match `Err` and route it
+            // through their existing failure paths.
+            _ => Err(anyhow!("could not detect image format")),
         }
     }
 
@@ -581,7 +585,6 @@ impl Asset for ImageType {
                 .map(|frame| frame.image.rgba_bytes().len())
                 .reduce(|acc, bytes| acc + bytes)
                 .unwrap_or(0),
-            ImageType::Unrecognized => 0,
         }
     }
 }
@@ -662,13 +665,16 @@ impl FitType {
     }
 }
 
+/// A successfully decoded image. Per GH9729 §695, an unrecognized format
+/// is surfaced as `Err` from `try_from_bytes` instead of an `Unrecognized`
+/// variant — every value of this type represents bytes we know how to
+/// render.
 #[derive(Clone)]
 pub enum ImageType {
     Svg { svg: Rc<usvg::Tree> },
     StaticBitmap { image: Arc<StaticImage> },
     AnimatedBitmap { image: Arc<AnimatedImage> },
-    // TODO: other types
-    Unrecognized,
+    // TODO: other types (HEIC/HEIF/AVIF/BMP/TIFF/ICO — see tech.md §702).
 }
 
 impl ImageType {
@@ -683,7 +689,6 @@ impl ImageType {
             ImageType::AnimatedBitmap { image } => {
                 image.frames.first().map(|frame| frame.image.size())
             }
-            ImageType::Unrecognized => None,
         }
     }
 
@@ -692,7 +697,6 @@ impl ImageType {
             ImageType::Svg { .. } => "ImageType::Svg",
             ImageType::StaticBitmap { .. } => "ImageType::StaticBitmap",
             ImageType::AnimatedBitmap { .. } => "ImageType::AnimatedBitmap",
-            ImageType::Unrecognized => "ImageType::Unrecognized",
         }
     }
 }
@@ -885,7 +889,6 @@ impl ImageType {
         animated_image_behavior: AnimatedImageBehavior,
     ) -> Result<Image> {
         match self {
-            ImageType::Unrecognized => Err(anyhow!("Unrecognized image format.")),
             ImageType::StaticBitmap { image } => {
                 if resize {
                     let img = resize_image(&image.img, bounds, fit_type);
