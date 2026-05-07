@@ -951,6 +951,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::DragTabsToWindows,
     FeatureFlag::NamedAgents,
     FeatureFlag::GitCredentialRefresh,
+    FeatureFlag::HandoffCloudCloud,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

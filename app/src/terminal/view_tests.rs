@@ -749,6 +749,29 @@ fn cloud_mode_v2_agent_prefixed_query_spawns_cloud_agent() {
 }
 
 #[test]
+fn fresh_cloud_mode_setup_enters_agent_view_when_view_pending() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_status(SharedSessionStatus::ViewPending);
+
+            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+            view.enter_ambient_agent_setup(Some("write the tests".to_string()), ctx);
+
+            assert!(view.agent_view_controller().as_ref(ctx).is_active());
+            assert_eq!(view.input().as_ref(ctx).buffer_text(ctx), "write the tests");
+        });
+    });
+}
+
+#[test]
 fn cloud_mode_followup_input_uses_explicit_submit_event_even_when_view_pending() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);

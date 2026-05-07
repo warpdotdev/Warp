@@ -49,7 +49,7 @@ fn create_default_serialized_block() -> SerializedBlock {
 }
 
 #[test]
-fn cloud_mode_deferred_terminal_model_starts_not_shared() {
+fn cloud_mode_deferred_terminal_model_starts_view_pending() {
     let model = TerminalModel::new_for_cloud_mode_shared_session_viewer(
         block_size(),
         color::List::from(&color::Colors::default()),
@@ -63,9 +63,10 @@ fn cloud_mode_deferred_terminal_model_starts_not_shared() {
 
     assert!(matches!(
         model.shared_session_status(),
-        SharedSessionStatus::NotShared
+        SharedSessionStatus::ViewPending
     ));
-    assert!(!model.shared_session_status().is_viewer());
+    assert!(model.shared_session_status().is_viewer());
+    assert!(model.is_dummy_cloud_mode_session());
 }
 
 #[test]

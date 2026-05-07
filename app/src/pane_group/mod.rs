@@ -5339,6 +5339,12 @@ impl PaneGroup {
                     model.enter_viewing_existing_session(task_id, ctx);
                 });
             }
+            let status = if view.owned_ambient_agent_task_id(ctx).is_some() {
+                shared_session::SharedSessionStatus::NotShared
+            } else {
+                shared_session::SharedSessionStatus::FinishedViewer
+            };
+            view.model.lock().set_shared_session_status(status);
             view.insert_conversation_ended_tombstone(ctx);
         });
 

@@ -122,7 +122,7 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal) fn owned_ambient_agent_task_id(
+    pub(crate) fn owned_ambient_agent_task_id(
         &self,
         ctx: &AppContext,
     ) -> Option<AmbientAgentTaskId> {
