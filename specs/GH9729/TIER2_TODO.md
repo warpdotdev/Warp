@@ -78,7 +78,7 @@ Hard rules:
 |---|------|-------------|------|----|----|
 | t2-4 | `Unrecognized` → `Err` globally | `7780d31` | [x] | [x] | [x] |
 | t2-5 | adopt `Error` at artifacts call site | `5a8072a` | [x] | [x] | [x] |
-| t2-6 | animated playback (continuous; pause deferred) | _pending_ | [x] | [ ] | [ ] |
+| t2-6 | animated playback (continuous; pause deferred) | `f077496` | [x] | [x] | [x] |
 | t2-7 | zoom and pan | | [ ] | [ ] | [ ] |
 | t2-8 | status footer | | [ ] | [ ] | [ ] |
 | t2-9 | EXIF orientation + ICC | | [ ] | [ ] | [ ] |
@@ -103,6 +103,24 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   "could not detect" branch sits ahead of the generic
   "decode/format" branch — a swap regression would silently widen
   the bucket. — `reviews/tier2-t2-4-r2.md`.
+- **t2-6-r1.** Post-asset-load callback in
+  `app/src/workspace/lightbox_view.rs::start_asset_load` does NOT
+  reset `animation_start_time`. If the bytes take ~600 ms to fetch
+  + decode, the animation plays from `elapsed = 600 ms` instead of
+  frame 0. One-line fix in the spawn closure; not breaking but
+  user-visible on slower networks. — `reviews/tier2-t2-6-r1.md`.
+- **t2-6-r2.** Stylistic only: (a) the conditional builder chain
+  `let mut image_builder = … ; if let Some(start) = … { … } let
+  image = …` is slightly awkward; consider an extension-trait
+  helper once a second `enable_animation_with_start_time` consumer
+  appears in `ui_components/`. (b) `animation_started_at` would
+  mirror the GPUI builder param name marginally better than
+  `animation_start_time`. (c) The inline `// GH9729 §697:` comments
+  on `NavigatePrevious` / `NavigateNext` partly duplicate the
+  field-level doc comment. (d) The `t2-6-pause` rewrite is the
+  natural moment to migrate `Option<Instant>` →
+  `enum AnimationState { Off, Playing { started_at: Instant },
+  Paused { … } }`. — `reviews/tier2-t2-6-r2.md`.
 - **t2-6-pause.** Play/pause control for the lightbox's animated
   playback. Real pause-resume needs `Image` (GPUI element in
   `crates/warpui_core/src/elements/image.rs`) to expose either a
