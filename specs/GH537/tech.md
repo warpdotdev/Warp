@@ -608,12 +608,17 @@ correlates "we triggered widget X" with "the new buffer arrived".
    warp_invoke_widget <widget_name> <hex(buffer)> <cursor>\n
    ```
 
-   This line is sent with `WARP_SUPPRESS_BLOCK=1` set (an env var
-   prefix already used by Warp for internal commands) so Warp's
-   block-list renderer does not draw a block for it. The helper
-   line is consumed by the shell as a normal command, but the
-   shell's `precmd` will report this block as suppressed and Warp
-   drops it from the visible scrollback.
+   The resulting block is created in a hidden interaction mode,
+   modeled on the existing AI-requested-command pattern in
+   `app/src/terminal/model/block/interaction_mode.rs (113-228,
+   325-345)`: the block carries metadata flagging it as
+   Warp-internal so the block-list renderer hides it (the same code
+   path used today to hide AI-requested command blocks). A new
+   `InteractionMode::WidgetInvocation { widget_name, originating_tab }`
+   variant is the v1-shape proposal — reusing the hide-by-default
+   plumbing rather than inventing a new env-var convention. The
+   block remains in the model for telemetry and replay, just not
+   rendered.
 4. The shell-side helper (defined in each bootstrap script):
 
    **zsh** (`bundled/bootstrap/zsh.sh`):
@@ -632,14 +637,28 @@ correlates "we triggered widget X" with "the new buffer arrived".
    }
    ```
 
-   **bash** (`bundled/bootstrap/bash_body.sh`): bash can't invoke a
-   `bind -x` body programmatically the same way zsh does `zle`, so
-   the helper does the next best thing — sets `READLINE_LINE` /
-   `READLINE_POINT`, then sends the bound key on the input queue
-   via the readline `\C-r`-style trick documented in
-   `script/readline-invoke.sh` (TODO: implement). For
-   `bind -x`-bound keys we can directly `eval` the bound command
-   string after fetching it via `bind -X`.
+   **bash** (`bundled/bootstrap/bash_body.sh`): bash is materially
+   harder than zsh because there is no programmatic equivalent of
+   `zle <widget>` for invoking a built-in readline function from
+   outside the line editor. Two cases:
+
+   - **`bind -x`-bound keys** (atuin, fzf, custom user widgets):
+     these execute a shell command body, which we *can* invoke
+     directly. The helper looks up the body via `bind -X` (its
+     output enumerates all `bind -x` bindings with their command
+     strings), sets `READLINE_LINE` / `READLINE_POINT` from the
+     passed buffer, then runs the body via `eval`. atuin and fzf
+     both ship as `bind -x`, so this covers the v1 motivating cases.
+   - **Built-in-readline-function-bound keys** (e.g. user has
+     `bind '"\C-r": reverse-search-history'` directly): there is no
+     clean way to invoke a readline function from outside the line
+     editor. The honest path is to skip the helper for these and
+     instead inject the bound key into the readline input queue
+     once the buffer has been pre-populated, then let readline run
+     normally. The mechanism for keystroke injection on bash is the
+     subject of an open question (Risks below); the v1 commit is to
+     ship `bind -x` coverage and document the gap for built-in
+     functions.
 
    **fish** (`bundled/bootstrap/fish.sh`): `commandline "$buffer"`
    sets the input, then the helper invokes the bound function via
@@ -773,6 +792,29 @@ every other shell→app DCS.
   `bind` outputs are stable but quoting differs. Each parser has a
   property-test fixture set covering edge cases (escapes, multi-byte,
   bound to nothing, named widgets).
+- **Bash invocation of built-in readline functions** (§6, dispatch
+  step 4). bash has no `zle`-equivalent for calling a readline
+  function programmatically from outside the line editor. v1 ships
+  pass-through for `bind -x`-bound keys (atuin and fzf are both
+  `bind -x`, so the motivating cases work) and explicitly does not
+  support pass-through for keys bound directly to readline
+  built-ins. A built-in-readline binding falls back to Category A
+  translation (the mapped `InputAction`); if Warp does not have a
+  matching action, it goes through the standard
+  `Unsupported`-fallthrough path with a diagnostic. **Open question:**
+  whether to invest in a keystroke-injection mechanism (writing
+  raw bytes to the readline input queue with the buffer
+  pre-populated) for v2. Out of scope for v1.
+- **Hidden-block plumbing reuse.** §6 dispatch step 3 proposes
+  modeling `warp_invoke_widget` blocks via the existing
+  `InteractionMode` hide-by-default pattern from
+  `interaction_mode.rs`. The interaction-mode tagging happens
+  on the app side at command-emit time; the bootstrap helper does
+  not need to know about it. **Open question:** whether reusing
+  `InteractionMode` requires extending the existing variants vs.
+  adding a new top-level "internal command" tag — depends on how
+  AI-requested-command code paths assume the metadata is shaped.
+  Tech-spec follow-up.
 
 ## Testing and validation
 
