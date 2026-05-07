@@ -159,6 +159,38 @@ pub fn shell_other_git_branches() -> ShellCommandGenerator {
     ShellCommandGenerator::new(command, Some(vec!["git".to_owned()]))
 }
 
+/// Generator that emits the porcelain output of `git worktree list`, followed by an
+/// `---ORIGIN---` marker and one `<path>|<branch>|<origin>` line per worktree where
+/// `<origin>` is parsed from the branch's reflog (`branch: Created from <ref>`).
+/// Cost is N+1 git invocations per refresh, negligible for typical N (2-5).
+/// See [`crate::context_chips::worktree::parse_porcelain_list`] for the parser.
+pub fn shell_git_worktree_list() -> ShellCommandGenerator {
+    // Bash/zsh/fish all accept this. PowerShell falls back to plain porcelain
+    // (origin display is best-effort, missing on Windows for now).
+    const SH_COMMAND: &str = "GIT_OPTIONAL_LOCKS=0 git worktree list --porcelain && \
+         echo '---ORIGIN---' && \
+         GIT_OPTIONAL_LOCKS=0 git worktree list --porcelain | awk '/^worktree/{print $2}' | \
+         while IFS= read -r wt; do \
+           br=$(GIT_OPTIONAL_LOCKS=0 git -C \"$wt\" rev-parse --abbrev-ref HEAD 2>/dev/null); \
+           if [ -n \"$br\" ] && [ \"$br\" != \"HEAD\" ]; then \
+             origin=$(GIT_OPTIONAL_LOCKS=0 git -C \"$wt\" reflog show \"$br\" --format=%gs 2>/dev/null | \
+               awk -F'Created from ' '/Created from /{print $2; exit}'); \
+             printf '%s|%s|%s\\n' \"$wt\" \"$br\" \"$origin\"; \
+           fi; \
+         done";
+
+    let pwsh_command = safe_git_powershell("git worktree list --porcelain");
+
+    let command = ShellCommand::shell_specific([
+        (ShellType::PowerShell, pwsh_command),
+        (ShellType::Bash, SH_COMMAND.to_string()),
+        (ShellType::Zsh, SH_COMMAND.to_string()),
+        (ShellType::Fish, SH_COMMAND.to_string()),
+    ]);
+
+    ShellCommandGenerator::new(command, Some(vec!["git".to_owned()]))
+}
+
 /// Generator function to get summary of git diff (num files changed and num lines changed).
 ///
 /// Used as a remote-session fallback when GitRepoStatusModel is unavailable.

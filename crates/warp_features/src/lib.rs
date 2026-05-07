@@ -859,6 +859,14 @@ pub enum FeatureFlag {
     /// conversation into a fresh cloud agent run with the current workspace
     /// snapshot attached. Requires `OzHandoff` to also be enabled.
     HandoffLocalCloud,
+
+    /// Enables the prompt context chip that lists git worktrees and lets the user open one in a
+    /// new tab.
+    GitWorktreesChip,
+
+    /// Enables the inert "Create new worktree…" footer entry inside the git worktrees chip menu.
+    /// Phase 2 (creation modal) wires this up; until then the entry stays hidden.
+    GitWorktreesChipCreate,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -941,6 +949,8 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::CloudModeInputV2,
     FeatureFlag::HandoffLocalCloud,
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::GitWorktreesChip,
+    FeatureFlag::GitWorktreesChipCreate,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

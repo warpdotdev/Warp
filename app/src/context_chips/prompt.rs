@@ -340,6 +340,9 @@ impl PromptConfiguration {
         if FeatureFlag::GithubPrPromptChip.is_enabled() && !suppress_pr_chip {
             chips.push(ContextChipKind::GithubPullRequest);
         }
+        if FeatureFlag::GitWorktreesChip.is_enabled() {
+            chips.push(ContextChipKind::GitWorktrees);
+        }
 
         Self::from_chips(chips, false, WarpPromptSeparator::None)
     }

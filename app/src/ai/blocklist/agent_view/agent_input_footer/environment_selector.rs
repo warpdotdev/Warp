@@ -202,6 +202,9 @@ impl EnvironmentSelector {
             PromptDisplayMenuEvent::CloseMenu => {
                 me.set_menu_visibility(false, ctx);
             }
+            PromptDisplayMenuEvent::TrailingActionInvoked { .. } => {
+                // Environment selector menu has no trailing action; ignore.
+            }
         });
 
         // Subscribe to CloudModel to refresh when environments are added/removed.

@@ -1017,6 +1017,17 @@ pub enum Event {
     OpenFilesPalette {
         source: PaletteSource,
     },
+    /// Open a directory in a brand-new tab. Bubbles up through `terminal_pane` to
+    /// `pane_group::Event::OpenDirectoryInNewTab`, which workspace handles.
+    OpenDirectoryInNewTab {
+        path: PathBuf,
+    },
+    /// Request removal of a git worktree. Bubbles to the workspace, which runs the
+    /// status check, shows the confirm dialog, performs `git worktree remove`, and
+    /// closes any tabs whose CWD is under the removed path.
+    RequestRemoveWorktree {
+        path: PathBuf,
+    },
     TryHandlePassiveCodeDiff(CodeDiffAction),
     ToggleAIDocumentPane {
         document_id: AIDocumentId,
@@ -5211,6 +5222,12 @@ impl Input {
                     document_id: *document_id,
                     document_version: *document_version,
                 });
+            }
+            PromptDisplayEvent::OpenWorktreeInNewTab(path) => {
+                ctx.emit(Event::OpenDirectoryInNewTab { path: path.clone() });
+            }
+            PromptDisplayEvent::RequestRemoveWorktree(path) => {
+                ctx.emit(Event::RequestRemoveWorktree { path: path.clone() });
             }
         }
     }

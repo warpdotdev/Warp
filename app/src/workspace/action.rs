@@ -635,6 +635,13 @@ pub enum WorkspaceAction {
     ShowHoaOnboardingFlow,
     /// Open the "New worktree" modal for creating a reusable worktree tab config.
     OpenNewWorktreeModal,
+    /// Open the chip-triggered "Create worktree" modal. The chip passes the parsed
+    /// `git worktree list --porcelain` output and the current worktree's path so the
+    /// workspace can seed the source picker without re-shelling.
+    OpenCreateWorktreeModalFromChip {
+        porcelain_output: String,
+        current_worktree_path: Option<std::path::PathBuf>,
+    },
     /// Open the native folder picker for the repo field in the new-worktree modal.
     OpenNewWorktreeRepoPicker,
     /// Create a new worktree in the given repo using the default worktree tab config.
@@ -857,6 +864,7 @@ impl WorkspaceAction {
             | CopyAccessTokenToClipboard
             | OpenTabConfigRepoPicker { .. }
             | OpenNewWorktreeModal
+            | OpenCreateWorktreeModalFromChip { .. }
             | OpenNewWorktreeRepoPicker
             | OpenWorktreeInRepo { .. }
             | OpenWorktreeAddRepoPicker

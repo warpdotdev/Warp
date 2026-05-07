@@ -15,6 +15,7 @@ mod lightbox_view;
 mod native_modal;
 mod one_time_modal_model;
 mod registry;
+pub mod remove_worktree_confirmation_dialog;
 pub mod rewind_confirmation_dialog;
 pub mod sync_inputs;
 pub mod tab_settings;
@@ -110,6 +111,7 @@ pub fn init(app: &mut AppContext) {
     lightbox_view::init(app);
     rewind_confirmation_dialog::init(app);
     delete_conversation_confirmation_dialog::init(app);
+    remove_worktree_confirmation_dialog::init(app);
     crate::tab_configs::remove_confirmation_dialog::init(app);
     hoa_onboarding::init(app);
     tab_configs::session_config_modal::init(app);
