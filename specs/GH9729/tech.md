@@ -617,10 +617,10 @@ The product spec previously promised a screen-reader label on the Lightbox image
 
 `app/src/workspace/view.rs` (or a small extracted helper module to avoid pulling the whole view crate into a test):
 
-- `image_preview_arm_dispatches_resolved_when_under_size_cap`: with a temp file of 1 KB, `build_image_preview_entry` returns one entry whose source is `Resolved` (the helper is the unit-testable boundary; the arm forwards its output to `Workspace::open_lightbox`).
-- `image_preview_arm_dispatches_error_when_over_size_cap`: with a temp file (sparse) of `MAX_PREVIEW_FILE_BYTES + 1`, `build_image_preview_entry` returns one entry whose source is `Error` and whose message is the sanitized constant.
-- `image_preview_arm_dispatches_error_when_metadata_fails`: with a path that does not exist, the helper returns `Error`.
-- `image_preview_arm_dispatches_error_for_non_regular_file`: with a path that resolves to a directory or a FIFO (where supported by the test runner), the helper returns `Error`.
+- `image_preview_arm_builds_resolved_when_under_size_cap`: with a temp file of 1 KB, `build_image_preview_entry` returns one entry whose source is `Resolved` (the helper is the unit-testable boundary; the arm forwards its output to `Workspace::open_lightbox`).
+- `image_preview_arm_builds_error_when_over_size_cap`: with a temp file (sparse) of `MAX_PREVIEW_FILE_BYTES + 1`, `build_image_preview_entry` returns one entry whose source is `Error` and whose message is the sanitized constant.
+- `image_preview_arm_builds_error_when_metadata_fails`: with a path that does not exist, the helper returns `Error`.
+- `image_preview_arm_builds_error_for_non_regular_file`: with a path that resolves to a directory or a FIFO (where supported by the test runner), the helper returns `Error`.
 
 `crates/warpui_core/src/assets/asset_cache.rs` (new test module section):
 

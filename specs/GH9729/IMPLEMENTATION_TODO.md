@@ -50,10 +50,10 @@ The original 2a / 2c bullets are struck through and superseded.
        `truncate_message` helper (`MAX_ERROR_MESSAGE_LEN = 256`), single-element
        `OpenLightbox` dispatch — `tech.md` §119
 - [x] 2-tests. Workspace-arm tests per `tech.md` §613 (lines 623-626):
-       `image_preview_arm_dispatches_resolved_when_under_size_cap`,
-       `image_preview_arm_dispatches_error_when_over_size_cap`,
-       `image_preview_arm_dispatches_error_when_metadata_fails`,
-       `image_preview_arm_dispatches_error_for_non_regular_file`
+       `image_preview_arm_builds_resolved_when_under_size_cap`,
+       `image_preview_arm_builds_error_when_over_size_cap`,
+       `image_preview_arm_builds_error_when_metadata_fails`,
+       `image_preview_arm_builds_error_for_non_regular_file`
 - ~~[ ] 2a. `list_sibling_images_natural_sorted` helper + `MAX_SIBLING_IMAGES`
        cap (1024) + hidden-file filter — out of scope (single-image v1)~~
 - ~~[ ] 2c. Unit tests for natural sort, hidden-file filter, sibling cap —

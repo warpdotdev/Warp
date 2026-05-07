@@ -3071,7 +3071,7 @@ fn test_tab_mru_order() {
 
 #[cfg(feature = "local_fs")]
 #[test]
-fn image_preview_arm_dispatches_resolved_when_under_size_cap() {
+fn image_preview_arm_builds_resolved_when_under_size_cap() {
     use std::io::Write as _;
 
     let dir = tempfile::TempDir::new().unwrap();
@@ -3098,7 +3098,7 @@ fn image_preview_arm_dispatches_resolved_when_under_size_cap() {
 
 #[cfg(feature = "local_fs")]
 #[test]
-fn image_preview_arm_dispatches_error_when_over_size_cap() {
+fn image_preview_arm_builds_error_when_over_size_cap() {
     use std::io::Write as _;
 
     let dir = tempfile::TempDir::new().unwrap();
@@ -3125,7 +3125,7 @@ fn image_preview_arm_dispatches_error_when_over_size_cap() {
 
 #[cfg(feature = "local_fs")]
 #[test]
-fn image_preview_arm_dispatches_error_when_metadata_fails() {
+fn image_preview_arm_builds_error_when_metadata_fails() {
     let dir = tempfile::TempDir::new().unwrap();
     // Path under a real temp dir but the file is never created.
     let path = dir.path().join("does_not_exist.png");
@@ -3147,7 +3147,7 @@ fn image_preview_arm_dispatches_error_when_metadata_fails() {
 
 #[cfg(feature = "local_fs")]
 #[test]
-fn image_preview_arm_dispatches_error_for_non_regular_file() {
+fn image_preview_arm_builds_error_for_non_regular_file() {
     // The temp directory itself is a regular *directory*, not a regular
     // file, so `metadata().is_file()` returns false. This exercises the
     // `is_file()` rejection without needing platform-specific FIFO support
