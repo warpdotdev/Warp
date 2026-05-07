@@ -171,6 +171,29 @@ impl Component for Lightbox {
                         .on_left_mouse_down(|_, _, _| DispatchEventResult::StopPropagation)
                         .finish()
                 }
+                // Per-image load/decode failure: render a non-blocking error
+                // panel with the filename (description) on one line and the
+                // sanitized message on the next. Dismissal (Escape, scrim, ×)
+                // continues to work; this panel never traps focus. See
+                // specs/GH9729/tech.md §182.
+                (Some(LightboxImageSource::Error { message }), _) => {
+                    let mut column = Flex::column()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_spacing(DESCRIPTION_SPACING);
+                    if let Some(description) = current_description.clone() {
+                        column = column.with_child(
+                            Text::new(description, appearance.ui_font_family(), text_size)
+                                .with_color(ColorU::white())
+                                .finish(),
+                        );
+                    }
+                    column = column.with_child(
+                        Text::new(message.clone(), appearance.ui_font_family(), text_size)
+                            .with_color(ColorU::white())
+                            .finish(),
+                    );
+                    column.finish()
+                }
                 // No images provided at all.
                 _ if image_count == 0 => {
                     Text::new("No images", appearance.ui_font_family(), text_size)
