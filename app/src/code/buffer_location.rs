@@ -36,6 +36,7 @@ pub struct SyncClock {
 }
 
 impl SyncClock {
+    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     pub fn new() -> Self {
         Self {
             server_version: ContentVersion::new(),
@@ -52,6 +53,7 @@ impl SyncClock {
     }
 
     /// Bump the server version after a file-watcher change.
+    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     pub fn bump_server(&mut self) -> ContentVersion {
         self.server_version = ContentVersion::new();
         self.server_version
