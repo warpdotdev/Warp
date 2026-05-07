@@ -88,19 +88,97 @@ const FG_SGR_PARAM: u8 = 38;
 const BG_SGR_PARAM: u8 = 48;
 
 lazy_static! {
-    pub static ref FILE_LINK_SEPARATORS: HashSet<char> =
-        HashSet::from([
-            '\0', '\t', ' ', '(', ')', ':', '\\', ',', '"', '\'', '[', ']', '{', '}', '<', '>',
-            ';', '|', '`', '=',
-            // Box-drawing characters used by tree-style directory listers.
-            '│', '├', '└', '─', '┬', '┴', '┼', '║', '╠', '╚', '═', '╦', '╩', '╬',
-        ]);
-
     /// The set of characters where, if we encounter them, we have a high degree of confidence that
     /// we're not in a valid URL. Other characters (e.g. '%') might be used in such a way that they
     /// result in invalid URLs, but we don't halt detection if we find them.
     /// See https://datatracker.ietf.org/doc/html/rfc3986 for more details.
     static ref URL_SEPARATORS: HashSet<char> = HashSet::from([' ', '<', '>', '"', '{', '}', '|', '\\', '^', '`']);
+}
+
+/// Returns whether `c` is a separator that should split a token during file
+/// path / link detection.
+///
+/// The set is the union of:
+///
+/// 1. An explicit ASCII list of common token separators (whitespace, control,
+///    and a curated set of punctuation that does not appear in valid file
+///    paths). This is the original list used by Warp prior to CJK support.
+/// 2. The non-ASCII box-drawing glyphs emitted by tree-style directory
+///    listers (e.g. `tree`, `eza --tree`).
+/// 3. Any non-ASCII character whose Unicode General Category is
+///    `P*` (any Punctuation) or `Z*` (any Separator). This makes
+///    full-width / CJK punctuation such as `：` (U+FF1A FULLWIDTH COLON),
+///    `，` (U+FF0C), `。` (U+3002), `「` `」` (U+300C / U+300D),
+///    `（` `）` (U+FF08 / U+FF09) terminate a path token, so output like
+///    `路径：/Users/me/foo.md` correctly extracts `/Users/me/foo.md`
+///    even though there is no ASCII whitespace between the prose and the
+///    path.
+///
+/// CJK ideographs (`Lo`) are intentionally **not** treated as separators
+/// because filenames and directories may contain them — the existing
+/// `test_possible_file_paths_in_word_multibyte` test asserts that
+/// `/path/音楽/テストファイル.txt` is recognised as a single path, and
+/// that contract must be preserved.
+pub fn is_file_link_separator(c: char) -> bool {
+    if c.is_ascii() {
+        return matches!(
+            c,
+            '\0' | '\t'
+                | ' '
+                | '('
+                | ')'
+                | ':'
+                | '\\'
+                | ','
+                | '"'
+                | '\''
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '<'
+                | '>'
+                | ';'
+                | '|'
+                | '`'
+                | '='
+        );
+    }
+    // Box-drawing characters used by tree-style directory listers. These are
+    // `So` (Symbol_Other), so they are not caught by the P*/Z* categories
+    // below and need to be matched explicitly.
+    if matches!(
+        c,
+        '│' | '├'
+            | '└'
+            | '─'
+            | '┬'
+            | '┴'
+            | '┼'
+            | '║'
+            | '╠'
+            | '╚'
+            | '═'
+            | '╦'
+            | '╩'
+            | '╬'
+    ) {
+        return true;
+    }
+    use unicode_general_category::{get_general_category, GeneralCategory};
+    matches!(
+        get_general_category(c),
+        GeneralCategory::ConnectorPunctuation
+            | GeneralCategory::DashPunctuation
+            | GeneralCategory::OpenPunctuation
+            | GeneralCategory::ClosePunctuation
+            | GeneralCategory::InitialPunctuation
+            | GeneralCategory::FinalPunctuation
+            | GeneralCategory::OtherPunctuation
+            | GeneralCategory::SpaceSeparator
+            | GeneralCategory::LineSeparator
+            | GeneralCategory::ParagraphSeparator
+    )
 }
 
 /// Represents a range of cells with information on their combined content and total
@@ -113,9 +191,7 @@ struct Fragment {
 
 impl Fragment {
     fn has_separator(&self) -> bool {
-        self.content
-            .chars()
-            .any(|c| FILE_LINK_SEPARATORS.contains(&c))
+        self.content.chars().any(is_file_link_separator)
     }
 }
 
@@ -1081,7 +1157,7 @@ impl GridHandler {
     /// Words are separated by the file link separators.
     pub fn fragment_boundary_at_point(&self, point: &Point) -> FragmentBoundary {
         fn is_at_boundary(cell: &Cell) -> bool {
-            FILE_LINK_SEPARATORS.contains(&cell.c)
+            is_file_link_separator(cell.c)
         }
 
         // Start by scanning backward.
@@ -1240,7 +1316,7 @@ impl GridHandler {
                 .content
                 .chars()
                 .next()
-                .map(|c| FILE_LINK_SEPARATORS.contains(&c))
+                .map(is_file_link_separator)
                 .unwrap_or(false),
             None => true,
         };
@@ -1420,7 +1496,7 @@ impl GridHandler {
             {
                 // If is a separator, we push the last fragment to the vector and push
                 // the separator as its own fragment.
-                if FILE_LINK_SEPARATORS.contains(&cell.c) {
+                if is_file_link_separator(cell.c) {
                     if !last_fragment.is_empty() {
                         let mut fragment_text = String::new();
                         mem::swap(&mut fragment_text, &mut last_fragment);

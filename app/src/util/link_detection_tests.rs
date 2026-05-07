@@ -129,3 +129,54 @@ fn test_possible_file_paths_in_word_accepts_token_at_separator_count_cap() {
     }
     assert!(possible_file_paths_in_word(&at_cap).next().is_some());
 }
+
+/// Paths preceded by CJK / full-width punctuation (e.g. `路径：/path/to/foo.md`)
+/// should still be recognised. These punctuation characters live in Unicode
+/// category `P*` and are now treated as token separators alongside the legacy
+/// ASCII set. See GH#10245.
+#[test]
+fn test_possible_file_paths_in_word_with_fullwidth_colon() {
+    let word = "路径：/Users/me/foo.md";
+    let possible_paths = possible_file_paths_in_word(word).collect_vec();
+    assert!(possible_paths.contains(&"/Users/me/foo.md"));
+}
+
+#[test]
+fn test_possible_file_paths_in_word_with_ideographic_full_stop() {
+    let word = "/tmp/foo.md。これは説明";
+    let possible_paths = possible_file_paths_in_word(word).collect_vec();
+    assert!(possible_paths.contains(&"/tmp/foo.md"));
+}
+
+#[test]
+fn test_possible_file_paths_in_word_with_cjk_corner_brackets() {
+    let word = "「/tmp/foo.md」";
+    let possible_paths = possible_file_paths_in_word(word).collect_vec();
+    assert!(possible_paths.contains(&"/tmp/foo.md"));
+}
+
+#[test]
+fn test_possible_file_paths_in_word_with_fullwidth_parens() {
+    let word = "（/tmp/foo.md）";
+    let possible_paths = possible_file_paths_in_word(word).collect_vec();
+    assert!(possible_paths.contains(&"/tmp/foo.md"));
+}
+
+#[test]
+fn test_possible_file_paths_in_word_with_fullwidth_comma() {
+    let word = "/tmp/foo.md，/tmp/bar.md";
+    let possible_paths = possible_file_paths_in_word(word).collect_vec();
+    assert!(possible_paths.contains(&"/tmp/foo.md"));
+    assert!(possible_paths.contains(&"/tmp/bar.md"));
+}
+
+/// Regression guard: CJK ideographs (Unicode category `Lo`) inside a path
+/// must NOT be treated as separators, otherwise filenames containing kanji
+/// or kana stop being clickable. This complements
+/// [`test_possible_file_paths_in_word_multibyte`] above.
+#[test]
+fn test_possible_file_paths_in_word_preserves_cjk_letters_in_path() {
+    let word = "/path/to/日本語ファイル.md";
+    let possible_paths = possible_file_paths_in_word(word).collect_vec();
+    assert!(possible_paths.contains(&"/path/to/日本語ファイル.md"));
+}
