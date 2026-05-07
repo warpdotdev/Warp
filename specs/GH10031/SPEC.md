@@ -19,17 +19,21 @@ or a different git worktree.
 
 - B1. The terminal's existing CWD-tracking hook (already used to
   feed prompt PWD into Warp) gains a "repo-root changed"
-  derived signal: re-run `git rev-parse --show-toplevel` and
-  `git rev-parse --git-common-dir` (the latter resolves to the
-  shared `.git` directory across worktrees, identifying the
-  worktree group).
+  derived signal: run one repo-context derivation process for
+  the new CWD. The derivation should ask a single `git rev-parse`
+  invocation for both `--show-toplevel` and `--git-common-dir`
+  so the two values are produced from the same snapshot. The
+  latter resolves to the shared `.git` directory across worktrees,
+  identifying the worktree group.
 - B2. When (`toplevel`, `git-common-dir`) tuple changes, fire a
   `RepoContextChanged` event that the existing repo-metadata
   subsystem already responds to. (It currently fires only on
   pane creation and tab switch.)
-- B3. Throttle the re-derivation: at most once per 500ms per
-  pane, and skip the rev-parse spawn if CWD hasn't changed since
-  the last check.
+- B3. Throttle repo-context derivation: at most one derivation
+  process per 500ms per pane. A derivation means one spawned
+  `git rev-parse --show-toplevel --git-common-dir` process, not
+  one process per output value. Skip the spawn entirely if CWD
+  hasn't changed since the last check.
 - B4. Worktree detection: two paths with the same
   `git-common-dir` are different worktrees of the same repo;
   metadata refreshes (branch / PR / diff) but the repo "identity"
@@ -50,7 +54,7 @@ or a different git worktree.
 - A4. `cd` between two unrelated repos refreshes everything
   including repo identity.
 - A5. Throttle: rapid back-and-forth `cd` does not spawn more
-  than 2 `git rev-parse` per second.
+  than 2 repo-context derivation processes per second per pane.
 
 ## Implementation pointers
 
@@ -65,8 +69,8 @@ or a different git worktree.
 
 - T1. Synthetic CWD-change event triggers a single
   `RepoContextChanged`.
-- T2. Two synthetic events within 100ms produce one event
-  (throttle).
+- T2. Two synthetic events within 100ms produce one repo-context
+  derivation process and one event (throttle).
 - T3. CWD into a non-git path emits a "clear" event.
 - T4. Worktree-vs-different-repo distinction returns the
   expected identity field.
