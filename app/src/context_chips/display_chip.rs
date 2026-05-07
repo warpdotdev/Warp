@@ -534,7 +534,8 @@ impl DisplayChip {
                 let git_branch_items: Vec<GitBranch> = chip_result
                     .on_click_values
                     .iter()
-                    .map(|branch_name| GitBranch(branch_name.clone()))
+                    .filter_map(|branch_name| normalize_git_branch_menu_item(branch_name))
+                    .map(GitBranch)
                     .collect();
 
                 let menu_view = ctx.add_typed_action_view(move |ctx| {
@@ -1779,7 +1780,22 @@ fn format_change_directory_command(dir_name: &str) -> String {
 }
 
 pub fn format_git_branch_command(branch_name: &str) -> String {
-    format!("git checkout {branch_name}")
+    format!("git checkout {}", quote_shell_argument(branch_name))
+}
+
+fn normalize_git_branch_menu_item(raw_branch_name: &str) -> Option<String> {
+    let branch_name = raw_branch_name.trim();
+    let branch_name = branch_name
+        .strip_prefix("* ")
+        .or_else(|| branch_name.strip_prefix("+ "))
+        .unwrap_or(branch_name)
+        .trim();
+
+    (!branch_name.is_empty()).then(|| branch_name.to_string())
+}
+
+fn quote_shell_argument(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 pub(crate) fn chip_container(

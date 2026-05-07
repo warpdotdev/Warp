@@ -1,4 +1,7 @@
-use super::{truncate_from_beginning, GitLineChanges};
+use super::{
+    format_git_branch_command, normalize_git_branch_menu_item, truncate_from_beginning,
+    GitLineChanges,
+};
 use crate::context_chips::{github_pr_display_text_from_url, ContextChipKind};
 
 #[test]
@@ -139,6 +142,59 @@ fn test_parse_from_git_output_partial_matches() {
     assert_eq!(result.files_changed, 2);
     assert_eq!(result.lines_added, 0); // "some" is not a number
     assert_eq!(result.lines_removed, 3);
+}
+
+#[test]
+fn test_normalize_git_branch_menu_item_strips_current_branch_marker() {
+    assert_eq!(
+        normalize_git_branch_menu_item("* main"),
+        Some("main".to_string())
+    );
+}
+
+#[test]
+fn test_normalize_git_branch_menu_item_strips_worktree_branch_marker() {
+    assert_eq!(
+        normalize_git_branch_menu_item("+ feature/worktree"),
+        Some("feature/worktree".to_string())
+    );
+}
+
+#[test]
+fn test_normalize_git_branch_menu_item_strips_padding() {
+    assert_eq!(
+        normalize_git_branch_menu_item("  feature/git-chip  "),
+        Some("feature/git-chip".to_string())
+    );
+}
+
+#[test]
+fn test_normalize_git_branch_menu_item_rejects_empty_entries() {
+    assert_eq!(normalize_git_branch_menu_item("  "), None);
+}
+
+#[test]
+fn test_format_git_branch_command_quotes_branch_name() {
+    assert_eq!(
+        format_git_branch_command("feature/git-chip"),
+        "git checkout 'feature/git-chip'"
+    );
+}
+
+#[test]
+fn test_format_git_branch_command_escapes_single_quotes() {
+    assert_eq!(
+        format_git_branch_command("feature/it's-ready"),
+        "git checkout 'feature/it'\''s-ready'"
+    );
+}
+
+#[test]
+fn test_format_git_branch_command_preserves_shell_metacharacters_as_literal_branch_name() {
+    assert_eq!(
+        format_git_branch_command("feature/$USER;rm"),
+        "git checkout 'feature/$USER;rm'"
+    );
 }
 
 #[test]
