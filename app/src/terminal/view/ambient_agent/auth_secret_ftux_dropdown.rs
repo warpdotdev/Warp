@@ -77,6 +77,8 @@ pub enum FtuxDropdownAction {
     SelectNewType(usize),
     /// Clear the display label and reopen the dropdown.
     ClearDisplayLabel,
+    /// Skip setting a secret (mark FTUX as completed without selecting one).
+    Skip,
 }
 
 /// Events emitted to the parent [`AuthSecretFtuxView`].
@@ -91,6 +93,8 @@ pub enum FtuxDropdownEvent {
     Closed,
     /// The user clicked the display label to dismiss creation mode.
     DisplayLabelCleared,
+    /// The user chose to skip setting a secret.
+    SkipRequested,
 }
 
 /// Full-width combobox for the FTUX auth secret selection flow.
@@ -228,14 +232,31 @@ impl AuthSecretFtuxDropdown {
         ctx.notify();
     }
 
+    /// Moves the menu selection up one item, if the dropdown is currently open.
+    /// Called by the parent Input view to forward the Up arrow key which is
+    /// intercepted by InputAction::Up before reaching the search editor.
+    pub fn select_previous_if_open(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.is_menu_open {
+            self.menu.update(ctx, |menu, ctx| menu.select_previous(ctx));
+        }
+    }
+
+    /// Focuses the search editor so it receives keyboard events.
+    pub fn focus_search_editor(&self, ctx: &mut ViewContext<Self>) {
+        ctx.focus(&self.search_editor);
+    }
+
+    /// Clears the display label without reopening the dropdown menu. Used by
+    /// the skip flow where the menu is already closed and we don't want
+    /// `set_display_label(None)` to reopen it.
+    pub fn clear_display_label_quietly(&mut self) {
+        self.display_label = None;
+    }
+
     /// Sets or clears the static display label. When `Some`, the select
     /// container shows a non-editable label and the dropdown is closed. When
     /// `None`, the editor is restored and the dropdown reopens.
-    pub fn set_display_label(
-        &mut self,
-        label: Option<String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    pub fn set_display_label(&mut self, label: Option<String>, ctx: &mut ViewContext<Self>) {
         self.display_label = label;
         if self.display_label.is_some() {
             self.set_menu_visibility(false, ctx);
@@ -328,13 +349,17 @@ impl AuthSecretFtuxDropdown {
 
         let mut items: Vec<MenuItem<FtuxDropdownAction>> = Vec::new();
 
+        let no_results_text_color = internal_colors::text_sub(theme, theme.surface_2());
+
         // Existing secrets (filtered by search query).
         match availability.auth_secrets_for(harness) {
             AuthSecretFetchState::Loaded(secrets) => {
+                let mut matched = false;
                 for secret in secrets {
                     if !query.is_empty() && !secret.name.to_lowercase().contains(&query) {
                         continue;
                     }
+                    matched = true;
                     items.push(MenuItem::Item(
                         MenuItemFields::new(secret.name.clone())
                             .with_font_size_override(FONT_SIZE)
@@ -346,6 +371,18 @@ impl AuthSecretFtuxDropdown {
                             .with_on_select_action(FtuxDropdownAction::SelectSecret(
                                 secret.name.clone(),
                             )),
+                    ));
+                }
+                if !matched {
+                    items.push(MenuItem::Item(
+                        MenuItemFields::new("No secrets found")
+                            .with_font_size_override(FONT_SIZE)
+                            .with_padding_override(
+                                MENU_ITEM_VERTICAL_PADDING,
+                                MENU_HORIZONTAL_PADDING,
+                            )
+                            .with_override_text_color(no_results_text_color)
+                            .with_no_interaction_on_hover(),
                     ));
                 }
             }
@@ -384,6 +421,21 @@ impl AuthSecretFtuxDropdown {
             ));
         }
 
+        // Separator before the skip option.
+        items.push(MenuItem::Separator);
+
+        // Skip option at the bottom with a side-by-side description.
+        items.push(MenuItem::Item(
+            MenuItemFields::new_with_label(
+                "Skip setting a secret",
+                "Choose this if authentication is set up in the environment",
+            )
+            .with_font_size_override(FONT_SIZE)
+            .with_padding_override(MENU_ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+            .with_override_hover_background_color(hover_background)
+            .with_on_select_action(FtuxDropdownAction::Skip),
+        ));
+
         self.menu.update(ctx, |menu, ctx| {
             menu.set_border(Some(border));
             menu.set_items(items, ctx);
@@ -409,32 +461,25 @@ impl AuthSecretFtuxDropdown {
 
         let icon_color: Fill = internal_colors::text_sub(theme, theme.surface_1()).into();
 
-        let search_icon = ConstrainedBox::new(
-            Icon::Search.to_warpui_icon(icon_color).finish(),
-        )
-        .with_height(SELECT_ICON_SIZE)
-        .with_width(SELECT_ICON_SIZE)
-        .finish();
+        let search_icon = ConstrainedBox::new(Icon::Search.to_warpui_icon(icon_color).finish())
+            .with_height(SELECT_ICON_SIZE)
+            .with_width(SELECT_ICON_SIZE)
+            .finish();
 
-        let right_icon_element = ConstrainedBox::new(
-            right_icon.to_warpui_icon(icon_color).finish(),
-        )
-        .with_height(SELECT_ICON_SIZE)
-        .with_width(SELECT_ICON_SIZE)
-        .finish();
+        let right_icon_element =
+            ConstrainedBox::new(right_icon.to_warpui_icon(icon_color).finish())
+                .with_height(SELECT_ICON_SIZE)
+                .with_width(SELECT_ICON_SIZE)
+                .finish();
 
         // When a display label is set (creation mode), show a static text
         // label instead of the interactive search editor.
         let center: Box<dyn Element> = if let Some(label) = &self.display_label {
             Expanded::new(
                 1.,
-                Text::new_inline(
-                    label.clone(),
-                    appearance.ui_font_family(),
-                    FONT_SIZE,
-                )
-                .with_color(theme.foreground().into())
-                .finish(),
+                Text::new_inline(label.clone(), appearance.ui_font_family(), FONT_SIZE)
+                    .with_color(theme.foreground().into())
+                    .finish(),
             )
             .finish()
         } else {
@@ -526,6 +571,10 @@ impl TypedActionView for AuthSecretFtuxDropdown {
             FtuxDropdownAction::ClearDisplayLabel => {
                 self.set_display_label(None, ctx);
                 ctx.emit(FtuxDropdownEvent::DisplayLabelCleared);
+            }
+            FtuxDropdownAction::Skip => {
+                self.set_menu_visibility(false, ctx);
+                ctx.emit(FtuxDropdownEvent::SkipRequested);
             }
         }
     }

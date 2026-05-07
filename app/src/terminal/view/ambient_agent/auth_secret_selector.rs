@@ -84,6 +84,8 @@ pub enum AuthSecretSelectorAction {
     ToggleMenu,
     /// The user picked an existing secret from the dropdown.
     SelectSecret(String),
+    /// The user cleared the selected secret (picked "No secret").
+    ClearSecret,
     /// The user clicked the "New" parent item; opens the sidecar.
     OpenNewTypeSidecar,
     /// The user picked one of the new-secret types from the sidecar.
@@ -364,8 +366,8 @@ impl AuthSecretSelector {
             MAIN_MENU_SAVE_POSITION_ID.to_string(),
             vec2f(offset_x, 0.),
             warpui::elements::PositionedElementOffsetBounds::WindowByPosition,
-            warpui::elements::PositionedElementAnchor::TopLeft,
-            ChildAnchor::TopLeft,
+            warpui::elements::PositionedElementAnchor::BottomLeft,
+            ChildAnchor::BottomLeft,
         )
     }
 
@@ -410,6 +412,15 @@ fn build_main_menu_items(
     };
 
     let mut items = vec![header];
+
+    // Always show a "No secret" option so the user can clear the selection.
+    items.push(MenuItem::Item(
+        MenuItemFields::new("No secret")
+            .with_font_size_override(ITEM_FONT_SIZE)
+            .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+            .with_override_hover_background_color(hover_background)
+            .with_on_select_action(AuthSecretSelectorAction::ClearSecret),
+    ));
 
     match fetch_state {
         AuthSecretFetchState::Loaded(secrets) => {
@@ -521,6 +532,12 @@ impl TypedActionView for AuthSecretSelector {
                         settings.mark_harness_auth_ftux_completed(harness, ctx);
                     },
                 );
+                self.set_menu_visibility(false, ctx);
+            }
+            AuthSecretSelectorAction::ClearSecret => {
+                self.ambient_agent_model.update(ctx, |model, ctx| {
+                    model.set_harness_auth_secret_name(None, ctx);
+                });
                 self.set_menu_visibility(false, ctx);
             }
             AuthSecretSelectorAction::OpenNewTypeSidecar => {

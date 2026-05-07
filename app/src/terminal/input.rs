@@ -2417,9 +2417,7 @@ impl Input {
                                 let harness = *harness;
                                 let type_index = *type_index;
                                 ftux_view.update(ctx, |view, ctx| {
-                                    view.enter_creation_state_public(
-                                        harness, type_index, ctx,
-                                    );
+                                    view.enter_creation_state_public(harness, type_index, ctx);
                                 });
                             }
                             ctx.notify();
@@ -7803,6 +7801,16 @@ impl Input {
     }
 
     pub fn focus_input_box(&self, ctx: &mut ViewContext<Self>) {
+        // When the auth secret FTUX is showing, redirect focus to the FTUX
+        // dropdown's search editor instead of the main input editor.
+        if self.should_show_auth_secret_ftux(ctx) {
+            if let Some(ftux_view) = self.auth_secret_ftux_view().cloned() {
+                ftux_view.update(ctx, |view, ctx| {
+                    view.focus_dropdown_editor(ctx);
+                });
+                return;
+            }
+        }
         ctx.focus_self();
     }
 
@@ -7871,6 +7879,17 @@ impl Input {
     }
 
     fn editor_up(&mut self, ctx: &mut ViewContext<Self>) {
+        // When the auth secret FTUX is active, forward the Up key to the
+        // FTUX dropdown menu instead of opening the history menu.
+        if self.should_show_auth_secret_ftux(ctx) {
+            if let Some(ftux_view) = self.auth_secret_ftux_view().cloned() {
+                ftux_view.update(ctx, |view, ctx| {
+                    view.select_previous_in_dropdown(ctx);
+                });
+            }
+            return;
+        }
+
         // History and input suggestions are not available for
         // read-only viewers in a shared session
         if self.model.lock().shared_session_status().is_reader() {

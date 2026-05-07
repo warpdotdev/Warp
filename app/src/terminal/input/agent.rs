@@ -509,7 +509,7 @@ impl Input {
     /// 1. The FTUX has not been completed for this harness and no secret is selected.
     /// 2. The FTUX view has an active creation state (the user picked "New {type}"
     ///    from the chip, which enters creation mode even after FTUX completion).
-    fn should_show_auth_secret_ftux(&self, app: &AppContext) -> bool {
+    pub(super) fn should_show_auth_secret_ftux(&self, app: &AppContext) -> bool {
         let Some(view_model) = self.ambient_agent_view_model() else {
             return false;
         };
@@ -610,9 +610,7 @@ impl Input {
                 .ambient_agent_view_model()
                 .map(|m| m.as_ref(app).selected_harness())
                 .unwrap_or(warp_cli::agent::Harness::Oz);
-            if harness != warp_cli::agent::Harness::Oz
-                && !self.should_show_auth_secret_ftux(app)
-            {
+            if harness != warp_cli::agent::Harness::Oz && !self.should_show_auth_secret_ftux(app) {
                 row.add_child(ChildView::new(auth_secret_selector).finish());
             }
         }

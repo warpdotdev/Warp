@@ -38,13 +38,14 @@ use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
 use crate::ai::harness_display;
 use crate::editor::{
-    EditorView, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
-    TextOptions,
+    EditorView, Event as EditorEvent, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys,
+    SingleLineEditorOptions, TextOptions,
 };
 use crate::terminal::view::ambient_agent::auth_secret_ftux_dropdown::{
     AuthSecretFtuxDropdown, FtuxDropdownEvent,
 };
 use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
+use warp_editor::editor::NavigationKey;
 
 /// Description font size (Figma: 14px).
 const DESCRIPTION_FONT_SIZE: f32 = 14.;
@@ -133,6 +134,11 @@ impl AuthSecretFtuxView {
     ) -> Self {
         let name_editor = make_single_line_editor(Some("API key name"), ctx);
 
+        // Subscribe to Tab/ShiftTab on the name editor (index 0) for focus cycling.
+        ctx.subscribe_to_view(&name_editor, |me, _, event, ctx| {
+            me.handle_form_editor_nav(0, event, ctx);
+        });
+
         // Build the FTUX-specific full-width dropdown internally.
         let ambient_agent_model_for_dropdown = ambient_agent_model.clone();
         let ftux_dropdown = ctx.add_typed_action_view(|ctx| {
@@ -182,6 +188,9 @@ impl AuthSecretFtuxView {
                 // Keep creation_state and field_editors intact so the form
                 // stays visible while the dropdown is re-opened.
                 ctx.notify();
+            }
+            FtuxDropdownEvent::SkipRequested => {
+                me.handle_skip(ctx);
             }
             _ => {}
         });
@@ -233,6 +242,24 @@ impl AuthSecretFtuxView {
         self.creation_state.is_some()
     }
 
+    /// Forwards an Up-arrow key press to the FTUX dropdown so the menu
+    /// selection moves up. No-op when the dropdown is closed (e.g. while the
+    /// creation form editors are focused).
+    pub fn select_previous_in_dropdown(&self, ctx: &mut ViewContext<Self>) {
+        self.ftux_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.select_previous_if_open(ctx);
+        });
+    }
+
+    /// Focuses the FTUX dropdown's search editor so it receives keyboard
+    /// events. Called by the parent Input view when it would normally focus
+    /// the main input editor but the FTUX is active.
+    pub fn focus_dropdown_editor(&self, ctx: &mut ViewContext<Self>) {
+        self.ftux_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.focus_search_editor(ctx);
+        });
+    }
+
     /// Sets whether the "Skip and continue" link is rendered. Used by callers
     /// that re-enter the creation flow from the chip (after FTUX has already
     /// been completed once for this harness).
@@ -255,6 +282,57 @@ impl AuthSecretFtuxView {
         self.enter_creation_state(harness, type_index, ctx);
     }
 
+    /// Returns all form editors in order: name editor first, then field editors.
+    /// Used for tab-cycling focus.
+    fn all_form_editors(&self) -> Vec<&ViewHandle<EditorView>> {
+        let mut editors = vec![&self.name_editor];
+        editors.extend(self.field_editors.iter());
+        editors
+    }
+
+    /// Focuses the form editor at the given index (0 = name editor, 1+ = field
+    /// editors). Wraps around at both ends.
+    fn focus_form_editor(&self, index: usize, ctx: &mut ViewContext<Self>) {
+        let editors = self.all_form_editors();
+        if let Some(editor) = editors.get(index % editors.len()) {
+            ctx.focus(editor);
+        }
+    }
+
+    /// Handles Tab / ShiftTab navigation events from a form editor at the given
+    /// index in the `all_form_editors()` list. Cycles focus forward or backward.
+    fn handle_form_editor_nav(
+        &self,
+        editor_index: usize,
+        event: &EditorEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let count = self.all_form_editors().len();
+        if count == 0 {
+            return;
+        }
+        match event {
+            EditorEvent::Navigate(key) => {
+                match key {
+                    NavigationKey::Tab => {
+                        self.focus_form_editor((editor_index + 1) % count, ctx);
+                    }
+                    NavigationKey::ShiftTab => {
+                        let prev = if editor_index == 0 {
+                            count - 1
+                        } else {
+                            editor_index - 1
+                        };
+                        self.focus_form_editor(prev, ctx);
+                    }
+                    // Other navigation keys are not relevant for form cycling.
+                    _ => {}
+                }
+            }
+            _other => {}
+        }
+    }
+
     fn enter_creation_state(
         &mut self,
         harness: Harness,
@@ -265,10 +343,17 @@ impl AuthSecretFtuxView {
             Some(info) => info,
             None => return,
         };
-        // Build a single-line editor for each field of the chosen type.
+        // Build a single-line editor for each field of the chosen type and
+        // subscribe to Tab/ShiftTab navigation events for focus cycling.
         let mut editors = Vec::with_capacity(info.fields.len());
-        for field in info.fields.iter() {
-            editors.push(make_single_line_editor(Some(field.label), ctx));
+        for (field_idx, field) in info.fields.iter().enumerate() {
+            let editor = make_single_line_editor(Some(field.label), ctx);
+            // field_idx + 1 because index 0 is the name editor.
+            let editor_index = field_idx + 1;
+            ctx.subscribe_to_view(&editor, move |me, _, event, ctx| {
+                me.handle_form_editor_nav(editor_index, event, ctx);
+            });
+            editors.push(editor);
         }
         self.field_editors = editors;
         self.creation_state = Some(SecretCreationState {
@@ -281,6 +366,9 @@ impl AuthSecretFtuxView {
         self.ftux_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_display_label(Some(info.display_name.to_string()), ctx);
         });
+        // Auto-focus the first form field (secret name) so the user can start
+        // typing immediately without clicking.
+        ctx.focus(&self.name_editor);
         ctx.notify();
     }
 
@@ -294,7 +382,16 @@ impl AuthSecretFtuxView {
         CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
             settings.mark_harness_auth_ftux_completed(harness, ctx);
         });
-        self.clear_creation_state(ctx);
+        // Clear any in-progress creation state and the dropdown's display
+        // label directly — we must NOT call `set_display_label(None)` here
+        // because that reopens the menu, which fights with the skip transition.
+        self.creation_state = None;
+        self.field_editors.clear();
+        self.ftux_dropdown.update(ctx, |dropdown, _ctx| {
+            dropdown.clear_display_label_quietly();
+        });
+        // Notify the parent Input view to re-render so it transitions from
+        // the FTUX content back to the normal input container.
         ctx.notify();
     }
 
