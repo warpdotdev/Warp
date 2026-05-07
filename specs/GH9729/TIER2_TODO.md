@@ -72,7 +72,7 @@ Hard rules:
 
 | # | Item | Impl commit | Impl | R1 | R2 |
 |---|------|-------------|------|----|----|
-| t2-4 | `Unrecognized` → `Err` globally | (see commit message) | [x] | [ ] | [ ] |
+| t2-4 | `Unrecognized` → `Err` globally | `7780d31` | [x] | [x] | [x] |
 | t2-5 | adopt `Error` at artifacts call site | | [ ] | [ ] | [ ] |
 | t2-6 | animated playback (+ play/pause) | | [ ] | [ ] | [ ] |
 | t2-7 | zoom and pan | | [ ] | [ ] | [ ] |
@@ -83,3 +83,19 @@ Hard rules:
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
 count.
+
+## Deferred R2 follow-ups
+
+Per the loop's "surface, don't fix" rule, R2-quality nits are recorded
+here for an off-loop cleanup pass after the main tier-2 list lands.
+
+- **t2-4-r2.** (1) No regression test loads garbage bytes through
+  `ImageType::try_from_bytes` and asserts the resulting "could not
+  detect image format" string — future wording drift would silently
+  break `sanitize_load_error`'s prefix match. (2) The rewritten test
+  `post_load_callback_rewrites_unrecognized_to_error` still carries
+  the legacy variant name; rename to reflect the `FailedToLoad` path.
+  (3) No direct unit test of `sanitize_load_error` proves the
+  "could not detect" branch sits ahead of the generic
+  "decode/format" branch — a swap regression would silently widen
+  the bucket. — `reviews/tier2-t2-4-r2.md`.
