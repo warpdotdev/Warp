@@ -971,9 +971,10 @@ impl GridHandler {
                 let Some(cell) = grid_row.get(col) else {
                     continue;
                 };
-                if cell.flags.intersects(
-                    Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
-                ) {
+                if cell
+                    .flags
+                    .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+                {
                     continue;
                 }
 

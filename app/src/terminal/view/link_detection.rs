@@ -87,7 +87,9 @@ impl GridHighlightedLink {
                 // fails the OSC 8 allow-list (product invariant 16) or the
                 // URI is unparseable. The hover/copy still work; this
                 // tooltip just explains the open-path rejection.
-                use super::link_security::{check_open_scheme, LinkSource, SchemeCheck, SchemeRejectReason};
+                use super::link_security::{
+                    check_open_scheme, LinkSource, SchemeCheck, SchemeRejectReason,
+                };
                 match check_open_scheme(uri, LinkSource::OscHyperlink) {
                     SchemeCheck::Allowed => "Open link",
                     SchemeCheck::Rejected {
