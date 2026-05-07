@@ -1132,7 +1132,7 @@ impl NotebookView {
             // Do not allow grabbing edit access if the notebook is trashed or feature flag is turned off.
             return;
         }
-        if FeatureFlag::SharedWithMe.is_enabled() && !active_notebook.editability(ctx).can_edit() {
+        if !active_notebook.editability(ctx).can_edit() {
             return;
         }
 
@@ -1483,9 +1483,7 @@ impl NotebookView {
         }
 
         // Add "Trash" to menu
-        if self.is_online(ctx)
-            && (!FeatureFlag::SharedWithMe.is_enabled() || access_level.can_trash())
-        {
+        if self.is_online(ctx) && access_level.can_trash() {
             menu_items.push(
                 MenuItemFields::new("Trash")
                     .with_on_select_action(NotebookAction::Trash)
@@ -1640,7 +1638,7 @@ impl NotebookView {
         let baton_future = ctx.spawn(has_metadata, |me, _, ctx| {
             let active_notebook_data = me.active_notebook_data.as_ref(ctx);
 
-            if FeatureFlag::SharedWithMe.is_enabled() && !active_notebook_data.editability(ctx).can_edit() {
+            if !active_notebook_data.editability(ctx).can_edit() {
                 log::debug!("Notebook is view-only, opening in view mode");
             } else if active_notebook_data.has_conflicts(ctx) {
                 log::debug!("Notebook has conflicts, opening in view mode");
@@ -1978,9 +1976,7 @@ impl NotebookView {
 
             let active_notebook_data = self.active_notebook_data.as_ref(app);
 
-            if !FeatureFlag::SharedWithMe.is_enabled()
-                || active_notebook_data.access_level(app).can_trash()
-            {
+            if active_notebook_data.access_level(app).can_trash() {
                 let ui_builder = appearance.ui_builder().clone();
                 action_row.add_child(
                     Align::new(
@@ -2264,12 +2260,11 @@ impl View for NotebookView {
             Mode::View => context.set.insert("NotebookViewing"),
         };
 
-        if !FeatureFlag::SharedWithMe.is_enabled()
-            || self
-                .active_notebook_data
-                .as_ref(app)
-                .editability(app)
-                .can_edit()
+        if self
+            .active_notebook_data
+            .as_ref(app)
+            .editability(app)
+            .can_edit()
         {
             context.set.insert("NotebookIsEditable");
         }

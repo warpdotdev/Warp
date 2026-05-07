@@ -317,12 +317,9 @@ pub trait CloudObject: Debug {
 
                 match cloud_model.get_by_uid(&hashed_parent_id) {
                     Some(parent) => parent.is_trashed_internal(cloud_model, ancestors),
-                    None => {
-                        // If the object has a parent, but the parent is not in CloudModel, assume
-                        // the object is shared, but not its parent. For backwards compatibility,
-                        // if sharing is disabled, default to trashed rather than untrashed.
-                        !FeatureFlag::SharedWithMe.is_enabled()
-                    }
+                    // If the object has a parent, but the parent is not in CloudModel, assume
+                    // the object is shared, but not its parent.
+                    None => false,
                 }
             }
             None => false,

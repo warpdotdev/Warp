@@ -2978,11 +2978,7 @@ impl View for WorkflowView {
             .finish(),
         );
 
-        let editability = if FeatureFlag::SharedWithMe.is_enabled() {
-            self.editability(app)
-        } else {
-            ContentEditability::Editable
-        };
+        let editability = self.editability(app);
         let mode_toggleable = match (ContextFlag::RunWorkflow.is_enabled(), editability) {
             // If logging in would allow editing, show the toggle for discoverability.
             (_, ContentEditability::RequiresLogin) => true,
@@ -3235,9 +3231,7 @@ impl BackingView for WorkflowView {
 
         // Add "Trash" to menu
         let access_level = self.access_level(ctx);
-        if self.is_online(ctx)
-            && (!FeatureFlag::SharedWithMe.is_enabled() || access_level.can_trash())
-        {
+        if self.is_online(ctx) && access_level.can_trash() {
             menu_items.push(
                 MenuItemFields::new("Trash")
                     .with_on_select_action(WorkflowAction::Trash)

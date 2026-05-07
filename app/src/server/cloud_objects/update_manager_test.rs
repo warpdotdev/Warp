@@ -7259,8 +7259,6 @@ fn test_permissions_update_grants_access() {
 
 #[test]
 fn test_permissions_update_existing_object() {
-    let _guard = FeatureFlag::SharedWithMe.override_enabled(true);
-
     App::test(Assets, |mut app| async move {
         initialize_app(&mut app);
 
@@ -7321,7 +7319,6 @@ fn test_permissions_update_existing_object() {
 
 #[test]
 fn test_add_guest_success() {
-    let _guard = FeatureFlag::SharedWithMe.override_enabled(true);
     App::test(Assets, |mut app| async move {
         initialize_app(&mut app);
         let mut server_api = mock_server_api();
@@ -7435,7 +7432,6 @@ fn test_add_guest_success() {
 
 #[test]
 fn test_add_guest_failure() {
-    let _guard = FeatureFlag::SharedWithMe.override_enabled(true);
     App::test(Assets, |mut app| async move {
         initialize_app(&mut app);
         let mut server_api = mock_server_api();

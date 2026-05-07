@@ -208,7 +208,7 @@ impl EnvVarCollectionView {
             .with_hovered_styles(hovered_styles)
             .with_text_and_icon_label(text_and_icon);
 
-        if FeatureFlag::SharedWithMe.is_enabled() && !editability.can_edit() {
+        if !editability.can_edit() {
             button = button.disabled();
         }
 

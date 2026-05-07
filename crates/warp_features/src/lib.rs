@@ -130,9 +130,6 @@ pub enum FeatureFlag {
     /// Enables next action prediction within Warp, powered by AI.
     AgentPredict,
 
-    /// Enables receiving shared Warp Drive objects.
-    SharedWithMe,
-
     /// Enables workflows for use with Agent Mode.
     AgentModeWorkflows,
 

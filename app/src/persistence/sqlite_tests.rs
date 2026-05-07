@@ -381,8 +381,7 @@ fn test_path_encode_decode() {
 
 #[test]
 fn test_deserialize_corrupted_guests() {
-    let _ = FeatureFlag::SharedWithMe.override_enabled(true);
-    // Use a hardcoded timestamp to ensure this test works on systems with more-than-microsecond
+    // Use a hardcoded timestamp
     // precision.
     let permissions_ts_micros = 123456;
     let permissions_ts =

@@ -432,23 +432,15 @@ pub struct CloudObjectPermissions {
 
 impl CloudObjectPermissions {
     pub fn new_from_server(server_permissions: ServerPermissions) -> Self {
-        let guests = if FeatureFlag::SharedWithMe.is_enabled() {
-            server_permissions
-                .guests
-                .into_iter()
-                .map(CloudObjectGuest::from_server)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let guests = server_permissions
+            .guests
+            .into_iter()
+            .map(CloudObjectGuest::from_server)
+            .collect();
 
-        let anyone_with_link = if FeatureFlag::SharedWithMe.is_enabled() {
-            server_permissions
-                .anyone_link_sharing
-                .map(CloudLinkSharing::from_server)
-        } else {
-            None
-        };
+        let anyone_with_link = server_permissions
+            .anyone_link_sharing
+            .map(CloudLinkSharing::from_server);
 
         Self {
             owner: server_permissions.space,
@@ -480,16 +472,14 @@ impl CloudObjectPermissions {
     pub fn update_from_new_permissions_ts(&mut self, server_permissions: ServerPermissions) {
         self.owner = server_permissions.space;
         self.permissions_last_updated_ts = Some(server_permissions.permissions_last_updated_ts);
-        if FeatureFlag::SharedWithMe.is_enabled() {
-            self.guests = server_permissions
-                .guests
-                .into_iter()
-                .map(CloudObjectGuest::from_server)
-                .collect();
-            self.anyone_with_link = server_permissions
-                .anyone_link_sharing
-                .map(CloudLinkSharing::from_server);
-        }
+        self.guests = server_permissions
+            .guests
+            .into_iter()
+            .map(CloudObjectGuest::from_server)
+            .collect();
+        self.anyone_with_link = server_permissions
+            .anyone_link_sharing
+            .map(CloudLinkSharing::from_server);
     }
 }
 

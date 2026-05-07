@@ -3314,33 +3314,25 @@ fn to_cloud_object_permissions(
         .permissions_last_updated_at
         .and_then(|ts| ServerTimestamp::from_unix_timestamp_micros(ts).ok());
 
-    let guests = if FeatureFlag::SharedWithMe.is_enabled() {
-        permissions
-            .object_guests
-            .as_deref()
-            // If deserializing guests fails, default to None and wait for an eventual refresh.
-            .and_then(|guests| super::cloud_objects::decode_guests(guests).ok())
-            .unwrap_or_default()
-    } else {
-        Default::default()
-    };
+    let guests = permissions
+        .object_guests
+        .as_deref()
+        // If deserializing guests fails, default to None and wait for an eventual refresh.
+        .and_then(|guests| super::cloud_objects::decode_guests(guests).ok())
+        .unwrap_or_default();
 
-    let anyone_with_link = if FeatureFlag::SharedWithMe.is_enabled() {
-        permissions
-            .anyone_with_link_access_level
-            .as_deref()
-            .and_then(|access_level| {
-                super::cloud_objects::decode_link_sharing(
-                    access_level,
-                    permissions.anyone_with_link_source.as_deref(),
-                )
-                // If deserializing link sharing fails, default to None and wait for an
-                // eventual refresh.
-                .ok()
-            })
-    } else {
-        None
-    };
+    let anyone_with_link = permissions
+        .anyone_with_link_access_level
+        .as_deref()
+        .and_then(|access_level| {
+            super::cloud_objects::decode_link_sharing(
+                access_level,
+                permissions.anyone_with_link_source.as_deref(),
+            )
+            // If deserializing link sharing fails, default to None and wait for an
+            // eventual refresh.
+            .ok()
+        });
 
     Some(CloudObjectPermissions {
         owner,

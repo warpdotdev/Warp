@@ -90,11 +90,7 @@ impl DetailsBar {
             );
         }
 
-        let editability = if FeatureFlag::SharedWithMe.is_enabled() {
-            notebook_data.editability(app)
-        } else {
-            ContentEditability::Editable
-        };
+        let editability = notebook_data.editability(app);
         if matches!(
             editability,
             ContentEditability::RequiresLogin | ContentEditability::Editable

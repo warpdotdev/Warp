@@ -58,33 +58,25 @@ pub fn upsert_cloud_object(
     let permissions_ts = cloud_object_permissions
         .permissions_last_updated_ts
         .map(|ts| ts.timestamp_micros());
-    let guests = if FeatureFlag::SharedWithMe.is_enabled() {
-        match encode_guests(&cloud_object_permissions.guests) {
-            Ok(guests) => Some(guests),
-            Err(err) => {
-                log::warn!("Unable to encode guests: {err:#}");
-                None
-            }
+    let guests = match encode_guests(&cloud_object_permissions.guests) {
+        Ok(guests) => Some(guests),
+        Err(err) => {
+            log::warn!("Unable to encode guests: {err:#}");
+            None
         }
-    } else {
-        None
     };
     let (anyone_with_link_access_level_value, anyone_with_link_source_value) =
-        if FeatureFlag::SharedWithMe.is_enabled() {
-            match cloud_object_permissions
-                .anyone_with_link
-                .as_ref()
-                .map(encode_link_sharing)
-            {
-                Some(Ok((access_level, source))) => (Some(access_level), source),
-                Some(Err(err)) => {
-                    log::warn!("Unable to encode link-sharing setting: {err:#}");
-                    (None, None)
-                }
-                None => (None, None),
+        match cloud_object_permissions
+            .anyone_with_link
+            .as_ref()
+            .map(encode_link_sharing)
+        {
+            Some(Ok((access_level, source))) => (Some(access_level), source),
+            Some(Err(err)) => {
+                log::warn!("Unable to encode link-sharing setting: {err:#}");
+                (None, None)
             }
-        } else {
-            (None, None)
+            None => (None, None),
         };
 
     let revision = cloud_object_metadata

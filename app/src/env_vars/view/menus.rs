@@ -391,9 +391,7 @@ impl EnvVarCollectionView {
         }
 
         // Add "Trash" to menu
-        if self.is_online(ctx)
-            && (!FeatureFlag::SharedWithMe.is_enabled() || access_level.can_trash())
-        {
+        if self.is_online(ctx) && access_level.can_trash() {
             menu_items.push(
                 MenuItemFields::new("Trash")
                     .with_on_select_action(EnvVarCollectionAction::Trash)

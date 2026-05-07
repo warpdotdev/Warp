@@ -2486,8 +2486,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AlacrittySettingsImport,
         #[cfg(feature = "dynamic_workflow_enums")]
         FeatureFlag::DynamicWorkflowEnums,
-        #[cfg(feature = "shared_with_me")]
-        FeatureFlag::SharedWithMe,
         #[cfg(feature = "am_workflows")]
         FeatureFlag::AgentModeWorkflows,
         #[cfg(feature = "ai_rules")]

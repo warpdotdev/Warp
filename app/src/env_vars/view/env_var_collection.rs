@@ -1213,7 +1213,7 @@ impl EnvVarCollectionView {
                         ),
                     });
 
-                if !FeatureFlag::SharedWithMe.is_enabled() || editability.can_edit() {
+                if editability.can_edit() {
                     row_contents.add_child(
                         Container::new(
                             icon_button(
@@ -1344,7 +1344,7 @@ impl View for EnvVarCollectionView {
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_main_axis_alignment(MainAxisAlignment::End)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center);
-            if !FeatureFlag::SharedWithMe.is_enabled() || editability.can_edit() {
+            if editability.can_edit() {
                 buttons_row.add_child(
                     Container::new(self.render_save_button(appearance, app))
                         .with_margin_left(BUTTON_SPACING)
