@@ -1757,7 +1757,17 @@ impl BlocklistAIHistoryModel {
 
             for conversation_id in conversation_ids {
                 if let Some(conversation) = self.conversations_by_id.get(conversation_id) {
-                    for exchange in conversation.root_task_exchanges() {
+                    // For child agent conversations, skip the first exchange — it
+                    // contains the synthetic orchestrator prompt, not user input.
+                    // TODO(QUALITY-636): Replace positional skip with an
+                    // `is_agent_initiated` field on the MAA UserQuery proto
+                    // message so the flag survives server restoration.
+                    let skip_count = if conversation.is_child_agent_conversation() {
+                        1
+                    } else {
+                        0
+                    };
+                    for exchange in conversation.root_task_exchanges().skip(skip_count) {
                         if let Some(query) = ai_exchange_to_query_history(exchange, history_order) {
                             live_queries_vec.push(query);
                         }
@@ -1778,7 +1788,12 @@ impl BlocklistAIHistoryModel {
 
             for conversation_id in conversation_ids {
                 if let Some(conversation) = self.conversations_by_id.get(conversation_id) {
-                    for exchange in conversation.root_task_exchanges() {
+                    let skip_count = if conversation.is_child_agent_conversation() {
+                        1
+                    } else {
+                        0
+                    };
+                    for exchange in conversation.root_task_exchanges().skip(skip_count) {
                         if let Some(query) = ai_exchange_to_query_history(exchange, history_order) {
                             cleared_queries_vec.push(query);
                         }
@@ -2108,6 +2123,7 @@ impl BlocklistAIHistoryModel {
         self.all_conversations_metadata.clear();
         self.agent_id_to_conversation_id.clear();
         self.server_token_to_conversation_id.clear();
+        self.children_by_parent.clear();
     }
 }
 
