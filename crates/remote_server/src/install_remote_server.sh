@@ -50,7 +50,8 @@ trap cleanup EXIT
 staging_tarball_path="{staging_tarball_path}"
 if [ -n "$staging_tarball_path" ]; then
   # SCP fallback: tarball already uploaded by the client.
-  staging_tarball_path="${staging_tarball_path/#\~/"$HOME"}"
+  # Same bash 3.2 caveat as the install_dir tilde expansion above.
+  staging_tarball_path="${staging_tarball_path/#\~/$HOME}"
   mv "$staging_tarball_path" "$tmpdir/oz.tar.gz"
 else
   # Normal path: download via curl or wget.
