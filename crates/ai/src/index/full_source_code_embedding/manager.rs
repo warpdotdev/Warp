@@ -1058,3 +1058,7 @@ impl Entity for CodebaseIndexManager {
 }
 
 impl SingletonEntity for CodebaseIndexManager {}
+
+#[cfg(test)]
+#[path = "manager_tests.rs"]
+mod tests;

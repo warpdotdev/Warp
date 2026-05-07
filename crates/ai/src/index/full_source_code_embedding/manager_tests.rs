@@ -1,0 +1,111 @@
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
+use warpui::App;
+use crate::index::full_source_code_embedding::store_client::MockStoreClient;
+
+use crate::workspace::WorkspaceMetadata;
+
+use super::{
+    BuildSource, CodebaseIndexManager,
+};
+
+fn workspace_metadata(path: impl Into<PathBuf>) -> WorkspaceMetadata {
+    WorkspaceMetadata {
+        path: path.into(),
+        navigated_ts: None,
+        modified_ts: None,
+        queried_ts: None,
+    }
+}
+
+#[test]
+fn initializes_with_indexing_disabled_when_configured() {
+    App::test((), |app| async move {
+        let manager = app.add_singleton_model(|ctx| {
+            CodebaseIndexManager::new(
+                vec![workspace_metadata("repo")],
+                Some(1),
+                1000,
+                32,
+                Arc::new(MockStoreClient),
+                false,
+                ctx,
+            )
+        });
+
+        manager.read(&app, |manager, _| {
+            assert!(!manager.is_indexing_enabled());
+            assert_eq!(manager.num_active_indices(), 0);
+            assert!(!manager.can_create_new_indices());
+        });
+    });
+}
+
+#[test]
+fn index_directory_is_noop_when_indexing_disabled() {
+    App::test((), |mut app| async move {
+        let manager = app.add_singleton_model(|ctx| {
+            CodebaseIndexManager::new(
+                Vec::new(),
+                Some(1),
+                1000,
+                32,
+                Arc::new(MockStoreClient),
+                false,
+                ctx,
+            )
+        });
+
+        manager.update(&mut app, |manager, ctx| {
+            manager.index_directory(PathBuf::from("repo"), ctx);
+            assert_eq!(manager.num_active_indices(), 0);
+        });
+    });
+}
+
+#[test]
+fn build_and_sync_is_noop_when_indexing_disabled() {
+    App::test((), |mut app| async move {
+        let manager = app.add_singleton_model(|ctx| {
+            CodebaseIndexManager::new(
+                Vec::new(),
+                Some(1),
+                1000,
+                32,
+                Arc::new(MockStoreClient),
+                false,
+                ctx,
+            )
+        });
+
+        manager.update(&mut app, |manager, ctx| {
+            manager.build_and_sync_codebase_index(BuildSource::FromPath(Path::new("repo")), ctx);
+            assert_eq!(manager.num_active_indices(), 0);
+        });
+    });
+}
+
+#[test]
+fn trigger_incremental_sync_returns_ok_when_indexing_disabled() {
+    App::test((), |mut app| async move {
+        let manager = app.add_singleton_model(|ctx| {
+            CodebaseIndexManager::new(
+                Vec::new(),
+                Some(1),
+                1000,
+                32,
+                Arc::new(MockStoreClient),
+                false,
+                ctx,
+            )
+        });
+
+        manager.update(&mut app, |manager, ctx| {
+            let result = manager.trigger_incremental_sync_for_path(Path::new("repo"), ctx);
+            assert!(result.is_ok());
+        });
+    });
+}
