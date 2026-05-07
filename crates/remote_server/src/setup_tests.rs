@@ -195,7 +195,8 @@ fn parse_preinstall_unsupported_non_glibc() {
 /// marker `printf` to capture the resolved `install_dir`.
 #[test]
 fn install_script_tilde_expansion_resolves_correctly() {
-    use std::process::{Command, Stdio};
+    use command::blocking::Command;
+    use std::process::Stdio;
 
     let bash = if std::path::Path::new("/bin/bash").exists() {
         "/bin/bash"
