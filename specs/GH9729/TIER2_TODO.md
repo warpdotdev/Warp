@@ -73,7 +73,7 @@ Hard rules:
 | # | Item | Impl commit | Impl | R1 | R2 |
 |---|------|-------------|------|----|----|
 | t2-4 | `Unrecognized` → `Err` globally | `7780d31` | [x] | [x] | [x] |
-| t2-5 | adopt `Error` at artifacts call site | `6cb2fc6` | [x] | [ ] | [ ] |
+| t2-5 | adopt `Error` at artifacts call site | `5a8072a` | [x] | [x] | [x] |
 | t2-6 | animated playback (+ play/pause) | | [ ] | [ ] | [ ] |
 | t2-7 | zoom and pan | | [ ] | [ ] | [ ] |
 | t2-8 | status footer | | [ ] | [ ] | [ ] |
@@ -99,3 +99,12 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   "could not detect" branch sits ahead of the generic
   "decode/format" branch — a swap regression would silently widen
   the bucket. — `reviews/tier2-t2-4-r2.md`.
+- **t2-5-r2.** (1) Categorical `LightboxImageSource::Error` messages
+  now live in two modules (`lightbox_view.rs::sanitize_load_error`
+  plus the artifacts call site); consider a shared catalog once the
+  third site lands. (2) `LightboxImage` lacks a constructor helper
+  (e.g., `LightboxImage::error(message)`) so each call site uses
+  verbose struct-literal form. (3) Test name
+  `surfaces_error_variant_for_screenshot_load_errors` is accurate
+  about the variant but does not capture the sanitization-of-error-text
+  property the body asserts. — `reviews/tier2-t2-5-r2.md`.
