@@ -117,7 +117,7 @@ Notes are written to `specs/GH9729/reviews/<item>-r<N>.md`.
 | 1b | resolver short-circuit | `c15c1be` | [x] | [x] |
 | 1c | resolver unit tests | `256d31d` | [x] | [x] |
 | 3a | `LightboxImageSource::Error` variant | `c0b5a7c` | [x] | [x] |
-| 3b | render `Error` inline in `Lightbox::render` | `328c333` | [ ] | [ ] |
+| 3b | render `Error` inline in `Lightbox::render` | `328c333` | [x] | [x] |
 | 2-arm | workspace `FileTarget::ImagePreview` arm | `38aec6e` | [ ] | [ ] |
 | 2-tests | workspace-arm tests | `32cee73` | [ ] | [ ] |
 | 4a | static-decode caps in `ImageType::try_from_bytes` | `926dedf` | [ ] | [ ] |
