@@ -18,7 +18,7 @@ use crate::{
     terminal::{model::rich_content::RichContentType, view::WithinBlockBanner},
 };
 
-use super::util::{ssh_command, user_host};
+use super::util::{ssh_command, ssh_command_with_remote_shell_override, user_host};
 
 /// Sets environment variables needed by the Google Cloud SDK.
 pub fn setup_gcloud_sdk() -> TestStep {
@@ -39,6 +39,21 @@ pub fn enter_ssh_command(shell: &str) -> TestStep {
         .with_typed_characters(&[&ssh_command])
         .with_keystrokes(&["enter"])
         .set_post_step_pause(Duration::from_millis(250))
+}
+
+/// Initiates an SSH connection that starts a specific remote shell via `-t`.
+pub fn enter_ssh_command_with_remote_shell_override(
+    login_user_shell: &str,
+    remote_shell_command: &str,
+) -> TestStep {
+    let ssh_command =
+        ssh_command_with_remote_shell_override(login_user_shell, remote_shell_command, true);
+    TestStep::new(&format!(
+        "Start ssh connection for '{login_user_shell}' with remote shell command '{remote_shell_command}'"
+    ))
+    .with_typed_characters(&[&ssh_command])
+    .with_keystrokes(&["enter"])
+    .set_post_step_pause(Duration::from_millis(250))
 }
 
 pub fn enter_remote_subshell_command(shell: &str) -> TestStep {

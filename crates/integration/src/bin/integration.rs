@@ -262,6 +262,7 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_ssh_into_fish);
     register_test!(test_ssh_into_sh);
     register_test!(test_ssh_into_ash);
+    register_test!(test_ssh_with_remote_shell_command_override);
     register_test!(test_ssh_with_shell_override);
     register_test!(test_custom_open_completions_menu_binding);
     register_test!(test_color_overrides_in_prompt_dont_crash);
