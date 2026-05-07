@@ -6550,12 +6550,69 @@ impl PaneGroup {
         let target_pane_id = from_child_panes.or(from_visible_pane).or(from_owner_lookup);
 
         let Some(target_pane_id) = target_pane_id else {
+            // The conversation isn't owned by any pane in this pane group
+            // (typical case: the child was opened via "Open in new tab"
+            // and now lives in a different tab's pane group, or the user
+            // is pressing ESC on a split-off-tab child whose orchestrator
+            // is in the source tab). Fall back to workspace-level
+            // navigation so the workspace can walk all tabs/windows and
+            // activate the containing tab as needed. Mirrors the
+            // breadcrumb parent-crumb click's cross-pane-group fallback.
+            if let Some(owner_view_id) = BlocklistAIHistoryModel::as_ref(ctx)
+                .terminal_view_id_for_conversation(&conversation_id)
+            {
+                ctx.dispatch_typed_action(&WorkspaceAction::FocusTerminalViewInWorkspace {
+                    terminal_view_id: owner_view_id,
+                });
+                return;
+            }
             self.log_swap_resolution_failure(focused_pane_id, conversation_id, ctx);
             return;
         };
 
         // No-op when the active pill is clicked.
         if target_pane_id == focused_pane_id {
+            return;
+        }
+
+        // If the *target* pane is currently the original of an active
+        // temporary replacement (i.e. some other pane is swapped into the
+        // target's slot right now), revert that replacement so the target
+        // returns to its slot and we can just focus it. Skipping this
+        // check would cause `replace_pane(anchor, target, true)` below to
+        // place `target` in `anchor`'s slot while `target` is also still
+        // recorded as the original of the existing replacement, leaving
+        // two `HiddenPane` entries pointing at the same pane and a tree
+        // node that subsequently corrupts on revert (duplicate leaf id).
+        //
+        // Concretely: child A is split off as a sibling of orchestrator
+        // O, child C is swapped into O's slot, user presses ESC on A
+        // (which emits `SwapPaneToConversation(O)`). Without this branch,
+        // we'd run `replace_pane(A, O, true)` even though O is currently
+        // hidden as the original of `TemporaryReplacement(C)`.
+        if let Some(replacement_id) = self.panes.replacement_pane_for_original(target_pane_id) {
+            // The replacement currently sitting in target's slot is
+            // (always, in practice) a child agent pane swapped in via
+            // the pill bar. Clear its split-off marker so the next
+            // reveal renders pills, matching what the regular anchor
+            // revert below does.
+            if let Some(terminal_view) = self.terminal_view_from_pane_id(replacement_id, ctx) {
+                terminal_view.update(ctx, |view, ctx| {
+                    view.clear_orchestration_split_off(ctx);
+                });
+            }
+            self.panes.revert_temporary_replacement(replacement_id);
+            self.handle_pane_count_change(ctx);
+            self.focus_pane(target_pane_id, true, ctx);
+            for pane_id in [replacement_id, target_pane_id] {
+                if let Some(terminal_view) = self.terminal_view_from_pane_id(pane_id, ctx) {
+                    terminal_view.update(ctx, |view, ctx| {
+                        view.update_agent_view_back_button_state(ctx);
+                    });
+                }
+            }
+            ctx.emit(Event::TerminalViewStateChanged);
+            ctx.emit(Event::AppStateChanged);
             return;
         }
 

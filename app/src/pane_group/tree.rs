@@ -382,6 +382,25 @@ impl PaneData {
         })
     }
 
+    /// Inverse of [`Self::original_pane_for_replacement`]: given an
+    /// `original_pane_id` that may currently be swapped out (i.e. it sits
+    /// in `hidden_panes` as the original of some active
+    /// `TemporaryReplacement`), return the replacement pane that took its
+    /// slot. Used by callers that want to revert a swap from the
+    /// original's side (e.g. "navigate back to this conversation" when
+    /// the conversation's pane is currently swapped out by another).
+    pub fn replacement_pane_for_original(&self, original_pane_id: PaneId) -> Option<PaneId> {
+        self.hidden_panes.iter().find_map(|hidden_pane| {
+            if hidden_pane.pane_id != original_pane_id {
+                return None;
+            }
+            match hidden_pane.reason {
+                HiddenPaneReason::TemporaryReplacement(replacement_id) => Some(replacement_id),
+                _ => None,
+            }
+        })
+    }
+
     pub fn is_hidden_closed_pane(&self, pane_id: &PaneId) -> bool {
         self.hidden_panes
             .iter()
