@@ -6724,12 +6724,16 @@ impl PaneGroup {
     /// commands and briefly leak the child transcript into the orchestrator
     /// pane while ownership shuffles.
     ///
-    /// Reverts any active swap in this pane group first so the orchestrator
-    /// (or whichever pane was swapped out) returns to its tree slot, then
-    /// splits the target child in next to that restored original. This
-    /// preserves the invariant that "Open in new pane" leaves the
-    /// orchestrator visible — even when a different child was the active
-    /// swap target at the time of the split.
+    /// If the orchestrator's pane is currently swapped out (i.e. some
+    /// child of the same orchestrator sits in the orchestrator's slot via
+    /// `TemporaryReplacement`), revert that specific swap first so the
+    /// orchestrator returns to its tree slot, then split the target child
+    /// in next to it. We deliberately do NOT touch swaps owned by other
+    /// orchestrators in the same pane group: with two orchestrators each
+    /// hosting an active swap, reverting an unrelated swap and then
+    /// splitting the target next to that unrelated original would leave
+    /// the target's own slot untouched and produce duplicate leaves in
+    /// the tree.
     pub fn unhide_child_agent_pane_for_split_off(
         &mut self,
         conversation_id: AIConversationId,
@@ -6750,30 +6754,43 @@ impl PaneGroup {
             return Some(child_pane_id);
         }
 
-        // Revert any active swap in this pane group so the swapped-out
-        // original (typically the orchestrator) returns to its tree slot.
-        // The new child is then split in next to that restored original
-        // — not next to whichever child happened to be the swap target.
-        // Without this, opening child A while child B is currently in the
-        // orchestrator's slot would leave the tree as `[B, A]` with the
-        // orchestrator stranded as the hidden swap original, breaking
-        // back-navigation from A's breadcrumbs.
-        let split_base = if let Some((original_pane_id, replacement_pane_id)) =
-            self.panes.any_temporary_replacement()
-        {
-            // Clear the split-off marker on whatever was swapped in so a
-            // future pill click renders pills, not breadcrumbs.
-            if let Some(terminal_view) = self.terminal_view_from_pane_id(replacement_pane_id, ctx) {
-                terminal_view.update(ctx, |view, ctx| {
-                    view.clear_orchestration_split_off(ctx);
-                });
+        // Resolve the orchestrator (parent) pane for this child in this
+        // pane group, if any. Used both to decide what to split next to
+        // and to scope swap-reverts to the correct orchestrator — we
+        // must not revert swaps belonging to a *different* orchestrator
+        // that happens to share this pane group.
+        let parent_pane_id = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .and_then(|c| c.parent_conversation_id())
+            .and_then(|parent_conv_id| self.pane_id_for_conversation_owner(parent_conv_id, ctx));
+
+        // If the orchestrator's pane is currently the original of an
+        // active swap (i.e. one of its children is sitting in its slot),
+        // revert that swap so the orchestrator returns to its tree slot.
+        // The replacement we revert may be the target child itself (the
+        // pre-existing single-orchestrator scenario) or a sibling child
+        // (the multi-children-of-same-orchestrator scenario). Either
+        // way, the swap we touch is scoped to the target's own
+        // orchestrator.
+        let split_base = if let Some(parent_pane_id) = parent_pane_id {
+            if let Some(replacement_pane_id) =
+                self.panes.replacement_pane_for_original(parent_pane_id)
+            {
+                // Clear the split-off marker on whatever was swapped in
+                // so a future pill click renders pills, not breadcrumbs.
+                if let Some(terminal_view) =
+                    self.terminal_view_from_pane_id(replacement_pane_id, ctx)
+                {
+                    terminal_view.update(ctx, |view, ctx| {
+                        view.clear_orchestration_split_off(ctx);
+                    });
+                }
+                self.panes.revert_temporary_replacement(replacement_pane_id);
             }
-            self.panes.revert_temporary_replacement(replacement_pane_id);
-            original_pane_id
+            parent_pane_id
         } else {
             self.focused_pane_id(ctx)
         };
-
         let split_ok = self
             .panes
             .split(split_base, child_pane_id, Direction::Right);
