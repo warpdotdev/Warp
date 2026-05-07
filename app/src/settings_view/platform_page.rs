@@ -89,7 +89,11 @@ impl PlatformPageView {
                                         ApiKeyScope::Personal
                                     }
                                     warp_graphql::object_permissions::OwnerType::Team => {
-                                        ApiKeyScope::Team
+                                        if FeatureFlag::NamedAgents.is_enabled() {
+                                            ApiKeyScope::Agent
+                                        } else {
+                                            ApiKeyScope::Team
+                                        }
                                     }
                                 };
                                 APIKeyProperties::new(
@@ -213,7 +217,13 @@ impl PlatformPageView {
 
                 let scope = match api_key.owner_type {
                     warp_graphql::object_permissions::OwnerType::User => ApiKeyScope::Personal,
-                    warp_graphql::object_permissions::OwnerType::Team => ApiKeyScope::Team,
+                    warp_graphql::object_permissions::OwnerType::Team => {
+                        if FeatureFlag::NamedAgents.is_enabled() {
+                            ApiKeyScope::Agent
+                        } else {
+                            ApiKeyScope::Team
+                        }
+                    }
                 };
                 let ui_key = APIKeyProperties::new(
                     uid,
@@ -322,6 +332,7 @@ struct APIKeyProperties {
 enum ApiKeyScope {
     Personal,
     Team,
+    Agent,
 }
 
 impl APIKeyProperties {
@@ -463,7 +474,7 @@ impl PlatformPageWidget {
             .add_child(Expanded::new(1., self.render_header_cell(appearance, "Name")).finish());
         header_row
             .add_child(Expanded::new(1., self.render_header_cell(appearance, "Key")).finish());
-        if FeatureFlag::TeamApiKeys.is_enabled() {
+        if FeatureFlag::TeamApiKeys.is_enabled() || FeatureFlag::NamedAgents.is_enabled() {
             header_row.add_child(
                 Expanded::new(1., self.render_header_cell(appearance, "Scope")).finish(),
             );
@@ -564,10 +575,11 @@ impl PlatformPageWidget {
             )
             .finish(),
         );
-        if FeatureFlag::TeamApiKeys.is_enabled() {
+        if FeatureFlag::TeamApiKeys.is_enabled() || FeatureFlag::NamedAgents.is_enabled() {
             let scope_display = match key.scope {
                 ApiKeyScope::Personal => "Personal",
                 ApiKeyScope::Team => "Team",
+                ApiKeyScope::Agent => "Agent",
             };
             row.add_child(
                 Expanded::new(

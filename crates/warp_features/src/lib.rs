@@ -859,6 +859,12 @@ pub enum FeatureFlag {
     /// conversation into a fresh cloud agent run with the current workspace
     /// snapshot attached. Requires `OzHandoff` to also be enabled.
     HandoffLocalCloud,
+
+    /// Enables creating API keys scoped to named agents in the API key
+    /// management UI. When enabled the "Team" option in the key-type
+    /// selector is replaced with "Agent" and users can pick which agent
+    /// identity the key authenticates as.
+    NamedAgents,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -941,6 +947,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::NamedAgents,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

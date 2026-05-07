@@ -66,6 +66,20 @@ use crate::{
 
 use super::ServerApi;
 
+/// A named agent identity from the public API.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct AgentIdentity {
+    pub uid: String,
+    pub name: String,
+    pub available: bool,
+}
+
+/// Wrapper for the `GET /api/v1/agent/identities` response.
+#[derive(serde::Deserialize)]
+struct AgentIdentitiesResponse {
+    agents: Vec<AgentIdentity>,
+}
+
 /// Error messages returned from the Firebase REST API when attempting to convert a refresh token
 /// into an access token that indicate the user's token is in an errored state.
 /// These are "soft" errors because the user likely just needs to log in again.
@@ -201,10 +215,14 @@ pub trait AuthClient: 'static + Send + Sync {
         &self,
         name: String,
         team_id: Option<cynic::Id>,
+        agent_uid: Option<cynic::Id>,
         expires_at: Option<warp_graphql::scalars::Time>,
     ) -> Result<GenerateApiKeyResult>;
 
     async fn expire_api_key(&self, key_uid: &ApiKeyUid) -> Result<ExpireApiKeyResult>;
+
+    /// Fetches the list of named agent identities for the user's team.
+    async fn list_agent_identities(&self) -> Result<Vec<AgentIdentity>>;
 
     /// Returns a cached ambient workload token, or issues a new one if not present or expired.
     ///
@@ -606,12 +624,14 @@ impl AuthClient for ServerApi {
         &self,
         name: String,
         team_id: Option<cynic::Id>,
+        agent_uid: Option<cynic::Id>,
         expires_at: Option<warp_graphql::scalars::Time>,
     ) -> Result<GenerateApiKeyResult> {
         let variables = GenerateApiKeyVariables {
             input: GenerateApiKeyInput {
                 name,
                 team_id,
+                agent_uid,
                 expires_at,
             },
             request_context: get_request_context(),
@@ -620,6 +640,12 @@ impl AuthClient for ServerApi {
         let response = self.send_graphql_request(operation, None).await?;
         Ok(response.generate_api_key)
     }
+
+    async fn list_agent_identities(&self) -> Result<Vec<AgentIdentity>> {
+        let response: AgentIdentitiesResponse = self.get_public_api("agent/identities").await?;
+        Ok(response.agents)
+    }
+
     async fn expire_api_key(&self, key_uid: &ApiKeyUid) -> Result<ExpireApiKeyResult> {
         let variables = ExpireApiKeyVariables {
             key_uid: key_uid.into(),
