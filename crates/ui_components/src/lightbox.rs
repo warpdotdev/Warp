@@ -15,6 +15,21 @@ use crate::{Component, Options as _, button};
 /// Padding between the scrim edge and the image.
 const SCRIM_PADDING: f32 = 48.;
 
+/// GH9729 §698: minimum zoom factor — below this the image becomes too
+/// small to be useful and the controls feel runaway.
+pub const MIN_ZOOM_FACTOR: f32 = 0.25;
+
+/// GH9729 §698: maximum zoom factor — above this typical raster decode
+/// pixels exceed any reasonable display, and the per-paint resampling
+/// cost grows quadratically.
+pub const MAX_ZOOM_FACTOR: f32 = 8.0;
+
+/// GH9729 §698: multiplicative step applied per zoom-in / zoom-out
+/// keystroke. `1.5` reaches `MAX_ZOOM_FACTOR = 8.0` in five `+` presses
+/// and `MIN_ZOOM_FACTOR = 0.25` in four `-` presses from the
+/// `1.0` default.
+pub const ZOOM_STEP: f32 = 1.5;
+
 /// Spacing between the image/loading area and the description text.
 const DESCRIPTION_SPACING: f32 = 12.;
 const LIGHTBOX_TEXT_SIZE_DELTA: f32 = 4.;
@@ -101,6 +116,20 @@ pub struct Params<'a> {
     /// Static images ignore this field entirely.
     pub animation_start_time: Option<Instant>,
 
+    /// GH9729 §698: zoom factor applied to the image's bounding box.
+    /// `1.0` renders at native size (the v1 default). Values `> 1.0`
+    /// scale the `ConstrainedBox` linearly so the image renders larger
+    /// (the surrounding `Align` keeps it centred; oversized images
+    /// overflow the centred stack — the lightbox scrim is full-window
+    /// so they stay inside the window). `< 1.0` shrinks below native
+    /// size for very-large images.
+    ///
+    /// The companion drag-to-pan deliverable from §698 is deferred —
+    /// see `TIER2_TODO.md::t2-7-pan` — because this GPUI fork has no
+    /// `Translate`/`Offset` primitive that lets us shift an element
+    /// during paint without an upstream addition.
+    pub zoom_factor: f32,
+
     /// Optional configuration for the lightbox.
     pub options: Options,
 }
@@ -179,13 +208,18 @@ impl Component for Lightbox {
                     if let Some(start) = params.animation_start_time {
                         image_builder = image_builder.enable_animation_with_start_time(start);
                     }
+                    // GH9729 §698: scale the bounding box by the caller-
+                    // supplied zoom factor. Negative or non-finite values
+                    // would NaN-poison the layout, so clamp to a sane
+                    // range first.
+                    let zoom = params.zoom_factor.clamp(MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR);
                     let image = ConstrainedBox::new(
                         image_builder
                             .before_load(Align::new(loading_element(appearance)).finish())
                             .finish(),
                     )
-                    .with_max_width(native_size.x())
-                    .with_max_height(native_size.y())
+                    .with_max_width(native_size.x() * zoom)
+                    .with_max_height(native_size.y() * zoom)
                     .finish();
 
                     EventHandler::new(image)

@@ -56,9 +56,11 @@ Hard rules:
        `paused_at`/freeze-elapsed primitive today, so a real (continuity-
        preserving) pause needs an upstream API addition rather than a
        call-site hack. — `tech.md` §697
-- [ ] **t2-7.** Zoom and pan. Extend `lightbox::Params` with zoom/pan state;
-       add `+`, `-`, `0`, drag-to-pan keybindings in `lightbox_view.rs`. —
-       `tech.md` §698
+- [x] **t2-7.** Zoom and pan. Extend `lightbox::Params` with zoom/pan state;
+       add `+`, `-`, `0`, drag-to-pan keybindings in `lightbox_view.rs`.
+       Zoom shipped in this row; drag-to-pan deferred (no
+       `Translate`/`Offset` primitive in this GPUI fork — see
+       `t2-7-pan` below). — `tech.md` §698
 - [ ] **t2-8.** Status footer. Extend `lightbox::Params` with an optional
        metadata strip (filename, dimensions, file size, format string)
        rendered below the image. — `tech.md` §699
@@ -79,7 +81,7 @@ Hard rules:
 | t2-4 | `Unrecognized` → `Err` globally | `7780d31` | [x] | [x] | [x] |
 | t2-5 | adopt `Error` at artifacts call site | `5a8072a` | [x] | [x] | [x] |
 | t2-6 | animated playback (continuous; pause deferred) | `f077496` | [x] | [x] | [x] |
-| t2-7 | zoom and pan | | [ ] | [ ] | [ ] |
+| t2-7 | zoom (pan deferred to t2-7-pan) | _pending_ | [x] | [ ] | [ ] |
 | t2-8 | status footer | | [ ] | [ ] | [ ] |
 | t2-9 | EXIF orientation + ICC | | [ ] | [ ] | [ ] |
 | t2-FINAL | presubmit | | [ ] | — | — |
@@ -121,6 +123,20 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   natural moment to migrate `Option<Instant>` →
   `enum AnimationState { Off, Playing { started_at: Instant },
   Paused { … } }`. — `reviews/tier2-t2-6-r2.md`.
+- **t2-7-pan.** Drag-to-pan for a zoomed-in image. This GPUI fork has
+  no `Translate`/`Offset`/`Transform` primitive that lets us shift an
+  element during paint, so applying a `pan_offset: Vector2F` to the
+  lightbox image needs an upstream addition: either a new
+  `Translate { dx: f32, dy: f32, child }` element under
+  `crates/warpui_core/src/elements/`, or a `paint_at` API on the
+  `PaintContext` that lets a wrapper element bias the child's paint
+  origin. The drag tracking itself is straightforward — clone
+  `crates/warpui_core/src/elements/drag_resize.rs`'s
+  `Arc<Mutex<DragState>>` pattern and capture
+  `LeftMouseDown`/`LeftMouseDragged`/`LeftMouseUp` on the image's
+  `EventHandler`. The blocker is purely the rendering primitive.
+  Belongs in a separate PR that adds the GPUI element first; this
+  bullet captures the design call needed.
 - **t2-6-pause.** Play/pause control for the lightbox's animated
   playback. Real pause-resume needs `Image` (GPUI element in
   `crates/warpui_core/src/elements/image.rs`) to expose either a

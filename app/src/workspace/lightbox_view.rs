@@ -23,7 +23,19 @@ pub fn init(app: &mut AppContext) {
             LightboxViewAction::NavigatePrevious,
             view_id.clone(),
         ),
-        FixedBinding::new("right", LightboxViewAction::NavigateNext, view_id),
+        FixedBinding::new(
+            "right",
+            LightboxViewAction::NavigateNext,
+            view_id.clone(),
+        ),
+        // GH9729 §698: zoom keybindings. `=` is the unmodified `+` key on
+        // US-style keyboards (matches the workspace-level `cmdorctrl-=`
+        // convention in `app/src/util/bindings.rs`); `shift-=` covers the
+        // explicit `+` press; `-` and `0` are the literal keys.
+        FixedBinding::new("=", LightboxViewAction::ZoomIn, view_id.clone()),
+        FixedBinding::new("shift-=", LightboxViewAction::ZoomIn, view_id.clone()),
+        FixedBinding::new("-", LightboxViewAction::ZoomOut, view_id.clone()),
+        FixedBinding::new("0", LightboxViewAction::ZoomReset, view_id),
     ]);
 }
 
@@ -57,6 +69,12 @@ pub enum LightboxViewAction {
     NavigatePrevious,
     /// Navigate to the next image.
     NavigateNext,
+    /// GH9729 §698: zoom the current image in by one step.
+    ZoomIn,
+    /// GH9729 §698: zoom the current image out by one step.
+    ZoomOut,
+    /// GH9729 §698: reset the current image to native size (`zoom_factor = 1.0`).
+    ZoomReset,
 }
 
 /// A view that renders a full-window lightbox overlay.
@@ -71,6 +89,14 @@ pub struct LightboxView {
     /// Static images ignore this; the Image element only consults
     /// `started_at` when there's an animated payload.
     animation_start_time: Instant,
+    /// GH9729 §698: current zoom factor applied to the displayed image.
+    /// `1.0` is native size; `>1` zooms in, `<1` shrinks. Always within
+    /// `[lightbox::MIN_ZOOM_FACTOR, lightbox::MAX_ZOOM_FACTOR]` after
+    /// any mutation. Reset to `1.0` whenever the displayed image
+    /// changes (construction, params replacement, arrow-key navigation)
+    /// so a freshly-shown image is never inherited at an unexpected
+    /// zoom level.
+    zoom_factor: f32,
 }
 
 impl LightboxView {
@@ -83,6 +109,7 @@ impl LightboxView {
             current_index: initial_index,
             lightbox: lightbox::Lightbox::default(),
             animation_start_time: Instant::now(),
+            zoom_factor: 1.0,
         };
         view.start_asset_loads(ctx);
         view
@@ -95,8 +122,17 @@ impl LightboxView {
             .min(params.images.len().saturating_sub(1));
         self.params = params;
         self.current_index = initial_index;
-        self.animation_start_time = Instant::now();
+        self.reset_per_image_state();
         self.start_asset_loads(ctx);
+    }
+
+    /// GH9729 §697 + §698: reset the per-image transient state (animation
+    /// timeline anchor and zoom factor) so the next render starts the
+    /// image from frame 0 at native size. Called from every site that
+    /// changes which image is currently displayed.
+    fn reset_per_image_state(&mut self) {
+        self.animation_start_time = Instant::now();
+        self.zoom_factor = 1.0;
     }
 
     /// Update a single image at the given index without replacing the full list.
@@ -176,6 +212,30 @@ impl LightboxView {
             }
         }
     }
+}
+
+/// GH9729 §698: direction for a single zoom-step keystroke.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ZoomDirection {
+    In,
+    Out,
+}
+
+/// GH9729 §698: compute the next zoom factor for a `ZoomIn` or `ZoomOut`
+/// keystroke. Multiplies (or divides) `current` by `lightbox::ZOOM_STEP`
+/// and clamps the result to
+/// `[lightbox::MIN_ZOOM_FACTOR, lightbox::MAX_ZOOM_FACTOR]`. A non-finite
+/// input collapses to `1.0` (the safe default) so a poisoned float
+/// cannot escape into the `ConstrainedBox` size.
+fn step_zoom(current: f32, direction: ZoomDirection) -> f32 {
+    if !current.is_finite() {
+        return 1.0;
+    }
+    let raw = match direction {
+        ZoomDirection::In => current * lightbox::ZOOM_STEP,
+        ZoomDirection::Out => current / lightbox::ZOOM_STEP,
+    };
+    raw.clamp(lightbox::MIN_ZOOM_FACTOR, lightbox::MAX_ZOOM_FACTOR)
 }
 
 /// Sanitize a per-asset-cache load error into a small set of categorical
@@ -272,6 +332,7 @@ impl View for LightboxView {
                 }),
                 current_image_native_size,
                 animation_start_time: Some(self.animation_start_time),
+                zoom_factor: self.zoom_factor,
                 options: lightbox::Options {
                     dismiss_keystroke: Keystroke::parse("escape").ok(),
                     on_navigate: Some(Arc::new(|direction, ctx, _| match direction {
@@ -299,17 +360,34 @@ impl TypedActionView for LightboxView {
             LightboxViewAction::NavigatePrevious => {
                 if self.current_index > 0 {
                     self.current_index -= 1;
-                    // GH9729 §697: restart the animation timeline on
-                    // navigation so the newly-focused image plays from
-                    // frame 0 rather than mid-loop.
-                    self.animation_start_time = Instant::now();
+                    self.reset_per_image_state();
                     ctx.notify();
                 }
             }
             LightboxViewAction::NavigateNext => {
                 if self.current_index + 1 < self.params.images.len() {
                     self.current_index += 1;
-                    self.animation_start_time = Instant::now();
+                    self.reset_per_image_state();
+                    ctx.notify();
+                }
+            }
+            LightboxViewAction::ZoomIn => {
+                let next = step_zoom(self.zoom_factor, ZoomDirection::In);
+                if next != self.zoom_factor {
+                    self.zoom_factor = next;
+                    ctx.notify();
+                }
+            }
+            LightboxViewAction::ZoomOut => {
+                let next = step_zoom(self.zoom_factor, ZoomDirection::Out);
+                if next != self.zoom_factor {
+                    self.zoom_factor = next;
+                    ctx.notify();
+                }
+            }
+            LightboxViewAction::ZoomReset => {
+                if self.zoom_factor != 1.0 {
+                    self.zoom_factor = 1.0;
                     ctx.notify();
                 }
             }
@@ -380,6 +458,54 @@ mod tests {
         assert_eq!(
             super::sanitize_load_error(&err),
             "image is too large to preview"
+        );
+    }
+
+    #[test]
+    fn step_zoom_in_multiplies_by_step() {
+        let result = super::step_zoom(1.0, super::ZoomDirection::In);
+        assert!((result - lightbox::ZOOM_STEP).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn step_zoom_out_divides_by_step() {
+        let result = super::step_zoom(1.0, super::ZoomDirection::Out);
+        assert!((result - 1.0 / lightbox::ZOOM_STEP).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn step_zoom_in_clamps_to_max() {
+        // GH9729 §698: zooming in repeatedly must saturate, not run away.
+        let mut z = 1.0;
+        for _ in 0..50 {
+            z = super::step_zoom(z, super::ZoomDirection::In);
+        }
+        assert_eq!(z, lightbox::MAX_ZOOM_FACTOR);
+    }
+
+    #[test]
+    fn step_zoom_out_clamps_to_min() {
+        let mut z = 1.0;
+        for _ in 0..50 {
+            z = super::step_zoom(z, super::ZoomDirection::Out);
+        }
+        assert_eq!(z, lightbox::MIN_ZOOM_FACTOR);
+    }
+
+    #[test]
+    fn step_zoom_recovers_from_non_finite_input() {
+        // A NaN-poisoned zoom factor would NaN-poison the ConstrainedBox
+        // size and corrupt the layout. The step helper must squelch that
+        // back to the safe default of 1.0.
+        assert_eq!(
+            super::step_zoom(f32::NAN, super::ZoomDirection::In),
+            1.0,
+            "NaN must be sanitized to 1.0"
+        );
+        assert_eq!(
+            super::step_zoom(f32::INFINITY, super::ZoomDirection::Out),
+            1.0,
+            "infinity must be sanitized to 1.0"
         );
     }
 
