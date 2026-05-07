@@ -3,7 +3,9 @@
 use super::ambient_agent::is_cloud_agent_pre_first_exchange;
 use super::shared_session::adapter::Kind as SharedSessionKind;
 use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState, Viewer};
-use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
+use crate::ai::agent::conversation::{
+    AIConversation, ConversationStatus, ServerAIConversationMetadata,
+};
 use crate::ai::blocklist::agent_view::agent_view_bg_fill;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
 use crate::ai::blocklist::agent_view::render_orchestration_breadcrumbs;
@@ -294,6 +296,7 @@ impl TerminalView {
         if let Some(breadcrumbs) = render_orchestration_breadcrumbs(
             self.agent_view_controller.as_ref(app),
             self.mouse_states.parent_conversation_header_link.clone(),
+            self.mouse_states.breadcrumbs_horizontal_scroll.clone(),
             app,
         ) {
             return breadcrumbs;
@@ -425,34 +428,35 @@ impl TerminalView {
 
         let mut icon_button_count: u32 = 0;
 
-        if FeatureFlag::CloudMode.is_enabled() {
-            let is_waiting_for_session = self
+        // Cloud-mode-only ambient agent cancel button is shown while we're waiting
+        // for the session to be ready.
+        let is_waiting_for_session = FeatureFlag::CloudMode.is_enabled()
+            && self
                 .ambient_agent_view_model
                 .as_ref()
                 .is_some_and(|model| model.as_ref(app).is_waiting_for_session());
-            let button_element = if is_waiting_for_session {
-                Some(self.render_ambient_agent_cancel_button(app))
-            } else if self.can_show_cloud_mode_details_ui(app) {
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    Some(self.render_cloud_mode_details_toggle_button(app))
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    None
-                }
-            } else {
+        let button_element = if is_waiting_for_session {
+            Some(self.render_ambient_agent_cancel_button(app))
+        } else if self.can_show_conversation_details_ui(app) {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                Some(self.render_conversation_details_toggle_button(app))
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
-            if let Some(button) = button_element {
-                icon_button_count += 1;
-                if let Some(existing) = left_of_overflow {
-                    left_of_overflow =
-                        Some(Flex::row().with_child(existing).with_child(button).finish());
-                } else {
-                    left_of_overflow = Some(button);
-                }
+        if let Some(button) = button_element {
+            icon_button_count += 1;
+            if let Some(existing) = left_of_overflow {
+                left_of_overflow =
+                    Some(Flex::row().with_child(existing).with_child(button).finish());
+            } else {
+                left_of_overflow = Some(button);
             }
         }
 
@@ -773,13 +777,13 @@ impl TerminalView {
         .finish()
     }
 
-    /// Render the info button for toggling the cloud mode details panel.
+    /// Render the info button for toggling the conversation details panel.
     /// Only available on non-WASM platforms (WASM uses a per-window button instead).
     #[cfg(not(target_arch = "wasm32"))]
-    fn render_cloud_mode_details_toggle_button(&self, app: &AppContext) -> Box<dyn Element> {
+    fn render_conversation_details_toggle_button(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let is_open = self.is_cloud_mode_details_panel_open;
+        let is_open = self.is_conversation_details_panel_open;
         let ui_builder = appearance.ui_builder().clone();
 
         // Use main text color when panel is open (hover-like appearance), sub color when closed
@@ -793,7 +797,7 @@ impl TerminalView {
             appearance,
             icons::Icon::Info,
             is_open, // show active background when panel is open
-            self.cloud_mode_details_panel_toggle_mouse_state.clone(),
+            self.conversation_details_panel_toggle_mouse_state.clone(),
             icon_color,
         );
 
@@ -819,7 +823,7 @@ impl TerminalView {
             .build()
             .on_click(|ctx, _, _| {
                 ctx.dispatch_typed_action::<PaneHeaderAction<TerminalAction, TerminalAction>>(
-                    PaneHeaderAction::CustomAction(TerminalAction::ToggleCloudModeDetailsPanel),
+                    PaneHeaderAction::CustomAction(TerminalAction::ToggleConversationDetailsPanel),
                 );
             })
             .finish()
@@ -949,14 +953,21 @@ impl TerminalView {
     /// the post-session pre-first-exchange phase (session ready, harness not started, no
     /// exchange yet). In either case the run is committed and we want the UI to read as busy.
     fn is_in_cloud_agent_setup_phase(&self, ctx: &AppContext) -> bool {
-        self.ambient_agent_view_model
+        if self
+            .ambient_agent_view_model
             .as_ref()
             .is_some_and(|model| model.as_ref(ctx).is_waiting_for_session())
-            || is_cloud_agent_pre_first_exchange(
-                self.ambient_agent_view_model.as_ref(),
-                &self.agent_view_controller,
-                ctx,
-            )
+        {
+            return true;
+        }
+
+        let model = self.model.lock();
+        is_cloud_agent_pre_first_exchange(
+            self.ambient_agent_view_model.as_ref(),
+            &self.agent_view_controller,
+            &model,
+            ctx,
+        )
     }
 
     /// Selected conversation status for chrome, or [`ConversationStatus::InProgress`] while the
@@ -1017,6 +1028,15 @@ impl TerminalView {
             .map(|conversation| {
                 self.selected_conversation_display_title_for_chrome(conversation, is_ambient_agent)
             })
+    }
+
+    /// Server metadata for the selected conversation, if any.
+    pub fn selected_conversation_server_metadata<'a>(
+        &'a self,
+        ctx: &'a AppContext,
+    ) -> Option<&'a ServerAIConversationMetadata> {
+        self.selected_conversation_for_user_facing_chrome(ctx)
+            .and_then(AIConversation::server_metadata)
     }
 
     pub fn selected_conversation_latest_user_prompt_for_tab_name(

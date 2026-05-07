@@ -16,7 +16,7 @@ use crate::{
 /// Renders a pending user query block with dimmed text and a "Queued" badge.
 /// Displayed when a follow-up prompt is queued via `/fork-and-compact <prompt>`,
 /// `/compact-and <prompt>`, `/queue <prompt>`, or for the initial prompt of a
-/// non-oz Cloud Mode run waiting for its harness CLI to start.
+/// Cloud Mode run waiting for its real shared-session transcript query to arrive.
 pub struct PendingUserQueryBlock {
     prompt: String,
     user_display_name: String,

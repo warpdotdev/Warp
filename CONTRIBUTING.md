@@ -140,11 +140,17 @@ cargo run            # build and run Warp
 
 Tests are required for most code changes:
 
+### Manual Testing
+Manual testing is required for changes that can be manually tested, and almost all changes can be manually tested. If your change can be manually tested, please include screenshots or a screen recording that show it working end to end in the PR description. 
+
+You can run the app locally using `./script/run` - see [WARP.md](WARP.md) for more details on how to get set up.
+
+### Automated Tests
 - **Bug fixes** should include a regression test that would have caught the bug.
 - **Algorithmic or non-trivial logic** needs unit tests.
 - **User-facing flows** should have end-to-end coverage under [`crates/integration/`](crates/integration/) whenever the behavior can be exercised that way. The bar is high-quality coverage of the changes you ship — with agent-driven development the expectation is more integration tests, not just coverage of P0 paths. If a flow is worth shipping, it's usually worth an integration test.
 
-Run unit tests with `cargo nextest run`. See [WARP.md](WARP.md) for more detail.
+Run unit tests with `cargo nextest run`.
 
 ## Code Style
 

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -30,7 +31,7 @@ use super::claude_transcript::{
 use super::json_utils::{read_json_file_or_default, write_json_file};
 use super::{
     cli_agent_session_status, write_temp_file, HarnessCleanupDisposition, HarnessRunner,
-    ManagedSecretValue, ResumePayload, SavePoint, ThirdPartyHarness,
+    ResumePayload, SavePoint, ThirdPartyHarness,
 };
 mod parent_bridge;
 mod wake_driver;
@@ -73,9 +74,9 @@ impl ThirdPartyHarness for ClaudeHarness {
         &self,
         working_dir: &Path,
         _system_prompt: Option<&str>,
-        secrets: &HashMap<String, ManagedSecretValue>,
+        resolved_env_vars: &HashMap<OsString, OsString>,
     ) -> Result<(), AgentDriverError> {
-        prepare_claude_environment_config(working_dir, secrets).map_err(|error| {
+        prepare_claude_environment_config(working_dir, resolved_env_vars).map_err(|error| {
             AgentDriverError::HarnessConfigSetupFailed {
                 harness: self.cli_agent().command_prefix().to_owned(),
                 error,
@@ -542,12 +543,12 @@ async fn upload_transcript(
 }
 fn prepare_claude_environment_config(
     working_dir: &Path,
-    secrets: &HashMap<String, ManagedSecretValue>,
+    resolved_env_vars: &HashMap<OsString, OsString>,
 ) -> Result<()> {
     let home_dir = claude_home_dir()?;
     let claude_json_path = home_dir.join(CLAUDE_JSON_FILE_NAME);
     let claude_settings_path = claude_config_dir()?.join(CLAUDE_SETTINGS_FILE_NAME);
-    let api_key_suffix = resolve_anthropic_api_key_suffix(secrets);
+    let api_key_suffix = resolve_anthropic_api_key_suffix(resolved_env_vars);
     prepare_claude_config(&claude_json_path, working_dir, api_key_suffix.as_deref())?;
     prepare_claude_settings(&claude_settings_path)?;
     Ok(())
@@ -651,27 +652,23 @@ struct ClaudeSettings {
     extra: Map<String, Value>,
 }
 
-/// Try to get the last 20 chars of the ANTHROPIC_API_KEY from the secrets map,
-/// where 20 chars is the suffix length that Claude Code truncates keys to.
-/// Falls back to the environment variable.
+/// Try to get the last 20 chars of the ANTHROPIC_API_KEY, where 20 chars is the
+/// suffix length that Claude Code truncates keys to.
 fn resolve_anthropic_api_key_suffix(
-    secrets: &HashMap<String, ManagedSecretValue>,
+    resolved_env_vars: &HashMap<OsString, OsString>,
 ) -> Option<String> {
-    // First, check for an AnthropicApiKey variant anywhere in the secrets map,
-    // since the secret name doesn't necessarily match the env var.
-    for secret in secrets.values() {
-        if let ManagedSecretValue::AnthropicApiKey { api_key } = secret {
-            return suffix_of(api_key).map(str::to_owned);
+    // Worker-injected process env wins.
+    if let Ok(key) = std::env::var(ANTHROPIC_API_KEY_ENV) {
+        if !key.is_empty() {
+            return suffix_of(&key).map(str::to_owned);
         }
     }
-    // Then check for a RawValue stored under the env var name.
-    if let Some(ManagedSecretValue::RawValue { value }) = secrets.get(ANTHROPIC_API_KEY_ENV) {
-        return suffix_of(value).map(str::to_owned);
-    }
-    // Fall back to the environment variable, which a user may have set separately in the env.
-    std::env::var(ANTHROPIC_API_KEY_ENV)
-        .ok()
-        .and_then(|k| suffix_of(&k).map(str::to_owned))
+    // Otherwise use the resolved value from the secrets map.
+    resolved_env_vars
+        .get(OsStr::new(ANTHROPIC_API_KEY_ENV))
+        .and_then(|v| v.to_str())
+        .and_then(suffix_of)
+        .map(str::to_owned)
 }
 
 fn suffix_of(key: &str) -> Option<&str> {

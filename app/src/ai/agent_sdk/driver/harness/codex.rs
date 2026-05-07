@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -11,7 +12,6 @@ use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 use warp_cli::agent::Harness;
-use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner, SingletonEntity};
 
 use crate::ai::agent::conversation::AIConversationId;
@@ -58,14 +58,14 @@ impl ThirdPartyHarness for CodexHarness {
         &self,
         working_dir: &Path,
         system_prompt: Option<&str>,
-        secrets: &HashMap<String, ManagedSecretValue>,
+        resolved_env_vars: &HashMap<OsString, OsString>,
     ) -> Result<(), AgentDriverError> {
-        prepare_codex_environment_config(working_dir, system_prompt, secrets).map_err(|error| {
-            AgentDriverError::HarnessConfigSetupFailed {
+        prepare_codex_environment_config(working_dir, system_prompt, resolved_env_vars).map_err(
+            |error| AgentDriverError::HarnessConfigSetupFailed {
                 harness: self.cli_agent().command_prefix().to_owned(),
                 error,
-            }
-        })
+            },
+        )
     }
 
     /// Fetch the codex transcript for the current task's conversation and wrap it into a
@@ -439,7 +439,7 @@ const CODEX_OPENAI_BASE_URL: &str = "https://us.api.openai.com/v1";
 fn prepare_codex_environment_config(
     working_dir: &Path,
     system_prompt: Option<&str>,
-    secrets: &HashMap<String, ManagedSecretValue>,
+    resolved_env_vars: &HashMap<OsString, OsString>,
 ) -> Result<()> {
     let home_dir =
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
@@ -449,7 +449,7 @@ fn prepare_codex_environment_config(
         write_codex_agents_override(&codex_dir, prompt)?;
     }
 
-    match resolve_openai_api_key(secrets) {
+    match resolve_openai_api_key(resolved_env_vars) {
         Some(api_key) => prepare_codex_auth(&codex_dir.join(CODEX_AUTH_FILE_NAME), &api_key)?,
         None => log::info!("No OPENAI_API_KEY available; skipping Codex auth.json seed"),
     }
@@ -535,24 +535,25 @@ fn write_codex_auth_json(path: &Path, auth: &CodexAuthDotJson) -> Result<()> {
     Ok(())
 }
 
-/// Returns the OpenAI API key for Codex auth, preferring the `OPENAI_API_KEY` env
-/// var so the seeded `auth.json` matches the credential the launched Codex process
-/// will see. [`AgentDriver::new`] skips a managed `OPENAI_API_KEY` secret when the
-/// env var is already set, so we mirror that precedence here.
-fn resolve_openai_api_key(secrets: &HashMap<String, ManagedSecretValue>) -> Option<String> {
+/// Returns the OpenAI API key for Codex auth.
+///
+/// Checks the worker-injected process env first (not in the resolved map since
+/// `build_secret_env_vars` skips env vars already present in the process env),
+/// then falls back to the resolved secret env vars map.
+fn resolve_openai_api_key(resolved_env_vars: &HashMap<OsString, OsString>) -> Option<String> {
+    // Worker-injected process env wins.
     if let Ok(value) = std::env::var(OPENAI_API_KEY_ENV) {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_owned());
         }
     }
-    if let Some(ManagedSecretValue::RawValue { value }) = secrets.get(OPENAI_API_KEY_ENV) {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_owned());
-        }
-    }
-    None
+    // Otherwise use the resolved value from the secrets map.
+    resolved_env_vars
+        .get(OsStr::new(OPENAI_API_KEY_ENV))
+        .and_then(|v| v.to_str())
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
 }
 
 /// Edit `~/.codex/config.toml` via `toml_edit` to seed the harness defaults

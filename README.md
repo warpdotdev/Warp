@@ -1,6 +1,12 @@
 <a href="https://www.warp.dev">
     <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://github.com/user-attachments/assets/9976b2da-2edd-4604-a36c-8fd53719c6d4" />
 </a>
+&nbsp;
+<p align="center">
+  <a href="https://www.warp.dev"><img height="20" alt="Built with Warp" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Built-With-Warp-Export@2x.png" /></a>
+  &nbsp;
+  <a href="https://oz.warp.dev"><img height="20" alt="Powered by Oz" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Powered-By-Oz-Export@2x.png" /></a>
+</p>
 
 <p align="center">
   <a href="https://www.warp.dev">Website</a>
@@ -38,6 +44,12 @@ Explore [build.warp.dev](https://build.warp.dev) to:
 - View top contributors and in-flight features
 - Track your own issues with GitHub sign-in
 - Click into active agent sessions in a web-compiled Warp terminal
+
+## Oz for OSS
+
+Maintaining a popular open-source project? [Apply for Oz credits](https://tally.so/r/LZWxqG) to explore [Oz for OSS](https://github.com/warpdotdev/oz-for-oss).
+
+Oz for OSS is our partner program for bringing the same agentic open-source management workflows used in this repository to select partner repositories. We work directly with maintainers to implement workflows for issue triage, PR review, community management, and contributor coordination in a way that fits each project.
 
 ## Licensing
 

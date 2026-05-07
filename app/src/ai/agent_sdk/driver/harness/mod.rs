@@ -10,7 +10,6 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tempfile::NamedTempFile;
 use warp_cli::agent::Harness;
-use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner, SingletonEntity};
 
 use crate::ai::agent::conversation::AIConversationId;
@@ -138,11 +137,16 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
     }
 
     /// Prepare CLI-specific config files before launching the harness command.
+    ///
+    /// `resolved_env_vars` contains the already-resolved secret env vars produced by
+    /// `build_secret_env_vars`. Precedence (worker env > typed secrets > raw values)
+    /// has already been applied, so harnesses can look up values directly without
+    /// re-deriving which secret won.
     fn prepare_environment_config(
         &self,
         _working_dir: &Path,
         _system_prompt: Option<&str>,
-        _secrets: &HashMap<String, ManagedSecretValue>,
+        _resolved_env_vars: &HashMap<OsString, OsString>,
     ) -> Result<(), AgentDriverError> {
         Ok(())
     }
@@ -543,5 +547,5 @@ pub(super) async fn upload_current_block_snapshot(
 }
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

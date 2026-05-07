@@ -259,6 +259,7 @@ fn test_detect_known_agents() {
                 ("copilot", CLIAgent::Copilot),
                 ("agent", CLIAgent::CursorCli),
                 ("goose", CLIAgent::Goose),
+                ("vibe", CLIAgent::Vibe),
             ] {
                 assert_eq!(
                     CLIAgent::detect(command, None, None, ctx),
@@ -282,6 +283,26 @@ fn test_detect_with_arguments() {
                 CLIAgent::detect("gemini chat", None, None, ctx),
                 Some(CLIAgent::Gemini),
             );
+        });
+    });
+}
+
+#[test]
+fn test_detect_vibe_acp_binary() {
+    // The mistral-vibe package ships a `vibe-acp` ACP-mode binary alongside
+    // the user-facing `vibe` TUI. Both must be detected as the same agent.
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            assert_eq!(
+                CLIAgent::detect("vibe-acp", None, None, ctx),
+                Some(CLIAgent::Vibe),
+            );
+            assert_eq!(
+                CLIAgent::detect("vibe-acp --some-flag", None, None, ctx),
+                Some(CLIAgent::Vibe),
+            );
+            // Distinct binary names should not bleed into Vibe.
+            assert_eq!(CLIAgent::detect("vibe-other", None, None, ctx), None);
         });
     });
 }

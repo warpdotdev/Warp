@@ -7,13 +7,16 @@ use super::{
     Input, InputAction, InputDropTargetData,
 };
 use crate::{
-    ai::blocklist::{
-        agent_view::{
-            agent_view_bg_fill,
-            shortcuts::{render_agent_shortcuts_view, AgentShortcutsViewContext},
-            AgentViewState,
+    ai::{
+        blocklist::{
+            agent_view::{
+                agent_view_bg_fill,
+                shortcuts::{render_agent_shortcuts_view, AgentShortcutsViewContext},
+                AgentViewState,
+            },
+            InputType,
         },
-        InputType,
+        harness_availability::HarnessAvailabilityModel,
     },
     appearance::Appearance,
     context_chips::spacing::{self},
@@ -67,9 +70,14 @@ impl Input {
     pub fn is_cloud_mode_input_v2_composing(&self, app: &AppContext) -> bool {
         FeatureFlag::CloudModeInputV2.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
-            && self
-                .ambient_agent_view_model()
-                .is_some_and(|model| model.as_ref(app).is_configuring_ambient_agent())
+            && self.ambient_agent_view_model().is_some_and(|model| {
+                let view_model = model.as_ref(app);
+                view_model.is_configuring_ambient_agent()
+                    // The handoff pane intentionally stays on the existing input UI even
+                    // when V2 is on — V2 is for fresh cloud-mode runs only, and handoff has
+                    // its own pre-spawn flow (submit interception).
+                    && !view_model.is_local_to_cloud_handoff()
+            })
     }
 
     /// Renders the input when there is an active `AgentView`.
@@ -118,7 +126,7 @@ impl Input {
         }
 
         let show_harness_row = FeatureFlag::CloudMode.is_enabled()
-            && FeatureFlag::AgentHarness.is_enabled()
+            && HarnessAvailabilityModel::as_ref(app).should_show_harness_selector()
             && self
                 .ambient_agent_view_model()
                 .is_some_and(|ambient_agent_model| {

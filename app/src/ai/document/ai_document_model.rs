@@ -48,8 +48,10 @@ use crate::{
     throttle::throttle,
     workspaces::user_workspaces::UserWorkspaces,
 };
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 use ai::diff_validation::DiffDelta;
 use warp_editor::{model::RichTextEditorModel, render::model::RichTextStyles};
+use warp_multi_agent_api as maa_api;
 use warpui::color::ColorU;
 
 /// The frequency at which we check for modifications and save the AI document to the server.
@@ -163,6 +165,16 @@ pub enum AIDocumentUpdateSource {
     Restoration,
 }
 
+/// Payload queued when the user edits the plan-card orchestration
+/// config block. Cleared after `send_request_input()` piggybacks it
+/// onto the outbound `UserInputs`.
+#[derive(Debug, Clone)]
+pub struct DirtyOrchestrationEvent {
+    pub plan_id: String,
+    pub config: OrchestrationConfig,
+    pub status: OrchestrationConfigStatus,
+}
+
 #[derive(Debug, Clone)]
 pub struct AIDocumentModel {
     documents: HashMap<AIDocumentId, AIDocument>,
@@ -179,12 +191,25 @@ pub struct AIDocumentModel {
     /// Mapping from (conversation_id, action_id, document_index) for streaming CreateDocuments
     /// tool calls to the corresponding AI document ID.
     streaming_create_documents: HashMap<(AIConversationId, AIAgentActionId, usize), AIDocumentId>,
+
+    /// Dirty event queued for the next outbound request.
+    /// Set when the user edits the config or toggles approval on the
+    /// plan card; cleared by the controller after piggybacking onto
+    /// the outbound `UserInputs`.
+    dirty_orchestration_events: HashMap<AIConversationId, DirtyOrchestrationEvent>,
 }
 
 impl AIDocumentModel {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         ctx.subscribe_to_model(&UpdateManager::handle(ctx), |me, event, ctx| {
             me.handle_update_manager_event(event, ctx);
+        });
+
+        // Subscribe to history events so we can hydrate the orchestration
+        // config from OrchestrationConfigSnapshot messages that arrive
+        // in the conversation's task message list.
+        ctx.subscribe_to_model(&BlocklistAIHistoryModel::handle(ctx), |me, event, ctx| {
+            me.handle_history_event_for_orchestration_config(event, ctx);
         });
 
         // Setup throttled save channel
@@ -203,6 +228,7 @@ impl AIDocumentModel {
             save_tx,
             pending_document_queue: Vec::new(),
             streaming_create_documents: HashMap::new(),
+            dirty_orchestration_events: HashMap::new(),
         }
     }
 
@@ -217,6 +243,7 @@ impl AIDocumentModel {
             save_tx,
             pending_document_queue: Vec::new(),
             streaming_create_documents: HashMap::new(),
+            dirty_orchestration_events: HashMap::new(),
         }
     }
 
@@ -1159,6 +1186,135 @@ impl AIDocumentModel {
                 true,
                 ctx,
             );
+        });
+    }
+
+    // ── Orchestration config: history event → hydration ──────────
+
+    fn handle_history_event_for_orchestration_config(
+        &mut self,
+        event: &BlocklistAIHistoryEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        // On restore, scan all restored conversations for the last snapshot.
+        if let BlocklistAIHistoryEvent::RestoredConversations {
+            conversation_ids, ..
+        } = event
+        {
+            for cid in conversation_ids {
+                self.scan_conversation_for_orchestration_config(*cid, ctx);
+            }
+        }
+    }
+
+    /// Scans all messages across all tasks in a restored conversation to find
+    /// the last `OrchestrationConfigSnapshot` and hydrate the config from it.
+    fn scan_conversation_for_orchestration_config(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        // Clone the snapshot out of the history borrow so we can pass
+        // &mut ctx to hydrate below.
+        let snapshot = {
+            let history = BlocklistAIHistoryModel::as_ref(ctx);
+            let Some(conversation) = history.conversation(&conversation_id) else {
+                return;
+            };
+            // Find the *last* snapshot so we hydrate the most recent config.
+            conversation
+                .all_tasks()
+                .flat_map(|task| task.messages())
+                .filter_map(|message| {
+                    if let Some(maa_api::message::Message::OrchestrationConfigSnapshot(snapshot)) =
+                        &message.message
+                    {
+                        Some(snapshot.clone())
+                    } else {
+                        None
+                    }
+                })
+                .last()
+        };
+        if let Some(snapshot) = snapshot {
+            Self::hydrate_orchestration_config_from_snapshot(conversation_id, &snapshot, ctx);
+        }
+    }
+
+    // ── Orchestration config accessors ────────────────────────────
+
+    pub fn take_dirty_orchestration_event(
+        &mut self,
+        conversation_id: &AIConversationId,
+    ) -> Option<DirtyOrchestrationEvent> {
+        self.dirty_orchestration_events.remove(conversation_id)
+    }
+
+    /// Re-insert a dirty event that was taken but not successfully sent.
+    pub fn set_dirty_orchestration_event(
+        &mut self,
+        conversation_id: AIConversationId,
+        event: DirtyOrchestrationEvent,
+    ) {
+        self.dirty_orchestration_events
+            .insert(conversation_id, event);
+    }
+
+    /// Updates the conversation-level orchestration config and status.
+    /// Called from the plan card config block when the user edits a field
+    /// or toggles the approval switch.
+    pub fn set_orchestration_config(
+        &mut self,
+        conversation_id: AIConversationId,
+        config: OrchestrationConfig,
+        status: OrchestrationConfigStatus,
+        plan_id: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.dirty_orchestration_events.insert(
+            conversation_id,
+            DirtyOrchestrationEvent {
+                plan_id: plan_id.clone().unwrap_or_default(),
+                config: config.clone(),
+                status,
+            },
+        );
+        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, hctx| {
+            if let Some(conversation) = history.conversation_mut(&conversation_id) {
+                conversation.set_orchestration_config(Some(config), status, plan_id);
+            }
+            hctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated { conversation_id });
+        });
+    }
+
+    /// Hydrates the orchestration config from an in-history
+    /// `Message.OrchestrationConfigSnapshot`. Called during conversation
+    /// restore and on incoming `UpdateTaskMessage` / `AddMessagesToTask`
+    /// events that carry the snapshot.
+    fn hydrate_orchestration_config_from_snapshot(
+        conversation_id: AIConversationId,
+        snapshot: &maa_api::OrchestrationConfigSnapshot,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let config = snapshot
+            .config
+            .as_ref()
+            .map(OrchestrationConfig::from_proto);
+        let status = OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());
+        let plan_id = if snapshot.plan_id.is_empty() {
+            None
+        } else {
+            Some(snapshot.plan_id.clone())
+        };
+
+        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, hctx| {
+            if let Some(conversation) = history.conversation_mut(&conversation_id) {
+                if conversation.set_orchestration_config(config, status, plan_id) {
+                    hctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                        conversation_id,
+                    });
+                }
+            }
         });
     }
 

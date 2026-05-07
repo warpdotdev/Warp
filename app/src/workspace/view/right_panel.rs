@@ -626,7 +626,7 @@ impl RightPanelView {
         if let Some(view) = existing_view {
             view.update(ctx, |view, ctx| {
                 view.set_terminal_view(terminal_view);
-                view.on_open(Some(repo_path.clone()), ctx);
+                view.on_open(ctx);
             });
             self.recompute_terminal_availability(ctx);
         } else if let Some(view) = self.create_code_review_view(
@@ -637,7 +637,7 @@ impl RightPanelView {
             ctx,
         ) {
             view.update(ctx, |view, ctx| {
-                view.on_open(Some(repo_path.clone()), ctx);
+                view.on_open(ctx);
             });
             self.recompute_terminal_availability(ctx);
         };
@@ -1595,9 +1595,8 @@ impl RightPanelView {
             if is_panel_open {
                 // on_open is idempotent (guards on is_open), so this is safe for
                 // already-open views and correctly re-opens cached-but-closed ones.
-                let repo_path = repo_path.to_path_buf();
                 view.update(ctx, |view, ctx| {
-                    view.on_open(Some(repo_path), ctx);
+                    view.on_open(ctx);
                 });
             }
         } else {
@@ -1630,9 +1629,8 @@ impl RightPanelView {
                         ctx,
                     ) {
                         if is_panel_open {
-                            let repo_path = repo_path.to_path_buf();
                             view.update(ctx, |view, ctx| {
-                                view.on_open(Some(repo_path), ctx);
+                                view.on_open(ctx);
                             });
                         }
                     }

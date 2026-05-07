@@ -715,6 +715,15 @@ pub enum FeatureFlag {
     /// real time.
     OrchestrationV2,
 
+    /// Gates client-side support for the `orchestrate` tool, which batches
+    /// multiple child agents into a single tool call with an inline
+    /// confirmation card. When enabled, the client advertises
+    /// `RequestSettings.SupportsOrchestrate = true` and the server's
+    /// orchestrate tool replaces `start_agent` / `start_agent_v2` for
+    /// orchestration-capable conversations. Layered on top of
+    /// `OrchestrationV2`; has no effect when v2 is off.
+    RunAgentsTool,
+
     /// Renders a horizontal pill bar in the agent view pane header showing the
     /// orchestrator agent and all of its child agents, with click-to-switch
     /// behavior between siblings.
@@ -844,6 +853,12 @@ pub enum FeatureFlag {
     ConfigurableContextWindow,
     /// Enables continuing cloud mode conversations in the cloud after an execution ends.
     HandoffCloudCloud,
+
+    /// Enables the local-to-cloud Oz handoff entry points (footer chip and
+    /// `/move-to-cloud` slash command) that fork the active local Oz
+    /// conversation into a fresh cloud agent run with the current workspace
+    /// snapshot attached. Requires `OzHandoff` to also be enabled.
+    HandoffLocalCloud,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -905,7 +920,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::FullSourceCodeEmbedding,
     FeatureFlag::CodebaseIndexSpeedbump,
     // End manually enabled Code features.
-    FeatureFlag::DirectoryTabColors,
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
     FeatureFlag::OzIdentityFederation,
@@ -915,14 +929,16 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::RememberFastForwardState,
     FeatureFlag::HOANotifications,
     FeatureFlag::OrchestrationV2,
+    FeatureFlag::OrchestrationPillBar,
+    FeatureFlag::RunAgentsTool,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
-    FeatureFlag::ConfigurableContextWindow,
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
+    FeatureFlag::HandoffLocalCloud,
     FeatureFlag::DragTabsToWindows,
 ];
 
@@ -1183,5 +1199,5 @@ impl From<TriState> for Option<bool> {
 }
 
 #[cfg(test)]
-#[path = "features_test.rs"]
+#[path = "features_tests.rs"]
 mod tests;

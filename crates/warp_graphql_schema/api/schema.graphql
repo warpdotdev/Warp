@@ -220,6 +220,17 @@ enum AgentHarness {
   OZ
 }
 
+"""A harness available to the requesting user."""
+type HarnessInfo {
+  displayName: String!
+  enabled: Boolean!
+  harness: AgentHarness!
+}
+
+type AvailableHarnesses {
+  harnesses: [HarnessInfo!]!
+}
+
 """Controls how many agent identities (service accounts) a team can have."""
 type AgentIdentitiesPolicy {
   isUnlimited: Boolean!
@@ -2769,6 +2780,7 @@ type RootQuery {
   In the future, this may be merged with taskSecrets into a single task query.
   """
   task(input: TaskInput!, requestContext: RequestContext!): TaskResult!
+  taskGitCredentials(input: TaskGitCredentialsInput!, requestContext: RequestContext!): TaskGitCredentialsResult!
   taskSecrets(input: TaskSecretsInput!, requestContext: RequestContext!): TaskSecretsResult!
   updatedCloudObjects(input: UpdatedCloudObjectsInput!, requestContext: RequestContext!): UpdatedCloudObjectsResult!
   user(requestContext: RequestContext!): UserResult!
@@ -3182,6 +3194,43 @@ type TaskSecretEntry {
   name: String!
   value: ManagedSecretValue!
 }
+
+"""A set of git credentials for a single hosting provider."""
+type TaskGitCredential {
+  """
+  The email address associated with the token, if available.
+  Null for service-account (installation) tokens.
+  """
+  email: String
+
+  """The git hosting provider (e.g. \"github.com\")."""
+  host: String!
+
+  """The OAuth or installation access token."""
+  token: String!
+
+  """
+  The GitHub username associated with the token, if available.
+  Null for service-account (installation) tokens.
+  """
+  username: String
+}
+
+"""Input for the taskGitCredentials query."""
+input TaskGitCredentialsInput {
+  """The ID of the task."""
+  taskId: ID!
+
+  """A short-lived token authorizing credential retrieval for the workload."""
+  workloadToken: String!
+}
+
+type TaskGitCredentialsOutput implements Response {
+  credentials: [TaskGitCredential!]!
+  responseContext: ResponseContext!
+}
+
+union TaskGitCredentialsResult = TaskGitCredentialsOutput | UserFacingError
 
 """Input for the taskSecrets query."""
 input TaskSecretsInput {
@@ -3800,6 +3849,7 @@ type User {
   githubInstallations: UserGithubInstallationsOutput!
   isOnWorkDomain: Boolean!
   isOnboarded: Boolean!
+  availableHarnesses: AvailableHarnesses!
   llms: FeatureModelChoice!
   managedSecrets: ManagedSecretConfig
   onboardingSurveyStatus: OnboardingSurveyStatus
@@ -3917,6 +3967,7 @@ type WarpAiPolicy {
   acceptedAutosuggestionsLimit: Int!
   disablePremiumModels: Boolean!
   isCodeSuggestionsToggleable: Boolean!
+  isGitOperationsAiEnabled: Boolean!
   isNextCommandEnabled: Boolean!
   isPromptSuggestionsToggleable: Boolean!
   isUnlimited: Boolean!

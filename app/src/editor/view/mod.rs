@@ -371,12 +371,16 @@ pub fn init(ctx: &mut AppContext) {
         FixedBinding::new(
             "pageup",
             EditorAction::PageUp,
-            id!("EditorView") & !id!("IMEOpen"),
+            id!("EditorView")
+                & !id!("IMEOpen")
+                & !id!(flags::TERMINAL_INPUT_PAGE_KEYS_HANDLED_BY_INPUT),
         ),
         FixedBinding::new(
             "pagedown",
             EditorAction::PageDown,
-            id!("EditorView") & !id!("IMEOpen"),
+            id!("EditorView")
+                & !id!("IMEOpen")
+                & !id!(flags::TERMINAL_INPUT_PAGE_KEYS_HANDLED_BY_INPUT),
         ),
         // Some editable bindings currently have more than 1 action.
         // Below's the list of those.
@@ -8767,5 +8771,5 @@ pub fn position_id_for_first_cursor(editor_view_id: EntityId) -> String {
 }
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

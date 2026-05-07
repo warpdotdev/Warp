@@ -387,6 +387,11 @@ impl AgentViewController {
         self.pane_group_id
     }
 
+    /// Returns the [`EntityId`] of the [`TerminalView`] that owns this controller.
+    pub fn terminal_view_id(&self) -> EntityId {
+        self.terminal_view_id
+    }
+
     pub fn set_pane_group_id(&mut self, pane_group_id: EntityId) {
         self.pane_group_id = Some(pane_group_id);
     }

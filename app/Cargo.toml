@@ -624,6 +624,8 @@ default = [
     "open_warp_new_settings_modes",
     "skip_firebase_anonymous_user",
     "settings_file",
+    "directory_tab_colors",
+    "configurable_context_window",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.
@@ -915,6 +917,7 @@ vertical_tabs_summary_mode = []
 tab_configs = []
 agent_harness = []
 oz_handoff = []
+handoff_local_cloud = []
 hoa_notifications = []
 open_code_notifications = []
 transfer_control_tool = []

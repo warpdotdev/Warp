@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 
 use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent_conversations_model::AgentConversationEntryId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::orchestration_event_streamer::{
@@ -45,6 +46,17 @@ pub enum ActiveAgentViewsEvent {
 pub enum ConversationOrTaskId {
     ConversationId(AIConversationId),
     TaskId(AmbientAgentTaskId),
+}
+
+impl From<AgentConversationEntryId> for ConversationOrTaskId {
+    fn from(id: AgentConversationEntryId) -> Self {
+        match id {
+            AgentConversationEntryId::Conversation(conversation_id) => {
+                ConversationOrTaskId::ConversationId(conversation_id)
+            }
+            AgentConversationEntryId::AmbientRun(task_id) => ConversationOrTaskId::TaskId(task_id),
+        }
+    }
 }
 
 impl ConversationOrTaskId {

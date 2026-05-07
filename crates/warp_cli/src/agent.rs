@@ -119,7 +119,9 @@ impl HiddenComputerUseArgs {
     }
 }
 /// The execution harness for an agent run.
-#[derive(Debug, Copy, Clone, ValueEnum, Eq, PartialEq, Default)]
+#[derive(
+    Debug, Copy, Clone, ValueEnum, Eq, PartialEq, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum Harness {
     /// Use Warp's built-in MAA infrastructure (default).
     #[default]
@@ -153,9 +155,8 @@ impl Harness {
 
     pub fn parse_local_child_harness(value: &str) -> Option<Self> {
         match Self::parse_orchestration_harness(value) {
-            Some(harness @ (Self::Claude | Self::OpenCode)) => Some(harness),
-            Some(Self::Oz) | Some(Self::Gemini) | Some(Self::Codex) | Some(Self::Unknown)
-            | None => None,
+            Some(harness @ (Self::Claude | Self::OpenCode | Self::Codex)) => Some(harness),
+            Some(Self::Oz) | Some(Self::Gemini) | Some(Self::Unknown) | None => None,
         }
     }
 

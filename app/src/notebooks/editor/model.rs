@@ -1257,6 +1257,53 @@ impl NotebooksEditorModel {
         self.content.as_ref(app).link_url_at_offset(offset)
     }
 
+    pub fn scroll_to_matching_header(
+        &mut self,
+        fragment: &str,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        let Some(range) = self.find_matching_header(fragment, ctx) else {
+            return false;
+        };
+
+        self.render_state.update(ctx, |render_state, _| {
+            render_state
+                .request_autoscroll_to(AutoScrollMode::PositionOffsetInViewportCenter(range.start));
+        });
+        true
+    }
+
+    fn find_matching_header(&self, fragment: &str, ctx: &AppContext) -> Option<Range<CharOffset>> {
+        let target = fragment.strip_prefix('#')?;
+        if target.is_empty() {
+            return None;
+        }
+        let target = urlencoding::decode(target).ok()?;
+        let target = target.trim().to_lowercase();
+        if target.is_empty() {
+            return None;
+        }
+
+        let content = self.content.as_ref(ctx);
+        for outline in content.outline_blocks() {
+            if !matches!(
+                &outline.block_type,
+                BlockType::Text(BufferBlockStyle::Header { .. })
+            ) {
+                continue;
+            }
+
+            let heading = content
+                .text_in_range(outline.start + 1..outline.end)
+                .into_string();
+            if heading.trim().to_lowercase() == target {
+                return Some(outline.start..outline.end);
+            }
+        }
+
+        None
+    }
+
     /// Whether or not there's an active command block selection.
     pub fn has_command_selection(&self, ctx: &AppContext) -> bool {
         self.child_models

@@ -2736,6 +2736,9 @@ impl TypedActionView for AISettingsPageView {
                 ctx.notify();
             }
             AISettingsPageAction::ToggleGitOperationsAutogen => {
+                if !UserWorkspaces::as_ref(ctx).is_git_operations_ai_enabled() {
+                    return;
+                }
                 match AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings
                         .git_operations_autogen_enabled_internal
@@ -4032,7 +4035,7 @@ impl ActiveAIWidget {
             && AISettings::as_ref(app)
                 .git_operations_autogen_enabled_internal
                 .is_supported_on_current_platform()
-            && UserWorkspaces::as_ref(app).ai_allowed_for_current_team()
+            && UserWorkspaces::as_ref(app).is_git_operations_ai_enabled()
     }
 
     fn render_next_command_section(

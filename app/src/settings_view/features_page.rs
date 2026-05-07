@@ -743,6 +743,9 @@ fn ctrl_tab_behavior_label(app: &AppContext, behavior: CtrlTabBehavior) -> &'sta
         CtrlTabBehavior::CycleMostRecentSession => {
             i18n::tr(app, I18nKey::FeaturesCtrlTabCycleMostRecentSession)
         }
+        CtrlTabBehavior::CycleMostRecentTab => {
+            i18n::tr(app, I18nKey::FeaturesCtrlTabCycleMostRecentTab)
+        }
     }
 }
 
@@ -2854,6 +2857,7 @@ impl FeaturesPageView {
             let values = vec![
                 CtrlTabBehavior::ActivatePrevNextTab,
                 CtrlTabBehavior::CycleMostRecentSession,
+                CtrlTabBehavior::CycleMostRecentTab,
             ];
 
             let current_value = *KeysSettings::as_ref(ctx).ctrl_tab_behavior;
