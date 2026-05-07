@@ -23,7 +23,9 @@ use crate::ai::blocklist::agent_view::orchestration_conversation_links::{
     conversation_id_for_agent_id, conversation_navigation_card_with_icon,
 };
 use crate::ai::blocklist::block::model::AIBlockModelHelper;
-use crate::ai::blocklist::block::{AIBlockAction, CollapsibleExpansionState};
+use crate::ai::blocklist::block::{
+    received_message_collapsible_id, AIBlockAction, CollapsibleExpansionState,
+};
 use crate::ai::blocklist::inline_action::inline_action_header::{
     ICON_MARGIN, INLINE_ACTION_HEADER_VERTICAL_PADDING, INLINE_ACTION_HORIZONTAL_PADDING,
 };
@@ -259,7 +261,6 @@ fn render_transcript_row(
 pub(super) fn render_messages_received_from_agents(
     messages: &[ReceivedMessageDisplay],
     props: Props,
-    message_id: &MessageId,
     app: &AppContext,
 ) -> Box<dyn Element> {
     if messages.is_empty() {
@@ -280,13 +281,14 @@ pub(super) fn render_messages_received_from_agents(
                 participant_for_agent_id(agent_id, orchestrator_agent_id.as_deref(), app)
             })
             .collect::<Vec<_>>();
+        let row_message_id = received_message_collapsible_id(&msg.message_id);
         let row = render_transcript_row(
             TranscriptRowData {
                 participant: &sender,
                 recipients: &recipients,
                 subject: &msg.subject,
                 body: &msg.message_body,
-                message_id,
+                message_id: &row_message_id,
                 is_streaming: false,
             },
             props,
