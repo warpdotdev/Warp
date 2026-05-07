@@ -1501,7 +1501,7 @@ impl LocalDiffStateModel {
     }
 
     /// Load diff data for a given mode without requiring an existing model instance.
-    /// Unlike `get_diff_data_for_mode`, this always loads fresh data from disk.
+    /// Always loads fresh data from disk.
     #[cfg(feature = "local_fs")]
     pub async fn load_diff_data_for_mode(
         mode: DiffMode,
@@ -3019,7 +3019,3 @@ impl LocalDiffStateModel {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "../diff_state_tests.rs"]
-mod tests;

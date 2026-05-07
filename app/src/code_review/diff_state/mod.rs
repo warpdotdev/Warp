@@ -381,16 +381,4 @@ impl DiffStateModel {
             inner: DiffStateBackend::Local(local),
         }
     }
-
-    pub(crate) async fn compute_merge_base(repo_path: &Path, mode: &DiffMode) -> Result<String> {
-        LocalDiffStateModel::compute_merge_base(repo_path, mode).await
-    }
-
-    pub(crate) fn parse_diff_hunks(diff_output: &str) -> Result<Vec<DiffHunk>> {
-        LocalDiffStateModel::parse_diff_hunks(diff_output)
-    }
-
-    pub(crate) fn parse_range(range_str: &str) -> Result<(usize, usize)> {
-        LocalDiffStateModel::parse_range(range_str)
-    }
 }
