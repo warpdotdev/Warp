@@ -321,10 +321,7 @@ impl AssetCache {
                     assets.insert(key.clone(), AssetStateInternal::loading());
                     self.load_asynchronously::<T>(
                         source.clone(),
-                        Box::pin(async move {
-                            let buffer = async_fs::read(path).await?;
-                            Ok(buffer.into())
-                        }),
+                        Box::pin(load_local_file_bounded(path)),
                     );
                 }
                 AssetSource::Raw { id } => {
@@ -498,3 +495,87 @@ impl Entity for AssetCache {
 }
 
 impl SingletonEntity for AssetCache {}
+
+/// Maximum bytes accepted from a `LocalFile` read for raster (non-SVG) inputs.
+/// Matches `MAX_PREVIEW_FILE_BYTES` in the workspace image-preview arm; the
+/// pre-read metadata stat there should make this cap unreachable in the
+/// happy path, but the asset-cache layer keeps the bound as a defense
+/// against TOCTOU growth and against any future `LocalFile` consumer that
+/// does not pre-stat. See specs/GH9729/tech.md §400.
+const MAX_ASSET_LOCAL_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Tighter byte cap applied to inputs that look like XML/SVG on a 1 KB
+/// content peek. Keyed on content (not extension) so XML hidden under a
+/// non-`.svg` extension is also tightened. See specs/GH9729/tech.md §400.
+const MAX_SVG_BYTES: u64 = 4 * 1024 * 1024;
+
+/// Bounded read of a local file under the GH9729 asset-cache cap.
+///
+/// Closes four surfaces enumerated in tech.md §400:
+///   1. `O_NONBLOCK` on Unix so `open()` of a FIFO returns immediately
+///      rather than blocking indefinitely waiting for a writer. (Read on a
+///      regular file is unaffected by `O_NONBLOCK` on POSIX.)
+///   2. Post-open `is_file()` against the OPENED descriptor (`fstat`, not
+///      path-based stat). Closes the TOCTOU window where the path was
+///      swapped to a FIFO / character device / directory between the
+///      workspace pre-read stat and this open syscall.
+///   3. Content-keyed cap selection: a 1 KB peek runs the same
+///      `looks_like_svg_xml` predicate that gates `usvg::Tree::from_data`,
+///      so an XML payload hidden under any extension is capped at 4 MB.
+///   4. `MAX + 1` bounded read: deterministically rejects a file that
+///      grew past the cap between the workspace stat and this read.
+async fn load_local_file_bounded(path: String) -> Result<Bytes> {
+    use futures_lite::AsyncReadExt as _;
+
+    // Open with O_NONBLOCK on Unix. On Windows the FIFO/named-pipe failure
+    // mode does not apply the same way and the post-open is_file() check
+    // is sufficient. `async_fs` exposes its own OpenOptionsExt trait that
+    // mirrors the std one but operates on `async_fs::OpenOptions`.
+    #[cfg(unix)]
+    use async_fs::unix::OpenOptionsExt as _;
+
+    let mut file = {
+        let mut opts = async_fs::OpenOptions::new();
+        opts.read(true);
+        #[cfg(unix)]
+        opts.custom_flags(libc::O_NONBLOCK);
+        opts.open(&path).await?
+    };
+
+    // Post-open regular-file check on the opened descriptor (fstat, not
+    // path-based stat). Required in addition to any pre-read path-based
+    // stat: it closes the TOCTOU window where the path was swapped to a
+    // FIFO, character device, or directory between the pre-read stat and
+    // this open syscall.
+    let meta = file.metadata().await?;
+    if !meta.file_type().is_file() {
+        anyhow::bail!("local asset is not a regular file");
+    }
+
+    // Pick the byte cap from CONTENT (not extension). Peek the first 1 KB
+    // and reuse the same `looks_like_svg_xml` helper that the SVG branch
+    // of `try_from_bytes` uses to gate the parser.
+    let mut peek = [0u8; 1024];
+    let n = file.read(&mut peek).await?;
+    let cap = if crate::image_cache::looks_like_svg_xml(&peek[..n]) {
+        MAX_SVG_BYTES
+    } else {
+        MAX_ASSET_LOCAL_FILE_BYTES
+    };
+
+    // Buffer the peeked bytes and continue reading without re-seeking. The
+    // remaining read is bounded by `cap + 1 - n` so the total buffer size
+    // never exceeds `cap + 1`. Reading `MAX + 1` and comparing afterward
+    // (vs reading exactly `MAX`) is what deterministically catches a file
+    // whose actual on-disk size exceeded the cap between the pre-read
+    // stat and this read.
+    let mut buf: Vec<u8> = Vec::with_capacity(n);
+    buf.extend_from_slice(&peek[..n]);
+    let remaining = (cap + 1).saturating_sub(buf.len() as u64);
+    let mut taken = file.take(remaining);
+    taken.read_to_end(&mut buf).await?;
+    if buf.len() as u64 > cap {
+        anyhow::bail!("local asset exceeds size cap");
+    }
+    Ok(Bytes::from(buf))
+}
