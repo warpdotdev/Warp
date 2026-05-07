@@ -504,11 +504,6 @@ impl Input {
         SavePosition::new(outer_stack.finish(), &self.save_position_id()).finish()
     }
 
-    /// Returns true when the auth secret FTUX flow should be shown instead of
-    /// the normal input container. This is true in two cases:
-    /// 1. The FTUX has not been completed for this harness and no secret is selected.
-    /// 2. The FTUX view has an active creation state (the user picked "New {type}"
-    ///    from the chip, which enters creation mode even after FTUX completion).
     pub(super) fn should_show_auth_secret_ftux(&self, app: &AppContext) -> bool {
         let Some(view_model) = self.ambient_agent_view_model() else {
             return false;
@@ -518,20 +513,16 @@ impl Input {
         if harness == Harness::Oz {
             return false;
         }
-        // If the FTUX view has an active creation state (user picked "New {type}"
-        // from the chip), always show the FTUX content so the creation form renders.
         if let Some(ftux_view) = self.auth_secret_ftux_view() {
             if ftux_view.as_ref(app).has_creation_state() {
                 return true;
             }
         }
-        // If FTUX has already been completed for this harness, skip it.
         if crate::ai::cloud_agent_settings::CloudAgentSettings::as_ref(app)
             .is_harness_auth_ftux_completed(harness)
         {
             return false;
         }
-        // Show FTUX when no auth secret is selected for this harness.
         vm.selected_harness_auth_secret_name().is_none()
     }
 
@@ -561,9 +552,6 @@ impl Input {
         .finish()
     }
 
-    /// Renders the auth secret FTUX content via [`ChildView`] of the
-    /// [`AuthSecretFtuxView`] that owns the form state. When the FTUX view is
-    /// not constructed (V2 disabled), returns an empty element.
     fn render_auth_secret_ftux_content(
         &self,
         _appearance: &Appearance,
@@ -603,8 +591,6 @@ impl Input {
             row.add_child(ChildView::new(harness_selector).finish());
         }
 
-        // Show the auth secret selector chip when a non-Oz harness is selected
-        // and the FTUX has already been completed for this harness.
         if let Some(auth_secret_selector) = self.auth_secret_selector() {
             let harness = self
                 .ambient_agent_view_model()

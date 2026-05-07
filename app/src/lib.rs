@@ -1321,11 +1321,6 @@ pub(crate) fn initialize_app(
         )
     });
 
-    // TEMPORARY: reset the per-harness auth secret FTUX setting on every app
-    // startup so the FTUX flow is shown again and the FTUX -> non-FTUX
-    // transition can be exercised end-to-end while iterating on the UI.
-    // Remove together with `CloudAgentSettings::reset_harness_auth_ftux_for_dev`
-    // before shipping.
     crate::ai::cloud_agent_settings::CloudAgentSettings::handle(ctx).update(
         ctx,
         |settings, ctx| {

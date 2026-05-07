@@ -1,21 +1,3 @@
-//! Auth secret FTUX view: a `TypedActionView` that renders the first-time
-//! setup flow shown when a user picks a non-Oz harness and the per-harness
-//! FTUX setting has not yet been completed.
-//!
-//! The FTUX view owns an [`AuthSecretFtuxDropdown`] (a full-width combobox)
-//! and adds:
-//!  - Description text explaining the flow.
-//!  - A creation sub-form (one single-line editor per field + a name editor)
-//!    that appears when the user picks "New {type}" from the dropdown.
-//!  - Skip / Cancel / Continue buttons at the bottom.
-//!
-//! Events:
-//!  - On a successful selection of an existing secret, the dropdown emits
-//!    [`FtuxDropdownEvent::SecretSelected`]; this view sets it on
-//!    `AmbientAgentViewModel` and marks the FTUX as completed.
-//!  - On a successful creation, this view subscribes to
-//!    [`HarnessAvailabilityEvent::AuthSecretCreated`] and finalizes by setting
-//!    the new secret as selected and marking FTUX as completed.
 
 use warp_cli::agent::Harness;
 use warp_core::ui::appearance::Appearance;
@@ -49,76 +31,47 @@ use crate::terminal::view::ambient_agent::auth_secret_ftux_dropdown::{
 use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
 use warp_editor::editor::NavigationKey;
 
-/// Description font size (Figma: 14px).
 const DESCRIPTION_FONT_SIZE: f32 = 14.;
 
-/// Field label font size (Figma: 10px gray).
 const FIELD_LABEL_FONT_SIZE: f32 = 10.;
 
-/// Button label font size (Figma: 14px).
 const BUTTON_FONT_SIZE: f32 = 14.;
 
-/// Editor font size for the single-line input boxes.
 const EDITOR_FONT_SIZE: f32 = 14.;
 
-/// Vertical spacing between the major rows of the FTUX (description, form,
-/// buttons).
 const ROW_SPACING: f32 = 24.;
 
-/// Vertical spacing between rows inside the content section (description +
-/// dropdown).
 const CONTENT_SECTION_SPACING: f32 = 12.;
 
-/// Vertical spacing between fields in the creation sub-form.
 const FORM_FIELD_SPACING: f32 = 8.;
 
-/// Padding used inside the Cancel/Continue buttons.
 const BUTTON_PADDING: f32 = 8.;
 
-/// Padding inside the field input editor's Container.
 const FIELD_EDITOR_PADDING: f32 = 8.;
 
-/// Corner radius on buttons and editors.
 const CORNER_RADIUS: f32 = 4.;
 
-/// Minimum height of each single-line field editor.
 const FIELD_EDITOR_MIN_HEIGHT: f32 = 32.;
 
-/// Actions dispatched by the [`AuthSecretFtuxView`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuthSecretFtuxAction {
-    /// Mark the FTUX as completed without selecting or creating a secret.
     Skip,
-    /// Switch the harness back to Oz, dismissing the FTUX.
     Cancel,
-    /// Commit the current form state: if a creation type is selected, build
-    /// the value and create the secret; otherwise, no-op (selecting an
-    /// existing secret already commits via the selector itself).
     Continue,
 }
 
-/// Per-creation state held by the FTUX view while the user is filling in a
-/// new secret's fields.
 struct SecretCreationState {
     harness: Harness,
     secret_type_index: usize,
-    /// True while the create-secret request is in flight; disables Continue.
     is_saving: bool,
 }
 
-/// First-time setup view shown when the user selects a non-Oz harness and the
-/// per-harness FTUX has not been completed yet.
 pub struct AuthSecretFtuxView {
     ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
     ftux_dropdown: ViewHandle<AuthSecretFtuxDropdown>,
-    /// Editor for the user-chosen name of the secret being created.
     name_editor: ViewHandle<EditorView>,
-    /// One editor per `AuthSecretTypeField` of the currently-selected new type.
-    /// Empty when no creation is in progress.
     field_editors: Vec<ViewHandle<EditorView>>,
     creation_state: Option<SecretCreationState>,
-    /// Mouse state handles for the bottom buttons. Owned by the view so they
-    /// stay stable across renders.
     cancel_mouse_state: MouseStateHandle,
     continue_mouse_state: MouseStateHandle,
 }
@@ -130,18 +83,15 @@ impl AuthSecretFtuxView {
     ) -> Self {
         let name_editor = make_single_line_editor(Some("API key name"), ctx);
 
-        // Subscribe to Tab/ShiftTab on the name editor (index 0) for focus cycling.
         ctx.subscribe_to_view(&name_editor, |me, _, event, ctx| {
             me.handle_form_editor_nav(0, event, ctx);
         });
 
-        // Build the FTUX-specific full-width dropdown internally.
         let ambient_agent_model_for_dropdown = ambient_agent_model.clone();
         let ftux_dropdown = ctx.add_typed_action_view(|ctx| {
             AuthSecretFtuxDropdown::new(ambient_agent_model_for_dropdown, ctx)
         });
 
-        // When the dropdown opens, trigger a lazy fetch for auth secrets.
         ctx.subscribe_to_view(&ftux_dropdown, |_me, _, event, ctx| {
             if matches!(event, FtuxDropdownEvent::Opened) {
                 let harness = _me.ambient_agent_model.as_ref(ctx).selected_harness();
@@ -151,8 +101,6 @@ impl AuthSecretFtuxView {
             }
         });
 
-        // When an existing secret is selected from the dropdown, set it on
-        // the view model and mark FTUX as completed.
         ctx.subscribe_to_view(&ftux_dropdown, |me, _, event, ctx| {
             if let FtuxDropdownEvent::SecretSelected(name) = event {
                 let harness = me.ambient_agent_model.as_ref(ctx).selected_harness();
@@ -169,11 +117,6 @@ impl AuthSecretFtuxView {
             }
         });
 
-        // When a new type is selected from the dropdown, enter creation mode.
-        // When the display label is clicked, keep the current form fields
-        // visible so the layout doesn't shift while the user browses options.
-        // The form is only replaced when a different type is selected, or
-        // cleared when an existing secret is picked.
         ctx.subscribe_to_view(&ftux_dropdown, |me, _, event, ctx| match event {
             FtuxDropdownEvent::NewTypeSelected {
                 harness,
@@ -182,8 +125,6 @@ impl AuthSecretFtuxView {
                 me.enter_creation_state(*harness, *type_index, ctx);
             }
             FtuxDropdownEvent::DisplayLabelCleared => {
-                // Keep creation_state and field_editors intact so the form
-                // stays visible while the dropdown is re-opened.
                 ctx.notify();
             }
             FtuxDropdownEvent::SkipRequested => {
@@ -192,20 +133,15 @@ impl AuthSecretFtuxView {
             _ => {}
         });
 
-        // When auth secret creation succeeds, finalize the FTUX (set the new
-        // secret as selected on the view model and mark FTUX as completed).
-        // When it fails, drop the saving flag so the user can retry.
         ctx.subscribe_to_model(
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
                 HarnessAvailabilityEvent::AuthSecretCreated { harness, name } => {
-                    // Only handle in the FTUX view that initiated the creation.
                     if me.creation_state.is_some() {
                         me.handle_secret_created(*harness, name.clone(), ctx);
                     }
                 }
                 HarnessAvailabilityEvent::AuthSecretCreationFailed { error } => {
-                    // Only handle in the FTUX view that initiated the creation.
                     if let Some(state) = me.creation_state.as_mut() {
                         state.is_saving = false;
                         let window_id = ctx.window_id();
@@ -225,7 +161,6 @@ impl AuthSecretFtuxView {
             },
         );
 
-        // When the harness changes, reset any in-progress creation state.
         ctx.subscribe_to_model(&ambient_agent_model, |me, _, event, ctx| {
             if matches!(event, AmbientAgentViewModelEvent::HarnessSelected) {
                 me.clear_creation_state(ctx);
@@ -244,32 +179,22 @@ impl AuthSecretFtuxView {
         }
     }
 
-    /// Returns true when the FTUX view has an active creation state (i.e. the
-    /// user selected a "New {type}" and the creation form fields are showing).
     pub fn has_creation_state(&self) -> bool {
         self.creation_state.is_some()
     }
 
-    /// Forwards an Up-arrow key press to the FTUX dropdown so the menu
-    /// selection moves up. No-op when the dropdown is closed (e.g. while the
-    /// creation form editors are focused).
     pub fn select_previous_in_dropdown(&self, ctx: &mut ViewContext<Self>) {
         self.ftux_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.select_previous_if_open(ctx);
         });
     }
 
-    /// Focuses the FTUX dropdown's search editor so it receives keyboard
-    /// events. Called by the parent Input view when it would normally focus
-    /// the main input editor but the FTUX is active.
     pub fn focus_dropdown_editor(&self, ctx: &mut ViewContext<Self>) {
         self.ftux_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.focus_search_editor(ctx);
         });
     }
 
-    /// Public entry point
-    /// (e.g. the top-row chip's "New {type}" sidecar in the non-FTUX path).
     pub fn enter_creation_state_public(
         &mut self,
         harness: Harness,
@@ -279,16 +204,12 @@ impl AuthSecretFtuxView {
         self.enter_creation_state(harness, type_index, ctx);
     }
 
-    /// Returns all form editors in order: name editor first, then field editors.
-    /// Used for tab-cycling focus.
     fn all_form_editors(&self) -> Vec<&ViewHandle<EditorView>> {
         let mut editors = vec![&self.name_editor];
         editors.extend(self.field_editors.iter());
         editors
     }
 
-    /// Focuses the form editor at the given index (0 = name editor, 1+ = field
-    /// editors). Wraps around at both ends.
     fn focus_form_editor(&self, index: usize, ctx: &mut ViewContext<Self>) {
         let editors = self.all_form_editors();
         if let Some(editor) = editors.get(index % editors.len()) {
@@ -296,8 +217,6 @@ impl AuthSecretFtuxView {
         }
     }
 
-    /// Handles Tab / ShiftTab navigation events from a form editor at the given
-    /// index in the `all_form_editors()` list. Cycles focus forward or backward.
     fn handle_form_editor_nav(
         &self,
         editor_index: usize,
@@ -322,7 +241,6 @@ impl AuthSecretFtuxView {
                         };
                         self.focus_form_editor(prev, ctx);
                     }
-                    // Other navigation keys are not relevant for form cycling.
                     _ => {}
                 }
             }
@@ -340,12 +258,9 @@ impl AuthSecretFtuxView {
             Some(info) => info,
             None => return,
         };
-        // Build a single-line editor for each field of the chosen type and
-        // subscribe to Tab/ShiftTab navigation events for focus cycling.
         let mut editors = Vec::with_capacity(info.fields.len());
         for (field_idx, field) in info.fields.iter().enumerate() {
             let editor = make_single_line_editor(Some(field.label), ctx);
-            // field_idx + 1 because index 0 is the name editor.
             let editor_index = field_idx + 1;
             ctx.subscribe_to_view(&editor, move |me, _, event, ctx| {
                 me.handle_form_editor_nav(editor_index, event, ctx);
@@ -358,13 +273,9 @@ impl AuthSecretFtuxView {
             secret_type_index: type_index,
             is_saving: false,
         });
-        // Show the selected type name in the dropdown so the user sees what
-        // was picked while the creation form fields are visible below.
         self.ftux_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_display_label(Some(info.display_name.to_string()), ctx);
         });
-        // Auto-focus the first form field (secret name) so the user can start
-        // typing immediately without clicking.
         ctx.focus(&self.name_editor);
         ctx.notify();
     }
@@ -379,17 +290,12 @@ impl AuthSecretFtuxView {
         CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
             settings.mark_harness_auth_ftux_completed(harness, ctx);
         });
-        // Clear any in-progress creation state and the dropdown's display
-        // label directly — we must NOT call `set_display_label(None)` here
-        // because that reopens the menu, which fights with the skip transition.
         self.clear_all_editor_buffers(ctx);
         self.creation_state = None;
         self.field_editors.clear();
         self.ftux_dropdown.update(ctx, |dropdown, _ctx| {
             dropdown.clear_display_label_quietly();
         });
-        // Notify the parent Input view to re-render so it transitions from
-        // the FTUX content back to the normal input container.
         ctx.notify();
     }
 
@@ -401,8 +307,6 @@ impl AuthSecretFtuxView {
     }
 
     fn handle_continue(&mut self, ctx: &mut ViewContext<Self>) {
-        // No creation in progress: nothing to do. Selection of an existing
-        // secret already commits via the selector itself.
         let Some(state) = self.creation_state.as_ref() else {
             return;
         };
@@ -415,12 +319,9 @@ impl AuthSecretFtuxView {
             return;
         };
 
-        // Read the secret name from the dedicated name editor.
         let name = self.name_editor.as_ref(ctx).buffer_text(ctx);
         let trimmed_name = name.trim();
         if trimmed_name.is_empty() {
-            // Surface a transient error via the harness availability event so
-            // the existing toast subscription on `Input` shows a message.
             HarnessAvailabilityModel::handle(ctx).update(ctx, |_model, ctx| {
                 ctx.emit(HarnessAvailabilityEvent::AuthSecretCreationFailed {
                     error: "Please enter a name for the secret.".to_string(),
@@ -430,7 +331,6 @@ impl AuthSecretFtuxView {
         }
         let name = trimmed_name.to_string();
 
-        // Read each field editor's buffer text in order.
         let field_values: Vec<String> = self
             .field_editors
             .iter()
@@ -448,8 +348,6 @@ impl AuthSecretFtuxView {
             }
         };
 
-        // Mark saving and dispatch creation. Refresh on the AuthSecretCreated
-        // event will finalize the flow.
         if let Some(state) = self.creation_state.as_mut() {
             state.is_saving = true;
         }
@@ -460,8 +358,6 @@ impl AuthSecretFtuxView {
         });
     }
 
-    /// Resets creation state, clears all editor buffers, and clears the
-    /// dropdown display text so re-entering the FTUX starts fresh.
     fn clear_creation_state(&mut self, ctx: &mut ViewContext<Self>) {
         if self.creation_state.is_some() {
             self.creation_state = None;
@@ -473,8 +369,6 @@ impl AuthSecretFtuxView {
         }
     }
 
-    /// Clears the buffer of every editor owned by this view (name editor and
-    /// all field editors) so stale values do not persist across FTUX entries.
     fn clear_all_editor_buffers(&self, ctx: &mut ViewContext<Self>) {
         self.name_editor.update(ctx, |editor, ctx| {
             editor.system_clear_buffer(true, ctx);
@@ -492,19 +386,15 @@ impl AuthSecretFtuxView {
         name: String,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Show a success toast. This lives here rather than on Input so that
-        // only one toast appears regardless of how many terminal panes exist.
         let window_id = ctx.window_id();
         let message = format!("API key '{name}' saved.");
         ToastStack::handle(ctx).update(ctx, |ts, ctx| {
             ts.add_ephemeral_toast(DismissibleToast::default(message), window_id, ctx);
         });
-        // Set the newly-created secret as selected on the view model.
         let vm = self.ambient_agent_model.clone();
         vm.update(ctx, |model, ctx| {
             model.set_harness_auth_secret_name(Some(name), ctx);
         });
-        // Mark FTUX as completed for this harness.
         CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
             settings.mark_harness_auth_ftux_completed(harness, ctx);
         });
@@ -578,8 +468,6 @@ impl AuthSecretFtuxView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(FORM_FIELD_SPACING);
 
-        // Name field at the top: required. Even though it's not in the
-        // server's secret-value JSON, it identifies the saved secret.
         column.add_child(self.render_field_label("SECRET NAME", app));
         column.add_child(self.render_editor_container(&self.name_editor, app));
 
@@ -640,7 +528,6 @@ impl AuthSecretFtuxView {
         let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
         row.add_child(Expanded::new(1., Empty::new().finish()).finish());
 
-        // Cancel button: switches harness back to Oz.
         row.add_child(self.render_button(
             "Cancel",
             self.cancel_mouse_state.clone(),
@@ -649,7 +536,6 @@ impl AuthSecretFtuxView {
             app,
         ));
 
-        // Continue button: filled with accent color.
         let accent_fill = Appearance::as_ref(app).theme().accent();
         row.add_child(self.render_button(
             "Continue",
@@ -663,7 +549,6 @@ impl AuthSecretFtuxView {
     }
 }
 
-/// Builds a single-line `EditorView` with the given placeholder text.
 fn make_single_line_editor(
     placeholder: Option<&str>,
     ctx: &mut ViewContext<AuthSecretFtuxView>,
@@ -717,7 +602,6 @@ impl View for AuthSecretFtuxView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(ROW_SPACING);
 
-        // Description + dropdown.
         let mut content_section = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
@@ -726,7 +610,6 @@ impl View for AuthSecretFtuxView {
         content_section.add_child(ChildView::new(&self.ftux_dropdown).finish());
         column.add_child(content_section.finish());
 
-        // If a creation type is selected, render the form below.
         if self.creation_state.is_some() {
             column.add_child(self.render_creation_form(app));
         }

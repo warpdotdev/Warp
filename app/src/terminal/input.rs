@@ -2354,9 +2354,6 @@ impl Input {
                     auth_secret_selector: None,
                     auth_secret_ftux_view: None,
                 });
-        // Build the AuthSecretSelector + AuthSecretFtuxView and store on the
-        // ambient state. We do this in a second pass so the FTUX view can take
-        // ownership of the selector handle.
         if let Some(state) = ambient_agent_view_state.as_mut() {
             if FeatureFlag::CloudModeInputV2.is_enabled() {
                 let selector = ctx.add_typed_action_view(|ctx| {
@@ -2375,11 +2372,6 @@ impl Input {
                             harness,
                             type_index,
                         } => {
-                            // Forward the "New {type}" selection from the
-                            // top-row chip to the FTUX view so the creation
-                            // form appears. The FTUX view's
-                            // `enter_creation_state` sets the display label
-                            // and builds the field editors.
                             if let Some(ftux_view) = me.auth_secret_ftux_view().cloned() {
                                 let harness = *harness;
                                 let type_index = *type_index;
@@ -7768,8 +7760,6 @@ impl Input {
     }
 
     pub fn focus_input_box(&self, ctx: &mut ViewContext<Self>) {
-        // When the auth secret FTUX is showing, redirect focus to the FTUX
-        // dropdown's search editor instead of the main input editor.
         if self.should_show_auth_secret_ftux(ctx) {
             if let Some(ftux_view) = self.auth_secret_ftux_view().cloned() {
                 ftux_view.update(ctx, |view, ctx| {
@@ -7846,8 +7836,6 @@ impl Input {
     }
 
     fn editor_up(&mut self, ctx: &mut ViewContext<Self>) {
-        // When the auth secret FTUX is active, forward the Up key to the
-        // FTUX dropdown menu instead of opening the history menu.
         if self.should_show_auth_secret_ftux(ctx) {
             if let Some(ftux_view) = self.auth_secret_ftux_view().cloned() {
                 ftux_view.update(ctx, |view, ctx| {
@@ -7857,8 +7845,6 @@ impl Input {
             return;
         }
 
-        // When the auth secret selector chip menu is open, forward the Up
-        // key to its menu instead of opening the history menu.
         if let Some(selector) = self.auth_secret_selector() {
             if selector.as_ref(ctx).is_menu_open() {
                 let selector = selector.clone();

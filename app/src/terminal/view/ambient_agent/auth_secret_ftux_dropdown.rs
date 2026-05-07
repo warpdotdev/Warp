@@ -1,12 +1,3 @@
-//! FTUX-specific auth secret dropdown: a full-width combobox with an inline
-//! search editor, rendered inside the FTUX content area. This is intentionally
-//! separate from the top-row [`AuthSecretSelector`] chip which uses an
-//! `ActionButton` + narrow `Menu` + sidecar pattern.
-//!
-//! The dropdown shows a flat list: existing secrets (filtered by search query),
-//! a separator, then one "New {type}" item per auth secret type for the
-//! harness. Selecting an existing secret emits [`FtuxDropdownEvent::SecretSelected`];
-//! selecting a "New" type emits [`FtuxDropdownEvent::NewTypeSelected`].
 
 use warp_cli::agent::Harness;
 use warp_core::ui::appearance::Appearance;
@@ -35,86 +26,54 @@ use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentVi
 use crate::ui_components::icons::Icon;
 use warp_editor::editor::NavigationKey;
 
-/// Width of the FTUX content area; the menu matches this (Figma: 720px).
 const MENU_WIDTH: f32 = 720.;
 
-/// Font size for the search editor and menu items (Figma: 14px).
 const FONT_SIZE: f32 = 14.;
 
-/// Font size for the helper text below the select (Figma: 12px).
 const HELPER_FONT_SIZE: f32 = 12.;
 
-/// Horizontal padding inside the select container (Figma: 12px).
 const SELECT_HORIZONTAL_PADDING: f32 = 12.;
 
-/// Vertical padding inside the select container (Figma: 8px).
 const SELECT_VERTICAL_PADDING: f32 = 8.;
 
-/// Gap between the search icon, editor, and right icon (Figma: 6px).
 const SELECT_GAP: f32 = 6.;
 
-/// Icon size inside the select container (Figma: 16px).
 const SELECT_ICON_SIZE: f32 = 16.;
 
-/// Corner radius on the select container (Figma: 4px).
 const SELECT_CORNER_RADIUS: f32 = 4.;
 
-/// Horizontal padding inside menu item rows (Figma: 16px).
 const MENU_HORIZONTAL_PADDING: f32 = 16.;
 
-/// Vertical padding on menu item rows (Figma: 8px).
 const MENU_ITEM_VERTICAL_PADDING: f32 = 8.;
 
-/// Vertical spacing between the field label and the select container.
 const LABEL_TO_SELECT_SPACING: f32 = 4.;
 
-/// Maximum height of the dropdown menu before it scrolls.
 const MENU_MAX_HEIGHT: f32 = 300.;
 
-/// Actions dispatched internally by this view.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FtuxDropdownAction {
-    /// Select an existing secret by name.
     SelectSecret(String),
-    /// Select a new secret type by index into `auth_secret_types_for_harness()`.
     SelectNewType(usize),
-    /// Clear the display label and reopen the dropdown.
     ClearDisplayLabel,
-    /// Skip setting a secret (mark FTUX as completed without selecting one).
     Skip,
 }
 
-/// Events emitted to the parent [`AuthSecretFtuxView`].
 pub enum FtuxDropdownEvent {
-    /// An existing secret was selected.
     SecretSelected(String),
-    /// A new type was selected; the parent should enter creation mode.
     NewTypeSelected { harness: Harness, type_index: usize },
-    /// The dropdown was opened (parent should trigger lazy fetch).
     Opened,
-    /// The dropdown was closed.
     Closed,
-    /// The user clicked the display label to dismiss creation mode.
     DisplayLabelCleared,
-    /// The user chose to skip setting a secret.
     SkipRequested,
 }
 
-/// Full-width combobox for the FTUX auth secret selection flow.
 pub struct AuthSecretFtuxDropdown {
-    /// Single-line editor for search/raw-value input.
     search_editor: ViewHandle<EditorView>,
     search_query: String,
-    /// The dropdown menu rendered as a positioned overlay below the select.
     menu: ViewHandle<Menu<FtuxDropdownAction>>,
     is_menu_open: bool,
     ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
-    /// When set, the select container renders a static text label instead of
-    /// the search editor. Clicking the container clears the label and reopens
-    /// the dropdown. Used to show the selected "New {type}" name while the
-    /// creation form is visible.
     display_label: Option<String>,
-    /// Mouse state for the select container when in label mode (hover + click).
     label_mouse_state: MouseStateHandle,
 }
 
@@ -168,10 +127,6 @@ impl AuthSecretFtuxDropdown {
                 me.search_editor.update(ctx, |editor, ctx| {
                     editor.system_clear_buffer(true, ctx);
                 });
-                // If the menu is already open, kick off a fetch for the newly
-                // selected harness. The `Opened` event only fires on open
-                // transitions, so switching harnesses while the menu stays open
-                // would otherwise leave the fetch state at `NotFetched`.
                 if me.is_menu_open {
                     let harness = me.ambient_agent_model.as_ref(ctx).selected_harness();
                     HarnessAvailabilityModel::handle(ctx).update(ctx, |model, ctx| {
@@ -211,8 +166,6 @@ impl AuthSecretFtuxDropdown {
             label_mouse_state: MouseStateHandle::default(),
         };
         me.refresh_menu(ctx);
-        // Auto-focus the editor and open the dropdown on construction so the
-        // user lands directly in the combobox when the FTUX appears.
         me.set_menu_visibility(true, ctx);
         me
     }
@@ -238,30 +191,20 @@ impl AuthSecretFtuxDropdown {
         ctx.notify();
     }
 
-    /// Moves the menu selection up one item, if the dropdown is currently open.
-    /// Called by the parent Input view to forward the Up arrow key which is
-    /// intercepted by InputAction::Up before reaching the search editor.
     pub fn select_previous_if_open(&mut self, ctx: &mut ViewContext<Self>) {
         if self.is_menu_open {
             self.menu.update(ctx, |menu, ctx| menu.select_previous(ctx));
         }
     }
 
-    /// Focuses the search editor so it receives keyboard events.
     pub fn focus_search_editor(&self, ctx: &mut ViewContext<Self>) {
         ctx.focus(&self.search_editor);
     }
 
-    /// Clears the display label without reopening the dropdown menu. Used by
-    /// the skip flow where the menu is already closed and we don't want
-    /// `set_display_label(None)` to reopen it.
     pub fn clear_display_label_quietly(&mut self) {
         self.display_label = None;
     }
 
-    /// Sets or clears the static display label. When `Some`, the select
-    /// container shows a non-editable label and the dropdown is closed. When
-    /// `None`, the editor is restored and the dropdown reopens.
     pub fn set_display_label(&mut self, label: Option<String>, ctx: &mut ViewContext<Self>) {
         self.display_label = label;
         if self.display_label.is_some() {
@@ -280,7 +223,6 @@ impl AuthSecretFtuxDropdown {
     fn handle_editor_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
         match event {
             EditorEvent::Focused => {
-                // Open the dropdown whenever the editor gains focus.
                 if !self.is_menu_open {
                     self.set_menu_visibility(true, ctx);
                 }
@@ -291,7 +233,6 @@ impl AuthSecretFtuxDropdown {
                     self.search_query = new_query;
                     self.refresh_menu(ctx);
                 }
-                // Ensure the menu stays open while typing.
                 if !self.is_menu_open {
                     self.set_menu_visibility(true, ctx);
                 }
@@ -322,7 +263,6 @@ impl AuthSecretFtuxDropdown {
         }
     }
 
-    /// Returns the number of existing secrets that match the current search query.
     fn matching_secret_count(&self, app: &AppContext) -> usize {
         let harness = self.ambient_agent_model.as_ref(app).selected_harness();
         let availability = HarnessAvailabilityModel::as_ref(app);
@@ -357,7 +297,6 @@ impl AuthSecretFtuxDropdown {
 
         let no_results_text_color = internal_colors::text_sub(theme, theme.surface_2());
 
-        // Existing secrets (filtered by search query).
         match availability.auth_secrets_for(harness) {
             AuthSecretFetchState::Loaded(secrets) => {
                 let mut matched = false;
@@ -412,10 +351,8 @@ impl AuthSecretFtuxDropdown {
             }
         }
 
-        // Separator before "New …" items.
         items.push(MenuItem::Separator);
 
-        // One "New {display_name}" item per auth secret type for the harness.
         for (index, info) in auth_secret_types_for_harness(harness).iter().enumerate() {
             items.push(MenuItem::Item(
                 MenuItemFields::new(format!("New {}", info.display_name))
@@ -427,10 +364,8 @@ impl AuthSecretFtuxDropdown {
             ));
         }
 
-        // Separator before the skip option.
         items.push(MenuItem::Separator);
 
-        // Skip option at the bottom with a side-by-side description.
         items.push(MenuItem::Item(
             MenuItemFields::new_with_label(
                 "Skip setting a secret",
@@ -448,7 +383,6 @@ impl AuthSecretFtuxDropdown {
         });
     }
 
-    /// Renders the select container: `[search_icon | editor_or_label | right_icon]`.
     fn render_select_container(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
@@ -478,8 +412,6 @@ impl AuthSecretFtuxDropdown {
                 .with_width(SELECT_ICON_SIZE)
                 .finish();
 
-        // When a display label is set (creation mode), show a static text
-        // label instead of the interactive search editor.
         let center: Box<dyn Element> = if let Some(label) = &self.display_label {
             Expanded::new(
                 1.,
@@ -509,8 +441,6 @@ impl AuthSecretFtuxDropdown {
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(SELECT_CORNER_RADIUS)))
             .finish();
 
-        // When in label mode, wrap in a Hoverable so clicking the container
-        // clears the label and reopens the dropdown.
         if self.display_label.is_some() {
             Hoverable::new(self.label_mouse_state.clone(), move |_| container)
                 .with_cursor(warpui::platform::Cursor::PointingHand)
@@ -523,8 +453,6 @@ impl AuthSecretFtuxDropdown {
         }
     }
 
-    /// Renders the helper text below the select, shown when the search query
-    /// has no matches among existing secrets.
     fn render_helper_text(&self, app: &AppContext) -> Box<dyn Element> {
         if self.search_query.trim().is_empty() || self.matching_secret_count(app) > 0 {
             return Empty::new().finish();
@@ -592,7 +520,6 @@ impl View for AuthSecretFtuxDropdown {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
-        // Select container + dropdown overlay.
         let mut stack = Stack::new();
         stack.add_child(self.render_select_container(app));
 
@@ -609,7 +536,6 @@ impl View for AuthSecretFtuxDropdown {
             .with_spacing(LABEL_TO_SELECT_SPACING);
         column.add_child(stack.finish());
 
-        // Helper text (only when search has no matches).
         let helper = self.render_helper_text(app);
         column.add_child(helper);
 

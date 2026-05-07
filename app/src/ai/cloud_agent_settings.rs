@@ -28,7 +28,6 @@ define_settings_group!(CloudAgentSettings, settings: [
 ]);
 
 impl CloudAgentSettings {
-    /// Returns true if the auth secret FTUX has been completed for the given harness.
     pub fn is_harness_auth_ftux_completed(&self, harness: Harness) -> bool {
         self.harness_auth_ftux_completed
             .value()
@@ -37,7 +36,6 @@ impl CloudAgentSettings {
             .unwrap_or(false)
     }
 
-    /// Marks the auth secret FTUX as completed for the given harness.
     pub fn mark_harness_auth_ftux_completed(
         &mut self,
         harness: Harness,
@@ -48,11 +46,6 @@ impl CloudAgentSettings {
         let _ = self.harness_auth_ftux_completed.set_value(map, ctx);
     }
 
-    /// TEMPORARY: clears the per-harness FTUX completion setting so the FTUX
-    /// flow is shown again on the next non-Oz harness selection. Called on app
-    /// startup to make iterating on the FTUX UI easier without manually
-    /// editing the settings store. Remove this together with its caller in
-    /// `lib.rs` before shipping.
     pub fn reset_harness_auth_ftux_for_dev(&mut self, ctx: &mut warpui::ModelContext<Self>) {
         let _ = self
             .harness_auth_ftux_completed
