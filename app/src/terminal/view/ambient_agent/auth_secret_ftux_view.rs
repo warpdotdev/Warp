@@ -227,6 +227,12 @@ impl AuthSecretFtuxView {
         }
     }
 
+    /// Returns true when the FTUX view has an active creation state (i.e. the
+    /// user selected a "New {type}" and the creation form fields are showing).
+    pub fn has_creation_state(&self) -> bool {
+        self.creation_state.is_some()
+    }
+
     /// Sets whether the "Skip and continue" link is rendered. Used by callers
     /// that re-enter the creation flow from the chip (after FTUX has already
     /// been completed once for this harness).
@@ -236,6 +242,17 @@ impl AuthSecretFtuxView {
             self.show_skip_link = show;
             ctx.notify();
         }
+    }
+
+    /// Public entry point for entering creation mode from external callers
+    /// (e.g. the top-row chip's "New {type}" sidecar in the non-FTUX path).
+    pub fn enter_creation_state_public(
+        &mut self,
+        harness: Harness,
+        type_index: usize,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.enter_creation_state(harness, type_index, ctx);
     }
 
     fn enter_creation_state(

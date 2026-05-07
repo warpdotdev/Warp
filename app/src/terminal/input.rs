@@ -2400,11 +2400,31 @@ impl Input {
                     )
                 });
                 ctx.subscribe_to_view(&selector, |me, _, event, ctx| {
-                    if matches!(
-                        event,
-                        AuthSecretSelectorEvent::MenuVisibilityChanged { open: false }
-                    ) {
-                        me.focus_input_box(ctx);
+                    match event {
+                        AuthSecretSelectorEvent::MenuVisibilityChanged { open: false } => {
+                            me.focus_input_box(ctx);
+                        }
+                        AuthSecretSelectorEvent::NewTypeSelected {
+                            harness,
+                            type_index,
+                        } => {
+                            // Forward the "New {type}" selection from the
+                            // top-row chip to the FTUX view so the creation
+                            // form appears. The FTUX view's
+                            // `enter_creation_state` sets the display label
+                            // and builds the field editors.
+                            if let Some(ftux_view) = me.auth_secret_ftux_view().cloned() {
+                                let harness = *harness;
+                                let type_index = *type_index;
+                                ftux_view.update(ctx, |view, ctx| {
+                                    view.enter_creation_state_public(
+                                        harness, type_index, ctx,
+                                    );
+                                });
+                            }
+                            ctx.notify();
+                        }
+                        AuthSecretSelectorEvent::MenuVisibilityChanged { open: true } => {}
                     }
                 });
                 let ftux_view = {

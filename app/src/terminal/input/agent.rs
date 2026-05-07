@@ -504,8 +504,11 @@ impl Input {
         SavePosition::new(outer_stack.finish(), &self.save_position_id()).finish()
     }
 
-    /// Returns true when the auth secret FTUX flow should be shown instead of the
-    /// normal input container.
+    /// Returns true when the auth secret FTUX flow should be shown instead of
+    /// the normal input container. This is true in two cases:
+    /// 1. The FTUX has not been completed for this harness and no secret is selected.
+    /// 2. The FTUX view has an active creation state (the user picked "New {type}"
+    ///    from the chip, which enters creation mode even after FTUX completion).
     fn should_show_auth_secret_ftux(&self, app: &AppContext) -> bool {
         let Some(view_model) = self.ambient_agent_view_model() else {
             return false;
@@ -514,6 +517,13 @@ impl Input {
         let harness = vm.selected_harness();
         if harness == Harness::Oz {
             return false;
+        }
+        // If the FTUX view has an active creation state (user picked "New {type}"
+        // from the chip), always show the FTUX content so the creation form renders.
+        if let Some(ftux_view) = self.auth_secret_ftux_view() {
+            if ftux_view.as_ref(app).has_creation_state() {
+                return true;
+            }
         }
         // If FTUX has already been completed for this harness, skip it.
         if crate::ai::cloud_agent_settings::CloudAgentSettings::as_ref(app)
