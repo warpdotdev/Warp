@@ -14699,6 +14699,7 @@ dependencies = [
  "tokio",
  "url",
  "warp_features",
+ "warp_util",
  "warpui",
  "warpui_extras",
  "websocket",

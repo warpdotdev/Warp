@@ -13220,9 +13220,9 @@ impl Input {
         // When AgentView is enabled, reverting to AI mode in an active agent view with an empty
         // buffer should unlock (re-enable autodetection) - semantically like clearing the "!".
         //
-        // If there is a pending image / file attachment or block, do NOT unlock. The user's
-        // intent is unambiguously "talk to the agent"; letting the classifier flip the input
-        // back to shell mode would be a bug.
+        // If there is a pending image / file attachment, do NOT unlock. The user's intent is
+        // unambiguously "talk to the agent"; letting the classifier flip the input back to
+        // shell mode would be a bug.
         let has_locking_attachment = self.ai_context_model.as_ref(ctx).has_locking_attachment();
         let should_unlock = FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()

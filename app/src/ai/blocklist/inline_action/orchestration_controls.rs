@@ -11,8 +11,9 @@ use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationExecutio
 use pathfinder_color::ColorU;
 use std::fmt::Debug;
 use warpui::elements::{
-    ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Expanded, Flex,
-    Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
+    ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
+    Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement,
+    PositionedElementAnchor, Radius, Text,
 };
 use warpui::platform::Cursor;
 use warpui::ui_components::button::ButtonVariant;
@@ -27,11 +28,12 @@ use warp_core::ui::theme::Fill;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
 use crate::ai::harness_display;
+use crate::ai::llms::LLMProvider;
 use crate::appearance::Appearance;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::ui_components::blended_colors;
 use crate::view_components::dropdown::{Dropdown, DropdownAction, DropdownStyle};
-use crate::view_components::FilterableDropdown;
+use crate::view_components::{FilterableDropdown, FilterableDropdownOrientation};
 use crate::LLMPreferences;
 
 // ── Shared constants ────────────────────────────────────────────────
@@ -61,7 +63,7 @@ pub trait OrchestrationControlAction: Clone + Debug + Send + Sync + 'static {
 
 /// Run-wide configuration fields shared between the confirmation card
 /// editor and the plan-card config block. Card-specific fields
-/// (agent_run_configs, base_prompt, summary, skills, is_editor_open)
+/// (agent_run_configs, base_prompt, summary, skills)
 /// remain on the per-view state structs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrchestrationEditState {
@@ -280,19 +282,58 @@ pub fn new_standard_picker_dropdown<A: OrchestrationControlAction, V: View>(
         dropdown.set_border_width(ORCHESTRATION_PICKER_BORDER_WIDTH, ctx_dropdown);
         dropdown.set_font_size(ORCHESTRATION_PICKER_FONT_SIZE, ctx_dropdown);
         dropdown.set_font_color(font_color, ctx_dropdown);
+        // Open menus above the trigger to avoid overlapping the input box.
+        dropdown.set_menu_position(
+            PositionedElementAnchor::TopLeft,
+            ChildAnchor::BottomLeft,
+            ctx_dropdown,
+        );
         dropdown
     })
 }
 
+/// Populates the model picker with all available models (no harness filter).
 pub fn populate_model_picker<A: OrchestrationControlAction, V: View>(
     dropdown: &ViewHandle<Dropdown<A>>,
     initial_model_id: &str,
     ctx: &mut ViewContext<V>,
 ) {
+    populate_model_picker_for_harness(dropdown, initial_model_id, "", ctx);
+}
+
+/// Returns whether the given LLM matches the harness filter.
+/// Claude → Anthropic only, Codex → OpenAI only, Oz/empty → all.
+fn matches_harness_filter(harness: Option<Harness>, provider: &LLMProvider) -> bool {
+    match harness {
+        Some(Harness::Claude) => matches!(provider, LLMProvider::Anthropic),
+        Some(Harness::Codex) => matches!(provider, LLMProvider::OpenAI),
+        Some(Harness::Oz)
+        | Some(Harness::Gemini)
+        | Some(Harness::OpenCode)
+        | Some(Harness::Unknown)
+        | None => true,
+    }
+}
+
+/// Populates the model picker, filtering choices by harness.
+/// Claude → Anthropic models only, Codex → OpenAI models only,
+/// Oz/empty → all models.
+pub fn populate_model_picker_for_harness<A: OrchestrationControlAction, V: View>(
+    dropdown: &ViewHandle<Dropdown<A>>,
+    initial_model_id: &str,
+    harness_type: &str,
+    ctx: &mut ViewContext<V>,
+) {
     let initial_model_id = initial_model_id.to_string();
+    let harness_type = harness_type.to_string();
     dropdown.update(ctx, |dropdown, ctx_dropdown| {
         let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
-        let choices: Vec<_> = llm_prefs.get_base_llm_choices_for_agent_mode().collect();
+        let all_choices: Vec<_> = llm_prefs.get_base_llm_choices_for_agent_mode().collect();
+        let harness = Harness::parse_orchestration_harness(&harness_type);
+        let choices: Vec<_> = all_choices
+            .into_iter()
+            .filter(|llm| matches_harness_filter(harness, &llm.provider))
+            .collect();
         let selected_display_name = choices
             .iter()
             .find(|llm| llm.id.to_string() == initial_model_id)
@@ -311,6 +352,36 @@ pub fn populate_model_picker<A: OrchestrationControlAction, V: View>(
             dropdown.set_selected_by_name(name, ctx_dropdown);
         }
     });
+}
+
+/// Returns whether the given model_id is present in the harness-filtered
+/// model choices. Used to detect when a harness change invalidates the
+/// current model selection.
+pub fn is_model_in_filtered_choices<V: View>(
+    model_id: &str,
+    harness_type: &str,
+    ctx: &mut ViewContext<V>,
+) -> bool {
+    let llm_prefs = LLMPreferences::as_ref(ctx);
+    let harness = Harness::parse_orchestration_harness(harness_type);
+    llm_prefs
+        .get_base_llm_choices_for_agent_mode()
+        .filter(|llm| matches_harness_filter(harness, &llm.provider))
+        .any(|llm| llm.id.to_string() == model_id)
+}
+
+/// Returns the model_id of the first model in the harness-filtered set,
+/// or `None` if the filtered set is empty.
+pub fn first_filtered_model_id<V: View>(
+    harness_type: &str,
+    ctx: &mut ViewContext<V>,
+) -> Option<String> {
+    let llm_prefs = LLMPreferences::as_ref(ctx);
+    let harness = Harness::parse_orchestration_harness(harness_type);
+    llm_prefs
+        .get_base_llm_choices_for_agent_mode()
+        .find(|llm| matches_harness_filter(harness, &llm.provider))
+        .map(|llm| llm.id.to_string())
 }
 
 pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
@@ -365,6 +436,8 @@ pub fn create_environment_picker<A: OrchestrationControlAction, V: View>(
         dropdown.set_style(styles);
         dropdown.set_top_bar_height(ORCHESTRATION_PICKER_HEIGHT, ctx_dropdown);
         dropdown.set_top_bar_max_width(f32::INFINITY);
+        // Open menu above the trigger to avoid overlapping the input box.
+        dropdown.set_orientation(FilterableDropdownOrientation::Up);
         dropdown
     });
     dropdown_handle.update(ctx, |dropdown, ctx_dropdown| {

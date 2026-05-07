@@ -165,6 +165,9 @@ impl Sessions {
                     sessions.set_remote_server_setup_state(*session_id, state.clone());
                     ctx.notify();
                 }
+                RemoteServerManagerEvent::BufferUpdated { .. } => {
+                    // Handled directly by GlobalBufferModel's subscription.
+                }
                 RemoteServerManagerEvent::SessionConnecting { .. }
                 | RemoteServerManagerEvent::SessionDeregistered { .. }
                 | RemoteServerManagerEvent::SessionConnectionFailed { .. }
