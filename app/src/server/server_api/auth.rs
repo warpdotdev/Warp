@@ -214,12 +214,12 @@ pub trait AuthClient: 'static + Send + Sync {
 
 impl ServerApi {
     pub(super) async fn access_token(&self) -> Result<AuthToken> {
-        if let Some(token) = self.bearer_token.clone() {
-            return Ok(AuthToken::Bearer(token));
-        }
 
         if cfg!(feature = "skip_login") {
             bail!("skip_login enabled; failing all authenticated requests");
+        }
+        if let Some(token) = self.bearer_token.clone() {
+            return Ok(AuthToken::Bearer(token));
         }
 
         let Some(auth_state) = self.auth_state.as_ref() else {

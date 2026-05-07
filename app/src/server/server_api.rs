@@ -681,13 +681,16 @@ impl ServerApi {
                 // to get a required user for some gql field. If we see that, since we have already
                 // successfully refreshed the user's access token earlier in this function, we know
                 // that this error is the result of the user's account being disabled/deleted.
-                if self.allowed_to_refresh_token()
-                    && errors
-                        .iter()
-                        .any(|error| error.message.contains("User not in context: Not found"))
+                if errors
+                    .iter()
+                    .any(|error| error.message.contains("User not in context: Not found"))
                 {
-                    log::error!("GraphQL request failed due to unauthenticated user");
-                    let _ = event_sender.try_send(ServerApiEvent::UserAccountDisabled);
+                    if self.allowed_to_refresh_token() {
+                        log::error!("GraphQL request failed due to unauthenticated user");
+                        let _ = event_sender.try_send(ServerApiEvent::UserAccountDisabled);
+                    } else {
+                        anyhow::bail!(ServerApiAuthError::CredentialsRejected);
+                    }
                 }
             }
 
@@ -1587,7 +1590,7 @@ impl SingletonEntity for ServerApiProvider {}
 mod tests {
     use super::*;
 
-    use cynic::GraphQlResponse;
+    use cynic::{GraphQlError, GraphQlResponse};
     use futures::executor::block_on;
     use std::future::Future;
     use std::pin::Pin;
@@ -1596,7 +1599,13 @@ mod tests {
     struct FakeGraphqlOperation {
         expected_auth_token: Option<String>,
         send_count: Arc<AtomicUsize>,
-        rejected_status: Option<StatusCode>,
+        result: FakeGraphqlResult,
+    }
+
+    enum FakeGraphqlResult {
+        Success,
+        Rejected(StatusCode),
+        ResponseErrors(Vec<String>),
     }
 
     impl FakeGraphqlOperation {
@@ -1604,7 +1613,7 @@ mod tests {
             Self {
                 expected_auth_token: expected_auth_token.map(ToOwned::to_owned),
                 send_count,
-                rejected_status: None,
+                result: FakeGraphqlResult::Success,
             }
         }
 
@@ -1616,7 +1625,19 @@ mod tests {
             Self {
                 expected_auth_token: expected_auth_token.map(ToOwned::to_owned),
                 send_count,
-                rejected_status: Some(status),
+                result: FakeGraphqlResult::Rejected(status),
+            }
+        }
+
+        fn response_errors(
+            expected_auth_token: Option<&str>,
+            send_count: Arc<AtomicUsize>,
+            messages: Vec<String>,
+        ) -> Self {
+            Self {
+                expected_auth_token: expected_auth_token.map(ToOwned::to_owned),
+                send_count,
+                result: FakeGraphqlResult::ResponseErrors(messages),
             }
         }
     }
@@ -1643,16 +1664,25 @@ mod tests {
             Box::pin(async move {
                 assert_eq!(options.auth_token, self.expected_auth_token);
                 self.send_count.fetch_add(1, Ordering::SeqCst);
-                if let Some(status) = self.rejected_status {
-                    return Err(GraphQLError::HttpError {
+                match self.result {
+                    FakeGraphqlResult::Success => Ok(GraphQlResponse {
+                        data: Some(()),
+                        errors: None,
+                    }),
+                    FakeGraphqlResult::Rejected(status) => Err(GraphQLError::HttpError {
                         status,
                         body: "redacted auth rejection".to_string(),
-                    });
+                    }),
+                    FakeGraphqlResult::ResponseErrors(messages) => Ok(GraphQlResponse {
+                        data: None,
+                        errors: Some(
+                            messages
+                                .into_iter()
+                                .map(|message| GraphQlError::new(message, None, None, None))
+                                .collect(),
+                        ),
+                    }),
                 }
-                Ok(GraphQlResponse {
-                    data: Some(()),
-                    errors: None,
-                })
             })
         }
     }
@@ -1731,6 +1761,33 @@ mod tests {
                 Some("daemon-token"),
                 send_count.clone(),
                 StatusCode::UNAUTHORIZED,
+            ),
+            None,
+        ))
+        .unwrap_err();
+
+        assert!(has_auth_error(
+            &error,
+            ServerApiAuthError::CredentialsRejected
+        ));
+        assert_eq!(send_count.load(Ordering::SeqCst), 1);
+        assert!(event_receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn send_graphql_request_refresh_disabled_user_not_in_context_is_credentials_rejected() {
+        let (event_sender, event_receiver) = async_channel::unbounded();
+        let server_api = ServerApi::new_for_test_with_bearer_token(
+            Some("daemon-token".to_string()),
+            event_sender,
+        );
+        let send_count = Arc::new(AtomicUsize::new(0));
+
+        let error = block_on(server_api.send_graphql_request(
+            FakeGraphqlOperation::response_errors(
+                Some("daemon-token"),
+                send_count.clone(),
+                vec!["User not in context: Not found".to_string()],
             ),
             None,
         ))
