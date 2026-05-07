@@ -40,6 +40,8 @@ pub fn remote_server_ssh_command(shell: &str, should_use_ssh_wrapper: bool) -> S
         &remote_server_user_host(shell),
         "-p 22",
         &format!("-o ProxyCommand=\"{REMOTE_SERVER_PROXY_COMMAND}\""),
+        "-o PreferredAuthentications=password",
+        "-o PubkeyAuthentication=no",
         "-o StrictHostKeyChecking=no",
         "-o UserKnownHostsFile=/dev/null",
     ]
