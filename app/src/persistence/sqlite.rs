@@ -234,17 +234,6 @@ fn establish_connection(database_url: &str, read_only: bool) -> Result<SqliteCon
     Ok(conn)
 }
 
-/// Set up SQLite [error logging](https://www.sqlite.org/errlog.html)
-///
-/// ## Safety
-/// Setting up SQLite logging is not thread-safe. No other SQLite calls may be made while this
-/// function is running.
-pub(super) fn initialize_sqlite_logging() {
-    unsafe {
-        init_logging();
-    }
-}
-
 unsafe fn init_logging() {
     use std::ffi::{c_char, c_int, c_void, CStr};
     use std::panic;

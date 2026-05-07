@@ -68,6 +68,11 @@ pub(crate) fn launch_daemon(identity_key: &str, ctx: &mut warpui::AppContext) {
     log::info!("Daemon bound to {}", socket_path.display());
 
     let _ = std::fs::write(&pid_path, std::process::id().to_string());
+    #[cfg(feature = "local_fs")]
+    ctx.add_singleton_model(|_ctx| {
+        crate::persistence::remote_codebase_indexing::RemoteCodebaseIndexingPersistence::initialize(
+        )
+    });
 
     ctx.add_singleton_model(move |ctx| {
         let spawner = ctx.spawner();
