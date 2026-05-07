@@ -196,21 +196,47 @@ fn harden_socket(addr: &ConnectionAddress) -> std::io::Result<()> {
     fs::set_permissions(addr.to_string(), fs::Permissions::from_mode(0o600))
 }
 
+/// Write the address file atomically under 0600 throughout. We never write
+/// the cookie into a file whose permissions could be looser than 0600 — if
+/// a previous Warp version left the target at 0644, opening it with
+/// `OpenOptions::mode(0o600)` would NOT tighten existing perms (mode only
+/// applies on creation), and the cookie bytes would be world-readable for
+/// the window between `write_all` and `set_permissions`.
+///
+/// Instead we write to a fresh sibling temp file that the kernel creates
+/// via `O_CREAT | O_EXCL` with mode 0600 (`create_new(true) + .mode`),
+/// flush, then atomically `rename(2)` it over the destination. The new
+/// inode replaces the old one with tight perms from inception.
 fn publish_address(addr: &ConnectionAddress, cookie: &str) -> std::io::Result<()> {
     let path = address_publish_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "address path has no parent",
+        )
+    })?;
+    fs::create_dir_all(parent)?;
+
+    let tmp_path = parent.join(format!(".local-api.address.{}.tmp", std::process::id()));
+    // Clear any stale temp from a prior crashed run; the open below uses
+    // O_EXCL so we must own a fresh inode.
+    let _ = fs::remove_file(&tmp_path);
+
+    let body = format_address_file(&addr.to_string(), cookie);
+    {
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp_path)?;
+        f.write_all(body.as_bytes())?;
+        f.sync_all()?;
     }
-    let mut f = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&path)?;
-    f.write_all(format_address_file(&addr.to_string(), cookie).as_bytes())?;
-    // OpenOptions::mode only applies on file creation; if the file existed
-    // with looser perms, force them tight here.
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+
+    if let Err(e) = fs::rename(&tmp_path, &path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(e);
+    }
     Ok(())
 }
 

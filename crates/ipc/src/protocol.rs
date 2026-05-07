@@ -134,6 +134,13 @@ pub enum ProtocolError {
     #[error(transparent)]
     Disconnected(#[from] std::io::Error),
 
+    /// The peer announced a frame larger than the configured cap, before
+    /// any payload bytes were read. The caller must close the connection;
+    /// the stream is unusable because the announced bytes were never
+    /// consumed and any subsequent header read would be misaligned.
+    #[error("frame payload {announced}B exceeds {cap}B cap")]
+    FrameTooLarge { announced: usize, cap: usize },
+
     #[error("Unknown error occurred: {0}")]
     Other(String),
 }
@@ -189,9 +196,10 @@ where
 
     if let Some(cap) = max_payload_len {
         if payload_len > cap {
-            return Err(ProtocolError::Other(format!(
-                "frame payload {payload_len}B exceeds {cap}B cap"
-            )));
+            return Err(ProtocolError::FrameTooLarge {
+                announced: payload_len,
+                cap,
+            });
         }
     }
 

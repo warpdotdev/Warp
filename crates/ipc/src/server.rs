@@ -25,7 +25,7 @@ use super::{
 /// implementation.
 #[async_trait]
 pub(super) trait AnyServiceImpl: Send + Sync {
-    async fn handle_request(&self, request: &[u8]) -> Vec<u8>;
+    async fn handle_request(&self, request: &[u8]) -> std::result::Result<Vec<u8>, String>;
 
     fn clone_service(&self) -> Box<dyn AnyServiceImpl>;
 }
@@ -36,11 +36,16 @@ where
     S: Service,
     I: ServiceImpl<Service = S> + Clone + Sized,
 {
-    async fn handle_request(&self, request_bytes: &[u8]) -> Vec<u8> {
-        let request: S::Request =
-            bincode::deserialize(request_bytes).expect("Failed to deserialize request bytes.");
+    async fn handle_request(&self, request_bytes: &[u8]) -> std::result::Result<Vec<u8>, String> {
+        // The framing layer can hand us arbitrary bytes from any same-host
+        // peer that opened the socket. Failing to typed-deserialize those
+        // bytes is a peer-input error, not a programmer bug, so we surface
+        // it as a framework-level `Response::Failure` instead of panicking
+        // the connection task.
+        let request: S::Request = bincode::deserialize(request_bytes)
+            .map_err(|e| format!("failed to deserialize request: {e}"))?;
         bincode::serialize::<S::Response>(&I::handle_request(self, request).await)
-            .expect("Should be able to serialize response.")
+            .map_err(|e| format!("failed to serialize response: {e}"))
     }
 
     fn clone_service(&self) -> Box<dyn AnyServiceImpl> {
@@ -287,10 +292,10 @@ impl Server {
                     bytes,
                 }) => {
                     let response_message = match services.get(&service_id) {
-                        Some(service) => {
-                            let response_bytes = service.handle_request(&bytes[..]).await;
-                            Response::success(id, service_id, response_bytes)
-                        }
+                        Some(service) => match service.handle_request(&bytes[..]).await {
+                            Ok(response_bytes) => Response::success(id, service_id, response_bytes),
+                            Err(error_message) => Response::failure(id, error_message),
+                        },
                         None => {
                             Response::failure(id, format!("No such service (ID: {service_id})"))
                         }
@@ -306,11 +311,26 @@ impl Server {
                 Err(e) => {
                     match e {
                         ProtocolError::Serialization(e) => {
+                            // The framing layer already consumed the
+                            // announced payload, so the stream is aligned
+                            // for the next frame. Skip this frame and
+                            // continue serving the connection.
                             log::warn!("Failed to deserialize request: {e:?}");
                         }
                         ProtocolError::Disconnected(_) => {
                             // The socket is disconnected, so exit.
                             log::warn!("IPC server disconnected unexpectedly.");
+                            break;
+                        }
+                        ProtocolError::FrameTooLarge { announced, cap } => {
+                            // The announced bytes were never read off the
+                            // wire, so the stream is now misaligned —
+                            // continuing would let the unread payload be
+                            // re-interpreted as the next frame's header.
+                            // Close the connection.
+                            log::warn!(
+                                "IPC peer announced oversized frame ({announced}B > {cap}B cap); closing connection"
+                            );
                             break;
                         }
                         e => {
