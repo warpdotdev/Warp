@@ -105,3 +105,53 @@ We'd like to call out a few of the [open source dependencies](https://docs.warp.
 * [FontKit](https://github.com/servo/font-kit)
 * [Core-foundation](https://github.com/servo/core-foundation-rs)
 * [Smol](https://github.com/smol-rs/smol)
+
+## Local Work Summary: `warp://action/open_file_editor`
+
+This local branch implements PR [#10233](https://github.com/warpdotdev/warp/pull/10233) for issue [#9561](https://github.com/warpdotdev/warp/issues/9561). The goal is to support opening local files in Warp's editor from external applications through a Warp URI and optionally jump to a specific line and column.
+
+Implemented URI forms:
+
+```text
+warp://action/open_file_editor?path=/absolute/path/to/file
+warp://action/open_file_editor?path=/absolute/path/to/file&line=120
+warp://action/open_file_editor?path=/absolute/path/to/file&line=120&column=8
+```
+
+Main changes:
+
+- Added `Action::OpenFileEditor` parsing and handling in `app/src/uri/mod.rs`.
+- Added required absolute `path` validation for `open_file_editor` URIs.
+- Added optional positive integer parsing for `line` and `column`.
+- Reused `LineAndColumnArg` and `Workspace::open_file_with_target` for editor positioning.
+- Used `CodeSource::Link` only for the new `open_file_editor` URI path so line/column metadata is preserved.
+- Kept existing `file://`, `new_tab`, and `new_window` behavior separate from the new URI action.
+- Hardened the security boundary so `warp://action/open_file_editor` cannot trigger `ExecuteInSession`; runnable scripts or directory/session-opening paths are rejected for this URI action.
+
+Tests added or updated in `app/src/uri/uri_test.rs` cover:
+
+- `path` only.
+- `path + line`.
+- `path + line + column`.
+- Percent-encoded paths.
+- Missing `path`.
+- Relative paths.
+- Invalid or zero `line` / `column`.
+- Regression coverage ensuring executable shell scripts still route to `ExecuteInSession` for `file://`, but are blocked for `warp://action/open_file_editor`.
+
+Validation performed locally:
+
+```bash
+cargo fmt --all --check
+MACOSX_DEPLOYMENT_TARGET=14.0 cargo test test_action_open_file_editor_parse --manifest-path /Users/niyangup/WorkSpace/warp/Cargo.toml
+MACOSX_DEPLOYMENT_TARGET=14.0 cargo test test_open_file_executable_sh_routes_to_execute --manifest-path /Users/niyangup/WorkSpace/warp/Cargo.toml
+```
+
+PR status notes:
+
+- CLA was signed as `@niyangup`.
+- Git author identity for this repository is set locally to `niyangup <niyangup@163.com>`.
+- The original Oz review requested changes because the editor-opening URI could reuse the `file://` execution path.
+- The branch history was rewritten so the PR commit author no longer appears as `poper`.
+- Oz re-review found `0 critical, 0 important, 0 suggestions` and approved the automated review.
+- Human review requested renaming the URI to `warp://action/open_file_editor` and testing with `warplocal://uri`.

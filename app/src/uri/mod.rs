@@ -677,23 +677,23 @@ fn parse_positive_usize_query_param(url: &Url, name: &str) -> Result<Option<usiz
     Ok(Some(value))
 }
 
-fn parse_open_file_url(url: &Url) -> Result<(PathBuf, Option<LineAndColumnArg>)> {
+fn parse_open_file_editor_url(url: &Url) -> Result<(PathBuf, Option<LineAndColumnArg>)> {
     let raw_path = url
         .query_pairs()
         .find(|(k, _)| k == "path")
         .map(|(_, v)| v)
-        .ok_or_else(|| anyhow!("missing path for open_file action"))?;
+        .ok_or_else(|| anyhow!("missing path for open_file_editor action"))?;
     let path = PathBuf::from(raw_path.into_owned());
     ensure!(
         path.is_absolute(),
-        "`path` must be absolute for open_file action"
+        "`path` must be absolute for open_file_editor action"
     );
 
     let line = parse_positive_usize_query_param(url, "line")?;
     let column = parse_positive_usize_query_param(url, "column")?;
     ensure!(
         line.is_some() || column.is_none(),
-        "`column` requires `line` for open_file action"
+        "`column` requires `line` for open_file_editor action"
     );
 
     Ok((
@@ -709,7 +709,7 @@ fn parse_open_file_url(url: &Url) -> Result<(PathBuf, Option<LineAndColumnArg>)>
 enum Action {
     NewTab,
     NewWindow,
-    OpenFile {
+    OpenFileEditor {
         path: PathBuf,
         line_col: Option<LineAndColumnArg>,
     },
@@ -729,9 +729,9 @@ impl Action {
         match url.path() {
             "/new_tab" => Ok(Self::NewTab),
             "/new_window" => Ok(Self::NewWindow),
-            "/open_file" => {
-                let (path, line_col) = parse_open_file_url(url)?;
-                Ok(Self::OpenFile { path, line_col })
+            "/open_file_editor" => {
+                let (path, line_col) = parse_open_file_editor_url(url)?;
+                Ok(Self::OpenFileEditor { path, line_col })
             }
             "/docker/open_subshell" => Ok(Self::Docker),
             "/open-repo" => Ok(Self::OpenRepo),
@@ -770,12 +770,12 @@ impl Action {
                 };
                 open_file(window_id, path, None, OpenFileOrigin::PathAction, ctx);
             }
-            Self::OpenFile { path, line_col } => {
+            Self::OpenFileEditor { path, line_col } => {
                 open_file(
                     primary_window_id,
                     path.clone(),
                     *line_col,
-                    OpenFileOrigin::OpenFileUri,
+                    OpenFileOrigin::OpenFileEditorUri,
                     ctx,
                 );
             }
@@ -975,7 +975,7 @@ impl Action {
         use WindowBehaviorHint as W;
         match self {
             Self::Docker
-            | Self::OpenFile { .. }
+            | Self::OpenFileEditor { .. }
             | Self::CreateEnvironment { .. }
             | Self::OpenRepo
             | Self::CloudAgentSetup
@@ -1081,7 +1081,7 @@ enum OpenFileAction {
 enum OpenFileOrigin {
     FileUrl,
     PathAction,
-    OpenFileUri,
+    OpenFileEditorUri,
 }
 
 /// Pure routing decision for `open_file`. Extracted so it can be unit-tested without
@@ -1106,7 +1106,7 @@ fn classify_open_file_action(path: &Path) -> OpenFileAction {
 }
 
 fn should_handle_open_file_action(action: OpenFileAction, origin: OpenFileOrigin) -> bool {
-    origin != OpenFileOrigin::OpenFileUri || action != OpenFileAction::ExecuteInSession
+    origin != OpenFileOrigin::OpenFileEditorUri || action != OpenFileAction::ExecuteInSession
 }
 
 /// Handle an incoming file path from a URI.
@@ -1175,7 +1175,7 @@ fn open_file(
             if let Some(workspaces) = ctx.views_of_type::<Workspace>(window_id) {
                 if let Some(workspace) = workspaces.into_iter().next() {
                     workspace.update(ctx, |workspace, ctx| {
-                        let source = if origin == OpenFileOrigin::OpenFileUri {
+                        let source = if origin == OpenFileOrigin::OpenFileEditorUri {
                             CodeSource::Link {
                                 path: path.clone(),
                                 range_start: line_col,

@@ -254,16 +254,16 @@ fn test_action_create_environment_parse_no_repos() {
 }
 
 #[test]
-fn test_action_open_file_parse_with_path_only() {
+fn test_action_open_file_editor_parse_with_path_only() {
     let url = Url::parse(&format!(
-        "{}://action/open_file?path=/tmp/test.rs",
+        "{}://action/open_file_editor?path=/tmp/test.rs",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
     let action = Action::parse(&url).unwrap();
     match action {
-        Action::OpenFile { path, line_col } => {
+        Action::OpenFileEditor { path, line_col } => {
             assert_eq!(path, PathBuf::from("/tmp/test.rs"));
             assert_eq!(line_col, None);
         }
@@ -272,16 +272,16 @@ fn test_action_open_file_parse_with_path_only() {
 }
 
 #[test]
-fn test_action_open_file_parse_with_line_and_column() {
+fn test_action_open_file_editor_parse_with_line_and_column() {
     let url = Url::parse(&format!(
-        "{}://action/open_file?path=/tmp/test.rs&line=120&column=8",
+        "{}://action/open_file_editor?path=/tmp/test.rs&line=120&column=8",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
     let action = Action::parse(&url).unwrap();
     match action {
-        Action::OpenFile { path, line_col } => {
+        Action::OpenFileEditor { path, line_col } => {
             assert_eq!(path, PathBuf::from("/tmp/test.rs"));
             assert_eq!(
                 line_col,
@@ -296,16 +296,16 @@ fn test_action_open_file_parse_with_line_and_column() {
 }
 
 #[test]
-fn test_action_open_file_parse_decodes_percent_encoded_path() {
+fn test_action_open_file_editor_parse_decodes_percent_encoded_path() {
     let url = Url::parse(&format!(
-        "{}://action/open_file?path=/tmp/hello%20world.rs&line=1",
+        "{}://action/open_file_editor?path=/tmp/hello%20world.rs&line=1",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
     let action = Action::parse(&url).unwrap();
     match action {
-        Action::OpenFile { path, line_col } => {
+        Action::OpenFileEditor { path, line_col } => {
             assert_eq!(path, PathBuf::from("/tmp/hello world.rs"));
             assert_eq!(
                 line_col,
@@ -320,9 +320,9 @@ fn test_action_open_file_parse_decodes_percent_encoded_path() {
 }
 
 #[test]
-fn test_action_open_file_parse_requires_path() {
+fn test_action_open_file_editor_parse_requires_path() {
     let url = Url::parse(&format!(
-        "{}://action/open_file?line=1",
+        "{}://action/open_file_editor?line=1",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -331,9 +331,9 @@ fn test_action_open_file_parse_requires_path() {
 }
 
 #[test]
-fn test_action_open_file_parse_rejects_relative_path() {
+fn test_action_open_file_editor_parse_rejects_relative_path() {
     let url = Url::parse(&format!(
-        "{}://action/open_file?path=src/main.rs&line=1",
+        "{}://action/open_file_editor?path=src/main.rs&line=1",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -342,9 +342,9 @@ fn test_action_open_file_parse_rejects_relative_path() {
 }
 
 #[test]
-fn test_action_open_file_parse_rejects_column_without_line() {
+fn test_action_open_file_editor_parse_rejects_column_without_line() {
     let url = Url::parse(&format!(
-        "{}://action/open_file?path=/tmp/test.rs&column=8",
+        "{}://action/open_file_editor?path=/tmp/test.rs&column=8",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -353,23 +353,23 @@ fn test_action_open_file_parse_rejects_column_without_line() {
 }
 
 #[test]
-fn test_action_open_file_parse_rejects_invalid_line_or_column() {
+fn test_action_open_file_editor_parse_rejects_invalid_line_or_column() {
     let invalid_line = Url::parse(&format!(
-        "{}://action/open_file?path=/tmp/test.rs&line=abc",
+        "{}://action/open_file_editor?path=/tmp/test.rs&line=abc",
         ChannelState::url_scheme()
     ))
     .unwrap();
     assert!(Action::parse(&invalid_line).is_err());
 
     let zero_line = Url::parse(&format!(
-        "{}://action/open_file?path=/tmp/test.rs&line=0",
+        "{}://action/open_file_editor?path=/tmp/test.rs&line=0",
         ChannelState::url_scheme()
     ))
     .unwrap();
     assert!(Action::parse(&zero_line).is_err());
 
     let invalid_column = Url::parse(&format!(
-        "{}://action/open_file?path=/tmp/test.rs&line=1&column=0",
+        "{}://action/open_file_editor?path=/tmp/test.rs&line=1&column=0",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -717,7 +717,7 @@ fn test_open_file_executable_sh_routes_to_execute() {
     ));
     assert!(!should_handle_open_file_action(
         action,
-        OpenFileOrigin::OpenFileUri
+        OpenFileOrigin::OpenFileEditorUri
     ));
 }
 
