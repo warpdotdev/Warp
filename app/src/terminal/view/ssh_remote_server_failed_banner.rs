@@ -60,16 +60,25 @@ impl SshRemoteServerFailureKind {
 pub struct SshRemoteServerFailedBanner {
     session_id: SessionId,
     kind: SshRemoteServerFailureKind,
-    error: String,
+    /// User-facing summary, or `None` to fall back to `kind.description()`.
+    user_message: Option<String>,
+    /// Technical error detail for the `ERROR:` block.
+    detail: String,
     close_mouse_state: MouseStateHandle,
 }
 
 impl SshRemoteServerFailedBanner {
-    pub fn new(session_id: SessionId, kind: SshRemoteServerFailureKind, error: String) -> Self {
+    pub fn new(
+        session_id: SessionId,
+        kind: SshRemoteServerFailureKind,
+        user_message: Option<String>,
+        detail: String,
+    ) -> Self {
         Self {
             session_id,
             kind,
-            error,
+            user_message,
+            detail,
             close_mouse_state: MouseStateHandle::default(),
         }
     }
@@ -110,14 +119,18 @@ impl View for SshRemoteServerFailedBanner {
             .with_color(fg_color)
             .finish();
 
-        let body_text = format!("{} {BANNER_BODY}", self.kind.description());
+        let description = self
+            .user_message
+            .as_deref()
+            .unwrap_or_else(|| self.kind.description());
+        let body_text = format!("{description} {BANNER_BODY}");
         let body = Text::new(body_text, appearance.ui_font_family(), small_font_size)
             .soft_wrap(true)
             .with_color(muted_color)
             .finish();
 
         // Error detail line wrapped in a red-tinted background container.
-        let trimmed_error = self.error.trim();
+        let trimmed_error = self.detail.trim();
         let error_element = if trimmed_error.is_empty() {
             None
         } else {

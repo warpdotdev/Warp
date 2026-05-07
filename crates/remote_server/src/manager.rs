@@ -19,7 +19,7 @@ use crate::setup::RemoteServerSetupState;
 use crate::setup::UnsupportedReason;
 #[cfg(not(target_family = "wasm"))]
 use crate::transport::Connection;
-use crate::transport::RemoteTransport;
+use crate::transport::{CheckBinaryError, InstallBinaryError, RemoteTransport};
 use crate::HostId;
 use repo_metadata::RepoMetadataUpdate;
 use serde::Serialize;
@@ -325,7 +325,7 @@ pub enum RemoteServerManagerEvent {
     /// - `Err(_)` means the check itself failed (e.g. SSH error or timeout).
     BinaryCheckComplete {
         session_id: SessionId,
-        result: Result<bool, String>,
+        result: Result<bool, Arc<CheckBinaryError>>,
         /// The detected remote platform (OS + arch) from `uname -sm`.
         /// `None` if detection failed or was not attempted.
         remote_platform: Option<RemotePlatform>,
@@ -349,7 +349,7 @@ pub enum RemoteServerManagerEvent {
     /// - `Err(_)` means the install failed and carries the failure reason (SSH error, timeout, script error, etc.).
     BinaryInstallComplete {
         session_id: SessionId,
-        result: Result<(), String>,
+        result: Result<(), Arc<InstallBinaryError>>,
     },
 
     // --- Telemetry events ---
@@ -553,7 +553,7 @@ impl RemoteServerManager {
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
                                 session_id,
-                                result: check_result.map_err(|e| e.to_string()),
+                                result: check_result.map_err(Arc::new),
                                 remote_platform: platform,
                                 preinstall_check: preinstall,
                                 has_old_binary,
@@ -647,7 +647,7 @@ impl RemoteServerManager {
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryInstallComplete {
                                 session_id,
-                                result: result.map_err(|e| e.to_string()),
+                                result: result.map_err(Arc::new),
                             });
                         })
                         .await;

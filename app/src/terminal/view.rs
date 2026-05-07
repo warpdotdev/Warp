@@ -4339,6 +4339,7 @@ impl TerminalView {
                         me.show_ssh_remote_server_failed_banner(
                             *session_id,
                             SshRemoteServerFailureKind::Launch,
+                            None,
                             error,
                             ctx,
                         );
@@ -4382,7 +4383,7 @@ impl TerminalView {
                             .unwrap_or((None, None));
                         send_telemetry_from_ctx!(
                             TelemetryEvent::RemoteServerInstallation {
-                                error: result.as_ref().err().cloned(),
+                                error: result.as_ref().err().map(|e| e.to_string()),
                                 remote_os,
                                 remote_arch,
                             },
@@ -4392,7 +4393,8 @@ impl TerminalView {
                             me.show_ssh_remote_server_failed_banner(
                                 *session_id,
                                 SshRemoteServerFailureKind::BinaryInstall,
-                                error,
+                                error.user_facing_message(),
+                                &error.to_string(),
                                 ctx,
                             );
                         }
@@ -4416,7 +4418,7 @@ impl TerminalView {
                         send_telemetry_from_ctx!(
                             TelemetryEvent::RemoteServerBinaryCheck {
                                 found: matches!(result, Ok(true)),
-                                error: result.as_ref().err().cloned(),
+                                error: result.as_ref().err().map(|e| e.to_string()),
                                 remote_os,
                                 remote_arch,
                             },
@@ -4426,7 +4428,8 @@ impl TerminalView {
                             me.show_ssh_remote_server_failed_banner(
                                 *session_id,
                                 SshRemoteServerFailureKind::BinaryCheck,
-                                error,
+                                error.user_facing_message(),
+                                &error.to_string(),
                                 ctx,
                             );
                         }
@@ -11786,7 +11789,8 @@ impl TerminalView {
         &mut self,
         session_id: SessionId,
         kind: SshRemoteServerFailureKind,
-        error: &str,
+        user_message: Option<String>,
+        detail: &str,
         ctx: &mut ViewContext<Self>,
     ) {
         let already_present = self.rich_content_views.iter().any(|view| {
@@ -11800,9 +11804,10 @@ impl TerminalView {
             return;
         }
 
-        let error = error.to_owned();
-        let banner = ctx
-            .add_typed_action_view(|_| SshRemoteServerFailedBanner::new(session_id, kind, error));
+        let detail = detail.to_owned();
+        let banner = ctx.add_typed_action_view(|_| {
+            SshRemoteServerFailedBanner::new(session_id, kind, user_message, detail)
+        });
 
         ctx.subscribe_to_view(&banner, move |me, _, event, ctx| match event {
             SshRemoteServerFailedBannerEvent::Dismissed => {

@@ -41,6 +41,26 @@ pub enum DetectPlatformError {
     Other(anyhow::Error),
 }
 
+impl DetectPlatformError {
+    /// Returns a short, user-facing description of the error suitable for
+    /// display in the UI banner. Returns `None` for `Other` errors where
+    /// no tailored message is available.
+    pub fn user_facing_message(&self) -> Option<String> {
+        match self {
+            Self::TimedOut => {
+                Some("The connection timed out while detecting the remote platform.".into())
+            }
+            Self::UnsupportedOs { os } => Some(format!(
+                "The remote host's operating system ({os}) is not supported."
+            )),
+            Self::UnsupportedArch { arch } => Some(format!(
+                "The remote host's architecture ({arch}) is not supported."
+            )),
+            Self::Other(_) => None,
+        }
+    }
+}
+
 impl From<crate::ssh::SshCommandError> for DetectPlatformError {
     fn from(err: crate::ssh::SshCommandError) -> Self {
         match err {
@@ -72,6 +92,20 @@ pub enum CheckBinaryError {
     Other(anyhow::Error),
 }
 
+impl CheckBinaryError {
+    /// Returns a short, user-facing description of the error suitable for
+    /// display in the UI banner. Returns `None` for `Other` errors where
+    /// no tailored message is available.
+    pub fn user_facing_message(&self) -> Option<String> {
+        match self {
+            Self::TimedOut => {
+                Some("The connection timed out while checking for the SSH extension.".into())
+            }
+            Self::Other(_) => None,
+        }
+    }
+}
+
 /// Error returned by [`RemoteTransport::install_binary`].
 #[derive(Debug, thiserror::Error)]
 pub enum InstallBinaryError {
@@ -81,6 +115,18 @@ pub enum InstallBinaryError {
     /// Any other transport-level or unexpected failure.
     #[error(transparent)]
     Other(anyhow::Error),
+}
+
+impl InstallBinaryError {
+    /// Returns a short, user-facing description of the error suitable for
+    /// display in the UI banner. Returns `None` for `Other` errors where
+    /// no tailored message is available.
+    pub fn user_facing_message(&self) -> Option<String> {
+        match self {
+            Self::TimedOut => Some("The installation timed out.".into()),
+            Self::Other(_) => None,
+        }
+    }
 }
 
 /// A successful return from [`RemoteTransport::connect`].
