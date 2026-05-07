@@ -7,7 +7,9 @@ use warp::{
     integration_testing::{
         remote_server::{
             assert_command_executor_is_remote_server, assert_remote_server_connected,
-            assert_remote_server_has_navigated, load_repo_metadata_directory_via_remote_server,
+            assert_remote_server_has_navigated,
+            assert_remote_server_loaded_repo_metadata_directory,
+            load_repo_metadata_directory_via_remote_server, record_remote_server_lazy_load_events,
             record_remote_server_navigation_events, wait_for_remote_server_ready,
             write_file_via_remote_server,
         },
@@ -31,13 +33,15 @@ use warpui::integration::TestStep;
 
 use super::{new_builder, Builder};
 
-/// Common builder configuration for remote server tests: gates on the
-/// `SshRemoteServer` feature flag and sets the install mode to `AlwaysInstall`
-/// so the binary check → connect flow runs without user interaction.
+/// Common builder configuration for remote server tests: enables the
+/// `SshRemoteServer` feature flag for these tests and sets the install mode to
+/// `AlwaysInstall` so the binary check → connect flow runs without user
+/// interaction.
 fn remote_server_builder() -> Builder {
+    FeatureFlag::SshRemoteServer.set_enabled(true);
     new_builder()
         .set_should_run_test(|| {
-            if !FeatureFlag::SshRemoteServer.is_enabled() {
+            if !cfg!(target_os = "linux") {
                 return false;
             }
             let (starter, _) = current_shell_starter_and_version();
@@ -180,6 +184,7 @@ pub fn test_remote_server_lazy_load_directory() -> Builder {
     let builder = with_ssh_connect_steps(remote_server_builder(), "bash");
     builder
         .with_step(record_remote_server_navigation_events())
+        .with_step(record_remote_server_lazy_load_events())
         // Create a git repo with a subdirectory on the remote.
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
@@ -215,6 +220,14 @@ pub fn test_remote_server_lazy_load_directory() -> Builder {
                 ))
                 // Give the async request a moment to complete.
                 .set_post_step_pause(Duration::from_secs(2)),
+        )
+        .with_step(
+            new_step_with_default_assertions("Assert lazy-load directory response succeeded")
+                .set_timeout(Duration::from_secs(15))
+                .add_named_assertion_with_data_from_prior_step(
+                    "remote server loaded repo metadata directory",
+                    assert_remote_server_loaded_repo_metadata_directory(0),
+                ),
         )
         // Verify the connection is still healthy after the lazy-load.
         .with_step(

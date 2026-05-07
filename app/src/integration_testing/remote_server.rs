@@ -1,6 +1,11 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    time::Duration,
+};
 
-use warp_core::SessionId;
+use warp_core::{HostId, SessionId};
 use warpui::{
     async_assert, async_assert_eq,
     integration::{
@@ -11,14 +16,25 @@ use warpui::{
 
 use crate::{
     integration_testing::view_getters::single_terminal_view_for_tab,
-    remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent, RemoteSessionState},
+    remote_server::manager::{
+        RemoteServerErrorKind, RemoteServerManager, RemoteServerManagerEvent,
+        RemoteServerOperation, RemoteSessionState,
+    },
     terminal::model::session::command_executor::remote_server_executor::RemoteServerCommandExecutor,
 };
 pub type RemoteServerActionCallback = Box<dyn Fn(&mut App, WindowId, &mut StepDataMap) + 'static>;
 
 type RemoteServerNavigationPaths = Rc<RefCell<HashMap<SessionId, String>>>;
+type RemoteServerLazyLoadEvents = Rc<RefCell<LazyLoadEvents>>;
 
 const REMOTE_SERVER_NAVIGATION_PATHS_KEY: &str = "remote_server_navigation_paths";
+const REMOTE_SERVER_LAZY_LOAD_EVENTS_KEY: &str = "remote_server_lazy_load_events";
+
+#[derive(Default)]
+struct LazyLoadEvents {
+    loaded_host_ids: HashSet<HostId>,
+    failures_by_session: HashMap<SessionId, Vec<RemoteServerErrorKind>>,
+}
 
 /// Returns a `TestStep` that records `NavigatedToDirectory` events emitted by
 /// `RemoteServerManager` into this integration test's step data.
@@ -45,6 +61,47 @@ pub fn record_remote_server_navigation_events() -> TestStep {
                             .borrow_mut()
                             .insert(*session_id, indexed_path.clone());
                     }
+                });
+            });
+        },
+    )
+}
+
+/// Returns a `TestStep` that records `LoadRepoMetadataDirectory` success and
+/// failure events emitted by `RemoteServerManager` into this integration test's
+/// step data.
+pub fn record_remote_server_lazy_load_events() -> TestStep {
+    TestStep::new("Record remote server lazy-load events").with_action(
+        |app, _window_id, step_data| {
+            let lazy_load_events: RemoteServerLazyLoadEvents =
+                Rc::new(RefCell::new(LazyLoadEvents::default()));
+            step_data.insert(
+                REMOTE_SERVER_LAZY_LOAD_EVENTS_KEY,
+                Rc::clone(&lazy_load_events),
+            );
+
+            app.update(|ctx| {
+                let mgr = RemoteServerManager::handle(ctx);
+                ctx.subscribe_to_model(&mgr, move |_mgr, event, _ctx| match event {
+                    RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { host_id, .. } => {
+                        lazy_load_events
+                            .borrow_mut()
+                            .loaded_host_ids
+                            .insert(host_id.clone());
+                    }
+                    RemoteServerManagerEvent::ClientRequestFailed {
+                        session_id,
+                        operation: RemoteServerOperation::LoadRepoMetadataDirectory,
+                        error_kind,
+                    } => {
+                        lazy_load_events
+                            .borrow_mut()
+                            .failures_by_session
+                            .entry(*session_id)
+                            .or_default()
+                            .push(*error_kind);
+                    }
+                    _ => {}
                 });
             });
         },
@@ -77,6 +134,46 @@ fn assert_remote_server_setup_ready(tab_idx: usize) -> AssertionCallback {
             async_assert!(
                 state.is_ready(),
                 "Expected RemoteServerSetupState::Ready, got {state:?}"
+            )
+        })
+    })
+}
+
+/// Asserts that the `LoadRepoMetadataDirectory` request emitted a successful
+/// `RepoMetadataDirectoryLoaded` event and did not emit `ClientRequestFailed`
+/// for the active session.
+pub fn assert_remote_server_loaded_repo_metadata_directory(
+    tab_idx: usize,
+) -> AssertionWithDataCallback {
+    Box::new(move |app, window_id, step_data| {
+        let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
+        terminal_view.read(app, |view, ctx| {
+            let Some(session_id) = view.active_block_session_id() else {
+                return AssertionOutcome::PreconditionFailed("No active session ID".into());
+            };
+            let mgr = RemoteServerManager::as_ref(ctx);
+            let session_state = mgr.session(session_id);
+            let Some(RemoteSessionState::Connected { host_id, .. }) = session_state else {
+                return AssertionOutcome::failure(format!(
+                    "Expected RemoteSessionState::Connected, got {session_state:?}"
+                ));
+            };
+            let Some(lazy_load_events) =
+                step_data.get::<_, RemoteServerLazyLoadEvents>(REMOTE_SERVER_LAZY_LOAD_EVENTS_KEY)
+            else {
+                return AssertionOutcome::failure(
+                    "No remote server lazy-load event recorder installed".into(),
+                );
+            };
+            let lazy_load_events = lazy_load_events.borrow();
+            if let Some(failures) = lazy_load_events.failures_by_session.get(&session_id) {
+                return AssertionOutcome::failure(format!(
+                    "LoadRepoMetadataDirectory failed for session {session_id:?}: {failures:?}"
+                ));
+            }
+            async_assert!(
+                lazy_load_events.loaded_host_ids.contains(host_id),
+                "No RepoMetadataDirectoryLoaded event recorded for LoadRepoMetadataDirectory"
             )
         })
     })
