@@ -199,22 +199,26 @@ impl AuthSecretFtuxView {
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
                 HarnessAvailabilityEvent::AuthSecretCreated { harness, name } => {
-                    me.handle_secret_created(*harness, name.clone(), ctx);
+                    // Only handle in the FTUX view that initiated the creation.
+                    if me.creation_state.is_some() {
+                        me.handle_secret_created(*harness, name.clone(), ctx);
+                    }
                 }
                 HarnessAvailabilityEvent::AuthSecretCreationFailed { error } => {
+                    // Only handle in the FTUX view that initiated the creation.
                     if let Some(state) = me.creation_state.as_mut() {
                         state.is_saving = false;
+                        let window_id = ctx.window_id();
+                        let message = format!("Failed to save API key: {error}");
+                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                            ts.add_ephemeral_toast(
+                                DismissibleToast::error(message),
+                                window_id,
+                                ctx,
+                            );
+                        });
+                        ctx.notify();
                     }
-                    let window_id = ctx.window_id();
-                    let message = format!("Failed to save API key: {error}");
-                    ToastStack::handle(ctx).update(ctx, |ts, ctx| {
-                        ts.add_ephemeral_toast(
-                            DismissibleToast::error(message),
-                            window_id,
-                            ctx,
-                        );
-                    });
-                    ctx.notify();
                 }
                 HarnessAvailabilityEvent::Changed
                 | HarnessAvailabilityEvent::AuthSecretsLoaded { .. } => {}

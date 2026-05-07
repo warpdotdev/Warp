@@ -30,7 +30,7 @@ use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys,
     SingleLineEditorOptions, TextOptions,
 };
-use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
+use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuVariant};
 use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
 use crate::ui_components::icons::Icon;
 use warp_editor::editor::NavigationKey;
@@ -67,6 +67,9 @@ const MENU_ITEM_VERTICAL_PADDING: f32 = 8.;
 
 /// Vertical spacing between the field label and the select container.
 const LABEL_TO_SELECT_SPACING: f32 = 4.;
+
+/// Maximum height of the dropdown menu before it scrolls.
+const MENU_MAX_HEIGHT: f32 = 300.;
 
 /// Actions dispatched internally by this view.
 #[derive(Clone, Debug, PartialEq)]
@@ -143,10 +146,13 @@ impl AuthSecretFtuxDropdown {
         });
 
         let menu = ctx.add_typed_action_view(|_ctx| {
-            Menu::new()
+            let mut menu = Menu::new()
                 .with_width(MENU_WIDTH)
                 .with_drop_shadow()
-                .prevent_interaction_with_other_elements()
+                .with_menu_variant(MenuVariant::scrollable())
+                .prevent_interaction_with_other_elements();
+            menu.set_height(MENU_MAX_HEIGHT);
+            menu
         });
 
         ctx.subscribe_to_view(&menu, |me, _, event, ctx| match event {
