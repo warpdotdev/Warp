@@ -154,7 +154,18 @@ All three live in `app/src/ai/blocklist/block/view_impl/timestamp_widgets.rs`
 ## Timer strategy
 
 Per product.md §risk 2 recommendation: **single shared 1Hz timer,
-gated to visible in-progress exchanges**.
+gated to visible exchanges with relative-format or progress labels**.
+
+> **Correction (re-review #10128):** the previous "gated to visible
+> in-progress exchanges" wording would have stopped 30s relative-
+> timestamp refreshes after every exchange completed, breaking
+> B2/A8's auto-promote contract for completed labels. The corrected
+> gate is: tick while ANY visible label needs refresh — that's
+> in-progress (1Hz needed) OR completed-with-relative-label (30s
+> needed). When all visible labels are absolute-format (>=24h ago,
+> rendered as "HH:MM" or "YYYY-MM-DD HH:MM"), the timer pauses
+> until visibility, scroll, or new exchange brings a relative-
+> format or in-progress label back into view.
 
 - Add a `TimestampTickService` registered on the agent view's owning
   context.
@@ -164,19 +175,24 @@ gated to visible in-progress exchanges**.
 - Two tick frequencies: 1Hz for progress labels, 30s for relative
   labels. Use a single underlying timer firing at 1Hz and
   internally rate-limit the 30s consumers.
+- Recompute the "needs ticking" predicate on every visibility
+  change, scroll, and exchange-state transition. The shared timer
+  is registered/unregistered as the predicate flips.
 - Stops ticking when the agent view loses visibility.
 
-  > **Correction (re-review #10128):** the previous draft cited
-  > "the existing `is_visible` hook" without identifying it. The
-  > concrete lifecycle source is the `ViewHandle`'s lifecycle
-  > callbacks: `BlockListViewModel::is_panel_visible(app)` /
-  > `terminal_view().is_active(app)` (the same checks the agent
-  > view's existing 1Hz status refresh uses). The
-  > `TimestampTickService` registers a `view_visibility_changed`
-  > observer at construction and pauses/resumes the underlying
-  > 1Hz timer in response. There is no new lifecycle API; we reuse
-  > what the agent view already polls.
-- Resumes on visibility regain via the same observer.
+  > **Correction (re-review #10128, lifecycle hook):** the previous
+  > draft cited specific method names that aren't on the public API.
+  > The honest answer: the agent view already polls visibility for
+  > its existing status-refresh path; the implementer must locate
+  > THAT polling site (grep `app/src/ai/blocklist/agent_view/` for
+  > the existing 1Hz/N-Hz refresh entry) and register the
+  > `TimestampTickService` against the same observer. If no shared
+  > observer exists, add one in the agent view's mount/unmount
+  > callbacks (`fn on_attach` / `fn on_detach`-equivalent) — those
+  > callbacks DO exist on every `View` per the `warpui` crate's
+  > `View` trait. The spec doesn't pin a method name; the
+  > implementer picks based on what they find in the agent view.
+- Resumes on the corresponding "view visible" callback.
 
 Why not per-widget timers:
 - A long conversation can have 50+ visible exchanges. 50 separate
