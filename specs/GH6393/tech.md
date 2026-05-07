@@ -13,9 +13,11 @@ OSC 8 is the cross-terminal escape sequence for attaching a URL to a span of cel
 
 **Shared ANSI types** — `crates/warp_terminal/src/model/ansi/control_sequence_parameters.rs`. `Attr`, `Mode`, `CursorStyle`, `PromptMarker` etc. live here and are re-exported by `app/src/terminal/model/ansi/mod.rs:21` (`pub use warp_terminal::model::ansi::control_sequence_parameters::*;`). New shared types (`Hyperlink`) belong here so both the parser and the trait can name them.
 
-**Cell storage — block list path (`FlatStorage`).** `crates/warp_terminal/src/model/grid/flat_storage/` uses a run-length-encoded `AttributeMap<T>` per attribute: `FgColorMap` and `BgAndStyleMap` (`flat_storage/style.rs:18-21`). This representation deduplicates long runs of cells that share the same value into a single map entry — a perfect fit for hyperlinks, where one OSC 8 span typically covers many adjacent cells with the same URI. Used by `GridHandler` (`grid_handler.rs:381`).
+**Cell storage — both representations are in play.** A common simplification is "block list = `FlatStorage`, alt-screen = 2D `Cell+Row`," but the block list actually uses **both** at different points in a cell's lifecycle. Hyperlinks therefore have to be wired through both, with the migration path between them preserving the id.
 
-**Cell storage — alt-screen / row-based path (`Cell` + `Row`).** `crates/warp_terminal/src/model/grid/cell.rs:144` defines `Cell` (24 bytes, deliberately tightly packed; the doc comment at line 122 calls out that adding bytes to `Cell` itself bumps the struct to 32 bytes — a 33% memory hit). Optional rare attributes go in `CellExtra` (`cell.rs:113-120`), a boxed side allocation that already holds `cell_with_zero_width` and `end_of_prompt`. Hyperlinks belong in `CellExtra`, not in the base `Cell`.
+- **Live (active) rows: 2D `Cell` + `Row`.** As output streams in, `GridHandler` writes into the visible 2D grid built from `Cell` (`crates/warp_terminal/src/model/grid/cell.rs:144`) and `Row`. `Cell` is 24 bytes and deliberately tightly packed (the comment at `cell.rs:122` calls out that adding bytes to `Cell` itself bumps the struct to 32 bytes — a 33% memory hit). Optional rare attributes go in `CellExtra` (`cell.rs:113-120`), a boxed side allocation that already holds `cell_with_zero_width` and `end_of_prompt`. Hyperlinks belong in `CellExtra`, not in the base `Cell`. This is also the only representation `AltScreen` uses — alt-screen apps don't migrate to scrollback.
+- **Scrollback / finished rows: `FlatStorage`.** Once a block finishes (`GridHandler::finish` at `grid_handler.rs:1621-1643`, which calls `resize_storage(1, …)` to push everything in when the `MaximizeFlatStorage` flag is on) — and during normal operation, when rows scroll out of the visible 2D grid into history — content moves into `FlatStorage` (`crates/warp_terminal/src/model/grid/flat_storage/`). It uses a run-length-encoded `AttributeMap<T>` per attribute: `FgColorMap` and `BgAndStyleMap` (`flat_storage/style.rs:18-21`). RLE deduplicates long runs of cells that share the same value into a single map entry — a good fit for hyperlinks, where one OSC 8 span typically covers many adjacent cells with the same id.
+- **Migration.** The 2D-to-flat path lives in `GridHandler::resize_storage` and the row-eviction code under `crates/warp_terminal/src/model/grid/`. Anywhere a `Cell` is converted into the flat representation (search for `From<&Cell>` impls in `flat_storage/style.rs:55-67` for the existing pattern), the conversion needs to read `cell.hyperlink_id()` and append it to the new `AttributeMap<Option<HyperlinkId>>` we're adding (§3a). The reverse path (flat → grid for resize/reflow that re-materializes rows) needs to do the inverse. Missing this in either direction silently strips clickability when a block scrolls or finishes, which is a regression on product invariant 12.
 
 **Auto-detected URL flow — the model that the OSC 8 plumbing should mirror:**
 - Detection lives in `app/src/terminal/model/grid/grid_handler.rs` via `pub fn url_at_point(&self, displayed_point: Point) -> Option<Link>` at line 596 and `Link` at line 143 (`{ range: RangeInclusive<Point>, is_empty: bool }`). `Link: ContainsPoint` (line 169).
@@ -38,7 +40,23 @@ Add a `Hyperlink { id: Option<String>, uri: String }` value type, a `HyperlinkPa
 1. **Field layout.** Treat the first slice element as the params field. Treat **all subsequent slice elements rejoined with `b";"`** as the URI field. This explicit rejoin is the parser's single most important rule: real-world URIs contain `;` (matrix params, query separators in some encodings, jsessionid, percent-encoded payloads), and the vte parser will split such URIs across multiple `params` entries. The contract — URI is always the rejoin of `params[1..]` — guarantees those URIs are reconstructed correctly by every implementation. Implementations that follow only the "two-field" mental shortcut **will silently drop valid URIs** and must not pass review.
 2. **Close form.** `params == []`, or `params == [b""]`, or the rejoined URI field is empty → `Ok(None)`. Three accepted shapes because real emitters send all three.
 3. **Open form.** Rejoined URI field is non-empty → parse the params field and return `Ok(Some(Hyperlink {...}))`. The params field is split on `:`; recognized keys are `id=...`, all others ignored. A params entry without `=` is `Err(MalformedParam)`.
-4. **Error cases.** Non-UTF-8 bytes in the URI → `Err(InvalidUtf8)`. URI exceeding `MAX_URI_BYTES` (a `pub const` defined in this module — see §3) → `Err(InvalidUtf8)`, **checked on the raw `&[u8]` rejoin before allocating the URI `String`**, so a 1 GB OSC 8 sequence never produces a 1 GB allocation. Empty params slice with no opening byte at all isn't reachable because `osc_dispatch` already guards against `params.is_empty()`.
+4. **Error cases.** The error variants reflect the actual failure mode, not a catch-all:
+    - Non-UTF-8 bytes in the URI → `Err(InvalidUtf8)`.
+    - URI exceeding `MAX_URI_BYTES` (a `pub const` defined in this module — see §3) → `Err(UriTooLong { len })`, **checked on the raw `&[u8]` rejoin before allocating the URI `String`**, so a 1 GB OSC 8 sequence never produces a 1 GB allocation.
+    - A param without `=` → `Err(MalformedParam)` (already covered in (3)).
+    - Empty params slice with no opening byte at all isn't reachable because `osc_dispatch` already guards against `params.is_empty()`.
+
+   ```rust
+   #[derive(Debug, thiserror::Error)]
+   pub enum HyperlinkParseError {
+       #[error("hyperlink URI is not valid UTF-8")]
+       InvalidUtf8,
+       #[error("hyperlink URI exceeds the {} byte cap (got {len})", MAX_URI_BYTES)]
+       UriTooLong { len: usize },
+       #[error("hyperlink param is malformed (no '=' found)")]
+       MalformedParam,
+   }
+   ```
 
 **Parser unit tests** live next to the type in a `#[cfg(test)] mod hyperlink_parse_tests`. The required ones:
 
@@ -83,18 +101,20 @@ impl HyperlinkRegistry {
     /// distinct-entries cap is hit. The URI byte length cap is
     /// enforced earlier — in `parse_osc_params` (§1) — so a too-long
     /// URI never reaches `intern`. That keeps the failure-modes per
-    /// caller simple: parse-time gives `Err(InvalidUtf8)`, intern-time
-    /// gives `None`.
+    /// caller simple: parse-time gives `Err(UriTooLong { ... })` or
+    /// `Err(InvalidUtf8)`; intern-time gives `None`.
     pub fn intern(&mut self, h: Hyperlink) -> Option<HyperlinkId>;
     pub fn get(&self, id: HyperlinkId) -> Option<&Hyperlink>;
 }
 ```
 
-Two storage variants need wiring:
+Both storage representations need wiring (the block list uses 2D `Cell+Row` for live rows and `FlatStorage` for scrollback; see Context). The order below matches the order a cell traverses them:
 
-**3a. `FlatStorage` (block list).** Add a third `AttributeMap<Option<HyperlinkId>>` parallel to `FgColorMap`/`BgAndStyleMap` in `crates/warp_terminal/src/model/grid/flat_storage/mod.rs`. RLE compression makes a 100-cell hyperlink cost one map entry. A new `flat_storage/hyperlink.rs` module mirroring `flat_storage/style.rs` is the natural shape.
+**3a. Live rows: extend `Cell` / `Row`.** Extend `CellExtra` (`crates/warp_terminal/src/model/grid/cell.rs:113`) with `hyperlink_id: Option<HyperlinkId>` and add accessors `Cell::hyperlink_id() / Cell::set_hyperlink_id()`. The 24-byte budget for `Cell` itself is preserved because the new field lives in the boxed extra. Resetting a cell preserves `EndOfPromptMarker`; the `hyperlink_id` slot is cleared along with the rest of the cell's content (per the §3d table). This is the only representation `AltScreen` ever uses, and the *first* representation block-list output uses while the block is live.
 
-**3b. `Cell` / `Row` (alt-screen and other row-based grids).** Extend `CellExtra` (`crates/warp_terminal/src/model/grid/cell.rs:113`) with `hyperlink_id: Option<HyperlinkId>` and add accessors `Cell::hyperlink_id() / Cell::set_hyperlink_id()`. The 24→24 byte budget for `Cell` itself is preserved because the new field lives in the boxed extra. Resetting a cell preserves `EndOfPromptMarker`; preserve `hyperlink_id` only while the cell still has content.
+**3b. Scrollback: extend `FlatStorage`.** Add a third `AttributeMap<Option<HyperlinkId>>` parallel to `FgColorMap`/`BgAndStyleMap` in `crates/warp_terminal/src/model/grid/flat_storage/mod.rs`. RLE deduplicates long runs of cells that share the same id into one map entry. A new `flat_storage/hyperlink.rs` mirroring `flat_storage/style.rs` is the natural shape.
+
+**3b-bis. Migration between the two representations.** When rows scroll out of the visible 2D grid into scrollback, or when a block finishes and `GridHandler::finish` (`grid_handler.rs:1621-1643`) calls `resize_storage(1, …)` to push everything to flat, every existing `Cell → flat_storage` conversion path needs to also carry the `hyperlink_id`. Concretely, the existing `From<&Cell> for BgAndStyle` impl (`flat_storage/style.rs:55-62`) is the model: we add an analogous `From<&Cell> for Option<HyperlinkId>` impl in the new `flat_storage/hyperlink.rs`, and update the row-flush / row-eviction code that calls these `From` impls so the new map gets populated alongside the existing two. The reverse path — flat → 2D row materialization for resize/reflow — already exists for color/style; we extend it to read the new map and stamp the resulting `Cell::set_hyperlink_id`. Missing either direction silently strips clickability when a block scrolls or finishes, which is a regression on product invariant 12; an integration test pumps an OSC 8 span into a small-height grid, scrolls it past the top of the visible region, and asserts hover/click still work in scrollback.
 
 **3c. Single owner for active id and registry (delegation path).** Active hyperlink state and the registry both live in **one place**, the same place that `input(c: char)` stamps cells with attributes. That's `GridHandler` for `BlockList` flow and `AltScreen`'s own grid for the alt-screen flow. `BlockGrid` and `Block` do **not** carry independent copies; they delegate `set_hyperlink` (and cell stamping) to the inner `GridHandler`. Concretely:
 
@@ -147,7 +167,7 @@ Without this section, an implementer could plausibly leave erased blanks with st
 
 | Cap | Default | Enforced where | Behavior on hit |
 | --- | --- | --- | --- |
-| Max URI byte length | 4096 | `parse_osc_params` (§1) — checked before allocating the `String`, so a 1 GB OSC 8 sequence never produces a 1 GB allocation | parser returns `Err(InvalidUtf8)`; dispatcher passes the OSC to `unhandled(params)`; `set_hyperlink` is **not** called. The visible text continues to render (invariant 15). |
+| Max URI byte length | 4096 | `parse_osc_params` (§1) — checked before allocating the `String`, so a 1 GB OSC 8 sequence never produces a 1 GB allocation | parser returns `Err(UriTooLong { len })`; dispatcher passes the OSC to `unhandled(params)`; `set_hyperlink` is **not** called. The visible text continues to render (invariant 15). |
 | Max distinct entries per registry | 4096 | `HyperlinkRegistry::intern` | returns `None`; `set_hyperlink` lands `active_hyperlink_id = None`; the still-active OSC 8 span renders as plain non-clickable cells. Existing entries stay valid; old links remain clickable. A `log::warn!` fires once per cap hit per registry. |
 | Max referencing cells per entry | unbounded | n/a | bounded indirectly by the grid's row cap. |
 
@@ -158,7 +178,7 @@ Without this section, an implementer could plausibly leave erased blanks with st
 **Caps are `pub const`** in the registry module so tests can override them via `#[cfg(test)] const MAX_DISTINCT_ENTRIES: usize = 4;` in a test-only build.
 
 Tests (in `hyperlink_registry_tests.rs` and `parse_osc_params` parser tests):
-- **Parser** (`parse_osc_params`): a URI exceeding `MAX_URI_BYTES` returns `Err(InvalidUtf8)`. **The parser does not allocate the URI `String` before checking length** — verified by a test that supplies `&[u8]` of length `MAX_URI_BYTES + 1` and asserts the function returns `Err` synchronously without holding a `String` of that size on the heap.
+- **Parser** (`parse_osc_params`): a URI exceeding `MAX_URI_BYTES` returns `Err(UriTooLong { len })` with `len` matching the input. **The parser does not allocate the URI `String` before checking length** — verified by a test that supplies `&[u8]` of length `MAX_URI_BYTES + 1` and asserts the function returns `Err` synchronously without holding a `String` of that size on the heap. Non-UTF-8 bytes return `Err(InvalidUtf8)` (separately tested).
 - **Registry intern**: `intern` returns `Some(id)` up to `MAX_DISTINCT_ENTRIES` distinct interns; the first call past the cap returns `None`, all earlier ids stay valid. The cap-hit `log::warn!` fires exactly once.
 - **`set_hyperlink` glue**: when `intern` returns `None`, `active_hyperlink_id` is `None` and subsequent `input(c)` writes plain non-clickable cells.
 - **No-reclaim under churn**: overwrite all cells in a row that referenced a hyperlink; assert `registry.len_for_test()` does not decrease. Documented as the intended behavior, not a bug.
@@ -411,6 +431,7 @@ Each numbered item below maps to a product invariant from `product.md`.
 **Unit tests — `FlatStorage`** (`flat_storage/mod_tests.rs`).
 - Writing 100 cells under one active id RLE-collapses to one `AttributeMap` entry.
 - Removing a row that ended a span doesn't bleed the active id into later writes.
+- **Migration round-trip** (anti-regression for §3b-bis): take a `Row` of `Cell`s with `hyperlink_id` set, push it into `FlatStorage` via the existing flush path, pull it back into a `Row` via the reverse path, assert each cell's `hyperlink_id` matches what went in. This is the single test that catches the most likely shipping bug ("clickability disappears when a block scrolls").
 
 **Unit tests — model lookups.** `hyperlink_at_point` returns the contiguous run of cells around `point` that share the same `HyperlinkId`, expanding left and right while the next cell is adjacent and carries the same id → invariants 5, 10. The lookup explicitly does **not** jump across non-adjacent cells even when `HyperlinkId` matches; cross-run grouping is out of scope.
 
