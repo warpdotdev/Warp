@@ -117,6 +117,7 @@ use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, PendingCloudLaunch
 use crate::ai::blocklist::AttachmentType;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::PendingAttachment;
+use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::server::server_api::ai::AttachmentFileInfo;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
@@ -3926,7 +3927,7 @@ impl Input {
             return true;
         }
 
-        if crate::ai::cloud_environments::CloudAmbientAgentEnvironment::get_all(ctx).is_empty() {
+        if CloudAmbientAgentEnvironment::get_all(ctx).is_empty() {
             ctx.emit(Event::OpenHandoffEnvironmentCreationModal);
             return true;
         }
@@ -3941,13 +3942,7 @@ impl Input {
             attachments,
         };
 
-        self.exit_cloud_handoff_compose(ctx);
-        self.editor.update(ctx, |editor, ctx| {
-            editor.clear_buffer(ctx);
-        });
-        self.ai_context_model.update(ctx, |context_model, ctx| {
-            context_model.clear_pending_attachments(ctx);
-        });
+        self.exit_cloud_handoff_compose_and_clear(ctx);
 
         ctx.dispatch_typed_action_deferred(WorkspaceAction::OpenLocalToCloudHandoffPane {
             launch: Some(launch),

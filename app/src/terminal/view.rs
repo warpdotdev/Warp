@@ -20771,9 +20771,7 @@ impl TerminalView {
                 );
             }
             InputEvent::OpenHandoffEnvironmentCreationModal => {
-                ctx.dispatch_typed_action(
-                    &WorkspaceAction::ShowHandoffEnvironmentCreationModal,
-                );
+                ctx.dispatch_typed_action(&WorkspaceAction::ShowHandoffEnvironmentCreationModal);
             }
         }
     }
