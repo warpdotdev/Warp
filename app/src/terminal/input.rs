@@ -105,14 +105,13 @@ use crate::ASSETS;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 
-use self::handoff_compose::HandoffLaunchRequestId;
 use crate::ai::attachment_utils::MAX_ATTACHMENT_SIZE_BYTES;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::agent_view::{
     AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, HandoffLaunchRequest};
+use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, PendingCloudLaunch};
 use crate::ai::blocklist::{AttachmentType, PendingAttachment};
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::server::server_api::ai::{AttachmentFileInfo, AttachmentInput};
@@ -3686,41 +3685,27 @@ impl Input {
             .update(ctx, |footer, ctx| footer.open_v2_environment_selector(ctx));
     }
 
-    /// Takes a pending `&` handoff launch request after its handoff pane opens.
-    pub(crate) fn take_handoff_launch_request(
+    /// Restores the `&` handoff compose draft after a workspace failure.
+    pub(crate) fn restore_cloud_handoff_draft(
         &mut self,
-        request_id: HandoffLaunchRequestId,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let taken = self
-            .handoff_compose_state
-            .update(ctx, |state, ctx| state.take_request(request_id, ctx));
-        if !taken {
-            return false;
-        }
-        self.clear_cloud_launch_draft(ctx);
-        true
-    }
-
-    /// Clears prompt text and attachments from the handoff compose draft.
-    pub(crate) fn clear_cloud_launch_draft(&mut self, ctx: &mut ViewContext<Self>) {
-        self.editor.update(ctx, |editor, ctx| {
-            editor.clear_buffer(ctx);
-        });
-        self.ai_context_model.update(ctx, |context_model, ctx| {
-            context_model.clear_pending_attachments(ctx);
-        });
-    }
-
-    /// Tracks the handoff request currently owned by the compose draft.
-    pub(crate) fn track_handoff_launch_request(
-        &mut self,
-        request_id: HandoffLaunchRequestId,
+        launch: PendingCloudLaunch,
+        explicit_environment_id: Option<SyncId>,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.handoff_compose_state.update(ctx, |state, ctx| {
-            state.set_active_request_id(request_id, ctx)
+        self.activate_cloud_handoff_compose(ctx);
+        self.editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text(&launch.prompt, ctx);
         });
+        self.ai_context_model.update(ctx, |model, ctx| {
+            for attachment in launch.attachments.display_attachments {
+                model.append_pending_attachments(vec![attachment], ctx);
+            }
+        });
+        if let Some(env_id) = explicit_environment_id {
+            self.handoff_compose_state.update(ctx, |state, ctx| {
+                state.set_environment_id(Some(env_id), true, ctx);
+            });
+        }
     }
 
     fn prefix_mode(&self, ctx: &AppContext) -> InputPrefixMode {
@@ -3922,18 +3907,22 @@ impl Input {
             .handoff_compose_state
             .as_ref(ctx)
             .explicit_environment_id();
-        let request = HandoffLaunchRequest::auto_submit(
+        let launch = PendingCloudLaunch {
             prompt,
             attachments,
-            explicit_environment_id,
-        );
-        let request_id = request.id();
-        self.handoff_compose_state.update(ctx, |state, ctx| {
-            state.set_active_request_id(request_id, ctx)
+        };
+
+        self.exit_cloud_handoff_compose(ctx);
+        self.editor.update(ctx, |editor, ctx| {
+            editor.clear_buffer(ctx);
+        });
+        self.ai_context_model.update(ctx, |context_model, ctx| {
+            context_model.clear_pending_attachments(ctx);
         });
 
         ctx.dispatch_typed_action_deferred(WorkspaceAction::OpenLocalToCloudHandoffPane {
-            request,
+            launch: Some(launch),
+            explicit_environment_id,
         });
         true
     }

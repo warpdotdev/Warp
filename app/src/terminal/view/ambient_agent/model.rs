@@ -21,7 +21,7 @@ use crate::ai::ambient_agents::{
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::TouchedWorkspace;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::blocklist::handoff::HandoffLaunchAttachments;
+pub(crate) use crate::ai::blocklist::handoff::PendingCloudLaunch;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
@@ -136,21 +136,10 @@ pub(crate) struct PendingHandoff {
     pub(crate) snapshot_upload: SnapshotUploadStatus,
     /// Gates submit — prevents double-submitting while the spawn is in flight.
     pub(crate) submission_state: HandoffSubmissionState,
-    /// Auto-submit payload for `& query` and `/move-to-cloud query`. Taken exactly once.
+    /// Auto-submit payload for `& query` and `/handoff query`. Taken exactly once.
     pub(crate) auto_submit: Option<PendingCloudLaunch>,
     /// Explicit source environment selection. When set, touched-repo overlap must not override it.
     pub(crate) explicit_environment_id: Option<SyncId>,
-}
-
-/// Carries the auto-submit payload for `& query` and `/move-to-cloud query`.
-/// Serves double duty: `request_attachments` feed the spawn request while
-/// `display_attachments` are restored into the editor if submission fails
-/// before the server accepts the run.
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-#[derive(Debug, Clone)]
-pub(crate) struct PendingCloudLaunch {
-    pub(crate) prompt: String,
-    pub(crate) attachments: HandoffLaunchAttachments,
 }
 
 /// Status of the ambient agent run.

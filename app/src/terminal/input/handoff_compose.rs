@@ -1,26 +1,13 @@
 //! Tracks the `&` prefix mode drafting state in the local input while the user
 //! writes a cloud handoff prompt, before a cloud pane/model exists.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use crate::server::ids::SyncId;
 use warpui::{Entity, ModelContext};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HandoffLaunchRequestId(u64);
-
-impl HandoffLaunchRequestId {
-    pub(crate) fn new() -> Self {
-        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-        Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
-    }
-}
 
 #[derive(Clone)]
 pub enum HandoffComposeStateEvent {
     ActiveChanged,
     EnvironmentSelected,
-    RequestChanged,
 }
 
 /// Transient state owned by the local input while drafting a cloud handoff
@@ -30,7 +17,6 @@ pub struct HandoffComposeState {
     active: bool,
     selected_environment_id: Option<SyncId>,
     has_explicit_environment_selection: bool,
-    active_request_id: Option<HandoffLaunchRequestId>,
 }
 
 impl HandoffComposeState {
@@ -40,21 +26,16 @@ impl HandoffComposeState {
 
     pub(crate) fn activate(&mut self, ctx: &mut ModelContext<Self>) {
         self.active = true;
-        self.active_request_id = None;
         self.has_explicit_environment_selection = false;
         ctx.emit(HandoffComposeStateEvent::ActiveChanged);
     }
 
     pub(crate) fn exit(&mut self, ctx: &mut ModelContext<Self>) {
-        if !self.active
-            && self.active_request_id.is_none()
-            && !self.has_explicit_environment_selection
-        {
+        if !self.active && !self.has_explicit_environment_selection {
             return;
         }
 
         self.active = false;
-        self.active_request_id = None;
         self.has_explicit_environment_selection = false;
         ctx.emit(HandoffComposeStateEvent::ActiveChanged);
     }
@@ -96,28 +77,6 @@ impl HandoffComposeState {
         if self.selected_environment_id.is_none() {
             self.set_environment_id(Some(environment_id), false, ctx);
         }
-    }
-
-    pub(crate) fn set_active_request_id(
-        &mut self,
-        request_id: HandoffLaunchRequestId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.active_request_id = Some(request_id);
-        ctx.emit(HandoffComposeStateEvent::RequestChanged);
-    }
-
-    pub(crate) fn take_request(
-        &mut self,
-        request_id: HandoffLaunchRequestId,
-        ctx: &mut ModelContext<Self>,
-    ) -> bool {
-        if self.active_request_id != Some(request_id) {
-            return false;
-        }
-
-        self.exit(ctx);
-        true
     }
 }
 

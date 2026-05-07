@@ -303,7 +303,6 @@ impl EnvironmentSelector {
                         HandoffComposeStateEvent::EnvironmentSelected => {
                             me.refresh_menu(ctx);
                         }
-                        HandoffComposeStateEvent::RequestChanged => {}
                     }
                     me.refresh_button(ctx);
                 });

@@ -492,7 +492,8 @@ pub enum WorkspaceAction {
     /// active conversation at all).
     #[allow(private_interfaces)]
     OpenLocalToCloudHandoffPane {
-        request: crate::ai::blocklist::handoff::HandoffLaunchRequest,
+        launch: Option<crate::ai::blocklist::handoff::PendingCloudLaunch>,
+        explicit_environment_id: Option<crate::server::ids::SyncId>,
     },
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {

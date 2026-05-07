@@ -29,7 +29,7 @@ use crate::ai::agent_management::telemetry::AgentManagementTelemetryEvent;
 use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
-use crate::ai::blocklist::handoff::HandoffLaunchRequest;
+use crate::ai::blocklist::handoff::PendingCloudLaunch;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
@@ -366,7 +366,6 @@ impl Input {
             return true;
         }
 
-        let mut defer_buffer_clear_until_cloud_launch_claim = false;
         // Handle the slash command action based on its kind
         match command.name {
             add_mcp if command.name == commands::ADD_MCP.name => {
@@ -890,20 +889,20 @@ impl Input {
                     .filter(|argument| !argument.is_empty())
                     .map(str::to_owned);
                 if let Some(prompt) = prompt {
-                    // `/move-to-cloud query` auto-submits, same as `& query`.
+                    // `/handoff query` auto-submits, same as `& query`.
                     let attachments = self.collect_cloud_launch_attachments(ctx);
-                    let request = HandoffLaunchRequest::auto_submit(
+                    let launch = PendingCloudLaunch {
                         prompt,
                         attachments,
-                        None,
-                    );
-                    self.track_handoff_launch_request(request.id(), ctx);
+                    };
                     ctx.dispatch_typed_action_deferred(
-                        WorkspaceAction::OpenLocalToCloudHandoffPane { request },
+                        WorkspaceAction::OpenLocalToCloudHandoffPane {
+                            launch: Some(launch),
+                            explicit_environment_id: None,
+                        },
                     );
-                    defer_buffer_clear_until_cloud_launch_claim = true;
                 } else {
-                    // `/move-to-cloud` with no query enters `&` compose mode,
+                    // `/handoff` with no query enters `&` compose mode,
                     // same as the footer chip.
                     self.activate_cloud_handoff_compose(ctx);
                 }
@@ -1083,7 +1082,7 @@ impl Input {
 
         // Leave the buffer alone when re-sending a queued prompt (the user may have typed
         // new input while the agent was busy).
-        if !is_queued_prompt && !defer_buffer_clear_until_cloud_launch_claim {
+        if !is_queued_prompt {
             self.editor.update(ctx, |editor, ctx| {
                 editor.clear_buffer(ctx);
             });
