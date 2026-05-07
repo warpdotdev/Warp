@@ -363,6 +363,7 @@ impl AIExecutionProfilesModel {
             .unwrap_or_else(|| self.default_profile(ctx))
     }
 
+    #[cfg(test)]
     pub fn default_profile_id(&self) -> ClientProfileId {
         self.default_profile_state.id()
     }
