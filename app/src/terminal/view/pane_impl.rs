@@ -952,15 +952,21 @@ impl TerminalView {
     /// the post-session pre-first-exchange phase (session ready, harness not started, no
     /// exchange yet). In either case the run is committed and we want the UI to read as busy.
     fn is_in_cloud_agent_setup_phase(&self, ctx: &AppContext) -> bool {
-        self.ambient_agent_view_model
+        if self
+            .ambient_agent_view_model
             .as_ref()
             .is_some_and(|model| model.as_ref(ctx).is_waiting_for_session())
-            || is_cloud_agent_pre_first_exchange(
-                self.ambient_agent_view_model.as_ref(),
-                &self.agent_view_controller,
-                &self.model,
-                ctx,
-            )
+        {
+            return true;
+        }
+
+        let model = self.model.lock();
+        is_cloud_agent_pre_first_exchange(
+            self.ambient_agent_view_model.as_ref(),
+            &self.agent_view_controller,
+            &model,
+            ctx,
+        )
     }
 
     /// Selected conversation status for chrome, or [`ConversationStatus::InProgress`] while the

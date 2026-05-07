@@ -2422,52 +2422,11 @@ impl CodeReviewView {
 
     fn handle_diff_state_model_event(
         &mut self,
-        diff_state_model: ModelHandle<DiffStateModel>,
+        _diff_state_model: ModelHandle<DiffStateModel>,
         event: &DiffStateModelEvent,
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            DiffStateModelEvent::RepositoryChanged => {
-                let old_path = self.repo_path().cloned();
-                let repo_path =
-                    diff_state_model.read(ctx, |model, _| model.active_repository_path(ctx));
-
-                safe_info!(
-                    safe: ("Code Review: Repository changed. Branch list cleared."),
-                    full: (
-                        "Code Review: Repository changed event - old path: {:?}, new path: {:?}",
-                        old_path,
-                        repo_path
-                    )
-                );
-
-                // Abort in-flight file invalidation tasks on the old repo before
-                // it is potentially replaced.
-                self.queue_full_invalidation();
-
-                if self.repo_path() != repo_path.as_ref() {
-                    self.update_current_repo(repo_path.clone(), ctx);
-                }
-
-                // update_current_repo replaces active_repo with a fresh
-                // RepositoryState, discarding the invalidate_all_pending flag
-                // that queue_full_invalidation just set. Re-apply it so the
-                // new repo also defers file invalidations until the full reload
-                // completes. (state == None covers this today, but the explicit
-                // flag makes the invariant resilient to future changes.)
-                if let Some(repo) = self.active_repo.as_mut() {
-                    repo.file_invalidation.invalidate_all_pending = true;
-                }
-
-                let repo_path_for_list = repo_path.clone().unwrap_or_default();
-                self.comment_list_view.update(ctx, |view, ctx| {
-                    // TODO(alokedesai): Update how we model repo path so that it's optional.
-                    // There are no guarantees that CodeReviewView is within a repo.
-                    view.set_repo_path(repo_path_for_list.clone(), ctx);
-                });
-
-                self.invalidate_all(None, ctx);
-            }
             DiffStateModelEvent::DiffMetadataChanged(InvalidationBehavior::All(source)) => {
                 // If the invalidation is an index lock change AND we don't have an already pending invalidation,
                 // don't eagerly reload all of the diffs.

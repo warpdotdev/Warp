@@ -57,6 +57,7 @@ use crate::appearance::Appearance;
 use crate::settings::{AISettings, InputModeSettings, InputSettings};
 use crate::terminal::model::blocks::{BlockHeightItem, RemovableBlocklistItem, RichContentItem};
 use crate::terminal::model::rich_content::RichContentType;
+use crate::terminal::view::ambient_agent::is_cloud_agent_pre_first_exchange;
 use crate::terminal::TerminalView;
 use crate::util::truncation::truncate_from_end;
 
@@ -987,15 +988,14 @@ impl View for AIBlock {
         let terminal_model = self.terminal_model.lock();
         let shared_session_status = terminal_model.shared_session_status().clone();
         let is_conversation_transcript_viewer = terminal_model.is_conversation_transcript_viewer();
-        drop(terminal_model);
 
-        let is_cloud_agent_pre_first_exchange =
-            crate::terminal::view::ambient_agent::is_cloud_agent_pre_first_exchange(
-                self.ambient_agent_view_model.as_ref(),
-                &self.agent_view_controller,
-                &self.terminal_model,
-                app,
-            );
+        let is_cloud_agent_pre_first_exchange = is_cloud_agent_pre_first_exchange(
+            self.ambient_agent_view_model.as_ref(),
+            &self.agent_view_controller,
+            &terminal_model,
+            app,
+        );
+        drop(terminal_model);
 
         contents.add_child(output::render(
             output::Props {

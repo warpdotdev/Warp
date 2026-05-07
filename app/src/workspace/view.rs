@@ -32,8 +32,9 @@ pub(crate) use onboarding::OnboardingTutorial;
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent::conversation::AIConversation;
-use crate::ai::agent_conversations_model::AgentConversationsModel;
-use crate::ai::agent_conversations_model::ConversationOrTask;
+use crate::ai::agent_conversations_model::{
+    AgentConversationNavigationSubject, AgentConversationsModel,
+};
 use crate::ai::agent_management::notifications::toast_stack::AgentNotificationToastStack;
 use crate::ai::agent_management::notifications::view::{
     NotificationMailboxView, NotificationMailboxViewEvent,
@@ -420,7 +421,7 @@ use warpui::elements::{
     MouseInBehavior, Rect,
 };
 use warpui::ui_components::button::{Button, ButtonVariant};
-use warpui::windowing::{StateEvent, WindowManager};
+use warpui::windowing::{state::ApplicationStage, StateEvent, WindowManager};
 use warpui::{elements::MouseStateHandle, fonts::Properties};
 
 use crate::{autoupdate, channel::ChannelState};
@@ -4019,36 +4020,14 @@ impl Workspace {
             return;
         }
 
-        // If the conversation is open in a pane this session, grab its nav data so we can
-        // navigate directly to it. Otherwise we'll restore from scratch into a new tab.
-        let nav_data = AgentConversationsModel::as_ref(ctx)
-            .get_conversation(&conversation_id)
-            .and_then(|entry| match entry {
-                ConversationOrTask::Conversation(metadata) => Some(&metadata.nav_data),
-                ConversationOrTask::Task(_) => None,
-            });
-
-        if let Some(nav_data) = nav_data {
-            let is_active =
-                ActiveAgentViewsModel::as_ref(ctx).is_conversation_open(nav_data.id, ctx);
-            let pane_view_locator = is_active.then_some(nav_data.pane_view_locator).flatten();
-            self.restore_or_navigate_to_conversation(
-                nav_data.id,
-                nav_data.window_id,
-                pane_view_locator,
-                nav_data.terminal_view_id,
-                Some(RestoreConversationLayout::NewTab),
-                ctx,
-            );
+        if let Some(action) = AgentConversationsModel::resolve_open_action(
+            AgentConversationNavigationSubject::ServerToken(server_token.clone()),
+            Some(RestoreConversationLayout::NewTab),
+            ctx,
+        ) {
+            ctx.dispatch_typed_action_deferred(action);
         } else {
-            self.restore_or_navigate_to_conversation(
-                conversation_id,
-                None,
-                None,
-                None,
-                Some(RestoreConversationLayout::NewTab),
-                ctx,
-            );
+            self.load_cloud_conversation_into_new_transcript_viewer(server_token, ctx);
         }
     }
 
@@ -16175,11 +16154,41 @@ impl Workspace {
     fn handle_window_state_change(&mut self, event: &StateEvent, ctx: &mut ViewContext<Self>) {
         match &event {
             StateEvent::ValueChanged { current, previous } => {
+                let did_window_change_focus =
+                    WindowManager::did_window_change_focus(self.window_id, current, previous);
+                let cached_window_is_active = current.active_window == Some(self.window_id);
+                let app_became_active = previous.stage != ApplicationStage::Active
+                    && current.stage == ApplicationStage::Active;
+                let platform_window_is_active =
+                    ctx.windows().active_window() == Some(self.window_id);
+
+                // Notify focus listeners when this window is active after either a window focus
+                // change or app reactivation while the active window stayed the same.
+                // On macOS, app activation can beat the deferred key-window update, so
+                // reactivation also verifies the live platform window.
+                if cached_window_is_active
+                    && (did_window_change_focus || (app_became_active && platform_window_is_active))
+                {
+                    if let Some(terminal_view) = self
+                        .active_tab_pane_group()
+                        .as_ref(ctx)
+                        .focused_session_view(ctx)
+                    {
+                        let ambient_agent_task_id = terminal_view
+                            .as_ref(ctx)
+                            .ambient_agent_task_id_for_details_panel(ctx);
+                        self.notify_terminal_focus_change(
+                            Some(terminal_view.id()),
+                            ambient_agent_task_id,
+                            ctx,
+                        );
+                    }
+                }
+
                 // Re-render if fullscreen state for active window has changed.
                 if current.is_active_window_fullscreen != previous.is_active_window_fullscreen {
                     ctx.notify();
-                } else if WindowManager::did_window_change_focus(self.window_id, current, previous)
-                {
+                } else if did_window_change_focus {
                     // Re-render if this window's focus state has changed.
                     ctx.notify();
                 } else if current.stage != previous.stage {
