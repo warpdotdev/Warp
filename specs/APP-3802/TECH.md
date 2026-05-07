@@ -30,7 +30,7 @@ BufferSource
 
 **Local** — existing behavior. File I/O through `FileModel`, version tracking via `ContentVersion` from the file-watcher, LSP sync via `didChange`.
 
-**ServerLocal** — daemon-side variant. Created when `ServerModel` calls `open_server_local`. Extends `Local` with a `SyncClock` for version-vector tracking so the daemon can detect conflicts with connected clients. File-watcher changes produce a background diff (`apply_diff_result`) which emits a `ServerLocalBufferUpdated` event containing 0-indexed `CharOffsetEdit`s. `ServerModel` subscribes to this event and pushes `BufferUpdatedPush` proto messages to all connections that have the buffer open.
+**ServerLocal** — daemon-side variant. Created when `ServerModel` calls `open_server_local`. Extends `Local` with a `SyncClock` for version-vector tracking so the daemon can detect conflicts with connected clients. File-watcher changes produce a background diff (`apply_diff_result`) which emits a `ServerLocalBufferUpdated` event containing 1-indexed `CharOffsetEdit`s. `ServerModel` subscribes to this event and pushes `BufferUpdatedPush` proto messages to all connections that have the buffer open.
 
 **Remote** — client-side proxy. Created by `open_remote_buffer` when a Warp tab opens a file on an SSH host. The `sync_clock` starts as `None` (unloaded) and becomes `Some` once the `OpenBufferResponse` arrives with the initial content and server version. Edits made locally fire `BufferEvent::ContentChanged`, which the subscription handler converts into `BufferEdit` proto messages using the delta's `PreciseDelta` ranges. Incoming `BufferUpdatedPush` events from the daemon are applied via `handle_buffer_updated_push`.
 
@@ -43,7 +43,7 @@ The protocol uses a two-component version vector (`SyncClock`) where each side o
 - **server_version** (S) — bumped by the daemon when the file changes on disk.
 - **client_version** (C) — bumped by the client when the user edits the buffer.
 
-All edits on the wire use 0-indexed character offsets (`TextEdit { start_offset, end_offset, text }`), avoiding line/column conversion overhead. The buffer internally uses 1-indexed `CharOffset`; the +1/−1 conversion happens at the boundary.
+All edits on the wire use 1-indexed character offsets (`TextEdit { start_offset, end_offset, text }`), matching the buffer's internal `CharOffset` representation. Since both sides of the syncing protocol (client and daemon) are our own `GlobalBufferModel`, there is no need for an intermediate 0-based format — using `CharOffset` values directly avoids conversion code and the off-by-one risks that come with it.
 
 #### Client → Server (user edit)
 
@@ -67,7 +67,7 @@ Client checks: C_expected == local C?
   no  → emit RemoteBufferConflict event
 ```
 
-On the daemon side, file-watcher events flow through the existing `FileModel` → `populate_buffer_with_read_content` → `start_background_diff_parse` → `apply_diff_result` pipeline. For `ServerLocal` buffers, `apply_diff_result` converts the byte-range diff edits to 0-indexed `CharOffsetEdit`s (using the buffer's native `ByteOffset::to_buffer_char_offset`) before applying the diff, then emits `ServerLocalBufferUpdated`. The `ServerModel`'s subscription converts these to proto `TextEdit`s and broadcasts to all connections.
+On the daemon side, file-watcher events flow through the existing `FileModel` → `populate_buffer_with_read_content` → `start_background_diff_parse` → `apply_diff_result` pipeline. For `ServerLocal` buffers, `apply_diff_result` converts the byte-range diff edits to 1-indexed `CharOffsetEdit`s (using the buffer's native `ByteOffset::to_buffer_char_offset`) before applying the diff, then emits `ServerLocalBufferUpdated`. The `ServerModel`'s subscription converts these to proto `TextEdit`s and broadcasts to all connections.
 
 A race guard exists: if a client edit arrives during the background diff parse, the buffer's `ContentVersion` will have changed, causing `apply_diff_result` to detect the mismatch via `version_match` and discard the stale diff.
 
@@ -153,6 +153,6 @@ Helper functions (`text_edit`, `char_edit`) construct proto and internal edit ty
 
 **Race between diff parse and client edit**: If a `BufferEdit` arrives while `apply_diff_result` is pending, the buffer version will have changed and the diff is safely discarded. The `version_match` guard at `global_buffer_model.rs:532` handles this.
 
-**Offset coordinate mismatch**: The buffer uses 1-indexed `CharOffset` internally; the proto uses 0-indexed. Off-by-one errors are mitigated by explicit +1/−1 conversions at the boundary and `saturating_add`/`saturating_sub` to avoid overflow from `u64::MAX` sentinels.
+**Offset coordinate mismatch**: Both the buffer and the wire protocol use 1-indexed `CharOffset` values, so no offset conversion is needed. Values are clamped to `max_charoffset` at the boundary to handle stale or out-of-range offsets.
 
 **Multi-connection buffer sharing**: `ServerBufferTracker` tracks per-buffer connection sets. File-watcher pushes go to all connections; `CloseBuffer` only removes one. Orphaned buffers are auto-deallocated.

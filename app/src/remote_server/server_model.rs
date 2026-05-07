@@ -19,17 +19,18 @@ use warp_util::content_version::ContentVersion;
 use warp_util::file::FileId;
 
 use super::proto::{
-    client_message, delete_file_response, run_command_response, save_buffer_response,
-    server_message, write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush,
-    ClientMessage, CloseBuffer, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
-    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
-    FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
+    client_message, delete_file_response, resolve_conflict_response, run_command_response,
+    save_buffer_response, server_message, write_file_response, Abort, Authenticate, BufferEdit,
+    BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatusesSnapshot, DeleteFile,
+    DeleteFileResponse, DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead,
+    FileContextProto, FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
     NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
-    ResolveConflict, RunCommandError, RunCommandErrorCode, RunCommandRequest, RunCommandResponse,
-    RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess, ServerMessage,
-    SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
+    ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, RunCommandError,
+    RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
+    SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
+    WriteFileResponse, WriteFileSuccess,
 };
-use super::server_buffer_tracker::ServerBufferTracker;
+use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
 /// How long the daemon waits with no connections before exiting.
 pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 * 60);
@@ -339,7 +340,10 @@ impl ServerModel {
             ctx.subscribe_to_model(&gbm, |me, event, ctx| match event {
                 GlobalBufferModelEvent::BufferLoaded { file_id, .. } => {
                     // Complete all pending OpenBuffer requests for this file.
-                    let pending = me.buffers.take_pending(file_id);
+                    let pending = me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::OpenBuffer,
+                    );
                     if !pending.is_empty() {
                         let gbm = GlobalBufferModel::handle(ctx);
                         let content = gbm.as_ref(ctx).content_for_file(*file_id, ctx);
@@ -409,7 +413,10 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FileSaved { file_id } => {
-                    for (request_id, conn_id) in me.buffers.take_pending(file_id) {
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::SaveBuffer,
+                    ) {
                         me.send_server_message(
                             Some(conn_id),
                             Some(&request_id),
@@ -420,9 +427,30 @@ impl ServerModel {
                             }),
                         );
                     }
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::ResolveConflict,
+                    ) {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::ResolveConflictResponse(
+                                ResolveConflictResponse {
+                                    result: Some(
+                                        resolve_conflict_response::Result::Success(
+                                            ResolveConflictSuccess {},
+                                        ),
+                                    ),
+                                },
+                            ),
+                        );
+                    }
                 }
                 GlobalBufferModelEvent::FailedToSave { file_id, error } => {
-                    for (request_id, conn_id) in me.buffers.take_pending(file_id) {
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::SaveBuffer,
+                    ) {
                         me.send_server_message(
                             Some(conn_id),
                             Some(&request_id),
@@ -435,9 +463,30 @@ impl ServerModel {
                             }),
                         );
                     }
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::ResolveConflict,
+                    ) {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::ResolveConflictResponse(
+                                ResolveConflictResponse {
+                                    result: Some(resolve_conflict_response::Result::Error(
+                                        FileOperationError {
+                                            message: format!("{error}"),
+                                        },
+                                    )),
+                                },
+                            ),
+                        );
+                    }
                 }
                 GlobalBufferModelEvent::FailedToLoad { file_id, error } => {
-                    for (request_id, conn_id) in me.buffers.take_pending(file_id) {
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::OpenBuffer,
+                    ) {
                         me.send_server_message(
                             Some(conn_id),
                             Some(&request_id),
@@ -598,8 +647,7 @@ impl ServerModel {
                 self.handle_save_buffer(msg, &request_id, conn_id, ctx)
             }
             Some(client_message::Message::ResolveConflict(msg)) => {
-                self.handle_resolve_conflict(msg, ctx);
-                return; // fire-and-forget notification
+                self.handle_resolve_conflict(msg, &request_id, conn_id, ctx)
             }
             None => {
                 log::warn!(
@@ -1387,15 +1435,18 @@ impl ServerModel {
 
         // Not yet loaded — stash request info so the GlobalBufferModelEvent
         // subscription can send the response when content arrives.
-        self.buffers
-            .insert_pending(file_id, request_id.clone(), conn_id);
+        self.buffers.insert_pending(
+            file_id,
+            request_id.clone(),
+            conn_id,
+            PendingBufferRequestKind::OpenBuffer,
+        );
         HandlerOutcome::Async(None)
     }
 
     /// Handles `BufferEdit` notification (fire-and-forget).
     /// Delegates to `GlobalBufferModel::apply_client_edit`. On rejection
-    /// (stale server version), pushes the server's current state back to
-    /// all connections so the client can detect the divergence.
+    /// (stale server version), the edit is silently dropped.
     fn handle_buffer_edit(&mut self, msg: BufferEdit, ctx: &mut ModelContext<Self>) {
         let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
             log::warn!("BufferEdit for unknown buffer: {}", msg.path);
@@ -1443,8 +1494,12 @@ impl ServerModel {
                 // Response will come via the FileSaved event subscription.
                 // Track the file_id → (request_id, conn_id) so the event
                 // handler can correlate.
-                self.buffers
-                    .insert_pending(file_id, request_id.clone(), conn_id);
+                self.buffers.insert_pending(
+                    file_id,
+                    request_id.clone(),
+                    conn_id,
+                    PendingBufferRequestKind::SaveBuffer,
+                );
                 HandlerOutcome::Async(None)
             }
             Err(err) => HandlerOutcome::Sync(server_message::Message::SaveBufferResponse(
@@ -1457,23 +1512,59 @@ impl ServerModel {
         }
     }
 
-    /// Handles `ResolveConflict` notification (fire-and-forget).
-    /// Accepts the client's content, replaces the server buffer, and saves to disk.
-    fn handle_resolve_conflict(&mut self, msg: ResolveConflict, ctx: &mut ModelContext<Self>) {
-        log::info!("Handling ResolveConflict path={}", msg.path);
+    /// Handles `ResolveConflict` by replacing the server buffer with the
+    /// client's content and persisting to disk. Returns an async
+    /// `HandlerOutcome` — the response is sent when `FileSaved` or
+    /// `FailedToSave` fires.
+    fn handle_resolve_conflict(
+        &mut self,
+        msg: ResolveConflict,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        log::info!(
+            "Handling ResolveConflict path={} (request_id={request_id})",
+            msg.path
+        );
 
         let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
-            log::warn!("ResolveConflict for unknown buffer: {}", msg.path);
-            return;
+            return HandlerOutcome::Sync(server_message::Message::ResolveConflictResponse(
+                ResolveConflictResponse {
+                    result: Some(resolve_conflict_response::Result::Error(
+                        FileOperationError {
+                            message: format!("Buffer not open: {}", msg.path),
+                        },
+                    )),
+                },
+            ));
         };
 
         let ack_sv = ContentVersion::from_raw(msg.acknowledged_server_version as usize);
+        let current_cv = ContentVersion::from_raw(msg.current_client_version as usize);
         let result = GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
-            gbm.resolve_conflict(file_id, ack_sv, &msg.client_content, ctx)
+            gbm.resolve_conflict(file_id, ack_sv, current_cv, &msg.client_content, ctx)
         });
 
-        if let Err(err) = result {
-            log::warn!("ResolveConflict failed for {}: {err}", msg.path);
+        match result {
+            Ok(()) => {
+                self.buffers.insert_pending(
+                    file_id,
+                    request_id.clone(),
+                    conn_id,
+                    PendingBufferRequestKind::ResolveConflict,
+                );
+                HandlerOutcome::Async(None)
+            }
+            Err(err) => HandlerOutcome::Sync(server_message::Message::ResolveConflictResponse(
+                ResolveConflictResponse {
+                    result: Some(resolve_conflict_response::Result::Error(
+                        FileOperationError {
+                            message: format!("Failed to resolve conflict: {err}"),
+                        },
+                    )),
+                },
+            )),
         }
     }
 

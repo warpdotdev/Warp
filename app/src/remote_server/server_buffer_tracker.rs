@@ -7,22 +7,31 @@ use super::server_model::{ConnectionId, ServerModel};
 use crate::code::global_buffer_model::GlobalBufferModel;
 use crate::remote_server::protocol::RequestId;
 
+/// Distinguishes the type of pending buffer request so the event
+/// subscription can send the correct response message.
+#[derive(Clone, Copy, Debug)]
+pub enum PendingBufferRequestKind {
+    OpenBuffer,
+    SaveBuffer,
+    ResolveConflict,
+}
+
 /// Bridges the ServerModel's per-connection state with the GlobalBufferModel's
 /// tracked buffers. Manages:
 /// - Wire path → FileId mappings for open server-local buffers
 /// - Per-buffer connection sets (which connections have each buffer open)
-/// - Pending async requests (OpenBuffer, SaveBuffer) awaiting events
+/// - Pending async requests (OpenBuffer, SaveBuffer, ResolveConflict) awaiting events
 pub struct ServerBufferTracker {
     /// Maps wire path strings to `FileId` for open server-local buffers.
     open_buffers: HashMap<String, FileId>,
     /// Tracks which connections have each buffer open.
     /// File-watcher pushes go to all connections in the set.
     buffer_connections: HashMap<FileId, HashSet<ConnectionId>>,
-    /// Tracks in-flight OpenBuffer / SaveBuffer requests so
+    /// Tracks in-flight OpenBuffer / SaveBuffer / ResolveConflict requests so
     /// `GlobalBufferModelEvent`s can be correlated back to the originating
     /// request and connection. Uses a `Vec` to support concurrent requests
     /// for the same buffer from different connections.
-    pending_requests: HashMap<FileId, Vec<(RequestId, ConnectionId)>>,
+    pending_requests: HashMap<FileId, Vec<(RequestId, ConnectionId, PendingBufferRequestKind)>>,
 }
 
 impl ServerBufferTracker {
@@ -135,15 +144,36 @@ impl ServerBufferTracker {
         file_id: FileId,
         request_id: RequestId,
         conn_id: ConnectionId,
+        kind: PendingBufferRequestKind,
     ) {
         self.pending_requests
             .entry(file_id)
             .or_default()
-            .push((request_id, conn_id));
+            .push((request_id, conn_id, kind));
     }
 
-    /// Retrieve and remove all pending requests for the given FileId.
-    pub fn take_pending(&mut self, file_id: &FileId) -> Vec<(RequestId, ConnectionId)> {
-        self.pending_requests.remove(file_id).unwrap_or_default()
+    /// Retrieve and remove pending requests that match `kind` for the given
+    /// FileId. Other pending requests for the same FileId are left in place.
+    pub fn take_pending_by_kind(
+        &mut self,
+        file_id: &FileId,
+        kind: PendingBufferRequestKind,
+    ) -> Vec<(RequestId, ConnectionId)> {
+        let Some(entries) = self.pending_requests.get_mut(file_id) else {
+            return Vec::new();
+        };
+        let mut matched = Vec::new();
+        entries.retain(|(req, conn, k)| {
+            if std::mem::discriminant(k) == std::mem::discriminant(&kind) {
+                matched.push((req.clone(), conn.to_owned()));
+                false // remove from the vec
+            } else {
+                true // keep
+            }
+        });
+        if entries.is_empty() {
+            self.pending_requests.remove(file_id);
+        }
+        matched
     }
 }

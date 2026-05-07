@@ -52,6 +52,7 @@ message ServerMessage {
     OpenBufferResponse open_buffer_response = 14;
     BufferUpdatedPush buffer_updated = 15;
     SaveBufferResponse save_buffer_response = 16;
+    ResolveConflictResponse resolve_conflict_response = 17;
   }
 }
 
@@ -381,7 +382,7 @@ message BufferEdit {
   repeated TextEdit edits = 4;
 }
 
-// A single text edit within a buffer, using 0-indexed character offsets.
+// A single text edit within a buffer, using 1-indexed character offsets (matching CharOffset).
 message TextEdit {
   uint64 start_offset = 1;
   uint64 end_offset = 2;
@@ -427,4 +428,15 @@ message ResolveConflict {
   string path = 1;
   uint64 acknowledged_server_version = 2;
   string client_content = 3;
+  uint64 current_client_version = 4;
 }
+
+// Server → client: result of a ResolveConflict request.
+message ResolveConflictResponse {
+  oneof result {
+    ResolveConflictSuccess success = 1;
+    FileOperationError error = 2;
+  }
+}
+
+message ResolveConflictSuccess {}

@@ -53,7 +53,7 @@ fn server_version(app: &App, file_id: warp_util::file::FileId) -> ContentVersion
 }
 
 /// Helper: creates a proto `TextEdit` for use with `apply_client_edit`.
-/// `start` and `end` are 0-indexed character offsets.
+/// `start` and `end` are 1-indexed character offsets (matching `CharOffset`).
 fn text_edit(start: u64, end: u64, text: &str) -> TextEdit {
     TextEdit {
         start_offset: start,
@@ -63,7 +63,7 @@ fn text_edit(start: u64, end: u64, text: &str) -> TextEdit {
 }
 
 /// Helper: creates a `CharOffsetEdit` for use with `handle_buffer_updated_push`.
-/// `start` and `end` are 0-indexed character offsets.
+/// `start` and `end` are 1-indexed character offsets (matching `CharOffset`).
 fn char_edit(start: usize, end: usize, text: &str) -> CharOffsetEdit {
     CharOffsetEdit {
         start: string_offset::CharOffset::from(start),
@@ -134,11 +134,11 @@ fn apply_client_edit_accepted_when_version_matches() {
         // Read the server_version before the edit.
         let sv = server_version(&app, file_id);
 
-        // Apply a client edit: insert " there" at end of line 0.
+        // Apply a client edit: insert " there" after "hello" (1-indexed offset 6).
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(5, 5, " there")],
+                &[text_edit(6, 6, " there")],
                 sv, // expected_server_version matches
                 ContentVersion::new(),
                 ctx,
@@ -176,7 +176,7 @@ fn apply_client_edit_rejected_when_version_stale() {
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(8, 8, " edit")],
+                &[text_edit(9, 9, " edit")],
                 stale_sv,
                 ContentVersion::new(),
                 ctx,
@@ -211,10 +211,10 @@ fn apply_client_edit_replaces_range() {
         let sv = server_version(&app, file_id);
 
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            // Replace "world" (char offset 6..11) with "rust".
+            // Replace "world" (1-indexed char offset 7..12) with "rust".
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(6, 11, "rust")],
+                &[text_edit(7, 12, "rust")],
                 sv,
                 ContentVersion::new(),
                 ctx,
@@ -249,11 +249,11 @@ fn apply_client_edit_across_lines() {
         let sv = server_version(&app, file_id);
 
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            // Delete from end of "line1" (offset 5) to start of "line3" (offset 12).
-            // "line1\nline2\n" = 12 chars, then "line3".
+            // Delete from after "line1" (1-indexed offset 6) to start of "line3" (1-indexed offset 13).
+            // "line1\nline2\n" = 12 chars, so "line3" starts at offset 13.
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(5, 12, "\n")],
+                &[text_edit(6, 13, "\n")],
                 sv,
                 ContentVersion::new(),
                 ctx,
@@ -289,13 +289,14 @@ fn handle_buffer_updated_push_accepted_when_version_matches() {
         let file_id = _buffer_state.file_id;
 
         // Push an edit with expected_client_version = 0 (matches initial).
+        // 1-indexed: offset 6 = after "hello".
         gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.handle_buffer_updated_push(
                 &host_id,
                 path.as_str(),
                 43, // new_server_version
                 0,  // expected_client_version (matches the seeded 0)
-                &[char_edit(5, 5, " there")],
+                &[char_edit(6, 6, " there")],
                 ctx,
             );
         });
@@ -337,7 +338,7 @@ fn handle_buffer_updated_push_conflict_when_client_version_stale() {
                 path.as_str(),
                 43,
                 999, // stale expected_client_version
-                &[char_edit(0, 8, "replaced")],
+                &[char_edit(1, 9, "replaced")],
                 ctx,
             );
         });
@@ -411,7 +412,7 @@ fn apply_client_edit_updates_sync_clock() {
         let new_cv = ContentVersion::new();
 
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &[text_edit(5, 5, " world")], sv, new_cv, ctx)
+            gbm.apply_client_edit(file_id, &[text_edit(6, 6, " world")], sv, new_cv, ctx)
         });
         assert!(accepted);
 
@@ -448,7 +449,7 @@ fn server_push_updates_sync_clock() {
                 path.as_str(),
                 43,
                 0,
-                &[char_edit(5, 5, " world")],
+                &[char_edit(6, 6, " world")],
                 ctx,
             );
         });
@@ -491,17 +492,17 @@ fn sequential_client_edits_accepted() {
         let sv = server_version(&app, file_id);
         let cv1 = ContentVersion::new();
 
-        // First edit: append "d".
+        // First edit: append "d" (1-indexed offset 4 = after "abc").
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &[text_edit(3, 3, "d")], sv, cv1, ctx)
+            gbm.apply_client_edit(file_id, &[text_edit(4, 4, "d")], sv, cv1, ctx)
         });
         assert!(accepted);
         assert_eq!(content(&app, file_id), "abcd");
 
-        // Second edit: append "e". server_version is unchanged.
+        // Second edit: append "e" (1-indexed offset 5 = after "abcd").
         let cv2 = ContentVersion::new();
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &[text_edit(4, 4, "e")], sv, cv2, ctx)
+            gbm.apply_client_edit(file_id, &[text_edit(5, 5, "e")], sv, cv2, ctx)
         });
         assert!(accepted);
         assert_eq!(content(&app, file_id), "abcde");
@@ -533,27 +534,27 @@ fn sequential_server_pushes_accepted() {
         });
         let file_id = _buffer_state.file_id;
 
-        // First push: append "c".
+        // First push: append "c" (1-indexed offset 3 = after "ab").
         gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.handle_buffer_updated_push(
                 &host_id,
                 path.as_str(),
                 11,
                 0,
-                &[char_edit(2, 2, "c")],
+                &[char_edit(3, 3, "c")],
                 ctx,
             );
         });
         assert_eq!(content(&app, file_id), "abc");
 
-        // Second push: append "d". client_version still 0.
+        // Second push: append "d" (1-indexed offset 4 = after "abc").
         gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.handle_buffer_updated_push(
                 &host_id,
                 path.as_str(),
                 12,
                 0,
-                &[char_edit(3, 3, "d")],
+                &[char_edit(4, 4, "d")],
                 ctx,
             );
         });
@@ -596,10 +597,12 @@ fn resolve_conflict_updates_content_and_clock() {
 
         let acked_sv = ContentVersion::new();
 
+        let client_cv = ContentVersion::new();
+
         // resolve_conflict may fail on the disk-save portion in tests;
         // the in-memory content and clock update are not gated on save success.
         let _ = gbm(&app).update(&mut app, |gbm, ctx| {
-            gbm.resolve_conflict(file_id, acked_sv, "resolved content", ctx)
+            gbm.resolve_conflict(file_id, acked_sv, client_cv, "resolved content", ctx)
         });
 
         assert_eq!(content(&app, file_id), "resolved content");
@@ -611,6 +614,77 @@ fn resolve_conflict_updates_content_and_clock() {
                 .sync_clock_for_server_local(file_id)
                 .unwrap();
             assert_eq!(clock.server_version, acked_sv);
+            assert_eq!(clock.client_version, client_cv);
+        });
+    })
+}
+
+// ── Echo loop prevention ─────────────────────────────────────────
+
+#[test]
+fn server_push_does_not_echo_back_as_client_edit() {
+    App::test((), |mut app| async move {
+        init_app(&mut app);
+        app.add_singleton_model(GlobalBufferModel::new);
+
+        let host_id = test_host_id();
+        let path = test_path();
+
+        // Track whether any user-originated ContentChanged fires on the buffer.
+        let (user_edit_tx, user_edit_rx) = async_channel::unbounded::<bool>();
+
+        let _buffer_state = gbm(&app).update(&mut app, |gbm, ctx| {
+            let state =
+                gbm.seed_remote_buffer_for_test(host_id.clone(), path.clone(), "hello", 42, ctx);
+
+            // Subscribe to buffer events, mirroring what open_remote_buffer does.
+            // If a user-originated ContentChanged fires, it means the echo loop
+            // guard (origin.from_user()) failed.
+            let tx = user_edit_tx.clone();
+            ctx.subscribe_to_model(&state.buffer, move |_me, event, _ctx| {
+                use warp_editor::content::buffer::BufferEvent;
+                if let BufferEvent::ContentChanged { origin, .. } = event {
+                    if origin.from_user() {
+                        let _ = tx.try_send(true);
+                    }
+                }
+            });
+            state
+        });
+        let file_id = _buffer_state.file_id;
+
+        // Apply a server push. insert_at_char_offset_ranges emits
+        // ContentChanged with SystemEdit origin, so the subscription
+        // above should NOT fire (origin.from_user() == false).
+        gbm(&app).update(&mut app, |gbm, ctx| {
+            gbm.handle_buffer_updated_push(
+                &host_id,
+                path.as_str(),
+                43,
+                0,
+                &[char_edit(6, 6, " world")],
+                ctx,
+            );
+        });
+
+        // Content should be updated.
+        assert_eq!(content(&app, file_id), "hello world");
+
+        // No user-originated ContentChanged should have fired.
+        assert!(
+            user_edit_rx.try_recv().is_err(),
+            "Server push should not trigger a user-originated ContentChanged"
+        );
+
+        // client_version should remain at 0.
+        let handle = gbm(&app);
+        app.read(|ctx| {
+            let clock = handle
+                .as_ref(ctx)
+                .sync_clock_for_remote_test(file_id)
+                .unwrap();
+            assert_eq!(clock.client_version, ContentVersion::from_raw(0));
+            assert_eq!(clock.server_version, ContentVersion::from_raw(43));
         });
     })
 }
@@ -642,7 +716,7 @@ fn apply_client_edit_multiple_edits_in_batch() {
         let accepted = gbm(&app).update(&mut app, |gbm, ctx| {
             gbm.apply_client_edit(
                 file_id,
-                &[text_edit(0, 3, "xxx"), text_edit(8, 11, "zzz")],
+                &[text_edit(1, 4, "xxx"), text_edit(9, 12, "zzz")],
                 sv,
                 ContentVersion::new(),
                 ctx,
@@ -674,7 +748,7 @@ fn handle_buffer_updated_push_multiple_edits_in_batch() {
                 path.as_str(),
                 2,
                 0,
-                &[char_edit(0, 3, "xxx"), char_edit(8, 11, "zzz")],
+                &[char_edit(1, 4, "xxx"), char_edit(9, 12, "zzz")],
                 ctx,
             );
         });

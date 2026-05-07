@@ -39,7 +39,7 @@ impl SyncClock {
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     pub fn new() -> Self {
         Self {
-            server_version: ContentVersion::new(),
+            server_version: ContentVersion::from_raw(0),
             client_version: ContentVersion::from_raw(0),
         }
     }
@@ -59,20 +59,12 @@ impl SyncClock {
         self.server_version
     }
 
-    /// Bump the client version after a local edit.
-    #[expect(dead_code)]
-    pub fn bump_client(&mut self) -> ContentVersion {
-        self.client_version = ContentVersion::new();
-        self.client_version
-    }
-
     /// Check whether a server push's expected client version matches our local state.
     pub fn server_push_matches(&self, expected_client_version: ContentVersion) -> bool {
         self.client_version == expected_client_version
     }
 
     /// Check whether a client edit's expected server version matches our local state.
-    #[allow(dead_code)]
     pub fn client_edit_matches(&self, expected_server_version: ContentVersion) -> bool {
         self.server_version == expected_server_version
     }

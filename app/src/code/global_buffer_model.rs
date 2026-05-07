@@ -203,7 +203,6 @@ pub enum GlobalBufferModelEvent {
     },
     /// A remote buffer update conflicted with local edits.
     /// The UI should present a resolution dialog.
-    #[allow(dead_code)]
     RemoteBufferConflict {
         file_id: FileId,
     },
@@ -212,7 +211,7 @@ pub enum GlobalBufferModelEvent {
     /// to connected clients as `BufferUpdatedPush`.
     ServerLocalBufferUpdated {
         file_id: FileId,
-        /// Incremental edits with 0-indexed character offsets.
+        /// Incremental edits with 1-indexed character offsets (matching `CharOffset`).
         edits: Vec<CharOffsetEdit>,
         new_server_version: ContentVersion,
         expected_client_version: ContentVersion,
@@ -233,11 +232,12 @@ impl GlobalBufferModelEvent {
     }
 }
 
-/// A text edit using 0-indexed character offsets.
+/// A text edit using 1-indexed character offsets (matching `CharOffset`).
 ///
 /// Used to carry incremental edits in `ServerLocalBufferUpdated` events
 /// and `handle_buffer_updated_push` without coupling `GlobalBufferModel`
-/// to proto types. Offsets are 0-indexed: offset 0 = first character.
+/// to proto types. Offsets use the same 1-indexed coordinate system as
+/// the buffer's `CharOffset`, so no conversion is needed at the boundary.
 pub struct CharOffsetEdit {
     pub start: CharOffset,
     pub end: CharOffset,
@@ -327,7 +327,7 @@ impl GlobalBufferModel {
             .iter()
             .filter_map(|id| match self.location_to_id.get_by_right(id) {
                 Some(BufferLocation::Local(path)) => Some(path.clone()),
-                _ => None,
+                Some(BufferLocation::Remote(_)) | None => None,
             })
             .collect();
 
@@ -540,7 +540,7 @@ impl GlobalBufferModel {
 
         let is_server_local = matches!(state.source, BufferSource::ServerLocal { .. });
 
-        // For ServerLocal buffers, convert byte-range edits to 0-indexed
+        // For ServerLocal buffers, convert byte-range edits to 1-indexed
         // char-offset edits BEFORE applying the diff, because the byte
         // ranges in diff.edits reference the old (pre-edit) buffer content.
         // Uses the buffer's native byte→char offset conversion.
@@ -551,14 +551,12 @@ impl GlobalBufferModel {
                     .iter()
                     .map(|(range, text)| {
                         // +1: 0-indexed text byte offset → 1-indexed buffer byte offset
-                        let start_1 =
+                        let start =
                             ByteOffset::from(range.start + 1).to_buffer_char_offset(buffer_ref);
-                        let end_1 =
-                            ByteOffset::from(range.end + 1).to_buffer_char_offset(buffer_ref);
+                        let end = ByteOffset::from(range.end + 1).to_buffer_char_offset(buffer_ref);
                         CharOffsetEdit {
-                            // -1: 1-indexed buffer char offset → 0-indexed wire char offset
-                            start: start_1 - 1,
-                            end: end_1 - 1,
+                            start,
+                            end,
                             text: text.clone(),
                         }
                     })
@@ -1536,7 +1534,14 @@ impl GlobalBufferModel {
             let path_for_edit = path_str.clone();
             ctx.subscribe_to_model(&buffer, move |me, event, ctx| {
                 use warp_editor::content::buffer::BufferEvent;
-                if let BufferEvent::ContentChanged { delta, .. } = event {
+                if let BufferEvent::ContentChanged { delta, origin, .. } = event {
+                    // Skip server-originated changes to prevent echo loop.
+                    // Server pushes applied via insert_at_char_offset_ranges
+                    // emit ContentChanged with SystemEdit origin.
+                    if !origin.from_user() {
+                        return;
+                    }
+
                     // Look up the sync clock to get the expected server version
                     // and bump the client version.
                     let Some(state) = me.buffers.get_mut(&file_id) else {
@@ -1563,16 +1568,14 @@ impl GlobalBufferModel {
                         .precise_deltas
                         .iter()
                         .map(|d| {
-                            // replaced_range is 1-indexed; convert to 0-indexed proto offsets.
-                            let start = d.replaced_range.start.as_usize().saturating_sub(1);
-                            let end = d.replaced_range.end.as_usize().saturating_sub(1);
+                            // Wire offsets are 1-indexed (matching CharOffset).
                             let text = buffer
                                 .as_ref(ctx)
                                 .text_in_range(d.resolved_range.clone())
                                 .into_string();
                             remote_server::proto::TextEdit {
-                                start_offset: start as u64,
-                                end_offset: end as u64,
+                                start_offset: d.replaced_range.start.as_usize() as u64,
+                                end_offset: d.replaced_range.end.as_usize() as u64,
                                 text,
                             }
                         })
@@ -1707,26 +1710,17 @@ impl GlobalBufferModel {
             return false;
         };
 
-        // Apply the text edits using 0-indexed char offsets from the proto.
-        // Convert to the buffer's 1-indexed CharOffset coordinate system.
+        // Wire offsets are 1-indexed (matching CharOffset), so no conversion needed.
         let new_version = ContentVersion::new();
         buffer.update(ctx, |buffer, ctx| {
             let max_offset = buffer.max_charoffset();
             let char_edits: Vec<(std::ops::Range<CharOffset>, String)> = edits
                 .iter()
                 .map(|edit| {
-                    // +1: 0-indexed proto offset → 1-indexed buffer offset, clamped to max.
-                    // saturating_add prevents overflow when the client sends u64::MAX.
-                    let start = CharOffset::from(
-                        (edit.start_offset as usize)
-                            .saturating_add(1)
-                            .min(max_offset.as_usize()),
-                    );
-                    let end = CharOffset::from(
-                        (edit.end_offset as usize)
-                            .saturating_add(1)
-                            .min(max_offset.as_usize()),
-                    );
+                    let start =
+                        CharOffset::from((edit.start_offset as usize).min(max_offset.as_usize()));
+                    let end =
+                        CharOffset::from((edit.end_offset as usize).min(max_offset.as_usize()));
                     (start..end, edit.text.clone())
                 })
                 .collect();
@@ -1764,6 +1758,7 @@ impl GlobalBufferModel {
         &mut self,
         file_id: FileId,
         acknowledged_server_version: ContentVersion,
+        current_client_version: ContentVersion,
         client_content: &str,
         ctx: &mut ModelContext<Self>,
     ) -> Result<(), FileSaveError> {
@@ -1773,6 +1768,7 @@ impl GlobalBufferModel {
 
         if let BufferSource::ServerLocal { sync_clock, .. } = &mut state.source {
             sync_clock.server_version = acknowledged_server_version;
+            sync_clock.client_version = current_client_version;
         }
 
         let Some(buffer) = state.buffer.upgrade(ctx) else {
@@ -1785,7 +1781,14 @@ impl GlobalBufferModel {
             buffer.set_version(new_version);
         });
 
-        // Save to disk.
+        // Save to disk. Note: the buffer content has already been replaced
+        // in memory above. If the save fails, memory and disk will diverge.
+        // In the local conflict case (handle_file_model_events / FileUpdated),
+        // the auto-reload is dropped and the user can retry the save manually.
+        // Here we're on the daemon side, so a failed save means the buffer
+        // stays diverged until the next file-watcher cycle reconciles it.
+        // The synchronous Result is propagated to the caller; async write
+        // failures surface via the FailedToSave event.
         let content = client_content.to_string();
         let save_version = ContentVersion::new();
         state.set_base_content_version(save_version);
@@ -1813,7 +1816,7 @@ impl GlobalBufferModel {
     }
 
     /// Returns whether a buffer is a `ServerLocal` source.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn is_server_local(&self, file_id: FileId) -> bool {
         self.buffers
             .get(&file_id)
@@ -1822,10 +1825,10 @@ impl GlobalBufferModel {
 
     /// Handle an incoming `BufferUpdatedPush` from the remote server.
     ///
-    /// Accepts incremental edits (0-indexed char offsets) and applies them
-    /// to the local buffer via `insert_at_char_offset_ranges`. If the
-    /// expected client version doesn't match, a conflict event is emitted.
-    #[allow(dead_code)]
+    /// Accepts incremental edits (1-indexed char offsets matching `CharOffset`)
+    /// and applies them to the local buffer via `insert_at_char_offset_ranges`.
+    /// If the expected client version doesn't match, a conflict event is emitted.
+    #[cfg_attr(not(feature = "local_tty"), allow(dead_code))]
     pub fn handle_buffer_updated_push(
         &mut self,
         host_id: &HostId,
@@ -1876,11 +1879,8 @@ impl GlobalBufferModel {
                 let char_edits: Vec<(std::ops::Range<CharOffset>, String)> = edits
                     .iter()
                     .map(|edit| {
-                        // +1: 0-indexed wire offset → 1-indexed buffer offset, clamped to max
-                        let start =
-                            std::cmp::min(CharOffset::from(edit.start.as_usize() + 1), max_offset);
-                        let end =
-                            std::cmp::min(CharOffset::from(edit.end.as_usize() + 1), max_offset);
+                        let start = std::cmp::min(edit.start, max_offset);
+                        let end = std::cmp::min(edit.end, max_offset);
                         (start..end, edit.text.clone())
                     })
                     .collect();
