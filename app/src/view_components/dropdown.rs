@@ -10,6 +10,7 @@ use warpui::{
     fonts::FamilyId,
     geometry::vector::vec2f,
     scene::DropShadow,
+    text_layout::ClipConfig,
     ui_components::{
         button::{ButtonVariant, TextAndIcon, TextAndIconAlignment},
         components::{Coords, UiComponent, UiComponentStyles},
@@ -96,6 +97,9 @@ pub struct DropdownItem<A: Action + Clone> {
     family_id: Option<FamilyId>,
     /// Optional hover tooltip shown over the row.
     tooltip: Option<String>,
+    /// Optional clip config controlling how `display_text` is clipped when it
+    /// would overflow the row width. Forwarded to [`MenuItemFields`].
+    clip_config: Option<ClipConfig>,
 }
 
 impl<A> DropdownItem<A>
@@ -111,6 +115,7 @@ where
             action,
             family_id: None,
             tooltip: None,
+            clip_config: None,
         }
     }
 
@@ -127,6 +132,14 @@ where
         self.tooltip = Some(tooltip.into());
         self
     }
+
+    /// Set a [`ClipConfig`] for this row. When set, the dropdown's text-layout
+    /// layer clips `display_text` at the actual rendered width instead of
+    /// callers having to pre-shrink the string.
+    pub fn with_clip_config(mut self, config: ClipConfig) -> Self {
+        self.clip_config = Some(config);
+        self
+    }
 }
 
 impl<A> From<&DropdownItem<A>> for MenuItem<DropdownAction<A>>
@@ -140,6 +153,9 @@ where
             ));
         if let Some(tooltip) = &dropdown_item.tooltip {
             menu_item = menu_item.with_tooltip(tooltip.clone());
+        }
+        if let Some(clip_config) = dropdown_item.clip_config {
+            menu_item = menu_item.with_clip_config(clip_config);
         }
         if let Some(family_id) = dropdown_item.family_id {
             menu_item.with_font_override(family_id).into_item()

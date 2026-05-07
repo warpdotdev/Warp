@@ -4,6 +4,7 @@ use warp_util::path::user_friendly_path;
 use warpui::{
     elements::{Border, ChildView, Container, Hoverable, MouseStateHandle, Text},
     platform::Cursor,
+    text_layout::ClipConfig,
     ui_components::components::UiComponentStyles,
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
@@ -12,17 +13,10 @@ use crate::{
     ai::persisted_workspace::{PersistedWorkspace, PersistedWorkspaceEvent},
     appearance::Appearance,
     tab_configs::PickerStyle,
-    util::truncation::truncate_from_beginning,
     view_components::{DropdownItem, FilterableDropdown},
 };
 
 const DEFAULT_DROPDOWN_WIDTH: f32 = 380.;
-
-/// Max characters shown for a repo path in the picker before left-truncating
-/// with an ellipsis. Sized to fit `DEFAULT_DROPDOWN_WIDTH` (380px) and the
-/// 412px `params_modal` style without triggering the menu's `autosize_text`
-/// shrink path (`app/src/menu.rs`).
-const MAX_REPO_DISPLAY_LEN: usize = 40;
 
 /// Label for the sticky "Add new repo..." footer at the bottom of the picker.
 const ADD_NEW_REPO_LABEL: &str = "+ Add new repo...";
@@ -156,18 +150,21 @@ impl RepoPicker {
         // "+ Add new repo..." is a sticky footer (not a list item) so it is
         // not included here.
         //
-        // Each item's `display_text` is the user-friendly form (`~`-prefixed,
-        // left-truncated). The action carries the *raw* absolute path so
-        // consumers reading `RepoPickerEvent::Selected` keep getting a real
-        // filesystem path.
+        // Each item's `display_text` is the full user-friendly form
+        // (`~`-prefixed). The dropdown clips it at render width via
+        // `ClipConfig::start()`, so distinct paths with shared trailing
+        // segments stay readable without character-count approximation.
+        // The action carries the *raw* absolute path so consumers reading
+        // `RepoPickerEvent::Selected` keep getting a real filesystem path.
         let home = dirs::home_dir().map(|p| p.display().to_string());
         let items: Vec<DropdownItem<RepoPickerAction>> = PersistedWorkspace::as_ref(ctx)
             .workspaces()
             .filter(|ws| ws.path.exists())
             .map(|ws| {
                 let path_str = ws.path.to_string_lossy().into_owned();
-                let display = format_display_path(&path_str, home.as_deref());
+                let display = user_friendly_path(&path_str, home.as_deref()).into_owned();
                 DropdownItem::new(display, RepoPickerAction::Select(path_str.clone()))
+                    .with_clip_config(ClipConfig::start())
                     .with_tooltip(path_str)
             })
             .collect();
@@ -209,8 +206,8 @@ impl RepoPicker {
     ///
     /// `refresh_items` eagerly mirrors any pre-selected raw path into
     /// `self.selected`, so we never need to fall back to the dropdown's
-    /// `selected_item_label` — that would now return the formatted display
-    /// string (e.g. `~/foo` or `…/bar`), not a usable filesystem path.
+    /// `selected_item_label` — that would return the `~`-abbreviated display
+    /// string, not a usable filesystem path.
     pub fn selected_value(&self, _app: &AppContext) -> Option<String> {
         self.selected.clone()
     }
@@ -249,12 +246,4 @@ impl TypedActionView for RepoPicker {
             }
         }
     }
-}
-
-/// Formats an absolute repo path for display in the picker: replaces a
-/// leading `home` directory with `~`, then left-truncates with an ellipsis if
-/// the result is longer than [`MAX_REPO_DISPLAY_LEN`].
-fn format_display_path(raw_path: &str, home: Option<&str>) -> String {
-    let abbreviated = user_friendly_path(raw_path, home);
-    truncate_from_beginning(&abbreviated, MAX_REPO_DISPLAY_LEN)
 }
