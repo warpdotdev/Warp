@@ -135,7 +135,7 @@ pub fn init(app: &mut AppContext) {
         #[cfg(feature = "local_fs")]
         EditableBinding::new(
             REVEAL_IN_FINDER_BINDING_NAME,
-            "Reveal in Finder",
+            "Reveal in file manager",
             CodeViewAction::RevealInFinder,
         )
         .with_context_predicate(id!("CodeEditorView"))
