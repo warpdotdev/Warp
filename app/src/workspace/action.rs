@@ -490,7 +490,6 @@ pub enum WorkspaceAction {
     /// Falls through to splitting a fresh cloud-mode pane when the active
     /// conversation isn't handoff-able (no synced server token, empty, or no
     /// active conversation at all).
-    #[allow(private_interfaces)]
     OpenLocalToCloudHandoffPane {
         #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
         launch: Option<crate::ai::blocklist::handoff::PendingCloudLaunch>,

@@ -5771,7 +5771,7 @@ fn test_cloud_handoff_prefix_activates_when_handoff_flags_enabled() {
 }
 
 #[test]
-fn test_cloud_handoff_prefix_exits_only_when_backspacing_empty_input() {
+fn test_cloud_handoff_prefix_normal_deletion_does_not_exit() {
     App::test((), |mut app| async move {
         let _agent_view_flag = FeatureFlag::AgentView.override_enabled(true);
         let _oz_handoff_flag = FeatureFlag::OzHandoff.override_enabled(true);
@@ -5789,6 +5789,7 @@ fn test_cloud_handoff_prefix_exits_only_when_backspacing_empty_input() {
             input.user_insert(" ", ctx);
         });
 
+        // Normal backspace that deletes the space (cursor at end) should NOT exit.
         input.update(&mut app, |input, ctx| {
             input
                 .editor
@@ -5801,6 +5802,7 @@ fn test_cloud_handoff_prefix_exits_only_when_backspacing_empty_input() {
             assert!(input.handoff_compose_state.as_ref(ctx).is_active());
         });
 
+        // Backspace on the now-empty buffer exits & mode.
         input.update(&mut app, |input, ctx| {
             input
                 .editor
@@ -5809,6 +5811,46 @@ fn test_cloud_handoff_prefix_exits_only_when_backspacing_empty_input() {
 
         input.read(&app, |input, ctx| {
             assert!(input.buffer_text(ctx).is_empty());
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::None);
+            assert!(!input.handoff_compose_state.as_ref(ctx).is_active());
+        });
+    });
+}
+
+#[test]
+fn test_cloud_handoff_prefix_exits_on_backspace_at_beginning_of_buffer() {
+    App::test((), |mut app| async move {
+        let _agent_view_flag = FeatureFlag::AgentView.override_enabled(true);
+        let _oz_handoff_flag = FeatureFlag::OzHandoff.override_enabled(true);
+        let _handoff_local_cloud_flag = FeatureFlag::HandoffLocalCloud.override_enabled(true);
+
+        initialize_app(&mut app);
+        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+        enter_fullscreen_agent_view_for_test(&terminal, &mut app);
+
+        input.update(&mut app, |input, ctx| {
+            input.user_insert(CLOUD_HANDOFF_INPUT_PREFIX, ctx);
+        });
+        input.update(&mut app, |input, ctx| {
+            input.user_insert("fix tests", ctx);
+        });
+
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "fix tests");
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::CloudHandoff);
+        });
+
+        // Move cursor to the beginning, then backspace.
+        input.update(&mut app, |input, ctx| {
+            input.editor.update(ctx, |editor, ctx| {
+                editor.handle_action(&EditorAction::MoveToLineStart, ctx);
+                editor.backspace(ctx);
+            });
+        });
+
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "fix tests");
             assert_eq!(input.prefix_mode(ctx), InputPrefixMode::None);
             assert!(!input.handoff_compose_state.as_ref(ctx).is_active());
         });

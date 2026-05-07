@@ -21,7 +21,7 @@ use crate::ai::ambient_agents::{
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::TouchedWorkspace;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-pub(crate) use crate::ai::blocklist::handoff::PendingCloudLaunch;
+use crate::ai::blocklist::handoff::PendingCloudLaunch;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
@@ -136,7 +136,9 @@ pub(crate) struct PendingHandoff {
     pub(crate) snapshot_upload: SnapshotUploadStatus,
     /// Gates submit — prevents double-submitting while the spawn is in flight.
     pub(crate) submission_state: HandoffSubmissionState,
-    /// Auto-submit payload for `& query` and `/handoff query`. Taken exactly once.
+    /// When the user types `& query` or `/handoff query`, the launch payload is
+    /// stashed here so `maybe_auto_submit_handoff` can consume it once
+    /// the touched workspace and snapshot upload have settled.
     pub(crate) auto_submit: Option<PendingCloudLaunch>,
     /// Explicit source environment selection. When set, touched-repo overlap must not override it.
     pub(crate) explicit_environment_id: Option<SyncId>,
@@ -1404,6 +1406,10 @@ impl AmbientAgentViewModel {
 
         self.status = Status::Cancelled { progress };
         self.pending_followup_prompt = None;
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        if let Some(handoff) = self.pending_handoff.as_mut() {
+            handoff.auto_submit = None;
+        }
 
         ctx.emit(AmbientAgentViewModelEvent::Cancelled);
     }

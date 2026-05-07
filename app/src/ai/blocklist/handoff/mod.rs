@@ -18,7 +18,7 @@ use super::PendingAttachment;
 use crate::server::server_api::ai::AttachmentInput;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct HandoffLaunchAttachments {
+pub struct HandoffLaunchAttachments {
     pub(crate) request_attachments: Vec<AttachmentInput>,
     pub(crate) display_attachments: Vec<PendingAttachment>,
 }
@@ -27,7 +27,7 @@ pub(crate) struct HandoffLaunchAttachments {
 /// `request_attachments` feed the spawn request while `display_attachments`
 /// are restored into the source input on failure.
 #[derive(Debug, Clone)]
-pub(crate) struct PendingCloudLaunch {
+pub struct PendingCloudLaunch {
     pub(crate) prompt: String,
     pub(crate) attachments: HandoffLaunchAttachments,
 }

@@ -120,7 +120,8 @@ use crate::server::server_api::ai::AttachmentFileInfo;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::server::server_api::ai::AttachmentInput;
 use crate::terminal::view::ambient_agent::{
-    HarnessSelector, HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
+    AuthSecretFtuxView, AuthSecretSelector, AuthSecretSelectorEvent, HarnessSelector,
+    HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 use crate::{
     ai::{
@@ -361,22 +362,6 @@ use super::{
     warpify::SubshellSource,
     History, HistoryEntry, SizeInfo, TerminalModel, UpArrowHistoryConfig,
 };
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::agent_sdk::driver::{
-    retry_handoff_snapshot_upload, HandoffSnapshotUploadRetryResult,
-};
-use crate::ai::blocklist::agent_view::{
-    AgentInputFooter, AgentInputFooterEvent, AgentViewController,
-};
-use crate::ai::blocklist::handoff::{
-    CloudLaunchAttachments, CloudLaunchRequest, CloudLaunchRequestId,
-};
-use crate::terminal::view::ambient_agent::{
-    AuthSecretFtuxView, AuthSecretSelector, AuthSecretSelectorEvent, HarnessSelector,
-    HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
-};
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::terminal::view::ambient_agent::{PendingCloudLaunch, SnapshotUploadStatus};
 use async_channel::Sender;
 use futures::stream::AbortHandle;
 use parking_lot::FairMutex;
@@ -3728,6 +3713,8 @@ impl Input {
         }
     }
 
+    /// Switches the input into cloud handoff compose mode, locking it to AI input
+    /// and activating the handoff compose state.
     fn activate_cloud_handoff_compose(&mut self, ctx: &mut ViewContext<Self>) {
         if self.prefix_mode(ctx) == InputPrefixMode::CloudHandoff {
             return;
@@ -3774,7 +3761,6 @@ impl Input {
 
     // Cloud handoff methods — candidates for extraction to a separate file
     // following the pattern used by `agent.rs`, `classic.rs`, etc.
-
     fn can_activate_cloud_handoff_prefix(
         &self,
         edit_origin: &EditOrigin,
@@ -10184,18 +10170,11 @@ impl Input {
                 init_content: InitContent::Custom("".to_owned()),
             })),
             EditorEvent::VimStatusUpdate => ctx.notify(),
-            EditorEvent::BackspaceOnEmptyBuffer => {
-                if !self.maybe_backspace_prefix_mode(ctx) {
-                    self.maybe_backspace_ai_icon(ctx);
-                }
+            EditorEvent::BackspaceOnEmptyBuffer | EditorEvent::BackspaceAtBeginningOfBuffer => {
+                self.handle_backspace_at_buffer_boundary(ctx);
             }
             EditorEvent::EmacsBindingUsed => {
                 ctx.emit(Event::EmacsBindingUsed);
-            }
-            EditorEvent::BackspaceAtBeginningOfBuffer => {
-                if !self.maybe_backspace_prefix_mode(ctx) {
-                    self.maybe_backspace_ai_icon(ctx);
-                }
             }
             EditorEvent::UpdatePeers { operations } => {
                 self.latest_buffer_operations.extend(operations.to_vec());
@@ -10732,37 +10711,33 @@ impl Input {
         ctx.notify();
     }
 
-    fn maybe_backspace_prefix_mode(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        if self.prefix_mode(ctx) == InputPrefixMode::CloudHandoff
-            && self.editor.as_ref(ctx).buffer_text(ctx).is_empty()
-        {
-            self.exit_cloud_handoff_compose(ctx);
-            ctx.notify();
-            return true;
-        }
-
-        false
-    }
-
-    /// If we're in AI input mode, clears the rightmost AI icon. There may be multiple AI icons
-    /// to backspace away in sequence (AI icon and follow up icon)
-    fn maybe_backspace_ai_icon(&mut self, ctx: &mut ViewContext<Self>) {
-        // If we're not in AI input mode, do nothing.
-        if !self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {
-            // If the AI is locked in shell mode in an active agent view or CLI
-            // agent rich input, clear the '!' indicator by switching to agent mode.
-            let is_cli_agent_input_open =
-                CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id);
-            if self.ai_input_model.as_ref(ctx).is_input_type_locked()
-                && (self.agent_view_controller.as_ref(ctx).is_fullscreen()
-                    || is_cli_agent_input_open)
-            {
-                self.exit_shell_mode_to_ai(ctx);
+    /// Handles backspace at the buffer boundary (empty buffer or cursor at
+    /// position 0). Covers prefix-mode exit (`&` and `!`) and legacy
+    /// classic-mode AI icon toggling in a single function.
+    fn handle_backspace_at_buffer_boundary(&mut self, ctx: &mut ViewContext<Self>) {
+        match self.prefix_mode(ctx) {
+            InputPrefixMode::CloudHandoff => {
+                self.exit_cloud_handoff_compose(ctx);
                 ctx.notify();
                 return;
-            } else {
+            }
+            InputPrefixMode::Shell => {
+                let is_cli_agent_input_open =
+                    CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id);
+                if self.agent_view_controller.as_ref(ctx).is_fullscreen() || is_cli_agent_input_open
+                {
+                    self.exit_shell_mode_to_ai(ctx);
+                    ctx.notify();
+                }
                 return;
             }
+            InputPrefixMode::None => {}
+        }
+
+        // Legacy classic-mode AI icon toggling (only reachable when Agent View
+        // is inactive and no prefix mode is set).
+        if !self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {
+            return;
         }
 
         let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
