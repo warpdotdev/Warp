@@ -2539,8 +2539,8 @@ impl ActionButtonTheme for AgentInputButtonTheme {
         appearance.theme().sub_text_color(effective_bg).into_solid()
     }
 
-    fn border(&self, appearance: &Appearance) -> Option<ColorU> {
-        Some(internal_colors::neutral_3(appearance.theme()))
+    fn border(&self, _appearance: &Appearance) -> Option<ColorU> {
+        None
     }
 
     fn should_opt_out_of_contrast_adjustment(&self) -> bool {
