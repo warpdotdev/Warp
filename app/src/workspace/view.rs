@@ -5953,6 +5953,12 @@ impl Workspace {
                     ctx,
                 );
             }
+            LeftPanelEvent::OpenRemoteFile { remote_path } => {
+                let source = CodeSource::RemoteFileTree {
+                    remote_path: remote_path.clone(),
+                };
+                self.open_code(source, EditorLayout::SplitPane, None, false, &[], ctx);
+            }
         }
     }
 

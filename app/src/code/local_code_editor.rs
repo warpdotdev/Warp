@@ -53,7 +53,6 @@ use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 
 use crate::{
     code::{
-        buffer_location::BufferLocation,
         editor::model::HoverableLink,
         footer::{CodeFooterView, CodeFooterViewEvent},
         global_buffer_model::{BufferState, GlobalBufferModel},
@@ -169,9 +168,9 @@ pub enum LocalCodeEditorEvent {
 
 /// Metadata about a file that is opened in the code view.
 #[derive(Debug, Clone)]
-enum LoadedFileMetadata {
-    /// Normal file with both FileId and path (for files that are actually opened)
-    LocalFile { id: FileId, path: PathBuf },
+struct LoadedFileMetadata {
+    id: FileId,
+    location: crate::code::buffer_location::FileLocation,
 }
 
 pub use super::diff_viewer::DisplayMode;
@@ -1180,7 +1179,10 @@ impl LocalCodeEditorView {
         T: FnOnce(BufferState, &mut ViewContext<Self>) -> ViewHandle<CodeEditorView>,
     {
         let buffer_state = GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
-            model.open(BufferLocation::Local(path.to_path_buf()), ctx)
+            model.open(
+                crate::code::buffer_location::FileLocation::Local(path.to_path_buf()),
+                ctx,
+            )
         });
         let file_id = buffer_state.file_id;
         let editor = editor_constructor(buffer_state, ctx);
@@ -1196,13 +1198,55 @@ impl LocalCodeEditorView {
         let mut local_editor =
             Self::new(editor, None, enable_diff_nav_by_default, display_mode, ctx);
 
-        local_editor.metadata = Some(LoadedFileMetadata::LocalFile {
+        local_editor.metadata = Some(LoadedFileMetadata {
             id: file_id,
-            path: path.to_path_buf(),
+            location: crate::code::buffer_location::FileLocation::Local(path.to_path_buf()),
         });
 
         Self::subscribe_to_global_buffer_events(file_id, ctx);
 
+        local_editor
+    }
+
+    /// Construct a new editor view backed by a remote buffer.
+    ///
+    /// Similar to `new_with_global_buffer` but opens the buffer via
+    /// `FileLocation::Remote` and skips local-only wiring (LSP, footer).
+    #[allow(dead_code)]
+    pub fn new_with_remote_global_buffer<T>(
+        remote_path: warp_util::remote_path::RemotePath,
+        editor_constructor: T,
+        ctx: &mut ViewContext<Self>,
+    ) -> Self
+    where
+        T: FnOnce(BufferState, &mut ViewContext<Self>) -> ViewHandle<CodeEditorView>,
+    {
+        let location = crate::code::buffer_location::FileLocation::Remote(remote_path.clone());
+        let buffer_state =
+            GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| model.open(location, ctx));
+        let file_id = buffer_state.file_id;
+        let editor = editor_constructor(buffer_state, ctx);
+
+        // Set language from the remote path's extension.
+        if let Some(ext) = remote_path.path.extension() {
+            editor.update(ctx, |editor, ctx| {
+                editor.set_language_with_name(ext, ctx);
+                editor.model.update(ctx, |model, ctx| {
+                    model.rebuild_layout_with_syntax_highlighting(ctx)
+                });
+            });
+        }
+
+        let mut local_editor = Self::new(editor, None, false, None, ctx);
+
+        local_editor.metadata = Some(LoadedFileMetadata {
+            id: file_id,
+            location: crate::code::buffer_location::FileLocation::Remote(remote_path),
+        });
+
+        Self::subscribe_to_global_buffer_events(file_id, ctx);
+
+        // Skip LSP registration and footer — remote LSP runs server-side.
         local_editor
     }
 
@@ -1599,9 +1643,9 @@ impl LocalCodeEditorView {
             .update(ctx, |model, ctx| model.register(path.clone(), buffer, ctx));
 
         let file_id = buffer_state.file_id;
-        me.metadata = Some(LoadedFileMetadata::LocalFile {
+        me.metadata = Some(LoadedFileMetadata {
             id: file_id,
-            path: path.clone(),
+            location: crate::code::buffer_location::FileLocation::Local(path.clone()),
         });
 
         me.set_new_file(false);
@@ -1666,15 +1710,18 @@ impl LocalCodeEditorView {
     }
 
     pub fn file_id(&self) -> Option<FileId> {
-        self.metadata.as_ref().map(|metadata| match metadata {
-            LoadedFileMetadata::LocalFile { id, .. } => *id,
-        })
+        self.metadata.as_ref().map(|m| m.id)
     }
 
+    /// Returns the unified file location (local or remote).
+    pub fn file_location(&self) -> Option<&crate::code::buffer_location::FileLocation> {
+        self.metadata.as_ref().map(|m| &m.location)
+    }
+
+    /// Returns the local path if this editor is backed by a local file.
+    /// Returns `None` for remote files. Used by LSP and other local-only code paths.
     pub fn file_path(&self) -> Option<&Path> {
-        self.metadata.as_ref().map(|metadata| match metadata {
-            LoadedFileMetadata::LocalFile { path, .. } => path.as_path(),
-        })
+        self.file_location().and_then(|loc| loc.to_local_path())
     }
 
     /// Update this editor's file identity after a `GlobalBufferModel::rename`.
@@ -1688,9 +1735,9 @@ impl LocalCodeEditorView {
         ctx: &mut ViewContext<Self>,
     ) {
         let file_id = buffer_state.file_id;
-        self.metadata = Some(LoadedFileMetadata::LocalFile {
+        self.metadata = Some(LoadedFileMetadata {
             id: file_id,
-            path: new_path.to_path_buf(),
+            location: crate::code::buffer_location::FileLocation::Local(new_path.to_path_buf()),
         });
 
         self.editor.update(ctx, |editor, ctx| {

@@ -411,6 +411,37 @@ impl CodeView {
         })
     }
 
+    /// Construct an editor for a remote file.
+    #[allow(dead_code)]
+    fn construct_remote_editor(
+        &mut self,
+        remote_path: warp_util::remote_path::RemotePath,
+        ctx: &mut ViewContext<Self>,
+    ) -> ViewHandle<LocalCodeEditorView> {
+        ctx.add_typed_action_view(|ctx| {
+            LocalCodeEditorView::new_with_remote_global_buffer(
+                remote_path,
+                |buffer_state, ctx| {
+                    ctx.add_typed_action_view(|ctx| {
+                        CodeEditorView::new(
+                            None,
+                            Some(buffer_state.buffer),
+                            CodeEditorRenderOptions::new(VerticalExpansionBehavior::FillMaxHeight),
+                            ctx,
+                        )
+                        .with_horizontal_scrollbar_appearance(
+                            warpui::elements::new_scrollable::ScrollableAppearance::new(
+                                warpui::elements::ScrollbarWidth::Auto,
+                                true,
+                            ),
+                        )
+                    })
+                },
+                ctx,
+            )
+        })
+    }
+
     /// Construct an editor for a new (unsaved) file with no file backing.
     fn construct_new_file_editor(
         &mut self,
@@ -453,6 +484,42 @@ impl CodeView {
         preview: bool,
         ctx: &mut ViewContext<Self>,
     ) -> TabData {
+        // Check if the source is a remote file tree — if so, use the remote editor constructor.
+        if let CodeSource::RemoteFileTree { remote_path } = &self.source {
+            let remote_path = remote_path.clone();
+            let code_editor = self.construct_remote_editor(remote_path, ctx);
+            let editor = code_editor.as_ref(ctx).editor().clone();
+            ctx.subscribe_to_view(&editor, |me, _, event, ctx| match event {
+                CodeEditorEvent::Focused => {
+                    me.promote_if_preview(ctx);
+                    ctx.emit(CodeViewEvent::Pane(PaneEvent::FocusSelf));
+                }
+                CodeEditorEvent::ContentChanged { .. } => {
+                    me.set_title_after_content_update(ctx);
+                }
+                _ => {}
+            });
+            ctx.subscribe_to_view(&code_editor, |me, _, event, ctx| match event {
+                LocalCodeEditorEvent::FileLoaded => {
+                    me.pane_configuration.update(ctx, |pane_config, ctx| {
+                        pane_config.refresh_pane_header_overflow_menu_items(ctx);
+                    });
+                    ctx.emit(CodeViewEvent::Pane(PaneEvent::AppStateChanged));
+                }
+                LocalCodeEditorEvent::FailedToLoad { error } => {
+                    log::warn!("Failed to load remote file. {error:?}");
+                    CodeView::display_load_failure(ctx.window_id(), ctx);
+                }
+                _ => {}
+            });
+            return TabData {
+                path: None,
+                editor_view: code_editor,
+                mouse_state_handles: Default::default(),
+                preview,
+            };
+        }
+
         // Opt out of shared buffer if we are creating a new file.
         // TODO(kevin): Once the file is saved, we should convert that into a shared buffer.
         let code_editor = if let Some(path) = path.as_ref() {

@@ -87,6 +87,11 @@ pub enum LeftPanelEvent {
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
     },
+    /// Open a remote file in a code editor pane.
+    #[allow(dead_code)]
+    OpenRemoteFile {
+        remote_path: warp_util::remote_path::RemotePath,
+    },
     NewConversationInNewTab,
     ShowDeleteConfirmationDialog {
         conversation_id: AIConversationId,
@@ -775,6 +780,11 @@ impl LeftPanelView {
                 ctx.emit(LeftPanelEvent::FileTree(
                     pane_group::Event::OpenDirectoryInNewTab { path: path.clone() },
                 ));
+            }
+            FileTreeEvent::OpenRemoteFile { remote_path } => {
+                ctx.emit(LeftPanelEvent::OpenRemoteFile {
+                    remote_path: remote_path.clone(),
+                });
             }
         }
     }

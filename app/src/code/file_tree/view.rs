@@ -2273,8 +2273,16 @@ impl FileTreeView {
 
         match item {
             FileTreeItem::File { metadata, .. } => {
-                // Remote file trees don't support opening files in the editor.
-                if !is_remote {
+                if is_remote {
+                    // Emit a remote open event if we have a host ID.
+                    if let Some(host_id) = &root_dir.remote_host_id {
+                        let remote_path = warp_util::remote_path::RemotePath::new(
+                            host_id.clone(),
+                            (*metadata.path).clone(),
+                        );
+                        ctx.emit(FileTreeEvent::OpenRemoteFile { remote_path });
+                    }
+                } else {
                     let path = metadata.path.to_local_path_lossy();
                     self.open_file(&path, None, ctx);
                 }
@@ -2901,6 +2909,11 @@ pub enum FileTreeEvent {
         path: PathBuf,
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
+    },
+    /// Open a remote file in the code editor.
+    #[allow(dead_code)]
+    OpenRemoteFile {
+        remote_path: warp_util::remote_path::RemotePath,
     },
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     FileRenamed {

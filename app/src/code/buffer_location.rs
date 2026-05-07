@@ -1,15 +1,62 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use warp_util::content_version::ContentVersion;
 use warp_util::remote_path::RemotePath;
 
-/// Uniquely identifies where a buffer's content lives.
+/// Uniquely identifies where a file lives — either on the local filesystem
+/// or on a remote host. Used across both the buffer model and the
+/// editor/view layers as the canonical file-identity type.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum BufferLocation {
+pub enum FileLocation {
     /// File on the local filesystem.
     Local(PathBuf),
     /// File on a remote host, identified by host + path.
     Remote(RemotePath),
+}
+
+impl FileLocation {
+    /// Returns the file name component for display (e.g. tab titles).
+    #[allow(dead_code)]
+    pub fn display_name(&self) -> &str {
+        match self {
+            FileLocation::Local(path) => path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default(),
+            FileLocation::Remote(remote) => remote.path.file_name().unwrap_or_default(),
+        }
+    }
+
+    /// Returns the file extension, if any. Used for language detection and icons.
+    #[allow(dead_code)]
+    pub fn extension(&self) -> Option<&str> {
+        match self {
+            FileLocation::Local(path) => path.extension().and_then(|e| e.to_str()),
+            FileLocation::Remote(remote) => remote.path.extension(),
+        }
+    }
+
+    /// Returns the local path if this is a `Local` location, `None` for `Remote`.
+    /// Callers that only work with local files (LSP, save-to-disk, reveal-in-finder)
+    /// should use this to gate their behavior.
+    pub fn to_local_path(&self) -> Option<&Path> {
+        match self {
+            FileLocation::Local(path) => Some(path.as_path()),
+            FileLocation::Remote(_) => None,
+        }
+    }
+}
+
+impl From<PathBuf> for FileLocation {
+    fn from(path: PathBuf) -> Self {
+        FileLocation::Local(path)
+    }
+}
+
+impl From<RemotePath> for FileLocation {
+    fn from(remote: RemotePath) -> Self {
+        FileLocation::Remote(remote)
+    }
 }
 
 /// Tracks sync state between client and server for a single remote buffer.

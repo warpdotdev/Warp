@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use warp_util::remote_path::RemotePath;
+
 use crate::ai::skills::SkillOpenOrigin;
 use ai::skills::SkillReference;
 use serde::{Deserialize, Serialize};
@@ -128,6 +130,9 @@ pub enum CodeSource {
         path: PathBuf,
         origin: SkillOpenOrigin,
     },
+    /// Opened from the remote file tree.
+    #[serde(skip)]
+    RemoteFileTree { remote_path: RemotePath },
 }
 
 impl CodeSource {
@@ -141,18 +146,28 @@ impl CodeSource {
             | Self::ProjectRules { .. }
             | Self::FileTree { .. }
             | Self::Finder { .. }
-            | Self::Skill { .. } => None,
+            | Self::Skill { .. }
+            | Self::RemoteFileTree { .. } => None,
         }
     }
 
     pub fn path(&self) -> Option<PathBuf> {
         match self {
-            Self::New { .. } | Self::AIAction { .. } => None,
+            Self::New { .. } | Self::AIAction { .. } | Self::RemoteFileTree { .. } => None,
             Self::Link { path, .. }
             | Self::ProjectRules { path }
             | Self::FileTree { path }
             | Self::Finder { path }
             | Self::Skill { path, .. } => Some(path.clone()),
+        }
+    }
+
+    /// Returns the remote path if this source is from a remote file tree.
+    #[allow(dead_code)]
+    pub fn remote_path(&self) -> Option<&RemotePath> {
+        match self {
+            Self::RemoteFileTree { remote_path } => Some(remote_path),
+            _ => None,
         }
     }
 
@@ -189,6 +204,7 @@ impl CodeSource {
             Self::FileTree { .. } => "file_tree",
             Self::Finder { .. } => "finder",
             Self::Skill { .. } => "skill",
+            Self::RemoteFileTree { .. } => "remote_file_tree",
         }
     }
 
@@ -197,7 +213,7 @@ impl CodeSource {
     /// `AIAction` is ephemeral (tied to a live conversation) and should not
     /// be restored.
     pub fn is_restorable(&self) -> bool {
-        !matches!(self, Self::AIAction { .. })
+        !matches!(self, Self::AIAction { .. } | Self::RemoteFileTree { .. })
     }
 }
 
