@@ -436,11 +436,24 @@ fn decode_static_with_limits_inner(
 ) -> anyhow::Result<image::RgbaImage> {
     let mut reader = image::ImageReader::with_format(std::io::Cursor::new(data), format);
     reader.limits(limits);
-    let img = reader.decode()?;
+    // GH9729 §700: read EXIF orientation from the decoder *before*
+    // consuming it into a `DynamicImage`. The `image` crate's
+    // per-format decoders (JPEG with the EXIF APP1 segment, PNG with
+    // the eXIf chunk, WebP with the EXIF chunk) report the tag here;
+    // formats whose decoder doesn't override the trait method get
+    // `Orientation::NoTransforms` (the trait default), making
+    // `apply_orientation` a no-op for them.
+    let mut decoder = reader.into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let mut img = image::DynamicImage::from_decoder(decoder)?;
     let pixels = (img.width() as u64).saturating_mul(img.height() as u64);
     if pixels > max_pixels {
         anyhow::bail!("image is too large to preview");
     }
+    // Apply orientation *after* the pixel-cap check — `apply_orientation`
+    // can transpose width/height (Rotate90/Rotate270) but cannot change
+    // the total pixel count, so cap correctness is preserved.
+    img.apply_orientation(orientation);
     Ok(img.into_rgba8())
 }
 

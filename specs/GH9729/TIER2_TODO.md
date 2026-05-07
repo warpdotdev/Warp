@@ -67,9 +67,12 @@ Hard rules:
        lives in the existing `description` field already, format
        string and file size are deferred (see `t2-8-r2` follow-up). —
        `tech.md` §699
-- [ ] **t2-9.** EXIF orientation + ICC color profile. Extend the agent-mode
+- [x] **t2-9.** EXIF orientation + ICC color profile. Extend the agent-mode
        decoder in `app/src/util/image.rs` and wire into
-       `ImageType::try_from_bytes`. — `tech.md` §700
+       `ImageType::try_from_bytes`. EXIF orientation shipped both
+       sites in this row; ICC color profile deferred to `t2-9-icc`
+       (needs `lcms2`/`qcms` dependency + non-trivial colour-space
+       conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
 - [ ] **t2-FINAL.** Presubmit (no R1/R2 rows): `cargo fmt`; `cargo clippy
@@ -86,7 +89,7 @@ Hard rules:
 | t2-6 | animated playback (continuous; pause deferred) | `f077496` | [x] | [x] | [x] |
 | t2-7 | zoom (pan deferred to t2-7-pan) | `6aee220` | [x] | [x] | [x] |
 | t2-8 | status footer (dimensions only) | `d9cc0c3` | [x] | [x] | [x] |
-| t2-9 | EXIF orientation + ICC | | [ ] | [ ] | [ ] |
+| t2-9 | EXIF orientation (ICC deferred to t2-9-icc) | _pending_ | [x] | [ ] | [ ] |
 | t2-FINAL | presubmit | | [ ] | — | — |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
@@ -185,6 +188,20 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   v1 §694 (background-executor stat) — once that lands, the
   size can come from the same stat the §119 size-cap check
   already does. — `reviews/tier2-t2-8-r2.md`.
+- **t2-9-icc.** ICC color profile flattening to sRGB. The `image`
+  crate exposes `ImageDecoder::icc_profile() -> ImageResult<Option<Vec<u8>>>`
+  for the JPEG/PNG/WebP decoders, so reading the embedded profile is
+  free. Applying it requires either `lcms2` / `qcms` (CMYK and named
+  colour-space conversion) or a hand-rolled limited path
+  (sRGB-→sRGB shortcut for the `cHRM`-only PNG case, plus a generic
+  reject for anything else). Either way it's a meaningful crate
+  dependency or a new colour-management module under
+  `crates/warpui_core/`. Belongs in a separate PR; tracked here so
+  v1.x can consider whether to ship without ICC and accept slight
+  colour drift on wide-gamut displays. The lightbox decoder in
+  `crates/warpui_core/src/image_cache.rs` and the agent-mode decoder
+  in `app/src/util/image.rs` should adopt the same path once
+  available.
 - **t2-7-pan.** Drag-to-pan for a zoomed-in image. This GPUI fork has
   no `Translate`/`Offset`/`Transform` primitive that lets us shift an
   element during paint, so applying a `pan_offset: Vector2F` to the
