@@ -374,6 +374,12 @@ pub struct DiffStateModel {
     computing_diffs_abort_handle: Option<SpawnedFutureHandle>,
     computing_metadata_abort_handle: Option<SpawnedFutureHandle>,
     refreshing_pr_info_handle: Option<SpawnedFutureHandle>,
+    /// Branch name for which `refresh_pr_info` has been called at least once.
+    /// Gates the metadata-refresh fallback so it only retries `gh pr view` once
+    /// per branch when `pr_info` is `None` (e.g. branch has no PR, lookup
+    /// failed). Without this, every filesystem event on the repo would re-fire
+    /// `gh pr view` for branches that legitimately have no PR.
+    pr_info_attempted_for_branch: Option<String>,
     /// Controls whether periodic throttled metadata refresh is active.
     /// Refresh is suppressed when the code review pane is not open.
     metadata_refresh_enabled: bool,
@@ -419,6 +425,7 @@ impl DiffStateModel {
             computing_diffs_abort_handle: None,
             computing_metadata_abort_handle: None,
             refreshing_pr_info_handle: None,
+            pr_info_attempted_for_branch: None,
             metadata_refresh_enabled: false,
         };
 
@@ -453,6 +460,7 @@ impl DiffStateModel {
             computing_diffs_abort_handle: None,
             computing_metadata_abort_handle: None,
             refreshing_pr_info_handle: None,
+            pr_info_attempted_for_branch: None,
             metadata_refresh_enabled: false,
         }
     }
@@ -1465,7 +1473,13 @@ impl DiffStateModel {
         } else if FeatureFlag::GitOperationsInCodeReview.is_enabled()
             && self.pr_info().is_none()
             && !self.is_pr_info_refreshing()
+            && self.pr_info_attempted_for_branch != current_branch
         {
+            // Initial-load fallback: if metadata arrived without a successful
+            // PR lookup yet on this branch, try once. Gated by
+            // `pr_info_attempted_for_branch` so subsequent metadata refreshes
+            // (every fs event on the repo) don't re-fire `gh pr view` when the
+            // branch has no PR or the lookup failed.
             self.refresh_pr_info(ctx);
         }
 
@@ -2826,6 +2840,10 @@ impl DiffStateModel {
         let Some(repo_path) = self.active_repository_path(ctx) else {
             return;
         };
+        // Mark this branch as attempted before spawning so the fallback in
+        // `handle_updated_metadata_for_repo` won't re-fire while the lookup
+        // is in flight or after it completes with no PR.
+        self.pr_info_attempted_for_branch = self.get_current_branch_name();
         #[cfg(feature = "local_tty")]
         let path_future = LocalShellState::handle(ctx).update(ctx, |shell_state, ctx| {
             shell_state.get_interactive_path_env_var(ctx)
@@ -2964,6 +2982,7 @@ impl DiffStateModel {
             computing_diffs_abort_handle: None,
             computing_metadata_abort_handle: None,
             refreshing_pr_info_handle: None,
+            pr_info_attempted_for_branch: None,
             metadata_refresh_enabled: false,
         }
     }
