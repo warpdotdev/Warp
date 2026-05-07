@@ -38,6 +38,17 @@ pub const MAX_DISTINCT_ENTRIES: usize = 4096;
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct HyperlinkId(NonZeroU32);
 
+impl HyperlinkId {
+    /// Returns the underlying integer value of this id. Intended for callers
+    /// that need a stable string identity for the hyperlink (e.g. caching a
+    /// rendered cell position by id for integration tests); other callers
+    /// should treat ids as opaque.
+    #[inline]
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
 impl GetSize for HyperlinkId {}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
