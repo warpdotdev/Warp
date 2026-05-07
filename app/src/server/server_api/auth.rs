@@ -19,7 +19,6 @@ use warp_graphql::queries::get_conversation_usage::{
     ConversationUsage, GetConversationUsage, GetConversationUsageVariables, UserResult,
 };
 
-use crate::auth::auth_state::AuthState;
 use warp_graphql::mutations::set_user_is_onboarded::{
     SetUserIsOnboarded, SetUserIsOnboardedResult, SetUserIsOnboardedVariables,
 };
@@ -65,7 +64,7 @@ use crate::{
     },
 };
 
-use super::{ServerApi, ServerApiAuthError, ServerApiTokenSource, TokenRefreshPolicy};
+use super::{ServerApi, ServerApiAuthError};
 
 /// Error messages returned from the Firebase REST API when attempting to convert a refresh token
 /// into an access token that indicate the user's token is in an errored state.
@@ -213,81 +212,61 @@ pub trait AuthClient: 'static + Send + Sync {
     async fn get_or_create_ambient_workload_token(&self) -> Result<Option<String>>;
 }
 
-pub(super) struct AuthStateTokenSource {
-    auth_state: Arc<AuthState>,
-    client: Arc<http_client::Client>,
-    event_sender: async_channel::Sender<ServerApiEvent>,
-}
-
-impl AuthStateTokenSource {
-    pub(super) fn new(
-        auth_state: Arc<AuthState>,
-        client: Arc<http_client::Client>,
-        event_sender: async_channel::Sender<ServerApiEvent>,
-    ) -> Self {
-        Self {
-            auth_state,
-            client,
-            event_sender,
+impl ServerApi {
+    pub(super) async fn access_token(&self) -> Result<AuthToken> {
+        if let Some(token) = self.bearer_token.clone() {
+            return Ok(AuthToken::Bearer(token));
         }
-    }
-}
 
-impl ServerApiTokenSource for AuthStateTokenSource {
-    fn access_token(&self, refresh_policy: TokenRefreshPolicy) -> BoxFuture<'_, Result<AuthToken>> {
-        Box::pin(async move {
-            if cfg!(feature = "skip_login") {
-                bail!("skip_login enabled; failing all authenticated requests");
-            }
+        if cfg!(feature = "skip_login") {
+            bail!("skip_login enabled; failing all authenticated requests");
+        }
 
-            let Some(credentials) = self.auth_state.credentials() else {
-                return Err(ServerApiAuthError::MissingCredentials.into());
-            };
+        let Some(auth_state) = self.auth_state.as_ref() else {
+            return Err(ServerApiAuthError::MissingCredentials.into());
+        };
 
-            match credentials {
-                Credentials::ApiKey { key, .. } => Ok(AuthToken::ApiKey(key)),
-                Credentials::Firebase(auth_tokens) => {
-                    let expiration_time = auth_tokens.expiration_time;
+        let Some(credentials) = auth_state.credentials() else {
+            return Err(ServerApiAuthError::MissingCredentials.into());
+        };
 
-                    // Generate a new ID token if the token has expired or will expire in the
-                    // next five minutes. This matches the behavior of the Firebase Auth SDK.
-                    if chrono::DateTime::now() + chrono::Duration::minutes(5) >= expiration_time {
-                        if !refresh_policy.allowed_to_refresh_token() {
-                            return Err(ServerApiAuthError::ExpiredRefreshDisabled.into());
-                        }
+        match credentials {
+            Credentials::ApiKey { key, .. } => Ok(AuthToken::ApiKey(key)),
+            Credentials::Firebase(auth_tokens) => {
+                let expiration_time = auth_tokens.expiration_time;
 
-                        let refresh_token = auth_tokens.refresh_token.clone();
-                        let firebase_token =
-                            FirebaseToken::Refresh(RefreshToken::new(refresh_token));
-
-                        let result = fetch_auth_tokens(self.client.clone(), firebase_token).await;
-
-                        if let Err(UserAuthenticationError::DeniedAccessToken(_)) = result {
-                            let _ = self.event_sender.send(ServerApiEvent::NeedsReauth).await;
-                        }
-                        let new_firebase_token_info = result?;
-                        self.auth_state
-                            .update_firebase_tokens(new_firebase_token_info.clone());
-                        let _ = self
-                            .event_sender
-                            .send(ServerApiEvent::AccessTokenRefreshed {
-                                token: new_firebase_token_info.id_token.clone(),
-                            })
-                            .await;
-                        return Ok(AuthToken::Firebase(new_firebase_token_info.id_token));
+                // Generate a new ID token if the token has expired or will expire in the
+                // next five minutes. This matches the behavior of the Firebase Auth SDK.
+                if chrono::DateTime::now() + chrono::Duration::minutes(5) >= expiration_time {
+                    if !self.allowed_to_refresh_token() {
+                        return Err(ServerApiAuthError::ExpiredRefreshDisabled.into());
                     }
 
-                    Ok(AuthToken::Firebase(auth_tokens.id_token))
-                }
-                Credentials::SessionCookie => Ok(AuthToken::NoAuth),
-                #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
-                Credentials::Test => Ok(AuthToken::NoAuth),
-            }
-        })
-    }
+                    let refresh_token = auth_tokens.refresh_token.clone();
+                    let firebase_token = FirebaseToken::Refresh(RefreshToken::new(refresh_token));
 
-    fn access_token_ignoring_validity(&self) -> Option<String> {
-        self.auth_state.get_access_token_ignoring_validity()
+                    let result = fetch_auth_tokens(self.client.clone(), firebase_token).await;
+
+                    if let Err(UserAuthenticationError::DeniedAccessToken(_)) = result {
+                        let _ = self.event_sender.send(ServerApiEvent::NeedsReauth).await;
+                    }
+                    let new_firebase_token_info = result?;
+                    auth_state.update_firebase_tokens(new_firebase_token_info.clone());
+                    let _ = self
+                        .event_sender
+                        .send(ServerApiEvent::AccessTokenRefreshed {
+                            token: new_firebase_token_info.id_token.clone(),
+                        })
+                        .await;
+                    return Ok(AuthToken::Firebase(new_firebase_token_info.id_token));
+                }
+
+                Ok(AuthToken::Firebase(auth_tokens.id_token))
+            }
+            Credentials::SessionCookie => Ok(AuthToken::NoAuth),
+            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
+            Credentials::Test => Ok(AuthToken::NoAuth),
+        }
     }
 }
 

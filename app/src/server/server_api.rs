@@ -20,14 +20,11 @@ use crate::ai::predict::predict_am_queries::{PredictAMQueriesRequest, PredictAMQ
 use crate::ai::voice::transcribe::{TranscribeRequest, TranscribeResponse};
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
-use crate::auth::credentials::AuthToken;
 use crate::auth::UserUid;
 use crate::server::graphql::default_request_options;
 use crate::server::server_api::presigned_upload::HttpStatusError;
 use ai::AIClient;
-use auth::{
-    AuthClient, AuthStateTokenSource, AMBIENT_WORKLOAD_TOKEN_HEADER, CLOUD_AGENT_ID_HEADER,
-};
+use auth::{AuthClient, AMBIENT_WORKLOAD_TOKEN_HEADER, CLOUD_AGENT_ID_HEADER};
 use base64::prelude::BASE64_URL_SAFE;
 use base64::Engine;
 use block::BlockClient;
@@ -415,65 +412,6 @@ pub enum ServerApiAuthError {
     CredentialsRejected,
 }
 
-/// Source of request authentication for [`ServerApi`].
-///
-/// Normal client usage is backed by [`AuthState`] with refresh enabled. Daemon/headless callers
-/// can inject a bearer-token source with refresh disabled so requests never attempt client
-/// `AuthState` refresh or emit client reauth events.
-pub trait ServerApiTokenSource: 'static + Send + Sync {
-    fn access_token(&self, refresh_policy: TokenRefreshPolicy) -> BoxFuture<'_, Result<AuthToken>>;
-
-    fn access_token_ignoring_validity(&self) -> Option<String> {
-        None
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Default)]
-pub struct BearerTokenSource {
-    token: RwLock<Option<String>>,
-}
-
-#[allow(dead_code)]
-impl BearerTokenSource {
-    pub fn new(token: Option<String>) -> Self {
-        Self {
-            token: RwLock::new(token.filter(|token| !token.is_empty())),
-        }
-    }
-
-    pub fn set_token(&self, token: impl Into<String>) {
-        let token = token.into();
-        if token.is_empty() {
-            self.clear_token();
-        } else {
-            *self.token.write() = Some(token);
-        }
-    }
-
-    pub fn clear_token(&self) {
-        *self.token.write() = None;
-    }
-}
-
-impl ServerApiTokenSource for BearerTokenSource {
-    fn access_token(
-        &self,
-        _refresh_policy: TokenRefreshPolicy,
-    ) -> BoxFuture<'_, Result<AuthToken>> {
-        Box::pin(async move {
-            let Some(token) = self.token.read().clone() else {
-                return Err(ServerApiAuthError::MissingCredentials.into());
-            };
-            Ok(AuthToken::Bearer(token))
-        })
-    }
-
-    fn access_token_ignoring_validity(&self) -> Option<String> {
-        self.token.read().clone()
-    }
-}
-
 /// An API wrapper struct with methods to requests to warp-server.
 ///
 /// Prefer NOT adding new methods directly on this struct; instead, add to one of the existing
@@ -482,7 +420,7 @@ impl ServerApiTokenSource for BearerTokenSource {
 pub struct ServerApi {
     client: Arc<http_client::Client>,
     auth_state: Option<Arc<AuthState>>,
-    token_source: Arc<dyn ServerApiTokenSource>,
+    bearer_token: Option<String>,
     token_refresh_policy: TokenRefreshPolicy,
     event_sender: async_channel::Sender<ServerApiEvent>,
     // TODO(jeff): Make `TelemetryApi` another type of client, and move it off `ServerApi`.
@@ -508,32 +446,26 @@ impl ServerApi {
         agent_source: Option<ai::AgentSource>,
     ) -> Self {
         let client = Arc::new(http_client::Client::new());
-        let token_source = Arc::new(AuthStateTokenSource::new(
-            auth_state.clone(),
-            client.clone(),
-            event_sender.clone(),
-        ));
         Self::new_with_parts(
             client,
             Some(auth_state),
-            token_source,
+            None,
             TokenRefreshPolicy::Allowed,
             event_sender,
             agent_source,
         )
     }
 
-    pub fn new_with_token_source(
-        token_source: Arc<dyn ServerApiTokenSource>,
-        token_refresh_policy: TokenRefreshPolicy,
+    pub fn new_with_bearer_token(
+        bearer_token: impl Into<String>,
         agent_source: Option<ai::AgentSource>,
     ) -> Self {
         let (event_sender, _) = async_channel::bounded(10);
         Self::new_with_parts(
             Arc::new(http_client::Client::new()),
             None,
-            token_source,
-            token_refresh_policy,
+            Some(bearer_token.into()).filter(|token| !token.is_empty()),
+            TokenRefreshPolicy::Disabled,
             event_sender,
             agent_source,
         )
@@ -542,7 +474,7 @@ impl ServerApi {
     fn new_with_parts(
         client: Arc<http_client::Client>,
         auth_state: Option<Arc<AuthState>>,
-        token_source: Arc<dyn ServerApiTokenSource>,
+        bearer_token: Option<String>,
         token_refresh_policy: TokenRefreshPolicy,
         event_sender: async_channel::Sender<ServerApiEvent>,
         agent_source: Option<ai::AgentSource>,
@@ -559,7 +491,7 @@ impl ServerApi {
         Self {
             client,
             auth_state,
-            token_source,
+            bearer_token,
             token_refresh_policy,
             event_sender,
             telemetry_api: TelemetryApi::new(),
@@ -578,16 +510,11 @@ impl ServerApi {
         let (tx, _) = async_channel::unbounded();
         let auth_state = Arc::new(AuthState::new_for_test());
         let client = Arc::new(http_client::Client::new_for_test());
-        let token_source = Arc::new(AuthStateTokenSource::new(
-            auth_state.clone(),
-            client.clone(),
-            tx.clone(),
-        ));
 
         Self::new_with_parts(
             client,
             Some(auth_state),
-            token_source,
+            None,
             TokenRefreshPolicy::Allowed,
             tx,
             None,
@@ -595,29 +522,30 @@ impl ServerApi {
     }
 
     #[cfg(test)]
-    fn new_for_test_with_token_source(
-        token_source: Arc<dyn ServerApiTokenSource>,
-        token_refresh_policy: TokenRefreshPolicy,
+    fn new_for_test_with_bearer_token(
+        bearer_token: Option<String>,
         event_sender: async_channel::Sender<ServerApiEvent>,
     ) -> Self {
         Self::new_with_parts(
             Arc::new(http_client::Client::new_for_test()),
             None,
-            token_source,
-            token_refresh_policy,
+            bearer_token.filter(|token| !token.is_empty()),
+            TokenRefreshPolicy::Disabled,
             event_sender,
             None,
         )
     }
 
-    async fn access_token(&self) -> Result<AuthToken> {
-        self.token_source
-            .access_token(self.token_refresh_policy)
-            .await
-    }
-
     pub fn allowed_to_refresh_token(&self) -> bool {
         self.token_refresh_policy.allowed_to_refresh_token()
+    }
+
+    fn access_token_ignoring_validity(&self) -> Option<String> {
+        self.bearer_token.clone().or_else(|| {
+            self.auth_state
+                .as_ref()
+                .and_then(|auth_state| auth_state.get_access_token_ignoring_validity())
+        })
     }
 
     pub(super) fn anonymous_id(&self) -> String {
@@ -1502,7 +1430,7 @@ impl ServerApi {
             .await
             .ok()
             .and_then(|token| token.bearer_token())
-            .or_else(|| self.token_source.access_token_ignoring_validity());
+            .or_else(|| self.access_token_ignoring_validity());
         if let Some(token_str) = auth_token {
             request_builder = request_builder.bearer_auth(token_str);
         }
@@ -1665,50 +1593,6 @@ mod tests {
     use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    struct RecordingTokenSource {
-        token: Option<AuthToken>,
-        error: Option<ServerApiAuthError>,
-        calls: AtomicUsize,
-        policies: Mutex<Vec<TokenRefreshPolicy>>,
-    }
-
-    impl RecordingTokenSource {
-        fn with_token(token: AuthToken) -> Self {
-            Self {
-                token: Some(token),
-                error: None,
-                calls: AtomicUsize::new(0),
-                policies: Mutex::new(Vec::new()),
-            }
-        }
-
-        fn calls(&self) -> usize {
-            self.calls.load(Ordering::SeqCst)
-        }
-
-        fn policies(&self) -> Vec<TokenRefreshPolicy> {
-            self.policies.lock().clone()
-        }
-    }
-
-    impl ServerApiTokenSource for RecordingTokenSource {
-        fn access_token(
-            &self,
-            refresh_policy: TokenRefreshPolicy,
-        ) -> BoxFuture<'_, Result<AuthToken>> {
-            Box::pin(async move {
-                self.calls.fetch_add(1, Ordering::SeqCst);
-                self.policies.lock().push(refresh_policy);
-                match (&self.token, &self.error) {
-                    (Some(token), None) => Ok(token.clone()),
-                    (None, Some(error)) => Err(error.clone().into()),
-                    (None, None) => Err(ServerApiAuthError::MissingCredentials.into()),
-                    (Some(_), Some(error)) => Err(error.clone().into()),
-                }
-            })
-        }
-    }
-
     struct FakeGraphqlOperation {
         expected_auth_token: Option<String>,
         send_count: Arc<AtomicUsize>,
@@ -1780,37 +1664,25 @@ mod tests {
     }
 
     #[test]
-    fn send_graphql_request_refresh_enabled_uses_token_source() {
-        let (event_sender, _) = async_channel::unbounded();
-        let token_source = Arc::new(RecordingTokenSource::with_token(AuthToken::Bearer(
-            "client-token".to_string(),
-        )));
-        let server_api = ServerApi::new_for_test_with_token_source(
-            token_source.clone(),
-            TokenRefreshPolicy::Allowed,
-            event_sender,
-        );
+    fn send_graphql_request_refresh_enabled_uses_auth_state() {
+        let server_api = ServerApi::new_for_test();
         let send_count = Arc::new(AtomicUsize::new(0));
 
         block_on(server_api.send_graphql_request(
-            FakeGraphqlOperation::successful(Some("client-token"), send_count.clone()),
+            FakeGraphqlOperation::successful(None, send_count.clone()),
             None,
         ))
         .unwrap();
 
-        assert_eq!(token_source.calls(), 1);
-        assert_eq!(token_source.policies(), vec![TokenRefreshPolicy::Allowed]);
+        assert!(server_api.allowed_to_refresh_token());
         assert_eq!(send_count.load(Ordering::SeqCst), 1);
     }
 
     #[test]
     fn send_graphql_request_refresh_disabled_uses_provided_bearer_token() {
         let (event_sender, _) = async_channel::unbounded();
-        let token_source = Arc::new(BearerTokenSource::new(None));
-        token_source.set_token("daemon-token");
-        let server_api = ServerApi::new_for_test_with_token_source(
-            token_source.clone(),
-            TokenRefreshPolicy::Disabled,
+        let server_api = ServerApi::new_for_test_with_bearer_token(
+            Some("daemon-token".to_string()),
             event_sender,
         );
         let send_count = Arc::new(AtomicUsize::new(0));
@@ -1823,19 +1695,12 @@ mod tests {
 
         assert!(!server_api.allowed_to_refresh_token());
         assert_eq!(send_count.load(Ordering::SeqCst), 1);
-        token_source.clear_token();
-        assert!(token_source.access_token_ignoring_validity().is_none());
     }
 
     #[test]
     fn send_graphql_request_refresh_disabled_missing_token_returns_auth_error() {
         let (event_sender, event_receiver) = async_channel::unbounded();
-        let token_source = Arc::new(BearerTokenSource::new(None));
-        let server_api = ServerApi::new_for_test_with_token_source(
-            token_source,
-            TokenRefreshPolicy::Disabled,
-            event_sender,
-        );
+        let server_api = ServerApi::new_for_test_with_bearer_token(None, event_sender);
         let send_count = Arc::new(AtomicUsize::new(0));
 
         let error = block_on(server_api.send_graphql_request(
@@ -1855,10 +1720,8 @@ mod tests {
     #[test]
     fn send_graphql_request_refresh_disabled_auth_rejection_is_credentials_rejected() {
         let (event_sender, event_receiver) = async_channel::unbounded();
-        let token_source = Arc::new(BearerTokenSource::new(Some("daemon-token".to_string())));
-        let server_api = ServerApi::new_for_test_with_token_source(
-            token_source,
-            TokenRefreshPolicy::Disabled,
+        let server_api = ServerApi::new_for_test_with_bearer_token(
+            Some("daemon-token".to_string()),
             event_sender,
         );
         let send_count = Arc::new(AtomicUsize::new(0));
