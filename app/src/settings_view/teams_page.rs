@@ -30,6 +30,7 @@ use crate::{
         CloudActionConfirmationDialogVariant,
     },
     editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions, TextOptions},
+    i18n::{self, I18nKey},
     network::NetworkStatus,
     send_telemetry_from_ctx,
     server::{
@@ -733,7 +734,7 @@ impl TeamsPageView {
             .to_string();
         let rename_team_editor = ctx.add_typed_action_view(|ctx| {
             let mut input = ClickableTextInput::new(team_name, ctx);
-            input.set_placeholder_text("Your new team name", ctx);
+            input.set_placeholder_text(crate::i18n::tr_static(ctx, "Your new team name"), ctx);
             input
         });
         ctx.subscribe_to_view(&rename_team_editor, |me, _, event, ctx| {
@@ -1775,6 +1776,7 @@ impl TeamsWidget {
         team_metadata: &Team,
         pricing_info_model: &PricingInfoModel,
         appearance: &Appearance,
+        app: &AppContext,
         has_admin_permissions: bool,
     ) -> Box<dyn Element> {
         let prorated_message = if has_admin_permissions {
@@ -1808,10 +1810,12 @@ impl TeamsWidget {
         .with_margin_right(horizontal_padding)
         .finish();
 
-        let member_pricing_header =
-            Container::new(self.render_subsection_header("Team members".to_owned(), appearance))
-                .with_margin_bottom(8.)
-                .finish();
+        let member_pricing_header = Container::new(self.render_subsection_header(
+            i18n::tr(app, I18nKey::TeamsTeamMembers).to_owned(),
+            appearance,
+        ))
+        .with_margin_bottom(8.)
+        .finish();
 
         let member_pricing_info =
             self.render_sub_text(additional_members_cost_money_msg, appearance, None);
@@ -1924,6 +1928,7 @@ impl TeamsWidget {
             &current_user_email,
             view,
             appearance,
+            app,
         ));
 
         // 5) Team discoverability toggle
@@ -1935,6 +1940,7 @@ impl TeamsWidget {
                 team_metadata,
                 &current_user_email,
                 appearance,
+                app,
             ))
         }
 
@@ -2201,11 +2207,13 @@ impl TeamsWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
-        let sub_header_text = match team.billing_metadata.customer_type {
-            CustomerType::Free => "Free plan usage limits",
-            _ => "Plan usage limits",
+        let sub_header_key = match team.billing_metadata.customer_type {
+            CustomerType::Free => I18nKey::TeamsFreePlanUsageLimits,
+            _ => I18nKey::TeamsPlanUsageLimits,
         };
-        section.add_child(self.render_subsection_header(sub_header_text.into(), appearance));
+        section.add_child(
+            self.render_subsection_header(i18n::tr(app, sub_header_key).into(), appearance),
+        );
 
         let mut shared_objects_usage_row =
             Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
@@ -2213,9 +2221,10 @@ impl TeamsWidget {
         if let Some(policy) = team.billing_metadata.tier.shared_notebooks_policy {
             if !policy.is_unlimited {
                 let mut shared_notebooks_column = Flex::column();
-                shared_notebooks_column.add_child(
-                    self.render_plan_usage_header("Shared Notebooks".into(), appearance),
-                );
+                shared_notebooks_column.add_child(self.render_plan_usage_header(
+                    i18n::tr(app, I18nKey::TeamsSharedNotebooks).into(),
+                    appearance,
+                ));
                 let num_shared_notebooks = cloud_model
                     .active_notebooks_in_space(Space::Team { team_uid: team.uid }, app)
                     .count();
@@ -2238,9 +2247,10 @@ impl TeamsWidget {
         if let Some(policy) = team.billing_metadata.tier.shared_workflows_policy {
             if !policy.is_unlimited {
                 let mut shared_workflows_column = Flex::column();
-                shared_workflows_column.add_child(
-                    self.render_plan_usage_header("Shared Workflows".into(), appearance),
-                );
+                shared_workflows_column.add_child(self.render_plan_usage_header(
+                    i18n::tr(app, I18nKey::TeamsSharedWorkflows).into(),
+                    appearance,
+                ));
                 let num_shared_workflows = cloud_model
                     .active_workflows_in_space(Space::Team { team_uid: team.uid }, app)
                     .count();
@@ -2284,6 +2294,7 @@ impl TeamsWidget {
                 team_metadata,
                 pricing_info_model,
                 appearance,
+                app,
                 has_admin_permissions,
             );
             invitation_section.add_child(
@@ -2302,6 +2313,7 @@ impl TeamsWidget {
                 view,
                 appearance,
                 chip_editor_style,
+                app,
             ));
         }
 
@@ -2313,6 +2325,7 @@ impl TeamsWidget {
             chip_editor_style,
             workspace_size_policy,
             has_admin_permissions,
+            app,
         ));
 
         invitation_section.finish()
@@ -2325,6 +2338,7 @@ impl TeamsWidget {
         view: &TeamsPageView,
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
@@ -2334,8 +2348,10 @@ impl TeamsWidget {
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
 
         // 1) "Invite by Link" subsection header
-        invite_by_link_header_row
-            .add_child(self.render_subsection_header("Invite by Link".to_owned(), appearance));
+        invite_by_link_header_row.add_child(self.render_subsection_header(
+            i18n::tr(app, I18nKey::TeamsInviteByLink).to_owned(),
+            appearance,
+        ));
 
         // 1.1) Toggle to the right of header only renders if user is admin
         if has_admin_permissions {
@@ -2411,6 +2427,7 @@ impl TeamsWidget {
                     view,
                     appearance,
                     chip_editor_style,
+                    app,
                 ));
             }
         }
@@ -2426,15 +2443,19 @@ impl TeamsWidget {
         chip_editor_style: UiComponentStyles,
         policy: WorkspaceSizePolicy,
         has_admin_permissions: bool,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
         // "Invite by Email" subsection header
         section.add_child(
-            Container::new(self.render_subsection_header("Invite by Email".to_owned(), appearance))
-                .with_padding_top(CONTENT_SEPARATION_PADDING)
-                .with_padding_bottom(8.)
-                .finish(),
+            Container::new(self.render_subsection_header(
+                i18n::tr(app, I18nKey::TeamsInviteByEmail).to_owned(),
+                appearance,
+            ))
+            .with_padding_top(CONTENT_SEPARATION_PADDING)
+            .with_padding_bottom(8.)
+            .finish(),
         );
 
         match team.billing_metadata.delinquency_status {
@@ -2725,15 +2746,17 @@ impl TeamsWidget {
         user_email: &str,
         view: &TeamsPageView,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut section = Flex::column().with_main_axis_size(MainAxisSize::Min);
 
         // 1) "Team Members" header
         section.add_child(
             SavePosition::new(
-                Container::new(
-                    self.render_subsection_header("Team Members".to_owned(), appearance),
-                )
+                Container::new(self.render_subsection_header(
+                    i18n::tr(app, I18nKey::TeamsTeamMembers).to_owned(),
+                    appearance,
+                ))
                 .with_padding_bottom(16.)
                 .finish(),
                 TEAM_MEMBERS_HEADER_POSITION_ID,
@@ -2759,14 +2782,18 @@ impl TeamsWidget {
         view: &TeamsPageView,
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
         // 1) "Restrict by domain" header
         section.add_child(
-            Container::new(self.render_sub_header("Restrict by domain".to_owned(), appearance))
-                .with_padding_top(16.)
-                .finish(),
+            Container::new(self.render_sub_header(
+                i18n::tr(app, I18nKey::TeamsRestrictByDomain).to_owned(),
+                appearance,
+            ))
+            .with_padding_top(16.)
+            .finish(),
         );
 
         // 2) Instruction text for domain restrictions + Domain approval mechanism (input box + button)
@@ -2934,6 +2961,7 @@ impl TeamsWidget {
         team: &Team,
         current_user_email: &str,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
@@ -2943,9 +2971,12 @@ impl TeamsWidget {
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
         discoverable_header_row.add_child(
-            Container::new(self.render_sub_header("Make team discoverable".to_owned(), appearance))
-                .with_padding_top(CONTENT_SEPARATION_PADDING)
-                .finish(),
+            Container::new(self.render_sub_header(
+                i18n::tr(app, I18nKey::TeamsMakeTeamDiscoverable).to_owned(),
+                appearance,
+            ))
+            .with_padding_top(CONTENT_SEPARATION_PADDING)
+            .finish(),
         );
 
         // Toggle to the right of header
@@ -3653,10 +3684,15 @@ impl TeamsWidget {
         let mut page = Flex::column();
 
         // Title, subtitle, and description
-        page.add_child(render_sub_header(appearance, "Teams".to_string(), None));
-        page.add_child(
-            self.render_sub_header_with_subtext_color(appearance, "Create a team".to_string()),
-        );
+        page.add_child(render_sub_header(
+            appearance,
+            i18n::tr(app, I18nKey::SettingsNavTeams).to_owned(),
+            None,
+        ));
+        page.add_child(self.render_sub_header_with_subtext_color(
+            appearance,
+            i18n::tr(app, I18nKey::TeamsCreateTeam).to_owned(),
+        ));
         page.add_child(
             Container::new(
                 self.render_description(CREATE_TEAM_DESCRIPTION.to_string(), appearance),
@@ -3715,11 +3751,11 @@ impl TeamsWidget {
             page.add_child(render_separator(appearance));
             page.add_child(self.render_sub_header_with_subtext_color(
                 appearance,
-                "Or, join an existing team within your company".to_string(),
+                i18n::tr(app, I18nKey::TeamsJoinExistingTeam).to_owned(),
             ));
 
             // Team discovery
-            page.add_child(self.render_team_discovery_section(view, appearance));
+            page.add_child(self.render_team_discovery_section(view, appearance, app));
         }
 
         page.finish()
@@ -3756,6 +3792,7 @@ impl TeamsWidget {
         &self,
         view: &TeamsPageView,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut team_discovery = Flex::column();
         // Sort teams so teams accepting invites with most teammates appear on top
@@ -3770,12 +3807,14 @@ impl TeamsWidget {
         // Render box for each team
         for team_state in &sorted_teams {
             team_discovery.add_child(
-                Container::new(self.render_single_team_in_team_discovery(team_state, appearance))
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-                    .with_border(Border::all(1.).with_border_fill(appearance.theme().outline()))
-                    .with_uniform_padding(16.)
-                    .with_margin_top(12.)
-                    .finish(),
+                Container::new(
+                    self.render_single_team_in_team_discovery(team_state, appearance, app),
+                )
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .with_border(Border::all(1.).with_border_fill(appearance.theme().outline()))
+                .with_uniform_padding(16.)
+                .with_margin_top(12.)
+                .finish(),
             );
         }
         team_discovery.finish()
@@ -3785,6 +3824,7 @@ impl TeamsWidget {
         &self,
         team_state: &DiscoverableTeamState,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let mut single_team = Flex::column();
 
@@ -3816,7 +3856,7 @@ impl TeamsWidget {
 
         // Join button
         single_team.add_child(
-            Container::new(self.render_join_team_button(team_state, appearance))
+            Container::new(self.render_join_team_button(team_state, appearance, app))
                 .with_padding_top(12.)
                 .finish(),
         );
@@ -3976,6 +4016,7 @@ impl TeamsWidget {
         &self,
         team_state: &DiscoverableTeamState,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         if team_state.team.team_accepting_invites {
             self.render_button(
@@ -4009,7 +4050,9 @@ impl TeamsWidget {
                     font_size: Some(14.),
                     ..Default::default()
                 })
-                .with_centered_text_label("Contact Admin to request access".to_string())
+                .with_centered_text_label(
+                    crate::i18n::tr_static(app, "Contact Admin to request access").to_string(),
+                )
                 .disabled()
                 .build()
                 .finish()
