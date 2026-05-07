@@ -593,13 +593,16 @@ impl Input {
             row.add_child(ChildView::new(harness_selector).finish());
         }
 
-        // Show the auth secret selector chip when a non-Oz harness is selected.
+        // Show the auth secret selector chip when a non-Oz harness is selected
+        // and the FTUX has already been completed for this harness.
         if let Some(auth_secret_selector) = self.auth_secret_selector() {
             let harness = self
                 .ambient_agent_view_model()
                 .map(|m| m.as_ref(app).selected_harness())
                 .unwrap_or(warp_cli::agent::Harness::Oz);
-            if harness != warp_cli::agent::Harness::Oz {
+            if harness != warp_cli::agent::Harness::Oz
+                && !self.should_show_auth_secret_ftux(app)
+            {
                 row.add_child(ChildView::new(auth_secret_selector).finish());
             }
         }

@@ -2,19 +2,17 @@
 //! setup flow shown when a user picks a non-Oz harness and the per-harness
 //! FTUX setting has not yet been completed.
 //!
-//! The FTUX view embeds the shared [`AuthSecretSelector`] (so the dropdown
-//! UX is defined in exactly one place) and adds:
+//! The FTUX view owns an [`AuthSecretFtuxDropdown`] (a full-width combobox)
+//! and adds:
 //!  - Description text explaining the flow.
 //!  - A creation sub-form (one single-line editor per field + a name editor)
-//!    that appears when the user picks "New {type}" from the selector's
-//!    sidecar.
+//!    that appears when the user picks "New {type}" from the dropdown.
 //!  - Skip / Cancel / Continue buttons at the bottom.
 //!
 //! Events:
-//!  - On a successful selection of an existing secret, the
-//!    [`AuthSecretSelector`] itself updates `AmbientAgentViewModel` and marks
-//!    the FTUX as completed; this view then re-renders into the normal input
-//!    container automatically.
+//!  - On a successful selection of an existing secret, the dropdown emits
+//!    [`FtuxDropdownEvent::SecretSelected`]; this view sets it on
+//!    `AmbientAgentViewModel` and marks the FTUX as completed.
 //!  - On a successful creation, this view subscribes to
 //!    [`HarnessAvailabilityEvent::AuthSecretCreated`] and finalizes by setting
 //!    the new secret as selected and marking FTUX as completed.
@@ -43,8 +41,8 @@ use crate::editor::{
     EditorView, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
     TextOptions,
 };
-use crate::terminal::view::ambient_agent::auth_secret_selector::{
-    AuthSecretSelector, AuthSecretSelectorEvent,
+use crate::terminal::view::ambient_agent::auth_secret_ftux_dropdown::{
+    AuthSecretFtuxDropdown, FtuxDropdownEvent,
 };
 use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
 
@@ -112,7 +110,7 @@ struct SecretCreationState {
 /// per-harness FTUX has not been completed yet.
 pub struct AuthSecretFtuxView {
     ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
-    auth_secret_selector: ViewHandle<AuthSecretSelector>,
+    ftux_dropdown: ViewHandle<AuthSecretFtuxDropdown>,
     /// Editor for the user-chosen name of the secret being created.
     name_editor: ViewHandle<EditorView>,
     /// One editor per `AuthSecretTypeField` of the currently-selected new type.
@@ -131,21 +129,52 @@ pub struct AuthSecretFtuxView {
 impl AuthSecretFtuxView {
     pub fn new(
         ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
-        auth_secret_selector: ViewHandle<AuthSecretSelector>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let name_editor = make_single_line_editor(Some("API key name"), ctx);
 
-        // When the user picks "New {type}" from the selector's sidecar, swap
-        // into creation mode and build the field editors.
-        ctx.subscribe_to_view(&auth_secret_selector, |me, _, event, ctx| match event {
-            AuthSecretSelectorEvent::NewTypeSelected {
+        // Build the FTUX-specific full-width dropdown internally.
+        let ambient_agent_model_for_dropdown = ambient_agent_model.clone();
+        let ftux_dropdown = ctx.add_typed_action_view(|ctx| {
+            AuthSecretFtuxDropdown::new(ambient_agent_model_for_dropdown, ctx)
+        });
+
+        // When the dropdown opens, trigger a lazy fetch for auth secrets.
+        ctx.subscribe_to_view(&ftux_dropdown, |_me, _, event, ctx| {
+            if matches!(event, FtuxDropdownEvent::Opened) {
+                let harness = _me.ambient_agent_model.as_ref(ctx).selected_harness();
+                HarnessAvailabilityModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.ensure_auth_secrets_fetched(harness, ctx);
+                });
+            }
+        });
+
+        // When an existing secret is selected from the dropdown, set it on
+        // the view model and mark FTUX as completed.
+        ctx.subscribe_to_view(&ftux_dropdown, |me, _, event, ctx| {
+            if let FtuxDropdownEvent::SecretSelected(name) = event {
+                let harness = me.ambient_agent_model.as_ref(ctx).selected_harness();
+                me.ambient_agent_model.update(ctx, |model, ctx| {
+                    model.set_harness_auth_secret_name(Some(name.clone()), ctx);
+                });
+                CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    settings.mark_harness_auth_ftux_completed(harness, ctx);
+                });
+                me.creation_state = None;
+                me.field_editors.clear();
+                ctx.notify();
+            }
+        });
+
+        // When a new type is selected from the dropdown, enter creation mode.
+        ctx.subscribe_to_view(&ftux_dropdown, |me, _, event, ctx| {
+            if let FtuxDropdownEvent::NewTypeSelected {
                 harness,
                 type_index,
-            } => {
+            } = event
+            {
                 me.enter_creation_state(*harness, *type_index, ctx);
             }
-            AuthSecretSelectorEvent::MenuVisibilityChanged { .. } => {}
         });
 
         // When auth secret creation succeeds, finalize the FTUX (set the new
@@ -179,7 +208,7 @@ impl AuthSecretFtuxView {
 
         Self {
             ambient_agent_model,
-            auth_secret_selector,
+            ftux_dropdown,
             name_editor,
             field_editors: Vec::new(),
             creation_state: None,
@@ -562,7 +591,7 @@ impl View for AuthSecretFtuxView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(CONTENT_SECTION_SPACING);
         content_section.add_child(self.render_description(app));
-        content_section.add_child(ChildView::new(&self.auth_secret_selector).finish());
+        content_section.add_child(ChildView::new(&self.ftux_dropdown).finish());
         column.add_child(content_section.finish());
 
         // If a creation type is selected, render the form below.

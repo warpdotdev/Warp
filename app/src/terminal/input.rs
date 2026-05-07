@@ -2408,10 +2408,9 @@ impl Input {
                     }
                 });
                 let ftux_view = {
-                    let selector_for_ftux = selector.clone();
                     let view_model_for_ftux = state.view_model.clone();
                     ctx.add_typed_action_view(|ctx| {
-                        AuthSecretFtuxView::new(view_model_for_ftux, selector_for_ftux, ctx)
+                        AuthSecretFtuxView::new(view_model_for_ftux, ctx)
                     })
                 };
                 state.auth_secret_selector = Some(selector);

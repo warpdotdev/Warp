@@ -47,4 +47,15 @@ impl CloudAgentSettings {
         map.insert(harness.config_name().to_string(), true);
         let _ = self.harness_auth_ftux_completed.set_value(map, ctx);
     }
+
+    /// TEMPORARY: clears the per-harness FTUX completion setting so the FTUX
+    /// flow is shown again on the next non-Oz harness selection. Called on app
+    /// startup to make iterating on the FTUX UI easier without manually
+    /// editing the settings store. Remove this together with its caller in
+    /// `lib.rs` before shipping.
+    pub fn reset_harness_auth_ftux_for_dev(&mut self, ctx: &mut warpui::ModelContext<Self>) {
+        let _ = self
+            .harness_auth_ftux_completed
+            .set_value(HashMap::new(), ctx);
+    }
 }

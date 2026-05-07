@@ -1,0 +1,536 @@
+//! FTUX-specific auth secret dropdown: a full-width combobox with an inline
+//! search editor, rendered inside the FTUX content area. This is intentionally
+//! separate from the top-row [`AuthSecretSelector`] chip which uses an
+//! `ActionButton` + narrow `Menu` + sidecar pattern.
+//!
+//! The dropdown shows a flat list: existing secrets (filtered by search query),
+//! a separator, then one "New {type}" item per auth secret type for the
+//! harness. Selecting an existing secret emits [`FtuxDropdownEvent::SecretSelected`];
+//! selecting a "New" type emits [`FtuxDropdownEvent::NewTypeSelected`].
+
+use warp_cli::agent::Harness;
+use warp_core::ui::appearance::Appearance;
+use warp_core::ui::theme::color::internal_colors;
+use warp_core::ui::theme::Fill;
+use warpui::elements::{
+    Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+    Empty, Expanded, Flex, MainAxisSize, OffsetPositioning, ParentAnchor, ParentElement as _,
+    ParentOffsetBounds, Radius, Stack, Text,
+};
+use warpui::{
+    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle,
+};
+
+use crate::ai::auth_secret_types::auth_secret_types_for_harness;
+use crate::ai::harness_availability::{
+    AuthSecretFetchState, HarnessAvailabilityEvent, HarnessAvailabilityModel,
+};
+use crate::editor::{
+    EditorView, Event as EditorEvent, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys,
+    SingleLineEditorOptions, TextOptions,
+};
+use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
+use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
+use crate::ui_components::icons::Icon;
+use warp_editor::editor::NavigationKey;
+
+/// Width of the FTUX content area; the menu matches this (Figma: 720px).
+const MENU_WIDTH: f32 = 720.;
+
+/// Font size for the search editor and menu items (Figma: 14px).
+const FONT_SIZE: f32 = 14.;
+
+/// Font size for the helper text below the select (Figma: 12px).
+const HELPER_FONT_SIZE: f32 = 12.;
+
+/// Font size for the field label above the select (Figma: 10px).
+const FIELD_LABEL_FONT_SIZE: f32 = 10.;
+
+/// Horizontal padding inside the select container (Figma: 12px).
+const SELECT_HORIZONTAL_PADDING: f32 = 12.;
+
+/// Vertical padding inside the select container (Figma: 8px).
+const SELECT_VERTICAL_PADDING: f32 = 8.;
+
+/// Gap between the search icon, editor, and right icon (Figma: 6px).
+const SELECT_GAP: f32 = 6.;
+
+/// Icon size inside the select container (Figma: 16px).
+const SELECT_ICON_SIZE: f32 = 16.;
+
+/// Corner radius on the select container (Figma: 4px).
+const SELECT_CORNER_RADIUS: f32 = 4.;
+
+/// Horizontal padding inside menu item rows (Figma: 16px).
+const MENU_HORIZONTAL_PADDING: f32 = 16.;
+
+/// Vertical padding on menu item rows (Figma: 8px).
+const MENU_ITEM_VERTICAL_PADDING: f32 = 8.;
+
+/// Vertical spacing between the field label and the select container.
+const LABEL_TO_SELECT_SPACING: f32 = 4.;
+
+/// Actions dispatched internally by this view.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FtuxDropdownAction {
+    /// Select an existing secret by name.
+    SelectSecret(String),
+    /// Select a new secret type by index into `auth_secret_types_for_harness()`.
+    SelectNewType(usize),
+}
+
+/// Events emitted to the parent [`AuthSecretFtuxView`].
+pub enum FtuxDropdownEvent {
+    /// An existing secret was selected.
+    SecretSelected(String),
+    /// A new type was selected; the parent should enter creation mode.
+    NewTypeSelected { harness: Harness, type_index: usize },
+    /// The dropdown was opened (parent should trigger lazy fetch).
+    Opened,
+    /// The dropdown was closed.
+    Closed,
+}
+
+/// Full-width combobox for the FTUX auth secret selection flow.
+pub struct AuthSecretFtuxDropdown {
+    /// Single-line editor for search/raw-value input.
+    search_editor: ViewHandle<EditorView>,
+    search_query: String,
+    /// The dropdown menu rendered as a positioned overlay below the select.
+    menu: ViewHandle<Menu<FtuxDropdownAction>>,
+    is_menu_open: bool,
+    ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
+}
+
+impl AuthSecretFtuxDropdown {
+    pub fn new(
+        ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
+        ctx: &mut ViewContext<Self>,
+    ) -> Self {
+        let search_editor = ctx.add_typed_action_view(|ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            let mut editor = EditorView::single_line(
+                SingleLineEditorOptions {
+                    text: TextOptions::ui_text(Some(FONT_SIZE), appearance),
+                    select_all_on_focus: false,
+                    clear_selections_on_blur: true,
+                    propagate_and_no_op_vertical_navigation_keys:
+                        PropagateAndNoOpNavigationKeys::Always,
+                    propagate_and_no_op_escape_key: PropagateAndNoOpEscapeKey::PropagateFirst,
+                    ..Default::default()
+                },
+                ctx,
+            );
+            editor.set_placeholder_text("Search secrets or enter value", ctx);
+            editor
+        });
+
+        ctx.subscribe_to_view(&search_editor, |me, _, event, ctx| {
+            me.handle_editor_event(event, ctx);
+        });
+
+        let menu = ctx.add_typed_action_view(|_ctx| {
+            Menu::new()
+                .with_width(MENU_WIDTH)
+                .with_drop_shadow()
+                .prevent_interaction_with_other_elements()
+        });
+
+        ctx.subscribe_to_view(&menu, |me, _, event, ctx| match event {
+            MenuEvent::Close { .. } => {
+                me.set_menu_visibility(false, ctx);
+            }
+            MenuEvent::ItemSelected | MenuEvent::ItemHovered => {}
+        });
+
+        ctx.subscribe_to_model(&ambient_agent_model, |me, _, event, ctx| match event {
+            AmbientAgentViewModelEvent::HarnessSelected => {
+                me.search_query.clear();
+                me.search_editor.update(ctx, |editor, ctx| {
+                    editor.system_clear_buffer(true, ctx);
+                });
+                // If the menu is already open, kick off a fetch for the newly
+                // selected harness. The `Opened` event only fires on open
+                // transitions, so switching harnesses while the menu stays open
+                // would otherwise leave the fetch state at `NotFetched`.
+                if me.is_menu_open {
+                    let harness = me.ambient_agent_model.as_ref(ctx).selected_harness();
+                    HarnessAvailabilityModel::handle(ctx).update(ctx, |model, ctx| {
+                        model.ensure_auth_secrets_fetched(harness, ctx);
+                    });
+                }
+                me.refresh_menu(ctx);
+                ctx.notify();
+            }
+            _ => {}
+        });
+
+        ctx.subscribe_to_model(
+            &HarnessAvailabilityModel::handle(ctx),
+            |me, _, event, ctx| match event {
+                HarnessAvailabilityEvent::AuthSecretsLoaded { .. }
+                | HarnessAvailabilityEvent::AuthSecretCreated { .. } => {
+                    me.refresh_menu(ctx);
+                    ctx.notify();
+                }
+                HarnessAvailabilityEvent::Changed
+                | HarnessAvailabilityEvent::AuthSecretCreationFailed { .. } => {}
+            },
+        );
+
+        ctx.subscribe_to_model(&Appearance::handle(ctx), |me, _, _, ctx| {
+            me.refresh_menu(ctx);
+        });
+
+        let mut me = Self {
+            search_editor,
+            search_query: String::new(),
+            menu,
+            is_menu_open: false,
+            ambient_agent_model,
+        };
+        me.refresh_menu(ctx);
+        // Auto-focus the editor and open the dropdown on construction so the
+        // user lands directly in the combobox when the FTUX appears.
+        me.set_menu_visibility(true, ctx);
+        me
+    }
+
+    fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
+        if self.is_menu_open == is_open {
+            return;
+        }
+        self.is_menu_open = is_open;
+        if is_open {
+            ctx.focus(&self.search_editor);
+            ctx.emit(FtuxDropdownEvent::Opened);
+        } else {
+            self.search_editor.update(ctx, |editor, ctx| {
+                editor.system_clear_buffer(true, ctx);
+            });
+            if !self.search_query.is_empty() {
+                self.search_query.clear();
+                self.refresh_menu(ctx);
+            }
+            ctx.emit(FtuxDropdownEvent::Closed);
+        }
+        ctx.notify();
+    }
+
+    fn handle_editor_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            EditorEvent::Focused => {
+                // Open the dropdown whenever the editor gains focus.
+                if !self.is_menu_open {
+                    self.set_menu_visibility(true, ctx);
+                }
+            }
+            EditorEvent::Edited(_) => {
+                let new_query = self.search_editor.as_ref(ctx).buffer_text(ctx);
+                if new_query != self.search_query {
+                    self.search_query = new_query;
+                    self.refresh_menu(ctx);
+                }
+                // Ensure the menu stays open while typing.
+                if !self.is_menu_open {
+                    self.set_menu_visibility(true, ctx);
+                }
+            }
+            EditorEvent::Navigate(NavigationKey::Up) => {
+                self.menu.update(ctx, |menu, ctx| menu.select_previous(ctx));
+            }
+            EditorEvent::Navigate(NavigationKey::Down) => {
+                self.menu.update(ctx, |menu, ctx| menu.select_next(ctx));
+            }
+            EditorEvent::Enter => {
+                let selected_action =
+                    self.menu
+                        .as_ref(ctx)
+                        .selected_item()
+                        .and_then(|item| match item {
+                            MenuItem::Item(fields) => fields.on_select_action().cloned(),
+                            _ => None,
+                        });
+                if let Some(action) = selected_action {
+                    <Self as TypedActionView>::handle_action(self, &action, ctx);
+                }
+            }
+            EditorEvent::Escape => {
+                self.set_menu_visibility(false, ctx);
+            }
+            _ => {}
+        }
+    }
+
+    /// Returns the number of existing secrets that match the current search query.
+    fn matching_secret_count(&self, app: &AppContext) -> usize {
+        let harness = self.ambient_agent_model.as_ref(app).selected_harness();
+        let availability = HarnessAvailabilityModel::as_ref(app);
+        let query = self.search_query.trim().to_lowercase();
+        match availability.auth_secrets_for(harness) {
+            AuthSecretFetchState::Loaded(secrets) => {
+                if query.is_empty() {
+                    secrets.len()
+                } else {
+                    secrets
+                        .iter()
+                        .filter(|s| s.name.to_lowercase().contains(&query))
+                        .count()
+                }
+            }
+            _ => 0,
+        }
+    }
+
+    fn refresh_menu(&mut self, ctx: &mut ViewContext<Self>) {
+        let appearance = Appearance::as_ref(ctx);
+        let theme = appearance.theme();
+        let hover_background: Fill = internal_colors::fg_overlay_2(theme).into();
+        let disabled_text_color = theme.disabled_text_color(theme.surface_2()).into_solid();
+        let border = Border::all(1.).with_border_color(internal_colors::neutral_4(theme));
+
+        let harness = self.ambient_agent_model.as_ref(ctx).selected_harness();
+        let availability = HarnessAvailabilityModel::as_ref(ctx);
+        let query = self.search_query.trim().to_lowercase();
+
+        let mut items: Vec<MenuItem<FtuxDropdownAction>> = Vec::new();
+
+        // Existing secrets (filtered by search query).
+        match availability.auth_secrets_for(harness) {
+            AuthSecretFetchState::Loaded(secrets) => {
+                for secret in secrets {
+                    if !query.is_empty() && !secret.name.to_lowercase().contains(&query) {
+                        continue;
+                    }
+                    items.push(MenuItem::Item(
+                        MenuItemFields::new(secret.name.clone())
+                            .with_font_size_override(FONT_SIZE)
+                            .with_padding_override(
+                                MENU_ITEM_VERTICAL_PADDING,
+                                MENU_HORIZONTAL_PADDING,
+                            )
+                            .with_override_hover_background_color(hover_background)
+                            .with_on_select_action(FtuxDropdownAction::SelectSecret(
+                                secret.name.clone(),
+                            )),
+                    ));
+                }
+            }
+            AuthSecretFetchState::NotFetched | AuthSecretFetchState::Loading => {
+                items.push(MenuItem::Item(
+                    MenuItemFields::new("Fetching secrets…")
+                        .with_font_size_override(FONT_SIZE)
+                        .with_padding_override(MENU_ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                        .with_disabled(true)
+                        .with_override_text_color(disabled_text_color),
+                ));
+            }
+            AuthSecretFetchState::Failed(_) => {
+                items.push(MenuItem::Item(
+                    MenuItemFields::new("Unable to load secrets")
+                        .with_font_size_override(FONT_SIZE)
+                        .with_padding_override(MENU_ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                        .with_disabled(true)
+                        .with_override_text_color(disabled_text_color),
+                ));
+            }
+        }
+
+        // Separator before "New …" items.
+        items.push(MenuItem::Separator);
+
+        // One "New {display_name}" item per auth secret type for the harness.
+        for (index, info) in auth_secret_types_for_harness(harness).iter().enumerate() {
+            items.push(MenuItem::Item(
+                MenuItemFields::new(format!("New {}", info.display_name))
+                    .with_font_size_override(FONT_SIZE)
+                    .with_padding_override(MENU_ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                    .with_override_hover_background_color(hover_background)
+                    .with_icon(Icon::Plus)
+                    .with_on_select_action(FtuxDropdownAction::SelectNewType(index)),
+            ));
+        }
+
+        self.menu.update(ctx, |menu, ctx| {
+            menu.set_border(Some(border));
+            menu.set_items(items, ctx);
+        });
+    }
+
+    /// Renders the "ANTHROPIC_API_KEY" field label above the select container.
+    fn render_field_label(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let color = internal_colors::text_sub(theme, theme.surface_1());
+        let harness = self.ambient_agent_model.as_ref(app).selected_harness();
+        // Use the first field label of the first secret type as the header label.
+        let label = auth_secret_types_for_harness(harness)
+            .first()
+            .and_then(|info| info.fields.first())
+            .map(|f| f.label)
+            .unwrap_or("API_KEY");
+        Text::new_inline(
+            label.to_string(),
+            appearance.ui_font_family(),
+            FIELD_LABEL_FONT_SIZE,
+        )
+        .with_color(color)
+        .finish()
+    }
+
+    /// Renders the select container: `[search_icon | editor | right_icon]`.
+    fn render_select_container(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let border_color = if self.is_menu_open {
+            theme.accent().into_solid()
+        } else {
+            internal_colors::neutral_3(theme)
+        };
+
+        let right_icon = if self.is_menu_open {
+            Icon::ChevronDown
+        } else {
+            Icon::Key
+        };
+
+        let icon_color: Fill = internal_colors::text_sub(theme, theme.surface_1()).into();
+
+        let search_icon = ConstrainedBox::new(
+            Icon::Search.to_warpui_icon(icon_color).finish(),
+        )
+        .with_height(SELECT_ICON_SIZE)
+        .with_width(SELECT_ICON_SIZE)
+        .finish();
+
+        let right_icon_element = ConstrainedBox::new(
+            right_icon.to_warpui_icon(icon_color).finish(),
+        )
+        .with_height(SELECT_ICON_SIZE)
+        .with_width(SELECT_ICON_SIZE)
+        .finish();
+
+        let editor = Expanded::new(1., ChildView::new(&self.search_editor).finish()).finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(SELECT_GAP)
+            .with_child(search_icon)
+            .with_child(editor)
+            .with_child(right_icon_element)
+            .finish();
+
+        Container::new(row)
+            .with_padding_left(SELECT_HORIZONTAL_PADDING)
+            .with_padding_right(SELECT_HORIZONTAL_PADDING)
+            .with_padding_top(SELECT_VERTICAL_PADDING)
+            .with_padding_bottom(SELECT_VERTICAL_PADDING)
+            .with_border(Border::all(1.).with_border_color(border_color))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(SELECT_CORNER_RADIUS)))
+            .finish()
+    }
+
+    /// Renders the helper text below the select, shown when the search query
+    /// has no matches among existing secrets.
+    fn render_helper_text(&self, app: &AppContext) -> Box<dyn Element> {
+        if self.search_query.trim().is_empty() || self.matching_secret_count(app) > 0 {
+            return Empty::new().finish();
+        }
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let color = internal_colors::text_sub(theme, theme.surface_1());
+        Text::new_inline(
+            "No secrets found. Save to use this value directly or click the key to add a secret."
+                .to_string(),
+            appearance.ui_font_family(),
+            HELPER_FONT_SIZE,
+        )
+        .with_color(color)
+        .soft_wrap(true)
+        .finish()
+    }
+
+    fn menu_positioning(&self) -> OffsetPositioning {
+        OffsetPositioning::offset_from_parent(
+            warpui::geometry::vector::vec2f(0., 0.),
+            ParentOffsetBounds::WindowByPosition,
+            ParentAnchor::BottomLeft,
+            ChildAnchor::TopLeft,
+        )
+    }
+}
+
+impl Entity for AuthSecretFtuxDropdown {
+    type Event = FtuxDropdownEvent;
+}
+
+impl TypedActionView for AuthSecretFtuxDropdown {
+    type Action = FtuxDropdownAction;
+
+    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
+        match action {
+            FtuxDropdownAction::SelectSecret(name) => {
+                ctx.emit(FtuxDropdownEvent::SecretSelected(name.clone()));
+                self.set_menu_visibility(false, ctx);
+            }
+            FtuxDropdownAction::SelectNewType(type_index) => {
+                let harness = self.ambient_agent_model.as_ref(ctx).selected_harness();
+                ctx.emit(FtuxDropdownEvent::NewTypeSelected {
+                    harness,
+                    type_index: *type_index,
+                });
+                self.set_menu_visibility(false, ctx);
+            }
+        }
+    }
+}
+
+impl View for AuthSecretFtuxDropdown {
+    fn ui_name() -> &'static str {
+        "AuthSecretFtuxDropdown"
+    }
+
+    fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min);
+
+        // Field label (e.g. "ANTHROPIC_API_KEY").
+        column.add_child(self.render_field_label(app));
+
+        // Small gap between label and select.
+        let mut select_section = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(LABEL_TO_SELECT_SPACING);
+        // Spacer element is implicit via the parent column spacing.
+
+        // Select container + dropdown overlay.
+        let mut stack = Stack::new();
+        stack.add_child(self.render_select_container(app));
+
+        if self.is_menu_open {
+            stack.add_positioned_overlay_child(
+                ChildView::new(&self.menu).finish(),
+                self.menu_positioning(),
+            );
+        }
+        select_section.add_child(stack.finish());
+
+        // Helper text (only when search has no matches).
+        let helper = self.render_helper_text(app);
+        select_section.add_child(helper);
+
+        // Combine label + select section with the label-to-select spacing.
+        let mut outer = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(LABEL_TO_SELECT_SPACING);
+        outer.add_child(self.render_field_label(app));
+        outer.add_child(select_section.finish());
+
+        outer.finish()
+    }
+}

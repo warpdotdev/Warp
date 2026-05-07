@@ -1,3 +1,4 @@
+mod auth_secret_ftux_dropdown;
 mod auth_secret_ftux_view;
 pub(crate) mod auth_secret_selector;
 mod block;
