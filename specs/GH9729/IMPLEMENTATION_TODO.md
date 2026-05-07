@@ -58,7 +58,7 @@ The original 2a / 2c bullets are struck through and superseded.
        cap (1024) + hidden-file filter — out of scope (single-image v1)~~
 - ~~[ ] 2c. Unit tests for natural sort, hidden-file filter, sibling cap —
        out of scope (single-image v1)~~
-- [ ] 4a. Static-decode caps in `ImageType::try_from_bytes`:
+- [x] 4a. Static-decode caps in `ImageType::try_from_bytes`:
        `image::Limits` (max dimension, max alloc) + `MAX_DECODE_PIXELS = 67M`
        — `tech.md` §234 (Static raster, under §217)
 - [ ] 4b. Animated decode caps: `MAX_ANIMATED_FRAMES`, `MAX_ANIMATED_TOTAL_PIXELS`

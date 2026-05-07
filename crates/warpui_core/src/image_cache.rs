@@ -268,6 +268,54 @@ impl CustomImageHeader {
     }
 }
 
+/// Maximum width or height in pixels accepted by the static-raster decode
+/// path. 8192 sits well above 4K (3840x2160) and covers the 99th-percentile
+/// project asset, screenshot, and changelog still. See specs/GH9729/tech.md
+/// §217 / §234.
+const MAX_DECODE_DIMENSION: u32 = 8_192;
+
+/// Total pixel cap (`MAX_DECODE_DIMENSION * MAX_DECODE_DIMENSION`). Belt-and-
+/// suspenders post-decode check against decoders that honor per-axis limits
+/// but still materialize a near-cap RGBA buffer. See specs/GH9729/tech.md §234.
+const MAX_DECODE_PIXELS: u64 = 67_108_864;
+
+/// Allocation cap forwarded to `image::Limits::max_alloc`. Sized at
+/// `MAX_DECODE_PIXELS * 4` (RGBA bytes) so the dimension cap and the alloc
+/// cap are internally consistent and the alloc cap is the binding constraint.
+/// See specs/GH9729/tech.md §221.
+const MAX_DECODE_ALLOC: u64 = 256 * 1024 * 1024;
+
+/// Build the `image::Limits` envelope used by the static-raster decode path
+/// (PNG, JPEG, WebP-static). See specs/GH9729/tech.md §234.
+fn decode_limits() -> image::Limits {
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_DECODE_DIMENSION);
+    limits.max_image_height = Some(MAX_DECODE_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC);
+    limits
+}
+
+/// Decode a static-raster image (PNG, JPEG, WebP-static) under the
+/// GH9729 size envelope. Returns the decoded `RgbaImage` or an error if the
+/// input would breach `decode_limits()` or the post-decode pixel cap.
+///
+/// The post-decode `pixels > MAX_DECODE_PIXELS` check is a defensive guard
+/// against decoders that honor per-axis `max_image_width`/`max_image_height`
+/// but still materialize a near-cap RGBA buffer.
+fn decode_static_with_limits(
+    data: &[u8],
+    format: image::ImageFormat,
+) -> anyhow::Result<image::RgbaImage> {
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(data), format);
+    reader.limits(decode_limits());
+    let img = reader.decode()?;
+    let pixels = (img.width() as u64).saturating_mul(img.height() as u64);
+    if pixels > MAX_DECODE_PIXELS {
+        anyhow::bail!("image is too large to preview");
+    }
+    Ok(img.into_rgba8())
+}
+
 impl Asset for ImageType {
     fn try_from_bytes(data: &[u8]) -> anyhow::Result<ImageType> {
         // SVGs are not handled by the guess_format helper function, so we have to manually check
@@ -319,23 +367,15 @@ impl Asset for ImageType {
 
         match image::guess_format(data) {
             Ok(ImageFormat::Jpeg) => {
-                let img = image::ImageReader::with_format(
-                    std::io::Cursor::new(data),
-                    image::ImageFormat::Jpeg,
-                )
-                .decode()?
-                .into_rgba8();
+                // GH9729 §234: enforce dimension/alloc/pixel envelope.
+                let img = decode_static_with_limits(data, image::ImageFormat::Jpeg)?;
                 Ok(ImageType::StaticBitmap {
                     image: Arc::new(StaticImage { img }),
                 })
             }
             Ok(ImageFormat::Png) => {
-                let img = image::ImageReader::with_format(
-                    std::io::Cursor::new(data),
-                    image::ImageFormat::Png,
-                )
-                .decode()?
-                .into_rgba8();
+                // GH9729 §234: enforce dimension/alloc/pixel envelope.
+                let img = decode_static_with_limits(data, image::ImageFormat::Png)?;
                 Ok(ImageType::StaticBitmap {
                     image: Arc::new(StaticImage { img }),
                 })
@@ -343,12 +383,19 @@ impl Asset for ImageType {
             Ok(ImageFormat::WebP) => {
                 let decoder = WebPDecoder::new(std::io::Cursor::new(data))?;
                 if decoder.has_animation() {
+                    // Animated WebP path is hardened in GH9729 item 4b
+                    // (frame-count + total-pixel caps). Untouched here.
                     let frames = decoder.into_frames().collect_frames()?;
                     Ok(ImageType::AnimatedBitmap {
                         image: Arc::new(AnimatedImage::from(frames)),
                     })
                 } else {
-                    let img = DynamicImage::from_decoder(decoder)?.into_rgba8();
+                    // GH9729 §234: route the static branch through the
+                    // limits-aware helper. The decoder is dropped here and
+                    // re-opened by `ImageReader::with_format` inside the
+                    // helper; the cost is one extra header parse.
+                    drop(decoder);
+                    let img = decode_static_with_limits(data, image::ImageFormat::WebP)?;
                     Ok(ImageType::StaticBitmap {
                         image: Arc::new(StaticImage { img }),
                     })
