@@ -568,15 +568,11 @@ pub fn render_static_agent_pill(name: &str, app: &AppContext) -> Box<dyn Element
     let avatar_color = pill_avatar_color(name, theme);
     let avatar_glyph = AvatarGlyph::Letter(pill_initial(name));
     let avatar = render_avatar_disc(avatar_color, avatar_glyph, theme, appearance);
-    let label_text = Text::new(
-        name.to_string(),
-        appearance.ui_font_family(),
-        appearance.monospace_font_size() - 1.,
-    )
-    .with_color(internal_colors::text_main(theme, theme.background()))
-    .soft_wrap(false)
-    .with_clip(ClipConfig::ellipsis())
-    .finish();
+    let label_text = Text::new(name.to_string(), appearance.ui_font_family(), 12.)
+        .with_color(internal_colors::text_main(theme, theme.background()))
+        .soft_wrap(false)
+        .with_clip(ClipConfig::ellipsis())
+        .finish();
 
     let row = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -1611,17 +1607,15 @@ fn render_avatar_disc(
     .finish();
 
     let glyph_element: Box<dyn Element> = match glyph {
-        AvatarGlyph::Letter(letter) => Text::new(
-            letter.to_string(),
-            appearance.ui_font_family(),
-            (appearance.monospace_font_size() - 2.).max(9.),
-        )
-        .with_color(theme.background().into_solid())
-        .with_style(Properties {
-            weight: Weight::Bold,
-            ..Default::default()
-        })
-        .finish(),
+        AvatarGlyph::Letter(letter) => {
+            Text::new(letter.to_string(), appearance.ui_font_family(), 10.)
+                .with_color(theme.background().into_solid())
+                .with_style(Properties {
+                    weight: Weight::Bold,
+                    ..Default::default()
+                })
+                .finish()
+        }
         AvatarGlyph::Icon(icon) => {
             ConstrainedBox::new(icon.to_warpui_icon(theme.background()).finish())
                 .with_width(10.)

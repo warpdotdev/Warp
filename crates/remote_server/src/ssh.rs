@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::Output;
 use std::time::Duration;
 
+use anyhow::anyhow;
 use command::r#async::Command;
 use warpui::r#async::FutureExt as _;
 
@@ -175,4 +176,44 @@ pub async fn run_ssh_script(
         .await
         .map_err(|_| SshCommandError::TimedOut { timeout })?
         .map_err(SshCommandError::IoError)
+}
+
+/// Upload a local file to the remote host via `scp`, reusing the
+/// ControlMaster socket for authentication. Returns `Ok(())` on success
+/// or an error describing the failure.
+pub async fn scp_upload(
+    socket_path: &Path,
+    local_path: &Path,
+    remote_path: &str,
+    timeout: Duration,
+) -> anyhow::Result<()> {
+    async {
+        Command::new("scp")
+            .arg("-o")
+            .arg(format!("ControlPath={}", socket_path.display()))
+            .arg("-o")
+            .arg("ControlMaster=no")
+            .arg("-o")
+            .arg("ConnectTimeout=15")
+            .arg(local_path.as_os_str())
+            .arg(format!("placeholder@placeholder:{remote_path}"))
+            .kill_on_drop(true)
+            .output()
+            .await
+    }
+    .with_timeout(timeout)
+    .await
+    .map_err(|_| anyhow!("scp timed out after {timeout:?}"))?
+    .map_err(|e| anyhow!("scp failed to execute: {e}"))
+    .and_then(|output| {
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!(
+                "scp failed (exit {:?}): {stderr}",
+                output.status.code()
+            ))
+        }
+    })
 }
