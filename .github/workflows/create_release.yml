@@ -10,6 +10,10 @@
 name: Create Release
 on:
   workflow_call:
+    outputs:
+      release_tag:
+        description: The release tag prepared for this workflow invocation.
+        value: ${{ jobs.prepare_release.outputs.release_tag }}
     inputs:
       channel:
         description: The channel to create a release or release candidate for.

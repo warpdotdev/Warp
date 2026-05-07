@@ -185,23 +185,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           AUTHOR_PATTERN: cesar|cesaryuan|cesaryuan@qq\.com
+          RELEASE_TAG: ${{ needs.create_release.outputs.release_tag }}
         run: |
           set -euo pipefail
 
-          TARGET_REF="refs/heads/master"
-          TARGET_COMMIT="$(git rev-parse "${TARGET_REF}^{commit}")"
-
-          RELEASE_TAG="$(
-            git tag --points-at "$TARGET_COMMIT" --sort=-version:refname \
-              | grep '\.oss_[0-9][0-9]$' \
-              | head -n1 || true
-          )"
           if [[ -z "$RELEASE_TAG" ]]; then
-            echo "::error::Could not determine the OSS release tag for master commit $TARGET_COMMIT."
+            echo "::error::The create_release workflow did not expose an OSS release tag."
             exit 1
           fi
 
-          mapfile -t MERGED_TAGS < <(git for-each-ref refs/tags --merged "$TARGET_REF" --sort=-creatordate --format='%(refname:short)')
+          # Refresh tags so this job can still resolve the release tag even if origin/master moved meanwhile.
+          echo "Refreshing tags before generating release notes for $RELEASE_TAG."
+          git fetch --force --tags origin
+
+          TARGET_COMMIT="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          echo "Generating release notes for tag $RELEASE_TAG at commit $TARGET_COMMIT."
+
+          mapfile -t MERGED_TAGS < <(git for-each-ref refs/tags --merged "$TARGET_COMMIT" --sort=-creatordate --format='%(refname:short)')
 
           BASE_REF=""
           for candidate in "${MERGED_TAGS[@]}"; do
@@ -229,9 +229,9 @@ jobs:
             echo
           } > "$NOTES_PATH"
 
-          LOG_RANGE="$TARGET_REF"
+          LOG_RANGE="$TARGET_COMMIT"
           if [[ -n "$BASE_REF" ]]; then
-            LOG_RANGE="${BASE_REF}..${TARGET_REF}"
+            LOG_RANGE="${BASE_REF}..${TARGET_COMMIT}"
           fi
 
           mapfile -t SUBJECTS < <(
