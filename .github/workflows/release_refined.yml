@@ -1,4 +1,4 @@
-name: Sync Upstream Stable And Release OSS From Master
+name: Sync Upstream Stable Or Release Warp Refined
 
 on:
   schedule:
@@ -143,11 +143,11 @@ jobs:
     with:
       channel: oss
       source_ref: refs/heads/master
-      build_linux: ${{ github.event_name == 'workflow_dispatch' && inputs.build_linux || false }}
+      build_linux: ${{ github.event_name == 'workflow_dispatch' && inputs.build_linux || true }}
       build_linux_arm: ${{ github.event_name == 'workflow_dispatch' && inputs.build_linux_arm || false }}
       build_windows: ${{ github.event_name == 'workflow_dispatch' && inputs.build_windows || true }}
       build_windows_arm: ${{ github.event_name == 'workflow_dispatch' && inputs.build_windows_arm || false }}
-      build_macos: ${{ github.event_name == 'workflow_dispatch' && inputs.build_macos || false }}
+      build_macos: ${{ github.event_name == 'workflow_dispatch' && inputs.build_macos || true }}
       build_macos_x86: ${{ github.event_name == 'workflow_dispatch' && inputs.build_macos_x86 || false }}
       build_web: ${{ github.event_name == 'workflow_dispatch' && inputs.build_web || false }}
       build_cli: ${{ github.event_name == 'workflow_dispatch' && inputs.build_cli || false }}
