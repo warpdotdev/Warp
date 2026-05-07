@@ -82,7 +82,22 @@ impl GridHighlightedLink {
             #[cfg(feature = "local_fs")]
             GridHighlightedLink::File(_) => "Open file",
             GridHighlightedLink::Url(_) => "Open link",
-            GridHighlightedLink::Hyperlink { .. } => "Open link",
+            GridHighlightedLink::Hyperlink { uri, .. } => {
+                // Tell the user *why* the click is inert when the scheme
+                // fails the OSC 8 allow-list (product invariant 16) or the
+                // URI is unparseable. The hover/copy still work; this
+                // tooltip just explains the open-path rejection.
+                use super::link_security::{check_open_scheme, LinkSource, SchemeCheck, SchemeRejectReason};
+                match check_open_scheme(uri, LinkSource::OscHyperlink) {
+                    SchemeCheck::Allowed => "Open link",
+                    SchemeCheck::Rejected {
+                        reason: SchemeRejectReason::Unparseable,
+                    } => "Cannot open: URI is malformed",
+                    SchemeCheck::Rejected {
+                        reason: SchemeRejectReason::DisallowedScheme { .. },
+                    } => "Cannot open: scheme not allowed",
+                }
+            }
         }
     }
 }

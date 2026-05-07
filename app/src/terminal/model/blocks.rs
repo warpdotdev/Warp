@@ -3398,6 +3398,13 @@ impl ansi::Handler for BlockList {
         delegate!(self.input(c));
     }
 
+    fn set_hyperlink(&mut self, hyperlink: Option<warp_terminal::model::ansi::Hyperlink>) {
+        // Delegate to the active block (or early-output handler) so the OSC 8
+        // active state lands on the same `GridHandler` that `input(c)` will
+        // stamp the cells on. See `specs/GH6393/tech.md` §3c.
+        delegate!(self.set_hyperlink(hyperlink));
+    }
+
     fn goto(&mut self, row: VisibleRow, col: usize) {
         delegate!(self.goto(row, col));
     }
