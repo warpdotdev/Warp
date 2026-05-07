@@ -6971,23 +6971,21 @@ impl TerminalView {
             return;
         };
 
-        if task.is_no_longer_running() {
-            if self.pending_cloud_followup_task_id == Some(task_id) {
-                return;
-            }
-            if self.owned_ambient_agent_task_id(ctx).is_some() {
-                if FeatureFlag::HandoffCloudCloud.is_enabled()
-                    && !self
-                        .model
-                        .lock()
-                        .shared_session_status()
-                        .is_sharer_or_viewer()
-                {
-                    self.enable_owned_cloud_followup_input(task_id, ctx);
-                }
-                return;
-            }
+        if !task.is_no_longer_running() || self.pending_cloud_followup_task_id == Some(task_id) {
+            return;
+        }
+
+        let can_continue_owned_task_in_cloud = self.owned_ambient_agent_task_id(ctx).is_some()
+            && FeatureFlag::HandoffCloudCloud.is_enabled();
+        if !can_continue_owned_task_in_cloud {
             self.insert_conversation_ended_tombstone(ctx);
+        } else if !self
+            .model
+            .lock()
+            .shared_session_status()
+            .is_sharer_or_viewer()
+        {
+            self.enable_owned_cloud_followup_input(task_id, ctx)
         }
     }
 
