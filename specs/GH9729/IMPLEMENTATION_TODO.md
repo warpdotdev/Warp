@@ -122,7 +122,7 @@ Notes are written to `specs/GH9729/reviews/<item>-r<N>.md`.
 | 2-tests | workspace-arm tests | `32cee73` | [x] | [x] |
 | 4a | static-decode caps in `ImageType::try_from_bytes` | `926dedf` | [x] | [x] |
 | 4b | animated-decode caps (WebP, GIF) | `a6aaf00` | [x] | [x] |
-| 4c | SVG content-sanity gate + intrinsic-dimension cap | `294fa95` | [ ] | [ ] |
+| 4c | SVG content-sanity gate + intrinsic-dimension cap | `294fa95` | [x] | [x] |
 | 4-tests-a | static-raster + SVG decoder tests | `abab042` | [ ] | [ ] |
 | 4-tests-b | animated decoder tests | `57be862` | [ ] | [ ] |
 | 5a | bounded `LocalFile` asset-cache read | `e338655` | [ ] | [ ] |
