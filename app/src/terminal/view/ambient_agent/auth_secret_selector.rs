@@ -31,7 +31,7 @@ use crate::ai::auth_secret_types::auth_secret_types_for_harness;
 use crate::ai::harness_availability::{
     AuthSecretFetchState, HarnessAvailabilityEvent, HarnessAvailabilityModel,
 };
-use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
+use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuVariant};
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::view::ambient_agent::host_selector::NakedHeaderButtonTheme;
 use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
@@ -58,6 +58,9 @@ const SIDECAR_WIDTH: f32 = 220.;
 
 /// Horizontal gap between the main menu and the sidecar.
 const SIDECAR_HORIZONTAL_GAP: f32 = 4.;
+
+/// Maximum height of the main dropdown menu before it scrolls.
+const MENU_MAX_HEIGHT: f32 = 280.;
 
 /// Tooltip string for the closed-state button.
 const BUTTON_TOOLTIP: &str = "Auth secret";
@@ -130,10 +133,13 @@ impl AuthSecretSelector {
         });
 
         let menu = ctx.add_typed_action_view(|_ctx| {
-            Menu::new()
+            let mut menu = Menu::new()
                 .with_width(MENU_WIDTH)
                 .with_drop_shadow()
-                .prevent_interaction_with_other_elements()
+                .with_menu_variant(MenuVariant::scrollable())
+                .prevent_interaction_with_other_elements();
+            menu.set_height(MENU_MAX_HEIGHT);
+            menu
         });
 
         // Subscribe to the main menu so we can:
@@ -217,6 +223,13 @@ impl AuthSecretSelector {
         self.is_menu_open
     }
 
+    /// Moves the menu selection up one item. Called by the parent Input view
+    /// to forward the Up arrow key which is intercepted by InputAction::Up
+    /// before reaching the focused menu.
+    pub fn select_previous(&self, ctx: &mut ViewContext<Self>) {
+        self.menu.update(ctx, |menu, ctx| menu.select_previous(ctx));
+    }
+
     fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
         if self.is_menu_open == is_open {
             return;
@@ -228,6 +241,19 @@ impl AuthSecretSelector {
             let harness = self.ambient_agent_model.as_ref(ctx).selected_harness();
             HarnessAvailabilityModel::handle(ctx).update(ctx, |model, ctx| {
                 model.ensure_auth_secrets_fetched(harness, ctx);
+            });
+            // Pre-select the currently active secret so the highlight starts
+            // on the right item and the scrollable menu scrolls to it.
+            let selected_action = self
+                .ambient_agent_model
+                .as_ref(ctx)
+                .selected_harness_auth_secret_name()
+                .map(|name| {
+                    AuthSecretSelectorAction::SelectSecret(name.to_string())
+                })
+                .unwrap_or(AuthSecretSelectorAction::ClearSecret);
+            self.menu.update(ctx, |menu, ctx| {
+                menu.set_selected_by_action(&selected_action, ctx);
             });
             ctx.focus(&self.menu);
         } else {

@@ -7857,6 +7857,18 @@ impl Input {
             return;
         }
 
+        // When the auth secret selector chip menu is open, forward the Up
+        // key to its menu instead of opening the history menu.
+        if let Some(selector) = self.auth_secret_selector() {
+            if selector.as_ref(ctx).is_menu_open() {
+                let selector = selector.clone();
+                selector.update(ctx, |selector, ctx| {
+                    selector.select_previous(ctx);
+                });
+                return;
+            }
+        }
+
         // History and input suggestions are not available for
         // read-only viewers in a shared session
         if self.model.lock().shared_session_status().is_reader() {
