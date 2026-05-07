@@ -75,7 +75,7 @@ The original 2a / 2c bullets are struck through and superseded.
        and `O_NONBLOCK` regression guard — `tech.md` §400 (`### 5.`)
 - [x] 5b. `lightbox_view.rs` post-load callback rewrites `FailedToLoad` /
        `Unrecognized` to `Error` — `tech.md` §613 (lines 660-661)
-- [ ] 5-tests. Asset-cache tests per `tech.md` §613 (lines 628-636).
+- [x] 5-tests. Asset-cache tests per `tech.md` §613 (lines 628-636).
 - [ ] 7.  Telemetry events for image-preview open / error / cap-hit —
        `tech.md` §517 (`### 7.`)
 - [ ] FINAL. Run `cargo fmt --check`, `cargo clippy --workspace --all-targets
