@@ -31,6 +31,15 @@ pub enum LightboxImageSource {
     /// The image source has been resolved.
     /// Note: the actual image bytes may still be loading via the `AssetCache`.
     Resolved { asset_source: AssetSource },
+    /// The image could not be loaded or decoded. The Lightbox renders a
+    /// non-blocking error panel inline (see `Lightbox::render`) and dismissal
+    /// (Escape, scrim click, ×) continues to work.
+    ///
+    /// `message` is intended to be one of a small set of sanitized,
+    /// human-readable categorical strings. Underlying OS errors and absolute
+    /// filesystem paths must NOT be interpolated here; log the original via
+    /// `log::warn!` for the operator instead. See `specs/GH9729/tech.md` §182.
+    Error { message: String },
 }
 
 /// A single image entry in the lightbox.

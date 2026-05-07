@@ -737,6 +737,8 @@ fn native_size_for_image(image: &LightboxImage, app: &AppContext) -> Option<Vect
             }
         }
         LightboxImageSource::Loading => None,
+        // Error entries have no native size.
+        LightboxImageSource::Error { .. } => None,
     }
 }
 

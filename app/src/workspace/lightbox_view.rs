@@ -162,6 +162,9 @@ impl View for LightboxView {
                         }
                     }
                     lightbox::LightboxImageSource::Loading => None,
+                    // Error entries have no native size; the existing render
+                    // logic tolerates `None` here. See specs/GH9729/tech.md §182.
+                    lightbox::LightboxImageSource::Error { .. } => None,
                 });
 
         self.lightbox.render(

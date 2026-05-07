@@ -38,7 +38,7 @@ mentioned are explicitly out of scope per `tech.md` §119 ("Single-element Vec..
 v1 always passes a one-element vec") and the descope listed in `product.md`.
 The original 2a / 2c bullets are struck through and superseded.
 
-- [ ] 3a. `LightboxImageSource::Error { message }` variant in
+- [x] 3a. `LightboxImageSource::Error { message }` variant in
        `crates/ui_components/src/lightbox.rs` — `tech.md` §182 (`### 3.`).
        Promoted ahead of the workspace arm because §119 references it.
 - [ ] 3b. Render the `Error` variant inline; drop the
