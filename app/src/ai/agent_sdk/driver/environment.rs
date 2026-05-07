@@ -235,8 +235,19 @@ pub(super) async fn ensure_repo_cloned(
 ) -> Result<(), PrepareEnvironmentError> {
     let repo_name = format!("{}/{}", repo.owner, repo.repo);
     let repo_url = format!("https://github.com/{repo_name}.git");
+    // Get the session's shell type for proper escaping, falling back to Bash
+    // when the session is not yet bootstrapped or the spawn fails.
+    let shell_type = spawner
+        .spawn(|driver, ctx| {
+            driver
+                .active_session_shell_type(ctx)
+                .unwrap_or(ShellType::Bash)
+        })
+        .await
+        .unwrap_or(ShellType::Bash);
+    let escaped_url = shell_escape_single_quotes(&repo_url, shell_type);
     // We do a partial clone here to speed up environment setup time.
-    let command = format!("git clone --filter=tree:0 {repo_url}");
+    let command = format!("git clone --filter=tree:0 '{escaped_url}'");
 
     let repo_dir = working_dir.join(&repo.repo);
     // Always ask the session whether the repo dir already exists, rather
