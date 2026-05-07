@@ -175,24 +175,28 @@ gated to visible exchanges with relative-format or progress labels**.
 - Two tick frequencies: 1Hz for progress labels, 30s for relative
   labels. Use a single underlying timer firing at 1Hz and
   internally rate-limit the 30s consumers.
-- Recompute the "needs ticking" predicate on every visibility
-  change, scroll, and exchange-state transition. The shared timer
-  is registered/unregistered as the predicate flips.
-- Stops ticking when the agent view loses visibility.
-
-  > **Correction (re-review #10128, lifecycle hook):** the previous
-  > draft cited specific method names that aren't on the public API.
-  > The honest answer: the agent view already polls visibility for
-  > its existing status-refresh path; the implementer must locate
-  > THAT polling site (grep `app/src/ai/blocklist/agent_view/` for
-  > the existing 1Hz/N-Hz refresh entry) and register the
-  > `TimestampTickService` against the same observer. If no shared
-  > observer exists, add one in the agent view's mount/unmount
-  > callbacks (`fn on_attach` / `fn on_detach`-equivalent) — those
-  > callbacks DO exist on every `View` per the `warpui` crate's
-  > `View` trait. The spec doesn't pin a method name; the
-  > implementer picks based on what they find in the agent view.
-- Resumes on the corresponding "view visible" callback.
+- Recompute the "needs ticking" predicate on each:
+  `AgentViewControllerEvent::EnteredAgentView`,
+  `AgentViewControllerEvent::ExitedAgentView`, scroll event, and
+  exchange-state transition. These are concrete model events from
+  `app/src/ai/blocklist/agent_view/controller.rs`; existing views
+  already subscribe to them with `ctx.subscribe_to_model(...)` (see
+  `agent_message_bar.rs` and `block/status_bar.rs`).
+- Start/stop the underlying `SpawnedFutureHandle` with the same
+  `ViewContext::spawn` + `Timer::after(Duration::from_secs(1))`
+  pattern used by `BlocklistAIStatusBar::start_last_read_timer` in
+  `app/src/ai/blocklist/block/status_bar.rs`. No new WarpUI view
+  lifecycle hook is required.
+- The "visible" predicate is:
+  `ActiveAgentViewsModel::is_conversation_open(conversation_id, ctx)`
+  AND at least one visible timestamp widget for that conversation
+  needs refresh. `is_conversation_open` is already the repo's
+  concrete "expanded agent view in some pane" check.
+- Stops ticking when `ExitedAgentView` makes the conversation no
+  longer open, or when all visible labels are absolute-format and no
+  progress labels remain. Resumes on `EnteredAgentView`, scroll, or
+  a new exchange-state transition that makes a refresh-needed label
+  visible again.
 
 Why not per-widget timers:
 - A long conversation can have 50+ visible exchanges. 50 separate
@@ -334,8 +338,10 @@ string `ts.format("%Y-%m-%d %H:%M:%S %:z").to_string()`.
 recompute paths above, it is:
 - `None` exactly while the exchange is in progress.
 - `Some(...)` once the exchange transitions out of in-progress —
-  including `Some(Local::now())` synthesized for restored
-  conversations whose stored timestamps were lost.
+  including `Some(Local::now())` synthesized by the model for
+  restored conversations whose stored timestamps were lost. That
+  synthesized value is treated as the model's completion time in V1;
+  the view does not try to detect or reinterpret it.
 
 This means the only real branch is **in-progress vs not**. The
 render path:
@@ -447,6 +453,9 @@ Tests use a fixed `now` (e.g. 2026-05-05 15:47:23) and exercise both
   restored conversations whose timestamps were synthesized.
 - IT8: After 5 minutes (advance the clock in test), a "just now"
   exchange auto-promotes to "5m ago" without user action.
+- IT9: Cancel a running exchange; the response bubble shows the
+  single composite label "cancelled at HH:MM • Xs" and does not
+  render a separate completed timestamp.
 
 ## Files touched
 
@@ -471,7 +480,7 @@ Tests use a fixed `now` (e.g. 2026-05-05 15:47:23) and exercise both
 - `app/src/ai/blocklist/block/view_impl/timestamp_widgets_test.rs`
   (new) — T6, T7, T8, T8b, T9, T9b, T10, T11.
 - `app/src/integration_testing/agent_mode/timestamps_test.rs` (new)
-  — IT1–IT8.
+  — IT1–IT9.
 
 This spec does NOT modify
 `app/src/ai/blocklist/agent_view/agent_message_bar.rs` — that file

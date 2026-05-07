@@ -233,17 +233,17 @@ A8. The display format auto-promotes from "just now" → "Xm ago" →
      labels (B2's max 30s update rule), OR
    - Render-on-scroll only.
    Recommendation: the 30s tick, gated to "while panel is visible
-   AND the oldest visible timestamp is in a relative-format
-   bucket" so we don't waste cycles on conversations whose
-   timestamps are all absolute.
+   AND any visible timestamp is in a relative-format bucket" so we
+   don't waste cycles on conversations whose timestamps are all
+   absolute.
 
 4. **Setting default.** Default `true` (opt-out) per B5. Confirm
    with maintainers before implementation; this is the most
    reversible decision.
 
-5. **Telemetry.** Add a one-time `setting_changed` event when the
-   user disables the new setting, so the team can see the opt-out
-   rate. No timestamp-display telemetry beyond that.
+5. **Telemetry.** Add only the existing `setting_changed` event when
+   the user toggles the new setting, so the team can see the opt-out
+   rate. No timestamp-display telemetry is added.
 
    **Privacy guardrails (security review #10128):**
    - The `setting_changed` payload is `{ setting: "agents.show_message_timestamps",
