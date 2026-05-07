@@ -159,11 +159,9 @@ impl CreateApiKeyModal {
             editor
         });
 
-        // Expiration dropdown
         let expiration_dropdown =
             ctx.add_typed_action_view(DropdownView::<CreateApiKeyModalAction>::new);
 
-        // Agent dropdown
         let agent_dropdown =
             ctx.add_typed_action_view(DropdownView::<CreateApiKeyModalAction>::new);
         agent_dropdown.update(ctx, |dropdown, ctx| {
@@ -171,7 +169,6 @@ impl CreateApiKeyModal {
             dropdown.set_menu_width(INPUT_WIDTH, ctx);
         });
 
-        // API key type segmented control
         let api_key_type_control = ctx.add_typed_action_view(move |ctx| {
             let options = if has_named_agents {
                 vec![ApiKeyType::Personal, ApiKeyType::Agent]
@@ -224,17 +221,14 @@ impl CreateApiKeyModal {
             me.name_editor.update(ctx, |_, ctx| ctx.notify());
         });
 
-        // Subscribe to UserWorkspaces to update has_team when team membership changes
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _, _, ctx| {
             me.update_has_team(ctx);
         });
 
-        // Subscribe to editor events for navigation and validation
         ctx.subscribe_to_view(&name_editor, |me, _, event, ctx| {
             me.handle_name_editor_event(event, ctx);
         });
 
-        // Populate expiration dropdown items and default selection (90 days)
         let default_expiration = ExpirationOption::NinetyDays;
         let items: Vec<DropdownItem<CreateApiKeyModalAction>> = ExpirationOption::all()
             .into_iter()
@@ -247,7 +241,6 @@ impl CreateApiKeyModal {
             .collect();
         expiration_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_items(items, ctx);
-            // Match the input width (460 - 2*16 padding = 428)
             dropdown.set_top_bar_max_width(INPUT_WIDTH);
             dropdown.set_menu_width(INPUT_WIDTH, ctx);
             dropdown.set_selected_by_action(
@@ -326,7 +319,6 @@ impl CreateApiKeyModal {
         }
         let name = self.name_editor.as_ref(ctx).buffer_text(ctx);
 
-        // Always allow creation, even with empty name (we'll use a default)
         let final_name = if name.trim().is_empty() {
             "Warp API Key".to_string()
         } else {
@@ -336,7 +328,6 @@ impl CreateApiKeyModal {
         self.request_state = RequestState::Pending;
         ctx.notify();
 
-        // Compute expiration timestamp based on selected option
         let expires_at = match self.expiration.days() {
             Some(days) => {
                 let t = Utc::now() + chrono::Duration::days(days);
@@ -347,7 +338,6 @@ impl CreateApiKeyModal {
 
         let selected_type = self.api_key_type_control.as_ref(ctx).selected_option();
 
-        // Get agent_uid if creating for agent
         let agent_uid = if selected_type == ApiKeyType::Agent {
             match &self.selected_agent_uid {
                 Some(uid) => Some(cynic::Id::new(uid.clone())),
@@ -364,7 +354,6 @@ impl CreateApiKeyModal {
             None
         };
 
-        // Get team_id if creating for team
         let team_id = if selected_type == ApiKeyType::Team {
             let workspaces = UserWorkspaces::as_ref(ctx);
             match workspaces.current_team_uid() {
@@ -384,16 +373,13 @@ impl CreateApiKeyModal {
             None
         };
 
-        // Fire mutation via ServerApi AuthClient
         let server_api = crate::server::server_api::ServerApiProvider::as_ref(ctx).get();
         ctx.spawn(
             async move { server_api.create_api_key(final_name, team_id, agent_uid, expires_at).await },
             |me, res, ctx| {
                 match res {
                     Ok(warp_graphql::mutations::generate_api_key::GenerateApiKeyResult::GenerateApiKeyOutput(output)) => {
-                        // Notify parent to append
                         ctx.emit(CreateApiKeyModalEvent::Created { api_key: output.api_key });
-                        // Switch to success view and show raw key
                         me.request_state = RequestState::Succeeded;
                         me.raw_key_copied = false;
                         me.raw_key = Some(output.raw_api_key);
@@ -610,7 +596,6 @@ impl View for CreateApiKeyModal {
         match self.request_state {
             RequestState::Succeeded => self.render_success_content(app),
             _ => {
-                // Entry form (Idle, Pending, Failed)
                 let selected_key_type = self.api_key_type_control.as_ref(app).selected_option();
 
                 let description_text = Text::new(
@@ -683,7 +668,6 @@ impl View for CreateApiKeyModal {
 
                 let mut col = Flex::column();
 
-                // Show segmented control if user has a team or named agents
                 if self.has_team || self.has_named_agents {
                     let type_label =
                         Text::new("Type", appearance.ui_font_family(), LABEL_FONT_SIZE)
@@ -703,7 +687,6 @@ impl View for CreateApiKeyModal {
                         .finish(),
                 );
 
-                // Agent selector when Agent type is selected
                 if selected_key_type == ApiKeyType::Agent {
                     let agent_label =
                         Text::new("Agent", appearance.ui_font_family(), LABEL_FONT_SIZE)
@@ -715,7 +698,6 @@ impl View for CreateApiKeyModal {
                         self.agents.iter().filter(|a| a.available).collect();
 
                     if !self.is_loading_agents && available_agents.is_empty() {
-                        // Empty state: no agents available
                         let empty_text = Text::new(
                             "No agents available. Create one first.",
                             appearance.ui_font_family(),
