@@ -85,7 +85,7 @@ Hard rules:
 | t2-5 | adopt `Error` at artifacts call site | `5a8072a` | [x] | [x] | [x] |
 | t2-6 | animated playback (continuous; pause deferred) | `f077496` | [x] | [x] | [x] |
 | t2-7 | zoom (pan deferred to t2-7-pan) | `6aee220` | [x] | [x] | [x] |
-| t2-8 | status footer (dimensions only) | _pending_ | [x] | [ ] | [ ] |
+| t2-8 | status footer (dimensions only) | `d9cc0c3` | [x] | [x] | [x] |
 | t2-9 | EXIF orientation + ICC | | [ ] | [ ] | [ ] |
 | t2-FINAL | presubmit | | [ ] | — | — |
 
@@ -160,6 +160,31 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   `cmdorctrl-=` zoom — out of scope for t2-7 but worth a
   codebase-wide future fix. —
   `reviews/tier2-t2-7-r2.md`.
+- **t2-8-r1.** The metadata strip in `lightbox.rs::content_with_description`
+  is gated on `current_description.is_some() && native_size.is_some()`,
+  so when an image is loaded with a `None` description (reachable via
+  `app/src/ai/artifacts/mod.rs:348-355` for screenshots without a
+  description) the metadata strip is silently dropped together with
+  the (absent) description. The fix: split the gate so the metadata
+  strip renders whenever `native_size.is_some()`, independent of the
+  description's presence. — `reviews/tier2-t2-8-r1.md`.
+- **t2-8-r2.** (a) Promote `metadata_line: Option<String>` to a
+  structured `LightboxMetadata { dimensions, file_size, format }`
+  shape when t2-8-r2 adds format and file-size — keeps the
+  formatting in the renderer, consistent across callers, testable
+  without round-tripping a string. (b) Module-top constants in
+  `lightbox.rs` are now split across three locations; one pass to
+  regroup. (c) Field name `metadata_line` is singular while §699
+  calls it a "metadata strip"; rename. (d) `size.x() as i32`
+  truncates toward zero — switch to `.round() as i32`. (e) The
+  field's doc comment forward-promises format/size that no v1
+  caller supplies; tighten until those land. (f) Add format
+  derivation: post-decode `ImageType` doesn't carry the codec, so
+  sniff it from the asset-source path extension at the
+  `LightboxView::render` site. (g) Add file-size: blocked on
+  v1 §694 (background-executor stat) — once that lands, the
+  size can come from the same stat the §119 size-cap check
+  already does. — `reviews/tier2-t2-8-r2.md`.
 - **t2-7-pan.** Drag-to-pan for a zoomed-in image. This GPUI fork has
   no `Translate`/`Offset`/`Transform` primitive that lets us shift an
   element during paint, so applying a `pan_offset: Vector2F` to the
