@@ -52,12 +52,10 @@ Out of scope for this spec:
 
 ### Motivating cases
 
-The bindings users actually care about in 2025 are dominated by
-external tools that ship `bindkey` / `bind` / `bind` snippets in their
-init scripts and overlay an interactive UI on top of the shell's line
-editor. The spec below is written so these work first; built-in widget
-mapping (`backward-kill-word` and friends) is a secondary success
-criterion. The driving examples:
+Real-world bindkey users in 2025 fall into two overlapping groups, and
+the spec must serve both. The driving examples:
+
+**Group 1: single-keystroke external widgets (TUI takeovers).**
 
 - **atuin** binds `Ctrl-R` (history search) and Up arrow to its own
   zsh widget / bash `bind -x` command / fish function. Pressing the
@@ -68,15 +66,34 @@ criterion. The driving examples:
 - **fzf** binds `Ctrl-R` (history fuzzy-find), `Ctrl-T` (file
   fuzzy-find), and `Alt-C` (directory fuzzy-cd) to similar shell
   widgets that invoke the `fzf` binary as a TUI.
-- **zsh-vi-mode** (jeffreytse/zsh-vi-mode and similar) rebinds
-  large parts of the keymap and switches modes dynamically.
 - **Editor-launching macros** like the canonical
   `bindkey '^X^E' edit-command-line` (open `$EDITOR` to edit the
   current command).
 
-These bindings are user-defined shell-function widgets, not built-in
-ZLE / readline / fish input functions. The spec must honor them as a
-primary use case; "v1 ships without atuin/fzf" is not acceptable.
+**Group 2: continuous inline-rendering plugins** (the line editor
+itself is customized — these don't fire on a single keystroke; they
+hook every keystroke to paint, suggest, highlight, or expand inline).
+
+- **zsh-autosuggestions** wraps `self-insert` and other widgets to
+  paint a dimmed history-suggestion inline as the user types. Right
+  arrow / End / Ctrl-E accepts the suggestion via a wrapper widget.
+- **zsh-syntax-highlighting** (and **fast-syntax-highlighting**)
+  hooks widgets to repaint the prompt line with syntax colors as the
+  user types.
+- **fish abbreviations** (`abbr`) expand on space / enter — this is
+  fish's first-class feature, not a plugin, and many users rely on
+  it heavily.
+- **zsh-vi-mode** (jeffreytse/zsh-vi-mode) rebinds large parts of the
+  keymap, swaps cursor shapes per mode, and adds surround/text-object
+  operators.
+
+The spec must honor both groups as primary v1 use cases; "v1 ships
+without atuin/fzf" is not acceptable, and "v1 ships but
+zsh-autosuggestions silently no longer works" is also not acceptable.
+Group 1 is handled by external widget pass-through (#11.5). Group 2
+needs a separate mechanism — the shell's line editor needs to be the
+authority for the current prompt's display so its plugins can paint
+inline. See #11.6.
 
 ### Discovery and lifecycle
 
@@ -298,6 +315,68 @@ primary use case; "v1 ships without atuin/fzf" is not acceptable.
     makes atuin's UI navigable). Warp does not buffer or re-intercept
     keystrokes during pass-through. Returning focus to Warp's
     block-mode editor happens when the widget signals completion.
+
+11.6. **Continuous inline-rendering plugin support.** When the user has
+    plugins installed that hook every keystroke to paint, suggest,
+    highlight, or expand inline (zsh-autosuggestions, zsh- or
+    fast-syntax-highlighting, fish abbreviations, zsh-vi-mode's
+    visual mode indicators), Warp honors them. Concretely, while the
+    user types in the input editor on a tab where these plugins are
+    active:
+
+    - **Inline suggestions appear.** If zsh-autosuggestions or an
+      equivalent is loaded and would have suggested a completion at
+      the current buffer state, that suggestion is visible in the
+      input editor in dimmed text after the cursor, exactly as it
+      would render in the user's terminal without Warp.
+    - **Suggestion acceptance works.** The keys the plugin binds to
+      accept a suggestion (typically Right arrow, End, Ctrl-E) accept
+      it the same way they would natively. Word-at-a-time acceptance
+      (Alt-F when bound to a `_zsh_autosuggest_accept_word`-style
+      widget) also works.
+    - **Syntax highlighting renders.** If zsh-syntax-highlighting,
+      fast-syntax-highlighting, or an equivalent is loaded, the
+      input editor shows the same per-token coloring as the user's
+      native terminal does — command vs argument, valid vs invalid
+      command, matching/mismatching quote and bracket pairs.
+    - **fish abbreviations expand.** Pressing space or enter after a
+      typed abbreviation expands it to its full form before the
+      command runs, exactly as fish does natively.
+    - **vi-mode indicators are correct.** Cursor shape per vi mode
+      (block in command mode, beam in insert, underline in replace)
+      matches what the active vi-mode plugin would draw. zsh-vi-mode
+      surround / text-object operators behave as they would natively.
+    - **No double-render or flicker.** The user sees one rendered
+      line per prompt — Warp's editor is not separately rendered on
+      top of (or under) the shell's view of the buffer.
+    - **Block mode UI is preserved.** Everything above the current
+      prompt (block list, sidebar, command palette, etc.) renders
+      and behaves exactly as it does today. The change is scoped to
+      how the active prompt's input area is composed.
+
+    The mechanism by which these plugins drive the input editor's
+    rendering is left to the tech spec — multiple shapes are
+    plausible (per-keystroke ZLE round-trip, embedding the shell's
+    line editor as the rendering authority for the active prompt,
+    plugin-specific query API, etc.) and the right choice is
+    informed by latency measurements that the implementation must
+    do. The behavioral invariants above are the bar regardless of
+    how the implementation gets there.
+
+    **Failure mode.** If the plugin emits something Warp's renderer
+    can't faithfully display (an obscure ANSI sequence, a 24-bit
+    color the active theme rejects, custom terminal-mode toggling),
+    the plugin's output renders as plain text (not crashing) and a
+    one-time-per-session diagnostic notes the limitation. The user
+    is never left with a broken prompt.
+
+    **Detection.** Warp does not need to enumerate plugins by name.
+    The same `bindkey -L` / `bind -p` / `bind` query used for
+    Category A/B/C bindings already surfaces the plugin's installed
+    widgets (e.g., `_zsh_autosuggest_accept` shows up bound to
+    Right arrow when zsh-autosuggestions is loaded). The presence
+    of these widgets is the signal that the implementation should
+    activate the inline-rendering path for that tab.
 
 12. `clear-screen` (typically `^L`) clears Warp's block list to the current
     prompt, matching the user's expectation from a real terminal — even if

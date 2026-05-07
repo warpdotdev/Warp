@@ -723,6 +723,107 @@ every other shell→app DCS.
 - No new shell-detection plumbing. The helper is shell-typed via
   the existing `Shell::shell_type`.
 
+### 7. Continuous inline-plugin rendering
+
+PRODUCT #11.6 commits to honoring plugins that hook every keystroke —
+zsh-autosuggestions, syntax highlighting, fish abbreviations,
+zsh-vi-mode's per-mode cursor shapes. Pass-through (§6) is the wrong
+shape for these because they fire on every keystroke, not on a single
+bound key. The right mechanism is genuinely an open implementation
+question, with three candidate shapes that need real measurement
+before one is picked.
+
+The behavioral bar from PRODUCT #11.6 is the contract; the picked
+mechanism is the implementer's call after benchmarking.
+
+#### Candidate A: per-keystroke ZLE round-trip
+
+- Every printable keystroke and every Category A widget invocation
+  goes through the same `warp_invoke_widget` plumbing as §6, just
+  with `widget = self-insert` (or the matched widget) and the buffer
+  state.
+- Bootstrap helper sets `BUFFER`, runs the widget, calls the
+  plugin-installed wrappers (because they're hooked into ZLE's
+  widget table), then reports back the new `BUFFER` plus any
+  plugin-emitted hints (suggestion text, syntax-highlight regions).
+- Warp paints the result in its native input editor.
+
+**Cost:** one shell roundtrip per keystroke. Local roundtrips through
+a PTY are typically ~0.5–2 ms; Warp's existing block-mode rendering
+adds another frame. Whether this clears the latency bar for human
+typing (~50 ms ceiling for "feels native") is the central question
+the implementation must answer.
+
+**Pros:** uniform mechanism with §6, no plugin-specific glue.
+**Cons:** if latency exceeds the bar, every key feels sluggish.
+
+#### Candidate B: live shell-line zone
+
+- Block list above the active prompt stays Warp-native. The active
+  prompt's input area becomes a region where the shell's line editor
+  draws directly (ZLE / readline / fish-line-editor renders into the
+  PTY, Warp lifts that output into the input area's bounding box).
+- Plugins paint inline because ZLE owns the surface they expect.
+- On Enter, the shell's line editor commits, the line graduates into
+  a Warp block, the next prompt's input area becomes a fresh shell
+  zone.
+
+**Cost:** Warp parses ANSI emitted by the shell into its own
+rendering primitives for that region. No per-key roundtrip; ZLE
+handles keystrokes natively (they reach the PTY).
+
+**Pros:** plugins work because they're driving the surface they
+were designed for. Lowest latency, plugins behave identically to a
+native terminal.
+**Cons:** Warp's block-mode features that depend on parsing the
+input editor's state (autocomplete suggestions, AI command
+correction) need a fresh hook for "current shell-zone buffer state",
+which has to be queried not assumed.
+
+#### Candidate C: plugin-aware query API
+
+- Warp's editor stays the source of truth for keystrokes and
+  rendering. After each buffer change Warp asynchronously asks the
+  shell for plugin-derived state: "what does
+  `_zsh_autosuggest_strategy` return for $BUFFER?", "what tokens
+  does `(z)highlighter` color?".
+- Bootstrap installs adapter functions that call into the loaded
+  plugins' public APIs and report back via DCS.
+- Warp paints suggestion / highlight regions from the returned data.
+
+**Cost:** one async query per buffer change; debounced. Plugin-
+specific adapter logic per supported plugin in the bootstrap.
+
+**Pros:** lowest UI latency (plugins are queried, not driven, so
+typing is never blocked).
+**Cons:** plugin-aware (we maintain adapters for autosuggest,
+syntax-highlight, fish abbr, vi-mode, etc.). Brittle when plugins
+change their internal API. Doesn't help bindings whose behavior
+isn't expressible as "compute X from buffer".
+
+#### How the implementation picks
+
+The implementation should prototype Candidate A first because it has
+the broadest coverage and reuses §6's infrastructure. If real
+latency on representative hardware (developer laptops, the slowest
+shell × plugin combination — typically zsh + oh-my-zsh + atuin +
+fzf-tab + zsh-autosuggestions + zsh-syntax-highlighting + powerlevel10k)
+sits within ~30 ms total per keystroke, ship A. If it doesn't, the
+fallback is B for the prompt's input area and A for everything else;
+C is the escape hatch for specific plugins where A and B both fail.
+
+The picked mechanism is documented in this spec as the
+implementation lands; PRODUCT #11.6 invariants are the user-facing
+contract regardless.
+
+#### What this is NOT
+
+- Not a wholesale "use PS1 mode for everything" — that gives up
+  Warp's block UI for the tab. Inline-plugin support has to coexist
+  with block mode.
+- Not "reimplement the plugins natively in Warp" — that's a
+  separate, much larger product question outside this spec's scope.
+
 ### Open questions carried from PRODUCT.md
 
 - **#11 (Category A widgets without Warp equivalent)** — v1 marks
@@ -903,12 +1004,51 @@ Tests are organized to map to numbered PRODUCT invariants. Use
   `External(...)`, fish `bind \cr __atuin_search` as
   `External("__atuin_search")`. Plus negative cases — built-ins
   stay `Action(...)`.
+- **zsh-autosuggestions inline rendering** — integration test
+  with zsh-autosuggestions installed and a seeded history. Type
+  `kub` and assert (a) Warp's input editor shows `kub` in the
+  active style and a dimmed completion (e.g. `ectl get pods`)
+  after the cursor, (b) pressing Right arrow accepts the full
+  suggestion and the buffer becomes the accepted command, (c)
+  pressing Alt-F (when bound to word-accept) accepts only the next
+  word. Covers PRODUCT #11.6 inline-suggestion + acceptance.
+- **zsh-syntax-highlighting** — integration test with
+  zsh-syntax-highlighting installed. Type `lsx` and assert that
+  `lsx` is rendered in the "command not found" style (red by
+  default). Type `ls -l` and assert `ls` is in the valid-command
+  style and `-l` is in the option style. Type a quoted string and
+  assert quote matching. Covers PRODUCT #11.6 syntax highlighting.
+- **fish abbreviations** — integration test in fish with `abbr -a
+  gco 'git checkout'` set. Type `gco` then space; assert the buffer
+  becomes `git checkout `. Type `gco` then enter; assert the
+  expanded command runs. Covers PRODUCT #11.6 fish abbr expansion.
+- **zsh-vi-mode cursor shape** — integration test with zsh-vi-mode
+  installed. Switch to command mode (Esc) and assert the cursor
+  shape rendered in Warp's input editor matches zsh-vi-mode's
+  configured command-mode shape (block by default). Switch to
+  insert mode (i) and assert the configured insert shape (beam).
+  Covers PRODUCT #11.6 vi-mode indicators.
+- **Inline plugin latency budget** — performance test on
+  representative hardware (developer laptop) measuring keystroke-
+  to-render time for the slowest realistic stack (zsh + oh-my-zsh
+  + atuin init + fzf init + zsh-autosuggestions +
+  zsh-syntax-highlighting + powerlevel10k). Asserts p95 keystroke
+  latency stays under 30 ms. Drives the §7 Candidate A vs B vs C
+  decision; failing test forces the fallback path.
+- **Inline plugin failure mode** — integration test that injects a
+  malformed ANSI sequence into the plugin output stream (simulate
+  a plugin emitting an unsupported escape). Assert: render
+  degrades to plain text, no crash, one diagnostic emitted, prompt
+  remains usable. Covers PRODUCT #11.6 failure mode.
 - **Manual** — run Warp against a developer's real zsh+oh-my-zsh +
-  atuin + fzf, a real bash with `~/.inputrc` + `bind -x` widgets +
+  atuin + fzf + zsh-autosuggestions + zsh-syntax-highlighting +
+  powerlevel10k, a real bash with `~/.inputrc` + `bind -x` widgets +
   atuin + fzf, and a real fish with `~/.config/fish/` bindings +
-  atuin + fzf. Capture a short loom walkthrough showing each
-  shell's bindings honored, including a real atuin search and a
-  real fzf history fuzzy-find.
+  atuin + fzf + abbreviations. Capture a short loom walkthrough
+  showing each shell's bindings honored, including a real atuin
+  search, a real fzf history fuzzy-find, inline autosuggestions
+  appearing as the user types, syntax highlighting, and a fish
+  abbreviation expanding on space.
 
 ## Follow-ups
 
