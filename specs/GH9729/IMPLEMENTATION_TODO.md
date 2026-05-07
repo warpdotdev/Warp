@@ -119,7 +119,7 @@ Notes are written to `specs/GH9729/reviews/<item>-r<N>.md`.
 | 3a | `LightboxImageSource::Error` variant | `c0b5a7c` | [x] | [x] |
 | 3b | render `Error` inline in `Lightbox::render` | `328c333` | [x] | [x] |
 | 2-arm | workspace `FileTarget::ImagePreview` arm | `38aec6e` | [x] | [x] |
-| 2-tests | workspace-arm tests | `32cee73` | [ ] | [ ] |
+| 2-tests | workspace-arm tests | `32cee73` | [x] | [x] |
 | 4a | static-decode caps in `ImageType::try_from_bytes` | `926dedf` | [ ] | [ ] |
 | 4b | animated-decode caps (WebP, GIF) | `a6aaf00` | [ ] | [ ] |
 | 4c | SVG content-sanity gate + intrinsic-dimension cap | `294fa95` | [ ] | [ ] |
