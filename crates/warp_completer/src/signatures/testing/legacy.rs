@@ -1052,3 +1052,50 @@ fn create_hidden_argument_suggestion(name: impl Into<String>) -> ArgumentType {
         display_name: None,
     })
 }
+
+pub fn cmake_like_signature() -> Signature {
+    Signature {
+        name: "cmake_test".to_string(),
+        alias_generator: None,
+        description: None,
+        priority: Priority::default(),
+        arguments: None,
+        subcommands: None,
+        options: Some(vec![
+            Opt {
+                exact_string: vec!["-D".to_string()],
+                description: None,
+                arguments: Some(vec![Argument {
+                    display_name: Some("define".to_string()),
+                    description: None,
+                    is_variadic: false,
+                    is_command: false,
+                    argument_types: vec![],
+                    optional: IsArgumentOptional::Required,
+                    skip_generator_validation: false,
+                }]),
+                required: false,
+                priority: Priority::Default,
+            },
+            Opt {
+                exact_string: vec!["-S".to_string()],
+                description: Some("source directory".to_string()),
+                arguments: None,
+                required: false,
+                priority: Priority::Default,
+            },
+            Opt {
+                exact_string: vec!["-B".to_string()],
+                description: Some("build directory".to_string()),
+                arguments: None,
+                required: false,
+                priority: Priority::Default,
+            },
+        ]),
+        parser_directives: ParserDirectives {
+            flags_are_posix_noncompliant: false,
+            flags_match_unique_prefix: false,
+            always_case_insensitive: false,
+        },
+    }
+}

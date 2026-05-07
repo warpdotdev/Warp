@@ -13,7 +13,10 @@ use crate::completer::{
 use crate::completer::{suggest::SuggestionType, TopLevelCommandCaseSensitivity};
 use crate::meta::{Span, SpannedItem};
 use crate::signatures::{
-    testing::{add_content_signature, create_test_command_registry, git_signature, test_signature},
+    testing::{
+        add_content_signature, cmake_like_signature, create_test_command_registry,
+        git_signature, test_signature,
+    },
     CommandRegistry,
 };
 
@@ -532,5 +535,31 @@ fn test_describe_case_insensitive_option() {
     assert_eq!(
         describe_at_cursor("Add-Content -e ASCII", ByteOffset::from(14), &ctx),
         None
+    );
+}
+
+#[test]
+fn test_describe_does_not_misclassify_non_bundle_single_dash_tokens() {
+    let registry = create_test_command_registry([cmake_like_signature()]);
+    let ctx = FakeCompletionContext::new(registry);
+
+    // -DWITH_TESTS contains chars not in the known shorthand set, so it should
+    // NOT be described as an option via the shorthand bundle path.
+    assert_eq!(
+        describe_at_cursor("cmake_test -DWITH_TESTS", ByteOffset::from(11), &ctx),
+        None
+    );
+
+    // -DS with only shorthand chars (D, S) IS a valid bundle — this should still work.
+    assert_eq!(
+        describe_at_cursor("cmake_test -DS", ByteOffset::from(11), &ctx),
+        Some(Description {
+            token: "-DS".to_string().spanned(Span::new(11, 14)),
+            description_text: Some("source directory".to_string()),
+            suggestion_type: SuggestionType::Option(
+                MatchRequirement::EntireName,
+                OptionCaseSensitivity::CaseSensitive
+            )
+        })
     );
 }
