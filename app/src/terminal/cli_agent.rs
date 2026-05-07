@@ -65,7 +65,7 @@ const DROID_COLOR: ColorU = ColorU {
 };
 
 /// OpenCode brand color (gray, used for contrast calculation only)
-const OPENCODE_COLOR: ColorU = ColorU {
+pub(crate) const OPENCODE_COLOR: ColorU = ColorU {
     r: 128,
     g: 128,
     b: 128,

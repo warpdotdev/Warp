@@ -2822,9 +2822,10 @@ impl BlocklistAIController {
             // persisting the conversation.
             history_model.update_conversation_cost_and_usage_for_request(
                 conversation_id,
-                finished_event
-                    .request_cost
-                    .map(|cost| RequestCost::new(cost.exact.into())),
+                finished_event.request_cost.map(|cost| {
+                    // Total credits charged for this request = inference (`exact`) + platform.
+                    RequestCost::new(f64::from(cost.exact) + f64::from(cost.platform_credits))
+                }),
                 finished_event.token_usage,
                 finished_event.conversation_usage_metadata.take(),
                 did_request_contain_user_query,

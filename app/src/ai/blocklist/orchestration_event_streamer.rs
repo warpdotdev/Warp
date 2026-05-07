@@ -36,7 +36,7 @@ const RESTORE_FETCH_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
 /// Slower backoff for permanent HTTP errors (e.g. 404 for deleted runs).
 /// Retries still happen in case the error was spurious, but at a much
 /// lower frequency to avoid log spam.
-const RESTORE_FETCH_PERMANENT_BACKOFF_STEPS: &[u64] = &[25, 30];
+const RESTORE_FETCH_PERMANENT_BACKOFF_STEPS: &[u64] = &[30];
 /// How often (milliseconds) the drain timer checks for SSE events.
 const SSE_DRAIN_INTERVAL_MS: u64 = 500;
 
@@ -770,8 +770,8 @@ impl OrchestrationEventStreamer {
     /// Schedules a retry of the post-restore `get_ambient_agent_task`
     /// fetch after an exponential backoff keyed on a per-conversation
     /// failure counter. Uses a fast schedule (1-10s) for transient errors
-    /// and a slow schedule (25-30s) for permanent HTTP errors. The
-    /// counter resets on success.
+    /// and a slow schedule (30s) for permanent HTTP errors. The counter
+    /// resets on success.
     fn start_restore_fetch_retry_timer(
         &mut self,
         conv_id: AIConversationId,

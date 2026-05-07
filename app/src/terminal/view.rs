@@ -17,7 +17,6 @@ use crate::ai::block_context::BlockContext;
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
 use crate::global_resource_handles::GlobalResourceHandlesProvider;
-use crate::terminal::view::ambient_agent::is_cloud_agent_pre_first_exchange;
 pub use init_project::{
     InitActionResult, InitProjectModel, InitProjectModelEvent, InitStepBlock, InitStepKind,
     ProjectScopedRulesResult,
@@ -2892,10 +2891,6 @@ impl TerminalView {
         self.current_repo_path.as_ref()
     }
 
-    /// Create a SyncEvent for other terminals to use based on
-    /// the state of this terminal. If this terminal view has an active input
-    /// editor, other terminals should match those contents.
-    /// Otherwise, they should just start syncing.
     fn is_nested_cloud_mode(&self, app: &AppContext) -> bool {
         if !self.is_ambient_agent_session(app) {
             return false;
@@ -2917,17 +2912,10 @@ impl TerminalView {
             .is_some_and(|index| index > 0)
     }
 
-    /// True when this pane's cloud agent is in any pre-first-exchange phase.
-    /// Thin wrapper over the free function that threads `self`'s handles.
-    fn is_cloud_agent_pre_first_exchange(&self, app: &AppContext) -> bool {
-        is_cloud_agent_pre_first_exchange(
-            self.ambient_agent_view_model.as_ref(),
-            &self.agent_view_controller,
-            &self.model,
-            app,
-        )
-    }
-
+    /// Create a SyncEvent for other terminals to use based on
+    /// the state of this terminal. If this terminal view has an active input
+    /// editor, other terminals should match those contents.
+    /// Otherwise, they should just start syncing.
     pub fn create_sync_event_based_on_terminal_state(&self, app_ctx: &AppContext) -> SyncEvent {
         if !matches!(
             self.model.lock().terminal_input_state(),
@@ -4511,7 +4499,9 @@ impl TerminalView {
                     | RemoteServerManagerEvent::HostDisconnected { .. }
                     | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
                     | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
-                    | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. } => {}
+                    | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
+                    | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
+                    | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. } => {}
                 }
             });
         }
@@ -7122,7 +7112,12 @@ impl TerminalView {
         // agent exchange arrives, we hide the interactive input view. A non-interactive footer is
         // rendered instead (see `TerminalView::render`).
         if !FeatureFlag::CloudModeSetupV2.is_enabled()
-            && self.is_cloud_agent_pre_first_exchange(app)
+            && ambient_agent::is_cloud_agent_pre_first_exchange(
+                self.ambient_agent_view_model.as_ref(),
+                &self.agent_view_controller,
+                model,
+                app,
+            )
         {
             return false;
         }
@@ -24890,7 +24885,7 @@ impl TypedActionView for TerminalView {
             | OpenChildAgentInNewTab { .. }
             | StopAgentConversation { .. }
             | KillAgentConversation { .. }
-            | OpenCLIAgentRichInput
+            | ToggleCLIAgentRichInput
             | ToggleSessionRecording => Empty,
         }
     }
@@ -26024,7 +26019,7 @@ impl TypedActionView for TerminalView {
                     recorder.toggle_recording(ctx);
                 });
             }
-            OpenCLIAgentRichInput => {
+            ToggleCLIAgentRichInput => {
                 if self.has_active_cli_agent_input_session(ctx) {
                     self.close_cli_agent_rich_input_and_disable_auto_toggle(ctx);
                 } else {
@@ -26130,7 +26125,14 @@ impl View for TerminalView {
 
                     if self.is_input_box_visible(&model, app) {
                         column.add_child(self.render_input());
-                    } else if !model.is_read_only() && self.is_cloud_agent_pre_first_exchange(app) {
+                    } else if !model.is_read_only()
+                        && ambient_agent::is_cloud_agent_pre_first_exchange(
+                            self.ambient_agent_view_model.as_ref(),
+                            &self.agent_view_controller,
+                            &model,
+                            app,
+                        )
+                    {
                         column.add_child(ambient_agent::render_loading_footer(appearance));
                     } else if self.show_remote_server_loading_footer(&model, app) {
                         column.add_child(

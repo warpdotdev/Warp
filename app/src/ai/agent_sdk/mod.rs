@@ -993,19 +993,47 @@ impl AgentDriverRunner {
             )
             .await
         };
-        let (secrets_result, attachments_result, task_metadata_result, handoff_snapshot_result) =
-            futures::future::join4(
-                task_secrets,
-                driver::attachments::fetch_and_download_attachments(
-                    ai_client.clone(),
-                    server_api.clone(),
-                    task_id_str.clone(),
-                    attachments_download_dir.clone(),
-                ),
-                task_metadata,
-                handoff_snapshot,
-            )
-            .await;
+
+        // Fetch a fresh GitHub token from the server so the driver can configure git
+        // and gh credentials without relying on environment variable injection.
+        let git_creds_ai_client = ai_client.clone();
+        let git_creds_task_id = task_id_str.clone();
+        let git_credentials = async move {
+            let workload_token = match warp_isolation_platform::issue_workload_token(Some(
+                std::time::Duration::from_mins(5),
+            ))
+            .await
+            {
+                Ok(token) => token.token,
+                Err(e) => {
+                    // Not in an isolated environment — no workload token available.
+                    log::debug!("Skipping git credentials fetch: {e}");
+                    return Ok(vec![]);
+                }
+            };
+            git_creds_ai_client
+                .get_task_git_credentials(git_creds_task_id, workload_token)
+                .await
+        };
+
+        let (
+            secrets_result,
+            attachments_result,
+            task_metadata_result,
+            handoff_snapshot_result,
+            git_credentials_result,
+        ) = futures::join!(
+            task_secrets,
+            driver::attachments::fetch_and_download_attachments(
+                ai_client.clone(),
+                server_api.clone(),
+                task_id_str.clone(),
+                attachments_download_dir.clone(),
+            ),
+            task_metadata,
+            handoff_snapshot,
+            git_credentials,
+        );
 
         // Extract attachments_dir from successful result, log errors
         let mut attachments_dir = match attachments_result {
@@ -1027,6 +1055,25 @@ impl AgentDriverRunner {
                 log::warn!("Failed to fetch handoff snapshot attachments: {e:#}");
             }
         }
+
+        match git_credentials_result {
+            Ok(credentials) if !credentials.is_empty() => {
+                driver::git_credentials::setup_git_config(&credentials);
+                driver::git_credentials::configure_git_identity(&credentials);
+                if let Err(e) = driver::git_credentials::write_git_credentials(&credentials) {
+                    log::warn!("Failed to write git credentials: {e:#}");
+                } else {
+                    log::info!("Git credentials configured from taskGitCredentials");
+                }
+            }
+            Ok(_) => {
+                log::debug!("No git credentials returned; skipping credential file setup");
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch git credentials: {e:#}");
+            }
+        }
+
         let secrets = match secrets_result {
             Ok(secrets) => secrets,
             Err(err) => {

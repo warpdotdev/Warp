@@ -9,10 +9,11 @@ use ai::agent::orchestration_config::{
     matches_active_config, OrchestrationConfig, OrchestrationConfigStatus,
 };
 use ai::skills::SkillReference;
+use pathfinder_geometry::vector::vec2f;
 use std::rc::Rc;
 use warpui::elements::{
-    Border, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, MainAxisSize, ParentElement,
-    Radius, Text,
+    Border, ChildView, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, MainAxisSize,
+    OffsetPositioning, ParentElement, Radius, Stack, Text,
 };
 use warpui::keymap::{FixedBinding, Keystroke};
 use warpui::{
@@ -40,6 +41,7 @@ use crate::ai::blocklist::inline_action::requested_action::{
 };
 use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::appearance::Appearance;
+use crate::menu::{Event as MenuEvent, Menu, MenuItemFields, MenuVariant};
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ButtonSize, KeystrokeSource, NakedTheme};
@@ -161,6 +163,8 @@ struct RunAgentsCardHandles {
 #[derive(Clone, Debug)]
 pub enum RunAgentsCardViewAction {
     Accept,
+    AcceptWithoutOrchestration,
+    ToggleAcceptMenu,
     Reject,
     ToggleEdit,
     DiscardEdits,
@@ -194,6 +198,11 @@ pub struct RunAgentsCardView {
     /// the auto-launch condition when `agent_run_configs` arrives via
     /// streaming after the initial empty chunk.
     active_config: Option<(OrchestrationConfig, OrchestrationConfigStatus)>,
+
+    // Split-button accept menu state
+    is_accept_menu_open: bool,
+    accept_menu: ViewHandle<Menu<RunAgentsCardViewAction>>,
+    position_id_prefix: String,
 
     action_model: ModelHandle<BlocklistAIActionModel>,
     block_model: Rc<dyn AIBlockModel<View = AIBlock>>,
@@ -308,18 +317,35 @@ impl RunAgentsCardView {
             std::sync::Arc::new(NakedTheme),
             ctx,
         );
-        // Both primary and chevron click route to Accept.
+        let position_id_prefix = format!("{action_id:?}");
         let accept_button = CompactibleSplitActionButton::new(
             "Accept".to_string(),
             Some(KeystrokeSource::Fixed(accept_keystroke)),
             ButtonSize::Small,
             RunAgentsCardViewAction::Accept,
-            RunAgentsCardViewAction::Accept,
+            RunAgentsCardViewAction::ToggleAcceptMenu,
             Icon::Check,
             true,
-            None,
+            Some(Self::get_position_id_for_accept_split_button(
+                &position_id_prefix,
+            )),
             ctx,
         );
+
+        let accept_menu = ctx.add_typed_action_view(|ctx| {
+            let theme = Appearance::as_ref(ctx).theme();
+            Menu::new()
+                .with_menu_variant(MenuVariant::Fixed)
+                .with_border(Border::all(1.).with_border_fill(theme.outline()))
+                .prevent_interaction_with_other_elements()
+        });
+        ctx.subscribe_to_view(&accept_menu, |me, _menu, event, ctx| match event {
+            MenuEvent::Close { .. } => {
+                me.is_accept_menu_open = false;
+                ctx.notify();
+            }
+            MenuEvent::ItemSelected | MenuEvent::ItemHovered => {}
+        });
 
         let action_id_for_subscription = action_id.clone();
         ctx.subscribe_to_model(&run_agents_executor, move |me, _, event, ctx| match event {
@@ -401,6 +427,9 @@ impl RunAgentsCardView {
             auto_launched,
             is_denied,
             active_config,
+            is_accept_menu_open: false,
+            accept_menu,
+            position_id_prefix,
             action_model,
             block_model,
         }
@@ -589,6 +618,26 @@ impl RunAgentsCardView {
     fn sync_picker_selections(&mut self, ctx: &mut ViewContext<Self>) {
         oc::sync_picker_selections(&self.state.orch, &self.handles.pickers, ctx);
     }
+
+    fn toggle_accept_menu(&mut self, ctx: &mut ViewContext<Self>) {
+        self.is_accept_menu_open = !self.is_accept_menu_open;
+        if self.is_accept_menu_open {
+            let item = MenuItemFields::new_with_label("Accept w/o orchestration", "")
+                .with_on_select_action(RunAgentsCardViewAction::AcceptWithoutOrchestration)
+                .into_item();
+            self.accept_menu.update(ctx, |menu, ctx| {
+                menu.set_items(vec![item], ctx);
+            });
+            self.accept_menu
+                .update(ctx, |menu, ctx| menu.set_selected_by_index(0, ctx));
+            ctx.focus(&self.accept_menu);
+        }
+        ctx.notify();
+    }
+
+    fn get_position_id_for_accept_split_button(prefix: &str) -> String {
+        format!("RunAgentsCardView-{prefix}-accept-split")
+    }
 }
 
 impl Entity for RunAgentsCardView {
@@ -662,7 +711,25 @@ impl View for RunAgentsCardView {
         }
 
         let is_blocked = matches!(status, Some(AIActionStatus::Blocked));
-        render_confirmation_card(&self.state, &self.handles, is_blocked, app)
+        let card = render_confirmation_card(&self.state, &self.handles, is_blocked, app);
+
+        let mut root_stack = Stack::new();
+        root_stack.add_child(card);
+
+        if self.is_accept_menu_open {
+            root_stack.add_positioned_child(
+                ChildView::new(&self.accept_menu).finish(),
+                OffsetPositioning::offset_from_save_position_element(
+                    Self::get_position_id_for_accept_split_button(&self.position_id_prefix),
+                    vec2f(0., 8.),
+                    warpui::elements::PositionedElementOffsetBounds::WindowByPosition,
+                    warpui::elements::PositionedElementAnchor::BottomRight,
+                    warpui::elements::ChildAnchor::TopRight,
+                ),
+            );
+        }
+
+        root_stack.finish()
     }
 
     fn keymap_context(&self, _app: &AppContext) -> warpui::keymap::Context {
@@ -681,6 +748,15 @@ impl TypedActionView for RunAgentsCardView {
         match action {
             RunAgentsCardViewAction::Accept => {
                 self.handle_accept(ctx);
+            }
+            RunAgentsCardViewAction::AcceptWithoutOrchestration => {
+                let action_id = self.action_id.clone();
+                self.action_model.update(ctx, |action_model, action_ctx| {
+                    action_model.deny_run_agents(&action_id, String::new(), action_ctx);
+                });
+            }
+            RunAgentsCardViewAction::ToggleAcceptMenu => {
+                self.toggle_accept_menu(ctx);
             }
             RunAgentsCardViewAction::Reject => {
                 ctx.emit(RunAgentsCardViewEvent::RejectRequested);

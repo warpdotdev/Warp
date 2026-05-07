@@ -56,7 +56,6 @@ use crate::{
         },
     },
     settings::cloud_preferences::Preference,
-    util::sync::Condition,
     workflows::{
         workflow::Workflow,
         workflow_enum::{CloudWorkflowEnum, CloudWorkflowEnumModel, WorkflowEnum},
@@ -83,6 +82,7 @@ use warp_core::features::FeatureFlag;
 use warp_graphql::mcp_gallery_template::MCPGalleryTemplate;
 use warp_graphql::object_permissions::AccessLevel;
 use warp_graphql::scalars::time::ServerTimestamp;
+use warp_util::sync::Condition;
 use warpui::r#async::{FutureId, Timer};
 use warpui::{duration_with_jitter, AppContext};
 use warpui::{Entity, ModelContext, RequestState, RetryOption, SingletonEntity};
