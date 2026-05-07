@@ -328,6 +328,16 @@ impl ChannelState {
         CHANNEL_STATE.lock().channel
     }
 
+    /// Returns true when this build runs against the disabled openWarp cloud
+    /// stub (TEST-NET-1 sentinel URLs). The startup path in `app/src/lib.rs`
+    /// and any new short-circuits introduced by the cloud-removal plan should
+    /// gate cloud-only initialisation on this predicate rather than parsing
+    /// `server_root_url` ad-hoc.
+    pub fn is_cloud_disabled() -> bool {
+        let state = CHANNEL_STATE.lock();
+        state.config.server_config.is_disabled() && state.config.oz_config.is_disabled()
+    }
+
     #[cfg(feature = "test-util")]
     pub fn app_version() -> Option<&'static str> {
         let version = APP_VERSION.lock();
