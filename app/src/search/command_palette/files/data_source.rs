@@ -134,12 +134,10 @@ impl FileDataSource {
             .and_then(|repo_root| opened_files.opened_files_for_repo(&repo_root))
             .cloned();
 
-        const CHUNK_SIZE: usize = 50;
-
         Box::pin(async move {
             let mut results = Vec::new();
 
-            for chunk in contents.chunks(CHUNK_SIZE) {
+            for chunk in contents.chunks(50) {
                 for item in chunk {
                     let mut file_ranking = if git_changed_files.contains(&item.path) {
                         FileRanking::ChangedInGit
