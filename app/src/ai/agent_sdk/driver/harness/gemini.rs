@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -53,6 +54,7 @@ impl ThirdPartyHarness for GeminiHarness {
         &self,
         working_dir: &Path,
         system_prompt: Option<&str>,
+        _resolved_env_vars: &HashMap<OsString, OsString>,
         _secrets: &HashMap<String, ManagedSecretValue>,
         _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<(), AgentDriverError> {

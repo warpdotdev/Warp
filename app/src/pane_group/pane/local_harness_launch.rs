@@ -117,12 +117,14 @@ pub(super) async fn prepare_local_harness_child_launch(
             // auth/session state. We still prepare harness config files here,
             // but there are no Warp-managed secrets to materialize into the
             // hidden child pane.
+            let empty_env_vars = HashMap::new();
             let managed_secrets: HashMap<String, ManagedSecretValue> = HashMap::new();
             let empty_mcp_servers = HashMap::new();
             third_party_harness
                 .prepare_environment_config(
                     &working_dir,
                     None,
+                    &empty_env_vars,
                     &managed_secrets,
                     &empty_mcp_servers,
                 )

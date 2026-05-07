@@ -1628,9 +1628,16 @@ impl AgentDriver {
         }
 
         // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
+        // `resolved_env_vars` carries the full env for the terminal session so harnesses
+        // can look up auth keys without re-deriving precedence.
+        let resolved_env_vars = foreground
+            .spawn(|me, _| Arc::clone(&me.resolved_env_vars))
+            .await
+            .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
         harness.prepare_environment_config(
             &working_dir,
             system_prompt.as_deref(),
+            &resolved_env_vars,
             &secrets,
             &resolved_mcp_servers,
         )?;

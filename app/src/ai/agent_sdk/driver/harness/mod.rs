@@ -143,6 +143,7 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         &self,
         _working_dir: &Path,
         _system_prompt: Option<&str>,
+        _resolved_env_vars: &HashMap<OsString, OsString>,
         _secrets: &HashMap<String, ManagedSecretValue>,
         _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<(), AgentDriverError> {
