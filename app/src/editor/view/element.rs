@@ -2369,17 +2369,11 @@ impl PaintState {
 
         let x = shifted_position.x() + (scroll_position.x() * view_snapshot.em_width);
 
-        let col = if let Some(col) = line.caret_index_for_x(x).map(|ix| ix as u32) {
-            col
-        } else {
-            // Clamp to the left or right if the x pos is before or after the buffer text, respectively.
+        if x < 0. || x >= line.width {
             is_clamped = true;
-            if x >= 0. {
-                line.end_index() as u32
-            } else {
-                line.first_index() as u32
-            }
-        };
+        }
+        let col = line.caret_index_for_x_unbounded(x) as u32;
+
         // Now convert from SoftWrapPoint to DisplayPoint.
         let soft_wrap_point = SoftWrapPoint::new(row, col);
 
