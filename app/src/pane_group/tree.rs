@@ -217,9 +217,14 @@ impl PaneData {
     }
 
     pub fn visible_pane_count(&self) -> usize {
-        let total_panes = self.pane_ids().len();
-        let hidden_count = self.num_hidden_panes();
-        total_panes.saturating_sub(hidden_count)
+        // `visible_pane_ids` does the right "is in tree AND not hidden"
+        // filter. Computing `pane_ids().len() - num_hidden_panes()` gives
+        // the wrong answer for `TemporaryReplacement`: the original is
+        // recorded in `hidden_panes` but is NOT in the tree (its slot now
+        // holds the replacement), so subtracting the hidden count
+        // double-counts that pane and produces values like 0 visible panes
+        // when there's actually 1 (the replacement).
+        self.visible_pane_ids().len()
     }
 
     pub fn has_horizontal_split(&self) -> bool {
@@ -397,6 +402,21 @@ impl PaneData {
             match hidden_pane.reason {
                 HiddenPaneReason::TemporaryReplacement(replacement_id) => Some(replacement_id),
                 _ => None,
+            }
+        })
+    }
+
+    /// Returns the `(original_pane_id, replacement_pane_id)` of any active
+    /// `TemporaryReplacement` in this pane group's hidden-pane list, or
+    /// `None` if no swap is currently active. Used by the orchestration
+    /// split-off paths to revert any in-flight swap before re-arranging
+    /// the tree, regardless of which child is the current swap target.
+    pub fn any_temporary_replacement(&self) -> Option<(PaneId, PaneId)> {
+        self.hidden_panes.iter().find_map(|hidden_pane| {
+            if let HiddenPaneReason::TemporaryReplacement(replacement_id) = hidden_pane.reason {
+                Some((hidden_pane.pane_id, replacement_id))
+            } else {
+                None
             }
         })
     }
