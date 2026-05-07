@@ -6,7 +6,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufReader, Read, Seek},
     path::{Path, PathBuf},
@@ -45,10 +45,10 @@ use warp_core::channel::ChannelState;
 use warp_core::sync_queue::SyncQueue;
 use warp_core::{safe_warn, send_telemetry_from_ctx};
 
-use super::file_invalidation_queue::{FileInvalidationError, FileInvalidationTask};
-
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
+        use std::collections::HashSet;
+        use super::file_invalidation_queue::{FileInvalidationError, FileInvalidationTask};
         use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
         use repo_metadata::{
             repository::{RepositorySubscriber, SubscriberId},
