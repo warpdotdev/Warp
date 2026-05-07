@@ -32,6 +32,8 @@ fn test_queueing_behavior() {
         let autoupdate_state = initialize_app(&mut app);
 
         app.update_model(&autoupdate_state, |autoupdate, ctx| {
+            // Simulate post-onboarding state so the polling_started gate doesn't interfere.
+            autoupdate.polling_started = true;
             assert_eq!(autoupdate.get_next_request(ctx), None);
             autoupdate.request_queue.push_back(RequestType::DailyCheck);
             assert_eq!(autoupdate.request_queue.len(), 1);
@@ -76,6 +78,8 @@ fn test_queue_behavior_sdk_mode() {
         let autoupdate_state = initialize_app(&mut app);
 
         app.update_model(&autoupdate_state, |autoupdate, ctx| {
+            // Set polling_started so the onboarding gate doesn't mask SDK-mode filtering logic.
+            autoupdate.polling_started = true;
             assert_eq!(autoupdate.get_next_request(ctx), None);
             autoupdate.request_queue.push_back(RequestType::DailyCheck);
             assert_eq!(autoupdate.request_queue.len(), 1);
@@ -122,6 +126,9 @@ fn test_cli_sdk_mode_prevents_autoupdate_polling() {
         let autoupdate_state = initialize_app(&mut app);
 
         app.update_model(&autoupdate_state, |autoupdate, ctx| {
+            // Set polling_started so the onboarding gate doesn't interfere with
+            // SDK-mode filtering, which is what this test exercises.
+            autoupdate.polling_started = true;
             // Simulate what the autoupdate poll loop would do: call poll_for_update.
             // In SDK mode, the Poll request enqueued by poll_for_update must be discarded
             // immediately without initiating a check (stage stays NoUpdateAvailable).

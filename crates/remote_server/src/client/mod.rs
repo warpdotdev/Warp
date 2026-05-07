@@ -4,6 +4,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::codebase_index_proto::{
+    proto_to_codebase_index_status_updated, proto_to_codebase_index_statuses_snapshot,
+    RemoteCodebaseIndexStatus,
+};
 use dashmap::DashMap;
 use futures::channel::oneshot;
 use futures::io::{AsyncRead, AsyncWrite};
@@ -17,7 +21,6 @@ use crate::proto::{
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
-
 use warp_core::SessionId;
 use warp_core::{safe_error, safe_warn};
 use warpui::r#async::TransportStream;
@@ -68,6 +71,12 @@ pub enum ClientEvent {
     RepoMetadataUpdated {
         update: repo_metadata::RepoMetadataUpdate,
     },
+    /// A full remote codebase-index status snapshot was pushed by the server.
+    CodebaseIndexStatusesSnapshotReceived {
+        statuses: Vec<RemoteCodebaseIndexStatus>,
+    },
+    /// A single remote codebase-index status update was pushed by the server.
+    CodebaseIndexStatusUpdated { status: RemoteCodebaseIndexStatus },
     /// A server message could not be decoded and had no parseable request_id.
     MessageDecodingError,
 }
@@ -418,6 +427,15 @@ impl RemoteServerClient {
             server_message::Message::RepoMetadataUpdate(push) => {
                 let update = crate::repo_metadata_proto::proto_to_repo_metadata_update(&push)?;
                 Some(ClientEvent::RepoMetadataUpdated { update })
+            }
+            server_message::Message::CodebaseIndexStatusesSnapshot(snapshot) => {
+                Some(ClientEvent::CodebaseIndexStatusesSnapshotReceived {
+                    statuses: proto_to_codebase_index_statuses_snapshot(&snapshot),
+                })
+            }
+            server_message::Message::CodebaseIndexStatusUpdated(update) => {
+                let status = proto_to_codebase_index_status_updated(&update)?;
+                Some(ClientEvent::CodebaseIndexStatusUpdated { status })
             }
             other => {
                 safe_warn!(
