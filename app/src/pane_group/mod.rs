@@ -3376,14 +3376,10 @@ impl PaneGroup {
                     conversation_id,
                     ambient_agent_task_id: _,
                 }) => {
-                    let loaded =
-                        self.terminal_view_from_pane_id(pane_id, ctx)
-                            .is_some_and(|target_view| {
-                                Self::fetch_and_load_transcript(target_view, conversation_id, ctx)
-                            });
-                    if !loaded {
-                        self.pending_ambient_agent_conversation_restorations
-                            .insert(task_id, pane_id);
+                    if let Some(target_view) = self.terminal_view_from_pane_id(pane_id, ctx) {
+                        Self::fetch_and_load_transcript(target_view, conversation_id, ctx);
+                    } else {
+                        self.replace_pane_with_new_cloud_conversation(pane_id, ctx);
                     }
                 }
                 _ => {
@@ -3394,27 +3390,16 @@ impl PaneGroup {
     }
 
     /// Fetches conversation data and loads it into the given transcript viewer.
-    ///
-    /// Returns `true` if the conversation metadata was found and the async load
-    /// was kicked off, or `false` if the metadata isn't available yet (caller
-    /// should defer and retry later).
     fn fetch_and_load_transcript(
         target_view: ViewHandle<TerminalView>,
         server_conversation_token: ServerConversationToken,
         ctx: &mut ViewContext<Self>,
-    ) -> bool {
+    ) {
         let history_model_handle = BlocklistAIHistoryModel::handle(ctx);
-        let ai_conversation_id = history_model_handle
-            .as_ref(ctx)
-            .find_conversation_id_by_server_token(&server_conversation_token);
-
-        let Some(ai_conversation_id) = ai_conversation_id else {
-            return false;
-        };
 
         let future = history_model_handle
             .as_ref(ctx)
-            .load_conversation_data(ai_conversation_id, ctx);
+            .load_conversation_by_server_token(&server_conversation_token, ctx);
         ctx.spawn(future, move |group, conversation, ctx| {
             if let Some(conversation) = conversation {
                 group.load_data_into_transcript_viewer(target_view, conversation, ctx);
@@ -3427,7 +3412,6 @@ impl PaneGroup {
                 group.replace_pane_with_new_cloud_conversation(pane_id, ctx);
             }
         });
-        true
     }
 
     /// Replaces a pane with a new cloud conversation.
