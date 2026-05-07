@@ -18,8 +18,11 @@ use remote_server::manager::RemoteServerExitStatus;
 use remote_server::setup::{
     parse_uname_output, remote_server_daemon_dir, PreinstallCheckResult, RemotePlatform,
 };
-use remote_server::ssh::ssh_args;
-use remote_server::transport::{Connection, RemoteTransport};
+use remote_server::ssh::{ssh_args, SshCommandError};
+use remote_server::transport::{
+    CheckBinaryError, Connection, DetectPlatformError, InstallBinaryError, PreinstallCheckError,
+    RemoteTransport,
+};
 
 /// SSH transport: connects via a ControlMaster socket.
 ///
@@ -78,7 +81,7 @@ impl SshTransport {
 impl RemoteTransport for SshTransport {
     fn detect_platform(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<RemotePlatform, String>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<RemotePlatform, DetectPlatformError>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             match remote_server::ssh::run_ssh_command(
@@ -90,21 +93,25 @@ impl RemoteTransport for SshTransport {
             {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout);
-                    parse_uname_output(&stdout).map_err(|e| format!("{e:#}"))
+                    parse_uname_output(&stdout)
+                        .map_err(|e| DetectPlatformError::UnsupportedPlatform(e))
                 }
                 Ok(output) => {
                     let code = output.status.code().unwrap_or(-1);
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    Err(format!("uname -sm exited with code {code}: {stderr}"))
+                    Err(DetectPlatformError::Other(anyhow::anyhow!(
+                        "uname -sm exited with code {code}: {stderr}"
+                    )))
                 }
-                Err(e) => Err(format!("{e:#}")),
+                Err(e) => Err(e.into()),
             }
         })
     }
 
     fn run_preinstall_check(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<PreinstallCheckResult, String>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<PreinstallCheckResult, PreinstallCheckError>> + Send>>
+    {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             match remote_server::ssh::run_ssh_script(
@@ -120,17 +127,15 @@ impl RemoteTransport for SshTransport {
                 }
                 Ok(output) => {
                     let code = output.status.code().unwrap_or(-1);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    Err(format!(
-                        "Preinstall check exited with code {code}: {stderr}"
-                    ))
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    Err(PreinstallCheckError::ScriptFailed { code, stderr })
                 }
-                Err(e) => Err(format!("{e:#}")),
+                Err(e) => Err(PreinstallCheckError::Other(e.into())),
             }
         })
     }
 
-    fn check_binary(&self) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
+    fn check_binary(&self) -> Pin<Box<dyn Future<Output = Result<bool, CheckBinaryError>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let bin_path = remote_server::setup::remote_server_binary();
@@ -149,11 +154,16 @@ impl RemoteTransport for SshTransport {
                     Some(1) => Ok(false),
                     Some(code) => {
                         let stderr = String::from_utf8_lossy(&output.stderr);
-                        Err(format!("binary check exited with code {code}: {stderr}"))
+                        Err(CheckBinaryError::Other(anyhow::anyhow!(
+                            "binary check exited with code {code}: {stderr}"
+                        )))
                     }
-                    None => Err("binary check terminated by signal".into()),
+                    None => Err(CheckBinaryError::Other(anyhow::anyhow!(
+                        "binary check terminated by signal"
+                    ))),
                 },
-                Err(e) => Err(format!("{e:#}")),
+                Err(SshCommandError::TimedOut { .. }) => Err(CheckBinaryError::TimedOut),
+                Err(e) => Err(CheckBinaryError::Other(e.into())),
             }
         })
     }
@@ -191,7 +201,9 @@ impl RemoteTransport for SshTransport {
         })
     }
 
-    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+    fn install_binary(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), InstallBinaryError>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let script = remote_server::setup::install_script();
@@ -210,9 +222,12 @@ impl RemoteTransport for SshTransport {
                 Ok(output) => {
                     let code = output.status.code().unwrap_or(-1);
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    Err(format!("install script failed (exit {code}): {stderr}"))
+                    Err(InstallBinaryError::Other(anyhow::anyhow!(
+                        "install script failed (exit {code}): {stderr}"
+                    )))
                 }
-                Err(e) => Err(format!("{e:#}")),
+                Err(SshCommandError::TimedOut { .. }) => Err(InstallBinaryError::TimedOut),
+                Err(e) => Err(InstallBinaryError::Other(e.into())),
             }
         })
     }

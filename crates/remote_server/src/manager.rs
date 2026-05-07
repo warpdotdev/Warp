@@ -538,13 +538,13 @@ impl RemoteServerManager {
                                 ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
                                     session_id,
                                     state: RemoteServerSetupState::Failed {
-                                        error: error.clone(),
+                                        error: error.to_string(),
                                     },
                                 });
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
                                 session_id,
-                                result: check_result,
+                                result: check_result.map_err(|e| e.to_string()),
                                 remote_platform: platform,
                                 preinstall_check: preinstall,
                                 has_old_binary,
@@ -632,13 +632,13 @@ impl RemoteServerManager {
                                 ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
                                     session_id,
                                     state: RemoteServerSetupState::Failed {
-                                        error: error.clone(),
+                                        error: error.to_string(),
                                     },
                                 });
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryInstallComplete {
                                 session_id,
-                                result,
+                                result: result.map_err(|e| e.to_string()),
                             });
                         })
                         .await;

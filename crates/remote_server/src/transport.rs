@@ -10,6 +10,7 @@
 //! `Arc<dyn RemoteTransport>` for reconnection.
 //!
 //! [`RemoteServerManager`]: crate::manager::RemoteServerManager
+use std::future::Future;
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -20,6 +21,63 @@ use warpui::r#async::executor;
 use crate::client::{ClientEvent, RemoteServerClient};
 use crate::manager::RemoteServerExitStatus;
 use crate::setup::{PreinstallCheckResult, RemotePlatform};
+
+/// Error returned by [`RemoteTransport::detect_platform`].
+#[derive(Debug, thiserror::Error)]
+pub enum DetectPlatformError {
+    /// The platform detection command timed out.
+    #[error("platform detection timed out")]
+    TimedOut,
+    /// The remote host reported an OS or architecture that is not
+    /// supported by the prebuilt remote-server binary.
+    #[error("unsupported platform")]
+    UnsupportedPlatform(#[source] anyhow::Error),
+    /// Any other transport-level or unexpected failure.
+    #[error(transparent)]
+    Other(anyhow::Error),
+}
+
+impl From<crate::ssh::SshCommandError> for DetectPlatformError {
+    fn from(err: crate::ssh::SshCommandError) -> Self {
+        match err {
+            crate::ssh::SshCommandError::TimedOut { .. } => Self::TimedOut,
+            other => Self::Other(other.into()),
+        }
+    }
+}
+
+/// Error returned by [`RemoteTransport::run_preinstall_check`].
+#[derive(Debug, thiserror::Error)]
+pub enum PreinstallCheckError {
+    /// The preinstall check script ran but exited with a non-zero code.
+    #[error("preinstall check script failed (exit {code}): {stderr}")]
+    ScriptFailed { code: i32, stderr: String },
+    /// Any other transport-level or unexpected failure.
+    #[error(transparent)]
+    Other(anyhow::Error),
+}
+
+/// Error returned by [`RemoteTransport::check_binary`].
+#[derive(Debug, thiserror::Error)]
+pub enum CheckBinaryError {
+    /// The binary check command timed out.
+    #[error("binary check timed out")]
+    TimedOut,
+    /// Any other transport-level or unexpected failure.
+    #[error(transparent)]
+    Other(anyhow::Error),
+}
+
+/// Error returned by [`RemoteTransport::install_binary`].
+#[derive(Debug, thiserror::Error)]
+pub enum InstallBinaryError {
+    /// The install script timed out.
+    #[error("install timed out")]
+    TimedOut,
+    /// Any other transport-level or unexpected failure.
+    #[error(transparent)]
+    Other(anyhow::Error),
+}
 
 /// A successful return from [`RemoteTransport::connect`].
 ///
@@ -64,11 +122,12 @@ pub struct Connection {
 pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// Detects the remote host's OS and architecture by running `uname -sm`.
     ///
-    /// Returns the parsed [`RemotePlatform`] on success, or an error string
-    /// if the command fails or the output cannot be parsed.
+    /// Returns the parsed [`RemotePlatform`] on success, or a
+    /// [`DetectPlatformError`] if the command fails or the output cannot
+    /// be parsed.
     fn detect_platform(
         &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<RemotePlatform, String>> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = Result<RemotePlatform, DetectPlatformError>> + Send>>;
 
     /// Runs the preinstall check script ([`crate::setup::PREINSTALL_CHECK_SCRIPT`])
     /// over the existing connection and parses its structured stdout into
@@ -81,12 +140,12 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     ///
     /// Returns `Ok(_)` on success (including when the script reported
     /// `Unknown` — that's a parser-level outcome, not a transport-level
-    /// failure). Returns `Err(_)` only on SSH-level failure (timeout,
+    /// failure). Returns `Err(_)` only on transport-level failure (timeout,
     /// broken pipe, non-zero exit with no parseable summary), which the
     /// caller treats as inconclusive (fail open).
     fn run_preinstall_check(
         &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<PreinstallCheckResult, String>> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = Result<PreinstallCheckResult, PreinstallCheckError>> + Send>>;
 
     /// Checks whether the remote server binary is present on the remote host.
     ///
@@ -96,10 +155,8 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     ///
     /// Returns `Ok(true)` if the binary is installed and executable,
     /// `Ok(false)` if it is definitively not installed, and
-    /// `Err(_)` if the check failed (e.g. SSH timeout/unreachable).
-    fn check_binary(
-        &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<bool, String>> + Send>>;
+    /// `Err(_)` if the check failed (e.g. timeout or unreachable).
+    fn check_binary(&self) -> Pin<Box<dyn Future<Output = Result<bool, CheckBinaryError>> + Send>>;
 
     /// Checks whether the remote host already has an existing install
     /// of the remote server binary.
@@ -110,9 +167,7 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     ///
     /// Returns `Ok(true)` if a prior install was detected, `Ok(false)`
     /// if not, and `Err(_)` on SSH failure.
-    fn check_has_old_binary(
-        &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<bool>> + Send>>;
+    fn check_has_old_binary(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<bool>> + Send>>;
 
     /// Installs the remote server binary on the remote host.
     ///
@@ -121,10 +176,10 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// [`SetupStateChanged`] and [`BinaryInstallComplete`].
     ///
     /// Returns `Ok(())` if the install succeeded, and
-    /// `Err(_)` if the install failed (e.g. SSH timeout, script error).
+    /// `Err(_)` if the install failed (e.g. timeout or script error).
     fn install_binary(
         &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = Result<(), InstallBinaryError>> + Send>>;
 
     /// Establish a new connection to the remote server.
     ///
@@ -139,7 +194,7 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     fn connect(
         &self,
         executor: std::sync::Arc<executor::Background>,
-    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Connection>> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Connection>> + Send>>;
 
     /// Remove the remote server binary, forcing a reinstall on the next
     /// [`install_binary`] call.
@@ -153,7 +208,7 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// [`install_binary`]: RemoteTransport::install_binary
     fn remove_remote_server_binary(
         &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
 
     /// Returns `true` if the transport considers a reconnect viable after
     /// a spontaneous disconnect with the given exit status.
