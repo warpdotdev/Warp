@@ -1010,6 +1010,10 @@ pub enum Event {
         prompt: String,
         attachments: Vec<AgentAttachment>,
     },
+    /// A disconnected Cloud Mode pane is requesting to submit a cloud follow-up.
+    SubmitCloudFollowup {
+        prompt: String,
+    },
     /// A viewer in a shared session is requesting to cancel the active agent conversation.
     CancelSharedSessionConversation {
         server_conversation_token: ServerConversationToken,
@@ -12479,6 +12483,19 @@ impl Input {
                 suggestions.confirm(ctx);
             });
         } else if self.should_block_cloud_mode_setup_submission(ctx) {
+            return;
+        } else if FeatureFlag::HandoffCloudCloud.is_enabled()
+            && self
+                .ambient_agent_view_model()
+                .is_some_and(|ambient_agent_model| {
+                    ambient_agent_model
+                        .as_ref(ctx)
+                        .is_ready_for_cloud_followup_prompt()
+                })
+        {
+            ctx.emit(Event::SubmitCloudFollowup {
+                prompt: command.trim().to_owned(),
+            });
             return;
         } else if FeatureFlag::AgentMode.is_enabled()
             && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
