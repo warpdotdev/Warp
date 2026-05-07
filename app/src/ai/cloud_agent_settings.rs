@@ -45,10 +45,4 @@ impl CloudAgentSettings {
         map.insert(harness.config_name().to_string(), true);
         let _ = self.harness_auth_ftux_completed.set_value(map, ctx);
     }
-
-    pub fn reset_harness_auth_ftux_for_dev(&mut self, ctx: &mut warpui::ModelContext<Self>) {
-        let _ = self
-            .harness_auth_ftux_completed
-            .set_value(HashMap::new(), ctx);
-    }
 }

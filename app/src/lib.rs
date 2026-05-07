@@ -1321,13 +1321,6 @@ pub(crate) fn initialize_app(
         )
     });
 
-    crate::ai::cloud_agent_settings::CloudAgentSettings::handle(ctx).update(
-        ctx,
-        |settings, ctx| {
-            settings.reset_harness_auth_ftux_for_dev(ctx);
-        },
-    );
-
     #[cfg(target_os = "macos")]
     if !launch_mode.is_headless() {
         AppearanceManager::as_ref(ctx).set_app_icon(ctx);

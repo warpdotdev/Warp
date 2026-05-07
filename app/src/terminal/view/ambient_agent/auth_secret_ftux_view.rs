@@ -1,4 +1,5 @@
-
+use crate::view_components::DismissibleToast;
+use crate::workspace::ToastStack;
 use warp_cli::agent::Harness;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
@@ -12,8 +13,6 @@ use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
-use crate::view_components::DismissibleToast;
-use crate::workspace::ToastStack;
 
 use crate::ai::auth_secret_types::{
     auth_secret_types_for_harness, build_managed_secret_value, AuthSecretTypeInfo,
@@ -81,7 +80,7 @@ impl AuthSecretFtuxView {
         ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let name_editor = make_single_line_editor(Some("API key name"), ctx);
+        let name_editor = make_single_line_editor(Some("NICKNAME"), ctx);
 
         ctx.subscribe_to_view(&name_editor, |me, _, event, ctx| {
             me.handle_form_editor_nav(0, event, ctx);
@@ -228,22 +227,20 @@ impl AuthSecretFtuxView {
             return;
         }
         match event {
-            EditorEvent::Navigate(key) => {
-                match key {
-                    NavigationKey::Tab => {
-                        self.focus_form_editor((editor_index + 1) % count, ctx);
-                    }
-                    NavigationKey::ShiftTab => {
-                        let prev = if editor_index == 0 {
-                            count - 1
-                        } else {
-                            editor_index - 1
-                        };
-                        self.focus_form_editor(prev, ctx);
-                    }
-                    _ => {}
+            EditorEvent::Navigate(key) => match key {
+                NavigationKey::Tab => {
+                    self.focus_form_editor((editor_index + 1) % count, ctx);
                 }
-            }
+                NavigationKey::ShiftTab => {
+                    let prev = if editor_index == 0 {
+                        count - 1
+                    } else {
+                        editor_index - 1
+                    };
+                    self.focus_form_editor(prev, ctx);
+                }
+                _ => {}
+            },
             _other => {}
         }
     }
@@ -408,7 +405,7 @@ impl AuthSecretFtuxView {
         let harness = self.ambient_agent_model.as_ref(app).selected_harness();
         let display_name = harness_display::display_name(harness);
         let description = format!(
-            "Please select an authentication secret or create a new one to use \
+            "Please select an API key or create a new one to use \
              {display_name} as a cloud agent."
         );
         Text::new_inline(
@@ -468,7 +465,7 @@ impl AuthSecretFtuxView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(FORM_FIELD_SPACING);
 
-        column.add_child(self.render_field_label("SECRET NAME", app));
+        column.add_child(self.render_field_label("NICKNAME", app));
         column.add_child(self.render_editor_container(&self.name_editor, app));
 
         for (idx, field) in info.fields.iter().enumerate() {
