@@ -1784,22 +1784,8 @@ pub fn render_orchestration_breadcrumbs(
     .with_propagate_mousewheel_if_not_handled(true)
     .finish();
 
-    // Wrap the scrollable in a `MainAxisSize::Max` row that horizontally
-    // centers the scrollable. The pane header's wrapping `Flex::column`
-    // uses `CrossAxisAlignment::Stretch`, which forces this secondary row
-    // to the full pane width. Without this centering wrapper the
-    // scrollable inherits that full width too and paints its inner
-    // (`MainAxisSize::Min`) breadcrumb row flush against the left edge of
-    // the pane.
-    //
-    // With this wrapper the scrollable is given an unconstrained main
-    // axis min and lays itself out at its child's natural width when the
-    // breadcrumbs fit. The centered outer row then positions it in the
-    // middle of the pane. When the breadcrumbs overflow, the scrollable
-    // clamps to the row's max width and horizontal scrolling kicks in as
-    // before — the visual result is identical to the previous left-aligned
-    // overflow behaviour because the scrollable now occupies the full
-    // available width.
+    // Center breadcrumbs while they fit; when they overflow, use the full
+    // width so horizontal scrolling still works.
     Some(
         Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
