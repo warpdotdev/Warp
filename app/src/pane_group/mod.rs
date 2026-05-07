@@ -2113,7 +2113,17 @@ impl PaneGroup {
                     .panes
                     .original_pane_for_replacement(*pane_id)
                     .unwrap_or(*pane_id);
-                let contents = match self.pane_contents.get(&snapshot_pane_id) {
+                let is_substituted = snapshot_pane_id != *pane_id;
+                // Whether the user-visible tree slot is the active
+                // terminal session. During an active swap, this is the
+                // replacement (e.g. a child agent). On restart the child
+                // is rebuilt off-tree and the orchestrator becomes the
+                // new visible leaf, so the orchestrator's snapshot
+                // should carry the active-session marker the user last
+                // saw — not whatever its own pane reported in isolation.
+                let visible_leaf_is_active_session =
+                    pane_id.as_terminal_pane_id() == self.active_session_id(app);
+                let mut contents = match self.pane_contents.get(&snapshot_pane_id) {
                     Some(pane) => pane.as_pane().snapshot(app),
                     None => {
                         // Create a new pane uuid if we have a bug where we didn't save it
@@ -2123,8 +2133,7 @@ impl PaneGroup {
                         LeafContents::Terminal(TerminalPaneSnapshot {
                             uuid: Uuid::new_v4().as_bytes().to_vec(),
                             cwd: None,
-                            is_active: snapshot_pane_id.as_terminal_pane_id()
-                                == self.active_session_id(app),
+                            is_active: visible_leaf_is_active_session,
                             is_read_only: false,
                             shell_launch_data: None,
                             input_config: Some(InputConfig::new(app)),
@@ -2135,6 +2144,20 @@ impl PaneGroup {
                         })
                     }
                 };
+
+                // After substitution, override `is_active` so the
+                // restored tab marks the right pane as the active
+                // terminal. Without this override the orchestrator's
+                // snapshot would carry `is_active = false` (because the
+                // child was the active session at snapshot time), and
+                // restore would either silently fall back to the
+                // leftmost terminal pane or, in multi-pane tabs, focus
+                // a different terminal than the user last saw.
+                if is_substituted && visible_leaf_is_active_session {
+                    if let LeafContents::Terminal(ref mut snapshot) = contents {
+                        snapshot.is_active = true;
+                    }
+                }
                 let custom_vertical_tabs_title =
                     self.pane_contents.get(&snapshot_pane_id).and_then(|pane| {
                         pane.as_pane()
@@ -4494,11 +4517,25 @@ impl PaneGroup {
         self.cleanup_closed_pane(pane_id, ctx);
     }
 
-    /// For each child agent conversation currently live in the closing
-    /// pane's terminal view, transfer ownership back to whichever pane owns
-    /// its parent (orchestrator) conversation. No-op for non-child
-    /// conversations and for child conversations whose parent has no
-    /// resolvable owning view.
+    /// Best-effort: for each child agent conversation currently live in
+    /// the closing pane's terminal view, ask the history model to
+    /// re-bind the child to whichever pane owns its parent
+    /// (orchestrator) conversation. This is defensive plumbing rather
+    /// than a true ownership transfer:
+    /// [`BlocklistAIHistoryModel::set_active_conversation_id`] requires
+    /// the destination view's live conversation list to already contain
+    /// the child, and in the typical orchestrator+child pane scenario
+    /// the parent's view does *not* own the child — the child has its
+    /// own dedicated `TerminalView`. In that case the call logs an
+    /// error inside the history model and no-ops, which is the correct
+    /// behavior.
+    ///
+    /// The call is still worth keeping as a hook for the rare paths
+    /// (e.g. a future split-off route that loads the child onto the
+    /// parent's view) where the parent's live list does include the
+    /// child. For non-child conversations and for child conversations
+    /// whose parent has no resolvable owning view, this method is a
+    /// silent no-op.
     fn transfer_child_agent_conversations_to_parents_on_close(
         &mut self,
         pane_id: PaneId,
@@ -4656,11 +4693,14 @@ impl PaneGroup {
             // from the child's pill bar — `replace_pane(child, sibling,
             // true)` recorded the child as the *original* of an active
             // TempRepl. Cases A and B don't touch that entry, so drop
-            // any hidden-pane record naming this child as either side
-            // of a swap. Without this, a future revert of the surviving
-            // sibling would try to splice the (now off-tree) child back
-            // into the tree, leaving a leaf that points to a stale
-            // pane.
+            // any hidden-pane record naming this child as the *original*
+            // side of a swap. (Replacement-side cleanup is already
+            // handled by Case A's explicit `revert_temporary_replacement`
+            // call, which removes the entry whose replacement matches
+            // the closing child.) Without this, a future revert of the
+            // surviving sibling would try to splice the (now off-tree)
+            // child back into the tree, leaving a leaf that points to a
+            // stale pane.
             self.panes.remove_hidden_pane(pane_id);
             // The pane stays in `pane_contents` and `child_agent_panes`
             // — it just goes back to off-tree state.
