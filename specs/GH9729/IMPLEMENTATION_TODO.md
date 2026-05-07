@@ -26,7 +26,7 @@ stops. The next iteration sees the updated state and picks the next item.
 ## Steps
 
 - [x] 1a. Add `FileTarget::ImagePreview` variant — `tech.md` §74 (`### 1.`)
-- [ ] 1b. Resolver short-circuit in `resolve_file_target_with_editor_choice`
+- [x] 1b. Resolver short-circuit in `resolve_file_target_with_editor_choice`
        (PNG/JPEG/GIF/WebP/SVG ahead of markdown probe and binary fall-through)
        — `tech.md` §74
 - [ ] 1c. Unit tests for resolver: each supported extension, precedence over

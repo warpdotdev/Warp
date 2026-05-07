@@ -204,6 +204,15 @@ pub fn resolve_file_target_with_editor_choice(
     default_layout: EditorLayout,
     layout: Option<EditorLayout>,
 ) -> FileTarget {
+    // 0. Image preview takes precedence over text/binary classification so
+    //    SVG (currently text-classified, would otherwise open as raw XML in the
+    //    code editor) and raster formats (currently binary, would otherwise
+    //    fall through to `SystemGeneric`) both land in the Lightbox overlay.
+    //    See specs/GH9729/tech.md §74.
+    if is_supported_image_file(path) {
+        return FileTarget::ImagePreview;
+    }
+
     let is_openable_in_warp = is_file_openable_in_warp(path);
     let is_markdown = matches!(is_openable_in_warp, Some(OpenableFileType::Markdown));
     let layout = layout.unwrap_or(default_layout);
