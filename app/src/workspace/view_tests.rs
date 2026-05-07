@@ -3063,8 +3063,11 @@ fn test_tab_mru_order() {
 // These exercise `build_image_preview_entry` directly rather than the full
 // `Workspace::open_file_with_target` arm; per the spec, "a small extracted
 // helper module to avoid pulling the whole view crate into a test." The
-// dispatch line in the arm itself is a one-liner that wraps the helper's
-// output in a single-element Vec and calls `dispatch_typed_action`.
+// arm itself is a one-liner that wraps the helper's output in a single-element
+// Vec and calls `Workspace::open_lightbox` (a direct helper call rather than
+// `dispatch_typed_action`, because the arm runs from a child-view subscription
+// callback where the workspace is not in the action dispatcher's responder
+// chain — see the rationale comment on `open_lightbox`).
 
 #[cfg(feature = "local_fs")]
 #[test]

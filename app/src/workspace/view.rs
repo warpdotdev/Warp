@@ -5918,13 +5918,16 @@ impl Workspace {
                 // GH9729: route image clicks through the existing Lightbox overlay.
                 // See specs/GH9729/tech.md §119. Construction of the entry lives
                 // in `build_image_preview_entry` so it can be unit-tested without
-                // a `ViewContext`.
+                // a `ViewContext`. We invoke `open_lightbox` directly rather than
+                // dispatching `WorkspaceAction::OpenLightbox`: this arm runs from
+                // a child-view subscription callback (file tree → left panel →
+                // workspace), so `Workspace` is not in the action dispatcher's
+                // responder chain and the action would be silently dropped. The
+                // direct-call shape matches the other arms in this match block
+                // (`open_code`, `open_file_notebook`, etc.).
                 let image =
                     build_image_preview_entry(&path, MAX_PREVIEW_FILE_BYTES, MAX_ERROR_MESSAGE_LEN);
-                ctx.dispatch_typed_action(&WorkspaceAction::OpenLightbox {
-                    images: vec![image],
-                    initial_index: 0,
-                });
+                self.open_lightbox(vec![image], 0, ctx);
             }
         }
     }
@@ -7579,6 +7582,49 @@ impl Workspace {
                 });
             }
         }
+    }
+
+    /// Open (or refresh) the workspace Lightbox overlay with the given images.
+    ///
+    /// Mirrors the convention of other `open_*` helpers (`open_code`,
+    /// `open_file_notebook`): the helper owns the `LightboxView` lifecycle
+    /// directly so it can be invoked both from the `WorkspaceAction::OpenLightbox`
+    /// action handler (when dispatched from a focused-view context where
+    /// `Workspace` is in the responder chain — e.g. the artifacts and blocklist
+    /// call sites) and from subscription-driven paths where it isn't (the
+    /// `FileTarget::ImagePreview` arm in `open_file_with_target`, GH9729).
+    /// Calling the helper directly avoids the action-router responder-chain
+    /// dependency that the typed-action dispatcher imposes.
+    fn open_lightbox(
+        &mut self,
+        images: Vec<LightboxImage>,
+        initial_index: usize,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let params = LightboxParams {
+            images,
+            initial_index,
+        };
+        if let Some(handle) = &self.lightbox_view {
+            handle.update(ctx, |view, ctx| view.update_params(params, ctx));
+        } else {
+            let handle = ctx.add_typed_action_view(|ctx| LightboxView::new(params, ctx));
+            ctx.subscribe_to_view(&handle, |me, _, event, ctx| match event {
+                LightboxViewEvent::Close => {
+                    me.lightbox_view = None;
+                    me.focus_active_tab(ctx);
+                    ctx.notify();
+                }
+                LightboxViewEvent::FocusLost => {
+                    // Focus already moved elsewhere; just tear down the view.
+                    me.lightbox_view = None;
+                    ctx.notify();
+                }
+            });
+            ctx.focus(&handle);
+            self.lightbox_view = Some(handle);
+        }
+        ctx.notify();
     }
 
     /// Open a code diff view by temporarily replacing the current pane or in a new tab.
@@ -22481,30 +22527,11 @@ impl TypedActionView for Workspace {
                 images,
                 initial_index,
             } => {
-                let params = LightboxParams {
-                    images: images.clone(),
-                    initial_index: *initial_index,
-                };
-                if let Some(handle) = &self.lightbox_view {
-                    handle.update(ctx, |view, ctx| view.update_params(params, ctx));
-                } else {
-                    let handle = ctx.add_typed_action_view(|ctx| LightboxView::new(params, ctx));
-                    ctx.subscribe_to_view(&handle, |me, _, event, ctx| match event {
-                        LightboxViewEvent::Close => {
-                            me.lightbox_view = None;
-                            me.focus_active_tab(ctx);
-                            ctx.notify();
-                        }
-                        LightboxViewEvent::FocusLost => {
-                            // Focus already moved elsewhere; just tear down the view.
-                            me.lightbox_view = None;
-                            ctx.notify();
-                        }
-                    });
-                    ctx.focus(&handle);
-                    self.lightbox_view = Some(handle);
-                }
-                ctx.notify();
+                // Body extracted into `Workspace::open_lightbox` so the
+                // `FileTarget::ImagePreview` arm in `open_file_with_target` can
+                // invoke the same logic directly when the action dispatcher's
+                // responder chain does not include the workspace (GH9729).
+                self.open_lightbox(images.clone(), *initial_index, ctx);
             }
             UpdateLightboxImage { index, image } => {
                 if let Some(handle) = &self.lightbox_view {
