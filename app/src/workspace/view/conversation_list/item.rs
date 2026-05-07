@@ -10,7 +10,7 @@ use crate::ui_components::agent_icon::agent_conversation_entry_icon_variant;
 use crate::ui_components::icon_with_status::render_icon_with_status;
 use crate::ui_components::icons::Icon;
 use crate::ui_components::menu_button::{icon_button_with_context_menu, MenuDirection};
-use crate::util::time_format::format_approx_duration_from_now_utc;
+use crate::util::time_format::{format_absolute_datetime_utc, format_approx_duration_from_now_utc};
 use crate::util::truncation::truncate_from_end;
 use crate::workspace::view::conversation_list::view::ConversationListViewAction;
 use pathfinder_geometry::vector::vec2f;
@@ -68,6 +68,7 @@ pub const STATIC_ITEM_MIN_HEIGHT: f32 = 42.;
 pub struct ItemState {
     pub mouse_state: MouseStateHandle,
     pub overflow_button_state: MouseStateHandle,
+    pub timestamp_mouse_state: MouseStateHandle,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -243,12 +244,36 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
     )
     .finish();
 
-    let timestamp = Text::new_inline(
-        format_approx_duration_from_now_utc(conversation.display.last_updated),
-        font_family,
-        font_size - 2.,
-    )
-    .with_color(theme.sub_text_color(theme.background()).into())
+    let timestamp_relative = format_approx_duration_from_now_utc(conversation.display.last_updated);
+    let timestamp_absolute = format_absolute_datetime_utc(conversation.display.last_updated);
+    let timestamp_ui_builder = ui_builder.clone();
+    let timestamp_mouse_state = state.timestamp_mouse_state.clone();
+    let timestamp_mouse_state_for_tooltip = timestamp_mouse_state.clone();
+    let timestamp = Hoverable::new(timestamp_mouse_state, move |state| {
+        let timestamp_text =
+            Text::new_inline(timestamp_relative.clone(), font_family, font_size - 2.)
+                .with_color(theme.sub_text_color(theme.background()).into())
+                .finish();
+
+        let mut stack = Stack::new().with_child(timestamp_text);
+        if state.is_hovered() {
+            let tooltip = timestamp_ui_builder
+                .tool_tip(timestamp_absolute.clone())
+                .build()
+                .finish();
+            stack.add_positioned_overlay_child(
+                tooltip,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0., -4.),
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::TopMiddle,
+                    ChildAnchor::BottomMiddle,
+                ),
+            );
+        }
+
+        stack.finish()
+    })
     .finish();
 
     let bottom_row = if let Some(subtext) = format_item_subtext(conversation, app) {
@@ -348,7 +373,13 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         }
 
         // Hide the tooltip when the overflow menu is being shown so that they don't overlap.
-        if is_selected && matches!(overflow_menu_display, OverflowMenuDisplay::Closed) {
+        let is_timestamp_hovered = timestamp_mouse_state_for_tooltip
+            .lock()
+            .is_ok_and(|state| state.is_hovered());
+        if is_selected
+            && !is_timestamp_hovered
+            && matches!(overflow_menu_display, OverflowMenuDisplay::Closed)
+        {
             let tooltip = ui_builder.tool_tip(tooltip_text).build().finish();
             let (parent_anchor, child_anchor, offset_x) = if tooltip_opens_right {
                 (ParentAnchor::MiddleRight, ChildAnchor::MiddleLeft, 4.)

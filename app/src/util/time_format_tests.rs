@@ -93,3 +93,15 @@ fn test_human_readable_approx_duration() {
         "9 years ago".to_owned()
     );
 }
+
+#[test]
+fn test_format_absolute_datetime_utc_is_unambiguous() {
+    let datetime = DateTime::parse_from_rfc3339("2026-05-06T17:30:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let formatted = format_absolute_datetime_utc(datetime);
+
+    assert!(formatted.contains("2026"));
+    assert!(formatted.contains(" at "));
+    assert!(formatted.contains("(UTC"));
+}

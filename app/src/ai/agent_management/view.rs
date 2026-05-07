@@ -49,7 +49,7 @@ use crate::menu::{MenuItem, MenuItemFields};
 use crate::notebooks::NotebookId;
 use crate::settings::ai::AISettings;
 use crate::ui_components::avatar::{Avatar, AvatarContent};
-use crate::util::time_format::format_approx_duration_from_now_utc;
+use crate::util::time_format::{format_absolute_datetime_utc, format_approx_duration_from_now_utc};
 use crate::view_components::action_button::{
     ActionButton, ButtonSize, NakedTheme, PrimaryTheme, SecondaryTheme,
 };
@@ -132,6 +132,7 @@ struct CardState {
     hover_state: MouseStateHandle,
     avatar_hover_state: MouseStateHandle,
     session_status_hover_state: MouseStateHandle,
+    timestamp_hover_state: MouseStateHandle,
     artifact_buttons_view: Option<ViewHandle<ArtifactButtonsRow>>,
     action_buttons_hover_state: MouseStateHandle,
     action_buttons_view: ViewHandle<ConversationActionButtonsRow>,
@@ -1029,6 +1030,7 @@ impl AgentManagementView {
                     hover_state: MouseStateHandle::default(),
                     avatar_hover_state: MouseStateHandle::default(),
                     session_status_hover_state: MouseStateHandle::default(),
+                    timestamp_hover_state: MouseStateHandle::default(),
                     action_buttons_hover_state: MouseStateHandle::default(),
                     artifact_buttons_view,
                     action_buttons_view,
@@ -1722,8 +1724,31 @@ impl AgentManagementView {
         let status_icon =
             render_status_element(&entry.display.status, STATUS_ICON_SIZE, appearance);
         let time_str = format_approx_duration_from_now_utc(entry.display.last_updated);
-        let time_text = Text::new_inline(time_str, font_family, font_size)
-            .with_color(theme.nonactive_ui_text_color().into());
+        let absolute_time = format_absolute_datetime_utc(entry.display.last_updated);
+        let ui_builder = appearance.ui_builder().clone();
+        let timestamp_hover_state = card_state.timestamp_hover_state.clone();
+        let time_text = Hoverable::new(timestamp_hover_state, move |state| {
+            let text = Text::new_inline(time_str.clone(), font_family, font_size)
+                .with_color(theme.nonactive_ui_text_color().into())
+                .finish();
+
+            let mut stack = Stack::new().with_child(text);
+            if state.is_hovered() {
+                let tooltip = ui_builder.tool_tip(absolute_time.clone()).build().finish();
+                stack.add_positioned_overlay_child(
+                    tooltip,
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(0., -4.),
+                        ParentOffsetBounds::WindowByPosition,
+                        ParentAnchor::TopMiddle,
+                        ChildAnchor::BottomMiddle,
+                    ),
+                );
+            }
+
+            stack.finish()
+        })
+        .finish();
         let creator_name = entry
             .display
             .creator
@@ -1753,7 +1778,7 @@ impl AgentManagementView {
             ));
         }
 
-        time_and_avatar.add_child(time_text.finish());
+        time_and_avatar.add_child(time_text);
         time_and_avatar.add_child(avatar);
 
         row.add_child(

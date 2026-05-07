@@ -1,19 +1,22 @@
 use itertools::Itertools as _;
 use markdown_parser::{parse_markdown, FormattedText, FormattedTextFragment, FormattedTextLine};
 use parking_lot::FairMutex;
+use pathfinder_geometry::vector::vec2f;
 use settings::Setting;
 use std::{borrow::Cow, cmp::Reverse, path::Path, sync::Arc};
 use warp_core::{features::FeatureFlag, report_if_error, ui::Icon};
 use warpui::{
     elements::{
-        Clipped, Container, CornerRadius, CrossAxisAlignment, Flex, FormattedTextElement,
-        HighlightedHyperlink, MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable,
-        Text,
+        ChildAnchor, Clipped, Container, CornerRadius, CrossAxisAlignment, Flex,
+        FormattedTextElement, HighlightedHyperlink, MainAxisSize, MouseStateHandle,
+        OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Shrinkable,
+        Stack, Text,
     },
     fonts::{Properties, Weight},
     keymap::Keystroke,
     prelude::{Align, ConstrainedBox, Cursor, Empty, Hoverable, MainAxisAlignment, SavePosition},
     scene::Border,
+    ui_components::components::UiComponent,
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
 };
 
@@ -50,7 +53,7 @@ use crate::{
         },
         TerminalModel,
     },
-    util::time_format::format_approx_duration_from_now_utc,
+    util::time_format::{format_absolute_datetime_utc, format_approx_duration_from_now_utc},
 };
 
 const CLOUD_AGENT_DOCS_URL: &str = "https://docs.warp.dev/agent-platform/cloud-agents/overview";
@@ -71,6 +74,7 @@ struct StateHandles {
     oz_updates: MouseStateHandle,
     changelog_link: MouseStateHandle,
     recent_conversations: [MouseStateHandle; MAX_RECENT_CONVERSATION_COUNT],
+    recent_conversation_timestamps: [MouseStateHandle; MAX_RECENT_CONVERSATION_COUNT],
     update_hyperlinks: Vec<HighlightedHyperlink>,
 }
 
@@ -920,6 +924,10 @@ fn render_recent_conversations_section(
         let conversation_id = recent_conversation.id;
         let title = recent_conversation.title.clone();
         let last_updated = recent_conversation.last_updated;
+        let timestamp_mouse_state = state_handles.recent_conversation_timestamps[i].clone();
+        let timestamp_relative = format_approx_duration_from_now_utc(last_updated.to_utc());
+        let timestamp_absolute = format_absolute_datetime_utc(last_updated.to_utc());
+        let ui_builder = appearance.ui_builder().clone();
 
         let row = Hoverable::new(
             state_handles.recent_conversations[i].clone(),
@@ -936,6 +944,41 @@ fn render_recent_conversations_section(
                     )
                 };
 
+                let timestamp_mouse_state = timestamp_mouse_state.clone();
+                let timestamp_relative = timestamp_relative.clone();
+                let timestamp_absolute = timestamp_absolute.clone();
+                let ui_builder = ui_builder.clone();
+                let timestamp = Hoverable::new(timestamp_mouse_state, move |timestamp_state| {
+                    let text = Text::new_inline(
+                        timestamp_relative.clone(),
+                        appearance.ui_font_family(),
+                        appearance.monospace_font_size() - 1.,
+                    )
+                    .with_color(secondary_text_color)
+                    .soft_wrap(false)
+                    .finish();
+
+                    let mut stack = Stack::new().with_child(text);
+                    if timestamp_state.is_hovered() {
+                        let tooltip = ui_builder
+                            .tool_tip(timestamp_absolute.clone())
+                            .build()
+                            .finish();
+                        stack.add_positioned_overlay_child(
+                            tooltip,
+                            OffsetPositioning::offset_from_parent(
+                                vec2f(0., -4.),
+                                ParentOffsetBounds::WindowByPosition,
+                                ParentAnchor::TopMiddle,
+                                ChildAnchor::BottomMiddle,
+                            ),
+                        );
+                    }
+
+                    stack.finish()
+                })
+                .finish();
+
                 Flex::row()
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_children([
@@ -951,14 +994,7 @@ fn render_recent_conversations_section(
                         )
                         .with_margin_right(8.)
                         .finish(),
-                        Text::new_inline(
-                            format_approx_duration_from_now_utc(last_updated.to_utc()),
-                            appearance.ui_font_family(),
-                            appearance.monospace_font_size() - 1.,
-                        )
-                        .with_color(secondary_text_color)
-                        .soft_wrap(false)
-                        .finish(),
+                        timestamp,
                     ])
                     .finish()
             },

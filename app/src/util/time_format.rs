@@ -27,6 +27,18 @@ pub fn format_approx_duration_from_now_utc(datetime: DateTime<Utc>) -> String {
     human_readable_approx_duration(Utc::now().sub(datetime), false)
 }
 
+/// Format a timestamp as an absolute local date/time with timezone.
+pub fn format_absolute_datetime(datetime: DateTime<Local>) -> String {
+    datetime
+        .format("%b %-d, %Y at %-I:%M %p %Z (UTC%:z)")
+        .to_string()
+}
+
+/// Format a UTC timestamp as an absolute local date/time with timezone.
+pub fn format_absolute_datetime_utc(datetime: DateTime<Utc>) -> String {
+    format_absolute_datetime(datetime.with_timezone(&Local))
+}
+
 /// Format a duration into a human-readable string, e.g. "3.14 sec".
 /// Compared to [`human_readable_approx_duration`], this method is for higher-precision, smaller
 /// values.

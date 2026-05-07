@@ -2,14 +2,19 @@
 
 use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
+use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::Icon;
-use warpui::elements::{ConstrainedBox, Container, Highlight, ParentElement, Shrinkable, Text};
+use warpui::elements::{
+    ChildAnchor, ConstrainedBox, Container, Highlight, Hoverable, MouseStateHandle,
+    OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Shrinkable, Stack, Text,
+};
 use warpui::fonts::{Properties, Style, Weight};
 use warpui::prelude::{Align, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize};
 use warpui::scene::{CornerRadius, Radius};
 use warpui::text_layout::ClipConfig;
+use warpui::ui_components::components::UiComponent;
 use warpui::{AppContext, Element, SingletonEntity};
 
 use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
@@ -21,7 +26,7 @@ use crate::appearance::Appearance;
 use crate::search::{ItemHighlightState, SearchItem};
 use crate::terminal::input::conversations::AcceptConversation;
 use crate::terminal::input::inline_menu::styles as inline_styles;
-use crate::util::time_format::format_approx_duration_from_now_utc;
+use crate::util::time_format::{format_absolute_datetime_utc, format_approx_duration_from_now_utc};
 
 /// Search item for rendering a conversation in the inline conversation menu.
 #[derive(Debug, Clone)]
@@ -102,6 +107,7 @@ impl SearchItem for ConversationSearchItem {
         let theme = appearance.theme();
 
         let font_size = inline_styles::font_size(appearance);
+        let font_family = appearance.ui_font_family();
         let background_color = inline_styles::menu_background_color(app);
 
         let primary_text_color = inline_styles::primary_text_color(theme, background_color.into());
@@ -156,12 +162,36 @@ impl SearchItem for ConversationSearchItem {
 
         // We want the timestamp 'column' to have fixed width so clipping is consistent,
         // limit the timestamp width to about 10 chars.
-        let timestamp = Text::new_inline(
-            format_approx_duration_from_now_utc(self.navigation_data.last_updated.to_utc()),
-            appearance.ui_font_family(),
-            font_size,
-        )
-        .with_color(secondary_text_color.into())
+        let timestamp_relative =
+            format_approx_duration_from_now_utc(self.navigation_data.last_updated.to_utc());
+        let timestamp_absolute =
+            format_absolute_datetime_utc(self.navigation_data.last_updated.to_utc());
+        let ui_builder = appearance.ui_builder().clone();
+        let timestamp = Hoverable::new(MouseStateHandle::default(), move |state| {
+            let timestamp_text =
+                Text::new_inline(timestamp_relative.clone(), font_family, font_size)
+                    .with_color(secondary_text_color.into())
+                    .finish();
+
+            let mut stack = Stack::new().with_child(timestamp_text);
+            if state.is_hovered() {
+                let tooltip = ui_builder
+                    .tool_tip(timestamp_absolute.clone())
+                    .build()
+                    .finish();
+                stack.add_positioned_overlay_child(
+                    tooltip,
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(0., -4.),
+                        ParentOffsetBounds::WindowByPosition,
+                        ParentAnchor::TopMiddle,
+                        ChildAnchor::BottomMiddle,
+                    ),
+                );
+            }
+
+            stack.finish()
+        })
         .finish();
 
         let max_timestamp_width = app
