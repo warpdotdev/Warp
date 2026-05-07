@@ -4698,9 +4698,10 @@ impl PaneGroup {
             // handled by Case A's explicit `revert_temporary_replacement`
             // call, which removes the entry whose replacement matches
             // the closing child.) Without this, a future revert of the
-            // surviving sibling would try to splice the (now off-tree)
-            // child back into the tree, leaving a leaf that points to a
-            // stale pane.
+            // surviving sibling — e.g. when the user closes the sibling
+            // — would splice the (off-tree but still live) child back
+            // into the tree and resurrect the just-closed pane as a
+            // visible leaf, which is not what the user asked for.
             self.panes.remove_hidden_pane(pane_id);
             // The pane stays in `pane_contents` and `child_agent_panes`
             // — it just goes back to off-tree state.
@@ -6753,15 +6754,10 @@ impl PaneGroup {
         if let Some(replacement_id) = self.panes.replacement_pane_for_original(target_pane_id) {
             // The replacement currently sitting in target's slot is
             // (always, in practice) a child agent pane swapped in via
-            // the pill bar. Clear its split-off marker so the next
-            // reveal renders pills, matching what the regular anchor
-            // revert below does.
-            if let Some(terminal_view) = self.terminal_view_from_pane_id(replacement_id, ctx) {
-                terminal_view.update(ctx, |view, ctx| {
-                    view.clear_orchestration_split_off(ctx);
-                });
-            }
-            self.panes.revert_temporary_replacement(replacement_id);
+            // the pill bar. The helper also clears its split-off marker
+            // so the next reveal renders pills, matching what the
+            // regular anchor revert below does.
+            self.revert_swap_clearing_split_off(replacement_id, ctx);
             self.handle_pane_count_change(ctx);
             self.focus_pane(target_pane_id, true, ctx);
             for pane_id in [replacement_id, target_pane_id] {
@@ -6782,15 +6778,10 @@ impl PaneGroup {
         // new operation becomes that original pane.
         let anchor =
             if let Some(original) = self.panes.original_pane_for_replacement(focused_pane_id) {
-                // Clear the split-off marker on the child we're swapping away
-                // from so it renders pills (not breadcrumbs) next time it
-                // becomes visible.
-                if let Some(terminal_view) = self.terminal_view_from_pane_id(focused_pane_id, ctx) {
-                    terminal_view.update(ctx, |view, ctx| {
-                        view.clear_orchestration_split_off(ctx);
-                    });
-                }
-                self.panes.revert_temporary_replacement(focused_pane_id);
+                // The helper also clears the split-off marker on the
+                // child we're swapping away from so it renders pills
+                // (not breadcrumbs) next time it becomes visible.
+                self.revert_swap_clearing_split_off(focused_pane_id, ctx);
                 original
             } else {
                 focused_pane_id
