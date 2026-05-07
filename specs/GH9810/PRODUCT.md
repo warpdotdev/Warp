@@ -34,8 +34,21 @@ available, copy debug link).
   expands the conversation into the modal view, the existing
   modal-side toolbelt is the source of truth and the inline
   toolbelt is hidden (no duplication).
-- B6. Keyboard: Tab/Shift-Tab moves focus between rows; pressing
-  Enter on the kebab opens it; arrow keys navigate within.
+- B6. Keyboard focus uses row-roving navigation. Tab/Shift-Tab
+  moves focus between collapsed conversation rows as it does today;
+  the inline Fork button and kebab are not separate Tab stops.
+  When a collapsed row is focused, Left/Right arrow moves the
+  active in-row control between the row body, Fork button, and
+  kebab. Enter or Space activates the active in-row control:
+  - Row body: opens/expands the conversation using today's row
+    behavior.
+  - Fork button: forks the conversation with the same semantics as
+    pointer-clicking Fork.
+  - Kebab: opens the overflow menu.
+- B7. Once the kebab menu is open, Up/Down arrow moves between menu
+  items, Enter/Space activates the highlighted item, Escape closes
+  the menu and restores focus to the collapsed row, and Tab follows
+  the app's existing menu-dismiss behavior.
 
 ## Acceptance criteria
 
@@ -47,6 +60,9 @@ available, copy debug link).
 - A4. Right-click row → kebab menu opens at the cursor.
 - A5. Expanding the conversation into the modal view hides the
   inline toolbelt.
+- A6. With keyboard focus on a collapsed row, users can reach and
+  activate both Fork and kebab without leaving row-roving
+  navigation.
 
 ## Implementation pointers
 
@@ -66,6 +82,10 @@ available, copy debug link).
   presence rules.
 - T3. Right-click outside the toolbelt opens the kebab menu.
 - T4. Modal-open state hides the inline toolbelt (snapshot test).
+- T5. Keyboard navigation reaches row body, Fork, and kebab with
+  Left/Right; Enter/Space activate the focused in-row control.
+- T6. Kebab menu supports Up/Down, Enter/Space, and Escape without
+  dropping focus from the collapsed row.
 
 ## Out of scope
 
