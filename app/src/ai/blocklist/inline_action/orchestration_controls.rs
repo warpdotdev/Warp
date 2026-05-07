@@ -9,15 +9,21 @@
 use ai::agent::action::RunAgentsExecutionMode;
 use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationExecutionMode};
 use pathfinder_color::ColorU;
+use pathfinder_geometry::vector::{vec2f, Vector2F};
 use std::fmt::Debug;
 use warpui::elements::{
     ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Expanded, Flex,
-    Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
+    Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Point, Radius,
+    Text,
 };
+use warpui::event::DispatchedEvent;
 use warpui::platform::Cursor;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponentStyles};
-use warpui::{AppContext, Element, SingletonEntity, View, ViewContext, ViewHandle};
+use warpui::{
+    AfterLayoutContext, AppContext, Element, EventContext, LayoutContext, PaintContext,
+    SingletonEntity, SizeConstraint, View, ViewContext, ViewHandle,
+};
 
 use warp_cli::agent::Harness;
 use warp_core::channel::{Channel, ChannelState};
@@ -44,6 +50,7 @@ pub const ORCHESTRATION_PICKER_HEIGHT: f32 = 36.;
 pub const ORCHESTRATION_PICKER_BORDER_WIDTH: f32 = 1.;
 pub const ORCHESTRATION_PICKER_FONT_SIZE: f32 = 14.;
 pub const ORCHESTRATION_PICKER_RADIUS: f32 = 4.;
+pub const ORCHESTRATION_PICKER_MAX_WIDTH: f32 = 205.;
 
 // ── Action trait ────────────────────────────────────────────────────
 
@@ -560,6 +567,145 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
     }
 }
 
+// ── Adaptive picker layout ──────────────────────────────────────────
+
+/// Lays out children horizontally at a fixed width when they all fit,
+/// otherwise stacks them vertically at full available width.
+///
+/// Switches to vertical when `n * picker_width + (n-1) * spacing` exceeds
+/// the available width from the incoming size constraint.
+struct AdaptivePickerRow {
+    children: Vec<Box<dyn Element>>,
+    picker_width: f32,
+    spacing: f32,
+    is_vertical: bool,
+    size: Option<Vector2F>,
+    origin: Option<Point>,
+}
+
+impl AdaptivePickerRow {
+    fn new(picker_width: f32, spacing: f32) -> Self {
+        Self {
+            children: Vec::new(),
+            picker_width,
+            spacing,
+            is_vertical: false,
+            size: None,
+            origin: None,
+        }
+    }
+
+    fn add_child(&mut self, child: Box<dyn Element>) {
+        self.children.push(child);
+    }
+
+    fn finish(self) -> Box<dyn Element> {
+        Box::new(self)
+    }
+}
+
+impl Element for AdaptivePickerRow {
+    fn layout(
+        &mut self,
+        constraint: SizeConstraint,
+        ctx: &mut LayoutContext,
+        app: &AppContext,
+    ) -> Vector2F {
+        let n = self.children.len();
+        if n == 0 {
+            self.size = Some(Vector2F::zero());
+            return Vector2F::zero();
+        }
+
+        let total_horizontal = self.picker_width * n as f32
+            + self.spacing * n.saturating_sub(1) as f32;
+
+        self.is_vertical = total_horizontal > constraint.max.x();
+
+        if self.is_vertical {
+            let width = constraint.max.x();
+            let mut total_height = 0.0f32;
+            for (i, child) in self.children.iter_mut().enumerate() {
+                if i > 0 {
+                    total_height += self.spacing;
+                }
+                let child_constraint =
+                    SizeConstraint::new(vec2f(width, 0.), vec2f(width, f32::INFINITY));
+                let child_size = child.layout(child_constraint, ctx, app);
+                total_height += child_size.y();
+            }
+            let size = vec2f(width, total_height);
+            self.size = Some(size);
+            size
+        } else {
+            let mut max_height = 0.0f32;
+            for child in self.children.iter_mut() {
+                let child_constraint = SizeConstraint::new(
+                    vec2f(self.picker_width, 0.),
+                    vec2f(self.picker_width, f32::INFINITY),
+                );
+                let child_size = child.layout(child_constraint, ctx, app);
+                max_height = max_height.max(child_size.y());
+            }
+            let size = vec2f(total_horizontal, max_height);
+            self.size = Some(size);
+            size
+        }
+    }
+
+    fn after_layout(&mut self, ctx: &mut AfterLayoutContext, app: &AppContext) {
+        for child in &mut self.children {
+            child.after_layout(ctx, app);
+        }
+    }
+
+    fn paint(&mut self, origin: Vector2F, ctx: &mut PaintContext, app: &AppContext) {
+        self.origin = Some(Point::from_vec2f(origin, ctx.scene.z_index()));
+        let mut current = origin;
+        if self.is_vertical {
+            for (i, child) in self.children.iter_mut().enumerate() {
+                if i > 0 {
+                    current += vec2f(0., self.spacing);
+                }
+                child.paint(current, ctx, app);
+                if let Some(size) = child.size() {
+                    current += vec2f(0., size.y());
+                }
+            }
+        } else {
+            for (i, child) in self.children.iter_mut().enumerate() {
+                if i > 0 {
+                    current += vec2f(self.spacing, 0.);
+                }
+                child.paint(current, ctx, app);
+                let advance = child.size().map_or(self.picker_width, |s| s.x());
+                current += vec2f(advance, 0.);
+            }
+        }
+    }
+
+    fn size(&self) -> Option<Vector2F> {
+        self.size
+    }
+
+    fn origin(&self) -> Option<Point> {
+        self.origin
+    }
+
+    fn dispatch_event(
+        &mut self,
+        event: &DispatchedEvent,
+        ctx: &mut EventContext,
+        app: &AppContext,
+    ) -> bool {
+        let mut handled = false;
+        for child in &mut self.children {
+            handled |= child.dispatch_event(event, ctx, app);
+        }
+        handled
+    }
+}
+
 // ── Render helpers ──────────────────────────────────────────────────
 
 pub fn render_mode_toggle<A: OrchestrationControlAction>(
@@ -615,7 +761,7 @@ pub fn render_mode_toggle<A: OrchestrationControlAction>(
         segmented_control
     } else {
         ConstrainedBox::new(segmented_control)
-            .with_width(205.)
+            .with_width(ORCHESTRATION_PICKER_MAX_WIDTH)
             .finish()
     };
 
@@ -692,7 +838,7 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
     if vertical {
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_spacing(8.);
+            .with_spacing(12.);
 
         let add = |col: &mut Flex, label: &str, picker: Option<Box<dyn Element>>| {
             col.add_child(render_picker_column(label, picker, appearance));
@@ -737,16 +883,13 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
             .with_margin_top(12.)
             .finish()
     } else {
-        let mut row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::Start)
-            .with_spacing(12.);
+        let mut row = AdaptivePickerRow::new(ORCHESTRATION_PICKER_MAX_WIDTH, 12.);
 
-        let add_picker = |row: &mut Flex, label: &str, picker: Option<Box<dyn Element>>| {
-            let col = render_picker_column(label, picker, appearance);
-            row.add_child(Expanded::new(1.0, col).finish());
-        };
+        let add_picker =
+            |row: &mut AdaptivePickerRow, label: &str, picker: Option<Box<dyn Element>>| {
+                let col = render_picker_column(label, picker, appearance);
+                row.add_child(col);
+            };
 
         add_picker(
             &mut row,
