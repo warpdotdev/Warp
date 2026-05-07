@@ -1,9 +1,9 @@
 use super::default_themes::*;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use warp_core::ui::color::pick_foreground_color;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::{
@@ -151,24 +151,46 @@ impl ThemeKind {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    Hash,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    PartialOrd,
-    Ord,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
+    Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord, schemars::JsonSchema,
 )]
 #[schemars(description = "A user-provided custom theme.")]
 pub struct CustomTheme {
     #[schemars(description = "The display name of the custom theme.")]
     name: String,
+    #[serde(
+        deserialize_with = "deserialize_tilde_path",
+        serialize_with = "serialize_tilde_path"
+    )]
     #[schemars(description = "The file path to the custom theme definition.")]
     path: PathBuf,
+}
+
+// Use serde passthrough to respect #[serde] annotations on path field for tilde expansion.
+impl settings_value::SettingsValue for CustomTheme {}
+
+fn deserialize_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // Normalize backslashes to forward slashes for cross-platform compatibility.
+    let raw = String::deserialize(deserializer)?;
+    let normalized = raw.replace('\\', "/");
+    Ok(expand_tilde(PathBuf::from(normalized)))
+}
+
+fn serialize_tilde_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let contracted = contract_tilde(path.to_path_buf());
+    // Normalize to forward slashes for cross-platform portability.
+    // Windows would emit backslashes, which Unix treats as filename characters.
+    let portable = contracted
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/");
+    portable.serialize(serializer)
 }
 
 impl CustomTheme {

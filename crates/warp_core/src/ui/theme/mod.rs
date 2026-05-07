@@ -94,7 +94,7 @@ fn default_image_opacity() -> Opacity {
 /// Performs tilde expansion to expand a _leading_ tilde to the user's home dir. Any intermediate
 /// tildes are not expanded. If the path does not begin with a tilde, then the existing path is
 /// returned unchanged.
-fn expand_tilde(path: PathBuf) -> PathBuf {
+pub fn expand_tilde(path: PathBuf) -> PathBuf {
     let home_dir = match home_dir() {
         Some(home_dir) => home_dir,
         None => return path,
@@ -102,6 +102,21 @@ fn expand_tilde(path: PathBuf) -> PathBuf {
 
     match path.strip_prefix("~") {
         Ok(stripped) => home_dir.join(stripped),
+        Err(_) => path,
+    }
+}
+
+/// Replaces a leading home-directory prefix with `~`. This is the inverse of
+/// [`expand_tilde`]. If the path does not begin with the user's home directory,
+/// or the home directory cannot be determined, the path is returned unchanged.
+pub fn contract_tilde(path: PathBuf) -> PathBuf {
+    let home_dir = match home_dir() {
+        Some(home_dir) => home_dir,
+        None => return path,
+    };
+
+    match path.strip_prefix(&home_dir) {
+        Ok(stripped) => PathBuf::from("~").join(stripped),
         Err(_) => path,
     }
 }
