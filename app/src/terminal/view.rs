@@ -225,7 +225,9 @@ use crate::ai::{
         ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
         ATTACH_AS_AGENT_MODE_CONTEXT_TEXT, PRE_REWIND_PREFIX,
     },
-    execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId, ProfileLookupError},
+    execution_profiles::profiles::{
+        AIExecutionProfilesModel, ClientProfileId, LaunchToastDedup, ProfileLookupError,
+    },
     get_relevant_files::controller::GetRelevantFilesController,
 };
 use crate::auth::auth_manager::AuthManager;
@@ -2525,6 +2527,8 @@ pub struct TerminalView {
     /// `pane_tree_from_template_recursive` when a tab config supplies both
     /// `commands = [...]` and a `profile = "..."` for an agent pane.
     pending_agent_profile_name: Option<String>,
+    /// Per-launch tracker used to dedup "agent profile not found" toasts.
+    pending_agent_profile_toast_dedup: Option<LaunchToastDedup>,
     slow_bootstrap_banner: ViewHandle<Banner<TerminalAction>>,
     is_slow_bootstrap_banner_open: bool,
 
@@ -4148,6 +4152,7 @@ impl TerminalView {
             awaiting_pending_command_completion: false,
             enter_agent_view_after_pending_commands: false,
             pending_agent_profile_name: None,
+            pending_agent_profile_toast_dedup: None,
             slow_bootstrap_banner,
             is_slow_bootstrap_banner_open: false,
             incompatible_configuration_banner,
@@ -14819,14 +14824,16 @@ impl TerminalView {
     pub fn clear_enter_agent_view_after_pending_commands(&mut self) {
         self.enter_agent_view_after_pending_commands = false;
         self.pending_agent_profile_name = None;
+        self.pending_agent_profile_toast_dedup = None;
     }
 
-    /// Stash the AI execution profile name to apply right before the
-    /// deferred agent-view entry runs. Called from
+    /// Stash the AI execution profile name and per-launch dedup tracker to apply
+    /// right before the deferred agent-view entry runs. Called from
     /// `pane_tree_from_template_recursive` when a tab config has a
     /// `profile = "..."` on an agent pane that also has setup commands.
-    pub fn set_pending_agent_profile_name(&mut self, name: Option<String>) {
-        self.pending_agent_profile_name = name;
+    pub fn set_pending_agent_profile(&mut self, name: String, dedup: LaunchToastDedup) {
+        self.pending_agent_profile_name = Some(name);
+        self.pending_agent_profile_toast_dedup = Some(dedup);
     }
 
     /// Resolve the deferred-launch tab-config profile name and apply it to
@@ -14835,11 +14842,15 @@ impl TerminalView {
     ///
     /// Returns `true` when agent-mode entry should proceed and `false` when
     /// it should be aborted (i.e. ambiguous profile name).
-    fn apply_pending_agent_profile(
+    pub(crate) fn apply_pending_agent_profile(
         &mut self,
         profile_name: &str,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        // Take the per-launch dedup tracker exactly once, before the match,
+        // so every outcome arm sees the same Option state and so the field
+        // is always cleared regardless of which branch runs.
+        let launch_warned_missing_profiles = self.pending_agent_profile_toast_dedup.take();
         let profiles_model = AIExecutionProfilesModel::handle(ctx);
         let view_id = ctx.view_id();
         let lookup = profiles_model
@@ -14853,12 +14864,15 @@ impl TerminalView {
                 true
             }
             Err(ProfileLookupError::NotFound(name)) => {
-                // Per-app-session dedup: the model carries a HashSet of names
-                // already warned about, shared with the immediate path in
-                // `pane_group::PaneGroup::apply_tab_config_agent_profile`.
-                let should_warn = profiles_model.update(ctx, |model, _| {
-                    model.note_missing_tab_config_profile(name.clone())
-                });
+                // Per-launch dedup: use the tracker taken above (if any) so
+                // only one toast per missing profile name is emitted within
+                // a single tab-config launch, even when one pane resolves
+                // through the immediate path and another through this
+                // deferred path.
+                let should_warn = launch_warned_missing_profiles
+                    .as_ref()
+                    .map(|dedup| dedup.record(name.clone()))
+                    .unwrap_or(true);
                 if should_warn {
                     ctx.emit(Event::ShowToast {
                         message: format!(
