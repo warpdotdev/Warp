@@ -197,8 +197,11 @@ impl TerminalView {
                 ) {
                     self.pending_cloud_followup_task_id = None;
                 }
-                // Auto-open details panel for local cloud mode once the session is ready.
-                self.maybe_auto_open_conversation_details_panel(ctx);
+                if FeatureFlag::HandoffCloudCloud.is_enabled() {
+                    self.refresh_conversation_details_panel_if_open(ctx);
+                } else {
+                    self.maybe_auto_open_conversation_details_panel(ctx);
+                }
                 // Re-render to hide the loading screen now that the session is ready.
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
@@ -902,9 +905,9 @@ impl TerminalView {
     }
 
     /// Auto-opens the conversation details panel once for cloud mode runs.
-    /// This is used for local cloud mode sessions (after `SessionReady`) and
-    /// shared ambient sessions (after join). Local non-cloud conversations
-    /// require an explicit user click on the pane-header toggle button.
+    /// This is used for legacy local cloud mode session startup and shared
+    /// ambient session joins. Local non-cloud conversations require an explicit
+    /// user click on the pane-header toggle button.
     pub(in crate::terminal::view) fn maybe_auto_open_conversation_details_panel(
         &mut self,
         ctx: &mut ViewContext<Self>,

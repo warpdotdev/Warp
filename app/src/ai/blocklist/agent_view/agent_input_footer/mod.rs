@@ -982,10 +982,10 @@ impl AgentInputFooter {
         }
         #[cfg(not(target_family = "wasm"))]
         {
-            if self.plugin_operation_in_progress {
-                return None;
-            }
-            if !FeatureFlag::HOANotifications.is_enabled() {
+            if self.plugin_operation_in_progress
+                || self.terminal_model.lock().is_shared_ambient_agent_session()
+                || !FeatureFlag::HOANotifications.is_enabled()
+            {
                 return None;
             }
 

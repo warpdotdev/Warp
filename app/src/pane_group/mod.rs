@@ -2,7 +2,8 @@ use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{AIAgentHarness, AIConversation, AIConversationId};
 use crate::ai::agent_conversations_model::{
-    AgentConversationsModel, AgentConversationsModelEvent, ConversationOrTask,
+    AgentConversationEntryId, AgentConversationNavigationSubject, AgentConversationsModel,
+    AgentConversationsModelEvent,
 };
 use crate::ai::ai_document_view::AIDocumentView;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -1840,9 +1841,14 @@ impl PaneGroup {
                 });
 
                 let restore_kind = match &task_data {
-                    Some((_, Some(task))) => {
-                        let item = ConversationOrTask::Task(task);
-                        match item.get_open_action(None, ctx) {
+                    Some((task_id, Some(_))) => {
+                        match AgentConversationsModel::resolve_open_action(
+                            AgentConversationNavigationSubject::Entry(
+                                AgentConversationEntryId::AmbientRun(*task_id),
+                            ),
+                            None,
+                            ctx,
+                        ) {
                             Some(WorkspaceAction::OpenAmbientAgentSession {
                                 session_id, ..
                             }) => AmbientRestoreKind::SharedSession { session_id },
@@ -3410,8 +3416,13 @@ impl PaneGroup {
                 continue;
             };
 
-            let item = ConversationOrTask::Task(&task);
-            match item.get_open_action(None, ctx) {
+            match AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task.task_id,
+                )),
+                None,
+                ctx,
+            ) {
                 Some(WorkspaceAction::OpenAmbientAgentSession {
                     session_id,
                     task_id: _,
@@ -4681,12 +4692,10 @@ impl PaneGroup {
             }
             // Case B: the child is in the tree as a real sibling (split
             // off via "Open in new pane"). Remove it from the tree.
-            else if self.panes.is_pane_in_tree(pane_id) {
-                if !self.panes.remove(pane_id) {
-                    log::error!(
-                        "close_pane: failed to remove split-off child pane {pane_id:?} from tree"
-                    );
-                }
+            else if self.panes.is_pane_in_tree(pane_id) && !self.panes.remove(pane_id) {
+                log::error!(
+                    "close_pane: failed to remove split-off child pane {pane_id:?} from tree"
+                );
             }
             // Case C (split-off, then swapped over): the child was a
             // visible split-off sibling, then a sibling pill was clicked
@@ -6981,12 +6990,10 @@ impl PaneGroup {
         // If the child is in the tree as a real sibling (split off), remove
         // it from the tree. Off-tree panes (after revert above, or if the
         // child was never split) are already not in the tree.
-        if self.panes.is_pane_in_tree(child_pane_id) {
-            if !self.panes.remove(child_pane_id) {
-                log::error!(
-                    "take_child_agent_pane_for_split_off: failed to remove pane {child_pane_id:?} from tree"
-                );
-            }
+        if self.panes.is_pane_in_tree(child_pane_id) && !self.panes.remove(child_pane_id) {
+            log::error!(
+                "take_child_agent_pane_for_split_off: failed to remove pane {child_pane_id:?} from tree"
+            );
         }
 
         // Drop any leftover hidden-pane entry naming the child. Covers

@@ -403,6 +403,7 @@ fn non_ambient_entry_uses_display_harness() {
             creator: AgentConversationCreator::default(),
             request_usage: None,
             run_time: None,
+            session_status: None,
             source: None,
             working_directory: None,
             environment_id: None,

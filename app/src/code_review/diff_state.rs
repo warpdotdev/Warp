@@ -5,6 +5,8 @@
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "local_fs")]
+use std::time::Duration;
 use std::{
     collections::HashMap,
     fs::File,
@@ -37,6 +39,8 @@ use crate::util::git::{
 use super::diff_size_limits::compute_diff_size;
 
 use crate::code_review::CodeReviewTelemetryEvent;
+#[cfg(feature = "local_fs")]
+use crate::throttle::throttle;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
 use warp_core::{safe_warn, send_telemetry_from_ctx};
@@ -44,13 +48,12 @@ use warp_core::{safe_warn, send_telemetry_from_ctx};
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
         use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
-        use warpui::SingletonEntity;
         use repo_metadata::{
             repository::{RepositorySubscriber, SubscriberId},
             RepoMetadataError, Repository, RepositoryUpdate,
         };
         use async_channel::Sender;
-        use warpui::ModelHandle;
+        use warpui::{ModelHandle, SingletonEntity};
     }
 }
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
@@ -334,7 +337,6 @@ impl From<&DiffsWithBaseContent> for Diffs {
 /// at base. This should not be cloned at any time.
 struct DiffsWithBaseContent {
     changes: Result<GitDiffWithBaseContent, String>,
-    repository_path: PathBuf,
 }
 
 #[derive(Default)]
@@ -406,13 +408,11 @@ struct GitNumStatMetadata {
 }
 
 impl DiffStateModel {
-    #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
+    #[cfg(feature = "local_fs")]
     pub fn new(repo_path: Option<String>, ctx: &mut ModelContext<Self>) -> Self {
         let model = Self {
-            #[cfg(feature = "local_fs")]
             repository: None,
             state: InternalDiffState::default(),
-            #[cfg(feature = "local_fs")]
             subscriber_id: None,
             mode: DiffMode::default(),
             metadata: None,
@@ -422,50 +422,39 @@ impl DiffStateModel {
             metadata_refresh_enabled: false,
         };
 
-        #[cfg(feature = "local_fs")]
-        {
-            if let Some(repo_path) = &repo_path {
-                let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
-                    model.detect_possible_git_repo(
-                        repo_path,
-                        RepoDetectionSource::CodeReviewInitialization,
-                        ctx,
-                    )
-                });
+        if let Some(repo_path) = &repo_path {
+            let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
+                model.detect_possible_git_repo(
+                    repo_path,
+                    RepoDetectionSource::CodeReviewInitialization,
+                    ctx,
+                )
+            });
 
-                ctx.spawn(fut, move |me, repo_path_opt, ctx| {
-                    me.maybe_set_new_active_repository(repo_path_opt.as_deref(), ctx);
-                });
-            }
+            ctx.spawn(fut, move |me, repo_path, ctx| {
+                if let Some(repo_path) = &repo_path {
+                    if let Some(repo_handle) =
+                        DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(repo_path, ctx)
+                    {
+                        me.set_active_repository(repo_handle, ctx);
+                    }
+                }
+            });
         }
         model
     }
 
-    /// Given a repository path, sets the new active repository to track diffs for.
-    #[cfg(feature = "local_fs")]
-    pub fn maybe_set_new_active_repository(
-        &mut self,
-        repo_path: Option<&Path>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let Some(repo_path) = repo_path else {
-            return;
-        };
-
-        // Check if the repository is new.
-        if self.repository.as_ref().is_some_and(|repository| {
-            repository.as_ref(ctx).root_dir().to_local_path().as_deref() == Some(repo_path)
-        }) {
-            return;
+    #[cfg(not(feature = "local_fs"))]
+    pub fn new(_repo_path: Option<String>, _ctx: &mut ModelContext<Self>) -> Self {
+        Self {
+            state: InternalDiffState::default(),
+            mode: DiffMode::default(),
+            metadata: None,
+            computing_diffs_abort_handle: None,
+            computing_metadata_abort_handle: None,
+            refreshing_pr_info_handle: None,
+            metadata_refresh_enabled: false,
         }
-
-        let Some(repository_model) =
-            DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(repo_path, ctx)
-        else {
-            return;
-        };
-
-        self.set_active_repository(repository_model, ctx);
     }
 
     pub fn get(&self) -> DiffState {
@@ -632,8 +621,8 @@ impl DiffStateModel {
         }
     }
 
-    // you'll have a HEAD after the first commit
-    pub fn has_head(&self) -> bool {
+    /// Returns `true` once the repository has at least one commit.
+    pub(super) fn has_head(&self) -> bool {
         cfg_if::cfg_if! {
             if #[cfg(feature = "local_fs")] {
                 self
@@ -647,7 +636,7 @@ impl DiffStateModel {
     }
 
     #[cfg(feature = "local_fs")]
-    pub fn active_repository_path(&self, app: &AppContext) -> Option<PathBuf> {
+    fn active_repository_path(&self, app: &AppContext) -> Option<PathBuf> {
         self.repository
             .as_ref()?
             .as_ref(app)
@@ -656,18 +645,8 @@ impl DiffStateModel {
     }
 
     #[cfg(not(feature = "local_fs"))]
-    pub fn active_repository_path(&self, _app: &warpui::AppContext) -> Option<PathBuf> {
+    fn active_repository_path(&self, _app: &warpui::AppContext) -> Option<PathBuf> {
         None
-    }
-
-    pub fn is_inside_repository(&self) -> bool {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "local_fs")] {
-                self.repository.is_some()
-            } else {
-                false
-            }
-        }
     }
 
     pub fn set_diff_mode(
@@ -1093,30 +1072,12 @@ impl DiffStateModel {
     }
 
     #[cfg(feature = "local_fs")]
-    pub fn set_active_repository(
+    fn set_active_repository(
         &mut self,
         new_repository: ModelHandle<Repository>,
         ctx: &mut ModelContext<Self>,
     ) {
-        // Unsubscribe from the old repository.
-
-        use std::time::Duration;
-
-        use crate::throttle::throttle;
-        if let Some(old_repository) = &self.repository {
-            if let Some(subscriber_id) = self.subscriber_id {
-                old_repository.update(ctx, |old_repository, ctx| {
-                    old_repository.stop_watching(subscriber_id, ctx);
-                })
-            }
-        }
-
         let new_repository_root = new_repository.as_ref(ctx).root_dir().to_local_path_lossy();
-        ctx.emit(DiffStateModelEvent::RepositoryChanged);
-
-        if let Some(handle) = self.computing_metadata_abort_handle.take() {
-            handle.abort();
-        }
 
         // Always include base branch metadata since only code review uses this model now.
         let include_base_branch = true;
@@ -1157,7 +1118,7 @@ impl DiffStateModel {
         ctx.spawn(start.registration_future, Self::handle_repository_updated);
 
         ctx.spawn_stream_local(
-            repository_update_rx.clone(),
+            repository_update_rx,
             move |me, item, ctx| match item {
                 DiffStateRepositoryUpdate::Invalidation(update) => {
                     if me.handle_file_update(update, ctx) {
@@ -1266,7 +1227,7 @@ impl DiffStateModel {
         if let Err(err) = result {
             log::warn!("Could not update repository: {err}");
 
-            let Some(repository) = self.repository.as_ref() else {
+            let Some(repository) = &self.repository else {
                 return;
             };
             let Some(subscriber_id) = self.subscriber_id.take() else {
@@ -1283,7 +1244,7 @@ impl DiffStateModel {
     /// Called when this model is about to be dropped to ensure the underlying
     /// `DirectoryWatcher` can be cleaned up.
     #[cfg(feature = "local_fs")]
-    pub fn stop_active_watcher(&mut self, ctx: &mut ModelContext<Self>) {
+    pub(crate) fn stop_active_watcher(&mut self, ctx: &mut ModelContext<Self>) {
         if let Some(repository) = &self.repository {
             if let Some(subscriber_id) = self.subscriber_id.take() {
                 repository.update(ctx, |repo, ctx| {
@@ -1291,28 +1252,6 @@ impl DiffStateModel {
                 });
             }
         }
-    }
-
-    #[cfg(feature = "local_fs")]
-    pub fn remove_active_repo(&mut self, ctx: &mut ModelContext<Self>) {
-        let Some(repository) = &self.repository else {
-            return;
-        };
-
-        // Unsubscribe from the repository watcher before releasing the handle.
-        if let Some(subscriber_id) = self.subscriber_id.take() {
-            repository.update(ctx, |repo, ctx| {
-                repo.stop_watching(subscriber_id, ctx);
-            });
-        }
-
-        let repository = self.repository.take().unwrap();
-        ctx.unsubscribe_from_model(&repository);
-        self.state = InternalDiffState::NotInRepository;
-        ctx.emit(DiffStateModelEvent::RepositoryChanged);
-        ctx.emit(DiffStateModelEvent::DiffMetadataChanged(
-            InvalidationBehavior::All(InvalidationSource::MetadataChange),
-        ));
     }
 
     /// Gets the merge base between HEAD and the specified branch
@@ -1474,7 +1413,6 @@ impl DiffStateModel {
 
         DiffsWithBaseContent {
             changes: diffs.map_err(|err| err.to_string()),
-            repository_path: repo_path,
         }
     }
 
@@ -1542,17 +1480,6 @@ impl DiffStateModel {
         diffs: DiffsWithBaseContent,
         ctx: &mut ModelContext<Self>,
     ) {
-        if Some(diffs.repository_path.as_path()) != self.active_repository_path(ctx).as_deref() {
-            // The current repository is different from the one we fetched state for.
-            // Refetch metadata for this new repository (which will trigger any downstream consumers to
-            // recompute diffs if they so please.
-            self.refresh_diff_metadata_for_current_repo(
-                InvalidationBehavior::All(InvalidationSource::MetadataChange),
-                ctx,
-            );
-            return;
-        }
-
         if let Err(e) = &diffs.changes {
             send_telemetry_from_ctx!(
                 CodeReviewTelemetryEvent::LoadDiffFailed {
@@ -1615,7 +1542,9 @@ impl DiffStateModel {
         Ok(count)
     }
 
-    pub async fn diff_metadata_against_head(repo_path: &Path) -> Result<DiffMetadataAgainstBase> {
+    pub(crate) async fn diff_metadata_against_head(
+        repo_path: &Path,
+    ) -> Result<DiffMetadataAgainstBase> {
         // First, get the list of changed files with their status
         log::debug!(
             "[GIT OPERATION] diff_state.rs diff_metadata_against_head git --no-optional-locks status --untracked-files=all --branch --porcelain=2 -z"
@@ -2952,8 +2881,6 @@ pub enum InvalidationSource {
 
 #[derive(Debug)]
 pub enum DiffStateModelEvent {
-    /// The repository the diff state is for has changed.
-    RepositoryChanged,
     /// Event dispatched when the current branch changes.
     CurrentBranchChanged,
     /// Event dispatched whenever the diff metadata changes in any way.
@@ -3019,6 +2946,26 @@ impl RepositorySubscriber for DiffStateModelRepositorySubscriber {
             };
             let _ = tx.send(msg).await;
         })
+    }
+}
+
+#[cfg(test)]
+impl DiffStateModel {
+    /// Test-only constructor that creates a bare model without a repository.
+    pub fn new_for_test(_ctx: &mut ModelContext<Self>) -> Self {
+        Self {
+            #[cfg(feature = "local_fs")]
+            repository: None,
+            state: InternalDiffState::default(),
+            #[cfg(feature = "local_fs")]
+            subscriber_id: None,
+            mode: DiffMode::default(),
+            metadata: None,
+            computing_diffs_abort_handle: None,
+            computing_metadata_abort_handle: None,
+            refreshing_pr_info_handle: None,
+            metadata_refresh_enabled: false,
+        }
     }
 }
 
