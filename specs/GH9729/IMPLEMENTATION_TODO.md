@@ -76,8 +76,12 @@ The original 2a / 2c bullets are struck through and superseded.
 - [x] 5b. `lightbox_view.rs` post-load callback rewrites `FailedToLoad` /
        `Unrecognized` to `Error` — `tech.md` §613 (lines 660-661)
 - [x] 5-tests. Asset-cache tests per `tech.md` §613 (lines 628-636).
-- [ ] 7.  Telemetry events for image-preview open / error / cap-hit —
-       `tech.md` §517 (`### 7.`)
+- [x] 7.  Telemetry serialization test for the existing `CodePanelsFileOpened`
+       event — `tech.md` §517 (`### 7.`). NOTE: §517 explicitly says "no
+       additional event, no additional enum, no aggregation change"; the
+       v1 telemetry posture is the existing event's `target` field
+       distinguishing image opens via the stable string `"image_preview"`,
+       wired in item 1a. This bullet adds the acceptance test only.
 - [ ] FINAL. Run `cargo fmt --check`, `cargo clippy --workspace --all-targets
        --tests -- -D warnings`, and `cargo nextest run --no-fail-fast
        --workspace --exclude command-signatures-v2`. Fix any fallout in
