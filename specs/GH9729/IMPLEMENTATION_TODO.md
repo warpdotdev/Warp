@@ -73,7 +73,7 @@ The original 2a / 2c bullets are struck through and superseded.
 - [x] 5a. Bound the `LocalFile` asset-cache read with content-keyed cap
        (raster vs SVG by 1 KB content peek), post-open `is_file()` check,
        and `O_NONBLOCK` regression guard — `tech.md` §400 (`### 5.`)
-- [ ] 5b. `lightbox_view.rs` post-load callback rewrites `FailedToLoad` /
+- [x] 5b. `lightbox_view.rs` post-load callback rewrites `FailedToLoad` /
        `Unrecognized` to `Error` — `tech.md` §613 (lines 660-661)
 - [ ] 5-tests. Asset-cache tests per `tech.md` §613 (lines 628-636).
 - [ ] 7.  Telemetry events for image-preview open / error / cap-hit —

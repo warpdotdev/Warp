@@ -70,7 +70,7 @@ impl LightboxView {
         let initial_index = params
             .initial_index
             .min(params.images.len().saturating_sub(1));
-        let view = Self {
+        let mut view = Self {
             params,
             current_index: initial_index,
             lightbox: lightbox::Lightbox::default(),
@@ -96,36 +96,116 @@ impl LightboxView {
         image: LightboxImage,
         ctx: &mut ViewContext<Self>,
     ) {
-        if let Some(slot) = self.params.images.get_mut(index) {
-            if let lightbox::LightboxImageSource::Resolved { ref asset_source } = image.source {
-                Self::start_asset_load(asset_source, ctx);
-            }
-            *slot = image;
+        if index >= self.params.images.len() {
+            return;
+        }
+        let asset_source = match &image.source {
+            lightbox::LightboxImageSource::Resolved { asset_source } => Some(asset_source.clone()),
+            _ => None,
+        };
+        self.params.images[index] = image;
+        if let Some(asset_source) = asset_source {
+            self.start_asset_load(index, asset_source, ctx);
         }
     }
 
     /// Kick off asset loads for all `Resolved` images and schedule re-renders.
-    fn start_asset_loads(&self, ctx: &mut ViewContext<Self>) {
-        for img in &self.params.images {
-            if let lightbox::LightboxImageSource::Resolved { ref asset_source } = img.source {
-                Self::start_asset_load(asset_source, ctx);
-            }
+    fn start_asset_loads(&mut self, ctx: &mut ViewContext<Self>) {
+        // Collect first (immutable borrow) so the per-entry call below can
+        // take `&mut self`.
+        let to_load: Vec<(usize, AssetSource)> = self
+            .params
+            .images
+            .iter()
+            .enumerate()
+            .filter_map(|(i, img)| match &img.source {
+                lightbox::LightboxImageSource::Resolved { asset_source } => {
+                    Some((i, asset_source.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        for (index, asset_source) in to_load {
+            self.start_asset_load(index, asset_source, ctx);
         }
     }
 
-    /// Eagerly load a single asset and schedule a `ctx.notify()` when the fetch
-    /// completes so the lightbox re-renders with the loaded image.
-    fn start_asset_load(asset_source: &AssetSource, ctx: &mut ViewContext<Self>) {
+    /// Eagerly load a single asset and schedule a `ctx.notify()` when the
+    /// fetch completes so the lightbox re-renders with the loaded image.
+    ///
+    /// The spawn callback also re-queries the asset cache for the post-load
+    /// state and rewrites `self.params.images[index].source` to
+    /// `LightboxImageSource::Error` on `FailedToLoad` or
+    /// `Loaded { ImageType::Unrecognized }`. Without this, a load failure or
+    /// a mislabeled file would render a permanent spinner. See
+    /// specs/GH9729/tech.md §182.
+    fn start_asset_load(
+        &mut self,
+        index: usize,
+        asset_source: AssetSource,
+        ctx: &mut ViewContext<Self>,
+    ) {
         let asset_cache = AssetCache::as_ref(ctx);
         if let AssetState::Loading { handle } =
             asset_cache.load_asset::<ImageType>(asset_source.clone())
         {
             if let Some(future) = handle.when_loaded(asset_cache) {
-                ctx.spawn(future, |_me, (), ctx| {
+                ctx.spawn(future, move |me, (), ctx| {
                     ctx.notify();
+                    let asset_cache = AssetCache::as_ref(ctx);
+                    let state = asset_cache.load_asset::<ImageType>(asset_source.clone());
+                    if let Some(new_source) = rewrite_image_for_load_state(&state) {
+                        if let Some(slot) = me.params.images.get_mut(index) {
+                            slot.source = new_source;
+                        }
+                    }
                 });
             }
         }
+    }
+}
+
+/// Sanitize a per-asset-cache load error into a small set of categorical
+/// strings that never interpolate raw OS errors or filesystem paths. The
+/// underlying error is logged via `log::warn!` for the operator.
+/// See specs/GH9729/tech.md §182.
+fn sanitize_load_error(err: &anyhow::Error) -> &'static str {
+    let s = format!("{err}").to_lowercase();
+    if s.contains("too large") || s.contains("exceeds") {
+        "image is too large to preview"
+    } else if s.contains("decode") || s.contains("format") {
+        "could not decode image"
+    } else {
+        "could not read image"
+    }
+}
+
+/// Inspect an `AssetState` for an image entry and decide whether the
+/// `LightboxImage::source` should be rewritten to the `Error` variant.
+/// Returns `Some(new_source)` if a rewrite is warranted, or `None` to
+/// leave the entry unchanged.
+///
+/// Two states trigger a rewrite per `tech.md` §182:
+///   * `Loaded { ImageType::Unrecognized }` (mislabeled or unsupported
+///     bytes — would otherwise spin forever).
+///   * `FailedToLoad(err)` (open / read / decode error — would otherwise
+///     spin forever).
+fn rewrite_image_for_load_state(
+    state: &AssetState<ImageType>,
+) -> Option<lightbox::LightboxImageSource> {
+    match state {
+        AssetState::Loaded { data } if matches!(**data, ImageType::Unrecognized) => {
+            Some(lightbox::LightboxImageSource::Error {
+                message: "could not detect image format".to_string(),
+            })
+        }
+        AssetState::FailedToLoad(err) => {
+            log::warn!("GH9729: image preview load failed: {}", err);
+            Some(lightbox::LightboxImageSource::Error {
+                message: sanitize_load_error(err).to_string(),
+            })
+        }
+        _ => None,
     }
 }
 
@@ -213,5 +293,79 @@ impl TypedActionView for LightboxView {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::rc::Rc;
+
+    #[test]
+    fn post_load_callback_rewrites_failed_to_load_to_error() {
+        // Simulate the asset cache reporting a load failure for an image
+        // entry. The rewrite helper must produce an Error variant whose
+        // message is one of the sanitized categorical strings, never the
+        // raw error string.
+        let err = anyhow::anyhow!(
+            "io error: failed to read /home/secret/path/to/image.png: permission denied"
+        );
+        let state: AssetState<ImageType> = AssetState::FailedToLoad(Rc::new(err));
+        let rewritten =
+            rewrite_image_for_load_state(&state).expect("FailedToLoad must rewrite");
+        match rewritten {
+            lightbox::LightboxImageSource::Error { message } => {
+                assert_eq!(
+                    message, "could not read image",
+                    "expected sanitized 'could not read image' for io/permission errors",
+                );
+                assert!(
+                    !message.contains("/home/"),
+                    "sanitized message must not leak the absolute path",
+                );
+                assert!(
+                    !message.contains("permission denied"),
+                    "sanitized message must not leak the OS error string",
+                );
+            }
+            other => panic!("expected Error variant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn post_load_callback_rewrites_unrecognized_to_error() {
+        // Simulate the asset cache reporting `Loaded` with the Unrecognized
+        // image-type variant (mislabeled file: e.g. a .png containing
+        // tarball bytes). The rewrite helper must produce the specific
+        // "could not detect image format" message.
+        let state: AssetState<ImageType> = AssetState::Loaded {
+            data: Rc::new(ImageType::Unrecognized),
+        };
+        let rewritten =
+            rewrite_image_for_load_state(&state).expect("Unrecognized must rewrite");
+        match rewritten {
+            lightbox::LightboxImageSource::Error { message } => {
+                assert_eq!(message, "could not detect image format");
+            }
+            other => panic!("expected Error variant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sanitize_load_error_picks_too_large_category() {
+        let err = anyhow::anyhow!("local asset exceeds size cap");
+        assert_eq!(super::sanitize_load_error(&err), "image is too large to preview");
+    }
+
+    #[test]
+    fn sanitize_load_error_picks_decode_category() {
+        let err = anyhow::anyhow!("png decode error: invalid IHDR chunk");
+        assert_eq!(super::sanitize_load_error(&err), "could not decode image");
+    }
+
+    #[test]
+    fn sanitize_load_error_falls_back_to_read_category() {
+        let err = anyhow::anyhow!("io error: connection reset");
+        assert_eq!(super::sanitize_load_error(&err), "could not read image");
     }
 }
