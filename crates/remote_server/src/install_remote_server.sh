@@ -27,12 +27,20 @@ case "$os_kernel" in
 esac
 
 install_dir="{install_dir}"
-# Inner quotes around `$HOME` would be safe on bash 4+, but on macOS's
-# stock /bin/bash 3.2 they are taken as literal characters in the
-# replacement, producing a path like `"/Users/<user>"/.warp/...` and
-# silently steering the install into a directory tree literally named
-# `"`. Pipe the script through bash 3.2 before changing this line.
-install_dir="${install_dir/#\~/$HOME}"
+# Avoid `${var/pattern/replacement}` for tilde expansion. Two
+# interpreter quirks make it dangerous in this script:
+#   1. bash 3.2 (macOS /bin/bash) keeps inner double-quotes around the
+#      replacement literal, so `"$HOME"` ends up as 6 literal
+#      characters and the install lands under a directory tree
+#      literally named `"`.
+#   2. bash 5.2+ enables `patsub_replacement` by default, which makes
+#      `&` in the replacement expand to the matched pattern, so a
+#      `$HOME` containing `&` resolves to a `~`-substituted path.
+# Use `case` + `${var#\~}` instead — works on bash 3.2 and bash 5.2+
+# without surprises.
+case "$install_dir" in
+  "~"|"~/"*) install_dir="${HOME}${install_dir#\~}" ;;
+esac
 mkdir -p "$install_dir"
 
 tmpdir=$(mktemp -d "$install_dir/.install.XXXXXX")
@@ -50,8 +58,10 @@ trap cleanup EXIT
 staging_tarball_path="{staging_tarball_path}"
 if [ -n "$staging_tarball_path" ]; then
   # SCP fallback: tarball already uploaded by the client.
-  # Same bash 3.2 caveat as the install_dir tilde expansion above.
-  staging_tarball_path="${staging_tarball_path/#\~/$HOME}"
+  # Same tilde-expansion caveat as install_dir above.
+  case "$staging_tarball_path" in
+    "~"|"~/"*) staging_tarball_path="${HOME}${staging_tarball_path#\~}" ;;
+  esac
   mv "$staging_tarball_path" "$tmpdir/oz.tar.gz"
 else
   # Normal path: download via curl or wget.

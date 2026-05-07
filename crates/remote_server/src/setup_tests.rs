@@ -170,26 +170,31 @@ fn parse_preinstall_unsupported_non_glibc() {
     assert!(!result.is_supported());
 }
 
-/// Regression: the install script's tilde-expansion line must work in
-/// macOS's stock `/bin/bash` 3.2.57. In bash 3.2, `"$HOME"` inside the
-/// replacement of `${var/pattern/replacement}` is treated as 6 literal
-/// characters (the quotes are not stripped), which turned
-/// `~/.warp/remote-server` into the *relative* path
-/// `"/Users/<user>"/.warp/remote-server` and silently steered the
-/// install into a directory tree literally named `"`. The launch step
-/// then looked at the real `$HOME/.warp/remote-server/oz-...`, found
-/// nothing, and reported "no such file or directory" → "Response
-/// channel closed".
+/// Regression: the install script's tilde-expansion logic must work
+/// across the bash versions we actually invoke at install time
+/// (`run_ssh_script` pipes the script into `bash -s` on the remote).
+/// Two interpreter quirks have to be avoided simultaneously:
+///
+///   1. bash 3.2 (macOS `/bin/bash`) keeps inner double-quotes around
+///      the replacement of `${var/pattern/replacement}` literal, so
+///      `"$HOME"` ends up as 6 literal characters and the install
+///      lands under a directory tree literally named `"`.
+///   2. bash 5.2+ with `patsub_replacement` (default-on) treats `&`
+///      in the replacement as the matched pattern, so a `$HOME`
+///      containing `&` resolves to a `~`-substituted path.
+///
+/// Both bugs surface as the install binary landing somewhere Warp's
+/// launch step doesn't look, producing a misleading "Response channel
+/// closed before receiving a reply".
 ///
 /// This test drives the *actual* production script (via
-/// [`install_script`]) rather than a hand-copied snippet so a future
-/// change that reintroduces the quoted form can't slip past by being
-/// dissimilar enough to dodge the static-grep check below. We
-/// truncate just before `mkdir -p` so no filesystem side effects leak
-/// out of the test, and append a marker `printf` to capture the
-/// resolved `install_dir`.
+/// [`install_script`]) rather than a hand-copied snippet, and runs it
+/// against several `HOME` values to exercise the patsub-`&` trap as
+/// well as the quote-literal trap. We truncate just before `mkdir -p`
+/// so no filesystem side effects leak out of the test, and append a
+/// marker `printf` to capture the resolved `install_dir`.
 #[test]
-fn install_script_tilde_expansion_works_in_bash_3_2() {
+fn install_script_tilde_expansion_resolves_correctly() {
     use std::process::{Command, Stdio};
 
     let bash = if std::path::Path::new("/bin/bash").exists() {
@@ -209,78 +214,79 @@ fn install_script_tilde_expansion_works_in_bash_3_2() {
         prefix = &script[..cutoff],
     );
 
-    let fake_home = "/Users/test";
-    let output = Command::new(bash)
-        .arg("-c")
-        .arg(&probe)
-        .env("HOME", fake_home)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("failed to spawn bash");
+    // Run the probe against a matrix of HOME values. The first is an
+    // ordinary path; the second contains `&`, which exercises bash
+    // 5.2's patsub_replacement (where it would otherwise expand to
+    // the matched `~`).
+    let cases = [
+        ("/Users/test", "ordinary HOME"),
+        (
+            "/Users/A&B",
+            "HOME with `&` (bash 5.2 patsub_replacement trap)",
+        ),
+    ];
 
-    assert!(
-        output.status.success(),
-        "bash exited with {:?}: stderr={}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr),
-    );
+    for (fake_home, label) in cases {
+        let output = Command::new(bash)
+            .arg("-c")
+            .arg(&probe)
+            .env("HOME", fake_home)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .expect("failed to spawn bash");
 
-    let install_dir = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        !install_dir.contains('"'),
-        "install_dir contains literal quote characters \
-         (bash 3.2 quote-literal regression): {install_dir:?}",
-    );
+        assert!(
+            output.status.success(),
+            "[{label}] bash exited with {:?}: stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr),
+        );
 
-    // Cross-check against the production layout: tilde must resolve
-    // to HOME, so the result equals `remote_server_dir()` with the
-    // leading `~` replaced.
-    let expected = remote_server_dir().replacen('~', fake_home, 1);
-    assert_eq!(install_dir, expected);
+        let install_dir = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            !install_dir.contains('"'),
+            "[{label}] install_dir contains literal quote characters \
+             (bash 3.2 quote-literal regression): {install_dir:?}",
+        );
+
+        // Cross-check against the production layout: tilde must
+        // resolve to HOME, so the result equals `remote_server_dir()`
+        // with the leading `~` replaced.
+        let expected = remote_server_dir().replacen('~', fake_home, 1);
+        assert_eq!(
+            install_dir, expected,
+            "[{label}] install_dir resolved incorrectly",
+        );
+    }
 }
 
-/// Regression: guards against re-introducing any quoted form of the
-/// tilde substitution by scanning the script source itself.
-/// Complements [`install_script_tilde_expansion_works_in_bash_3_2`] —
-/// the live bash test catches behavioural regressions, this static
-/// check catches them earlier and rules out variants the live test
-/// might miss (`"${HOME}"`, `'$HOME'`, etc.).
-///
-/// The rule: every `${var/#\~/...}` occurrence in the script must
-/// have its replacement start with `$` (i.e. `$HOME` or `${HOME}`
-/// directly). Anything else is a quoted form that bash 3.2 will
-/// preserve as literal characters.
+/// Regression: guards against re-introducing the
+/// `${var/pattern/replacement}` tilde-substitution form, which has two
+/// known interpreter bugs (see
+/// [`install_script_tilde_expansion_resolves_correctly`] for details).
+/// Complements the live bash test — the live test catches behavioural
+/// regressions, this static check fails fast and explains *why* in
+/// the assertion message so a future contributor doesn't have to
+/// re-discover the constraints from a CI failure.
 #[test]
-fn install_script_does_not_quote_home_in_tilde_substitution() {
+fn install_script_avoids_pattern_substitution_for_tilde_expansion() {
     let template = INSTALL_SCRIPT_TEMPLATE;
-    let needle = r"/#\~/";
-    let mut hits = 0;
-    let mut search_from = 0;
-    while let Some(off) = template[search_from..].find(needle) {
-        let abs = search_from + off;
-        let after = &template[abs + needle.len()..];
-        let next = after.chars().next();
-        let context_end = abs + needle.len() + after.len().min(16);
-        let context = &template[abs..context_end];
-        assert_eq!(
-            next,
-            Some('$'),
-            "install_remote_server.sh has tilde substitution `{context}` \
-             at byte {abs}; the replacement must start with `$` (i.e. \
-             `$HOME` or `${{HOME}}`) — not a quote, single quote, or \
-             anything else — because bash 3.2 (macOS /bin/bash) keeps \
-             the surrounding characters literal in the replacement of \
-             `${{var/pattern/replacement}}`",
-        );
-        hits += 1;
-        search_from = abs + needle.len();
-    }
     assert!(
-        hits >= 1,
-        "no `/#\\~/...` substitutions found in install_remote_server.sh \
-         — has the script changed shape such that this test is no \
-         longer guarding what it claims to?",
+        !template.contains(r"/#\~/"),
+        "install_remote_server.sh uses `${{var/#\\~/...}}` for tilde \
+         expansion. This form has two known interpreter bugs that \
+         silently mis-resolve the install path:\n\
+         \n\
+           1. bash 3.2 (macOS /bin/bash) keeps inner double-quotes \
+              around the replacement literal, so `\"$HOME\"` ends up \
+              as 6 literal characters including the quotes.\n\
+           2. bash 5.2+ enables `patsub_replacement` by default, which \
+              makes `&` in the replacement expand to the matched \
+              pattern, so a `$HOME` containing `&` resolves wrong.\n\
+         \n\
+         Use `case`/`${{var#\\~}}` instead — see install_remote_server.sh \
+         for the pattern.",
     );
 }
 
