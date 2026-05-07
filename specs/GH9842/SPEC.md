@@ -19,16 +19,18 @@ without dispatching it. The user edits, then submits manually.
 - B1. Each prompt-suggestion entry exposes two affordances:
   - **Primary click (existing):** sends the suggestion as-is.
     Pixel-equivalent to today.
-  - **New: insert-as-draft.** Discoverable via either:
-    - A small "edit" icon next to the suggestion (preferred, low
-      friction).
-    - Modifier-click on the suggestion (Cmd-click / Ctrl-click).
-- B2. Insert-as-draft replaces the current agent-input contents
-  with the suggestion text. If the input already has user text,
-  show a one-time confirmation tooltip ("Replace existing
-  draft?") OR insert at the current caret position — TECH spec
-  picks one.
-- B3. Cursor lands at the end of the inserted text.
+  - **New: insert-as-draft.** Both entry points are required and
+    dispatch the same action:
+    - A small edit icon next to the suggestion.
+    - Modifier-click on the suggestion (Cmd-click on macOS,
+      Ctrl-click on Linux/Windows).
+- B2. Insert-as-draft inserts the suggestion text at the current
+  agent-input caret position without dispatching it. If the input
+  is empty, this is equivalent to setting the input to the
+  suggestion text. If the input already has user text, preserve
+  that text and insert at the caret; V1 does not show a replace
+  confirmation and does not overwrite the existing draft.
+- B3. Cursor lands immediately after the inserted suggestion text.
 - B4. The insert dispatches NO send action. The user must
   manually send via Enter / Cmd-Enter as usual.
 - B5. The existing inline-banner prompt-suggestion model
@@ -36,16 +38,23 @@ without dispatching it. The user edits, then submits manually.
   is the data source; no schema change.
 - B6. Telemetry: emit a single `prompt_suggestion_inserted_as_draft`
   event when the user takes the new affordance. No payload beyond
-  the suggestion category (e.g., "zero_state", "follow_up") —
-  never the suggestion text or the user's edited result.
+  the suggestion category. Derive the category only from existing
+  `PromptSuggestion` fields, in this order:
+  `static_prompt_suggestion_name = Some(name)` maps to
+  `static:{name}`; otherwise `coding_query_context.is_some()` maps
+  to `coding_query`; otherwise `should_start_new_conversation`
+  maps to `new_conversation` when true and `follow_up` when false.
+  Never derive the category from `prompt`, `label`, `id`, or the
+  user's edited result.
 
 ## Acceptance criteria
 
 - A1. Click the suggestion → it sends (existing behavior preserved).
-- A2. Modifier-click OR click the edit icon → text inserts into
-  the agent input, no send fires, cursor at end.
-- A3. With existing draft text in the input, the chosen behavior
-  from B2 fires (replace-with-confirmation OR insert-at-caret).
+- A2. Modifier-click and click the edit icon both insert text into
+  the agent input, no send fires, cursor lands after the inserted
+  text.
+- A3. With existing draft text in the input, the suggestion inserts
+  at the caret and preserves the surrounding text.
 - A4. The new event fires exactly once per insert; respects
   global telemetry opt-out.
 
@@ -55,8 +64,10 @@ without dispatching it. The user edits, then submits manually.
   `app/src/terminal/view/inline_banner/prompt_suggestions.rs`.
 - `TerminalAction::ResolvePromptSuggestion(...)` (search:
   `app/src/terminal/view/init.rs`) is today's "send-it-now" path.
-  Add a sibling `InsertPromptSuggestionAsDraft(String)` action
-  that targets the agent input editor's set-text path.
+  Add a sibling `InsertPromptSuggestionAsDraft(PromptSuggestion)`
+  action that targets the agent input editor's insert-at-caret
+  path. Keep the full `PromptSuggestion` available until telemetry
+  is emitted so the category can be derived from existing fields.
 - The agent-input editor lives in
   `app/src/ai/blocklist/agent_view/agent_input_footer/...`.
 
@@ -64,9 +75,13 @@ without dispatching it. The user edits, then submits manually.
 
 - T1. Modifier-click on a suggestion fixture inserts the text
   into the agent-input editor model, no send action fires.
-- T2. Plain click still dispatches the existing send action.
-- T3. With pre-existing input, the chosen B2 behavior is honored.
-- T4. New telemetry event fires exactly once per insert.
+- T2. Clicking the edit icon on the same fixture inserts the text
+  through the same action path.
+- T3. Plain click still dispatches the existing send action.
+- T4. With pre-existing input, insert-as-draft inserts at the
+  caret and preserves existing text.
+- T5. New telemetry event fires exactly once per insert and uses
+  the B6 category mapping without suggestion text.
 
 ## Out of scope
 
