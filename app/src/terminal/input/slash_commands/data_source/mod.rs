@@ -120,7 +120,11 @@ impl SlashCommandDataSource {
             }
         });
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, event, ctx| {
-            if matches!(event, UserWorkspacesEvent::CodebaseContextEnablementChanged) {
+            if matches!(
+                event,
+                UserWorkspacesEvent::CodebaseContextEnablementChanged
+                    | UserWorkspacesEvent::TeamsChanged
+            ) {
                 me.recompute_active_commands(ctx);
             }
         });
@@ -237,11 +241,21 @@ impl SlashCommandDataSource {
             session_context |= Availability::AI_ENABLED;
         }
 
+        if self.is_cloud_mode_v2 && FeatureFlag::CloudModeInputV2.is_enabled() {
+            session_context |= Availability::CLOUD_AGENT_V2;
+        }
         if !self.is_cloud_mode_v2 {
             session_context |= Availability::NOT_CLOUD_AGENT;
         }
 
         let is_orchestration_enabled = AISettings::as_ref(ctx).is_orchestration_enabled(ctx);
+
+        // Hide /host when no default host is configured (env var or workspace setting).
+        let has_default_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .is_some()
+            || UserWorkspaces::as_ref(ctx).default_host_slug().is_some();
 
         #[cfg(not(target_family = "wasm"))]
         let active_conversation_is_cloud_oz = self.active_conversation_is_cloud_oz(ctx);
@@ -276,6 +290,8 @@ impl SlashCommandDataSource {
                         true
                     }
                 })
+                // /host is only useful when a default self-hosted host is configured.
+                .filter(|(_, command)| command.name != commands::HOST.name || has_default_host)
                 // When CLI agent input is open, restrict to the explicit allowlist.
                 .filter(|(_, command)| {
                     !is_cli_agent_input

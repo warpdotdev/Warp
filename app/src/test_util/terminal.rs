@@ -21,9 +21,13 @@ use warpui::{platform::WindowStyle, App, ViewHandle, WindowId};
 use watcher::HomeDirectoryWatcher;
 
 use super::settings::initialize_settings_for_tests;
+use crate::ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer;
+use crate::ai::blocklist::orchestration_events::OrchestrationEventService;
+use crate::ai::blocklist::task_status_sync_model::TaskStatusSyncModel;
 use crate::ai::blocklist::BlocklistAIPermissions;
 use crate::ai::blocklist::SerializedBlockListItem;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::llms::LLMPreferences;
 use crate::ai::outline::RepoOutlines;
 use crate::ai::restored_conversations::RestoredAgentConversations;
@@ -66,6 +70,7 @@ use crate::{
     },
 };
 use repo_metadata::watcher::DirectoryWatcher;
+use warp_core::features::FeatureFlag;
 
 /// Initializes all of the necessary models to use a terminal view.
 pub fn initialize_app_for_terminal_view(app: &mut App) {
@@ -92,6 +97,11 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(|_| History::default());
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
+    app.add_singleton_model(OrchestrationEventService::new);
+    app.add_singleton_model(TaskStatusSyncModel::new);
+    if FeatureFlag::OrchestrationV2.is_enabled() {
+        app.add_singleton_model(OrchestrationEventStreamer::new);
+    }
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
     app.add_singleton_model(BlocklistAIPermissions::new);
     app.add_singleton_model(AgentNotificationsModel::new);
@@ -107,6 +117,7 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(LLMPreferences::new);
+    app.add_singleton_model(HarnessAvailabilityModel::new);
     app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(|_| DetectedRepositories::default());

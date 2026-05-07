@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::document::ai_document_model::{AIDocumentSaveStatus, AIDocumentUserEditStatus};
+use crate::ai::document::orchestration_config_block::OrchestrationConfigBlockView;
 use crate::appearance::Appearance;
 use crate::drive::{items::WarpDriveItemId, sharing::ShareableObject, CloudObjectTypeAndId};
 use crate::notebooks::editor::view::RichTextEditorConfig;
@@ -170,6 +171,7 @@ pub struct AIDocumentView {
     synced_status_mouse_state: MouseStateHandle,
     view_position_id: String,
     version_button: ViewHandle<ActionButton>,
+    orchestration_config_block: Option<ViewHandle<OrchestrationConfigBlockView>>,
 }
 
 impl AIDocumentView {
@@ -287,6 +289,30 @@ impl AIDocumentView {
                         // Try to populate terminal view if conversations were restored
                         me.maybe_populate_terminal_view(*terminal_view_id, conversation_ids, ctx);
                     }
+                    BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                        conversation_id: cid,
+                    } => {
+                        // Re-render so the config block picks up changes
+                        // only for our document's conversation.
+                        let our_conv = AIDocumentModel::as_ref(ctx)
+                            .get_conversation_id_for_document_id(&document_id);
+                        if our_conv.as_ref() == Some(cid) {
+                            // Lazily create the config block view if it
+                            // wasn't available at construction time (the
+                            // plan sidebar can open before the server
+                            // sends the orchestration config).
+                            if me.orchestration_config_block.is_none() {
+                                let conv_id = *cid;
+                                me.orchestration_config_block =
+                                    Some(ctx.add_typed_action_view(move |ctx| {
+                                        OrchestrationConfigBlockView::new_with_conversation_id(
+                                            conv_id, ctx,
+                                        )
+                                    }));
+                            }
+                            ctx.notify();
+                        }
+                    }
                     _ => {}
                 }
             },
@@ -403,6 +429,21 @@ impl AIDocumentView {
                 })
         });
 
+        // Create the orchestration config block if there's an active config
+        // for this document's conversation.
+        let doc_conversation_id =
+            AIDocumentModel::as_ref(ctx).get_conversation_id_for_document_id(&document_id);
+        let has_orchestration_config = doc_conversation_id.and_then(|cid| {
+            BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&cid)
+                .and_then(|conv| conv.orchestration_config().map(|_| cid))
+        });
+        let orchestration_config_block = has_orchestration_config.map(|conv_id| {
+            ctx.add_typed_action_view(move |ctx| {
+                OrchestrationConfigBlockView::new_with_conversation_id(conv_id, ctx)
+            })
+        });
+
         let mut me = Self {
             document_id,
             document_version,
@@ -420,6 +461,7 @@ impl AIDocumentView {
             synced_status_mouse_state: MouseStateHandle::default(),
             view_position_id,
             version_button,
+            orchestration_config_block,
         };
         // Force update the editor view based on the initial document version
         me.refresh(ctx);
@@ -1015,12 +1057,40 @@ impl View for AIDocumentView {
         "AIDocumentView"
     }
 
-    fn render(&self, _app: &AppContext) -> Box<dyn warpui::Element> {
+    fn render(&self, app: &AppContext) -> Box<dyn warpui::Element> {
+        let has_orchestration_config = AIDocumentModel::as_ref(app)
+            .get_conversation_id_for_document_id(&self.document_id)
+            .and_then(|cid| {
+                BlocklistAIHistoryModel::as_ref(app)
+                    .conversation(&cid)
+                    .and_then(|conv| conv.orchestration_config().map(|_| ()))
+            })
+            .is_some();
+
+        let mut content_column =
+            Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+
+        // Orchestration config block — shown above the editor when the
+        // conversation has an active OrchestrationConfigSnapshot.
+        if has_orchestration_config {
+            if let Some(config_block) = &self.orchestration_config_block {
+                content_column.add_child(
+                    Container::new(ChildView::new(config_block).finish())
+                        .with_horizontal_padding(16.)
+                        .with_padding_bottom(12.)
+                        .with_padding_top(8.)
+                        .finish(),
+                );
+            }
+        }
+
         let editor = Container::new(ChildView::new(&self.editor).finish())
             .with_padding_left(8.)
             .with_padding_right(8.)
             .finish();
-        let mut stack = Stack::new().with_child(editor);
+        content_column.add_child(warpui::elements::Expanded::new(1.0, editor).finish());
+
+        let mut stack = Stack::new().with_child(content_column.finish());
 
         if self.is_version_menu_open {
             stack.add_positioned_overlay_child(

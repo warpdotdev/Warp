@@ -12,6 +12,7 @@ use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::model::block::{
     AgentInteractionMetadata, AgentViewVisibility, BlockId, SerializedAIMetadata, SerializedBlock,
 };
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 
 use crate::ai::agent::api::convert_conversation::{
     compute_time_to_first_token_ms_from_messages, ConvertToExchanges,
@@ -48,7 +49,7 @@ use crate::{
             todos::AIAgentTodoList,
             AIAgentOutputMessage, AIAgentOutputMessageType, MessageToAIAgentOutputMessageError,
         },
-        blocklist::BlocklistAIHistoryEvent,
+        blocklist::{BlocklistAIHistoryEvent, ConversationStatusUpdate},
     },
     persistence::{
         model::{AgentConversationData, PersistedAutoexecuteMode},
@@ -228,6 +229,12 @@ pub struct AIConversation {
     /// event log. Used on restore to resume event delivery without
     /// re-delivering already-processed events.
     last_event_sequence: Option<i64>,
+
+    /// Per-conversation orchestration config hydrated from
+    /// `OrchestrationConfigSnapshot` messages in the conversation's task list.
+    orchestration_config: Option<OrchestrationConfig>,
+    orchestration_status: OrchestrationConfigStatus,
+    orchestration_plan_id: Option<String>,
 }
 
 pub(crate) fn artifact_from_fork_proto(
@@ -278,6 +285,9 @@ impl AIConversation {
             parent_conversation_id: None,
             is_remote_child: false,
             last_event_sequence: None,
+            orchestration_config: None,
+            orchestration_status: OrchestrationConfigStatus::default(),
+            orchestration_plan_id: None,
         }
     }
 
@@ -355,6 +365,7 @@ impl AIConversation {
             parent_agent_id,
             agent_name,
             parent_conversation_id,
+            is_remote_child,
             run_id,
             autoexecute_override,
             last_event_sequence,
@@ -380,6 +391,7 @@ impl AIConversation {
             let parent_conversation_id = data
                 .parent_conversation_id
                 .and_then(|id| AIConversationId::try_from(id).ok());
+            let is_remote_child = data.is_remote_child;
             let run_id = data.run_id;
             let autoexecute_override = if FeatureFlag::RememberFastForwardState.is_enabled() {
                 data.autoexecute_override
@@ -399,6 +411,7 @@ impl AIConversation {
                 parent_agent_id,
                 agent_name,
                 parent_conversation_id,
+                is_remote_child,
                 run_id,
                 autoexecute_override,
                 last_event_sequence,
@@ -413,6 +426,7 @@ impl AIConversation {
                 None,
                 None,
                 None,
+                false,
                 None,
                 AIConversationAutoexecuteMode::default(),
                 None,
@@ -457,8 +471,11 @@ impl AIConversation {
             parent_agent_id,
             agent_name,
             parent_conversation_id,
-            is_remote_child: false,
+            is_remote_child,
             last_event_sequence,
+            orchestration_config: None,
+            orchestration_status: OrchestrationConfigStatus::default(),
+            orchestration_plan_id: None,
         })
     }
 
@@ -669,11 +686,14 @@ impl AIConversation {
         } else {
             None
         };
+        let prev_status = self.status.clone();
+        let new_status = status.clone();
         self.status = status;
         ctx.emit(BlocklistAIHistoryEvent::UpdatedConversationStatus {
             conversation_id: self.id,
             terminal_view_id,
-            is_restored: false,
+            update: ConversationStatusUpdate::Changed { prev_status },
+            new_status,
         });
     }
 
@@ -809,7 +829,15 @@ impl AIConversation {
 
     /// Returns true if this conversation was spawned by a parent orchestrator agent.
     pub fn is_child_agent_conversation(&self) -> bool {
-        self.parent_conversation_id.is_some()
+        self.parent_conversation_id.is_some() || self.parent_agent_id.is_some()
+    }
+
+    /// True iff this conversation knows about a parent agent — either via a
+    /// local parent placeholder (`parent_conversation_id`, set in the GUI
+    /// parent) or via the parent's server-side run identifier
+    /// (`parent_agent_id`, stamped in driver-hosted processes).
+    pub fn has_parent_agent(&self) -> bool {
+        self.parent_conversation_id.is_some() || self.parent_agent_id.is_some()
     }
 
     /// Returns true if this is a placeholder for a child agent executing on a
@@ -822,6 +850,35 @@ impl AIConversation {
     /// Marks this conversation as a remote child placeholder.
     pub fn mark_as_remote_child(&mut self) {
         self.is_remote_child = true;
+    }
+
+    pub fn orchestration_config(&self) -> Option<&OrchestrationConfig> {
+        self.orchestration_config.as_ref()
+    }
+
+    pub fn orchestration_status(&self) -> OrchestrationConfigStatus {
+        self.orchestration_status
+    }
+
+    pub fn orchestration_plan_id(&self) -> Option<&str> {
+        self.orchestration_plan_id.as_deref()
+    }
+
+    /// Replaces the orchestration config, status, and plan_id for this
+    /// conversation. Returns `true` if any value actually changed.
+    pub fn set_orchestration_config(
+        &mut self,
+        config: Option<OrchestrationConfig>,
+        status: OrchestrationConfigStatus,
+        plan_id: Option<String>,
+    ) -> bool {
+        let changed = self.orchestration_config != config
+            || self.orchestration_status != status
+            || self.orchestration_plan_id != plan_id;
+        self.orchestration_config = config;
+        self.orchestration_status = status;
+        self.orchestration_plan_id = plan_id;
+        changed
     }
 
     /// Returns a flat list of linearized messages across all tasks, interpolating subtask messages
@@ -2293,6 +2350,29 @@ impl AIConversation {
                                 None => {}
                             }
                         }
+                        Some(api::message::Message::OrchestrationConfigSnapshot(
+                            snapshot,
+                        )) => {
+                            let config = snapshot
+                                .config
+                                .as_ref()
+                                .map(OrchestrationConfig::from_proto);
+                            let status = OrchestrationConfigStatus::from_proto(
+                                snapshot.status.as_ref(),
+                            );
+                            let plan_id = if snapshot.plan_id.is_empty() {
+                                None
+                            } else {
+                                Some(snapshot.plan_id.clone())
+                            };
+                            if self.set_orchestration_config(config, status, plan_id) {
+                                ctx.emit(
+                                    BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                                        conversation_id: self.id,
+                                    },
+                                );
+                            }
+                        }
                         Some(api::message::Message::ToolCallResult(tcr)) => {
                             // Clean up temp directories from conversation search subagents.
                             if let Some(api::message::tool_call_result::Result::Subagent(_)) =
@@ -2830,6 +2910,7 @@ impl AIConversation {
                 parent_agent_id: self.parent_agent_id.clone(),
                 agent_name: self.agent_name.clone(),
                 parent_conversation_id: self.parent_conversation_id.map(|id| id.to_string()),
+                is_remote_child: self.is_remote_child,
                 run_id: self.task_id.map(|id| id.to_string()),
                 autoexecute_override: Some(self.autoexecute_override.into()),
                 last_event_sequence: self.last_event_sequence,

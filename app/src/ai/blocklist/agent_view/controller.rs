@@ -337,7 +337,7 @@ const NEW_CONVERSATION_KEYBINDING_CONFIRMATION_MESSAGE_ID: &str =
 /// Controller responsible for managing and updating agent view state for a given terminal pane.
 ///
 /// `AgentViewState` is stored on the terminal model but should only be updated via the APIs on
-/// this constroller, which ensures the correct events are emitted and downstream effects take
+/// this controller, which ensures the correct events are emitted and downstream effects take
 /// place.
 pub struct AgentViewController {
     terminal_model: Arc<FairMutex<TerminalModel>>,
@@ -385,6 +385,11 @@ impl AgentViewController {
 
     pub fn pane_group_id(&self) -> Option<EntityId> {
         self.pane_group_id
+    }
+
+    /// Returns the [`EntityId`] of the [`TerminalView`] that owns this controller.
+    pub fn terminal_view_id(&self) -> EntityId {
+        self.terminal_view_id
     }
 
     pub fn set_pane_group_id(&mut self, pane_group_id: EntityId) {

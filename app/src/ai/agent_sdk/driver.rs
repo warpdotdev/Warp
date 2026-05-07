@@ -22,7 +22,8 @@ use crate::ai::skills::{SkillManager, SkillWatcher};
 use crate::ai::{
     agent::conversation::AIConversationId,
     agent_sdk::driver::harness::{
-        task_env_vars, HarnessKind, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness,
+        task_env_vars, HarnessCleanupDisposition, HarnessKind, HarnessRunner, ResumePayload,
+        SavePoint, ThirdPartyHarness,
     },
 };
 use crate::terminal::cli_agent_sessions::plugin_manager::{
@@ -34,15 +35,19 @@ use crate::terminal::cli_agent_sessions::{
 use crate::{
     ai::{
         agent::{
-            AIAgentExchange, AIAgentInput, AIAgentOutput, CancellationReason, RenderableAIError,
+            AIAgentActionResultType, AIAgentExchange, AIAgentInput, AIAgentOutput,
+            CancellationReason, RenderableAIError, RequestFileEditsResult,
         },
         ambient_agents::{
             conversation_output_status_from_conversation, AmbientAgentTaskId,
             AmbientConversationStatus,
         },
         blocklist::{
-            agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-            BlocklistAIPermissions,
+            agent_view::AgentViewEntryOrigin,
+            orchestration_event_streamer::{
+                register_agent_event_consumer, unregister_agent_event_consumer,
+            },
+            BlocklistAIHistoryEvent, BlocklistAIHistoryModel, BlocklistAIPermissions,
         },
         cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironment},
         execution_profiles::profiles::AIExecutionProfilesModel,
@@ -97,6 +102,7 @@ mod snapshot;
 pub(crate) mod terminal;
 
 use environment::PrepareEnvironmentError;
+pub(crate) use snapshot::upload_snapshot_for_handoff;
 use terminal::TerminalDriverEvent;
 
 const MCP_SERVER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -250,6 +256,12 @@ pub struct AgentDriver {
     /// - Secrets are passed to MCP servers during spawning.
     secrets: Arc<HashMap<String, ManagedSecretValue>>,
 
+    /// Env vars passed to the terminal session, including resolved secrets, cloud
+    /// provider vars, task vars, and sandbox flags. Shared with
+    /// `prepare_environment_config` so harnesses can look up resolved secret
+    /// values without re-deriving precedence.
+    resolved_env_vars: Arc<HashMap<OsString, OsString>>,
+
     output_format: OutputFormat,
 
     // The associated task ID for this agent run, if any.
@@ -268,6 +280,10 @@ pub struct AgentDriver {
     // The conversation ID to continue (if provided).
     restored_conversation_id: Option<AIConversationId>,
 
+    /// If set, a third-party-harness conversation to resume. Consumed when
+    /// preparing the harness runner and cleared afterward.
+    resume_payload: Option<ResumePayload>,
+
     /// Cloud providers set up within this driver session.
     cloud_providers: Vec<Box<dyn cloud_provider::CloudProvider>>,
 
@@ -279,10 +295,22 @@ pub struct AgentDriver {
     snapshot_upload_timeout: Duration,
     snapshot_script_timeout: Duration,
 
-    /// If set, a third-party-harness conversation to resume. Consumed by `prepare_harness`
-    /// when building the runner and taken back to `None` after use so subsequent runs start
-    /// fresh.
-    resume_payload: Option<ResumePayload>,
+    /// Conversation ID this driver is running. Set at construction for
+    /// resumed runs and on `ConversationServerTokenAssigned` for fresh
+    /// runs; consumed by `unregister_streamer_consumer` at end of run.
+    run_conversation_id: Option<AIConversationId>,
+
+    /// Parent agent run's `run_id` from the server task metadata, when
+    /// this driver run was spawned by another agent. Stamped onto the
+    /// conversation's `parent_agent_id` field at register time so the
+    /// streamer recognizes the child role in driver-hosted processes.
+    parent_run_id: Option<String>,
+
+    /// Async writer that records `file` declarations for paths the agent creates or edits
+    /// via `RequestFileEdits`. `Some` only when `FeatureFlag::OzHandoff` is enabled, the run
+    /// has a cloud task id, and `--no-snapshot` was not set; `None` keeps the observer a
+    /// pure no-op for local and disabled runs.
+    snapshot_file_writer: Option<snapshot::DeclarationsWriterHandle>,
 }
 
 pub(crate) enum SDKConversationOutputStatus {
@@ -513,81 +541,13 @@ impl AgentDriver {
                     _ => None,
                 });
 
-        // Build environment variables from secrets for the terminal session.
-        // Do not override env vars that are already set to a non-empty value in the current
-        // process. This ensures that worker-injected credentials (e.g. harness auth secrets)
-        // and user-provided env vars (e.g. on self-hosted workers) take precedence over
-        // generic managed secrets.
-        let mut env_vars = HashMap::with_capacity(secrets.len() + 1);
-        for (name, secret) in &secrets {
-            let (env_name, env_value) = match secret {
-                ManagedSecretValue::RawValue { value } => (name.as_str(), value.as_str()),
-                ManagedSecretValue::AnthropicApiKey { api_key } => {
-                    ("ANTHROPIC_API_KEY", api_key.as_str())
-                }
-                ManagedSecretValue::AnthropicBedrockAccessKey {
-                    aws_access_key_id,
-                    aws_secret_access_key,
-                    aws_session_token,
-                    aws_region,
-                } => {
-                    // Inject env vars needed for Claude Code Bedrock access key authentication.
-                    // AWS_SESSION_TOKEN is only injected when the user provided one (i.e. for
-                    // temporary/STS credentials).
-                    let mut vars = vec![
-                        ("AWS_ACCESS_KEY_ID", aws_access_key_id.as_str()),
-                        ("AWS_SECRET_ACCESS_KEY", aws_secret_access_key.as_str()),
-                        ("CLAUDE_CODE_USE_BEDROCK", "1"),
-                        ("AWS_REGION", aws_region.as_str()),
-                    ];
-                    if let Some(token) = aws_session_token.as_deref() {
-                        vars.push(("AWS_SESSION_TOKEN", token));
-                    }
-                    for (env_name, env_value) in vars {
-                        if std::env::var(env_name).is_ok_and(|v| !v.is_empty()) {
-                            log::warn!(
-                                "Skipping managed secret {env_name}: already set in environment"
-                            );
-                            continue;
-                        }
-                        env_vars.insert(OsString::from(env_name), OsString::from(env_value));
-                    }
-                    continue; // Skip the single-var insert below since we handled all vars inline.
-                }
-                ManagedSecretValue::AnthropicBedrockApiKey {
-                    aws_bearer_token_bedrock,
-                    aws_region,
-                } => {
-                    // Inject all three env vars needed for Claude Code Bedrock authentication.
-                    let vars = [
-                        (
-                            "AWS_BEARER_TOKEN_BEDROCK",
-                            aws_bearer_token_bedrock.as_str(),
-                        ),
-                        ("CLAUDE_CODE_USE_BEDROCK", "1"),
-                        ("AWS_REGION", aws_region.as_str()),
-                    ];
-                    for (env_name, env_value) in vars {
-                        if std::env::var(env_name).is_ok_and(|v| !v.is_empty()) {
-                            log::warn!(
-                                "Skipping managed secret {env_name}: already set in environment"
-                            );
-                            continue;
-                        }
-                        env_vars.insert(OsString::from(env_name), OsString::from(env_value));
-                    }
-                    continue; // Skip the single-var insert below since we handled all vars inline.
-                }
-            };
-            if std::env::var(env_name).is_ok_and(|v| !v.is_empty()) {
-                log::warn!("Skipping managed secret {env_name}: already set in environment");
-                continue;
-            }
-            env_vars.insert(OsString::from(env_name), OsString::from(env_value));
-        }
+        let mut env_vars = build_secret_env_vars(&secrets);
 
         // Inject cloud provider env vars.
         cloud_provider::collect_env_vars(&cloud_providers, &mut env_vars)?;
+        // Clone before consuming for env vars; the field on `Self` is
+        // also needed at register time.
+        let parent_run_id_for_self = parent_run_id.clone();
         env_vars.extend(task_env_vars(
             task_id.as_ref(),
             parent_run_id.as_deref(),
@@ -600,10 +560,12 @@ impl AgentDriver {
             env_vars.insert(OsString::from("IS_SANDBOX"), OsString::from("1"));
         }
 
+        let resolved_env_vars = Arc::new(env_vars);
+
         let terminal_driver = terminal::TerminalDriver::create(
             terminal::TerminalDriverOptions {
                 working_dir: working_dir.clone(),
-                env_vars,
+                env_vars: HashMap::clone(&resolved_env_vars),
                 should_share,
                 task_id,
                 conversation_restoration,
@@ -616,24 +578,63 @@ impl AgentDriver {
             me.handle_terminal_driver_event(event, ctx);
         });
 
+        let mut run_conversation_id: Option<AIConversationId> = None;
+
+        // For a resumed conversation the ID is known up front; register
+        // immediately so the streamer can satisfy the parent gate as soon
+        // as the first child is registered.
+        if let Some(conv_id) = restored_conversation_id {
+            stamp_parent_agent_id_if_some(conv_id, parent_run_id_for_self.as_deref(), ctx);
+            register_agent_event_consumer(conv_id, ctx.model_id(), ctx);
+            run_conversation_id = Some(conv_id);
+        }
+
+        // Spawn the async declarations writer only when the snapshot pipeline will actually
+        // read what it produces: feature enabled, cloud task run, and --no-snapshot not set.
+        let snapshot_disabled_value = snapshot_disabled.unwrap_or(false);
+        let snapshot_file_writer = match task_id {
+            Some(id) if FeatureFlag::OzHandoff.is_enabled() && !snapshot_disabled_value => {
+                let background = ctx.background_executor();
+                Some(snapshot::DeclarationsWriterHandle::new(
+                    id,
+                    working_dir.clone(),
+                    &background,
+                ))
+            }
+            _ => None,
+        };
+
         Ok(Self {
             terminal_driver,
             working_dir,
             secrets: Arc::new(secrets),
+            resolved_env_vars,
             output_format: OutputFormat::default(),
             task_id,
             harness: None,
             idle_on_complete,
             restored_conversation_id,
+            resume_payload,
             cloud_providers,
             environment,
-            snapshot_disabled: snapshot_disabled.unwrap_or(false),
+            snapshot_disabled: snapshot_disabled_value,
             snapshot_upload_timeout: snapshot_upload_timeout
                 .unwrap_or(snapshot::DEFAULT_SNAPSHOT_UPLOAD_TIMEOUT),
             snapshot_script_timeout: snapshot_script_timeout
                 .unwrap_or(snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT),
-            resume_payload,
+            run_conversation_id,
+            parent_run_id: parent_run_id_for_self,
+            snapshot_file_writer,
         })
+    }
+
+    /// Pair to the registration in `new` / `execute_run`. No-op when
+    /// nothing was registered.
+    fn unregister_streamer_consumer(&self, ctx: &mut ModelContext<Self>) {
+        let Some(conversation_id) = self.run_conversation_id else {
+            return;
+        };
+        unregister_agent_event_consumer(conversation_id, ctx.model_id(), ctx);
     }
 
     pub fn set_output_format(&mut self, output_format: OutputFormat) {
@@ -681,6 +682,13 @@ impl AgentDriver {
                     }
                 }
                 let result = Self::run_internal(task, foreground.clone()).await;
+
+                // Unregister the driver consumer now that the run is done.
+                // The streamer will tear down the SSE if no other consumer
+                // remains and the conversation isn't a child.
+                let _ = foreground
+                    .spawn(|me, ctx| me.unregister_streamer_consumer(ctx))
+                    .await;
 
                 // Run the snapshot upload before signaling the caller. The caller resumes and
                 // triggers process termination as soon as it receives `result`; the snapshot
@@ -1515,16 +1523,17 @@ impl AgentDriver {
         };
 
         // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
-        let secrets = foreground
-            .spawn(|me, _| Arc::clone(&me.secrets))
+        // Pass the terminal env vars (which include the resolved secrets) so harnesses
+        // can look up auth keys without re-deriving precedence.
+        let resolved_env_vars = foreground
+            .spawn(|me, _| Arc::clone(&me.resolved_env_vars))
             .await
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
-        harness.prepare_environment_config(&working_dir, system_prompt.as_deref(), &secrets)?;
-
-        // Pull the resume payload off the driver so the harness runner can rehydrate any
-        // existing session/conversation state before launching its CLI. The payload variant
-        // is harness-specific; harnesses match on their own [`ResumePayload`] variant and
-        // ignore others.
+        harness.prepare_environment_config(
+            &working_dir,
+            system_prompt.as_deref(),
+            &resolved_env_vars,
+        )?;
         let resume = foreground
             .spawn(|me, _| me.resume_payload.take())
             .await
@@ -1588,14 +1597,31 @@ impl AgentDriver {
 
         // Final save after the command finishes.
         log::debug!("Triggering final save of harness conversation data");
-        report_if_error!(runner
+        let final_save_succeeded = match runner
             .save_conversation(SavePoint::Final, foreground)
             .await
-            .context("Failed to save harness conversation (final)"));
-        report_if_error!(runner
-            .cleanup(foreground)
+            .context("Failed to save harness conversation (final)")
+        {
+            Ok(()) => true,
+            Err(err) => {
+                report_error!(err);
+                false
+            }
+        };
+        let cleanup_disposition = if final_save_succeeded
+            && matches!(command_result.as_ref(), Ok(exit_code) if exit_code.was_successful())
+        {
+            HarnessCleanupDisposition::PreserveResumptionStateIfSupported
+        } else {
+            HarnessCleanupDisposition::DropResumptionState
+        };
+        if let Err(err) = runner
+            .cleanup(cleanup_disposition, foreground)
             .await
-            .context("Failed to clean up harness runtime state"));
+            .context("Failed to clean up harness runtime state")
+        {
+            report_error!(err);
+        }
 
         let exit_code = command_result?;
         log::debug!("Agent harness exited with status {exit_code}");
@@ -1679,6 +1705,25 @@ impl AgentDriver {
                 return;
             }
 
+            // Fresh runs learn their conversation_id via
+            // `ConversationServerTokenAssigned`; resumed runs already
+            // registered in `new` (and so skip this branch).
+            if me.run_conversation_id.is_none() {
+                if let BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+                    conversation_id,
+                    ..
+                } = event
+                {
+                    me.run_conversation_id = Some(*conversation_id);
+                    stamp_parent_agent_id_if_some(
+                        *conversation_id,
+                        me.parent_run_id.as_deref(),
+                        ctx,
+                    );
+                    register_agent_event_consumer(*conversation_id, ctx.model_id(), ctx);
+                }
+            }
+
             match event {
                 BlocklistAIHistoryEvent::UpdatedTodoList { .. } => {
                     // TODO: Log TODO list updates.
@@ -1704,6 +1749,26 @@ impl AgentDriver {
                     report_if_error!(me
                         .write_exchange_inputs(exchange)
                         .context("Failed to write exchange inputs"));
+
+                    // Forward any successful file-edit paths from this exchange's inputs to the
+                    // snapshot declarations writer so the end-of-run upload covers files written
+                    // outside any declared repo.
+                    if let Some(writer) = me.snapshot_file_writer.as_ref() {
+                        let mut paths = Vec::new();
+                        for input in &exchange.input {
+                            if let AIAgentInput::ActionResult { result, .. } = input {
+                                if let AIAgentActionResultType::RequestFileEdits(
+                                    RequestFileEditsResult::Success { updated_files, .. },
+                                ) = &result.result
+                                {
+                                    for updated in updated_files {
+                                        paths.push(updated.file_context.file_name.clone());
+                                    }
+                                }
+                            }
+                        }
+                        writer.append(paths);
+                    }
 
                     // Reset the idle timer only if we've already scheduled one.
                     // This handles the case where a follow-up query creates new exchanges after
@@ -1865,7 +1930,10 @@ impl AgentDriver {
                 | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
                 | BlocklistAIHistoryEvent::ClearedActiveConversation { .. }
                 | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
-                | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => (),
+                | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+                | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
+                | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
+                | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => (),
             }
         });
 
@@ -2228,6 +2296,13 @@ impl AgentDriver {
             return;
         };
 
+        // Drain any pending declarations writes from the history subscription before the
+        // declarations script runs. This guarantees no driver-side `file` append is still in
+        // flight when the bash script appends its `repo` entries.
+        if let Ok(Some(writer)) = spawner.spawn(|me, _| me.snapshot_file_writer.clone()).await {
+            writer.flush().await;
+        }
+
         // Regenerate the declarations file so the upload pipeline sees the latest workspace
         // state. The helper swallows its own errors at ERROR level; we just proceed.
         snapshot::run_declarations_script(&working_dir, &task_id, script_timeout).await;
@@ -2243,6 +2318,121 @@ impl AgentDriver {
                 "Snapshot upload timed out after {:?}; continuing with cleanup (task {task_id})",
                 upload_timeout
             ));
+        }
+    }
+}
+
+/// Build the env-var map for the agent terminal session from managed secrets.
+///
+/// Invariant: the server resolves at most one typed auth secret per harness, so
+/// env-var collisions between typed secrets cannot occur in practice.
+///
+/// Precedence order:
+/// 1. Worker-injected process env (already non-empty in `std::env`). Never overridden.
+/// 2. Typed auth secrets (`AnthropicApiKey`, `AnthropicBedrock*`). Inserted atomically:
+///    if any one env var for a typed secret is already worker-injected, the entire
+///    secret is skipped.
+/// 3. Generic `RawValue` secrets. Skipped on collision with either of the above.
+fn build_secret_env_vars(
+    secrets: &HashMap<String, ManagedSecretValue>,
+) -> HashMap<OsString, OsString> {
+    let mut env_vars = HashMap::with_capacity(secrets.len() + 1);
+
+    // Phase 1: Record which env-var names are claimed by typed auth secrets.
+    let typed_env_names = typed_secret_env_names(secrets);
+
+    // Phase 2: Insert typed auth secrets atomically.
+    for (name, secret) in secrets {
+        let entries = typed_secret_entries(secret);
+        if entries.is_empty() {
+            continue;
+        }
+
+        if let Some((conflict, _)) = entries
+            .iter()
+            .find(|(env_name, _)| std::env::var(env_name).is_ok_and(|v| !v.is_empty()))
+        {
+            log::warn!(
+                "Skipping auth secret '{name}' ({:?}): '{conflict}' is already set \
+                 in the process environment",
+                secret.secret_type(),
+            );
+            continue;
+        }
+
+        for (env_name, env_value) in entries {
+            env_vars.insert(OsString::from(env_name), OsString::from(env_value));
+        }
+    }
+
+    // Phase 3: Insert generic RawValue secrets, skipping any that collide
+    // with worker-injected env vars or typed-secret-claimed names.
+    for (name, secret) in secrets {
+        let ManagedSecretValue::RawValue { value } = secret else {
+            continue;
+        };
+        let env_name = name.as_str();
+
+        if std::env::var(env_name).is_ok_and(|v| !v.is_empty()) {
+            log::warn!("Skipping managed secret {env_name}: already set in environment");
+            continue;
+        }
+        if typed_env_names.contains(env_name) {
+            log::warn!("Skipping generic secret '{env_name}': overridden by a typed auth secret");
+            continue;
+        }
+
+        env_vars.insert(OsString::from(env_name), OsString::from(value.as_str()));
+    }
+
+    env_vars
+}
+
+/// The env-var names that any typed auth secret in `secrets` will populate.
+/// Used for phase-3 collision detection and by the suffix resolver.
+fn typed_secret_env_names(secrets: &HashMap<String, ManagedSecretValue>) -> HashSet<&'static str> {
+    let mut names = HashSet::new();
+    for secret in secrets.values() {
+        for (env_name, _) in typed_secret_entries(secret) {
+            names.insert(env_name);
+        }
+    }
+    names
+}
+
+fn typed_secret_entries(secret: &ManagedSecretValue) -> Vec<(&'static str, &str)> {
+    match secret {
+        ManagedSecretValue::RawValue { .. } => vec![],
+        ManagedSecretValue::AnthropicApiKey { api_key } => {
+            vec![("ANTHROPIC_API_KEY", api_key.as_str())]
+        }
+        ManagedSecretValue::AnthropicBedrockApiKey {
+            aws_bearer_token_bedrock,
+            aws_region,
+        } => vec![
+            (
+                "AWS_BEARER_TOKEN_BEDROCK",
+                aws_bearer_token_bedrock.as_str(),
+            ),
+            ("CLAUDE_CODE_USE_BEDROCK", "1"),
+            ("AWS_REGION", aws_region.as_str()),
+        ],
+        ManagedSecretValue::AnthropicBedrockAccessKey {
+            aws_access_key_id,
+            aws_secret_access_key,
+            aws_session_token,
+            aws_region,
+        } => {
+            let mut entries = vec![
+                ("AWS_ACCESS_KEY_ID", aws_access_key_id.as_str()),
+                ("AWS_SECRET_ACCESS_KEY", aws_secret_access_key.as_str()),
+                ("CLAUDE_CODE_USE_BEDROCK", "1"),
+                ("AWS_REGION", aws_region.as_str()),
+            ];
+            if let Some(token) = aws_session_token.as_deref() {
+                entries.push(("AWS_SESSION_TOKEN", token));
+            }
+            entries
         }
     }
 }
@@ -2283,6 +2473,25 @@ pub(super) async fn report_driver_error(
             anyhow!(e).context(format!("Failed to report driver error for task {task_id}"))
         );
     }
+}
+
+/// Stamps `parent_agent_id` (= parent's `run_id` under v2) onto the
+/// driver-hosted conversation so the streamer's child-role check
+/// succeeds. No-op when `parent_run_id` is `None` (a top-level run).
+fn stamp_parent_agent_id_if_some(
+    conv_id: AIConversationId,
+    parent_run_id: Option<&str>,
+    ctx: &mut ModelContext<AgentDriver>,
+) {
+    let Some(parent_run_id) = parent_run_id else {
+        return;
+    };
+    let parent_run_id = parent_run_id.to_owned();
+    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
+        if let Some(conv) = history.conversation_mut(&conv_id) {
+            conv.set_parent_agent_id(parent_run_id);
+        }
+    });
 }
 
 /// Write the session URL to stdout using the appropriate output format

@@ -2397,7 +2397,7 @@ fn test_pending_metadata_update_with_rtc() {
             mocked_metadata_update_message,
         );
 
-        // Assert we don't have a pending change now that we've updated the metadat
+        // Assert we don't have a pending change now that we've updated the metadata
         assert_pending_online_only_change_for_object(
             &mut app,
             &notebook_id.to_server_id().uid(),
@@ -3673,7 +3673,7 @@ fn test_pending_conflict_correctly_clears_after_edits() {
             ModelEvent::UpsertNotebook { .. }
         ));
 
-        // While we still have edits in flight, recieve an RTC message, that has a TS before the object update
+        // While we still have edits in flight, receive an RTC message, that has a TS before the object update
         // response. This should put the notebook conflict status as pending
         let mocked_metadata = ServerMetadata {
             uid: server_id,
@@ -3805,7 +3805,7 @@ fn test_pending_conflict_correctly_stays_after_edits() {
             ModelEvent::UpsertNotebook { .. }
         ));
 
-        // While we still have edits in flight, recieve an RTC message, that has a TS after the object update
+        // While we still have edits in flight, receive an RTC message, that has a TS after the object update
         // response. This should put the notebook conflict status as pending
         let mocked_metadata = ServerMetadata {
             uid: server_id,

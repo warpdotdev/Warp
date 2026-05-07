@@ -260,6 +260,7 @@ fn validation_rejects_invalid_entries() {
 
 #[test]
 fn serializes_mcp_servers_as_object_not_string() {
+    use crate::ai::agent::UserQueryMode;
     use crate::ai::ambient_agents::AgentConfigSnapshot;
     use crate::server::server_api::ai::SpawnAgentRequest;
 
@@ -270,6 +271,7 @@ fn serializes_mcp_servers_as_object_not_string() {
 
     let request = SpawnAgentRequest {
         prompt: "hello".to_string(),
+        mode: UserQueryMode::Normal,
         config: Some(AgentConfigSnapshot {
             mcp_servers: Some(mcp_servers),
             ..Default::default()
@@ -282,6 +284,8 @@ fn serializes_mcp_servers_as_object_not_string() {
         parent_run_id: None,
         runtime_skills: vec![],
         referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
     };
 
     let value = serde_json::to_value(&request).unwrap();

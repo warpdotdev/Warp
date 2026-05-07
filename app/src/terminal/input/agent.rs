@@ -7,13 +7,16 @@ use super::{
     Input, InputAction, InputDropTargetData,
 };
 use crate::{
-    ai::blocklist::{
-        agent_view::{
-            agent_view_bg_fill,
-            shortcuts::{render_agent_shortcuts_view, AgentShortcutsViewContext},
-            AgentViewState,
+    ai::{
+        blocklist::{
+            agent_view::{
+                agent_view_bg_fill,
+                shortcuts::{render_agent_shortcuts_view, AgentShortcutsViewContext},
+                AgentViewState,
+            },
+            InputType,
         },
-        InputType,
+        harness_availability::HarnessAvailabilityModel,
     },
     appearance::Appearance,
     context_chips::spacing::{self},
@@ -67,9 +70,14 @@ impl Input {
     pub fn is_cloud_mode_input_v2_composing(&self, app: &AppContext) -> bool {
         FeatureFlag::CloudModeInputV2.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
-            && self
-                .ambient_agent_view_model()
-                .is_some_and(|model| model.as_ref(app).is_configuring_ambient_agent())
+            && self.ambient_agent_view_model().is_some_and(|model| {
+                let view_model = model.as_ref(app);
+                view_model.is_configuring_ambient_agent()
+                    // The handoff pane intentionally stays on the existing input UI even
+                    // when V2 is on — V2 is for fresh cloud-mode runs only, and handoff has
+                    // its own pre-spawn flow (submit interception).
+                    && !view_model.is_local_to_cloud_handoff()
+            })
     }
 
     /// Renders the input when there is an active `AgentView`.
@@ -118,7 +126,7 @@ impl Input {
         }
 
         let show_harness_row = FeatureFlag::CloudMode.is_enabled()
-            && FeatureFlag::AgentHarness.is_enabled()
+            && HarnessAvailabilityModel::as_ref(app).should_show_harness_selector()
             && self
                 .ambient_agent_view_model()
                 .is_some_and(|ambient_agent_model| {
@@ -506,7 +514,7 @@ impl Input {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(CLOUD_MODE_V2_TOP_ROW_GAP);
 
-        column.add_child(self.render_cloud_mode_v2_top_row());
+        column.add_child(self.render_cloud_mode_v2_top_row(app));
         column.add_child(self.render_cloud_mode_v2_input_container(appearance, app));
         Align::new(
             ConstrainedBox::new(column.finish())
@@ -528,14 +536,17 @@ impl Input {
         Some(ChildView::new(view).finish())
     }
 
-    fn render_cloud_mode_v2_top_row(&self) -> Box<dyn Element> {
+    fn render_cloud_mode_v2_top_row(&self, app: &AppContext) -> Box<dyn Element> {
         let mut row = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(CLOUD_MODE_V2_TOP_ROW_INNER_GAP);
 
+        // Only show the host selector when a default host is configured.
         if let Some(host) = self.host_selector() {
-            row.add_child(ChildView::new(host).finish());
+            if host.as_ref(app).has_default_host() {
+                row.add_child(ChildView::new(host).finish());
+            }
         }
         if let Some(harness_selector) = self.harness_selector() {
             row.add_child(ChildView::new(harness_selector).finish());

@@ -3772,7 +3772,7 @@ fn test_add_cursor() {
                 .soft_wrap_state()
                 .update(frame_layouts);
 
-            // Add cursors (mimicing cursors added via mouse).
+            // Add cursors (mimicking cursors added via mouse).
             let existing_cursors = vec![
                 DisplayPoint::new(1, 1)..DisplayPoint::new(1, 2),
                 DisplayPoint::new(2, 2)..DisplayPoint::new(2, 3),

@@ -499,6 +499,8 @@ pub enum CLIAgentType {
     Pi,
     Auggie,
     Cursor,
+    Goose,
+    Vibe,
     Unknown,
 }
 
@@ -523,8 +525,8 @@ pub enum NotificationAgentVariant {
 impl From<NotificationSourceAgent> for NotificationAgentVariant {
     fn from(agent: NotificationSourceAgent) -> Self {
         match agent {
-            NotificationSourceAgent::Oz => Self::Oz,
-            NotificationSourceAgent::CLI(cli_agent) => Self::CLIAgent(cli_agent.into()),
+            NotificationSourceAgent::Oz { .. } => Self::Oz,
+            NotificationSourceAgent::CLI { agent, .. } => Self::CLIAgent(agent.into()),
         }
     }
 }
@@ -1043,6 +1045,7 @@ pub enum AIAgentInput {
     MessagesReceivedFromAgents { message_count: usize },
     EventsFromAgents { event_count: usize },
     PassiveSuggestionResult,
+    OrchestrationConfigUpdate,
 }
 
 impl From<FullAIAgentInput> for AIAgentInput {
@@ -1083,6 +1086,7 @@ impl From<FullAIAgentInput> for AIAgentInput {
                 event_count: events.len(),
             },
             FullAIAgentInput::PassiveSuggestionResult { .. } => Self::PassiveSuggestionResult,
+            FullAIAgentInput::OrchestrationConfigUpdate { .. } => Self::OrchestrationConfigUpdate,
         }
     }
 }
@@ -1369,7 +1373,9 @@ pub enum TelemetryEvent {
     /// We attempted to bootstrap an SSH session via the SSH wrapper.  The
     /// argument is the name of the remote shell.
     SSHBootstrapAttempt(String),
-    SSHControlMasterError,
+    SSHControlMasterError {
+        has_remote_server: bool,
+    },
     KeybindingChanged {
         action: String,
         keystroke: Keystroke,
@@ -1892,7 +1898,7 @@ pub enum TelemetryEvent {
 
         /// The server-generated output ID for the output in this block.
         ///
-        /// This is only populated if the some part of the response was succesfully received.
+        /// This is only populated if the some part of the response was successfully received.
         server_output_id: Option<ServerOutputId>,
 
         was_autodetected_ai_query: bool,
@@ -2769,13 +2775,15 @@ pub enum TelemetryEvent {
     CloudAgentCapacityModalUpgradeClicked,
     /// Emitted when a RequestComputerUse action is approved (manually or auto-executed).
     ComputerUseApproved {
-        conversation_id: AIConversationId,
+        client_conversation_id: AIConversationId,
+        server_conversation_id: Option<String>,
         is_autoexecuted: bool,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
     },
     /// Emitted when a RequestComputerUse action is cancelled/rejected.
     ComputerUseCancelled {
-        conversation_id: AIConversationId,
+        client_conversation_id: AIConversationId,
+        server_conversation_id: Option<String>,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
     },
     /// Emitted when a warp://linear deeplink is opened.
@@ -2831,6 +2839,24 @@ pub enum TelemetryEvent {
         installed_binary: bool,
         remote_os: Option<String>,
         remote_arch: Option<String>,
+        /// Short description of the remote libc (e.g. "glibc 2.35",
+        /// "musl", "unknown"). `None` when the preinstall check did
+        /// not run (e.g. macOS hosts).
+        remote_libc: Option<String>,
+    },
+    /// Emitted when the preinstall check classifies the remote host as
+    /// unsupported by the prebuilt remote-server binary, so the controller
+    /// silently falls back to the legacy SSH/`RemoteCommandExecutor`
+    /// flow without surfacing an install prompt.
+    RemoteServerHostUnsupported {
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+        /// Detected libc on the remote host, e.g. `"glibc 2.28"`,
+        /// `"musl"`, `"unknown"`.
+        detected_libc: String,
+        /// Required minimum glibc reported by the script. Empty when
+        /// the unsupported classification was not glibc-related.
+        required_glibc: String,
     },
 }
 
@@ -4106,7 +4132,6 @@ impl TelemetryEvent {
             | TelemetryEvent::SettingsImportResetButtonClicked
             | TelemetryEvent::ITermMultipleHotkeys
             | TelemetryEvent::DriveSharingOnboardingBlockShown
-            | TelemetryEvent::SSHControlMasterError
             | TelemetryEvent::SettingsImportInitiated
             | TelemetryEvent::GrepToolSucceeded
             | TelemetryEvent::FileGlobToolSucceeded
@@ -4119,6 +4144,9 @@ impl TelemetryEvent {
             | TelemetryEvent::GlobalSearchOpened
             | TelemetryEvent::GlobalSearchQueryStarted
             | TelemetryEvent::GetStartedSkipToTerminal => None,
+            TelemetryEvent::SSHControlMasterError { has_remote_server } => Some(json!({
+                "has_remote_server": has_remote_server,
+            })),
             TelemetryEvent::RemoteServerBinaryCheck {
                 found,
                 error,
@@ -4180,11 +4208,24 @@ impl TelemetryEvent {
                 installed_binary,
                 remote_os,
                 remote_arch,
+                remote_libc,
             } => Some(json!({
                 "duration_ms": duration_ms,
                 "installed_binary": installed_binary,
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
+                "remote_libc": remote_libc,
+            })),
+            TelemetryEvent::RemoteServerHostUnsupported {
+                remote_os,
+                remote_arch,
+                detected_libc,
+                required_glibc,
+            } => Some(json!({
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+                "detected_libc": detected_libc,
+                "required_glibc": required_glibc,
             })),
             TelemetryEvent::ConversationListItemOpened { is_ambient_agent } => Some(json!({
                 "is_ambient_agent": is_ambient_agent,
@@ -4506,19 +4547,23 @@ impl TelemetryEvent {
             TelemetryEvent::CloudAgentCapacityModalDismissed => None,
             TelemetryEvent::CloudAgentCapacityModalUpgradeClicked => None,
             TelemetryEvent::ComputerUseApproved {
-                conversation_id,
+                client_conversation_id,
+                server_conversation_id,
                 is_autoexecuted,
                 ambient_agent_task_id,
             } => Some(json!({
-                "conversation_id": conversation_id,
+                "client_conversation_id": client_conversation_id,
+                "server_conversation_id": server_conversation_id,
                 "is_autoexecuted": is_autoexecuted,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
             TelemetryEvent::ComputerUseCancelled {
-                conversation_id,
+                client_conversation_id,
+                server_conversation_id,
                 ambient_agent_task_id,
             } => Some(json!({
-                "conversation_id": conversation_id,
+                "client_conversation_id": client_conversation_id,
+                "server_conversation_id": server_conversation_id,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
             TelemetryEvent::FreeTierLimitHitInterstitialDisplayed => None,
@@ -4620,7 +4665,7 @@ impl TelemetryEvent {
             | TelemetryEvent::LoggedOutStartup
             | TelemetryEvent::DownloadSource(_)
             | TelemetryEvent::SSHBootstrapAttempt(_)
-            | TelemetryEvent::SSHControlMasterError
+            | TelemetryEvent::SSHControlMasterError { .. }
             | TelemetryEvent::KeybindingChanged { .. }
             | TelemetryEvent::KeybindingResetToDefault { .. }
             | TelemetryEvent::KeybindingRemoved { .. }
@@ -4996,7 +5041,8 @@ impl TelemetryEvent {
             | TelemetryEvent::RemoteServerDisconnection { .. }
             | TelemetryEvent::RemoteServerClientRequestError { .. }
             | TelemetryEvent::RemoteServerMessageDecodingError { .. }
-            | TelemetryEvent::RemoteServerSetupDuration { .. } => false,
+            | TelemetryEvent::RemoteServerSetupDuration { .. }
+            | TelemetryEvent::RemoteServerHostUnsupported { .. } => false,
             #[cfg(feature = "local_fs")]
             TelemetryEvent::CodePaneOpened { .. }
             | TelemetryEvent::CodePanelsFileOpened { .. }
@@ -5563,7 +5609,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::RemoteServerDisconnection
             | Self::RemoteServerClientRequestError
             | Self::RemoteServerMessageDecodingError
-            | Self::RemoteServerSetupDuration => {
+            | Self::RemoteServerSetupDuration
+            | Self::RemoteServerHostUnsupported => {
                 EnablementState::Flag(FeatureFlag::SshRemoteServer)
             }
         }
@@ -5969,6 +6016,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerClientRequestError => "RemoteServer.ClientRequestError",
             Self::RemoteServerMessageDecodingError => "RemoteServer.MessageDecodingError",
             Self::RemoteServerSetupDuration => "RemoteServer.SetupDuration",
+            Self::RemoteServerHostUnsupported => "RemoteServer.HostUnsupported",
             #[cfg(windows)]
             Self::WSLRegistryError => "WSL Distribution Registry Error",
             #[cfg(windows)]
@@ -7005,6 +7053,10 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::RemoteServerSetupDuration => {
                 "End-to-end duration of the remote server setup flow"
+            }
+            Self::RemoteServerHostUnsupported => {
+                "Preinstall check classified the remote host as unsupported, \
+                 falling back to the legacy SSH flow"
             }
         }
     }

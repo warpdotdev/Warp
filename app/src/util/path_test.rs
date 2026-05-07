@@ -47,3 +47,47 @@ fn test_resolve_command() {
     // Note the trailing space.
     assert!(resolve_executable("zsh ").is_none());
 }
+
+#[cfg(windows)]
+struct EnvVarGuard {
+    key: &'static str,
+    original: Option<std::ffi::OsString>,
+}
+
+#[cfg(windows)]
+impl EnvVarGuard {
+    fn set(key: &'static str, value: impl Into<std::ffi::OsString>) -> Self {
+        let original = std::env::var_os(key);
+        std::env::set_var(key, value.into());
+        Self { key, original }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        if let Some(original) = &self.original {
+            std::env::set_var(self.key, original);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
+}
+
+#[cfg(windows)]
+#[test]
+#[serial_test::serial]
+fn test_resolve_command_uses_pathext() {
+    use crate::util::path::resolve_executable_in_path;
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let command_path = temp_dir.path().join("codex.cmd");
+    std::fs::write(&command_path, "@echo off\r\n").unwrap();
+
+    let _pathext = EnvVarGuard::set("PATHEXT", ".CMD;.EXE");
+    let resolved = resolve_executable_in_path("codex", temp_dir.path().as_os_str()).unwrap();
+    assert_eq!(
+        resolved.as_ref().to_string_lossy().to_ascii_lowercase(),
+        command_path.to_string_lossy().to_ascii_lowercase()
+    );
+}

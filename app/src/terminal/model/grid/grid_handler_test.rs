@@ -1,3 +1,6 @@
+// The code in this file is adapted from the alacritty_terminal crate under the
+// Apache license; see: crates/warp_terminal/src/model/LICENSE-ALACRITTY.
+
 use std::ops::BitOrAssign;
 
 use warp_terminal::model::char_or_str::CharOrStr;
@@ -1694,6 +1697,87 @@ fn test_clear_screen_above_at_wide_char() {
         .contains(Flags::WIDE_CHAR_SPACER));
 }
 
+fn assert_visible_grid_blank(grid: &GridHandler) {
+    for row in 0..grid.visible_rows() {
+        for col in 0..grid.columns() {
+            assert_eq!(grid.grid_storage()[VisibleRow(row)][col].c, '\0');
+        }
+    }
+}
+
+fn write_two_visible_rows(grid: &mut GridHandler) {
+    grid.input_at_cursor("abc");
+    grid.carriage_return();
+    grid.linefeed();
+    grid.input_at_cursor("def");
+}
+
+#[test]
+fn test_clear_screen_all_primary_preserves_visible_rows_in_history_by_default() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(3, 5, MAX_SCROLL_LIMIT);
+    write_two_visible_rows(&mut grid);
+
+    grid.clear_screen(ansi::ClearMode::All);
+
+    assert!(grid.history_size() > 0);
+    assert_visible_grid_blank(&grid);
+}
+
+#[test]
+fn test_clear_screen_all_primary_with_full_grid_clear_behavior_clears_in_place() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(3, 5, MAX_SCROLL_LIMIT);
+    write_two_visible_rows(&mut grid);
+    grid.enable_full_grid_clear_behavior();
+
+    grid.clear_screen(ansi::ClearMode::All);
+
+    assert_eq!(grid.history_size(), 0);
+    assert_visible_grid_blank(&grid);
+}
+
+#[test]
+fn test_clear_screen_all_alt_screen_clears_in_place() {
+    let mut grid = GridHandler::new_for_alt_screen_test(3, 5);
+    write_two_visible_rows(&mut grid);
+
+    grid.clear_screen(ansi::ClearMode::All);
+
+    assert_eq!(grid.history_size(), 0);
+    assert_visible_grid_blank(&grid);
+}
+
+#[test]
+fn test_resize_primary_preserves_visible_rows_in_history_by_default() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(1, 5, MAX_SCROLL_LIMIT);
+    grid.input_at_cursor("12345");
+
+    grid.resize(SizeInfo::new_without_font_metrics(1, 2));
+
+    assert!(grid.history_size() > 0);
+}
+
+#[test]
+fn test_resize_primary_with_full_grid_clear_behavior_keeps_visible_rows_in_place() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(1, 5, MAX_SCROLL_LIMIT);
+    grid.input_at_cursor("12345");
+    grid.enable_full_grid_clear_behavior();
+    grid.resize(SizeInfo::new_without_font_metrics(1, 2));
+
+    assert_eq!(grid.history_size(), 0);
+}
+
+#[test]
+fn test_resize_finished_primary_with_full_grid_clear_behavior_uses_scrollback() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(1, 5, MAX_SCROLL_LIMIT);
+    grid.input_at_cursor("12345");
+    grid.finish();
+    grid.enable_full_grid_clear_behavior();
+
+    grid.resize(SizeInfo::new_without_font_metrics(1, 2));
+
+    assert!(grid.history_size() > 0);
+}
+
 #[test]
 fn test_clear_line_left_preserves_adjacent_wide_char() {
     // Wide char at cols 2-3, cursor at col 1.  Clearing left should only
@@ -2120,4 +2204,111 @@ fn content_len_equals_len_when_no_trailing_blanks() {
     grid.input_at_cursor("abc");
     let expected = grid.grid_storage().max_cursor_point.row.0 + grid.history_size() + 1;
     assert_eq!(grid.content_len(), expected);
+}
+
+// ─── FullGridClearBehavior::Clear resize + scroll desync ─────────────
+
+#[test]
+fn test_full_grid_clear_resize_then_scroll_does_not_panic_on_row_iteration() {
+    // Regression test for issue with `FullGridClearBehavior`: make sure that
+    // when FullGridClearBehavior::Clear is active, resize_storage
+    // resizes the active GridStorage and the flat storage correctly.
+    // Before, we didn't set 'flat_storage.set_columns(), and subsequent scrolls pushed
+    // wider rows into the narrower flat storage, corrupting the index. Iterating
+    // those rows then panicked.
+    let old_cols = 10;
+    let new_cols = 20;
+    let num_rows = 3;
+
+    let mut grid =
+        GridHandler::new_for_test_with_scroll_limit(num_rows, old_cols, MAX_SCROLL_LIMIT);
+    grid.enable_full_grid_clear_behavior();
+
+    // Resize grid wider.
+    grid.resize(SizeInfo::new_without_font_metrics(num_rows, new_cols));
+
+    // Fill visible rows with new-width content and trigger a scroll so
+    // a wide row gets pushed into narrow flat storage.
+    for _ in 0..num_rows {
+        for c in "abcdefghijklmnopqrst".chars() {
+            grid.input(c);
+        }
+        grid.carriage_return();
+        grid.linefeed();
+    }
+
+    // Iterating flat storage rows should not panic.
+    for row_idx in 0..grid.flat_storage.total_rows() {
+        let _ = grid.flat_storage.rows_from(row_idx).next();
+    }
+}
+
+#[test]
+fn test_full_grid_clear_resize_narrower_then_scroll_does_not_panic() {
+    // Same scenario but resizing to a narrower width.
+    let old_cols = 20;
+    let new_cols = 10;
+    let num_rows = 3;
+
+    let mut grid =
+        GridHandler::new_for_test_with_scroll_limit(num_rows, old_cols, MAX_SCROLL_LIMIT);
+
+    // Fill grid with wide content before enabling Clear behavior.
+    for _ in 0..num_rows {
+        for c in "abcdefghijklmnopqrst".chars() {
+            grid.input(c);
+        }
+        grid.carriage_return();
+        grid.linefeed();
+    }
+
+    grid.enable_full_grid_clear_behavior();
+    grid.resize(SizeInfo::new_without_font_metrics(num_rows, new_cols));
+
+    // Trigger more scrolling with narrow content.
+    for _ in 0..num_rows {
+        for c in "abcdefghij".chars() {
+            grid.input(c);
+        }
+        grid.carriage_return();
+        grid.linefeed();
+    }
+
+    for row_idx in 0..grid.flat_storage.total_rows() {
+        let _ = grid.flat_storage.rows_from(row_idx).next();
+    }
+}
+
+#[test]
+fn test_full_grid_clear_resize_then_bounds_to_string_does_not_panic() {
+    // End-to-end repro via the same code path as block_snapshot:
+    // bounds_to_string → line_to_string → row() → RowIterator::next.
+    let old_cols = 10;
+    let new_cols = 20;
+    let num_rows = 3;
+
+    let mut grid =
+        GridHandler::new_for_test_with_scroll_limit(num_rows, old_cols, MAX_SCROLL_LIMIT);
+    grid.enable_full_grid_clear_behavior();
+    grid.resize(SizeInfo::new_without_font_metrics(num_rows, new_cols));
+
+    for _ in 0..num_rows {
+        for c in "abcdefghijklmnopqrst".chars() {
+            grid.input(c);
+        }
+        grid.carriage_return();
+        grid.linefeed();
+    }
+
+    let total = grid.total_rows();
+    if total > 0 {
+        let _ = grid.bounds_to_string(
+            Point::new(0, 0),
+            Point::new(total - 1, grid.columns().saturating_sub(1)),
+            false,
+            RespectObfuscatedSecrets::No,
+            false,
+            RespectDisplayedOutput::No,
+        );
+    }
 }
