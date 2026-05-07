@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use instant::Instant;
 use pathfinder_geometry::vector::Vector2F;
 use ui_components::{lightbox, Component as _};
 use warpui::assets::asset_cache::{AssetCache, AssetSource, AssetState};
@@ -63,6 +64,13 @@ pub struct LightboxView {
     params: LightboxParams,
     current_index: usize,
     lightbox: lightbox::Lightbox,
+    /// GH9729 §697: timeline anchor for the currently-displayed image's
+    /// animated GIF/WebP playback. Reset to `Instant::now()` whenever
+    /// the displayed image changes (construction, params replacement,
+    /// arrow-key navigation) so each entry's loop starts from frame 0.
+    /// Static images ignore this; the Image element only consults
+    /// `started_at` when there's an animated payload.
+    animation_start_time: Instant,
 }
 
 impl LightboxView {
@@ -74,6 +82,7 @@ impl LightboxView {
             params,
             current_index: initial_index,
             lightbox: lightbox::Lightbox::default(),
+            animation_start_time: Instant::now(),
         };
         view.start_asset_loads(ctx);
         view
@@ -86,6 +95,7 @@ impl LightboxView {
             .min(params.images.len().saturating_sub(1));
         self.params = params;
         self.current_index = initial_index;
+        self.animation_start_time = Instant::now();
         self.start_asset_loads(ctx);
     }
 
@@ -261,6 +271,7 @@ impl View for LightboxView {
                     ctx.dispatch_typed_action(LightboxViewAction::Dismiss);
                 }),
                 current_image_native_size,
+                animation_start_time: Some(self.animation_start_time),
                 options: lightbox::Options {
                     dismiss_keystroke: Keystroke::parse("escape").ok(),
                     on_navigate: Some(Arc::new(|direction, ctx, _| match direction {
@@ -288,12 +299,17 @@ impl TypedActionView for LightboxView {
             LightboxViewAction::NavigatePrevious => {
                 if self.current_index > 0 {
                     self.current_index -= 1;
+                    // GH9729 §697: restart the animation timeline on
+                    // navigation so the newly-focused image plays from
+                    // frame 0 rather than mid-loop.
+                    self.animation_start_time = Instant::now();
                     ctx.notify();
                 }
             }
             LightboxViewAction::NavigateNext => {
                 if self.current_index + 1 < self.params.images.len() {
                     self.current_index += 1;
+                    self.animation_start_time = Instant::now();
                     ctx.notify();
                 }
             }

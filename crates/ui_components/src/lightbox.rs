@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use instant::Instant;
 use pathfinder_geometry::vector::{Vector2F, vec2f};
 use warp_core::ui::{Icon, appearance::Appearance};
 use warpui::{
@@ -89,6 +90,17 @@ pub struct Params<'a> {
     /// indicator instead.
     pub current_image_native_size: Option<Vector2F>,
 
+    /// GH9729 §697: timeline anchor for animated GIF/WebP frame progression.
+    /// When `Some`, the rendered `Image` is wired with
+    /// `enable_animation_with_start_time`, driving continuous playback via
+    /// the implicit per-frame `ctx.repaint_after` loop in
+    /// `Image::paint_animated_image`. When `None`, the image renders the
+    /// first frame only (legacy behaviour, kept for callers that don't
+    /// want animation, e.g. inert example/test surfaces).
+    ///
+    /// Static images ignore this field entirely.
+    pub animation_start_time: Option<Instant>,
+
     /// Optional configuration for the lightbox.
     pub options: Options,
 }
@@ -157,9 +169,18 @@ impl Component for Lightbox {
             match (current_source, params.current_image_native_size) {
                 // Image source resolved AND native size known → render the image.
                 (Some(LightboxImageSource::Resolved { asset_source }), Some(native_size)) => {
+                    // GH9729 §697: opt into continuous animated playback when
+                    // the caller supplied a timeline anchor. The Image
+                    // element's `paint_animated_image` schedules its own
+                    // per-frame redraw via `ctx.repaint_after`, so no
+                    // explicit timer or task is needed at this layer.
+                    let mut image_builder =
+                        Image::new(asset_source.clone(), CacheOption::Original).contain();
+                    if let Some(start) = params.animation_start_time {
+                        image_builder = image_builder.enable_animation_with_start_time(start);
+                    }
                     let image = ConstrainedBox::new(
-                        Image::new(asset_source.clone(), CacheOption::Original)
-                            .contain()
+                        image_builder
                             .before_load(Align::new(loading_element(appearance)).finish())
                             .finish(),
                     )

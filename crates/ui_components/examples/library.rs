@@ -563,6 +563,7 @@ impl RootView {
                     ctx.dispatch_typed_action(Action::CloseLightbox);
                 }),
                 current_image_native_size,
+                animation_start_time: None,
                 options: lightbox::Options {
                     dismiss_keystroke: Some(warpui::keymap::Keystroke {
                         key: "escape".to_string(),
@@ -596,6 +597,7 @@ impl RootView {
                     ctx.dispatch_typed_action(Action::CloseLightbox);
                 }),
                 current_image_native_size,
+                animation_start_time: None,
                 options: lightbox::Options {
                     dismiss_keystroke: Some(warpui::keymap::Keystroke {
                         key: "escape".to_string(),

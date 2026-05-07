@@ -13717,6 +13717,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "asset_cache",
+ "instant",
  "pathfinder_color",
  "pathfinder_geometry",
  "rust-embed 8.7.2",

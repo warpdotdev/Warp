@@ -48,10 +48,14 @@ Hard rules:
        site (`app/src/ai/artifacts/mod.rs:362-365`) so screenshot fetch
        failures use `Error` instead of `Loading + "Failed to load"`. —
        `tech.md` §696
-- [ ] **t2-6.** Animated GIF/WebP continuous playback. Wire
+- [x] **t2-6.** Animated GIF/WebP continuous playback. Wire
        `Image::enable_animation_with_start_time(Instant)` into the Lightbox
-       image element; drive a per-frame redraw on the focused entry. Adds
-       a basic play/pause control as a follow-on sub-step. — `tech.md` §697
+       image element; drive a per-frame redraw on the focused entry. The
+       play/pause sub-layer is deferred — see Deferred R2 follow-ups
+       below — because GPUI's `Image` element has no
+       `paused_at`/freeze-elapsed primitive today, so a real (continuity-
+       preserving) pause needs an upstream API addition rather than a
+       call-site hack. — `tech.md` §697
 - [ ] **t2-7.** Zoom and pan. Extend `lightbox::Params` with zoom/pan state;
        add `+`, `-`, `0`, drag-to-pan keybindings in `lightbox_view.rs`. —
        `tech.md` §698
@@ -74,7 +78,7 @@ Hard rules:
 |---|------|-------------|------|----|----|
 | t2-4 | `Unrecognized` → `Err` globally | `7780d31` | [x] | [x] | [x] |
 | t2-5 | adopt `Error` at artifacts call site | `5a8072a` | [x] | [x] | [x] |
-| t2-6 | animated playback (+ play/pause) | | [ ] | [ ] | [ ] |
+| t2-6 | animated playback (continuous; pause deferred) | _pending_ | [x] | [ ] | [ ] |
 | t2-7 | zoom and pan | | [ ] | [ ] | [ ] |
 | t2-8 | status footer | | [ ] | [ ] | [ ] |
 | t2-9 | EXIF orientation + ICC | | [ ] | [ ] | [ ] |
@@ -99,6 +103,18 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   "could not detect" branch sits ahead of the generic
   "decode/format" branch — a swap regression would silently widen
   the bucket. — `reviews/tier2-t2-4-r2.md`.
+- **t2-6-pause.** Play/pause control for the lightbox's animated
+  playback. Real pause-resume needs `Image` (GPUI element in
+  `crates/warpui_core/src/elements/image.rs`) to expose either a
+  `paused_at: Option<Instant>` field or a frozen-elapsed-millis
+  parameter so `paint_animated_image` can hold the current frame
+  without skipping `ctx.repaint_after`. The two call-site-only
+  workarounds (rebuild `started_at = now() - paused_elapsed`, or
+  drop `enable_animation_with_start_time` while paused) either
+  silently keep advancing the frame or jump back to frame 0 on
+  resume — neither is acceptable as v1.x UX. Belongs in a separate
+  PR that touches the GPUI element first; tracked as a sub-bullet
+  here so t2-6 can land its primary deliverable.
 - **t2-5-r2.** (1) Categorical `LightboxImageSource::Error` messages
   now live in two modules (`lightbox_view.rs::sanitize_load_error`
   plus the artifacts call site); consider a shared catalog once the
