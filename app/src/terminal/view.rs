@@ -2007,13 +2007,13 @@ pub enum Event {
     /// 3-dot menu in the orchestration pill bar. Bubbles up to
     /// `PaneGroup`, which reuses the existing dedicated child agent pane
     /// (see [`PaneGroup::unhide_child_agent_pane_for_split_off`]) instead
-    /// of creating a fresh one: the child's `TerminalView` has been
-    /// receiving its own block stream all along (it was created up front
-    /// when the orchestrator spawned the child), so revealing it as a
-    /// sibling of the orchestrator preserves in-flight commands and the
-    /// full transcript. Creating a fresh view here would clone the
+    /// of creating a fresh one: creating a fresh view would clone the
     /// conversation into a second pane and cancel any in-flight commands
-    /// running in the original.
+    /// running in the original. Reusing the existing child pane keeps
+    /// in-flight commands running and the full transcript intact — the
+    /// child's `TerminalView` has been receiving its own block stream
+    /// all along (it was created up front when the orchestrator
+    /// spawned the child).
     OpenChildAgentInNewPane {
         conversation_id: AIConversationId,
     },
@@ -4609,23 +4609,43 @@ impl TerminalView {
     }
 
     /// If the active conversation is a child agent (has a
-    /// `parent_conversation_id`), emit a `SwapPaneToConversation` event
-    /// targeting the parent and return `true`. The pane group then makes
-    /// the parent's pane visible in the focused slot rather than exiting
-    /// agent view in place — a child agent's `TerminalView` is just a
-    /// vehicle for the AI conversation and has no meaningful shell to
-    /// fall back into. Both the ESC keypress and the agent-view back
-    /// button ("for Orchestrator") route through here so the visible
-    /// affordance and the action match. Returns `false` for
-    /// non-child-agent conversations so the caller can run the normal
-    /// exit-agent-view flow.
+    /// `parent_conversation_id`), navigate to the parent and return
+    /// `true`. The pane group then makes the parent's pane visible in
+    /// the focused slot rather than exiting agent view in place — a
+    /// child agent's `TerminalView` is just a vehicle for the AI
+    /// conversation and has no meaningful shell to fall back into.
+    /// Both the ESC keypress and the agent-view back button ("for
+    /// Orchestrator") route through here so the visible affordance and
+    /// the action match. Returns `false` for non-child-agent
+    /// conversations so the caller can run the normal exit-agent-view
+    /// flow.
+    ///
+    /// We dispatch [`WorkspaceAction::FocusTerminalViewInWorkspace`]
+    /// when the parent's owning `TerminalView` is known to the history
+    /// model. The workspace handler routes through
+    /// [`crate::pane_group::PaneGroup::reveal_and_focus_pane`], which
+    /// transparently handles all three relevant cases:
+    ///   * same-tab swap target (orchestrator hidden as a TempRepl
+    ///     original): reverts the swap so the orchestrator returns to
+    ///     its slot;
+    ///   * same-tab visible parent (e.g. orchestrator already split
+    ///     off): just focuses the parent's pane;
+    ///   * cross-tab parent (parent was opened in another tab via
+    ///     "Open in new tab"): switches to that tab and focuses there.
+    ///
+    /// As a fallback, if no `TerminalView` canonically owns the parent
+    /// (e.g. the parent's pane was closed but a child agent pane still
+    /// references the conversation), emit
+    /// [`Event::SwapPaneToConversation`] so the local pane group can
+    /// lazily reveal a hidden orchestrator pane via
+    /// [`crate::pane_group::PaneGroup::swap_active_pane_to_conversation`].
     ///
     /// Importantly, this check runs *before* `can_exit_agent_view_for_terminal_view`
     /// gating: a long-running child agent cannot "exit" in place anyway,
     /// but the user still expects ESC / the back button to navigate them
     /// to the orchestrator. Gating on `can_exit` first would silently
     /// turn both into no-ops in the common case.
-    fn try_navigate_to_parent_conversation(&self, ctx: &mut ViewContext<Self>) -> bool {
+    fn try_navigate_to_parent_conversation(&mut self, ctx: &mut ViewContext<Self>) -> bool {
         if !FeatureFlag::AgentView.is_enabled() {
             return false;
         }
@@ -4637,15 +4657,28 @@ impl TerminalView {
         let Some(active_conv_id) = active_conv_id else {
             return false;
         };
-        let parent_id = BlocklistAIHistoryModel::as_ref(ctx)
+        let history = BlocklistAIHistoryModel::as_ref(ctx);
+        let parent_id = history
             .conversation(&active_conv_id)
             .and_then(|c| c.parent_conversation_id());
         let Some(parent_id) = parent_id else {
             return false;
         };
-        ctx.emit(Event::SwapPaneToConversation {
-            conversation_id: parent_id,
-        });
+        let parent_terminal_view_id = history.terminal_view_id_for_conversation(&parent_id);
+
+        if let Some(parent_terminal_view_id) = parent_terminal_view_id {
+            // Defer the dispatch so it runs after any in-flight event
+            // handling on this view completes — matches the pattern used
+            // for cross-pane-group navigation in
+            // `EnterAgentBlockAction::EnterAgentMode`.
+            ctx.dispatch_typed_action_deferred(WorkspaceAction::FocusTerminalViewInWorkspace {
+                terminal_view_id: parent_terminal_view_id,
+            });
+        } else {
+            ctx.emit(Event::SwapPaneToConversation {
+                conversation_id: parent_id,
+            });
+        }
         true
     }
 

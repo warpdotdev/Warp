@@ -4826,6 +4826,28 @@ impl PaneGroup {
         }
     }
 
+    /// Revert the temporary-replacement entry whose replacement pane is
+    /// `replacement_id` and clear any orchestration split-off marker on
+    /// the replacement's `TerminalView`. The split-off marker clear is
+    /// defensive: it is normally set only on panes split off via "Open
+    /// in new pane", but the Case-C scenario described in
+    /// [`Self::close_pane`] (a split-off pane that was later swapped
+    /// over by a sibling pill click) can leave it set on a pane that is
+    /// about to return to off-tree state, where it would otherwise
+    /// cause future reveals to render breadcrumbs instead of pills.
+    fn revert_swap_clearing_split_off(
+        &mut self,
+        replacement_id: PaneId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if let Some(terminal_view) = self.terminal_view_from_pane_id(replacement_id, ctx) {
+            terminal_view.update(ctx, |view, ctx| {
+                view.clear_orchestration_split_off(ctx);
+            });
+        }
+        self.panes.revert_temporary_replacement(replacement_id);
+    }
+
     /// Reveal `pane_id` if it's currently the *original* of an active
     /// `TemporaryReplacement` (i.e. another pane is occupying its tree
     /// slot via swap), then focus it. Used by cross-tab navigation paths
@@ -4837,19 +4859,38 @@ impl PaneGroup {
     /// off-tree original and leave the user staring at the (still
     /// visible) replacement, with focus stuck on a pane the user can't
     /// see or reach.
+    ///
+    /// If `pane_id` is neither in the layout tree nor the original of an
+    /// active swap, this method falls through to `focus_pane_by_id` and
+    /// logs a warning: focus will land on a pane that has no visible
+    /// slot, which is a bug in the caller (cross-tab paths should only
+    /// resolve to in-tree or swap-hidden panes).
     pub fn reveal_and_focus_pane(&mut self, pane_id: PaneId, ctx: &mut ViewContext<Self>) {
         if let Some(replacement_id) = self.panes.replacement_pane_for_original(pane_id) {
-            // Clear the split-off marker on whatever was swapped in so
-            // a subsequent reveal renders pills rather than breadcrumbs.
-            if let Some(terminal_view) = self.terminal_view_from_pane_id(replacement_id, ctx) {
-                terminal_view.update(ctx, |view, ctx| {
-                    view.clear_orchestration_split_off(ctx);
-                });
-            }
-            self.panes.revert_temporary_replacement(replacement_id);
+            self.revert_swap_clearing_split_off(replacement_id, ctx);
             self.handle_pane_count_change(ctx);
+            // The visible content of this tree slot just changed from
+            // the replacement back to the original. Refresh the
+            // agent-view back-button label on both panes — its label
+            // depends on whether the active conversation is a child
+            // agent and is normally only computed when the pane enters
+            // agent view, so a stale label would otherwise persist on
+            // the now-visible original until something else triggers a
+            // refresh. Mirrors the explicit refresh in
+            // [`Self::swap_active_pane_to_conversation`].
+            for refresh_pane_id in [pane_id, replacement_id] {
+                if let Some(terminal_view) = self.terminal_view_from_pane_id(refresh_pane_id, ctx) {
+                    terminal_view.update(ctx, |view, ctx| {
+                        view.update_agent_view_back_button_state(ctx);
+                    });
+                }
+            }
             ctx.emit(Event::TerminalViewStateChanged);
             ctx.emit(Event::AppStateChanged);
+        } else if !self.panes.is_pane_in_tree(pane_id) {
+            log::warn!(
+                "reveal_and_focus_pane: pane {pane_id:?} is off-tree and is not the original of an active TemporaryReplacement; focus will land on a non-visible pane"
+            );
         }
         self.focus_pane_by_id(pane_id, ctx);
     }
@@ -6839,16 +6880,7 @@ impl PaneGroup {
             if let Some(replacement_pane_id) =
                 self.panes.replacement_pane_for_original(parent_pane_id)
             {
-                // Clear the split-off marker on whatever was swapped in
-                // so a future pill click renders pills, not breadcrumbs.
-                if let Some(terminal_view) =
-                    self.terminal_view_from_pane_id(replacement_pane_id, ctx)
-                {
-                    terminal_view.update(ctx, |view, ctx| {
-                        view.clear_orchestration_split_off(ctx);
-                    });
-                }
-                self.panes.revert_temporary_replacement(replacement_pane_id);
+                self.revert_swap_clearing_split_off(replacement_pane_id, ctx);
             }
             parent_pane_id
         } else {
