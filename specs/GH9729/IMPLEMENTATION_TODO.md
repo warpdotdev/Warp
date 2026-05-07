@@ -125,7 +125,7 @@ Notes are written to `specs/GH9729/reviews/<item>-r<N>.md`.
 | 4c | SVG content-sanity gate + intrinsic-dimension cap | `294fa95` | [x] | [x] |
 | 4-tests-a | static-raster + SVG decoder tests | `abab042` | [x] | [x] |
 | 4-tests-b | animated decoder tests | `57be862` | [x] | [x] |
-| 5a | bounded `LocalFile` asset-cache read | `e338655` | [ ] | [ ] |
+| 5a | bounded `LocalFile` asset-cache read | `e338655` | [x] | [x] |
 | 5b | post-load callback rewrites failures to `Error` | `d5fdacc` | [ ] | [ ] |
 | 5-tests | asset-cache tests | `4ed1e80` | [ ] | [ ] |
 | 7 | telemetry serialization test | `ec6ffb1` | [ ] | [ ] |
