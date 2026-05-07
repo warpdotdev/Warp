@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use warpui::text_layout;
 
-use crate::editor::{view::DisplayPoint, Point};
+use crate::editor::{Point, view::DisplayPoint};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct SoftWrapPoint(Point);
@@ -56,7 +56,9 @@ impl SoftWrapState {
         let frame_layouts = self.0.lock();
         match &*frame_layouts {
             Some(frame_layouts) => callback(Ok(frame_layouts)),
-            None => callback(Err(anyhow!("No frame layout. This should only happen if we attempt to read before a frame of the editor has been laid out"))),
+            None => callback(Err(anyhow!(
+                "No frame layout. This should only happen if we attempt to read before a frame of the editor has been laid out"
+            ))),
         }
     }
 }
@@ -171,14 +173,10 @@ impl FrameLayouts {
             acc_lines += frame.lines().len()
         }
         if let Some(line) = self.get_line(point.row() as usize) {
-            if let Some(glyph) = line.last_glyph() {
-                if point.column() as usize == glyph.index + 1 {
-                    clamp_direction = ClampDirection::Up;
-                }
-            } else if let Some(glyph) = line.first_glyph() {
-                if point.column() as usize == glyph.index {
-                    clamp_direction = ClampDirection::Down;
-                }
+            if point.column() as usize == line.end_index() {
+                clamp_direction = ClampDirection::Up;
+            } else if point.column() as usize == line.first_index() {
+                clamp_direction = ClampDirection::Down;
             }
         }
 
