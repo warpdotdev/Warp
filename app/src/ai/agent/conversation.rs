@@ -218,7 +218,7 @@ pub struct AIConversation {
     parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     agent_name: Option<String>,
-    /// Harness used to render the child agent's shared agent/logo icon in orchestration UI.
+    /// Harness metadata associated with this child agent in orchestration flows.
     orchestration_harness_type: Option<String>,
     /// The local conversation ID of the parent that spawned this child, if any.
     parent_conversation_id: Option<AIConversationId>,

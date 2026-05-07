@@ -200,7 +200,7 @@ fn agent_display_name_from_id_returns_orchestrator_label() {
         let actual = app.read(|ctx| {
             agent_display_name_from_id("orchestrator-agent-id", Some("orchestrator-agent-id"), ctx)
         });
-        assert_eq!(actual, "Orchestrator agent");
+        assert_eq!(actual, "Orchestrator");
     });
 }
 
@@ -214,7 +214,7 @@ fn agent_display_name_from_id_returns_unknown_fallback() {
     });
 }
 #[test]
-fn participant_for_agent_id_uses_child_agent_harness_icon() {
+fn participant_for_agent_id_uses_pill_style_child_agent_avatar() {
     App::test((), |mut app| async move {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
         history_model.update(&mut app, |history_model, ctx| {
@@ -244,12 +244,7 @@ fn participant_for_agent_id_uses_child_agent_harness_icon() {
         assert_eq!(actual.display_name, "Agent 1");
         assert_eq!(
             actual.avatar,
-            OrchestrationAvatar::agent(
-                "Agent 1".to_string(),
-                Harness::Claude,
-                ConversationStatus::InProgress,
-                false
-            )
+            OrchestrationAvatar::agent("Agent 1".to_string())
         );
     });
 }
@@ -258,12 +253,7 @@ fn participant_for_agent_id_uses_child_agent_harness_icon() {
 fn transcript_metadata_uses_transcript_copy_without_technical_labels() {
     let recipients = vec![OrchestrationParticipant {
         display_name: "Agent 1".to_string(),
-        avatar: OrchestrationAvatar::agent(
-            "Agent 1".to_string(),
-            Harness::Oz,
-            ConversationStatus::InProgress,
-            false,
-        ),
+        avatar: OrchestrationAvatar::agent("Agent 1".to_string()),
     }];
 
     let metadata = transcript_metadata(&recipients, "Fix tests").expect("metadata");
@@ -294,12 +284,7 @@ fn transcript_metadata_preserves_non_orchestrator_recipients() {
         OrchestrationParticipant::orchestrator(),
         OrchestrationParticipant {
             display_name: "Agent 1".to_string(),
-            avatar: OrchestrationAvatar::agent(
-                "Agent 1".to_string(),
-                Harness::Oz,
-                ConversationStatus::InProgress,
-                false,
-            ),
+            avatar: OrchestrationAvatar::agent("Agent 1".to_string()),
         },
     ];
 

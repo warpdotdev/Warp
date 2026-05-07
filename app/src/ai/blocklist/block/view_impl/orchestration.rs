@@ -1,7 +1,6 @@
 //! Rendering functions for orchestration-related output items (messaging & agent management).
 
 use pathfinder_color::ColorU;
-use warp_cli::agent::Harness;
 use warpui::elements::{
     ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable,
     MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
@@ -54,7 +53,7 @@ struct OrchestrationParticipant {
 impl OrchestrationParticipant {
     fn orchestrator() -> Self {
         Self {
-            display_name: "Orchestrator agent".to_string(),
+            display_name: "Orchestrator".to_string(),
             avatar: OrchestrationAvatar::Orchestrator,
         }
     }
@@ -62,12 +61,7 @@ impl OrchestrationParticipant {
     fn unknown_child() -> Self {
         Self {
             display_name: "Unknown agent".to_string(),
-            avatar: OrchestrationAvatar::agent(
-                "Unknown agent".to_string(),
-                Harness::Unknown,
-                ConversationStatus::InProgress,
-                false,
-            ),
+            avatar: OrchestrationAvatar::agent("Unknown agent".to_string()),
         }
     }
 
@@ -123,18 +117,10 @@ fn participant_for_conversation(
         return OrchestrationParticipant::orchestrator();
     }
 
-    let harness = conversation
-        .orchestration_harness()
-        .unwrap_or(Harness::Unknown);
     let display_name = conversation.agent_name().unwrap_or("Agent").to_string();
     OrchestrationParticipant {
         display_name: display_name.clone(),
-        avatar: OrchestrationAvatar::agent(
-            display_name,
-            harness,
-            conversation.status().clone(),
-            conversation.is_remote_child(),
-        ),
+        avatar: OrchestrationAvatar::agent(display_name),
     }
 }
 

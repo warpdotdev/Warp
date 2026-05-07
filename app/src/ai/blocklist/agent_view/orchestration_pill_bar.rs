@@ -1,5 +1,5 @@
 //! Renders a horizontal pill bar in the agent view header containing the
-//! orchestrator agent and any child agents spawned by it. Clicking a pill
+//! orchestrator and any child agents spawned by it. Clicking a pill
 //! switches the active pane to that agent's conversation.
 //!
 //! V1 scope: avatars (deterministic color + initial), pill labels, click to
@@ -83,6 +83,38 @@ fn pill_initial(name: &str) -> char {
         .next()
         .map(|c| c.to_ascii_uppercase())
         .unwrap_or('A')
+}
+/// Renders the orchestrator avatar disc shared by pill, breadcrumb, and transcript
+/// surfaces.
+pub(super) fn render_orchestrator_avatar_disc(
+    size: f32,
+    theme: &WarpTheme,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    render_avatar_disc(
+        theme.ansi_fg_cyan(),
+        AvatarGlyph::Icon(Icon::Oz),
+        size,
+        theme,
+        appearance,
+    )
+}
+
+/// Renders a child-agent avatar using the same deterministic-color + initial-letter
+/// treatment as the orchestration pill bar.
+pub(super) fn render_agent_avatar_disc(
+    name: &str,
+    size: f32,
+    theme: &WarpTheme,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    render_avatar_disc(
+        pill_avatar_color(name, theme),
+        AvatarGlyph::Letter(pill_initial(name)),
+        size,
+        theme,
+        appearance,
+    )
 }
 
 /// What kind of pill we are rendering, which determines click behavior.
@@ -565,9 +597,7 @@ impl OrchestrationPillBar {
 pub fn render_static_agent_pill(name: &str, app: &AppContext) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
-    let avatar_color = pill_avatar_color(name, theme);
-    let avatar_glyph = AvatarGlyph::Letter(pill_initial(name));
-    let avatar = render_avatar_disc(avatar_color, avatar_glyph, theme, appearance);
+    let avatar = render_agent_avatar_disc(name, AVATAR_SIZE, theme, appearance);
     let label_text = Text::new(name.to_string(), appearance.ui_font_family(), 12.)
         .with_color(internal_colors::text_main(theme, theme.background()))
         .soft_wrap(false)
@@ -982,9 +1012,12 @@ fn render_hover_card(
     // (mapped to icon+color via `status_icon_and_color`) to drive the
     // badge so the card matches the colors used elsewhere in the agent
     // details panel.
-    let avatar_color = pill_avatar_color(&name, theme);
-    let avatar_glyph = AvatarGlyph::Letter(pill_initial(&name));
-    let avatar = render_avatar_disc(avatar_color, avatar_glyph, theme, appearance);
+    let is_orchestrator = conversation.parent_conversation_id().is_none();
+    let avatar = if is_orchestrator {
+        render_orchestrator_avatar_disc(AVATAR_SIZE, theme, appearance)
+    } else {
+        render_agent_avatar_disc(&name, AVATAR_SIZE, theme, appearance)
+    };
     let name_text = Text::new(
         name,
         appearance.ui_font_family(),
@@ -1005,7 +1038,6 @@ fn render_hover_card(
     // the orchestration as a whole. Until we plumb an aggregated
     // child-status accessor we hide the badge for the orchestrator pill
     // — child pills still show the (per-child accurate) badge.
-    let is_orchestrator = conversation.parent_conversation_id().is_none();
     // Cap the badge at a fixed width so it can't shove the name out of
     // the card. Slightly larger than the longest expected status label
     // ("In progress") plus its icon and padding.
@@ -1390,7 +1422,7 @@ fn render_pill(
                 .with_height(AVATAR_SIZE)
                 .finish()
         } else {
-            render_avatar_disc(avatar_color, avatar_glyph, theme, appearance)
+            render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance)
         };
 
         // Body row contains just the avatar + label — the 3-dot button
@@ -1593,22 +1625,24 @@ fn render_overflow_button(
 fn render_avatar_disc(
     avatar_color: ColorU,
     glyph: AvatarGlyph,
+    size: f32,
     theme: &WarpTheme,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let disc = ConstrainedBox::new(
         Container::new(Empty::new().finish())
             .with_background_color(avatar_color)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(AVATAR_SIZE / 2.)))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(size / 2.)))
             .finish(),
     )
-    .with_width(AVATAR_SIZE)
-    .with_height(AVATAR_SIZE)
+    .with_width(size)
+    .with_height(size)
     .finish();
+    let glyph_size = size * 0.625;
 
     let glyph_element: Box<dyn Element> = match glyph {
         AvatarGlyph::Letter(letter) => {
-            Text::new(letter.to_string(), appearance.ui_font_family(), 10.)
+            Text::new(letter.to_string(), appearance.ui_font_family(), glyph_size)
                 .with_color(theme.background().into_solid())
                 .with_style(Properties {
                     weight: Weight::Bold,
@@ -1618,8 +1652,8 @@ fn render_avatar_disc(
         }
         AvatarGlyph::Icon(icon) => {
             ConstrainedBox::new(icon.to_warpui_icon(theme.background()).finish())
-                .with_width(10.)
-                .with_height(10.)
+                .with_width(glyph_size)
+                .with_height(glyph_size)
                 .finish()
         }
     };
@@ -1642,8 +1676,8 @@ fn render_avatar_disc(
             )
             .finish(),
     )
-    .with_width(AVATAR_SIZE)
-    .with_height(AVATAR_SIZE)
+    .with_width(size)
+    .with_height(size)
     .finish();
 
     Stack::new()
@@ -2069,7 +2103,7 @@ fn build_crumb_inner(
     .with_clip(ClipConfig::ellipsis())
     .finish();
 
-    let avatar = render_avatar_disc(avatar_color, avatar_glyph, theme, appearance);
+    let avatar = render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance);
 
     let row = Flex::row()
         .with_main_axis_alignment(MainAxisAlignment::Center)
