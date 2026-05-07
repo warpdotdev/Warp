@@ -185,6 +185,11 @@ impl WorkingDirectoriesModel {
 
         let diff_state_model = ctx.add_model(|ctx| DiffStateModel::new(key.clone(), ctx));
 
+        debug_assert_eq!(
+            matches!(key, UniversalPath::Local(_)),
+            diff_state_model.as_ref(ctx).is_local(),
+            "UniversalPath variant must match DiffStateModel backend",
+        );
         self.diff_state_models.insert(key, diff_state_model.clone());
 
         Some(diff_state_model)

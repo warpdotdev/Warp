@@ -20,7 +20,7 @@ cfg_if::cfg_if! {
 }
 #[cfg(not(target_arch = "wasm32"))]
 use warpui::AppContext;
-use warpui::{r#async::SpawnedFutureHandle, ModelContext, ModelHandle};
+use warpui::{r#async::SpawnedFutureHandle, ModelContext};
 
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::features::FeatureFlag;
@@ -52,11 +52,7 @@ cfg_if::cfg_if! {
             RepoMetadataError, Repository, RepositoryUpdate,
         };
         use async_channel::Sender;
-        use warpui::SingletonEntity;
-    }
-    else {
-        // ModelHandle already imported unconditionally above;
-        // warpui::ModelHandle used by LocalDiffStateModel fields on all targets.
+        use warpui::{ModelHandle, SingletonEntity};
     }
 }
 #[cfg(all(feature = "local_fs", feature = "local_tty"))]
@@ -2881,7 +2877,7 @@ impl LocalDiffStateModel {
         GitFileStatus::try_from(status_code)
     }
 
-    /// Fetches PR info
+    /// Fetches PR info for the current branch via `gh pr view` (network call).
     /// Call this on branch change or after push — not on every metadata refresh.
     #[cfg(feature = "local_fs")]
     pub fn refresh_pr_info(&mut self, ctx: &mut ModelContext<Self>) {

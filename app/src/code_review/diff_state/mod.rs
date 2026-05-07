@@ -99,6 +99,11 @@ impl DiffStateModel {
 
     // ── Unified read API ─────────────────────────────────────────────
 
+    /// Returns `true` when the backend is a local diff state model.
+    pub(crate) fn is_local(&self) -> bool {
+        matches!(self.inner, DiffStateBackend::Local(_))
+    }
+
     pub(crate) fn get(&self, ctx: &AppContext) -> DiffState {
         match &self.inner {
             DiffStateBackend::Local(m) => m.as_ref(ctx).get(),
@@ -188,39 +193,6 @@ impl DiffStateModel {
             DiffStateBackend::Local(m) => m.as_ref(ctx).has_head(),
             DiffStateBackend::Remote(m) => m.as_ref(ctx).has_head(),
         }
-    }
-
-    pub async fn get_all_branches(
-        repo_path: &Path,
-        max_branch_count: Option<usize>,
-        include_remotes: bool,
-    ) -> Result<Vec<(String, bool)>> {
-        LocalDiffStateModel::get_all_branches(repo_path, max_branch_count, include_remotes).await
-    }
-
-    pub async fn get_all_branches_with_known_main(
-        repo_path: &Path,
-        main_branch: &str,
-        max_branch_count: Option<usize>,
-        include_remotes: bool,
-    ) -> Result<Vec<(String, bool)>> {
-        LocalDiffStateModel::get_all_branches_with_known_main(
-            repo_path,
-            main_branch,
-            max_branch_count,
-            include_remotes,
-        )
-        .await
-    }
-
-    pub fn sort_branches_main_first(
-        branches: &[(String, bool)],
-    ) -> impl Iterator<Item = &(String, bool)> {
-        LocalDiffStateModel::sort_branches_main_first(branches)
-    }
-
-    pub(crate) fn parse_unified_diff_header(header_line: &str) -> Result<UnifiedDiffHeader> {
-        LocalDiffStateModel::parse_unified_diff_header(header_line)
     }
 
     // ── Unified write API ────────────────────────────────────────────
@@ -315,9 +287,51 @@ impl DiffStateModel {
     }
 
     // ── Local-only operations ─────────────────────────────────────────
-    // These are inherently local: `stop_active_watcher` manages a local
-    // filesystem watcher, and the static helpers run git commands directly
-    // against a local repo path. None of these have remote equivalents.
+    // These are inherently local and delegate directly to `LocalDiffStateModel`
+    // without dispatching through the backend enum. They operate on local repo
+    // paths, run git CLI commands, or parse raw git output — none of which
+    // apply to remote repositories. Remote equivalents will use server-side
+    // APIs instead.
+
+    /// Lists branches by running `git branch` against a local repo path.
+    pub async fn get_all_branches(
+        repo_path: &Path,
+        max_branch_count: Option<usize>,
+        include_remotes: bool,
+    ) -> Result<Vec<(String, bool)>> {
+        LocalDiffStateModel::get_all_branches(repo_path, max_branch_count, include_remotes).await
+    }
+
+    /// Lists branches with a known main branch by running `git branch`
+    /// against a local repo path.
+    pub async fn get_all_branches_with_known_main(
+        repo_path: &Path,
+        main_branch: &str,
+        max_branch_count: Option<usize>,
+        include_remotes: bool,
+    ) -> Result<Vec<(String, bool)>> {
+        LocalDiffStateModel::get_all_branches_with_known_main(
+            repo_path,
+            main_branch,
+            max_branch_count,
+            include_remotes,
+        )
+        .await
+    }
+
+    /// Sorts a branch list so the main branch appears first. Pure helper
+    /// over data returned by the local git branch listing above.
+    pub fn sort_branches_main_first(
+        branches: &[(String, bool)],
+    ) -> impl Iterator<Item = &(String, bool)> {
+        LocalDiffStateModel::sort_branches_main_first(branches)
+    }
+
+    /// Parses a `@@ -a,b +c,d @@` unified diff header line. This is a
+    /// format-level utility tied to local `git diff` output.
+    pub(crate) fn parse_unified_diff_header(header_line: &str) -> Result<UnifiedDiffHeader> {
+        LocalDiffStateModel::parse_unified_diff_header(header_line)
+    }
 
     #[cfg(feature = "local_fs")]
     pub(crate) fn stop_active_watcher(&self, ctx: &mut ModelContext<Self>) {
