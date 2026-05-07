@@ -103,6 +103,12 @@ pub enum Mode {
     /// ?2026
     /// See https://gist.github.com/christianparpart/d8a62cc1ab659194337d73e399004036.
     SyncOutput,
+    /// ?2031
+    /// Enable unsolicited dark/light theme change notifications.
+    /// When set, the terminal sends `CSI ? 997 ; 1 n` (dark) or `CSI ? 997 ; 2 n` (light)
+    /// whenever the active theme changes between dark and light mode.
+    /// See https://contour-terminal.org/vt-extensions/color-palette-update-notifications/
+    DarkLightNotifications,
 }
 
 impl Mode {
@@ -145,6 +151,7 @@ impl Mode {
                 },
                 2004 => Mode::BracketedPaste,
                 2026 => Mode::SyncOutput,
+                2031 => Mode::DarkLightNotifications,
                 _ => {
                     trace!("[unimplemented] primitive mode: {num}");
                     return None;

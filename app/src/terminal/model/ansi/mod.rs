@@ -1381,6 +1381,14 @@ where
                 }
             }
             ('n', None) => handler.device_status(writer, next_param_or(0) as usize),
+            ('n', Some(b'?')) => {
+                // Private DSR (Device Status Report): CSI ? Ps n
+                // CSI ? 996 n — query current color preference (dark/light mode)
+                match next_param_or(0) {
+                    996 => handler.report_color_scheme(writer),
+                    _ => unhandled!(),
+                }
+            }
             ('P', None) => handler.delete_chars(next_param_or(1) as usize),
             ('p', intermediate) => {
                 // This is a DECRQM (request mode) query [1], which expects a
