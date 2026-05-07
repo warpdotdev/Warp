@@ -66,7 +66,8 @@ use crate::workspaces::user_profiles::UserProfiles;
 
 const FIELD_SPACING: f32 = 16.0;
 const HEADER_SPACING: f32 = 12.0;
-const STATUS_ICON_SIZE: f32 = 16.0;
+const STATUS_ICON_SIZE: f32 = 12.0;
+const HARNESS_CIRCLE_SIZE: f32 = 16.0;
 const HARNESS_ICON_IN_CIRCLE: f32 = 9.0;
 const LABEL_VALUE_GAP: f32 = 4.0;
 const SECTION_HEADER_GAP: f32 = 8.0;
@@ -1106,12 +1107,12 @@ impl ConversationDetailsPanel {
         .with_width(HARNESS_ICON_IN_CIRCLE)
         .with_height(HARNESS_ICON_IN_CIRCLE)
         .finish();
-        let icon_padding = (STATUS_ICON_SIZE - HARNESS_ICON_IN_CIRCLE) / 2.;
+        let icon_padding = (HARNESS_CIRCLE_SIZE - HARNESS_ICON_IN_CIRCLE) / 2.;
         let icon = Container::new(icon_glyph)
             .with_uniform_padding(icon_padding)
             .with_background(circle_bg)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                STATUS_ICON_SIZE / 2.,
+                HARNESS_CIRCLE_SIZE / 2.,
             )))
             .finish();
 

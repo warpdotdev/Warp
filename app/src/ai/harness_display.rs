@@ -69,11 +69,10 @@ pub fn circle_background(harness: Harness, theme: &WarpTheme) -> WarpThemeFill {
 pub fn icon_fill_on_circle(harness: Harness, theme: &WarpTheme) -> WarpThemeFill {
     match harness {
         Harness::Oz => theme.main_text_color(theme.background()),
-        Harness::Claude
-        | Harness::Codex
-        | Harness::Gemini
-        | Harness::OpenCode
-        | Harness::Unknown => WarpThemeFill::Solid(ColorU::white()),
+        Harness::Claude | Harness::Codex | Harness::Gemini | Harness::OpenCode => {
+            WarpThemeFill::Solid(ColorU::white())
+        }
+        Harness::Unknown => theme.main_text_color(internal_colors::fg_overlay_2(theme)),
     }
 }
 
