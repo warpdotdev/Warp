@@ -417,7 +417,9 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             | Self::HarnessSupportReportArtifact
             | Self::HarnessSupportNotifyUser
             | Self::HarnessSupportFinishTask
-            | Self::HarnessSupportReportShutdown => EnablementState::Flag(FeatureFlag::AgentHarness),
+            | Self::HarnessSupportReportShutdown => {
+                EnablementState::Flag(FeatureFlag::AgentHarness)
+            }
             Self::ArtifactUpload | Self::ArtifactGet | Self::ArtifactDownload => {
                 EnablementState::Flag(FeatureFlag::ArtifactCommand)
             }

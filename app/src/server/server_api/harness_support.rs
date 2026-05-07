@@ -399,9 +399,7 @@ impl HarnessSupportClient for ServerApi {
         error_message: Option<String>,
     ) -> Result<()> {
         let request = match (error_category, error_message) {
-            (Some(category), Some(message)) => {
-                ReportShutdownRequest::abnormal(category, message)
-            }
+            (Some(category), Some(message)) => ReportShutdownRequest::abnormal(category, message),
             _ => ReportShutdownRequest::clean(),
         };
         self.post_public_api_unit("harness-support/report-shutdown", &request)
