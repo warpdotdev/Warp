@@ -972,7 +972,7 @@ impl GridHandler {
                     continue;
                 };
                 if cell.flags.intersects(
-                    cell::Flags::WIDE_CHAR_SPACER | cell::Flags::LEADING_WIDE_CHAR_SPACER,
+                    Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
                 ) {
                     continue;
                 }

@@ -25,7 +25,7 @@ use onboarding::callout::{FinalState, OnboardingCalloutViewEvent, OnboardingQuer
 use onboarding::{OnboardingCalloutView, OnboardingKeybindings};
 pub(crate) mod docker_sandbox;
 mod link_detection;
-mod link_security;
+pub(crate) mod link_security;
 mod open_in_warp;
 mod pane_impl;
 mod passive_suggestions;
