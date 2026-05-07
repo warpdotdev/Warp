@@ -42,21 +42,12 @@ pub enum DetectPlatformError {
 }
 
 impl DetectPlatformError {
-    /// Returns a short, user-facing description of the error suitable for
-    /// display in the UI banner. Returns `None` for `Other` errors where
-    /// no tailored message is available.
-    pub fn user_facing_message(&self) -> Option<String> {
+    /// Returns a user-facing error message for display in the UI banner.
+    /// Starts with a generic description, followed by specific details when available.
+    pub fn user_facing_message(&self) -> String {
         match self {
-            Self::TimedOut => {
-                Some("The connection timed out while detecting the remote platform.".into())
-            }
-            Self::UnsupportedOs { os } => Some(format!(
-                "The remote host's operating system ({os}) is not supported."
-            )),
-            Self::UnsupportedArch { arch } => Some(format!(
-                "The remote host's architecture ({arch}) is not supported."
-            )),
-            Self::Other(_) => None,
+            Self::Other(_) => "Failed to detect remote platform".into(),
+            _ => format!("Failed to detect remote platform: {self}"),
         }
     }
 }
@@ -93,15 +84,11 @@ pub enum CheckBinaryError {
 }
 
 impl CheckBinaryError {
-    /// Returns a short, user-facing description of the error suitable for
-    /// display in the UI banner. Returns `None` for `Other` errors where
-    /// no tailored message is available.
-    pub fn user_facing_message(&self) -> Option<String> {
+    /// Returns a user-facing error message for display in the UI banner.
+    pub fn user_facing_message(&self) -> String {
         match self {
-            Self::TimedOut => {
-                Some("The connection timed out while checking for the SSH extension.".into())
-            }
-            Self::Other(_) => None,
+            Self::Other(_) => "Failed to check for SSH extension".into(),
+            _ => format!("Failed to check for SSH extension: {self}"),
         }
     }
 }
@@ -118,13 +105,11 @@ pub enum InstallBinaryError {
 }
 
 impl InstallBinaryError {
-    /// Returns a short, user-facing description of the error suitable for
-    /// display in the UI banner. Returns `None` for `Other` errors where
-    /// no tailored message is available.
-    pub fn user_facing_message(&self) -> Option<String> {
+    /// Returns a user-facing error message for display in the UI banner.
+    pub fn user_facing_message(&self) -> String {
         match self {
-            Self::TimedOut => Some("The installation timed out.".into()),
-            Self::Other(_) => None,
+            Self::Other(_) => "Failed to install SSH extension".into(),
+            _ => format!("Failed to install SSH extension: {self}"),
         }
     }
 }

@@ -4339,7 +4339,6 @@ impl TerminalView {
                         me.show_ssh_remote_server_failed_banner(
                             *session_id,
                             SshRemoteServerFailureKind::Launch,
-                            None,
                             error,
                             ctx,
                         );
@@ -4393,8 +4392,7 @@ impl TerminalView {
                             me.show_ssh_remote_server_failed_banner(
                                 *session_id,
                                 SshRemoteServerFailureKind::BinaryInstall,
-                                error.user_facing_message(),
-                                &error.to_string(),
+                                &error.user_facing_message(),
                                 ctx,
                             );
                         }
@@ -4428,8 +4426,7 @@ impl TerminalView {
                             me.show_ssh_remote_server_failed_banner(
                                 *session_id,
                                 SshRemoteServerFailureKind::BinaryCheck,
-                                error.user_facing_message(),
-                                &error.to_string(),
+                                &error.user_facing_message(),
                                 ctx,
                             );
                         }
@@ -11789,8 +11786,7 @@ impl TerminalView {
         &mut self,
         session_id: SessionId,
         kind: SshRemoteServerFailureKind,
-        user_message: Option<String>,
-        detail: &str,
+        error: &str,
         ctx: &mut ViewContext<Self>,
     ) {
         let already_present = self.rich_content_views.iter().any(|view| {
@@ -11804,9 +11800,9 @@ impl TerminalView {
             return;
         }
 
-        let detail = detail.to_owned();
+        let error = error.to_owned();
         let banner = ctx.add_typed_action_view(|_| {
-            SshRemoteServerFailedBanner::new(session_id, kind, user_message, detail)
+            SshRemoteServerFailedBanner::new(session_id, kind, error)
         });
 
         ctx.subscribe_to_view(&banner, move |me, _, event, ctx| match event {
