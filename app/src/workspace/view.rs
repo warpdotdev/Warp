@@ -85,7 +85,8 @@ use crate::app_state::{
     PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabSnapshot,
     TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
 };
-use crate::code_review::diff_state::{DiffStateModel, UniversalPath};
+use crate::code::buffer_location::BufferLocation;
+use crate::code_review::diff_state::DiffStateModel;
 #[cfg(feature = "local_fs")]
 use crate::code_review::CodeReviewTelemetryEvent;
 use crate::code_review::GlobalCodeReviewModel;
@@ -8073,7 +8074,7 @@ impl Workspace {
                     let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                         self.working_directories_model.update(ctx, |model, ctx| {
                             model.get_or_create_diff_state_model(
-                                UniversalPath::Local(rp.clone()),
+                                BufferLocation::Local(rp.clone()),
                                 ctx,
                             )
                         })
@@ -8120,7 +8121,7 @@ impl Workspace {
         let repo_path = panel_context.repo_path.clone();
         let diff_state_model = repo_path.as_ref().and_then(|rp| {
             self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(UniversalPath::Local(rp.clone()), ctx)
+                model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
             })
         });
         let Some(diff_state_model) = diff_state_model else {
@@ -8237,7 +8238,7 @@ impl Workspace {
             |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
                 let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                     self.working_directories_model.update(ctx, |model, ctx| {
-                        model.get_or_create_diff_state_model(UniversalPath::Local(rp.clone()), ctx)
+                        model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
                     })
                 })?;
                 Some(CodeReviewPaneContext {
@@ -20929,7 +20930,7 @@ impl TypedActionView for Workspace {
                         let diff_state_model = repo_path.as_ref().and_then(|rp| {
                             self.working_directories_model.update(ctx, |model, ctx| {
                                 model.get_or_create_diff_state_model(
-                                    UniversalPath::Local(rp.clone()),
+                                    BufferLocation::Local(rp.clone()),
                                     ctx,
                                 )
                             })

@@ -11,6 +11,7 @@ use warpui::{AppContext, SingletonEntity as _};
 use warpui::{Entity, EntityId, ModelContext};
 use warpui::{ModelHandle, ViewHandle};
 
+use crate::code::buffer_location::BufferLocation;
 #[cfg(feature = "local_fs")]
 use crate::code::file_tree::FileTreeView;
 use crate::code_review::comments::{
@@ -18,7 +19,7 @@ use crate::code_review::comments::{
 };
 use crate::code_review::{
     code_review_view::CodeReviewView,
-    diff_state::{DiffMode, DiffStateModel, UniversalPath},
+    diff_state::{DiffMode, DiffStateModel},
 };
 use crate::workspace::view::global_search::view::GlobalSearchView;
 
@@ -84,7 +85,7 @@ pub struct WorkingDirectoriesModel {
     /// Global mapping from repository keys to their DiffStateModel.
     /// Since git state is inherently tied to a repository (not a pane group),
     /// this is stored globally and shared across all pane groups viewing the same repo.
-    diff_state_models: HashMap<UniversalPath, ModelHandle<DiffStateModel>>,
+    diff_state_models: HashMap<BufferLocation, ModelHandle<DiffStateModel>>,
     /// Global mapping from repository root paths to their CommentBatch.
     /// Like the DiffStateModel mapping, comments are inherently tied to git diffs
     /// and are shared across all pane groups viewing the same repo.
@@ -176,7 +177,7 @@ impl WorkingDirectoriesModel {
     /// If the model doesn't exist, it will be created.
     pub fn get_or_create_diff_state_model(
         &mut self,
-        key: UniversalPath,
+        key: BufferLocation,
         ctx: &mut ModelContext<Self>,
     ) -> Option<ModelHandle<DiffStateModel>> {
         if let Some(model) = self.diff_state_models.get(&key) {
@@ -186,9 +187,9 @@ impl WorkingDirectoriesModel {
         let diff_state_model = ctx.add_model(|ctx| DiffStateModel::new(key.clone(), ctx));
 
         debug_assert_eq!(
-            matches!(key, UniversalPath::Local(_)),
+            matches!(key, BufferLocation::Local(_)),
             diff_state_model.as_ref(ctx).is_local(),
-            "UniversalPath variant must match DiffStateModel backend",
+            "BufferLocation variant must match DiffStateModel backend",
         );
         self.diff_state_models.insert(key, diff_state_model.clone());
 
@@ -208,7 +209,7 @@ impl WorkingDirectoriesModel {
                 .values()
                 .all(|tab| !tab.contains(&repo_path))
             {
-                let key = UniversalPath::Local(repo_path);
+                let key = BufferLocation::Local(repo_path);
                 if let Some(model) = self.diff_state_models.remove(&key) {
                     model.update(ctx, |model, ctx| {
                         model.stop_active_watcher(ctx);
@@ -646,7 +647,7 @@ impl WorkingDirectoriesModel {
 
     pub fn get_or_create_diff_state_model(
         &mut self,
-        _key: UniversalPath,
+        _key: BufferLocation,
         _ctx: &mut ModelContext<Self>,
     ) -> Option<ModelHandle<DiffStateModel>> {
         None

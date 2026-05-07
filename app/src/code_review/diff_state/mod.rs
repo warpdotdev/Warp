@@ -9,8 +9,8 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::code::buffer_location::BufferLocation;
 use crate::util::git::{Commit, PrInfo};
-use repo_metadata::repository_identifier::RemoteRepositoryIdentifier;
 use warpui::{AppContext, ModelContext, ModelHandle};
 
 // Re-export everything from the local model so existing `use
@@ -31,16 +31,6 @@ enum DiffStateBackend {
     Remote(ModelHandle<RemoteDiffStateModel>),
 }
 
-/// Key for the per-repository `DiffStateModel` cache in
-/// [`WorkingDirectoriesModel`]. Uses `PathBuf` for local repos (avoiding
-/// `PathBuf → StandardizedPath` conversion) and `RemoteRepositoryIdentifier`
-/// for remote repos.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum UniversalPath {
-    Local(PathBuf),
-    Remote(RemoteRepositoryIdentifier),
-}
-
 // ── Wrapper ──────────────────────────────────────────────────────────────
 
 /// Wrapper that provides a unified API over local and remote diff state models.
@@ -58,15 +48,15 @@ impl warpui::Entity for DiffStateModel {
 impl DiffStateModel {
     // ── Construction ─────────────────────────────────────────────────
 
-    pub fn new(key: UniversalPath, ctx: &mut ModelContext<Self>) -> Self {
+    pub fn new(key: BufferLocation, ctx: &mut ModelContext<Self>) -> Self {
         let inner = match key {
-            UniversalPath::Local(path) => {
+            BufferLocation::Local(path) => {
                 let repo_path = Some(path.display().to_string());
                 let local = ctx.add_model(|ctx| LocalDiffStateModel::new(repo_path, ctx));
                 ctx.subscribe_to_model(&local, Self::forward_event);
                 DiffStateBackend::Local(local)
             }
-            UniversalPath::Remote(_remote_id) => {
+            BufferLocation::Remote(_remote_id) => {
                 let remote = ctx.add_model(RemoteDiffStateModel::new);
                 ctx.subscribe_to_model(&remote, Self::forward_event);
                 DiffStateBackend::Remote(remote)

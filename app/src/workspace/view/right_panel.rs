@@ -30,7 +30,7 @@ use crate::{
     terminal::resizable_data::{ModalType, ResizableData},
 };
 use crate::{
-    code_review::diff_state::{DiffStateModel, UniversalPath},
+    code::buffer_location::BufferLocation, code_review::diff_state::DiffStateModel,
     terminal::view::TerminalView,
 };
 use dunce::canonicalize;
@@ -1598,7 +1598,7 @@ impl RightPanelView {
         } else {
             let diff_state_model = self.working_directories_model.update(ctx, |model, ctx| {
                 model.get_or_create_diff_state_model(
-                    UniversalPath::Local(repo_path.to_path_buf()),
+                    BufferLocation::Local(repo_path.to_path_buf()),
                     ctx,
                 )
             });
