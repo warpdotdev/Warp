@@ -31,6 +31,36 @@ struct Pending {
     context: Option<Context>,
 }
 
+fn keystroke_matches_binding(
+    binding_keystroke: &Keystroke,
+    pressed_keystroke: &Keystroke,
+    allow_enter_equivalence: bool,
+) -> bool {
+    binding_keystroke == pressed_keystroke
+        || (allow_enter_equivalence
+            && binding_keystroke.key == "enter"
+            && pressed_keystroke.key == "numpadenter"
+            && binding_keystroke.ctrl == pressed_keystroke.ctrl
+            && binding_keystroke.alt == pressed_keystroke.alt
+            && binding_keystroke.shift == pressed_keystroke.shift
+            && binding_keystroke.cmd == pressed_keystroke.cmd
+            && binding_keystroke.meta == pressed_keystroke.meta)
+}
+
+fn keystrokes_start_with(
+    binding_keystrokes: &[Keystroke],
+    pressed_keystrokes: &[Keystroke],
+    allow_enter_equivalence: bool,
+) -> bool {
+    binding_keystrokes.len() >= pressed_keystrokes.len()
+        && binding_keystrokes
+            .iter()
+            .zip(pressed_keystrokes)
+            .all(|(binding, pressed)| {
+                keystroke_matches_binding(binding, pressed, allow_enter_equivalence)
+            })
+}
+
 type BindingValidatorFn = Box<dyn Fn(BindingLens) -> IsBindingValid>;
 
 /// Enum indicating the results of validating a binding.
@@ -315,30 +345,35 @@ impl Matcher {
         }
 
         pending.keystrokes.push(keystroke);
+        for allow_enter_equivalence in [false, true] {
+            let mut retain_pending = false;
 
-        let mut retain_pending = false;
-        for binding in self.keymap.bindings() {
-            if let Trigger::Keystrokes(keystrokes) = &binding.trigger {
-                if keystrokes.starts_with(&pending.keystrokes)
-                    && binding.context_predicate.eval(ctx)
-                {
-                    if keystrokes.len() == pending.keystrokes.len() {
-                        self.pending.remove(&view_id);
-                        return MatchResult::Action(binding.action.clone());
-                    } else {
-                        retain_pending = true;
-                        pending.context = Some(ctx.clone());
+            for binding in self.keymap.bindings() {
+                if let Trigger::Keystrokes(keystrokes) = &binding.trigger {
+                    if keystrokes_start_with(
+                        keystrokes,
+                        &pending.keystrokes,
+                        allow_enter_equivalence,
+                    ) && binding.context_predicate.eval(ctx)
+                    {
+                        if keystrokes.len() == pending.keystrokes.len() {
+                            self.pending.remove(&view_id);
+                            return MatchResult::Action(binding.action.clone());
+                        } else {
+                            retain_pending = true;
+                            pending.context = Some(ctx.clone());
+                        }
                     }
                 }
             }
+
+            if retain_pending {
+                return MatchResult::Pending;
+            }
         }
 
-        if retain_pending {
-            MatchResult::Pending
-        } else {
-            self.pending.remove(&view_id);
-            MatchResult::None
-        }
+        self.pending.remove(&view_id);
+        MatchResult::None
     }
 
     // Attempt to match with a StandardAction.
