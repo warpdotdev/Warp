@@ -30,10 +30,14 @@ expanded. Format is configurable per user preference and locale-aware.
 
 - Collapsed reasoning / tool-call / plan-step rows show a start timestamp inline
   in the header.
-- Expanded headers show both an absolute start time and a duration (or
-  `running…` for in-progress phases).
+- Expanded headers show both an absolute start time and a live elapsed counter
+  (in-progress) or final duration (completed) — the elapsed value updates on
+  the existing 1 Hz ticker, never as a separate `running…` placeholder.
 - Format respects the user's locale and existing 12h/24h convention.
 - A user-facing setting selects between absolute, relative, automatic, or off.
+- A second user-facing setting (`agent.subblock_timestamp_show_in_expanded`)
+  controls whether the timestamp affordance appears in the expanded view at
+  all; the format setting always governs the format itself.
 - Coverage extends consistently across all collapsible "agent sub-blocks"
   (reasoning, tool calls, plan steps).
 
@@ -119,14 +123,31 @@ continues to switch to absolute past the 60-minute mark per B2.
 
 ### B3. Expanded-row header
 
-When the block is expanded, the header shows both an absolute start time and a
-duration:
+When the block is expanded, the header shows both an absolute start time and an
+elapsed counter / final duration. The same field is reused across the in-progress
+and completed states — there is NO separate `running…` placeholder.
 
-- Completed phase: `Started 11:42:07 · 4.3s`
-- In-progress phase: `Started 11:42:07 · running…` and updates as it runs.
+- In-progress phase: `Started 11:42:07 · <elapsed> elapsed`, where `<elapsed>`
+  is computed from the start timestamp at each tick of the existing 1 Hz
+  subscriber (B4). Examples while ticking: `1s elapsed`, `2s elapsed`,
+  `3s elapsed`, … `4s elapsed`.
+- Completed phase: `Started 11:42:07 · 4.3s` — at the moment the completion
+  event arrives, the elapsed value is replaced by the final duration string
+  (matching the precision used for completed phases elsewhere) and stops
+  updating.
+
+The expanded view always displays a numeric elapsed/duration value; it never
+shows a static `running…` label. The 1 Hz ticker described in B4 is the only
+clock driving in-progress updates — no per-row timer.
 
 Absolute time in the expanded header is always rendered using B2.1's canonical
 form, regardless of B2's relative/absolute choice for the collapsed row.
+
+### B3.1. Visibility of the expanded-row timestamp
+
+The `agent.subblock_timestamp_show_in_expanded` setting (Settings / API surface)
+controls whether the expanded-view header carries the timestamp affordance at
+all. Its precedence is defined in B6.
 
 ### B4. Live-update cadence
 
@@ -151,13 +172,43 @@ form, regardless of B2's relative/absolute choice for the collapsed row.
 - `"relative"` — always relative time per B2.2 (extends past 60 min).
 - `"auto"` (default) — relative ≤ 60 min, absolute beyond per B2.1.
 
+### B6.1. Precedence: format vs. show_in_expanded
+
+The two settings are orthogonal but interact:
+
+- `agent.subblock_timestamp_format` controls the FORMAT used wherever a
+  timestamp is rendered (off / absolute / relative / auto).
+- `agent.subblock_timestamp_show_in_expanded` controls VISIBILITY in the
+  EXPANDED view ONLY. It has no effect on the collapsed row.
+
+The full 3 × 2 matrix:
+
+| `format`     | `show_in_expanded` | Collapsed row timestamp | Expanded header timestamp |
+| ------------ | ------------------ | ----------------------- | ------------------------- |
+| `"off"`      | `true`  *or* `false` | hidden                  | hidden (the format-`off` rule wins; `show_in_expanded` has no effect) |
+| `"absolute"` | `true`             | absolute, per B2.1      | `Started <absolute> · <elapsed>/duration` per B3 |
+| `"absolute"` | `false`            | absolute, per B2.1      | hidden (no `Started …` line and no elapsed/duration affordance in the expanded header) |
+| `"relative"` | `true`             | relative, per B2.2      | `Started <absolute> · <elapsed>/duration` per B3 (expanded form ALWAYS uses canonical absolute, per B3) |
+| `"relative"` | `false`            | relative, per B2.2      | hidden |
+| `"auto"`     | `true`             | auto (rel ≤ 60 min, else abs) | `Started <absolute> · <elapsed>/duration` per B3 |
+| `"auto"`     | `false`            | auto (rel ≤ 60 min, else abs) | hidden |
+
+When the expanded header timestamp is hidden because of `show_in_expanded =
+false`, the entire `Started … · <elapsed>/duration` affordance is suppressed —
+NOT just the start time. This is intentional so the expanded view is fully
+free of timing chrome when the user opts out.
+
+The format `"off"` rule is the global override: when format is `"off"`,
+`show_in_expanded` is ignored and the affordance is hidden in BOTH views.
+
 ### B7. Accessibility
 
 - The collapsed row's `aria-label` must include a human-readable timestamp
   description, e.g. `"Thinking phase started 2 minutes ago"` or
   `"Thinking phase started at 11:42:07"`.
-- The expanded header's accessible name must include both start time and
-  duration (or "running" while in-progress).
+- The expanded header's accessible name must include start time plus the
+  elapsed counter (in-progress) or final duration (completed) — wording
+  matches the visible text and updates on the 1 Hz ticker.
 - Hover tooltip (see Open Questions) must not be the only carrier of timing
   information.
 
@@ -165,8 +216,8 @@ form, regardless of B2's relative/absolute choice for the collapsed row.
 
 | Setting | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `agent.subblock_timestamp_format` | enum `"off" \| "absolute" \| "relative" \| "auto"` | `"auto"` | Drives collapsed-row format for reasoning, tool-call, and plan-step sub-blocks. |
-| `agent.subblock_timestamp_show_in_expanded` | bool | `true` | When `false`, B3 is suppressed. |
+| `agent.subblock_timestamp_format` | enum `"off" \| "absolute" \| "relative" \| "auto"` | `"auto"` | Drives FORMAT for reasoning, tool-call, and plan-step sub-blocks. `"off"` is the global override — hides timestamps in BOTH collapsed and expanded views. |
+| `agent.subblock_timestamp_show_in_expanded` | bool | `true` | Controls VISIBILITY in the EXPANDED view ONLY. When `false`, the entire `Started … · <elapsed>/duration` affordance is suppressed in the expanded header (collapsed row is unaffected). Has NO effect when `format = "off"`. Full precedence in B6.1. |
 
 UI placement: Settings → Agents → "Agent sub-block timestamps":
 
@@ -186,18 +237,35 @@ No new public API. The values flow through the existing settings store.
 - A1. With format `"auto"`, a collapsed reasoning row whose start time is
   within the last 60 minutes shows a relative timestamp; older than 60 minutes
   shows an absolute timestamp.
-- A2. Expanding a row shows `Started <absolute> · <duration>` for completed
-  phases and `Started <absolute> · running…` for in-progress phases.
-- A3. Setting `"off"` removes timestamps from collapsed and expanded rows.
+- A2. Expanding a completed phase shows `Started <absolute> · <duration>`
+  (e.g. `Started 11:42:07 · 4.3s`). Expanding an in-progress phase shows
+  `Started <absolute> · <elapsed> elapsed`, where `<elapsed>` advances on the
+  existing 1 Hz ticker (e.g. `1s elapsed`, `2s elapsed`, …) and is replaced by
+  the final duration string the moment the completion event arrives.
+- A2.1. The expanded view never displays a static `running…` label. The
+  elapsed counter is the only in-progress affordance.
+- A3. Setting format `"off"` removes timestamps from collapsed and expanded
+  rows in BOTH views, regardless of `subblock_timestamp_show_in_expanded`.
 - A4. Setting `"absolute"` forces absolute on collapsed rows; `"relative"`
   forces relative.
 - A5. 12h vs 24h rendering follows `time.use_24h` (with OS fallback when unset).
 - A6. Tool-call blocks and plan-step blocks get the same treatment as reasoning
-  phases (collapsed timestamp, expanded start + duration).
+  phases (collapsed timestamp, expanded start + elapsed/duration per A2).
 - A7. Relative timestamps refresh on a 5-second cadence; the most recent
-  in-progress phase refreshes on a 1-second cadence.
+  in-progress phase refreshes on a 1-second cadence and drives the elapsed
+  counter described in A2.
 - A8. The collapsed row's `aria-label` carries an accurate timing description
   matching the visible format.
+- A_show_in_expanded_off_format_on. With format `!= "off"` and
+  `subblock_timestamp_show_in_expanded = false`, the collapsed row shows the
+  timestamp per its format setting, and the expanded header shows NO
+  `Started …` line and NO elapsed/duration affordance.
+- A_show_in_expanded_on. With format `!= "off"` and
+  `subblock_timestamp_show_in_expanded = true`, both views show timestamps
+  per B3.
+- A_show_in_expanded_format_off_overrides. With format `"off"`, the value of
+  `subblock_timestamp_show_in_expanded` (true OR false) has NO effect:
+  timestamps remain hidden in BOTH views.
 
 ## Implementation Pointers
 
@@ -223,18 +291,40 @@ No new public API. The values flow through the existing settings store.
   `app/src/ai/blocklist/orchestration_events.rs` and
   `app/src/ai/agent/conversation_yaml.rs`.
 - `(new module)` Time-formatting helper:
-  `app/src/util/relative_time.rs` (no existing equivalent found in
-  `app/src/util/`). Module exposes:
+  `app/src/util/relative_time.rs`. The codebase already has
+  `app/src/util/time_format.rs` for relative human-readable durations
+  (e.g. `format_approx_duration_from_now`); the new module is dedicated to
+  this feature's per-sub-block needs and MUST be the SINGLE shared helper used
+  by reasoning, tool-call, and plan-step rendering — no duplicated formatters.
+  Module exposes:
   - `fn format_relative_auto(now: SystemTime, started_at: SystemTime) -> RelativeOrAbsolute`
     (caps at 60 min, then signals fallthrough to absolute).
   - `fn format_relative_extended(now: SystemTime, started_at: SystemTime) -> String`
     (implements B2.2 ranges past 60 min; used only for forced `"relative"`).
-  - `fn format_absolute(started_at: SystemTime, use_24h: bool, locale: &Locale) -> String`
-    (implements B2.1; emits date-prefixed form when older than 24 h).
+  - `fn format_absolute(started_at: SystemTime, now: SystemTime, prefer_24h: bool) -> String`
+    (implements B2.1). The clock is INJECTED via `now` so the date-prefix
+    branch (`now - started_at > 24 h`) is fully deterministic and unit-testable
+    without depending on the system clock. Behavior:
+    - When `now - started_at <= 24 h`: time-only form per B2.1
+      (`HH:MM:SS` or `h:MM:SS AM/PM`).
+    - When `now - started_at > 24 h`: date-prefixed form per B2.1.
+  - `(internal)` `fn format_date_prefix(date: SystemTime, locale: &Locale) -> String`
+    used by `format_absolute` only. The locale resolver from
+    `app/src/util/time_format.rs` plus `time.use_24h` are the inputs; if no
+    locale-aware short-date helper exists yet, V1 uses the locale-neutral
+    ISO-8601 form `YYYY-MM-DD` as a deterministic fallback. V1.5 may swap in a
+    locale-aware short date.
+- A SINGLE shared helper rule: all sub-block renderers (reasoning, tool-call,
+  plan-step) call into `relative_time.rs` for both the collapsed and expanded
+  forms. No renderer should hand-roll its own time string. The expanded view's
+  in-progress elapsed counter (B3) calls `human_readable_precise_duration`
+  from `app/src/util/time_format.rs` once per 1 Hz tick — do NOT introduce a
+  parallel implementation.
 - `(new module or co-located in agent_view)` Coalesced ticker for live-update
   cadence — single 1 Hz + 5 Hz subscriber per conversation list. Suggested
-  location: `app/src/ai/blocklist/agent_view/timestamp_ticker.rs`. No
-  per-row timers.
+  location: `app/src/ai/blocklist/agent_view/timestamp_ticker.rs`. The 1 Hz
+  subscriber drives BOTH the most-recent in-progress relative timestamp AND
+  the expanded-view elapsed counter (B3). No per-row timers.
 - Tool-call and plan-step rendering: tool calls flow through the same agent
   output renderer above (`view_impl/output.rs`); plan-step UI is rendered via
   `app/src/ai/blocklist/prompt/plan_and_todo_list.rs`. Both pick up the
@@ -248,27 +338,45 @@ No new public API. The values flow through the existing settings store.
   `Nm ago` < 60 min.
 - T2. `format_relative_auto` signals fallthrough to `format_absolute` past 60
   minutes; `auto` adapter renders the canonical absolute form per B2.1.
-- T3. Expanded view shows correct duration once a phase emits a completion
-  event.
-- T4. In-progress phase shows `running…` and the duration label updates as
-  the ticker fires.
-- T5. Setting `"off"` removes the timestamp DOM/aria-label entirely.
+- T3. Expanded view shows the final duration string (e.g. `4.3s`) once a phase
+  emits a completion event, replacing the prior elapsed counter at the exact
+  tick the completion arrives.
+- T4. In-progress phase shows the elapsed counter (`1s elapsed`, `2s elapsed`,
+  …) and the value advances on each 1 Hz tick of the ticker. Test asserts the
+  text never reads `running…` — the elapsed counter is the only in-progress
+  affordance.
+- T5. Setting format `"off"` removes the timestamp DOM/aria-label entirely
+  from BOTH collapsed and expanded views, regardless of `show_in_expanded`.
 - T6. Setting `"absolute"` and `"relative"` force the corresponding format
   regardless of age. Forced `"relative"` exercises B2.2 ranges:
   `60m ago`, `2h ago`, `2d ago`, `1w ago`.
-- T7. Absolute form rendering per B2.1: `time.use_24h = true` renders
-  `11:42:07`; `time.use_24h = false` renders `11:42:07 AM`. A start time older
-  than 24 h prefixes the locale date (e.g. `2026-05-08 11:42:07` /
-  `2026-05-08 11:42:07 AM`). OS-fallback path is exercised when the setting
-  is unset.
+- T7. Absolute form rendering per B2.1 with `format_absolute(start, now,
+  prefer_24h)`: `prefer_24h = true` renders `11:42:07`; `prefer_24h = false`
+  renders `11:42:07 AM`. With `now - start > 24 h` the helper prefixes the
+  date (V1 fallback `2026-05-08`, e.g. `2026-05-08 11:42:07` /
+  `2026-05-08 11:42:07 AM`). The clock-injection contract is exercised by
+  passing two synthetic `now` values across the 24 h boundary in the same test
+  to confirm no system-clock dependency.
+- T7.1. The shared-helper rule is enforced: a single `format_absolute` call
+  site is used by reasoning, tool-call, and plan-step rendering. Test asserts
+  identical output for the same `(start, now, prefer_24h)` across all three
+  call sites.
 - T8. Tool-call block and plan-step block receive identical treatment per
   B1–B3.
 - T9. Stepping the mock clock by 5 s causes all visible relative-formatted
   rows to re-render with the new value.
 - T10. `aria-label` audit for collapsed and expanded rows matches the visible
-  text, including the canonical absolute form when applicable.
+  text, including the canonical absolute form when applicable. Expanded-view
+  aria-label MUST include the elapsed counter while in-progress (e.g. "Started
+  at 11:42:07, 4 seconds elapsed") and the final duration once complete.
 - T11. Timer coalescing: rendering 50 sub-block rows registers exactly one
   1 Hz subscriber and one 5 Hz subscriber against the ticker.
+- T_show_in_expanded_matrix. The 3 × 2 matrix in B6.1 is exercised end-to-end
+  per cell: for each combination of `format ∈ {"off", "absolute", "relative",
+  "auto"}` × `show_in_expanded ∈ {true, false}`, the test asserts the exact
+  collapsed-row and expanded-header rendering described in B6.1's table. This
+  includes the format-`"off"` override (both `show_in_expanded` values yield
+  identical hidden output).
 
 ## Open Questions
 
