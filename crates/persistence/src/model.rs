@@ -14,10 +14,9 @@ use super::schema::{
     generic_string_objects, ignored_suggestions, mcp_environment_variables,
     mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, object_actions,
     object_metadata, object_permissions, pane_branches, pane_leaves, pane_nodes, panels,
-    project_rules, projects, remote_codebase_index_cache, remote_codebase_index_user_state,
-    server_experiments, settings_panes, tabs, team_members, team_settings, teams, terminal_panes,
-    user_profiles, welcome_panes, windows, workflow_panes, workflows, workspace_language_server,
-    workspace_metadata, workspace_teams, workspaces,
+    project_rules, projects, server_experiments, settings_panes, tabs, team_members, team_settings,
+    teams, terminal_panes, user_profiles, welcome_panes, windows, workflow_panes, workflows,
+    workspace_language_server, workspace_metadata, workspace_teams, workspaces,
 };
 
 #[derive(Insertable)]
@@ -240,74 +239,6 @@ impl PartialEq for Project {
 }
 
 impl Eq for Project {}
-
-#[derive(Clone, Debug, Identifiable, Queryable, PartialEq)]
-#[diesel(table_name = remote_codebase_index_cache)]
-pub struct RemoteCodebaseIndexCache {
-    pub id: i32,
-    pub repo_identity_key: String,
-    pub repo_path: String,
-    pub snapshot_version: i32,
-    pub snapshot_file_key: String,
-    pub root_hash: Option<String>,
-    pub embedding_config_json: Option<String>,
-    pub navigated_ts: Option<NaiveDateTime>,
-    pub modified_ts: Option<NaiveDateTime>,
-    pub queried_ts: Option<NaiveDateTime>,
-    pub last_indexed_ts: Option<NaiveDateTime>,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
-
-#[derive(Clone, Debug, Insertable, AsChangeset, PartialEq)]
-#[diesel(table_name = remote_codebase_index_cache)]
-#[diesel(treat_none_as_null = true)]
-pub struct NewRemoteCodebaseIndexCache {
-    pub repo_identity_key: String,
-    pub repo_path: String,
-    pub snapshot_version: i32,
-    pub snapshot_file_key: String,
-    pub root_hash: Option<String>,
-    pub embedding_config_json: Option<String>,
-    pub navigated_ts: Option<NaiveDateTime>,
-    pub modified_ts: Option<NaiveDateTime>,
-    pub queried_ts: Option<NaiveDateTime>,
-    pub last_indexed_ts: Option<NaiveDateTime>,
-    pub updated_at: NaiveDateTime,
-}
-
-#[derive(Clone, Debug, Identifiable, Queryable, PartialEq)]
-#[diesel(table_name = remote_codebase_index_user_state)]
-pub struct RemoteCodebaseIndexUserState {
-    pub id: i32,
-    pub identity_key: String,
-    pub repo_identity_key: String,
-    pub repo_path: String,
-    pub enablement_state: String,
-    pub index_status: String,
-    pub failure_reason: Option<String>,
-    pub backend_association_state: Option<String>,
-    pub last_ready_root_hash: Option<String>,
-    pub last_status_updated_at: NaiveDateTime,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
-
-#[derive(Clone, Debug, Insertable, AsChangeset, PartialEq)]
-#[diesel(table_name = remote_codebase_index_user_state)]
-#[diesel(treat_none_as_null = true)]
-pub struct NewRemoteCodebaseIndexUserState {
-    pub identity_key: String,
-    pub repo_identity_key: String,
-    pub repo_path: String,
-    pub enablement_state: String,
-    pub index_status: String,
-    pub failure_reason: Option<String>,
-    pub backend_association_state: Option<String>,
-    pub last_ready_root_hash: Option<String>,
-    pub last_status_updated_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
 
 #[derive(Identifiable, Insertable, Queryable)]
 pub struct WorkspaceTeam {
