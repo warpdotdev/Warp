@@ -133,6 +133,42 @@ impl Default for SafeReadOpts {
   short-circuit on the size check before allocating the full
   buffer.
 
+### Error precedence (B7)
+
+When multiple checks would apply to the same input, the helpers
+evaluate them in this fixed order and short-circuit on the first
+that matches. Only one `SafeReadError` variant is ever returned for
+a single call:
+
+1. **Symlink rejection** (when `opts.follow_symlinks == false`).
+   Evaluated against the path metadata before any open. Returns
+   `SafeReadError::Io` with `ErrorKind::InvalidInput`.
+2. **Open / metadata I/O errors** (permission denied, not found,
+   etc.). Returns `SafeReadError::Io { source }`.
+3. **Size check** against `opts.max_bytes`. Evaluated from
+   `Metadata::len()` for regular files before any read; for streams
+   without a known length, evaluated incrementally during the
+   streaming read at B6's 1 MiB threshold. Returns
+   `SafeReadError::TooLarge`.
+4. **Binary check** (text helpers only) — runs against the first
+   8 KiB chunk as it streams in. Returns
+   `SafeReadError::BinaryContent`.
+5. **UTF-8 validation** (text helpers only) — runs against the
+   complete payload after the binary check passes. Returns
+   `SafeReadError::InvalidUtf8`.
+
+Rationale: cheap checks first (metadata, then 8 KiB header), so an
+overlong binary file returns `TooLarge` rather than reading the 8 KiB
+just to call it `BinaryContent`. The order is part of the public
+contract and is asserted by `T_error_precedence` (see Test plan).
+
+| Overlap case (text read) | Expected error |
+|---|---|
+| Path is a symlink + `follow_symlinks=false` + file is huge + binary + invalid UTF-8 | `Io { ErrorKind::InvalidInput }` |
+| File is 1 GiB AND contains NUL in first 8 KiB AND has invalid UTF-8 | `TooLarge` |
+| File is within `max_bytes` AND has NUL in first 8 KiB AND has invalid UTF-8 | `BinaryContent` |
+| File is within `max_bytes` AND no NUL in first 8 KiB AND invalid UTF-8 | `InvalidUtf8` |
+
 ### Binary-content detection contract
 
 The V1 default heuristic — NUL byte in first 8 KiB — is a deliberate,
@@ -174,6 +210,39 @@ for low CPU cost on the hot path.
 where false negatives corrupt downstream prompts should adopt
 `Strict` once available.
 
+#### Required follow-up: AI/UI surfaces migrate to `Strict` in V1.5
+
+This is a hard follow-up commitment, not a recommendation. The V1
+migration moves high-traffic call sites to the `safe_read` helpers
+with the default `BinaryCheck::NulInFirst8Kib` so they ship before
+`Strict` exists. To ensure prompt and UI reads do not stay on the
+weaker heuristic indefinitely, V1.5 has the following acceptance
+criteria:
+
+1. `BinaryCheck::Strict` is implemented and merged.
+2. The following V1-migrated AI/UI call sites are updated in V1.5 to
+   pass `binary_check: BinaryCheck::Strict` (the rest may keep the
+   default):
+   - `crates/ai/src/skills/parse_skill.rs::parse_markdown_file`
+     (skill content goes directly into model prompts).
+   - `app/src/code/local_code_editor.rs` file-open path when the
+     content is forwarded to an AI agent or rendered into the UI
+     viewport (non-AI editor opens may keep the default).
+   - Any call site reachable from an "attach file to chat" or
+     "include file context" UI affordance.
+3. A new V1.5 acceptance test (`T_strict_migration`) asserts each of
+   the call sites above resolves `opts.binary_check` to
+   `BinaryCheck::Strict`. The test is a `grep`-style audit, similar
+   to `T_lint_severity_location`, that fails if any of the listed
+   call sites still uses the default.
+4. The V1.5 PR description must list each migrated call site
+   explicitly, mirroring the V1 migration table.
+
+If V1.5 ships without item 2, the V2 `deny` promotion is blocked
+until item 2 is addressed in a follow-up PR. This prevents the
+"V1 ships, follow-up forgotten" failure mode where AI/UI surfaces
+quietly stay on the weaker heuristic indefinitely.
+
 ## Error type
 
 ```rust
@@ -197,19 +266,41 @@ attributes in Rust source. These two surfaces together drive the
 
 ### Lint data: `.clippy.toml`
 
-A `.clippy.toml` at the workspace root configures the
-`disallowed-methods` lint payload. This file does NOT control whether
-the lint fires as a warning or an error — that is set at the crate
-root (see "Lint severity" below).
+A `.clippy.toml` already exists at the workspace root with
+`disallowed-macros`, `disallowed-types`, and a populated
+`disallowed-methods` list (covering
+`async_channel::Sender::send_blocking` and
+`line_ending::LineEnding::from_current_platform`). The V1 PR
+**extends the existing `disallowed-methods` array** by appending the
+four new entries below. It does NOT replace, reorder, or remove any
+existing entry, and it does NOT modify the `disallowed-macros` or
+`disallowed-types` blocks. This file does NOT control whether the
+lint fires as a warning or an error — that is set at the crate root
+(see "Lint severity" below).
+
+The post-V1 `disallowed-methods` array, with new entries appended at
+the end:
 
 ```toml
 disallowed-methods = [
+    # Pre-existing entries (preserved verbatim — do NOT modify):
+    { path = "async_channel::Sender::send_blocking", reason = "send_blocking() does not exist for wasm.  Use warpui::r#async::block_on() with send() instead.", allow-invalid = true },
+    { path = "line_ending::LineEnding::from_current_platform", reason = "line_ending::LineEnding::from_current_platform does not account for Unix-like subsystems for Windows. In most cases, use warp_core::platform::SessionPlatform::default_line_ending() instead." },
+
+    # New entries added in V1 (#10049):
     { path = "std::fs::read",                 reason = "use safe_read::read_bytes" },
     { path = "std::fs::read_to_string",       reason = "use safe_read::read_to_string" },
     { path = "tokio::fs::read",               reason = "use safe_read::async_read_bytes" },
     { path = "tokio::fs::read_to_string",     reason = "use safe_read::async_read_to_string" },
 ]
 ```
+
+Acceptance for the lint-data change is:
+
+1. The two pre-existing `disallowed-methods` entries are byte-identical
+   before and after the V1 PR.
+2. The four new entries are appended in the order shown.
+3. `disallowed-macros` and `disallowed-types` are unchanged.
 
 ### Lint severity: crate-root attributes
 
@@ -225,9 +316,86 @@ V1 application of `warn`:
 #![warn(clippy::disallowed_methods)]
 ```
 
-The V1 PR adds this attribute to every workspace crate that contains
-non-test production code. Test-only crates (those whose every module
-is `#[cfg(test)]`) do not get the attribute.
+#### Concrete V1 crate-root coverage list
+
+The V1 PR adds `#![warn(clippy::disallowed_methods)]` to the crate
+root (`lib.rs` or `main.rs`) of every workspace crate enumerated
+below. This list is the acceptance criterion: the `tests/lint_attribute_audit.rs`
+fixture asserts the attribute exists in exactly these files, and CI
+fails if a crate is added or removed without updating both the spec
+list and the audit test.
+
+`app/` (binary):
+- `app/src/main.rs`
+
+`crates/` (libraries — derived from the workspace member list and
+filtered to crates with non-test production code):
+
+- `crates/ai/src/lib.rs`
+- `crates/app-installation-detection/src/lib.rs`
+- `crates/asset_cache/src/lib.rs`
+- `crates/asset_macro/src/lib.rs`
+- `crates/channel_versions/src/lib.rs`
+- `crates/command/src/lib.rs`
+- `crates/command-signatures-v2/src/lib.rs`
+- `crates/computer_use/src/lib.rs`
+- `crates/editor/src/lib.rs`
+- `crates/field_mask/src/lib.rs`
+- `crates/firebase/src/lib.rs`
+- `crates/fuzzy_match/src/lib.rs`
+- `crates/graphql/src/lib.rs`
+- `crates/handlebars/src/lib.rs`
+- `crates/http_client/src/lib.rs`
+- `crates/http_server/src/lib.rs`
+- `crates/input_classifier/src/lib.rs`
+- `crates/ipc/src/lib.rs`
+- `crates/isolation_platform/src/lib.rs`
+- `crates/jsonrpc/src/lib.rs`
+- `crates/languages/src/lib.rs`
+- `crates/lsp/src/lib.rs`
+- `crates/managed_secrets/src/lib.rs`
+- `crates/managed_secrets_wasm/src/lib.rs`
+- `crates/markdown_parser/src/lib.rs`
+- `crates/natural_language_detection/src/lib.rs`
+- `crates/node_runtime/src/lib.rs`
+- `crates/onboarding/src/lib.rs`
+- `crates/persistence/src/lib.rs`
+- `crates/prevent_sleep/src/lib.rs`
+- `crates/remote_server/src/lib.rs`
+- `crates/repo_metadata/src/lib.rs`
+- `crates/serve-wasm/src/lib.rs`
+- `crates/settings/src/lib.rs`
+- `crates/settings_value/src/lib.rs`
+- `crates/settings_value_derive/src/lib.rs`
+- `crates/simple_logger/src/lib.rs`
+- `crates/string-offset/src/lib.rs`
+- `crates/sum_tree/src/lib.rs`
+- `crates/syntax_tree/src/lib.rs`
+- `crates/ui_components/src/lib.rs`
+- `crates/vim/src/lib.rs`
+- `crates/virtual_fs/src/lib.rs`
+- `crates/voice_input/src/lib.rs`
+- `crates/warp_cli/src/main.rs` (binary)
+- `crates/warp_completer/src/lib.rs`
+- `crates/warp_core/src/lib.rs`
+- `crates/warp_features/src/lib.rs`
+- `crates/warp_files/src/lib.rs`
+- `crates/warp_js/src/lib.rs`
+- `crates/warp_logging/src/lib.rs`
+- `crates/warp_ripgrep/src/lib.rs`
+
+The list is enumerated explicitly so that the V1 PR's diff can be
+reviewed against a closed set rather than "every workspace member".
+Test-only support crates (e.g., `crates/integration_testing` if its
+every module is `#[cfg(test)]`-gated) and integration test harnesses
+do not receive the attribute. `Integration` and `integration` style
+crates are inspected before merge: if every public module is
+`#[cfg(test)]`-only, they are excluded from the list above.
+
+If new crates are added to the workspace after V1 lands but before V2
+flips to `deny`, the V2 PR's first step is to extend the list above
+to cover them; otherwise the deny promotion creates a hard CI failure
+the moment the new crate first imports `std::fs::read*`.
 
 V2 promotion to `deny` is a single change at each of those same crate
 roots:
@@ -323,6 +491,17 @@ Identified via `git grep "fs::read"` in app/src and crates/:
 - T10. (V1.5) Async parity: `async_read_to_string` and
   `async_read_bytes` produce identical errors and successful
   payloads as their sync counterparts on the same fixtures.
+- T_error_precedence. Build a synthetic fixture that violates every
+  rule simultaneously: a symlink pointing at a 1 GiB file whose
+  first 8 KiB contains a NUL byte at offset 4 KiB and whose tail
+  contains an invalid UTF-8 sequence. Run the same path through
+  `read_to_string` four times with progressively relaxed `opts`:
+    1. `follow_symlinks: false` → expect `Io { ErrorKind::InvalidInput }`.
+    2. `follow_symlinks: true, max_bytes: 100` → expect `TooLarge`.
+    3. `follow_symlinks: true, max_bytes: 2 GiB` → expect `BinaryContent`.
+    4. As (3) but on a sibling fixture without the NUL byte → expect
+       `InvalidUtf8`.
+  Asserts the precedence ordering documented in B7.
 - T_lint_severity_location. Build-level test that asserts the
   V1 PR adds `#![warn(clippy::disallowed_methods)]` to every
   workspace crate root listed in the migration plan, and that
