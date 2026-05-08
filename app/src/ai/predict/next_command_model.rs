@@ -828,5 +828,5 @@ fn find_potential_autosuggestions_from_history<'a>(
 }
 
 #[cfg(test)]
-#[path = "next_command_model_test.rs"]
+#[path = "next_command_model_tests.rs"]
 mod tests;

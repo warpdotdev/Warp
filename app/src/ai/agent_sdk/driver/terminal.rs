@@ -16,7 +16,7 @@ use warp_cli::share::{ShareAccessLevel, ShareRequest, ShareSubject};
 use warp_completer::completer::CommandOutput;
 use warp_core::command::ExitCode;
 use warp_core::features::FeatureFlag;
-use warp_util::path::ShellFamily;
+use warp_util::{path::ShellFamily, sync::Condition};
 use warpui::{
     r#async::FutureExt, AppContext, Entity, ModelContext, ModelHandle, SingletonEntity as _,
     ViewHandle,
@@ -35,7 +35,6 @@ use crate::{
         view::ConversationRestorationInNewPaneType,
         TerminalView,
     },
-    util::sync::Condition,
     workspaces::user_workspaces::UserWorkspaces,
 };
 

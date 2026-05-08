@@ -6,5 +6,5 @@ pub(crate) mod terminal_manager;
 pub(crate) use terminal_manager::TerminalManager;
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

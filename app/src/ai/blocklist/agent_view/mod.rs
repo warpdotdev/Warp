@@ -6,6 +6,7 @@ mod controller;
 mod ephemeral_message_model;
 mod inline_agent_view_header;
 // TODO: Move orchestration_conversation_links module import elsewhere.
+pub(crate) mod orchestration_avatar;
 pub(crate) mod orchestration_conversation_links;
 pub mod orchestration_pill_bar;
 pub mod shortcuts;

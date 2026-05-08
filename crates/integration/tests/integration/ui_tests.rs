@@ -209,6 +209,9 @@ integration_tests! {
     test_secrets_are_always_redacted_in_ai_inputs,
 
     test_active_session_follows_focus,
+    test_tab_context_menu_copies_metadata,
+    test_vertical_tab_context_menu_copies_metadata,
+    test_vertical_pane_context_menu_copies_metadata,
 
     test_focus_panes_on_hover,
 

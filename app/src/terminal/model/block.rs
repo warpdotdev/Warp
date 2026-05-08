@@ -3357,5 +3357,5 @@ impl ansi::Handler for Block {
 }
 
 #[cfg(test)]
-#[path = "block_test.rs"]
+#[path = "block_tests.rs"]
 mod tests;

@@ -28,6 +28,11 @@ path = "src/bin/local.rs"
 test = false
 
 [[bin]]
+name = "integration"
+path = "src/bin/integration.rs"
+test = false
+
+[[bin]]
 name = "stable"
 path = "src/bin/stable.rs"
 test = false
@@ -203,6 +208,7 @@ toml_edit.workspace = true
 tracing.workspace = true
 ui_components.workspace = true
 unicase = "2.7.0"
+unicode-general-category.workspace = true
 unicode-width.workspace = true
 unindent = "0.1.7"
 url = { workspace = true, features = ["serde"] }
@@ -286,9 +292,9 @@ tokio.workspace = true
 tokio-util.workspace = true
 
 # AWS SDK (loading credentials for BYO LLM)
-aws-config = { version = "1.8.12", features = ["credentials-login"] }
+aws-config = { version = "1.8.16", features = ["credentials-login"] }
 aws-credential-types = "1"
-aws-sdk-sts = "1"
+aws-sdk-sts = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-types = "1"
 
 rmcp = { workspace = true, features = [
@@ -574,6 +580,7 @@ default = [
     "cloud_mode_image_context",
     "agent_mode_computer_use",
     "oz_platform_skills",
+    "oz_identity_federation",
     "sync_ambient_plans",
     "conversation_artifacts",
     "agent_view",
@@ -624,6 +631,8 @@ default = [
     "open_warp_new_settings_modes",
     "skip_firebase_anonymous_user",
     "settings_file",
+    "directory_tab_colors",
+    "configurable_context_window",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.
@@ -915,6 +924,7 @@ vertical_tabs_summary_mode = []
 tab_configs = []
 agent_harness = []
 oz_handoff = []
+handoff_local_cloud = []
 hoa_notifications = []
 open_code_notifications = []
 transfer_control_tool = []
@@ -930,6 +940,7 @@ cloud_mode_setup_v2 = ["cloud_mode"]
 cloud_mode_input_v2 = ["cloud_mode"]
 configurable_context_window = []
 handoff_cloud_cloud = ["cloud_mode_setup_v2"]
+git_credential_refresh = []
 
 [package.metadata.bundle.bin.warp-oss]
 category = "public.app-category.developer-tools"

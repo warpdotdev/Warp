@@ -12,6 +12,7 @@ use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::model::block::{
     AgentInteractionMetadata, AgentViewVisibility, BlockId, SerializedAIMetadata, SerializedBlock,
 };
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 
 use crate::ai::agent::api::convert_conversation::{
     compute_time_to_first_token_ms_from_messages, ConvertToExchanges,
@@ -22,6 +23,7 @@ use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::{collections::HashMap, fmt::Display};
+use warp_cli::agent::Harness;
 
 use super::task_store::TaskStore;
 use uuid::Uuid;
@@ -216,6 +218,8 @@ pub struct AIConversation {
     parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     agent_name: Option<String>,
+    /// Harness metadata associated with this child agent in orchestration flows.
+    orchestration_harness_type: Option<String>,
     /// The local conversation ID of the parent that spawned this child, if any.
     parent_conversation_id: Option<AIConversationId>,
     /// True when this conversation is a placeholder for a child agent executing
@@ -228,6 +232,12 @@ pub struct AIConversation {
     /// event log. Used on restore to resume event delivery without
     /// re-delivering already-processed events.
     last_event_sequence: Option<i64>,
+
+    /// Per-conversation orchestration config hydrated from
+    /// `OrchestrationConfigSnapshot` messages in the conversation's task list.
+    orchestration_config: Option<OrchestrationConfig>,
+    orchestration_status: OrchestrationConfigStatus,
+    orchestration_plan_id: Option<String>,
 }
 
 pub(crate) fn artifact_from_fork_proto(
@@ -275,9 +285,13 @@ impl AIConversation {
             artifacts: Vec::new(),
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
             last_event_sequence: None,
+            orchestration_config: None,
+            orchestration_status: OrchestrationConfigStatus::default(),
+            orchestration_plan_id: None,
         }
     }
 
@@ -354,6 +368,7 @@ impl AIConversation {
             artifacts,
             parent_agent_id,
             agent_name,
+            orchestration_harness_type,
             parent_conversation_id,
             is_remote_child,
             run_id,
@@ -378,6 +393,7 @@ impl AIConversation {
                 .unwrap_or_default();
             let parent_agent_id = data.parent_agent_id;
             let agent_name = data.agent_name;
+            let orchestration_harness_type = data.orchestration_harness_type;
             let parent_conversation_id = data
                 .parent_conversation_id
                 .and_then(|id| AIConversationId::try_from(id).ok());
@@ -400,6 +416,7 @@ impl AIConversation {
                 artifacts,
                 parent_agent_id,
                 agent_name,
+                orchestration_harness_type,
                 parent_conversation_id,
                 is_remote_child,
                 run_id,
@@ -413,6 +430,7 @@ impl AIConversation {
                 ConversationUsageMetadata::default(),
                 Default::default(),
                 Vec::new(),
+                None,
                 None,
                 None,
                 None,
@@ -460,9 +478,13 @@ impl AIConversation {
             artifacts,
             parent_agent_id,
             agent_name,
+            orchestration_harness_type,
             parent_conversation_id,
             is_remote_child,
             last_event_sequence,
+            orchestration_config: None,
+            orchestration_status: OrchestrationConfigStatus::default(),
+            orchestration_plan_id: None,
         })
     }
 
@@ -795,6 +817,24 @@ impl AIConversation {
     pub fn set_agent_name(&mut self, name: String) {
         self.agent_name = Some(name);
     }
+    pub fn orchestration_harness_type(&self) -> Option<&str> {
+        self.orchestration_harness_type.as_deref()
+    }
+
+    pub fn orchestration_harness(&self) -> Option<Harness> {
+        self.orchestration_harness_type
+            .as_deref()
+            .map(parse_orchestration_harness_type)
+            .or_else(|| {
+                self.server_metadata
+                    .as_ref()
+                    .map(|metadata| Harness::from(metadata.harness))
+            })
+    }
+
+    pub fn set_orchestration_harness(&mut self, harness: Harness) {
+        self.orchestration_harness_type = Some(harness.config_name().to_string());
+    }
 
     pub fn parent_conversation_id(&self) -> Option<AIConversationId> {
         self.parent_conversation_id
@@ -837,6 +877,35 @@ impl AIConversation {
     /// Marks this conversation as a remote child placeholder.
     pub fn mark_as_remote_child(&mut self) {
         self.is_remote_child = true;
+    }
+
+    pub fn orchestration_config(&self) -> Option<&OrchestrationConfig> {
+        self.orchestration_config.as_ref()
+    }
+
+    pub fn orchestration_status(&self) -> OrchestrationConfigStatus {
+        self.orchestration_status
+    }
+
+    pub fn orchestration_plan_id(&self) -> Option<&str> {
+        self.orchestration_plan_id.as_deref()
+    }
+
+    /// Replaces the orchestration config, status, and plan_id for this
+    /// conversation. Returns `true` if any value actually changed.
+    pub fn set_orchestration_config(
+        &mut self,
+        config: Option<OrchestrationConfig>,
+        status: OrchestrationConfigStatus,
+        plan_id: Option<String>,
+    ) -> bool {
+        let changed = self.orchestration_config != config
+            || self.orchestration_status != status
+            || self.orchestration_plan_id != plan_id;
+        self.orchestration_config = config;
+        self.orchestration_status = status;
+        self.orchestration_plan_id = plan_id;
+        changed
     }
 
     /// Returns a flat list of linearized messages across all tasks, interpolating subtask messages
@@ -2308,6 +2377,29 @@ impl AIConversation {
                                 None => {}
                             }
                         }
+                        Some(api::message::Message::OrchestrationConfigSnapshot(
+                            snapshot,
+                        )) => {
+                            let config = snapshot
+                                .config
+                                .as_ref()
+                                .map(OrchestrationConfig::from_proto);
+                            let status = OrchestrationConfigStatus::from_proto(
+                                snapshot.status.as_ref(),
+                            );
+                            let plan_id = if snapshot.plan_id.is_empty() {
+                                None
+                            } else {
+                                Some(snapshot.plan_id.clone())
+                            };
+                            if self.set_orchestration_config(config, status, plan_id) {
+                                ctx.emit(
+                                    BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                                        conversation_id: self.id,
+                                    },
+                                );
+                            }
+                        }
                         Some(api::message::Message::ToolCallResult(tcr)) => {
                             // Clean up temp directories from conversation search subagents.
                             if let Some(api::message::tool_call_result::Result::Subagent(_)) =
@@ -2844,6 +2936,7 @@ impl AIConversation {
                 artifacts_json,
                 parent_agent_id: self.parent_agent_id.clone(),
                 agent_name: self.agent_name.clone(),
+                orchestration_harness_type: self.orchestration_harness_type.clone(),
                 parent_conversation_id: self.parent_conversation_id.map(|id| id.to_string()),
                 is_remote_child: self.is_remote_child,
                 run_id: self.task_id.map(|id| id.to_string()),
@@ -3342,6 +3435,11 @@ impl AIConversation {
     }
 }
 
+fn parse_orchestration_harness_type(value: &str) -> Harness {
+    Harness::from_config_name(value)
+        .or_else(|| Harness::parse_orchestration_harness(value))
+        .unwrap_or(Harness::Unknown)
+}
 pub(super) fn update_todo_list_from_todo_op(
     todo_lists: &mut Vec<AIAgentTodoList>,
     op: api::message::update_todos::Operation,

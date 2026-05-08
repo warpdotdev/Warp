@@ -10,6 +10,7 @@ use session_sharing_protocol::common::SessionId;
 use super::AmbientAgentTaskId;
 use super::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::{
+    server::retry_strategies::with_bounded_retry,
     server::server_api::ai::{AIClient, RunFollowupRequest, SpawnAgentRequest, TaskStatusMessage},
     terminal::shared_session,
 };
@@ -19,7 +20,7 @@ use crate::{
 pub const TASK_STATUS_POLLING_DURATION: Duration = Duration::from_secs(80);
 
 #[cfg(not(test))]
-const TASK_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const TASK_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(3);
 #[cfg(test)]
 const TASK_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
@@ -33,29 +34,21 @@ pub struct SessionJoinInfo {
 impl SessionJoinInfo {
     pub fn from_task(task: &AmbientAgentTask) -> Option<Self> {
         let run_execution = task.active_run_execution();
-        // Prefer the server-provided session_link when available; it is a better signal
-        // that a session-sharing link is ready to be shown to the user.
-        if let Some(link) = run_execution.session_link {
-            let session_id = run_execution
-                .session_id
-                .and_then(|session_id| SessionId::from_str(session_id).ok());
-            return Some(Self {
-                session_id,
-                session_link: link.to_string(),
-            });
-        }
+        // The cloud-mode pane joins on `session_id`; a standalone `session_link` isn't
+        // actionable without it.
+        let session_id_str = run_execution.session_id?;
+        let session_id = SessionId::from_str(session_id_str).ok()?;
 
-        // Fallback to constructing a link from the session_id.
-        if let Some(session_id) = run_execution.session_id {
-            if let Ok(session_id) = SessionId::from_str(session_id) {
-                return Some(Self {
-                    session_id: Some(session_id),
-                    session_link: shared_session::join_link(&session_id),
-                });
-            }
-        }
-
-        None
+        // Prefer the server-provided `session_link`; fall back to constructing one from
+        // `session_id`. `active_run_execution()` already filters out empty links.
+        let session_link = run_execution
+            .session_link
+            .map(String::from)
+            .unwrap_or_else(|| shared_session::join_link(&session_id));
+        Some(Self {
+            session_id: Some(session_id),
+            session_link,
+        })
     }
 }
 
@@ -185,7 +178,21 @@ fn poll_run_until_joinable_session(
                     return;
                 }
                 _ = poll_timer => {
-                    match ai_client.get_ambient_agent_task(&run_id).await {
+                    // Wrap the status poll in with_bounded_retry so transient
+                    // HTTP errors (429, 5xx) are retried with exponential
+                    // backoff instead of immediately killing the CLI.
+                    let poll_result = {
+                        let client = ai_client.clone();
+                        with_bounded_retry(
+                            &format!("poll agent {run_id}"),
+                            || {
+                                let client = client.clone();
+                                async move { client.get_ambient_agent_task(&run_id).await }
+                            },
+                        )
+                        .await
+                    };
+                    match poll_result {
                         Ok(task) => {
                             if last_state.as_ref() != Some(&task.state) {
                                 last_state = Some(task.state.clone());

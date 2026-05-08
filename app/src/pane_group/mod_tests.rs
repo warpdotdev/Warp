@@ -16,6 +16,7 @@ use crate::{
         },
         document::ai_document_model::AIDocumentModel,
         execution_profiles::profiles::AIExecutionProfilesModel,
+        harness_availability::HarnessAvailabilityModel,
         llms::LLMPreferences,
         mcp::{
             templatable_manager::TemplatableMCPServerManager, FileBasedMCPManager, FileMCPWatcher,
@@ -78,7 +79,10 @@ use uuid::Uuid;
 use warp_core::features::FeatureFlag;
 use watcher::HomeDirectoryWatcher;
 
-use super::child_agent::{create_hidden_child_agent_conversation, HiddenChildAgentTaskContext};
+use super::child_agent::{
+    create_hidden_child_agent_conversation, HiddenChildAgentConversationRequest,
+    HiddenChildAgentTaskContext,
+};
 use super::*;
 use crate::terminal::resizable_data::ResizableData;
 use ai::{
@@ -154,6 +158,7 @@ fn initialize_app(app: &mut App) {
     });
     app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(LLMPreferences::new);
+    app.add_singleton_model(HarnessAvailabilityModel::new);
     #[cfg(feature = "voice_input")]
     app.add_singleton_model(voice_input::VoiceInput::new);
     #[cfg(feature = "local_fs")]
@@ -437,7 +442,8 @@ fn test_insert_hidden_child_agent_pane_keeps_focus_and_active_session() {
 
         pane_group.update(&mut app, |panes, ctx| {
             let parent_pane_id = get_newly_created_pane_id(panes, &[]);
-            let initial_pane_count = panes.pane_count();
+            let initial_tree_pane_count = panes.pane_count();
+            let initial_content_pane_count = panes.pane_ids().count();
             let initial_visible_count = panes.visible_pane_count();
             let initial_active_session = panes.active_session_id(ctx);
 
@@ -447,11 +453,13 @@ fn test_insert_hidden_child_agent_pane_keeps_focus_and_active_session() {
                 ctx,
             );
 
-            assert_eq!(panes.pane_count(), initial_pane_count + 1);
+            assert_eq!(panes.pane_count(), initial_tree_pane_count);
+            assert_eq!(panes.pane_ids().count(), initial_content_pane_count + 1);
             assert_eq!(panes.visible_pane_count(), initial_visible_count);
             assert!(panes.has_pane_id(child_pane_id.into()));
+            assert!(!panes.panes.is_pane_in_tree(child_pane_id.into()));
 
-            // The new child pane should remain hidden and not affect visible ordering.
+            // The new child pane should remain off-tree and not affect visible ordering.
             assert_eq!(panes.pane_id_by_index(0), Some(parent_pane_id));
             assert_eq!(panes.pane_id_by_index(1), None);
 
@@ -477,14 +485,17 @@ fn test_hidden_child_creation_applies_ambient_task_id_to_controller() {
 
             let child = create_hidden_child_agent_conversation(
                 panes,
-                parent_pane_id,
-                "Agent 1".to_string(),
-                parent_conversation_id,
-                HashMap::new(),
-                Some(HiddenChildAgentTaskContext {
-                    task_id,
-                    working_dir: None,
-                }),
+                HiddenChildAgentConversationRequest {
+                    parent_pane_id,
+                    name: "Agent 1".to_string(),
+                    parent_conversation_id,
+                    orchestration_harness: None,
+                    env_vars: HashMap::new(),
+                    task_context: Some(HiddenChildAgentTaskContext {
+                        task_id,
+                        working_dir: None,
+                    }),
+                },
                 ctx,
             )
             .expect("fresh hidden child conversation should be created");
