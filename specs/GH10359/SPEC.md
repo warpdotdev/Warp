@@ -52,13 +52,29 @@ risk of accidental destructive actions.
 ### B2. Selection actions
 
 - Per-row checkbox toggles the row's selection.
-- Header controls:
-  - "Select all visible" — selects only currently rendered rows
-    (respects active filter / search).
-  - "Select all" — selects every conversation, including
-    not-yet-rendered ones (virtualization-safe).
-  - "Clear selection" — clears the selection set without exiting
-    selection mode.
+- Header controls (precise semantics):
+  - **"Select all visible"** — selects only the rows currently
+    materialized in the virtualized list's DOM (i.e., the rows
+    actually rendered in the viewport plus any virtualization
+    overscan window). Rows that scroll into view AFTER the action
+    are NOT auto-selected. This is the **safe default**.
+  - **"Select all"** — selects every conversation matching the
+    current filter/search query, **including non-materialized
+    rows** that the virtualization layer has not rendered. The
+    client first fetches a count of the matching set; if the count
+    exceeds **100**, the UI shows a confirmation chip
+    (`Select all 247? [Confirm] [Cancel]`) before applying. With
+    no active filter, "Select all" applies to all conversations;
+    with an active filter, it applies to the filtered set only
+    (e.g. `Select all 47 matching "foo"?`).
+  - **"Clear selection"** — clears the selection set without
+    exiting selection mode.
+- Selection set tracks rows by **conversation ID**. The selection
+  persists across filter/search changes — previously-selected
+  conversations remain selected even if they are no longer visible
+  due to a tightened filter. When this happens, the header chip
+  surfaces both totals, e.g. `12 selected · 8 not currently
+  visible`.
 - Mouse modifiers:
   - Cmd-click (macOS) / Ctrl-click (Win/Linux) on a row toggles
     that single row's selection.
@@ -71,11 +87,13 @@ risk of accidental destructive actions.
 
 - Header includes a "Delete selected (N)" button.
   - Disabled when N == 0.
-  - When N > 0 and the user has any existing
-    "skip delete confirmations" preference set, that preference
-    is **still respected**, but bulk delete ALWAYS confirms,
-    regardless of the preference, because the blast radius is
-    larger than a single row.
+  - **Skip-confirmation is NOT supported for bulk delete in V1.**
+    Every bulk-delete operation prompts, regardless of any
+    existing single-row "skip confirmations" preference. The
+    blast radius of a bulk delete is materially larger than a
+    single row, so V1 intentionally does not honor a skip-confirm
+    preference here. Single-row delete continues to honor its
+    existing preference unchanged.
 - Confirmation dialog copy:
   > Delete N conversations? You have 5 seconds to undo.
   >
@@ -99,6 +117,28 @@ risk of accidental destructive actions.
   active, the previous deletion is committed immediately
   (tombstones flushed) and a new snackbar is shown for the new
   batch. Undo only ever applies to the most recent batch.
+
+### B4a. Undo accessibility
+
+The 5-second undo window must be reachable without a mouse and
+must work with reduced-motion and assistive-technology settings:
+
+- The snackbar's "Undo" button is keyboard-reachable: pressing
+  Tab while the snackbar is visible focuses the Undo button. Esc
+  returns focus to the prior context (typically the conversation
+  list) without invoking Undo.
+- Screen readers announce the snackbar on appearance:
+  > Deleted N conversations. Undo available for 5 seconds. Press
+  > Tab to focus undo.
+- The snackbar element uses `role="alert"` and
+  `aria-live="assertive"` so the announcement is not deferred.
+- For users with `prefers-reduced-motion`, the snackbar appears
+  and dismisses without slide / fade animations; the 5-second
+  visibility window is unchanged.
+- Cmd+Z (macOS) / Ctrl+Z (Win/Linux) while focus is anywhere
+  inside the conversation list also triggers Undo, provided the
+  invocation occurs within the 5-second window. After the
+  window, the shortcut is a no-op for this flow.
 
 ### B5. Active-conversation refocus
 
@@ -136,12 +176,64 @@ risk of accidental destructive actions.
 
 - No new user-facing settings.
 - Existing single-row delete-confirmation preference (if any) is
-  respected for single-row deletes and overridden for bulk
-  deletes (see B3).
+  respected for single-row deletes; bulk delete intentionally
+  does NOT honor a skip-confirm preference in V1 (see B3).
 - Storage layer: `app/src/storage/conversations.rs` gains a
   batch-delete API and a tombstone window so the in-memory state
   can restore the batch within the 5s undo window without a full
   reload.
+
+### Storage / API contract (bulk delete)
+
+Bulk delete is implemented as a **single batch endpoint** rather
+than a client-side fan-out of per-row deletes. This bounds the
+failure surface and gives the server a single point of accounting.
+
+- Endpoint: `DELETE /api/conversations`
+  - Body: `{ ids: ["...", "...", ...] }`
+  - Response: `{ results: [{ id, status, error_message? }, ...] }`
+    where `status` is one of `"deleted" | "not_found" |
+    "forbidden" | "error"`. `error_message` is present only when
+    `status == "error"`.
+
+- **Atomicity**: best-effort, **per-id**. Partial failure does
+  not roll back the successful deletions. Each id outcome is
+  reported individually so the client can surface granular
+  feedback.
+
+- **Per-batch limit**: maximum **500 ids per batch**. The client
+  splits a larger selection into sequential 500-id batches and
+  surfaces aggregate progress in the snackbar / header chip
+  (e.g. `Deleting 1,200 conversations… (batch 2 of 3)`).
+
+- **Failure handling**:
+  - Successful per-id deletions enter the undo tombstone set and
+    can be restored within the 5s window.
+  - Per-id errors (`"error"` / `"forbidden"`) are NOT tombstoned;
+    those rows remain in the conversation list with an inline
+    error indicator and a re-tryable affordance.
+  - On a network-level error mid-batch (no usable response),
+    retry the failed batch up to **3 times** with exponential
+    backoff (250ms, 500ms, 1s). After exhaustion, surface a
+    user-visible error in the snackbar with a "Retry" affordance.
+
+- **Undo endpoint**: `POST /api/conversations/restore`
+  - Body: `{ ids: ["...", "...", ...] }`
+  - The server retains tombstone state for at least the 5-second
+    client undo window plus a server-side grace period sufficient
+    to cover clock skew and request latency.
+
+### Bulk-delete safety limits
+
+- **Hard cap**: a single bulk-delete operation may target at most
+  **5,000 conversations**. Selecting more than this and pressing
+  Delete shows an error chip:
+  > Maximum 5,000 conversations per delete — narrow your
+  > selection.
+- **Server-side rate limit**: at most **10 batch-delete
+  requests per minute per user**. Exceeding this returns
+  `429 Too Many Requests` and the client surfaces a transient
+  error with retry-after guidance.
 
 ## Acceptance Criteria
 
@@ -151,8 +243,9 @@ risk of accidental destructive actions.
 - A2. Selecting via checkbox, Cmd-click, and Shift-click all
   produce the expected selection set; the live header count is
   accurate.
-- A3. "Delete selected (N)" prompts the bulk-delete confirmation
-  even when the per-row "skip confirmations" preference is set.
+- A3. "Delete selected (N)" always prompts the bulk-delete
+  confirmation. The per-row "skip confirmations" preference is
+  not honored for bulk delete in V1.
 - A4. Within 5s, clicking Undo restores all deleted conversations
   to their original positions and state.
 - A5. Deleting the active conversation as part of a bulk batch
@@ -217,11 +310,15 @@ risk of accidental destructive actions.
 - Q3. Should "Select all" warn before selecting >N (e.g., 500)
   conversations? V1 proposal: no warning, but the confirmation
   dialog already shows the count.
-- Q4. Does the storage layer need a server-side bulk-delete
+- Q4. ~~Does the storage layer need a server-side bulk-delete
   endpoint, or is per-row deletion fanned-out client-side
-  acceptable for V1? Proposal: V1 fans out client-side; if
-  performance is unacceptable at large N, add a server endpoint
-  in a follow-up.
+  acceptable for V1?~~ **Resolved**: V1 uses a single batch
+  endpoint (`DELETE /api/conversations`) with explicit per-id
+  results, a 500-id batch cap, exponential-backoff retry, and
+  tombstone-based undo. See **Storage / API contract** above.
+  Client-side fan-out is rejected because it leaves
+  partial-failure semantics undefined and makes server-side rate
+  limiting and accounting unreliable.
 
 ## Telemetry
 
