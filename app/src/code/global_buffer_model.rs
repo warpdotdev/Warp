@@ -1577,7 +1577,7 @@ impl GlobalBufferModel {
             let manager = RemoteServerManager::handle(ctx);
             manager.as_ref(ctx).client_for_host(&host_id).cloned()
         };
-        log::info!(
+        log::debug!(
             "[remote-buffer] Setting up edit subscription: path={path_str} has_client={}",
             client_for_sub.is_some()
         );
@@ -1632,7 +1632,7 @@ impl GlobalBufferModel {
                             }
                         })
                         .collect();
-                    log::info!(
+                    log::debug!(
                         "[remote-buffer] Sending BufferEdit: path={path_for_edit} \
                          expected_sv={expected_sv} new_cv={} edit_count={}",
                         new_cv.as_u64(),
@@ -1674,7 +1674,7 @@ impl GlobalBufferModel {
             return BufferState::new(file_id, buffer);
         };
 
-        log::info!("[remote-buffer] Sending OpenBuffer for path={path_str} host={host_id:?}");
+        log::debug!("[remote-buffer] Sending OpenBuffer for path={path_str} host={host_id:?}");
         ctx.spawn(
             async move {
                 client
@@ -1703,7 +1703,7 @@ impl GlobalBufferModel {
     ) {
         match result {
             Ok(response) => {
-                log::info!(
+                log::debug!(
                     "[remote-buffer] OpenBuffer response: content_len={} server_version={}",
                     response.content.len(),
                     response.server_version,
@@ -1778,7 +1778,7 @@ impl GlobalBufferModel {
         };
 
         if !sync_clock.client_edit_matches(expected_server_version) {
-            log::info!(
+            log::debug!(
                 "Rejected client edit: expected S={:?}, actual S={:?}",
                 expected_server_version,
                 sync_clock.server_version
@@ -1933,7 +1933,7 @@ impl GlobalBufferModel {
             return;
         };
 
-        log::info!("[remote-buffer] Re-opening buffer: path={path_str}");
+        log::debug!("[remote-buffer] Re-opening buffer: path={path_str}");
         // Close first so the server deallocates the old in-memory buffer
         // (which contains stale client edits). The subsequent OpenBuffer
         // will create a fresh buffer and read from disk.
@@ -1964,7 +1964,7 @@ impl GlobalBufferModel {
         path: &str,
         ctx: &mut ModelContext<Self>,
     ) {
-        log::info!("[remote-buffer] BufferConflictDetected: host={host_id} path={path}");
+        log::debug!("[remote-buffer] BufferConflictDetected: host={host_id} path={path}");
 
         let Some(file_id) = self.find_remote_file_id(host_id, path) else {
             log::warn!("[remote-buffer] BufferConflictDetected for unknown buffer: {path}");
@@ -1989,7 +1989,7 @@ impl GlobalBufferModel {
         edits: &[CharOffsetEdit],
         ctx: &mut ModelContext<Self>,
     ) {
-        log::info!(
+        log::debug!(
             "[remote-buffer] BufferUpdatedPush: path={path} new_sv={new_server_version} \
              expected_cv={expected_client_version} edit_count={}",
             edits.len()
@@ -2011,7 +2011,7 @@ impl GlobalBufferModel {
             return;
         };
 
-        log::info!(
+        log::debug!(
             "[remote-buffer] SyncClock state: local_sv={:?} local_cv={:?}",
             sync_clock.server_version,
             sync_clock.client_version,
@@ -2020,7 +2020,7 @@ impl GlobalBufferModel {
         let expected_cv = ContentVersion::from_raw(expected_client_version as usize);
         if sync_clock.server_push_matches(expected_cv) {
             // Accept the update — apply edits incrementally.
-            log::info!(
+            log::debug!(
                 "[remote-buffer] Accepting push: applying {} edits",
                 edits.len()
             );

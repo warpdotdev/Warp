@@ -120,10 +120,7 @@ pub enum CodeSource {
     /// Opened from project rules (WARP.md) file.
     ProjectRules { path: PathBuf },
     /// Opened from file tree (local or remote).
-    FileTree {
-        #[serde(skip)]
-        location: Option<FileLocation>,
-    },
+    FileTree { location: FileLocation },
     /// Opened from macOS Finder via "Open With".
     Finder { path: PathBuf },
     /// Opened from a skill.
@@ -153,8 +150,8 @@ impl CodeSource {
         match self {
             Self::New { .. } | Self::AIAction { .. } => None,
             Self::FileTree { location, .. } => match location {
-                Some(FileLocation::Local(path)) => Some(path.clone()),
-                _ => None,
+                FileLocation::Local(path) => Some(path.clone()),
+                FileLocation::Remote(_) => None,
             },
             Self::Link { path, .. }
             | Self::ProjectRules { path }
@@ -164,13 +161,26 @@ impl CodeSource {
     }
 
     /// Returns the `FileLocation` for file tree sources.
-    #[allow(dead_code)]
     pub fn file_location(&self) -> Option<&FileLocation> {
         match self {
-            Self::FileTree {
-                location: Some(location),
-            } => Some(location),
+            Self::FileTree { location } => Some(location),
             _ => None,
+        }
+    }
+
+    /// Returns the `FileLocation` for any source that has a backing file.
+    ///
+    /// Unlike `path()` (which only returns local paths) and `file_location()`
+    /// (which only covers `FileTree`), this covers every variant that maps to
+    /// a file — local or remote.
+    pub fn location(&self) -> Option<FileLocation> {
+        match self {
+            Self::New { .. } | Self::AIAction { .. } => None,
+            Self::FileTree { location } => Some(location.clone()),
+            Self::Link { path, .. }
+            | Self::ProjectRules { path }
+            | Self::Finder { path }
+            | Self::Skill { path, .. } => Some(FileLocation::Local(path.clone())),
         }
     }
 
@@ -205,7 +215,7 @@ impl CodeSource {
             Self::AIAction { .. } => "ai_action",
             Self::ProjectRules { .. } => "project_rules",
             Self::FileTree {
-                location: Some(FileLocation::Remote(_)),
+                location: FileLocation::Remote(_),
             } => "remote_file_tree",
             Self::FileTree { .. } => "file_tree",
             Self::Finder { .. } => "finder",
@@ -222,7 +232,7 @@ impl CodeSource {
             self,
             Self::AIAction { .. }
                 | Self::FileTree {
-                    location: Some(FileLocation::Remote(_)),
+                    location: FileLocation::Remote(_),
                 }
         )
     }

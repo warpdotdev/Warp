@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use warp_util::content_version::ContentVersion;
 use warp_util::remote_path::RemotePath;
 
 /// Uniquely identifies where a file lives — either on the local filesystem
 /// or on a remote host. Used across both the buffer model and the
 /// editor/view layers as the canonical file-identity type.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum FileLocation {
     /// File on the local filesystem.
     Local(PathBuf),
