@@ -21,6 +21,8 @@
   ·
   <a href="https://docs.warp.dev">Docs</a>
   ·
+  <a href="https://deepwiki.com/warpdotdev/warp">DeepWiki</a>
+  ·
   <a href="https://www.warp.dev/blog/how-warp-works">How Warp Works</a>
 </p>
 
