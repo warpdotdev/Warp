@@ -427,6 +427,11 @@ pub fn install_script(staging_tarball_path: Option<&str>) -> String {
             "{no_http_client_exit_code}",
             &NO_HTTP_CLIENT_EXIT_CODE.to_string(),
         )
+        .replace(
+            "{download_failed_exit_code}",
+            &DOWNLOAD_FAILED_EXIT_CODE.to_string(),
+        )
+        .replace("{no_tar_exit_code}", &NO_TAR_EXIT_CODE.to_string())
         .replace("{staging_tarball_path}", staging_tarball_path.unwrap_or(""))
 }
 
@@ -487,6 +492,17 @@ pub fn download_tarball_url(platform: &RemotePlatform) -> String {
 /// trigger the SCP upload fallback.
 pub const NO_HTTP_CLIENT_EXIT_CODE: i32 = 3;
 
+/// Exit code the install script uses when both curl and wget are present
+/// but both failed to download the tarball (DNS failure, TLS error,
+/// HTTP 403/502, timeout, partial download, etc.). The Rust side matches
+/// on this to trigger the SCP upload fallback.
+pub const DOWNLOAD_FAILED_EXIT_CODE: i32 = 4;
+
+/// Exit code the install script uses when `tar` is not available on the
+/// remote host. The Rust side matches on this to trigger the direct
+/// binary upload fallback (extract locally, upload only the binary).
+pub const NO_TAR_EXIT_CODE: i32 = 5;
+
 /// Timeout for the binary existence check.
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -498,6 +514,23 @@ pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
 /// the tarball over the user's SSH link, which is typically slower than
 /// the remote host's direct internet connection.
 pub const SCP_INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Returns `true` if the install script stderr indicates a host-level
+/// condition that should **not** be retried via SCP fallback. These are
+/// "true" failures (permission denied, no disk space, read-only
+/// filesystem, quota exceeded) that no amount of alternate download
+/// strategy can fix.
+pub fn is_non_retryable_host_error(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    // Each pattern corresponds to a POSIX errno string commonly emitted
+    // by mkdir, chmod, mv, tar, or the shell on real remote hosts.
+    lower.contains("permission denied")
+        || lower.contains("read-only file system")
+        || lower.contains("no space left on device")
+        || lower.contains("disk quota exceeded")
+        || lower.contains("cannot create directory")
+        || lower.contains("operation not permitted")
+}
 
 #[cfg(test)]
 #[path = "setup_tests.rs"]

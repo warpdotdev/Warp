@@ -315,3 +315,92 @@ fn parse_preinstall_missing_status_falls_open() {
     assert_eq!(result.status, PreinstallStatus::Unknown);
     assert!(result.is_supported());
 }
+
+#[test]
+fn exit_code_constants_are_distinct() {
+    // Guard: the install script exit codes must be distinct so the Rust
+    // side routes to the correct fallback.
+    let codes = [
+        NO_HTTP_CLIENT_EXIT_CODE,
+        DOWNLOAD_FAILED_EXIT_CODE,
+        NO_TAR_EXIT_CODE,
+    ];
+    for (i, a) in codes.iter().enumerate() {
+        for b in &codes[i + 1..] {
+            assert_ne!(a, b, "exit code collision: {a} == {b}");
+        }
+        // None of them should collide with the unsupported-arch exit (2)
+        // or generic failure (1).
+        assert_ne!(*a, 1);
+        assert_ne!(*a, 2);
+    }
+}
+
+#[test]
+fn install_script_substitutes_new_exit_codes() {
+    let script = install_script(None);
+    // The new exit code placeholders must be resolved in the generated
+    // script — no raw `{download_failed_exit_code}` or `{no_tar_exit_code}`
+    // should remain.
+    assert!(
+        !script.contains("{download_failed_exit_code}"),
+        "placeholder not substituted"
+    );
+    assert!(
+        !script.contains("{no_tar_exit_code}"),
+        "placeholder not substituted"
+    );
+    // The actual numeric values should appear.
+    assert!(script.contains(&format!("exit {DOWNLOAD_FAILED_EXIT_CODE}")));
+    assert!(script.contains(&format!("exit {NO_TAR_EXIT_CODE}")));
+}
+
+#[test]
+fn is_non_retryable_detects_permission_denied() {
+    assert!(is_non_retryable_host_error(
+        "mkdir: cannot create directory '/root/.warp': Permission denied"
+    ));
+}
+
+#[test]
+fn is_non_retryable_detects_no_space() {
+    assert!(is_non_retryable_host_error(
+        "tar: oz: Cannot write: No space left on device"
+    ));
+}
+
+#[test]
+fn is_non_retryable_detects_read_only_fs() {
+    assert!(is_non_retryable_host_error(
+        "mv: cannot move 'oz': Read-only file system"
+    ));
+}
+
+#[test]
+fn is_non_retryable_detects_quota() {
+    assert!(is_non_retryable_host_error(
+        "write failed: Disk quota exceeded"
+    ));
+}
+
+#[test]
+fn is_non_retryable_ignores_download_errors() {
+    // Network/download errors should NOT be classified as non-retryable,
+    // because the SCP fallback may succeed.
+    assert!(!is_non_retryable_host_error(
+        "curl: (6) Could not resolve host: app.warp.dev"
+    ));
+    assert!(!is_non_retryable_host_error(
+        "wget: unable to resolve host address"
+    ));
+    assert!(!is_non_retryable_host_error(
+        "curl: (60) SSL certificate problem"
+    ));
+}
+
+#[test]
+fn is_non_retryable_detects_operation_not_permitted() {
+    assert!(is_non_retryable_host_error(
+        "chmod: changing permissions of 'oz': Operation not permitted"
+    ));
+}

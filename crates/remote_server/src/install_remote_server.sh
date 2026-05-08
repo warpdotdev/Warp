@@ -9,6 +9,8 @@
 #   {version_query}             — e.g. &version=v0.2026... (empty when no release tag)
 #   {version_suffix}            — e.g. -v0.2026...        (empty when no release tag)
 #   {no_http_client_exit_code}  — exit code when neither curl nor wget is available
+#   {download_failed_exit_code} — exit code when both curl and wget fail to download
+#   {no_tar_exit_code}          — exit code when tar is not available
 #   {staging_tarball_path}      — path to a pre-uploaded tarball (SCP fallback; empty normally)
 set -e
 
@@ -64,17 +66,50 @@ if [ -n "$staging_tarball_path" ]; then
   esac
   mv "$staging_tarball_path" "$tmpdir/oz.tar.gz"
 else
-  # Normal path: download via curl or wget.
+  # Normal path: download via curl or wget, with retry using the
+  # alternate client if the primary fails.
   url="{download_base_url}?package=tar&os=$os_name&arch=$arch_name&channel={channel}{version_query}"
 
-  if command -v curl >/dev/null 2>&1; then
-    curl -fSL "$url" -o "$tmpdir/oz.tar.gz"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -q -O "$tmpdir/oz.tar.gz" "$url"
-  else
+  has_curl=false
+  has_wget=false
+  command -v curl >/dev/null 2>&1 && has_curl=true
+  command -v wget >/dev/null 2>&1 && has_wget=true
+
+  if [ "$has_curl" = false ] && [ "$has_wget" = false ]; then
     echo "error: neither curl nor wget is available" >&2
     exit {no_http_client_exit_code}
   fi
+
+  download_ok=false
+  download_err=""
+
+  # Try primary client, then retry with alternate on failure.
+  if [ "$has_curl" = true ]; then
+    if curl -fSL --connect-timeout 15 --retry 1 "$url" -o "$tmpdir/oz.tar.gz" 2>/dev/null; then
+      download_ok=true
+    else
+      download_err="curl failed (exit $?)"
+    fi
+  fi
+
+  if [ "$download_ok" = false ] && [ "$has_wget" = true ]; then
+    if wget -q --timeout=15 -O "$tmpdir/oz.tar.gz" "$url" 2>/dev/null; then
+      download_ok=true
+    else
+      download_err="${download_err:+$download_err; }wget failed (exit $?)"
+    fi
+  fi
+
+  if [ "$download_ok" = false ]; then
+    echo "error: remote download failed: $download_err" >&2
+    exit {download_failed_exit_code}
+  fi
+fi
+
+# Verify tar is available before attempting extraction.
+if ! command -v tar >/dev/null 2>&1; then
+  echo "error: tar is not available" >&2
+  exit {no_tar_exit_code}
 fi
 
 tar -xzf "$tmpdir/oz.tar.gz" -C "$tmpdir"
