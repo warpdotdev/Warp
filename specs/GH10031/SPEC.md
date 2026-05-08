@@ -94,6 +94,51 @@ updates without losing the final state.
   event that the existing repo-metadata subsystem responds to.
   (It currently fires only on pane creation and tab switch.)
 
+### Result ordering (stale-result rejection)
+
+A leading-edge derivation and the trailing-edge re-derivation
+of the SAME 250ms window can complete in any order — the child
+processes overlap and the trailing-edge process started later
+may finish FIRST (leading was scheduled against an earlier
+CWD that resolves slowly; trailing was dispatched against the
+latest CWD and returns quickly). Without explicit ordering,
+the leading result could land second and overwrite the
+trailing result, leaving the metadata reflecting an
+intermediate CWD instead of the final one.
+
+- B-ORDER. **Each derivation carries a monotonically
+  increasing `derivation_seq: u64` per pane**, assigned at the
+  moment the derivation is *dispatched* (not at the moment its
+  child process exits). The pane's repo-metadata coordinator
+  also tracks `last_applied_seq: u64` per pane, initially 0.
+- B-ORDER-1. When a derivation child process exits and
+  produces a result (success → canonical tuple, or failure →
+  non-git clear), the coordinator compares its `seq` against
+  `last_applied_seq` for the pane:
+  - If `seq > last_applied_seq`: the result is current. Apply
+    it (fire `RepoContextChanged` or `RepoMetadataCleared` per
+    B2/B5), then set `last_applied_seq = seq`.
+  - If `seq <= last_applied_seq`: the result is stale (a
+    later derivation has already been applied to the metadata
+    surface). **Discard the result silently**: do NOT fire any
+    event, do NOT update the cached canonical tuple. Log at
+    debug level.
+- B-ORDER-2. The cached canonical tuple used for B-CANON
+  short-circuit decisions (and for B5-INVALIDATE) is updated
+  **only when a non-stale result is applied**. Stale results
+  cannot perturb the cache or suppress future event emission.
+- B-ORDER-3. Cancelling an in-flight leading-edge derivation
+  is NOT required for correctness; the seq comparison
+  guarantees the trailing-edge result wins regardless of the
+  child-process exit order. Implementations MAY cancel
+  in-flight leading-edge children for resource reasons but
+  MUST NOT rely on cancellation for the ordering guarantee.
+- B-ORDER-4. The pane's `derivation_seq` is monotonic across
+  pane lifetime; it is NOT reset by `RepoMetadataCleared` or by
+  CWD-into-non-git transitions, so a late-arriving leading-edge
+  result from before a clear cannot be re-applied as the
+  "next" event after the clear.
+
 ### Throttle (leading + trailing edge)
 
 - B3. Throttle repo-context derivation per pane:
@@ -108,19 +153,31 @@ updates without losing the final state.
     guarantees the final state is correct after a burst.
   - Skip the spawn entirely if CWD hasn't changed since the
     last completed derivation.
-- B3-budget. **Sustained-rate cap (strict).** The throttle
-  window is exactly 250ms. Each window admits AT MOST one
-  leading-edge derivation plus AT MOST one trailing-edge
-  derivation — a hard cap of 2 derivations per 250ms window
-  per pane. The sustained maximum rate is therefore
-  **1 derivation per 250ms = 4 per second per pane**.
-  Implementations MUST NOT amortize multiple trailing-edge
-  re-derivations into a single window (e.g., by coalescing
-  several windows' trailing edges into one batch); each
-  window's trailing edge fires at most once and uses the
-  latest CWD at the moment that window elapses. Bursts longer
-  than one window are governed by per-window enforcement, not
-  by a global moving-rate budget.
+- B3-budget. **Sustained-rate cap (canonical, single rule).**
+  The throttle window is exactly 250ms. Within any single
+  250ms window per pane, **AT MOST 2 derivation processes may
+  be spawned**: at most one leading-edge derivation at the
+  start of the window, plus at most one trailing-edge
+  derivation when the window elapses. The sustained maximum
+  spawn rate is therefore **2 derivations per 250ms window =
+  8 derivations per second per pane** (peak / per-window
+  cap). Across longer-running, fully back-to-back windows
+  with continuous CWD changes the throughput averages out to
+  the trailing-edge-per-window contribution — i.e., one
+  trailing derivation reflecting the latest CWD per 250ms
+  window, **4 trailing derivations per second per pane** —
+  because each subsequent window's leading edge is
+  short-circuited by B3 ("skip the spawn entirely if CWD
+  hasn't changed since the last completed derivation") when
+  the previous trailing derivation already covered the same
+  CWD. Implementations MUST NOT amortize multiple trailing
+  edges across windows into a single batch (each window's
+  trailing edge fires at most once with the LATEST CWD at the
+  moment that window elapses). Bursts longer than one window
+  are governed by per-window enforcement, not by a global
+  moving-rate budget. This single B3-budget rule supersedes
+  earlier wording that conflated the per-window peak (8/s)
+  with the steady-state trailing rate (4/s).
 
 ### Worktree vs different repo
 
@@ -203,6 +260,13 @@ updates without losing the final state.
 - A-CLEAR-EVENT. `cd` from a git repo to a non-git path emits
   exactly one `RepoMetadataCleared { pane_id }` event; no
   `RepoContextChanged` is emitted on this transition.
+- A-STALE-REJECT. When a leading-edge derivation overlaps a
+  trailing-edge derivation for the same pane and the trailing
+  derivation finishes first, the trailing result is applied to
+  the metadata surface and the late-arriving leading result is
+  discarded silently. The metadata always reflects the LATEST
+  CWD seen at dispatch time, never an earlier intermediate CWD,
+  regardless of child-process exit order.
 
 ## Implementation pointers
 
@@ -263,6 +327,35 @@ updates without losing the final state.
      `RepoContextChanged` is observed (NOT suppressed by tuple
      equality), even though the canonical tuple equals the
      pre-clear value.
+- T_stale_leading_overrun. **Stale-leading-result rejection.**
+  Sequence:
+  1. Pane CWD = `/repo-A/sub` → leading-edge derivation L
+     dispatched with `seq = N`. Mock its `git rev-parse` to
+     hang for 200ms.
+  2. While L is still in flight, advance pane CWD to
+     `/repo-B/sub` (different repo). The throttle window
+     elapses → trailing-edge derivation T dispatched with
+     `seq = N+1`. Mock T's `git rev-parse` to return
+     immediately (canonical tuple for `/repo-B`).
+  3. T exits first → `seq = N+1 > last_applied_seq (0)` → fire
+     `RepoContextChanged` for `/repo-B`; set
+     `last_applied_seq = N+1`; cache repo-B tuple.
+  4. L exits second with the older `/repo-A` canonical tuple.
+     Assert: L's result is DISCARDED (`seq = N <=
+     last_applied_seq = N+1`). No `RepoContextChanged` for
+     `/repo-A` is emitted; the cached tuple still equals the
+     `/repo-B` tuple; metadata reflects `/repo-B`.
+- T_stale_after_clear. **No re-application across a clear.**
+  Sequence:
+  1. CWD = `/repo-A` → leading derivation L (`seq = N`)
+     dispatched, hangs.
+  2. CWD = `/tmp` (non-git) → trailing derivation T1
+     (`seq = N+1`) returns failure → `RepoMetadataCleared`
+     fires; cached tuple = `None`; `last_applied_seq = N+1`.
+  3. L exits with the `/repo-A` tuple. Assert: L's result is
+     DISCARDED (`seq = N <= N+1`); no `RepoContextChanged`
+     fires; cached tuple stays `None`. The clear remains
+     sticky exactly as B5a/B5-INVALIDATE require.
 - T_basedir_explicit_cwd. **Deterministic invocation.** Spawn
   the derivation with pane CWD = `/repo-A/sub`. Verify the
   child process for `git rev-parse` was spawned with
