@@ -49,6 +49,8 @@ fn spawn_agent_request_serializes_agent_uid_as_agent_identity_uid() {
         parent_run_id: None,
         runtime_skills: vec![],
         referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
     };
 
     let value = serde_json::to_value(&request).unwrap();
