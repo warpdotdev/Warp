@@ -39,20 +39,35 @@ Three new actions are registered in the keymap and Command Palette:
 the editor file's parent directory. This separates "what is the project?"
 (workspace state) from "where does this file live?" (filesystem path), and
 makes the B4 outside-project fallback well-defined: a file is "outside the
-project root" iff its absolute path is not a descendant of the active
-workspace's resolved root.
+project root" iff its absolute path is not a descendant of the resolved
+project root.
 
-Resolution order (the same root the file tree uses):
+**Authoritative rule.** The project root is the **git toplevel containing
+the active workspace folder when one exists, otherwise the active
+workspace folder itself**. Git toplevel takes precedence over the workspace
+folder when both are available; the workspace folder is the fallback when
+the workspace is not inside any git working tree. This single rule is
+authoritative; any earlier wording that called the workspace folder the
+"canonical" root is superseded by this section. The reason git toplevel is
+preferred is that monorepo users routinely open a sub-package as their
+workspace, and "relative path" is far more useful when anchored at the
+repo root (`packages/foo/src/x.ts`) than at the sub-package root
+(`src/x.ts`) — the former is what teammates expect to paste into reviews,
+issue links, and `cd` commands.
 
-1. **Active workspace folder** — the folder backing the currently active
-   Warp workspace (the same folder shown at the top of the file tree).
-   This is the canonical "project root".
-2. **Git toplevel of the workspace folder** — when the workspace folder is
-   itself inside a git working tree, run `git rev-parse --show-toplevel`
-   on the **workspace folder** (not the editor file's parent directory)
-   and use the toplevel as the project root. This widens the root for
-   monorepos where the workspace was opened on a sub-directory.
-3. **No active workspace** — if Warp has no active workspace at all (e.g.,
+Resolution order (matches what the file tree uses; first match wins):
+
+1. **Git toplevel of the active workspace folder.** If Warp has an active
+   workspace AND the workspace folder is inside a git working tree, run
+   `git rev-parse --show-toplevel` on the **workspace folder** (not on
+   the editor file's parent directory) and use the toplevel as the
+   project root. This is the common case and the preferred outcome.
+2. **Active workspace folder fallback.** If Warp has an active workspace
+   but the workspace folder is NOT inside any git working tree (or
+   `git rev-parse` fails for any reason — git absent, repo corrupt,
+   detached `.git` file pointing at a missing gitdir), the workspace
+   folder itself is the project root.
+3. **No active workspace.** If Warp has no active workspace at all (e.g.,
    a single-file editor session opened outside any workspace), there is
    no project root. Behavior:
    - `editor.copy_relative_path` and `editor.copy_path_with_line` follow
@@ -60,11 +75,19 @@ Resolution order (the same root the file tree uses):
      for the line variant) with the B4 toasts.
    - `editor.copy_absolute_path` is unaffected.
 
-Edge case — symlinks: both the workspace root and the editor file path are
-canonicalized (resolved through symlinks) before the inside/outside
-comparison. A file reached via a symlink whose target is inside the project
-root is treated as inside the project; the relative path is computed from
-the canonicalized paths.
+The resolved project root is cached per workspace and invalidated when the
+active workspace changes or the workspace folder moves.
+
+Edge case — symlinks: both the resolved project root (whichever of #1 or
+#2 applied) and the editor file path are canonicalized (resolved through
+symlinks via `std::fs::canonicalize` on Unix and the platform equivalent
+on Windows) before the inside/outside comparison and before the relative
+path is computed. A file reached via a symlink whose canonical target is
+inside the canonical project root is treated as inside the project; the
+relative path is computed between the two canonicalized paths. If
+canonicalization fails for either path (e.g., permission denied,
+dangling symlink), the action treats the file as outside the project root
+and falls back per B4.
 
 ### B3. No file open
 
@@ -191,6 +214,16 @@ New modules:
 - T_outside_project_with_line. `copy_path_with_line` invoked on a file outside the project root copies `/abs/path/to/file:N` (or `:N:K` if column is explicit) and surfaces the toast "File is outside project root — copied absolute path with line".
 - T_palette_targets_last_focused_editor. With editor A focused, open Command Palette, run `editor.copy_relative_path` → clipboard contains the path of the file in editor A; focus returns to editor A after the palette dismisses.
 - T_palette_no_editor_noop. With no editor previously focused (palette opened from file tree), run any of the three actions → no clipboard write, B3 toast surfaces, action still appeared in the palette list.
+
+Project-root resolution branches (B2):
+
+- T_root_git_toplevel_in_monorepo. Active workspace is opened on `<repo>/packages/foo` and `<repo>/.git` exists. Editor file is `<repo>/packages/foo/src/x.ts`. `editor.copy_relative_path` produces `packages/foo/src/x.ts` (anchored at git toplevel, not the workspace folder). Verifies B2.1 takes precedence over B2.2.
+- T_root_workspace_fallback_no_git. Active workspace is `/Users/u/notes` and that folder is NOT inside any git working tree (no `.git` reachable up the parent chain). Editor file is `/Users/u/notes/today.md`. `editor.copy_relative_path` produces `today.md`. Verifies the B2.2 workspace-folder fallback fires when git toplevel resolution fails because no repo exists.
+- T_root_workspace_fallback_git_failure. Active workspace is `/Users/u/proj` containing a corrupt `.git` file (e.g., gitdir pointer to a missing path). `git rev-parse --show-toplevel` exits non-zero. The action falls back to the workspace folder per B2.2 — `editor.copy_relative_path` produces `src/x.ts` for `/Users/u/proj/src/x.ts` rather than erroring or producing the absolute path.
+- T_root_no_workspace_fallback. Warp has no active workspace (single-file editor session). Editor file is `/tmp/scratch.txt`. `editor.copy_relative_path` falls back to absolute path `/tmp/scratch.txt` with the B4 outside-project toast. `editor.copy_path_with_line` does the same and preserves `:N[:K]` per B4 and B9. `editor.copy_absolute_path` is unaffected.
+- T_root_symlink_canonicalization_inside. Project root is `/Users/u/proj` (canonical) and the editor opens `/Users/u/proj/src/x.ts` via the symlink path `/Users/u/link-to-proj/src/x.ts`. After canonicalizing both root and file path, the file is inside the project; `editor.copy_relative_path` produces `src/x.ts` (relative path computed from canonicalized paths, not from the symlink path that opened the file).
+- T_root_symlink_canonicalization_outside. The editor opens `/Users/u/proj/external` which is a symlink whose canonical target is `/Users/u/elsewhere/external`. After canonicalization, the file is outside the project root; `editor.copy_relative_path` falls back to the canonical absolute path `/Users/u/elsewhere/external` with the B4 toast.
+- T_root_symlink_canonicalization_failure. Editor opens a dangling symlink (`/Users/u/proj/broken` → missing target). Canonicalization fails; the action treats the file as outside the project root per B2 and falls back per B4 with the absolute (uncanonicalized) symlink path. No panic, no silent success.
 
 ## Open Questions
 
