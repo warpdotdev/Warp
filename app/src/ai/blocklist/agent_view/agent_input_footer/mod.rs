@@ -902,7 +902,7 @@ impl AgentInputFooter {
                 .ambient_agent_view_model
                 .as_ref()
                 .map(|m| m.as_ref(app).selected_harness())
-                .map_or(true, |harness| match harness {
+                .is_none_or(|harness| match harness {
                     Harness::Oz | Harness::Unknown => true,
                     _ => HarnessAvailabilityModel::as_ref(app)
                         .models_for(harness)
