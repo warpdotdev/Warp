@@ -574,6 +574,7 @@ default = [
     "cloud_mode_image_context",
     "agent_mode_computer_use",
     "oz_platform_skills",
+    "oz_identity_federation",
     "sync_ambient_plans",
     "conversation_artifacts",
     "agent_view",

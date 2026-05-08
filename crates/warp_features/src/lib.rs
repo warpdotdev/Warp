@@ -927,7 +927,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     // End manually enabled Code features.
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
-    FeatureFlag::OzIdentityFederation,
     FeatureFlag::AgentHarness,
     FeatureFlag::OzHandoff,
     FeatureFlag::ConversationApi,
@@ -954,7 +953,6 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Orchestration,
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::MarkdownTables,
-    FeatureFlag::OzIdentityFederation,
     FeatureFlag::GitOperationsInCodeReview,
 ];
 
@@ -1048,7 +1046,6 @@ impl FeatureFlag {
                 Some("Enables rendering markdown tables inline in AI block list responses.")
             }
             MarkdownTables => Some("Enables rendering and interaction support for markdown tables in notebooks."),
-            OzIdentityFederation => Some("Enables automatic authentication from Oz to AWS and GCP"),
             SettingsFile => Some("Enables configuring Warp via a user-editable `settings.toml` file, with hot reload and error reporting for invalid values."),
             GitOperationsInCodeReview => Some("Enables commit, push, and create-PR actions directly from the code review panel."),
             _ => None,
