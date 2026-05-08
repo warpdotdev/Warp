@@ -17,15 +17,16 @@ use super::{
     detail_target_for_hovered_row, format_summary_primary_labels,
     non_terminal_search_text_fragments, pane_ids_for_display_granularity,
     pane_search_text_fragments, preferred_agent_tab_titles, search_fragments_contain_query,
-    select_summary_pane_kind_icons, should_keep_detail_sidecar_visible_for_mouse_position,
-    summary_overflow_count, summary_pane_kind_to_status_variant, summary_search_text_fragments,
-    terminal_kind_badge_label,
+    secondary_pair_placement, select_summary_pane_kind_icons,
+    should_keep_detail_sidecar_visible_for_mouse_position, summary_overflow_count,
+    summary_pane_kind_to_status_variant, summary_search_text_fragments, terminal_kind_badge_label,
     terminal_primary_line_data, terminal_pull_request_badge_label, terminal_search_text_fragments,
     terminal_title_fallback_font, uses_outer_group_container, visible_pane_ids_for_detail_target,
     vtab_diff_stats_text, AgentTabTextPreference, SummaryPaneKind, SummaryPaneKindIcons,
     TerminalAgentText, TerminalPrimaryLineData, TerminalPrimaryLineFont, VerticalTabsDetailTarget,
     VerticalTabsDetailTargetKind, VerticalTabsSummaryBranchEntry, VerticalTabsSummaryData,
 };
+use warpui::elements::{ChildAnchor, ParentAnchor};
 
 fn pane_id() -> PaneId {
     TerminalPaneId::dummy_terminal_pane_id().into()
@@ -326,6 +327,62 @@ fn summary_pane_kind_icons_dedup_ignores_status() {
         }
         other => panic!("expected a single OzAgent kind, got {other:?}"),
     }
+}
+
+// Regression tests for the #10179 round-2 fix: when the primary kind has a
+// status badge (agent), the secondary moves to TR. The Y component of the
+// offset must FLIP to negative so the secondary goes UP into the TR
+// quadrant, not DOWN into the primary. These tests pin the geometric
+// contract that the bot caught a regression in last round.
+
+#[test]
+fn pair_secondary_placement_for_agent_primary_anchors_top_right_with_negative_y() {
+    let p = secondary_pair_placement(true, 7.5);
+    assert_eq!(
+        p.parent_anchor,
+        ParentAnchor::TopRight,
+        "agent primary must anchor secondary at TR to leave BR clear for the status badge"
+    );
+    assert_eq!(p.child_anchor, ChildAnchor::TopRight);
+    assert_eq!(
+        p.offset_x, 7.5,
+        "X always positive: secondary sits to the right of the primary"
+    );
+    assert_eq!(
+        p.offset_y, -7.5,
+        "Y must FLIP to negative for TR: pathfinder is +Y-down, so a +Y \
+         offset would push the secondary DOWN into the primary instead of \
+         UP into the TR quadrant"
+    );
+}
+
+#[test]
+fn pair_secondary_placement_for_non_agent_primary_anchors_bottom_right_with_positive_y() {
+    let p = secondary_pair_placement(false, 7.5);
+    assert_eq!(
+        p.parent_anchor,
+        ParentAnchor::BottomRight,
+        "non-agent primary keeps the existing BR placement (no status badge to occlude)"
+    );
+    assert_eq!(p.child_anchor, ChildAnchor::BottomRight);
+    assert_eq!(p.offset_x, 7.5);
+    assert_eq!(
+        p.offset_y, 7.5,
+        "Y stays positive for BR: pushes the secondary further into the BR quadrant"
+    );
+}
+
+#[test]
+fn pair_secondary_placement_offset_magnitude_matches_across_corners() {
+    // Both placements use the same magnitude — only the corner / Y-sign changes.
+    let agent = secondary_pair_placement(true, 12.0);
+    let non_agent = secondary_pair_placement(false, 12.0);
+    assert_eq!(agent.offset_x.abs(), non_agent.offset_x.abs());
+    assert_eq!(agent.offset_y.abs(), non_agent.offset_y.abs());
+    assert_ne!(
+        agent.offset_y, non_agent.offset_y,
+        "Y signs must differ between TR (agent) and BR (non-agent) placements"
+    );
 }
 
 #[test]

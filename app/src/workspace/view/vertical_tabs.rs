@@ -3664,6 +3664,57 @@ fn render_summary_tab_item(
     render_pane_row_element(props, Padding::uniform(8.), true, content, theme)
 }
 
+/// Pure description of where a pair-icon's secondary should sit relative to
+/// its primary. Extracted from `render_summary_pane_kind_icons` so the corner
+/// choice (#10179: TR for agent primaries to avoid covering the BR-anchored
+/// status badge) is unit-testable without any GPU / layout state.
+///
+/// `corner_offset` is the magnitude (always positive) computed from the
+/// primary radius and secondary outer size in the caller. The returned
+/// `offset_y` flips sign with the corner so positive-Y-down (pathfinder)
+/// coordinates push the secondary in the right direction:
+/// - BR anchor: +y pushes the secondary further into the BR quadrant.
+/// - TR anchor: -y pushes the secondary up out of the primary into the TR
+///   quadrant. (Reusing +y here would push DOWN into the primary — the bug
+///   round-2 of #10179 caught.)
+///
+/// The `offset_x` is always positive — the secondary always sits to the
+/// right of the primary in both placements.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct PairSecondaryPlacement {
+    pub parent_anchor: ParentAnchor,
+    pub child_anchor: ChildAnchor,
+    pub offset_x: f32,
+    pub offset_y: f32,
+}
+
+pub(super) fn secondary_pair_placement(
+    primary_has_status_badge: bool,
+    corner_offset: f32,
+) -> PairSecondaryPlacement {
+    debug_assert!(
+        corner_offset >= 0.0,
+        "corner_offset is a magnitude; sign comes from the anchor selection"
+    );
+    if primary_has_status_badge {
+        // Top-right: leaves BR clear for the status badge. Y must be
+        // negative — see doc comment.
+        PairSecondaryPlacement {
+            parent_anchor: ParentAnchor::TopRight,
+            child_anchor: ChildAnchor::TopRight,
+            offset_x: corner_offset,
+            offset_y: -corner_offset,
+        }
+    } else {
+        PairSecondaryPlacement {
+            parent_anchor: ParentAnchor::BottomRight,
+            child_anchor: ChildAnchor::BottomRight,
+            offset_x: corner_offset,
+            offset_y: corner_offset,
+        }
+    }
+}
+
 fn render_summary_pane_kind_icons(
     icons: SummaryPaneKindIcons,
     appearance: &Appearance,
@@ -3717,21 +3768,13 @@ fn render_summary_pane_kind_icons(
             // but Y must FLIP to negative — otherwise positive Y would push
             // the secondary DOWN into the primary instead of UP into the TR
             // quadrant. The corner offset magnitude is the same; only Y's
-            // sign changes.
-            let (parent_anchor, child_anchor, offset_y) = if primary_has_status_badge {
-                // Top-right: leaves BR clear for the status badge.
-                (
-                    ParentAnchor::TopRight,
-                    ChildAnchor::TopRight,
-                    -secondary_corner_offset,
-                )
-            } else {
-                (
-                    ParentAnchor::BottomRight,
-                    ChildAnchor::BottomRight,
-                    secondary_corner_offset,
-                )
-            };
+            // sign changes. This decision is extracted to a pure helper so
+            // it is unit-testable without GPU / layout state — see
+            // `secondary_pair_placement` and its tests.
+            let placement = secondary_pair_placement(
+                primary_has_status_badge,
+                secondary_corner_offset,
+            );
 
             let mut stack = Stack::new().with_child(
                 ConstrainedBox::new(primary_icon)
@@ -3742,10 +3785,10 @@ fn render_summary_pane_kind_icons(
             stack.add_positioned_child(
                 secondary_with_ring,
                 OffsetPositioning::offset_from_parent(
-                    vec2f(secondary_corner_offset, offset_y),
+                    vec2f(placement.offset_x, placement.offset_y),
                     ParentOffsetBounds::Unbounded,
-                    parent_anchor,
-                    child_anchor,
+                    placement.parent_anchor,
+                    placement.child_anchor,
                 ),
             );
             ConstrainedBox::new(stack.finish())
