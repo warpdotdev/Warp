@@ -635,7 +635,7 @@ impl MCPServersListPageView {
 
             terminal_view_handle.update(ctx, |terminal, ctx| {
                 let shell_family = terminal.shell_family(ctx);
-                let shell_launch_data = terminal.active_session_shell(ctx);
+                let shell_launch_data = terminal.active_or_pending_shell_launch_data(ctx);
                 let tail_command =
                     tail_command_for_shell(shell_family, log_file_path, shell_launch_data.as_ref());
                 terminal.set_pending_command(&tail_command, ctx);
