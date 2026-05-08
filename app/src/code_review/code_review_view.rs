@@ -765,6 +765,13 @@ impl CodeReviewView {
     pub fn on_close(&mut self, ctx: &mut ViewContext<Self>) {
         self.is_open = false;
 
+        if self
+            .find_model
+            .read(ctx, |model, _| model.is_find_bar_open())
+        {
+            self.close_find_bar(ctx);
+        }
+
         ctx.unsubscribe_to_model(&self.diff_state_model);
 
         self.code_review_footer = None;
@@ -2277,8 +2284,14 @@ impl CodeReviewView {
     }
 
     fn close_find_bar(&mut self, ctx: &mut ViewContext<Self>) {
-        self.find_model.update(ctx, |model, _| {
+        self.find_bar.update(ctx, |find_bar, ctx| {
+            find_bar.set_query_text("", ctx);
+        });
+
+        let editor_handles = self.editor_handles().collect::<Vec<_>>();
+        self.find_model.update(ctx, |model, model_ctx| {
             model.set_is_find_bar_open(false);
+            model.update_query(None, editor_handles.into_iter(), model_ctx);
             model.clear_results();
         });
 
