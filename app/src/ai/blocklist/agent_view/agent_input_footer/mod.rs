@@ -12,6 +12,7 @@ use crate::{
             BlocklistAIInputModel,
         },
         execution_profiles::profiles::AIExecutionProfilesModel,
+        harness_availability::HarnessAvailabilityModel,
         AIRequestUsageModel,
     },
     appearance::Appearance,
@@ -56,6 +57,7 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
 };
 use toolbar_item::AgentToolbarItemKind;
+use warp_cli::agent::Harness;
 
 use std::sync::Arc;
 
@@ -894,7 +896,21 @@ impl AgentInputFooter {
         right = right.with_child(ChildView::new(&self.file_button).finish());
 
         if let Some(model_selector) = self.v2_model_selector.as_ref() {
-            right = right.with_child(ChildView::new(model_selector).finish());
+            // Only show the model selector when the active harness has available models.
+            // Some harnesses (e.g. Gemini) may not have any server-provided model options.
+            let show_selector = self
+                .ambient_agent_view_model
+                .as_ref()
+                .map(|m| m.as_ref(app).selected_harness())
+                .map_or(true, |harness| match harness {
+                    Harness::Oz | Harness::Unknown => true,
+                    _ => HarnessAvailabilityModel::as_ref(app)
+                        .models_for(harness)
+                        .is_some_and(|models| !models.is_empty()),
+                });
+            if show_selector {
+                right = right.with_child(ChildView::new(model_selector).finish());
+            }
         }
 
         Flex::row()

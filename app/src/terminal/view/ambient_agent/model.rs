@@ -198,8 +198,6 @@ pub struct AmbientAgentViewModel {
     worker_host: Option<String>,
     /// Selected model id for a third-party harness (e.g. `"opus"` for Claude).
     harness_model_id: Option<String>,
-    /// Whether the optimistic InitialUserQuery block has been inserted for the current run.
-    has_inserted_cloud_mode_user_query_block: bool,
     /// Whether the harness CLI (e.g. `claude`, `gemini`) has started running for a non-oz run.
     /// Used to transition the cloud-mode setup UI out of the pre-first-exchange phase when
     /// there is no oz `AppendedExchange` to key off of.
@@ -267,7 +265,6 @@ impl AmbientAgentViewModel {
             harness,
             worker_host: None,
             harness_model_id: None,
-            has_inserted_cloud_mode_user_query_block: false,
             harness_command_started: false,
             active_execution_session_id: None,
             last_ended_execution_session_id: None,
@@ -810,7 +807,6 @@ impl AmbientAgentViewModel {
         self.task_id = None;
         self.conversation_id = None;
         self.harness_model_id = None;
-        self.has_inserted_cloud_mode_user_query_block = false;
         self.harness_command_started = false;
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
