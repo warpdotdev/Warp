@@ -1566,7 +1566,7 @@ fn test_agent_origin_block_can_be_attached_to_other_conversation() {
 }
 
 #[test]
-fn test_finish_startup_commands_at_block_attaches_and_unhides_only_target_block() {
+fn test_finish_startup_commands_at_block_attaches_and_unhides_command_blocks_since_target_block() {
     let _agent_view_flag = FeatureFlag::AgentView.override_enabled(true);
     let mut block_list =
         new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
@@ -1574,9 +1574,15 @@ fn test_finish_startup_commands_at_block_attaches_and_unhides_only_target_block(
 
     let setup_block_index = insert_block(&mut block_list, "setup", "output");
     let harness_block_index = insert_block(&mut block_list, "claude", "output");
+    let followup_block_index = insert_block(&mut block_list, "pwd", "output");
     let setup_block_id = block_list.block_at(setup_block_index).unwrap().id().clone();
     let harness_block_id = block_list
         .block_at(harness_block_index)
+        .unwrap()
+        .id()
+        .clone();
+    let followup_block_id = block_list
+        .block_at(followup_block_index)
         .unwrap()
         .id()
         .clone();
@@ -1594,27 +1600,29 @@ fn test_finish_startup_commands_at_block_attaches_and_unhides_only_target_block(
 
     assert!(!block_list.is_executing_oz_environment_startup_commands());
 
-    let harness_block = block_list
-        .block_with_id(&harness_block_id)
-        .expect("harness block should still exist");
-    assert!(!harness_block.is_hidden());
-    assert!(!harness_block.is_oz_environment_startup_command());
-    assert!(!harness_block.should_hide_block(block_list.agent_view_state()));
-    match harness_block.agent_view_visibility() {
-        AgentViewVisibility::Terminal {
-            pending_conversation_ids,
-            conversation_ids,
-        } => {
-            assert!(pending_conversation_ids.is_empty());
-            assert!(conversation_ids.contains(&conversation_id));
+    for block_id in [&harness_block_id, &followup_block_id] {
+        let block = block_list
+            .block_with_id(block_id)
+            .expect("block should still exist");
+        assert!(!block.is_hidden());
+        assert!(!block.is_oz_environment_startup_command());
+        assert!(!block.should_hide_block(block_list.agent_view_state()));
+        match block.agent_view_visibility() {
+            AgentViewVisibility::Terminal {
+                pending_conversation_ids,
+                conversation_ids,
+            } => {
+                assert!(pending_conversation_ids.is_empty());
+                assert!(conversation_ids.contains(&conversation_id));
+            }
+            AgentViewVisibility::Agent {
+                origin_conversation_id,
+                pending_other_conversation_ids,
+                other_conversation_ids,
+            } => panic!(
+                "expected terminal visibility, got agent visibility: {origin_conversation_id:?}, {pending_other_conversation_ids:?}, {other_conversation_ids:?}"
+            ),
         }
-        AgentViewVisibility::Agent {
-            origin_conversation_id,
-            pending_other_conversation_ids,
-            other_conversation_ids,
-        } => panic!(
-            "expected terminal visibility, got agent visibility: {origin_conversation_id:?}, {pending_other_conversation_ids:?}, {other_conversation_ids:?}"
-        ),
     }
 
     let setup_block = block_list

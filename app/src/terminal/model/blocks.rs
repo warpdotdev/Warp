@@ -1348,11 +1348,16 @@ impl BlockList {
         conversation_id: Option<AIConversationId>,
     ) {
         self.is_executing_oz_environment_startup_commands = false;
-        if let Some(block) = self.mut_block_from_id(block_id) {
-            block.unhide();
-            block.set_is_oz_environment_startup_command(false);
-            if let Some(conversation_id) = conversation_id {
-                block.add_attached_conversation_id(conversation_id);
+        if let Some(block_index) = self.block_index_for_id(block_id) {
+            for block in self.blocks.iter_mut().skip(block_index.0) {
+                if block.is_background() || block.is_static() {
+                    continue;
+                }
+                block.unhide();
+                block.set_is_oz_environment_startup_command(false);
+                if let Some(conversation_id) = conversation_id {
+                    block.add_attached_conversation_id(conversation_id);
+                }
             }
         }
         self.update_blocks_and_sumtree(None, None, |_| {}, |_| {});
