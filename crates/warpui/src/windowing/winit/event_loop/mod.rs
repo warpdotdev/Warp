@@ -1321,6 +1321,15 @@ impl EventLoop {
                 if !is_focused {
                     window_state.left_alt_pressed = false;
                     window_state.right_alt_pressed = false;
+
+                    if let Some(window) = self
+                        .ui_app
+                        .read(|ctx| ctx.windows().platform_window(window_state.window_id))
+                    {
+                        self.callbacks
+                            .for_window(window.as_ref())
+                            .dispatch_event(ClearMarkedText);
+                    }
                 }
 
                 // On the next tick of the event loop, notify the ui_app that focus has
@@ -1513,7 +1522,7 @@ impl EventLoop {
                     .update(|ctx| ctx.report_active_cursor_position_update());
             }
             winit::event::Ime::Preedit(preedit_text, cursor_position) => {
-                if !self.ime_enabled {
+                if !self.ime_enabled && !preedit_text.is_empty() {
                     return;
                 }
 
@@ -1528,12 +1537,16 @@ impl EventLoop {
                 };
 
                 let mut window_callbacks = self.callbacks.for_window(window.as_ref());
-                window_callbacks.dispatch_event(SetMarkedText {
-                    marked_text: preedit_text,
-                    selected_range: cursor_position
-                        .map(|cursor_position| cursor_position.0..cursor_position.1)
-                        .unwrap_or(0..0),
-                });
+                if preedit_text.is_empty() {
+                    window_callbacks.dispatch_event(ClearMarkedText);
+                } else {
+                    window_callbacks.dispatch_event(SetMarkedText {
+                        marked_text: preedit_text,
+                        selected_range: cursor_position
+                            .map(|cursor_position| cursor_position.0..cursor_position.1)
+                            .unwrap_or(0..0),
+                    });
+                }
             }
             winit::event::Ime::Commit(chars) => {
                 let Some(window_state) = self.state.windows.get_mut(&winit_window_id) else {
@@ -1554,6 +1567,19 @@ impl EventLoop {
             }
             winit::event::Ime::Disabled => {
                 self.ime_enabled = false;
+                let Some(window_state) = self.state.windows.get_mut(&winit_window_id) else {
+                    return;
+                };
+                let Some(window) = self
+                    .ui_app
+                    .read(|ctx| ctx.windows().platform_window(window_state.window_id))
+                else {
+                    return;
+                };
+
+                self.callbacks
+                    .for_window(window.as_ref())
+                    .dispatch_event(ClearMarkedText);
             }
         };
     }
