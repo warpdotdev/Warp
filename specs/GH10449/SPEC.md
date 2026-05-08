@@ -129,7 +129,8 @@ attached to the current scope (verified field:
   `addon_total` is 0 (all expired), the segment falls back to
   the base-only `<used>/<allowance>` render.
 - Tooltip lists EACH add-on on its own line, in the form
-  `Add-on <name>: <amount> (expires <expires_at>)`. Example:
+  `Add-on <display_name>: <amount> (expires <expires_at>)`.
+  Example:
   ```
   Acme Workspace · Base 2500 (resets Dec 1)
   Add-on Boost: 500 (expires Dec 15)
@@ -137,6 +138,30 @@ attached to the current scope (verified field:
   ```
 - Sorting in the tooltip: ascending by `expires_at`, oldest
   expiry first (so the soonest-to-vanish add-on is at the top).
+- **Redaction rule for add-on tooltip rows.** Because the tooltip
+  is rendered in always-visible chrome (visible in screenshares,
+  screenshots, and screen recordings), each add-on row is
+  constrained to the SAME "no raw identifier" rule applied to
+  workspace identifiers in B3a:
+  - `<display_name>`: ONLY the human-readable add-on display name
+    already shown in Settings → Billing & Usage (the
+    `BonusGrant::display_name` field). Raw add-on / grant
+    identifiers (`bonus_grant_id`, internal grant slug, billing
+    line-item id, SKU, invoice id, customer id) MUST NOT appear.
+  - `<amount>`: integer credit count only. No USD figure, no
+    invoice amount, no purchase price.
+  - `<expires_at>`: a coarse user-facing date (locale-formatted
+    `YYYY-MM-DD` or its locale equivalent). NO timestamps, NO
+    timezones, NO time-of-day, NO ISO durations.
+  - If a grant has NO `display_name` (older grants where the
+    field is missing), the row falls back to the literal string
+    "Add-on credit" — never the grant id. If even the amount is
+    missing for a grant, that grant row is OMITTED rather than
+    rendered with placeholder data.
+  - The same redaction applies whether the tooltip is shown via
+    hover, keyboard focus, or assistive-tech accessibility tree.
+  - These tooltip rows are display-only and are NEVER copied into
+    telemetry payloads (see Telemetry).
 - The "+addon" display only renders when at least one add-on
   with `expires_at > now` is present. If no add-ons are surfaced,
   the segment falls back to the metered render.
@@ -158,28 +183,45 @@ attached to the current scope (verified field:
     `AIRequestUsageModel::refresh_request_usage_async`.
   - Emits `AIRequestUsageModelEvent::RequestUsageUpdated` to
     subscribers.
-- **Status-bar segment is a passive observer.** The new chip
-  subscribes via the existing warpui pattern already used by the
-  Billing pane and the buy-credits banner — verified call site:
-  `ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx),
-  |me, event, ctx| { ... })` (see `app/src/terminal/buy_credits_banner.rs:75`
-  and `app/src/workspace/view/free_tier_limit_hit_modal.rs:68`).
-  The segment NEVER calls `refresh_request_usage_async` itself,
-  NEVER spawns its own polling loop, and NEVER opens its own
-  GraphQL client. It reads via
-  `AIRequestUsageModel::as_ref(ctx).request_limit()` (used elsewhere
-  in `app/src/terminal/input.rs:12788`) and re-renders on
-  `RequestUsageUpdated`.
+- **Status-bar segment is a passive observer of fetches.** The
+  chip's relationship to network refresh is strictly observer:
+  - It MAY subscribe to `AIRequestUsageModel`'s
+    `RequestUsageUpdated` events to drive re-renders (this is a
+    model-event subscription, not a network fetch).
+  - It MUST NOT call `refresh_request_usage_async`, MUST NOT spawn
+    its own polling loop, and MUST NOT open its own GraphQL
+    client.
+  - It MUST NOT subscribe to or trigger billing GraphQL fetches
+    directly. The existing call sites that already drive
+    `refresh_request_usage_async` (auth state changes, agent-turn
+    completion handler in the conversation/Billing pane path,
+    explicit settings refresh) remain the ONLY refresh triggers.
+  - Reads happen via
+    `AIRequestUsageModel::as_ref(ctx).request_limit()` (used
+    elsewhere in `app/src/terminal/input.rs:12788`).
+  - Subscription pattern mirrors the existing warpui call sites
+    (verified): `ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx),
+    |me, event, ctx| { ... })` — see
+    `app/src/terminal/buy_credits_banner.rs:75` and
+    `app/src/workspace/view/free_tier_limit_hit_modal.rs:68`.
+  In short: the segment subscribes to MODEL EVENTS for redraw, not
+  to AGENT-TURN events for refetch. The agent-turn → refetch path
+  is owned upstream by `AIRequestUsageModel` and its existing
+  callers; the segment never adds a new refresh trigger.
 - **Single-fetch invariant.** Because `AIRequestUsageModel` is a
   warpui `SingletonEntity`, the per-process single-instance
   invariant is structural, not advisory: spawning N status-bar
   chips (in N windows / panes) attaches N subscribers to the SAME
   singleton — there is no additional fetch loop per chip.
-- Cache TTL: ≤2s after the most-recent agent-turn-completion
-  event for the active conversation. The segment subscribes to
-  the same agent-turn completion signal already used by the
-  conversation list and the Billing pane; it does NOT subscribe
-  per-segment to billing fetches directly.
+- Cache TTL: the chip re-renders within ≤2s of the most-recent
+  `RequestUsageUpdated` event published by `AIRequestUsageModel`.
+  The agent-turn-completion → `refresh_request_usage_async` →
+  `RequestUsageUpdated` chain is owned ENTIRELY upstream by
+  `AIRequestUsageModel` and its existing callers (the conversation
+  list / Billing pane path). The segment does NOT subscribe to
+  agent-turn completion itself, does NOT subscribe to billing
+  fetches directly, and does NOT add a new refresh trigger; it
+  only listens to `RequestUsageUpdated` for redraw.
 - Background refresh cadence is OWNED by `AIRequestUsageModel`
   and the call sites that already invoke
   `refresh_request_usage_async` (auth state changes, post agent
@@ -295,8 +337,11 @@ attached to the current scope (verified field:
 - A3. Clicking the segment opens Settings → Billing & Usage.
 - A4. Switching workspace billing scope updates the segment to
   the new scope's used/allowance within 2s.
-- A5. Simulated 30s of consecutive fetch failures hides the
-  segment; a subsequent successful fetch restores it.
+- A5. After ≥30s without a successful update the segment switches
+  to the Stale row of B1a.i (last-known value with stale dot
+  indicator). After ≥5 min of consecutive failed/missing updates
+  the segment hides per the Failed row. A subsequent successful
+  fetch restores the live render.
 - A6. With `plan == "unlimited"`, the segment renders `∞` and
   ignores threshold colors.
 - A7. With `status_bar.show_ai_credits = false`, the segment is
@@ -307,10 +352,14 @@ attached to the current scope (verified field:
   exact glyph/text and color token specified, including
   delinquent, restricted, missing-allowance, enterprise-no-limit,
   and add-on credit cases.
-- A10. Single shared subscription: with N status-bar segments
-  visible simultaneously across windows/tabs (N ≥ 2), the
-  process performs exactly ONE billing-state subscription and
-  the underlying fetch cadence is unchanged from N=1.
+- A10. Single shared upstream: with N status-bar segments visible
+  simultaneously across windows/tabs (N ≥ 2), there is exactly
+  ONE `AIRequestUsageModel` instance (the existing
+  `SingletonEntity`) and the underlying GraphQL fetch cadence is
+  unchanged from N=1. Each segment registers an
+  `RequestUsageUpdated` model-event subscription on that singleton
+  for its own redraw; these are model-event listeners, not
+  network fetches.
 - A11. Authorization: a user lacking billing-view permission for
   the active workspace has the segment hidden, even with
   `status_bar.show_ai_credits = true`. Switching to a workspace
@@ -388,8 +437,10 @@ module to keep the no-extra-pipeline invariant intact.
   a single fetch within 2s.
 - T3. Stale-on-error: fetch failure retains last value and
   surfaces stale indicator in tooltip.
-- T4. Hidden-after-failure: 30s of consecutive failures hides the
-  segment; one success restores it.
+- T4. Stale-then-hidden timing: after ≥30s without a successful
+  update the segment renders the Stale row of B1a.i; after ≥5 min
+  of consecutive failures the segment hides (Failed row); one
+  successful `RequestUsageUpdated` event restores the live render.
 - T5. Click routing: click navigates to Settings → Billing &
   Usage scoped to the current workspace.
 - T6. Workspace-scope switch updates the segment within 2s and
@@ -450,20 +501,31 @@ NOT yet referenced by acceptance.)
 
 ## Telemetry
 
-- The status-bar segment emits exactly ONE event:
+- **Segment-emitted events (closed set).** The status-bar segment
+  emits EXACTLY ONE event from segment-owned code:
   - `{ event: "status_bar.segment_clicked", segment: "ai_credits" }`
   - No additional fields. No usage totals (`used`, `allowance`,
     `remaining_pct`), no scope names, no workspace identifiers
     (workspace id, slug, billing customer id), no plan tier, no
-    reset timestamps. The `surface` discriminator stays scoped to
-    pane-vs-segment attribution and never carries usage shape.
-- The billing fetch itself reuses the existing Billing-pane fetch
-  path and its existing instrumentation. If that path already
-  has a `surface` field, the segment's attached observer
-  contributes the value `"status_bar"`; otherwise the field is
-  added with values constrained to the closed set
-  `{"billing_pane", "status_bar"}`.
-- Explicit non-goal: no segment-side telemetry beyond the click
-  event. Any additional usage-shape telemetry (allowance crossing
-  thresholds, plan-tier distributions, reset timing) remains
-  owned by the Billing & Usage pane.
+    reset timestamps. No add-on display names, amounts, or
+    expirations.
+- **Fetch instrumentation is upstream-owned and out of scope for
+  this spec.** The billing GraphQL fetch lives on
+  `AIRequestUsageModel` and its existing callers. That code path
+  already emits its own telemetry today, OWNS its event shape, and
+  is NOT modified by this spec:
+  - The segment does NOT add a new `surface` field to the existing
+    fetch instrumentation.
+  - The segment does NOT contribute a `"status_bar"` surface value
+    to upstream fetch events.
+  - The existing fetch event remains exactly as it is in the
+    current codebase. If a future change wants to attribute fetches
+    to a calling surface, that is a separate spec.
+  This eliminates the prior conflict between "exactly one click
+  event" and "the segment's attached observer contributes a
+  surface value" — there is no observer-side fetch instrumentation.
+- **Explicit non-goal:** no segment-side telemetry beyond the
+  click event. Any usage-shape telemetry (allowance crossing
+  thresholds, plan-tier distributions, reset timing, add-on
+  inventory) remains owned by the Billing & Usage pane and its
+  existing telemetry surface.
