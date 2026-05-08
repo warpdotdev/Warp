@@ -67,6 +67,7 @@ fn request_params_for_local_backend_tests() -> RequestParams {
         local_openai_responses_backend_enabled: true,
         local_openai_api_key: None,
         local_openai_base_url: None,
+        local_openai_model_override: None,
         model_provider: LLMProvider::OpenAI,
         autonomy_level: api::AutonomyLevel::Supervised,
         isolation_level: api::IsolationLevel::None,
@@ -435,6 +436,22 @@ fn prepare_local_responses_request_configures_parallel_tool_calls_and_store_poli
         prepared_request.session_id_header,
         Some(params.conversation_id.to_string())
     );
+}
+
+/// Verifies that a configured local model override wins over Warp's selected model ID.
+#[test]
+fn prepare_local_responses_request_prefers_local_model_override() {
+    let mut params = request_params_for_local_backend_tests();
+    params.local_openai_api_key = Some("test-key".to_string());
+    params.local_openai_base_url = Some("https://example.com".to_string());
+    params.local_openai_model_override = Some("custom-provider-model".to_string());
+    params.model = LLMId::from("claude-4-5");
+
+    let prepared_request =
+        prepare_local_responses_request(&params).expect("request should prepare successfully");
+
+    assert_eq!(prepared_request.request_body.model, "custom-provider-model");
+    assert!(prepared_request.request_body.reasoning.is_none());
 }
 
 /// Verifies that prompt cache keys stay stable across per-turn input changes within the same conversation.

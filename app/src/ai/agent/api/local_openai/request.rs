@@ -68,8 +68,9 @@ pub(super) fn prepare_local_responses_request(
             .get(&params.conversation_id)
             .cloned()
             .unwrap_or_default();
+        let effective_model_id = resolve_local_openai_model_id(params);
         let (normalized_model, reasoning) =
-            normalize_openai_model_and_reasoning(&params.model.to_string());
+            normalize_openai_model_and_reasoning(&effective_model_id);
         let instructions = build_local_openai_system_prompt(&normalized_model);
         let tools = build_tools_payload(params);
         let include = responses_include_fields(params);
@@ -96,6 +97,21 @@ pub(super) fn prepare_local_responses_request(
         request_body,
         session_id_header,
     })
+}
+
+/// Resolves the model ID that should be sent to the local OpenAI-compatible backend.
+fn resolve_local_openai_model_id(params: &RequestParams) -> String {
+    if let Some(model_override) = params
+        .local_openai_model_override
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        log::debug!("Using local OpenAI model override: {model_override}");
+        return model_override.to_string();
+    }
+
+    params.model.to_string()
 }
 
 /// Returns the extra Responses fields Warp needs preserved across stateless turns.

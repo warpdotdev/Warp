@@ -38,6 +38,7 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         local_openai_responses_backend_enabled: false,
         local_openai_api_key: None,
         local_openai_base_url: None,
+        local_openai_model_override: None,
         model_provider: LLMProvider::Unknown,
         autonomy_level: api::AutonomyLevel::Supervised,
         isolation_level: api::IsolationLevel::None,
@@ -90,13 +91,11 @@ fn supported_tools_omit_upload_artifact_when_feature_flag_is_disabled() {
     assert!(!supported_tools.contains(&api::ToolType::UploadFileArtifact));
 }
 
+/// Verifies that the local backend only requires explicit opt-in.
 #[test]
-fn local_openai_backend_requires_opt_in_and_openai_provider() {
+fn local_openai_backend_requires_opt_in() {
     let mut params = request_params_with_ask_user_question_enabled(false);
     params.local_openai_responses_backend_enabled = true;
-    assert!(!should_use_local_openai_responses_backend(&params));
-
-    params.model_provider = LLMProvider::OpenAI;
     assert!(should_use_local_openai_responses_backend(&params));
 }
 
@@ -104,7 +103,6 @@ fn local_openai_backend_requires_opt_in_and_openai_provider() {
 fn local_openai_backend_allows_remote_sessions() {
     let mut params = request_params_with_ask_user_question_enabled(false);
     params.local_openai_responses_backend_enabled = true;
-    params.model_provider = LLMProvider::OpenAI;
     params.session_context =
         SessionContext::new_remote_for_test(Some(warp_core::HostId::new("host-1".to_string())));
 

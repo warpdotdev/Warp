@@ -16,6 +16,7 @@ use crate::{
     network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind},
     report_error,
     server::server_api::ServerApiProvider,
+    settings::AISettings,
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
 };
 
@@ -32,12 +33,27 @@ pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -
         .is_byo_api_key_enabled()
         .then(|| ApiKeyManager::as_ref(app).keys().clone());
 
+    if local_openai_backend_routes_all_models_with_api_key(
+        *AISettings::as_ref(app).local_openai_responses_backend_enabled,
+        api_keys.as_ref(),
+    ) {
+        return true;
+    }
+
     match provider {
         LLMProvider::OpenAI => api_keys.is_some_and(|keys| keys.openai.is_some()),
         LLMProvider::Anthropic => api_keys.is_some_and(|keys| keys.anthropic.is_some()),
         LLMProvider::Google => api_keys.is_some_and(|keys| keys.google.is_some()),
         _ => false,
     }
+}
+
+/// Returns whether the local OpenAI-compatible backend should count as provider access for all models.
+fn local_openai_backend_routes_all_models_with_api_key(
+    local_backend_enabled: bool,
+    api_keys: Option<&ai::api_keys::ApiKeys>,
+) -> bool {
+    local_backend_enabled && api_keys.is_some_and(|keys| keys.openai.is_some())
 }
 
 /// Returns the effective disable reason after accounting for provider API keys.

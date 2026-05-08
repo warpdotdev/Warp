@@ -6612,6 +6612,7 @@ struct ApiKeysWidget {
     openai_base_url_editor: ViewHandle<EditorView>,
     anthropic_api_key_editor: ViewHandle<EditorView>,
     google_api_key_editor: ViewHandle<EditorView>,
+    local_openai_model_override_editor: ViewHandle<EditorView>,
 
     can_use_warp_credits_with_byok: SwitchStateHandle,
     local_openai_responses_backend_enabled: SwitchStateHandle,
@@ -6662,6 +6663,7 @@ impl ApiKeysWidget {
             openai_base_url,
             anthropic: anthropic_key,
             google: google_key,
+            local_openai_model_override,
             ..
         } = ApiKeyManager::as_ref(ctx).keys().clone();
 
@@ -6760,11 +6762,49 @@ impl ApiKeysWidget {
             set_google_key,
             "AIzaSy..."
         );
+        let local_openai_model_override_editor = Self::create_api_value_editor(
+            local_openai_model_override.as_ref(),
+            "gpt-5.4 or your-provider-model",
+            false,
+            ctx,
+        );
+        AISettingsPageView::update_editor_interaction_state(
+            local_openai_model_override_editor.clone(),
+            is_any_ai_enabled && is_byo_enabled,
+            ctx,
+        );
+        ctx.subscribe_to_view(
+            &local_openai_model_override_editor,
+            |_, editor, event, ctx| {
+                if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                    let buffer_text = editor.as_ref(ctx).buffer_text(ctx);
+                    let model_id = buffer_text.trim().is_empty().not().then_some(buffer_text);
+                    ApiKeyManager::handle(ctx).update(ctx, |model, ctx| {
+                        model.set_local_openai_model_override(model_id, ctx);
+                    });
+                }
+            },
+        );
+        let local_openai_model_override_editor_clone = local_openai_model_override_editor.clone();
+        ctx.subscribe_to_model(&workspace_handle, move |_, workspace, event, ctx| {
+            if let UserWorkspacesEvent::TeamsChanged = event {
+                let is_any_ai_enabled = AISettings::handle(ctx).as_ref(ctx).is_any_ai_enabled(ctx);
+                let is_byo_enabled = workspace.as_ref(ctx).is_byo_api_key_enabled();
+                AISettingsPageView::update_editor_interaction_state(
+                    local_openai_model_override_editor_clone.clone(),
+                    is_any_ai_enabled && is_byo_enabled,
+                    ctx,
+                );
+                ctx.notify();
+            }
+        });
 
         let openai_api_key_editor_clone = openai_api_key_editor.clone();
         let anthropic_api_key_editor_clone = anthropic_api_key_editor.clone();
         let google_api_key_editor_clone = google_api_key_editor.clone();
         let openai_base_url_editor_for_ai_toggle = openai_base_url_editor.clone();
+        let local_openai_model_override_editor_for_ai_toggle =
+            local_openai_model_override_editor.clone();
         ctx.subscribe_to_model(&AISettings::handle(ctx), move |_, _, event, ctx| {
             if matches!(event, AISettingsChangedEvent::IsAnyAIEnabled { .. }) {
                 let is_enabled = AISettings::handle(ctx).as_ref(ctx).is_any_ai_enabled(ctx)
@@ -6789,6 +6829,11 @@ impl ApiKeysWidget {
                     is_enabled,
                     ctx,
                 );
+                AISettingsPageView::update_editor_interaction_state(
+                    local_openai_model_override_editor_for_ai_toggle.clone(),
+                    is_enabled,
+                    ctx,
+                );
                 ctx.notify();
             }
         });
@@ -6798,6 +6843,7 @@ impl ApiKeysWidget {
             openai_base_url_editor,
             anthropic_api_key_editor,
             google_api_key_editor,
+            local_openai_model_override_editor,
 
             can_use_warp_credits_with_byok: Default::default(),
             local_openai_responses_backend_enabled: Default::default(),
@@ -6807,6 +6853,7 @@ impl ApiKeysWidget {
 
     fn render_api_keys_section(
         &self,
+        view: &AISettingsPageView,
         appearance: &Appearance,
         app: &AppContext,
         is_byo_enabled: bool,
@@ -6814,6 +6861,7 @@ impl ApiKeysWidget {
         let ai_settings = AISettings::as_ref(app);
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
         let is_enabled = is_any_ai_enabled && is_byo_enabled;
+        let use_local_openai_backend = *ai_settings.local_openai_responses_backend_enabled;
 
         let mut column = Flex::column().with_spacing(16.).with_child(
             Container::new(render_ai_setting_description(
@@ -6827,11 +6875,16 @@ impl ApiKeysWidget {
             .finish(),
         );
 
+        if is_byo_enabled {
+            column.add_child(self.render_local_openai_responses_backend_toggle(view, app));
+        }
+
         /// Helper function to render the UI for an API key input field.
         fn render_api_key_input(
             appearance: &Appearance,
             label: &'static str,
             editor: ViewHandle<EditorView>,
+            hint: Option<&'static str>,
             is_enabled: bool,
             app: &AppContext,
         ) -> Box<dyn Element> {
@@ -6858,41 +6911,67 @@ impl ApiKeysWidget {
                 .build()
                 .finish();
 
-            Flex::column()
+            let mut column = Flex::column()
                 .with_spacing(8.)
                 .with_child(label)
-                .with_child(input)
-                .finish()
+                .with_child(input);
+
+            if let Some(hint) = hint {
+                let hint_text = Text::new(hint, appearance.ui_font_family(), CONTENT_FONT_SIZE)
+                    .with_color(styles::description_font_color(is_enabled, app).into())
+                    .soft_wrap(true)
+                    .finish();
+                column.add_child(hint_text);
+            }
+
+            column.finish()
         }
 
         column.add_child(render_api_key_input(
             appearance,
             i18n::tr(app, I18nKey::AiOpenAiApiKey),
             self.openai_api_key_editor.clone(),
+            None,
             is_enabled,
             app,
         ));
-        column.add_child(render_api_key_input(
-            appearance,
-            "OpenAI Base URL",
-            self.openai_base_url_editor.clone(),
-            is_enabled,
-            app,
-        ));
-        column.add_child(render_api_key_input(
-            appearance,
-            i18n::tr(app, I18nKey::AiAnthropicApiKey),
-            self.anthropic_api_key_editor.clone(),
-            is_enabled,
-            app,
-        ));
-        column.add_child(render_api_key_input(
-            appearance,
-            i18n::tr(app, I18nKey::AiGoogleApiKey),
-            self.google_api_key_editor.clone(),
-            is_enabled,
-            app,
-        ));
+        if use_local_openai_backend {
+            column.add_child(render_api_key_input(
+                appearance,
+                "OpenAI Base URL",
+                self.openai_base_url_editor.clone(),
+                None,
+                is_enabled,
+                app,
+            ));
+            column.add_child(render_api_key_input(
+                appearance,
+                "OpenAI-Compatible Model ID",
+                self.local_openai_model_override_editor.clone(),
+                Some(
+                    "If left empty, Warp sends the currently selected model ID in Profiles to the local backend. Your OpenAI-compatible provider must support that model.",
+                ),
+                is_enabled,
+                app,
+            ));
+        } else {
+            column.add_child(render_api_key_input(
+                appearance,
+                "Anthropic API Key",
+                self.anthropic_api_key_editor.clone(),
+                None,
+                is_enabled,
+                app,
+            ));
+            column.add_child(render_api_key_input(
+                appearance,
+                "Google API Key",
+                self.google_api_key_editor.clone(),
+                None,
+                is_enabled,
+                app,
+            ));
+        }
 
         // Show upgrade CTA if BYOK is not enabled
         if !is_byo_enabled {
@@ -7015,7 +7094,7 @@ impl ApiKeysWidget {
         );
 
         let description = render_ai_setting_description(
-            "When enabled, Warp Agent requests go directly from this client to the configured OpenAI-compatible /v1/responses endpoint. Your OpenAI API key and request payload will not be sent to Warp's /ai/multi-agent service on this path.",
+            "When enabled, Warp Agent requests go directly from this client to the configured OpenAI-compatible /v1/responses endpoint, regardless of which model is selected in Warp. Your OpenAI API key and request payload will not be sent to Warp's /ai/multi-agent service on this path.",
             is_enabled,
             app,
         );
@@ -7031,7 +7110,7 @@ impl SettingsWidget for ApiKeysWidget {
     type View = AISettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "api keys bring your own byo openai anthropic google claude gemini gpt base url responses local backend"
+        "api keys bring your own byo openai gpt custom model model id base url responses local backend compatible"
     }
 
     fn render(
@@ -7055,16 +7134,11 @@ impl SettingsWidget for ApiKeysWidget {
                 .with_padding_bottom(HEADER_PADDING)
                 .finish(),
             )
-            .with_child(self.render_api_keys_section(appearance, app, is_byo_enabled));
+            .with_child(self.render_api_keys_section(view, appearance, app, is_byo_enabled));
 
         if is_byo_enabled {
             column.add_child(
                 Container::new(self.render_can_use_warp_credits_with_byok_toggle(view, app))
-                    .with_margin_top(16.)
-                    .finish(),
-            );
-            column.add_child(
-                Container::new(self.render_local_openai_responses_backend_toggle(view, app))
                     .with_margin_top(16.)
                     .finish(),
             );
