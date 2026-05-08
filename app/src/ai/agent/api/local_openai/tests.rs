@@ -7,8 +7,8 @@ use ai::agent::action_result::{
     RequestCommandOutputResult, SearchCodebaseResult, WriteToLongRunningShellCommandResult,
 };
 use warp_core::command::ExitCode;
-use warp_terminal::model::BlockId;
 use warp_multi_agent_api as api;
+use warp_terminal::model::BlockId;
 
 use super::request::{
     build_tools_payload, convert_inputs_to_response_items, convert_inputs_to_task_messages,
@@ -28,13 +28,13 @@ use super::types::{
     StreamingTextMessageState,
 };
 use super::*;
+use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent::task::TaskId;
 use crate::ai::agent::AIAgentActionResult;
 use crate::ai::agent::AIAgentContext;
 use crate::ai::agent::AIAgentInput;
 use crate::ai::agent::MCPContext;
 use crate::ai::agent::MCPServer;
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::task::TaskId;
 use crate::ai::blocklist::SessionContext;
 use crate::ai::llms::{LLMId, LLMProvider};
 
@@ -67,6 +67,7 @@ fn request_params_for_local_backend_tests() -> RequestParams {
         local_openai_responses_backend_enabled: true,
         local_openai_api_key: None,
         local_openai_base_url: None,
+        local_openai_model_override: None,
         model_provider: LLMProvider::OpenAI,
         autonomy_level: api::AutonomyLevel::Supervised,
         isolation_level: api::IsolationLevel::None,
@@ -437,6 +438,22 @@ fn prepare_local_responses_request_configures_parallel_tool_calls_and_store_poli
     );
 }
 
+/// Verifies that a configured local model override wins over Warp's selected model ID.
+#[test]
+fn prepare_local_responses_request_prefers_local_model_override() {
+    let mut params = request_params_for_local_backend_tests();
+    params.local_openai_api_key = Some("test-key".to_string());
+    params.local_openai_base_url = Some("https://example.com".to_string());
+    params.local_openai_model_override = Some("custom-provider-model".to_string());
+    params.model = LLMId::from("claude-4-5");
+
+    let prepared_request =
+        prepare_local_responses_request(&params).expect("request should prepare successfully");
+
+    assert_eq!(prepared_request.request_body.model, "custom-provider-model");
+    assert!(prepared_request.request_body.reasoning.is_none());
+}
+
 /// Verifies that prompt cache keys stay stable across per-turn input changes within the same conversation.
 #[test]
 fn prepare_local_responses_request_keeps_prompt_cache_key_stable_for_same_conversation() {
@@ -536,11 +553,9 @@ fn prepare_local_responses_request_includes_web_search_tool_when_enabled() {
         .as_array()
         .expect("tools should serialize as an array");
 
-    assert!(
-        tools
-            .iter()
-            .any(|tool| tool["type"] == serde_json::json!("web_search"))
-    );
+    assert!(tools
+        .iter()
+        .any(|tool| tool["type"] == serde_json::json!("web_search")));
     assert_eq!(
         request_body["include"],
         serde_json::json!([
@@ -1715,7 +1730,10 @@ fn convert_inputs_to_response_items_serializes_ask_user_question_answers() {
         serde_json::from_str(output).expect("ask_user_question output should be valid json");
     assert_eq!(output["status"], "success");
     assert_eq!(output["answers"][0]["question_id"], "q1");
-    assert_eq!(output["answers"][0]["selected_options"][0], "回答一个具体问题");
+    assert_eq!(
+        output["answers"][0]["selected_options"][0],
+        "回答一个具体问题"
+    );
     assert_eq!(output["answers"][0]["other_text"], "");
     assert_eq!(output["answers"][1]["question_id"], "q2");
     assert_eq!(output["answers"][1]["skipped"], true);
@@ -1875,7 +1893,10 @@ fn convert_inputs_to_response_items_serializes_file_and_search_results() {
     assert_eq!(read_files_output["files"][0]["line_range"]["end"], 2);
     assert_eq!(read_files_output["files"][0]["content_type"], "text");
     assert_eq!(read_files_output["files"][0]["content"], "fn main() {}\n");
-    assert_eq!(read_files_output["files"][1]["file_path"], "assets/logo.png");
+    assert_eq!(
+        read_files_output["files"][1]["file_path"],
+        "assets/logo.png"
+    );
     assert_eq!(read_files_output["files"][1]["content_type"], "binary");
     assert_eq!(read_files_output["files"][1]["content"], "<binary>");
     assert_eq!(read_files_output["files"][1]["size_bytes"], 4);
@@ -1901,7 +1922,9 @@ fn convert_inputs_to_response_items_serializes_read_skill_results() {
             result: AIAgentActionResultType::ReadSkill(ReadSkillResult::Success {
                 content: FileContext::new(
                     "skills/test/SKILL.md".to_string(),
-                    AnyFileContent::StringContent("# Test Skill\nFollow the instructions.\n".to_string()),
+                    AnyFileContent::StringContent(
+                        "# Test Skill\nFollow the instructions.\n".to_string(),
+                    ),
                     None,
                     None,
                 ),

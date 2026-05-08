@@ -38,6 +38,7 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         local_openai_responses_backend_enabled: false,
         local_openai_api_key: None,
         local_openai_base_url: None,
+        local_openai_model_override: None,
         model_provider: LLMProvider::Unknown,
         autonomy_level: api::AutonomyLevel::Supervised,
         isolation_level: api::IsolationLevel::None,

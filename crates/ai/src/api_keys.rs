@@ -29,6 +29,8 @@ pub struct ApiKeys {
     pub openai: Option<String>,
     #[serde(default = "default_openai_base_url")]
     pub openai_base_url: Option<String>,
+    #[serde(default)]
+    pub local_openai_model_override: Option<String>,
     pub open_router: Option<String>,
 }
 
@@ -39,6 +41,7 @@ impl Default for ApiKeys {
             anthropic: None,
             openai: None,
             openai_base_url: default_openai_base_url(),
+            local_openai_model_override: None,
             open_router: None,
         }
     }
@@ -110,6 +113,17 @@ impl ApiKeyManager {
     /// Stores the local OpenAI-compatible base URL used by the local Responses backend.
     pub fn set_openai_base_url(&mut self, base_url: Option<String>, ctx: &mut ModelContext<Self>) {
         self.keys.openai_base_url = base_url;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    /// Stores the optional model override used by the local OpenAI-compatible backend.
+    pub fn set_local_openai_model_override(
+        &mut self,
+        model_id: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.keys.local_openai_model_override = model_id;
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
         self.write_keys_to_secure_storage(ctx);
     }
@@ -271,6 +285,7 @@ mod tests {
             keys.openai_base_url.as_deref(),
             Some(DEFAULT_OPENAI_BASE_URL)
         );
+        assert_eq!(keys.local_openai_model_override, None);
     }
 }
 
