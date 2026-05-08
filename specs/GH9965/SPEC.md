@@ -30,15 +30,66 @@ window/workspace.
 - For users with multiple contexts (e.g., personal + one or more
   team/workspace billing accounts), the indicator follows the
   workspace selector — the same selector that drives which workspace
-  the agent runs against. Switching the workspace selector switches
-  the indicator's scope on the next refresh tick.
+  the agent runs against.
+- **Scope-change behavior (security-relevant — see "Cross-scope leak
+  prevention" below):** the moment the workspace selector changes
+  scope, the chip's *displayed* dollar value is cleared synchronously
+  in the same UI commit that updates the workspace selector itself,
+  before the next paint. The chip immediately enters a "loading"
+  state (no dollar amount visible — see B6.1 below for the rendered
+  placeholder), and an immediate scoped refresh is dispatched. The
+  60 s refresh tick is NOT relied upon to clear the previous value.
+  This guarantees no dollar amount from the previous scope is ever
+  rendered while the workspace selector reads the new scope.
 - The hover tooltip always names the active scope explicitly
   (e.g., "Personal" or "Acme Workspace") so users with multiple
-  contexts can confirm what the dollar figure represents.
+  contexts can confirm what the dollar figure represents. During the
+  loading state the tooltip's scope name is the **new** scope (never
+  the old one).
 - When no billing context is resolvable (signed out, workspace
   switching mid-flight, or BYOK without credit accounting), the
   indicator hides entirely rather than displaying a zero or
   ambiguous value.
+
+### Cross-scope leak prevention
+
+Billing spend and workspace scope names are sensitive account data:
+showing one billing scope's dollar value under another scope's
+workspace label is a privacy regression even for a few seconds. This
+is treated as a security-relevant requirement of V1, not a polish
+follow-up.
+
+The implementation rules below are mandatory:
+
+1. **Synchronous clear.** Scope changes invalidate the cached value
+   *before* the workspace-selector mutation is committed to the UI
+   tree. The chip never renders a frame in which the workspace
+   selector reads "Acme" while the chip's dollar amount still
+   reflects "Personal."
+2. **No display-from-previous-scope.** The cache is keyed by scope
+   identifier (e.g., `BillingScopeId`). A cache lookup that returns
+   a value belonging to a different scope than the active one is
+   treated as a cache miss; the chip enters the loading state rather
+   than rendering the mismatched value.
+3. **Immediate scoped refresh.** A dedicated fetch for the new scope
+   is dispatched in the same code path that triggers the synchronous
+   clear, not on the next 60 s tick. Network failures fall through
+   to the failure-retry timer ("Refresh vs failure-retry timers"
+   below); the chip stays in the loading state until the new scope's
+   value lands or the 5-minute hide threshold elapses.
+4. **In-flight fetch cancellation.** Any in-flight fetch for a
+   previous scope is cancelled at scope-change time so a late
+   response from the old scope cannot land in the chip. If
+   cancellation is best-effort, the response handler MUST verify the
+   scope identifier on the response matches the active scope and
+   discard the response otherwise.
+5. **Tooltip parity.** The tooltip's scope label and dollar value
+   are read from the same scope-keyed cache entry. The tooltip can
+   never show a scope name that disagrees with the dollar value
+   above it.
+
+These rules together close the round-1 stale-cross-scope-display
+gap.
 
 ## Behavior contract
 
@@ -67,6 +118,14 @@ window/workspace.
   successful fetch surfaces a "stale" tooltip annotation but keeps
   the chip visible; ≥5 minutes of continuous failure hides the chip
   entirely. See "Refresh vs failure-retry timers" below.
+- B6.1. **Loading-state rendering during scope change.** Between the
+  synchronous clear (Cross-scope leak prevention rule 1) and the
+  arrival of the new scope's first successful fetch, the chip
+  renders the placeholder "— · 7-day spend" (em-dash, no dollar
+  amount). The placeholder is taken to occupy the same width as the
+  full label so the right-hand cluster does not reflow. If the
+  loading state persists past 5 minutes (rule 3 above + the 5-minute
+  hide threshold), the chip hides per B6's prolonged-failure rule.
 - B7. Default OFF: the issue's request is opt-in; users who don't
   want to see spend reminders aren't forced to. The setting is
   one click in Settings → Agents → Display.
@@ -254,16 +313,45 @@ status-bar collapse logic — no new threshold values are introduced.
   recovery.
 - T6. Refresh timing: a simulated agent-turn-completion event
   causes the indicator to reflect the new value within 2 seconds.
-- T7. Tooltip totals: tooltip renders the active scope name,
-  exact USD with 2 decimal places, and the "rolling 7 days"
-  caption.
+- T7. Tooltip totals (full B4 coverage): tooltip renders ALL of:
+  (a) the active scope name (e.g., "Personal" or "Acme
+  Workspace");
+  (b) the rolling 7-day total formatted as exact USD with 2
+  decimal places;
+  (c) the **current-month total** formatted as exact USD with 2
+  decimal places, sourced from the existing `BillingUsage`
+  `usage_current_month_usd` field (no client-side aggregation);
+  (d) the "rolling 7 days" caption;
+  (e) a "View details →" link that, when activated by click or by
+  keyboard activation (Enter / Space when focused), dispatches the
+  same `OpenSettingsPage(BillingAndUsage)` action as T4. Asserted
+  with both a click-handler unit test on the link and an
+  end-to-end snapshot of the tooltip DOM verifying all 5 fields
+  are present.
 - T8. Stale-on-error single-failure: a single failed fetch following
   a successful one keeps the chip's value visible (within the 30 s
   staleness window the tooltip does not yet add the "stale"
   annotation; the annotation appears only past 30 s).
-- T9. Multi-scope: switching the workspace selector causes the
-  next refresh tick to show that scope's value and label, not the
-  prior scope's stale value.
+- T9a. Multi-scope synchronous clear (security-critical): switching
+  the workspace selector from "Personal" ($12.34) to "Acme
+  Workspace" results in the chip showing the loading placeholder
+  "— · 7-day spend" *before the next paint*. Asserted by capturing
+  the rendered tree on the same UI commit that mutates the
+  workspace selector and checking that no frame ever contains
+  "$12.34" together with the "Acme Workspace" tooltip label.
+- T9b. Cross-scope cache miss: a cached value tagged for scope
+  `personal` is treated as a miss when the active scope is
+  `acme-workspace` — the chip enters the loading state rather than
+  rendering the cached personal value under the Acme label.
+- T9c. Late-response discard: a fetch issued for `personal` that
+  resolves *after* the user has switched to `acme-workspace` is
+  dropped on arrival; the chip's value does not change. Asserted
+  with a fault-injecting fake client that delays the personal
+  response.
+- T9d. Immediate scoped refresh: scope change dispatches a fresh
+  fetch for the new scope without waiting for the 60 s tick. Once
+  the new scope's response arrives, the chip transitions from
+  "— · 7-day spend" to the new scope's USD value.
 - T10. Status-bar placement: snapshot the right-hand status-bar
   group with the chip ON; assert the 7-day-spend chip is rendered
   immediately to the left of the context-remaining chip.
