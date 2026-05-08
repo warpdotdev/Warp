@@ -2,7 +2,7 @@
 
 ## Summary
 
-Add user-facing settings to control local-to-cloud handoff, gate the `&` prefix entrypoint independently, and ensure snapshot uploads are disabled when cloud conversations are off. Also plumb the org-level `warpHostedAgentsEnabled` flag to the client so handoff can be force-disabled when the org disables Warp-hosted agents.
+Add user-facing settings to control local-to-cloud handoff, gate the `&` prefix entrypoint independently, and ensure snapshot uploads are disabled when cloud conversations are off.
 
 Figma: none provided
 
@@ -36,45 +36,36 @@ Figma: none provided
 
 9. The handoff setting is force-disabled (toggle rendered checked-off and non-interactive) when **either** of these conditions is true:
    - The user's cloud conversation storage setting is off (user-level `is_cloud_conversation_storage_enabled == false`, or org-level `cloud_conversation_storage_settings == Disable`).
-   - The org has disabled Warp-hosted agents (`warpHostedAgentsEnabled == false` on the org's `AmbientAgentSettings`).
    - The user or org has AI disabled.
 
-10. When force-disabled, the toggle shows a tooltip explaining why: "Cloud handoff requires cloud conversations and Warp-hosted agents to be enabled." (or a more specific message if only one prerequisite is missing).
+10. When force-disabled, the toggle shows a tooltip explaining why: "Cloud handoff requires cloud conversations to be enabled."
 
 11. When force-disabled, the effective value of the setting is `false` regardless of the stored value. All handoff surfaces (invariants 3a–3d) are suppressed.
 
-12. If the prerequisites become satisfied again (user re-enables cloud conversations, or org re-enables hosted agents), the toggle becomes interactive and the stored value takes effect again.
-
-### Plumbing `warpHostedAgentsEnabled` to the client
-
-13. The client already receives `AmbientAgentSettings.warpHostedAgentsEnabled` in the GraphQL workspace response. Currently only `enableWarpAttribution` and `defaultHostSlug` are extracted from `ambient_agent_settings` in the GQL conversion layer. This change adds extraction of `warpHostedAgentsEnabled` into `WorkspaceSettings` so it is available for the force-disable check in invariant 9.
-
-14. When `ambient_agent_settings` is absent from the GraphQL response, `warpHostedAgentsEnabled` defaults to `true` (matching the server default of allowing hosted agents).
+12. If the prerequisites become satisfied again (user re-enables cloud conversations), the toggle becomes interactive and the stored value takes effect again.
 
 ### Snapshot gating: local-to-cloud handoff
 
-15. When the effective handoff setting is disabled (either by user choice or force-disabled), no local-to-cloud handoff flow runs, so `fork_conversation` and `upload_snapshot_for_handoff` are never called. This is a natural consequence of invariant 3, not a separate gate.
+13. When the effective handoff setting is disabled (either by user choice or force-disabled), no local-to-cloud handoff flow runs, so `fork_conversation` and `upload_snapshot_for_handoff` are never called. This is a natural consequence of invariant 3, not a separate gate.
 
-16. Independently of the handoff setting, if cloud conversation storage is disabled at the time a cloud agent is spawned (from any surface — cloud mode compose, handoff, etc.), the client sets `snapshot_disabled: true` on the `SpawnAgentRequest` so the cloud agent's end-of-run snapshot upload is also skipped.
+14. Independently of the handoff setting, if cloud conversation storage is disabled at the time a cloud agent is spawned (from any surface — cloud mode compose, handoff, etc.), the client sets `snapshot_disabled: true` on the `SpawnAgentRequest` so the cloud agent's end-of-run snapshot upload is also skipped.
 
-17. The `snapshot_disabled` field is added to `SpawnAgentRequest` as an optional boolean. When `None` or absent, the server/agent uses its default behavior (snapshot enabled). When `Some(true)`, the cloud agent skips the end-of-run snapshot upload pipeline.
+15. The `snapshot_disabled` field is added to `SpawnAgentRequest` as an optional boolean. When `None` or absent, the server/agent uses its default behavior (snapshot enabled). When `Some(true)`, the cloud agent skips the end-of-run snapshot upload pipeline.
 
 ### Snapshot gating: all cloud agent spawns
 
-18. The `snapshot_disabled` flag is set on **every** cloud agent spawn from the client (not just handoff spawns) when cloud conversation storage is disabled. This includes spawns from cloud mode compose, the agent management view, and any other client-initiated spawn path that goes through `AmbientAgentViewModel::spawn_agent` or `spawn_agent_with_request`.
+16. The `snapshot_disabled` flag is set on **every** cloud agent spawn from the client (not just handoff spawns) when cloud conversation storage is disabled. This includes spawns from cloud mode compose, the agent management view, and any other client-initiated spawn path that goes through `AmbientAgentViewModel::spawn_agent` or `spawn_agent_with_request`.
 
-19. Cloud-to-cloud follow-up submissions (`submit_cloud_followup`) are **not** gated — follow-ups are allowed regardless of cloud conversation storage, since the parent cloud run already has a conversation. However, the `snapshot_disabled` flag propagates to follow-up runs the same way it does for initial spawns.
+17. Cloud-to-cloud follow-up submissions (`submit_cloud_followup`) are **not** gated — follow-ups are allowed regardless of cloud conversation storage, since the parent cloud run already has a conversation. However, the `snapshot_disabled` flag propagates to follow-up runs the same way it does for initial spawns.
 
 ### Interaction with cloud-to-cloud handoff
 
-20. The handoff setting gates local-to-cloud handoff only. Cloud-to-cloud follow-ups (the "Continue" tombstone flow gated by `HandoffCloudCloud`) are unaffected by this setting.
+18. The handoff setting gates local-to-cloud handoff only. Cloud-to-cloud follow-ups (the "Continue" tombstone flow gated by `HandoffCloudCloud`) are unaffected by this setting.
 
 ### Edge cases
 
-21. If the user disables cloud conversation storage while a local-to-cloud handoff is in progress (fork + snapshot upload already in flight), the in-flight operation completes. The setting change takes effect on the next handoff attempt.
+19. If the user disables cloud conversation storage while a local-to-cloud handoff is in progress (fork + snapshot upload already in flight), the in-flight operation completes. The setting change takes effect on the next handoff attempt.
 
-22. If an org admin toggles `warpHostedAgentsEnabled` while the client is running, the change takes effect when the workspace data is next fetched (the existing workspace refresh cadence). No special real-time push is required.
+20. The setting does not affect the SDK/CLI `oz` agent path.
 
-23. The setting does not affect the SDK/CLI `oz` agent path. The `--no-snapshot` flag on `AgentDriverOptions` continues to work independently. The `snapshot_disabled` field on `SpawnAgentRequest` is a separate, additive mechanism for client-spawned cloud agents.
-
-24. Anonymous and logged-out users never see the handoff setting (AI settings are hidden when AI is disabled, and AI is disabled for anonymous/logged-out users).
+21. Anonymous and logged-out users never see the handoff setting (AI settings are hidden when AI is disabled, and AI is disabled for anonymous/logged-out users).

@@ -1691,7 +1691,7 @@ impl AISettings {
 
     /// Returns true when local-to-cloud handoff is effectively enabled.
     /// False when the user/org has disabled it, cloud conversations are off,
-    /// Warp-hosted agents are disabled, or AI is globally off.
+    /// or AI is globally off.
     pub fn is_cloud_handoff_enabled(&self, app: &warpui::AppContext) -> bool {
         if !self.is_any_ai_enabled(app) || !*self.cloud_handoff_enabled {
             return false;
@@ -1703,14 +1703,10 @@ impl AISettings {
         if !privacy.is_cloud_conversation_storage_enabled {
             return false;
         }
-        let workspaces = UserWorkspaces::as_ref(app);
-        if matches!(
-            workspaces.get_cloud_conversation_storage_enablement_setting(),
+        !matches!(
+            UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
             crate::workspaces::workspace::AdminEnablementSetting::Disable
-        ) {
-            return false;
-        }
-        workspaces.is_warp_hosted_agents_enabled()
+        )
     }
 
     pub fn is_ampersand_handoff_enabled(&self, app: &warpui::AppContext) -> bool {

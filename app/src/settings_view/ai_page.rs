@@ -6358,17 +6358,12 @@ impl SettingsWidget for CloudHandoffWidget {
                 UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
                 AdminEnablementSetting::Disable
             );
-        let hosted_agents_off = !UserWorkspaces::as_ref(app).is_warp_hosted_agents_enabled();
-        let is_force_disabled = !is_any_ai_enabled || cloud_convos_off || hosted_agents_off;
+        let is_force_disabled = !is_any_ai_enabled || cloud_convos_off;
 
         let effective_handoff = !is_force_disabled && *ai_settings.cloud_handoff_enabled;
 
-        let tooltip_text = if cloud_convos_off && hosted_agents_off {
-            "Cloud handoff requires cloud conversations and Warp-hosted agents to be enabled."
-        } else if cloud_convos_off {
+        let tooltip_text = if cloud_convos_off {
             "Cloud handoff requires cloud conversations to be enabled."
-        } else if hosted_agents_off {
-            "Cloud handoff requires Warp-hosted agents to be enabled by your organization."
         } else {
             ""
         };

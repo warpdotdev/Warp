@@ -6,16 +6,14 @@ This spec implements the behavior described in `specs/REMOTE-1573/PRODUCT.md`. T
 
 1. **New AI settings** — two booleans (`cloud_handoff_enabled`, `ampersand_handoff_enabled`) in the `AISettings` settings group (`app/src/settings/ai.rs:710-1463`).
 2. **Settings UI** — a new widget section on the AI settings page (`app/src/settings_view/ai_page.rs`) following the pattern of `CloudAgentComputerUseWidget` (line 6191).
-3. **GraphQL plumbing** — extracting `warp_hosted_agents_enabled` from `AmbientAgentSettings` in the GQL conversion layer (`app/src/workspaces/gql_convert.rs:831-839`) and storing it on `WorkspaceSettings` (`app/src/workspaces/workspace.rs:762-784`).
-4. **Handoff surface gating** — using the effective setting value to gate the `&` prefix (`app/src/terminal/input.rs:3721-3751`), the `/handoff` slash command (`app/src/terminal/input/slash_commands/mod.rs:882-910`), the footer chip (`app/src/ai/blocklist/agent_view/agent_input_footer/mod.rs:2043-2053`), and the workspace action handler (`app/src/workspace/view.rs:20681-20691`).
-5. **Snapshot gating** — adding `snapshot_disabled` to `SpawnAgentRequest` (`app/src/server/server_api/ai.rs:205-248`) and setting it from the cloud-conversation-storage state in every client-side spawn path (`app/src/terminal/view/ambient_agent/model.rs:967-994`, `build_handoff_spawn_request` at line 569).
+3. **Handoff surface gating** — using the effective setting value to gate the `&` prefix (`app/src/terminal/input.rs:3721-3751`), the `/handoff` slash command (`app/src/terminal/input/slash_commands/mod.rs:882-910`), the footer chip (`app/src/ai/blocklist/agent_view/agent_input_footer/mod.rs:2043-2053`), and the workspace action handler (`app/src/workspace/view.rs:20681-20691`).
+4. **Snapshot gating** — adding `snapshot_disabled` to `SpawnAgentRequest` and setting it from the cloud-conversation-storage state in every client-side spawn path (`app/src/terminal/view/ambient_agent/model.rs:967-994`, `build_handoff_spawn_request` at line 569).
 
 ### How the effective handoff value is derived
 
 The effective value is `false` when any of these is true (PRODUCT.md invariant 9):
 - `AISettings::is_any_ai_enabled()` returns `false`
 - Cloud conversation storage is effectively disabled (user-level `is_cloud_conversation_storage_enabled == false` on `PrivacySettings`, or org-level `cloud_conversation_storage_settings == Disable` on `WorkspaceSettings`)
-- Org has `warp_hosted_agents_enabled == false` (new field on `WorkspaceSettings`)
 - Feature flags `OzHandoff` or `HandoffLocalCloud` are off (existing gate in `is_local_to_cloud_handoff_available()` at `app/src/ai/blocklist/mod.rs:11-16`)
 - The user has toggled the setting off
 
@@ -29,15 +27,7 @@ We pass `snapshot_disabled` through the spawn request rather than checking `Priv
 
 ## Proposed changes
 
-### 1. Plumb `warp_hosted_agents_enabled` into `WorkspaceSettings`
-
-**`app/src/workspaces/workspace.rs`**: Add a `warp_hosted_agents_enabled: bool` field to `WorkspaceSettings`, defaulting to `true`.
-
-**`app/src/workspaces/gql_convert.rs`** (inside `From<GqlWorkspaceSettings> for WorkspaceSettings`, ~line 831): Extract `warp_hosted_agents_enabled` from `ambient_agent_settings`, defaulting to `true` when absent.
-
-**`app/src/workspaces/user_workspaces.rs`**: Add an `is_warp_hosted_agents_enabled()` getter following the pattern of `get_cloud_conversation_storage_enablement_setting()`, defaulting to `true` when no team is present.
-
-### 2. Add settings to `AISettings`
+### 1. Add settings to `AISettings`
 
 **`app/src/settings/ai.rs`**: Add two new entries to `define_settings_group!(AISettings, ...)`, following the pattern of `orchestration_enabled`:
 
@@ -46,14 +36,14 @@ We pass `snapshot_disabled` through the spawn request rather than checking `Priv
 
 Add two derived helpers on `AISettings`:
 
-- `is_cloud_handoff_enabled(&self, app) -> bool` — returns `false` when any prerequisite is missing: AI disabled, setting off, feature flags off (delegates to `is_local_to_cloud_handoff_available()`), cloud conversation storage off (user-level via `PrivacySettings` or org-level via `AdminEnablementSetting::Disable`), or warp-hosted agents disabled.
+- `is_cloud_handoff_enabled(&self, app) -> bool` — returns `false` when any prerequisite is missing: AI disabled, setting off, feature flags off (delegates to `is_local_to_cloud_handoff_available()`), or cloud conversation storage off (user-level via `PrivacySettings` or org-level via `AdminEnablementSetting::Disable`).
 - `is_ampersand_handoff_enabled(&self, app) -> bool` — returns `is_cloud_handoff_enabled(app) && *self.ampersand_handoff_enabled`.
 
-### 3. Add `snapshot_disabled` to `SpawnAgentRequest`
+### 2. Add `snapshot_disabled` to `SpawnAgentRequest`
 
-**`app/src/server/server_api/ai.rs`** (inside `SpawnAgentRequest`): Add an `Option<bool>` field `snapshot_disabled` after `initial_snapshot_token`, with `skip_serializing_if = "Option::is_none"`.
+inside `SpawnAgentRequest`: Add an `Option<bool>` field `snapshot_disabled` after `initial_snapshot_token`, with `skip_serializing_if = "Option::is_none"`.
 
-### 4. Set `snapshot_disabled` at spawn time
+### 3. Set `snapshot_disabled` at spawn time
 
 **`app/src/terminal/view/ambient_agent/model.rs`**: In `build_default_spawn_config`, after computing `computer_use_enabled`, read cloud conversation storage state and set `snapshot_disabled` on the returned request. Since `AgentConfigSnapshot` doesn't carry `snapshot_disabled` (it's a `SpawnAgentRequest`-level field), the flag must be set in `spawn_agent` and `build_handoff_spawn_request` directly.
 
@@ -61,7 +51,7 @@ In `spawn_agent` (~line 968) and `build_handoff_spawn_request` (~line 569), set 
 
 Add a private helper `should_disable_snapshot(ctx: &AppContext) -> bool` that returns `true` when cloud conversation storage is off — either user-level (`PrivacySettings::is_cloud_conversation_storage_enabled == false`) or org-level (`AdminEnablementSetting::Disable`).
 
-### 5. Gate handoff surfaces
+### 4. Gate handoff surfaces
 
 All four sites switch from the current `is_local_to_cloud_handoff_available()` check to the new `AISettings::is_cloud_handoff_enabled(app)`:
 
@@ -72,25 +62,24 @@ All four sites switch from the current `is_local_to_cloud_handoff_available()` c
 
 `is_local_to_cloud_handoff_available()` in `app/src/ai/blocklist/mod.rs` is retained as a pure feature-flag check and called internally by `is_cloud_handoff_enabled`. Existing callers are migrated to the new setting-aware helper.
 
-### 6. Settings UI widget
+### 5. Settings UI widget
 
 **`app/src/settings_view/ai_page.rs`**: Add a new `CloudHandoffWidget` struct implementing `SettingsWidget`, placed in the "Experimental" section near `CloudAgentComputerUseWidget`. Pattern:
 
 - `should_render`: return `true` when `OzHandoff` and `HandoffLocalCloud` flags are on. The widget handles the disabled state internally.
-- `render`: Compute force-disabled state from cloud-conversation-storage + warp-hosted-agents. When force-disabled, render the toggle as disabled with a tooltip. Beneath the parent toggle, render the `&` sub-toggle indented, disabled when parent is off.
+- `render`: Compute force-disabled state from cloud-conversation-storage. When force-disabled, render the toggle as disabled with a tooltip. Beneath the parent toggle, render the `&` sub-toggle indented, disabled when parent is off.
 
 Follow the exact pattern of `AgentAttributionWidget` (line 6093) for org-forced-disabled toggles with tooltips, and `CloudAgentComputerUseWidget` (line 6191) for the overall section layout.
 
 ## Testing and validation
 
 **Unit tests** (new file `app/src/settings/ai_tests.rs` or inline `#[cfg(test)]` block):
-- `is_cloud_handoff_enabled` returns `false` when AI disabled, cloud convos off, org-hosted-agents off, or setting toggled off. Covers PRODUCT.md invariants 3, 9, 11.
+- `is_cloud_handoff_enabled` returns `false` when AI disabled, cloud convos off, or setting toggled off. Covers PRODUCT.md invariants 3, 9, 11.
 - `is_ampersand_handoff_enabled` returns `false` when parent is off or sub-setting is off. Covers invariants 6, 7, 8.
 - `should_disable_snapshot` returns `true` when cloud conversation storage is user-disabled or org-disabled. Covers invariants 16, 18.
 
 **Existing tests**:
 - `app/src/terminal/input_tests.rs` already has `&`-prefix tests (line 5733+). Add a case where `cloud_handoff_enabled` is false and verify `&` does not activate handoff compose.
-- `app/src/workspaces/user_workspaces_tests.rs` — add a case for `is_warp_hosted_agents_enabled` with `ambient_agent_settings` absent vs present.
 
 **Manual validation**:
 - Toggle handoff off in settings → verify `&`, `/handoff`, and footer chip are all suppressed.
