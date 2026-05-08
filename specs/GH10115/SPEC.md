@@ -57,10 +57,47 @@ Existing min/max zoom clamps (e.g., 0.5x..3.0x) apply per window. Each window ca
 
 ## Settings / API surface
 
-- `appearance.zoom_level` (existing): unchanged in schema, semantics, and storage. Now documented as "default for new windows". User-facing label updated to match.
+`appearance.zoom_level` (existing) is preserved in **schema, type, range,
+storage location, and serde representation**. What changes is **only its
+runtime role**, which this spec makes explicit and consistent across all
+sections:
+
+| Aspect | Before this spec | After this spec |
+|---|---|---|
+| TOML key | `appearance.zoom_level` | `appearance.zoom_level` (unchanged) |
+| On-disk type / range / default | unchanged | unchanged |
+| Storage backing | unchanged | unchanged |
+| **Runtime semantics** | Live global zoom — every window reads it on every paint; mutating it via `Cmd +/-/0` updates this value and re-renders all windows. | **Default for new windows only.** Read **once** at window-creation time to seed that window's per-window `zoom_level: f32`. Never read again on subsequent paints for an already-open window. |
+| Effect of mutating it (Settings UI) | Applies live to every window. | Applies only to **subsequently-opened** windows; already-open windows keep their per-window zoom (B6). |
+| Effect of `Cmd +/-/0` and zoom action handlers | Wrote into `appearance.zoom_level`. | Do **NOT** touch `appearance.zoom_level`. They mutate the focused window's per-window `zoom_level: f32` only (B1). |
+| User-facing label | "Zoom" | "Default zoom for new windows" (B5). |
+
+**Resolves the apparent contradiction.** Earlier wording that said
+"semantics are unchanged" is **superseded** by this table — schema and
+storage are unchanged, but runtime semantics shift from a live global
+override to a one-time seed value. Concrete consequences:
+
+- Toggling `appearance.zoom_level` in Settings while window A and B are
+  open does **not** change the rendered zoom of A or B (B6, A6).
+- `Cmd +` in window A does **not** write to `appearance.zoom_level` and
+  does **not** change the value any other window will use on next open;
+  it only mutates A's per-window state (B1, A1).
+- Opening a new window C reads `appearance.zoom_level` exactly once to
+  seed C's per-window `zoom_level: f32`; subsequent zoom actions in C
+  diverge from `appearance.zoom_level` without rewriting it.
+
+Other surface details:
+
 - No new persisted settings in V1.
-- Internal: per-window state object gains a `zoom_level: f32` field initialized from `appearance.zoom_level` at window-creation time.
-- New UI control: "Apply to all open windows" button in Settings → Appearance → Zoom. Resets every open window's per-window zoom to the current global default.
+- Internal: per-window state object gains a `zoom_level: f32` field
+  initialized from `appearance.zoom_level` at window-creation time and
+  mutated thereafter only by zoom action handlers and the "Apply to all
+  open windows" button.
+- New UI control: "Apply to all open windows" button in Settings →
+  Appearance → Zoom. Resets every open window's per-window
+  `zoom_level: f32` to the current value of `appearance.zoom_level`
+  (writes the global default into each window's per-window field; does
+  not change `appearance.zoom_level` itself).
 
 ## Acceptance Criteria
 
