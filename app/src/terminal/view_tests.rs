@@ -674,6 +674,82 @@ fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
 }
 
 #[test]
+fn cloud_mode_v1_agent_prefixed_query_spawns_cloud_agent() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_mode = FeatureFlag::AgentMode.override_enabled(true);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+        let _cloud_mode_input_v2 = FeatureFlag::CloudModeInputV2.override_enabled(false);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+        let input = terminal.read(&app, |view, _| view.input.clone());
+
+        input.update(&mut app, |input, ctx| {
+            input.ai_input_model().update(ctx, |ai_input, ctx| {
+                ai_input.set_input_config(
+                    InputConfig {
+                        input_type: InputType::AI,
+                        is_locked: false,
+                    },
+                    true,
+                    ctx,
+                );
+            });
+            assert!(!input.is_cloud_mode_input_v2_composing(ctx));
+            input.replace_buffer_content("/agent fix the tests", ctx);
+            input.input_enter(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let ambient_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .as_ref(ctx);
+            let request = ambient_model
+                .request()
+                .expect("enter should submit through the cloud agent spawn path");
+            assert_eq!(request.prompt, "/agent fix the tests");
+            assert_eq!(request.mode, UserQueryMode::Normal);
+            assert!(input.as_ref(ctx).buffer_text(ctx).is_empty());
+        });
+    });
+}
+
+#[test]
+fn cloud_mode_v2_agent_prefixed_query_spawns_cloud_agent() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_mode = FeatureFlag::AgentMode.override_enabled(true);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+        let _cloud_mode_input_v2 = FeatureFlag::CloudModeInputV2.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+        let input = terminal.read(&app, |view, _| view.input.clone());
+
+        input.update(&mut app, |input, ctx| {
+            assert!(input.is_cloud_mode_input_v2_composing(ctx));
+            input.replace_buffer_content("/agent fix the tests", ctx);
+            input.input_enter(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let ambient_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .as_ref(ctx);
+            let request = ambient_model
+                .request()
+                .expect("enter should submit through the cloud agent spawn path");
+            assert_eq!(request.prompt, "/agent fix the tests");
+            assert_eq!(request.mode, UserQueryMode::Normal);
+            assert!(input.as_ref(ctx).buffer_text(ctx).is_empty());
+        });
+    });
+}
+
+#[test]
 fn pending_cloud_followup_without_ambient_model_restores_prompt() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);

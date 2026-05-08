@@ -44,7 +44,7 @@ use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::system::SystemInfo;
 use crate::system::SystemStats;
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
-use crate::terminal::event::BootstrappedEvent;
+use crate::terminal::event::{BlockMetadataReceivedEvent, BootstrappedEvent};
 use crate::terminal::keys::TerminalKeybindings;
 use crate::terminal::local_shell::LocalShellState;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
@@ -61,6 +61,7 @@ use crate::terminal::model::grid::Dimensions as _;
 use crate::terminal::model::index::Side;
 use crate::terminal::model::session::{BootstrapSessionType, SessionInfo};
 use crate::terminal::model::terminal_model::BlockIndex;
+use crate::terminal::model_events::ModelEvent;
 use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 use chrono::Local;
 use warpui::text::SelectionType;
@@ -336,20 +337,37 @@ pub fn simulate_directory_for_completion<A, S>(
 {
     let directory = directory.into();
     terminal.update(app, |terminal, ctx| {
-        terminal.model.lock().block_list_mut().precmd(PrecmdValue {
-            pwd: Some(directory.clone()),
-            session_id: Some(session_id.into()),
-            ..Default::default()
-        });
+        let block_metadata = BlockMetadata::new(Some(session_id), Some(directory.clone()));
+        let block_index = {
+            let mut model = terminal.model.lock();
+            model.block_list_mut().precmd(PrecmdValue {
+                pwd: Some(directory.clone()),
+                session_id: Some(session_id.into()),
+                ..Default::default()
+            });
+            model.block_list().active_block_index()
+        };
 
         // Normally, the precmd message should be sufficient to also set this block metadata.
-        // However, in unit tests the foreground executor does not relay the event.
+        // However, in unit tests the foreground executor does not relay the event, so notify
+        // the dispatcher directly for models that observe active-session metadata.
+        terminal
+            .model_event_dispatcher()
+            .update(ctx, |dispatcher, ctx| {
+                dispatcher.set_active_session_id(session_id);
+                ctx.emit(ModelEvent::BlockMetadataReceived(
+                    BlockMetadataReceivedEvent {
+                        block_metadata: block_metadata.clone(),
+                        block_index,
+                        is_after_in_band_command: false,
+                        is_done_bootstrapping: true,
+                    },
+                ));
+            });
+
+        // Keep the input's block metadata in sync with the active-session metadata above.
         terminal.input().update(ctx, |input, ctx| {
-            input.set_active_block_metadata(
-                BlockMetadata::new(Some(session_id), Some(directory)),
-                false,
-                ctx,
-            );
+            input.set_active_block_metadata(block_metadata, false, ctx);
         });
     });
 }

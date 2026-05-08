@@ -1619,6 +1619,7 @@ pub struct Input {
     inline_slash_commands_view: ViewHandle<InlineSlashCommandView>,
     cloud_mode_v2_slash_commands_view: Option<ViewHandle<CloudModeV2SlashCommandView>>,
     slash_command_data_source: ModelHandle<SlashCommandDataSource>,
+    cloud_mode_composer_slash_command_data_source: Option<ModelHandle<SlashCommandDataSource>>,
 
     /// Inline conversation menu for selecting AI conversations.
     inline_conversation_menu_view: ViewHandle<InlineConversationMenuView>,
@@ -3121,21 +3122,24 @@ impl Input {
                 agent_view_controller: agent_view_controller.clone(),
                 cli_subagent_controller: cli_subagent_controller.clone(),
                 terminal_view_id,
+                ambient_agent_view_model: ambient_agent_view_model.clone(),
             };
             SlashCommandDataSource::new(args, ctx)
         });
 
-        let v2_slash_command_data_source = if FeatureFlag::CloudModeInputV2.is_enabled() {
-            let args = slash_commands::DataSourceArgs {
-                active_session: active_session.clone(),
-                agent_view_controller: agent_view_controller.clone(),
-                cli_subagent_controller: cli_subagent_controller.clone(),
-                terminal_view_id,
+        let cloud_mode_composer_slash_command_data_source =
+            if FeatureFlag::CloudModeInputV2.is_enabled() {
+                let args = slash_commands::DataSourceArgs {
+                    active_session: active_session.clone(),
+                    agent_view_controller: agent_view_controller.clone(),
+                    cli_subagent_controller: cli_subagent_controller.clone(),
+                    terminal_view_id,
+                    ambient_agent_view_model: ambient_agent_view_model.clone(),
+                };
+                Some(ctx.add_model(|ctx| SlashCommandDataSource::for_cloud_mode_v2(args, ctx)))
+            } else {
+                None
             };
-            Some(ctx.add_model(|ctx| SlashCommandDataSource::for_cloud_mode_v2(args, ctx)))
-        } else {
-            None
-        };
         let slash_command_model = ctx.add_model(|ctx| {
             SlashCommandModel::new(
                 &buffer_model,
@@ -3298,7 +3302,7 @@ impl Input {
         });
 
         let cloud_mode_v2_slash_commands_view =
-            if let Some(v2_data_source) = v2_slash_command_data_source {
+            if let Some(v2_data_source) = cloud_mode_composer_slash_command_data_source.clone() {
                 let view = ctx.add_typed_action_view(|ctx| {
                     CloudModeV2SlashCommandView::new(
                         &slash_command_model,
@@ -3476,6 +3480,7 @@ impl Input {
             agent_shortcut_view_model,
             ambient_agent_view_state,
             slash_command_data_source,
+            cloud_mode_composer_slash_command_data_source,
             ephemeral_message_model,
             input_contents_before_prompt_chip_command: None,
         };
@@ -13855,10 +13860,17 @@ impl Input {
             footer.set_current_repo_path(repo_path.clone(), footer_ctx);
         });
 
-        self.slash_command_data_source
-            .update(ctx, |data_source, ctx| {
+        self.slash_command_data_source.update(ctx, {
+            let repo_path = repo_path.clone();
+            |data_source, ctx| {
+                data_source.set_active_repo_root(repo_path, ctx);
+            }
+        });
+        if let Some(data_source) = self.cloud_mode_composer_slash_command_data_source.as_ref() {
+            data_source.update(ctx, |data_source, ctx| {
                 data_source.set_active_repo_root(repo_path, ctx);
             });
+        }
     }
 
     fn active_session_path_if_local(&self, ctx: &ViewContext<Self>) -> Option<&Path> {
