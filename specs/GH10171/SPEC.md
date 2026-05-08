@@ -132,10 +132,18 @@ visible user gate.
   for that `(path_hash, content_hash)` key. The next open
   defaults to `imported` until the user re-trusts.
 - B-TRUST-UPGRADE. Upgrading an `imported` config to `trusted`
-  requires an explicit user action: a "Trust this tab config"
-  control on the consent card (B-CONSENT) or in the Tab Configs
-  settings row. One-time, per file content. Trust does not
-  cascade to other tab configs.
+  requires an explicit user action via EXACTLY ONE of two
+  surfaces:
+  1. The "Trust this tab config" checkbox on the consent card
+     (B-CONSENT) — combined with a non-cancelled
+     `[Open with profile]` resolution (per
+     B-CONSENT-MULTIPANE-PROMOTE for multi-pane).
+  2. The "Trust this tab config" control on the Tab Configs
+     settings row, which MUST first show the Trust-review modal
+     defined in B-TRUST-UPGRADE-DISCLOSURE.
+  No other code path may write a `"trusted"` entry to the sidecar.
+  Trust is one-time, per file content, and does NOT cascade to
+  other tab configs.
 - B-TRUST-UPGRADE-DISCLOSURE. **Trust promotion from settings
   requires the same verbatim disclosure as the consent card.**
   When the user clicks "Trust this tab config" from the Tab
