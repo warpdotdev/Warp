@@ -60,7 +60,7 @@ use ai::workspace::WorkspaceMetadata as CodeWorkspaceMetadata;
 use self::model::{AgentConversation, AgentConversationData, Project};
 
 #[cfg(any(feature = "local_fs", feature = "integration_tests"))]
-pub use sqlite::database_file_path;
+pub use sqlite::database_file_path_for_scope;
 #[cfg(any(feature = "local_fs", feature = "integration_tests"))]
 pub use sqlite::establish_ro_connection;
 

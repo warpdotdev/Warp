@@ -19,15 +19,15 @@ use crate::{
 };
 
 use super::{
-    database_file_path, database_file_path_for_scope, decode_path, deduplicate_events, encode_path,
-    read_sqlite_data, save_app_state, setup_database,
+    app_database_file_path, database_file_path_for_scope, decode_path, deduplicate_events,
+    encode_path, read_sqlite_data, save_app_state, setup_database,
 };
 
 #[test]
-fn app_scope_database_path_matches_legacy_helper() {
+fn app_scope_database_path_matches_app_database_path() {
     assert_eq!(
         database_file_path_for_scope(&PersistenceScope::App),
-        database_file_path()
+        app_database_file_path()
     );
 }
 

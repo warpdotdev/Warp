@@ -425,15 +425,11 @@ fn setup_database(database_path: &Path) -> Result<SqliteConnection> {
     Ok(conn)
 }
 
-/// The path at which the sqlite database is located.
+/// The path at which the sqlite database is located for the given scope.
 ///
 /// Integration tests that initialize the database with known data should use
 /// this function to determine where to create the database file.
-pub fn database_file_path() -> PathBuf {
-    database_file_path_for_scope(&PersistenceScope::App)
-}
-
-fn database_file_path_for_scope(scope: &PersistenceScope) -> PathBuf {
+pub fn database_file_path_for_scope(scope: &PersistenceScope) -> PathBuf {
     match scope {
         PersistenceScope::App => app_database_file_path(),
         PersistenceScope::RemoteServerDaemon { identity_key } => {

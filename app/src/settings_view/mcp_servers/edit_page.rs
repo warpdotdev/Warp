@@ -39,7 +39,9 @@ use crate::{
     banner::{Banner, BannerTextContent},
     cloud_object::{CloudObject, Space},
     code::editor::view::{CodeEditorRenderOptions, CodeEditorView},
-    persistence::ModelEvent,
+    persistence::{
+        database_file_path_for_scope, establish_ro_connection, ModelEvent, PersistenceScope,
+    },
     server::{
         cloud_objects::update_manager::InitiatedBy,
         telemetry::{MCPTemplateCreationSource, TelemetryEvent},
@@ -194,10 +196,10 @@ impl MCPServersEditPageView {
 
         #[cfg(not(target_family = "wasm"))]
         let database_connection =
-            crate::persistence::database_file_path()
+            database_file_path_for_scope(&PersistenceScope::App)
                 .to_str()
                 .and_then(|db_url| {
-                    crate::persistence::establish_ro_connection(db_url)
+                    establish_ro_connection(db_url)
                         .ok()
                         .map(|conn| Arc::new(Mutex::new(conn)))
                 });
