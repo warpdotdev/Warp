@@ -6,7 +6,8 @@
 //! This module lives in `app/` (rather than in the `remote_server` crate alongside
 //! `repo_metadata_proto`) because it depends on app-level types
 //! (`code_review::diff_state`, `util::git`) that are not available in the crate.
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::proto;
 use warp_util::standardized_path::StandardizedPath;
@@ -14,7 +15,8 @@ use warp_util::standardized_path::StandardizedPath;
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::code_review::diff_state::{
     DiffHunk, DiffLine, DiffLineType, DiffMetadata, DiffMetadataAgainstBase, DiffMode, DiffState,
-    DiffStats, FileDiff, FileDiffAndContent, FileStatusInfo, GitDiffWithBaseContent, GitFileStatus,
+    DiffStats, FileDiff, FileDiffAndContent, FileStatusInfo, GitDiffData, GitDiffWithBaseContent,
+    GitFileStatus,
 };
 use crate::util::git::{Commit, PrInfo};
 
@@ -75,6 +77,188 @@ impl TryFrom<&proto::FileStatusInfo> for FileStatusInfo {
         }
 
         Ok(FileStatusInfo { path, status })
+    }
+}
+
+impl From<&proto::DiffStats> for DiffStats {
+    fn from(stats: &proto::DiffStats) -> Self {
+        DiffStats {
+            files_changed: stats.files_changed as usize,
+            total_additions: stats.total_additions as usize,
+            total_deletions: stats.total_deletions as usize,
+        }
+    }
+}
+
+impl From<&proto::DiffMetadataAgainstBase> for DiffMetadataAgainstBase {
+    fn from(base: &proto::DiffMetadataAgainstBase) -> Self {
+        DiffMetadataAgainstBase {
+            aggregate_stats: base
+                .aggregate_stats
+                .as_ref()
+                .map(DiffStats::from)
+                .unwrap_or_default(),
+        }
+    }
+}
+
+impl From<&proto::Commit> for Commit {
+    fn from(commit: &proto::Commit) -> Self {
+        Commit {
+            hash: commit.hash.clone(),
+            subject: commit.subject.clone(),
+            files_changed: commit.files_changed as usize,
+            additions: commit.additions as usize,
+            deletions: commit.deletions as usize,
+        }
+    }
+}
+
+impl From<&proto::PrInfo> for PrInfo {
+    fn from(pr: &proto::PrInfo) -> Self {
+        PrInfo {
+            number: pr.number,
+            url: pr.url.clone(),
+        }
+    }
+}
+
+impl From<&proto::DiffMetadata> for DiffMetadata {
+    fn from(metadata: &proto::DiffMetadata) -> Self {
+        DiffMetadata {
+            main_branch_name: metadata.main_branch_name.clone(),
+            current_branch_name: metadata.current_branch_name.clone(),
+            against_head: metadata
+                .against_head
+                .as_ref()
+                .map(DiffMetadataAgainstBase::from)
+                .unwrap_or_default(),
+            against_base_branch: metadata
+                .against_base_branch
+                .as_ref()
+                .map(DiffMetadataAgainstBase::from),
+            has_head_commit: metadata.has_head_commit,
+            unpushed_commits: metadata.unpushed_commits.iter().map(Commit::from).collect(),
+            upstream_ref: metadata.upstream_ref.clone(),
+            pr_info: metadata.pr_info.as_ref().map(PrInfo::from),
+        }
+    }
+}
+
+impl From<proto::DiffLineType> for DiffLineType {
+    fn from(t: proto::DiffLineType) -> Self {
+        match t {
+            proto::DiffLineType::Context | proto::DiffLineType::Unspecified => {
+                DiffLineType::Context
+            }
+            proto::DiffLineType::Add => DiffLineType::Add,
+            proto::DiffLineType::Delete => DiffLineType::Delete,
+            proto::DiffLineType::HunkHeader => DiffLineType::HunkHeader,
+        }
+    }
+}
+
+impl From<&proto::DiffLine> for DiffLine {
+    fn from(l: &proto::DiffLine) -> Self {
+        DiffLine {
+            line_type: proto::DiffLineType::try_from(l.line_type)
+                .unwrap_or(proto::DiffLineType::Context)
+                .into(),
+            old_line_number: l.old_line_number.map(|n| n as usize),
+            new_line_number: l.new_line_number.map(|n| n as usize),
+            text: l.text.clone(),
+            no_trailing_newline: l.no_trailing_newline,
+        }
+    }
+}
+
+impl From<&proto::DiffHunk> for DiffHunk {
+    fn from(hunk: &proto::DiffHunk) -> Self {
+        DiffHunk {
+            old_start_line: hunk.old_start_line as usize,
+            old_line_count: hunk.old_line_count as usize,
+            new_start_line: hunk.new_start_line as usize,
+            new_line_count: hunk.new_line_count as usize,
+            lines: hunk.lines.iter().map(DiffLine::from).collect(),
+            unified_diff_start: hunk.unified_diff_start as usize,
+            unified_diff_end: hunk.unified_diff_end as usize,
+        }
+    }
+}
+
+impl From<proto::DiffSize> for DiffSize {
+    fn from(s: proto::DiffSize) -> Self {
+        match s {
+            proto::DiffSize::Normal | proto::DiffSize::Unspecified => DiffSize::Normal,
+            proto::DiffSize::Large => DiffSize::Large,
+            proto::DiffSize::Unrenderable => DiffSize::Unrenderable,
+        }
+    }
+}
+
+impl From<&proto::FileDiff> for FileDiff {
+    fn from(file: &proto::FileDiff) -> Self {
+        FileDiff {
+            file_path: PathBuf::from(&file.file_path),
+            status: file
+                .status
+                .as_ref()
+                .and_then(|s| GitFileStatus::try_from(s).ok())
+                .unwrap_or(GitFileStatus::Modified),
+            hunks: Arc::new(file.hunks.iter().map(DiffHunk::from).collect()),
+            is_binary: file.is_binary,
+            is_autogenerated: file.is_autogenerated,
+            max_line_number: file.max_line_number as usize,
+            has_hidden_bidi_chars: file.has_hidden_bidi_chars,
+            size: proto::DiffSize::try_from(file.size)
+                .unwrap_or(proto::DiffSize::Normal)
+                .into(),
+        }
+    }
+}
+
+impl From<&proto::FileDiff> for FileDiffAndContent {
+    fn from(file: &proto::FileDiff) -> Self {
+        Self {
+            file_diff: FileDiff::from(file),
+            content_at_head: file.content_at_base.clone(),
+        }
+    }
+}
+impl From<&proto::GitDiffData> for GitDiffData {
+    fn from(data: &proto::GitDiffData) -> Self {
+        GitDiffData {
+            files: data.files.iter().map(FileDiff::from).collect(),
+            total_additions: data.total_additions as usize,
+            total_deletions: data.total_deletions as usize,
+            files_changed: data.files_changed as usize,
+        }
+    }
+}
+
+impl From<&proto::GitDiffData> for GitDiffWithBaseContent {
+    fn from(data: &proto::GitDiffData) -> Self {
+        Self {
+            files: data.files.iter().map(FileDiffAndContent::from).collect(),
+            total_additions: data.total_additions as usize,
+            total_deletions: data.total_deletions as usize,
+            files_changed: data.files_changed as usize,
+        }
+    }
+}
+impl From<Option<&proto::DiffState>> for DiffState {
+    fn from(state: Option<&proto::DiffState>) -> Self {
+        let Some(state) = state else {
+            return DiffState::Loading;
+        };
+
+        match &state.state {
+            Some(proto::diff_state::State::NotInRepository(_)) => DiffState::NotInRepository,
+            Some(proto::diff_state::State::Loading(_)) => DiffState::Loading,
+            Some(proto::diff_state::State::Error(e)) => DiffState::Error(e.message.clone()),
+            Some(proto::diff_state::State::Loaded(_)) => DiffState::Loaded,
+            None => DiffState::Loading,
+        }
     }
 }
 
@@ -188,6 +372,15 @@ impl From<&GitFileStatus> for proto::GitFileStatus {
     }
 }
 
+impl From<&FileStatusInfo> for proto::FileStatusInfo {
+    fn from(info: &FileStatusInfo) -> Self {
+        proto::FileStatusInfo {
+            path: info.path.to_string(),
+            status: Some((&info.status).into()),
+        }
+    }
+}
+
 impl From<&DiffLineType> for proto::DiffLineType {
     fn from(t: &DiffLineType) -> Self {
         match t {
@@ -246,6 +439,11 @@ impl From<&DiffState> for proto::DiffState {
                 message: msg.clone(),
             }),
             DiffState::Loaded => proto::diff_state::State::Loaded(proto::DiffStateLoaded {}),
+            // Disconnected is a client-only state; the server never
+            // serialises it. Map to Loading as a safe fallback.
+            DiffState::Disconnected => {
+                proto::diff_state::State::Loading(proto::DiffStateLoading {})
+            }
         };
         proto::DiffState {
             state: Some(state_oneof),
@@ -272,6 +470,21 @@ pub fn file_diff_to_proto(f: &FileDiff, content_at_base: Option<&str>) -> proto:
 impl From<&FileDiffAndContent> for proto::FileDiff {
     fn from(f: &FileDiffAndContent) -> Self {
         file_diff_to_proto(&f.file_diff, f.content_at_head.as_deref())
+    }
+}
+
+impl From<&GitDiffData> for proto::GitDiffData {
+    fn from(d: &GitDiffData) -> Self {
+        proto::GitDiffData {
+            files: d
+                .files
+                .iter()
+                .map(|f| file_diff_to_proto(f, None))
+                .collect(),
+            total_additions: d.total_additions as u64,
+            total_deletions: d.total_deletions as u64,
+            files_changed: d.files_changed as u64,
+        }
     }
 }
 

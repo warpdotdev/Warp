@@ -72,6 +72,24 @@ impl DiffStateModelMap {
     fn remove(&mut self, key: &FileLocation) -> Option<ModelHandle<DiffStateModel>> {
         self.models.remove(key)
     }
+
+    /// Removes all `FileLocation::Remote` entries whose `host_id` matches
+    /// and returns them so the caller can run cleanup (e.g. `unsubscribe`).
+    fn drain_remote_models_for_host(
+        &mut self,
+        host_id: &remote_server::HostId,
+    ) -> Vec<ModelHandle<DiffStateModel>> {
+        let matching_keys: Vec<FileLocation> = self
+            .models
+            .keys()
+            .filter(|k| matches!(k, FileLocation::Remote(rp) if &rp.host_id == host_id))
+            .cloned()
+            .collect();
+        matching_keys
+            .into_iter()
+            .filter_map(|k| self.models.remove(&k))
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -177,6 +195,20 @@ pub fn update_index_set(
 impl WorkingDirectoriesModel {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Cleans up remote diff state models for the given host.
+    /// Called when the host disconnects (all sessions to the host are gone).
+    pub fn handle_host_disconnected(
+        &mut self,
+        host_id: &remote_server::HostId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        for model in self.diff_state_models.drain_remote_models_for_host(host_id) {
+            model.update(ctx, |model, ctx| {
+                model.stop_active_watcher(ctx);
+            });
+        }
     }
 
     /// Get the unique directories for a specific pane group in insertion order (oldest first).

@@ -12,7 +12,11 @@ use crate::client::ClientEvent;
 use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
-use crate::proto::{DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot};
+use crate::proto::{
+    DiffMode, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, FileStatusInfo,
+    TextEdit,
+};
+use crate::repo_metadata_proto::proto_load_repo_metadata_directory_response_to_update;
 use crate::setup::PreinstallCheckResult;
 #[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
@@ -112,6 +116,8 @@ pub enum RemoteServerOperation {
     DeleteFile,
     RunCommand,
     GetFragmentMetadataFromHash,
+    GetDiffState,
+    DiscardFiles,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -172,7 +178,8 @@ impl RemoteServerErrorKind {
             ClientError::Protocol(_)
             | ClientError::UnexpectedResponse
             | ClientError::FileOperationFailed(_)
-            | ClientError::FragmentMetadataLookup { .. } => Self::Other,
+            | ClientError::FragmentMetadataLookup { .. }
+            | ClientError::DiscardFailed(_) => Self::Other,
         }
     }
 }
@@ -433,7 +440,7 @@ pub enum RemoteServerManagerEvent {
         path: String,
         new_server_version: u64,
         expected_client_version: u64,
-        edits: Vec<crate::proto::TextEdit>,
+        edits: Vec<TextEdit>,
     },
     /// The file changed on disk while the client had unsaved edits.
     /// The server did NOT apply the change; the client should show a
@@ -441,19 +448,26 @@ pub enum RemoteServerManagerEvent {
     BufferConflictDetected { host_id: HostId, path: String },
 
     // --- Diff state events (forwarded from ClientEvent push channel) ---
-    /// A full diff state snapshot was pushed by the server (NewDiffsComputed).
+    /// A full diff state snapshot was pushed by the server (or returned
+    /// from the initial `GetDiffState` request).
     DiffStateSnapshotReceived {
         host_id: HostId,
+        repo_path: StandardizedPath,
+        mode: DiffMode,
         snapshot: DiffStateSnapshot,
     },
     /// A metadata-only diff state update was pushed by the server.
     DiffStateMetadataUpdateReceived {
         host_id: HostId,
+        repo_path: StandardizedPath,
+        mode: DiffMode,
         update: DiffStateMetadataUpdate,
     },
     /// A single-file diff delta was pushed by the server.
     DiffStateFileDeltaReceived {
         host_id: HostId,
+        repo_path: StandardizedPath,
+        mode: DiffMode,
         delta: DiffStateFileDelta,
     },
 
@@ -1515,6 +1529,138 @@ impl RemoteServerManager {
         }
     }
 
+    /// Sends a `GetDiffState` request to the remote server for the given
+    /// session and emits the snapshot response as a manager event.
+    pub fn get_diff_state(
+        &mut self,
+        session_id: SessionId,
+        repo_path: StandardizedPath,
+        mode: DiffMode,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(client) = self.client_for_session(session_id).cloned() else {
+            log::warn!("Remote server get_diff_state: no connected client session={session_id:?}");
+            return;
+        };
+        let Some(host_id) = self.host_id_for_session(session_id).cloned() else {
+            log::warn!("Remote server get_diff_state: no host_id session={session_id:?}");
+            return;
+        };
+
+        let mode_for_event = mode.clone();
+        let repo_path_for_event = repo_path.clone();
+        let spawner = self.spawner.clone();
+        ctx.background_executor()
+            .spawn(async move {
+                match client.get_diff_state(&repo_path, mode).await {
+                    Ok(resp) => match resp.result {
+                        Some(crate::proto::get_diff_state_response::Result::Snapshot(snapshot)) => {
+                            let _ = spawner
+                                .spawn(move |_me, ctx| {
+                                    ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
+                                        host_id,
+                                        repo_path: repo_path_for_event,
+                                        mode: mode_for_event,
+                                        snapshot,
+                                    });
+                                })
+                                .await;
+                        }
+                        Some(crate::proto::get_diff_state_response::Result::Error(e)) => {
+                            log::warn!("Remote server get_diff_state error: {}", e.message);
+                            let snapshot = DiffStateSnapshot {
+                                repo_path: repo_path_for_event.to_string(),
+                                mode: Some(mode_for_event.clone()),
+                                metadata: None,
+                                state: Some(crate::proto::DiffState {
+                                    state: Some(crate::proto::diff_state::State::Error(
+                                        crate::proto::DiffStateErrorValue { message: e.message },
+                                    )),
+                                }),
+                                diffs: None,
+                            };
+                            let _ = spawner
+                                .spawn(move |_me, ctx| {
+                                    ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
+                                        host_id,
+                                        repo_path: repo_path_for_event,
+                                        mode: mode_for_event,
+                                        snapshot,
+                                    });
+                                })
+                                .await;
+                        }
+                        None => {
+                            log::warn!("Empty GetDiffStateResponse");
+                        }
+                    },
+                    Err(e) => {
+                        log::warn!(
+                            "Remote server get_diff_state failed: session={session_id:?} error={e}"
+                        );
+                        // Transport-level telemetry is emitted automatically
+                        // by send_request via RequestFailedEvent.
+                    }
+                }
+            })
+            .detach();
+    }
+
+    /// Sends an `UnsubscribeDiffState` notification (fire-and-forget) to the
+    /// remote server for the given session.
+    pub fn unsubscribe_diff_state(
+        &self,
+        session_id: SessionId,
+        repo_path: &StandardizedPath,
+        mode: DiffMode,
+    ) {
+        if let Some(client) = self.client_for_session(session_id) {
+            client.unsubscribe_diff_state(repo_path, mode);
+        } else {
+            log::debug!(
+                "Remote server unsubscribe_diff_state: no client for session={session_id:?}"
+            );
+        }
+    }
+
+    /// Sends a `DiscardFiles` request to the remote server. On success the
+    /// server's watcher will push updated diff snapshots.
+    #[allow(clippy::too_many_arguments)]
+    pub fn discard_files(
+        &mut self,
+        session_id: SessionId,
+        repo_path: StandardizedPath,
+        files: Vec<FileStatusInfo>,
+        should_stash: bool,
+        branch_name: Option<String>,
+        mode: DiffMode,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(client) = self.client_for_session(session_id).cloned() else {
+            log::warn!("Remote server discard_files: no connected client session={session_id:?}");
+            return;
+        };
+        ctx.background_executor()
+            .spawn(async move {
+                match client
+                    .discard_files(&repo_path, files, should_stash, branch_name, mode)
+                    .await
+                {
+                    Ok(()) => {
+                        log::info!("Remote server discard_files succeeded");
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Remote server discard_files failed: session={session_id:?} error={e}"
+                        );
+                        // Transport-level telemetry is emitted automatically
+                        // by send_request via RequestFailedEvent.
+                    }
+                }
+            })
+            .detach();
+    }
+
     /// Sends a `LoadRepoMetadataDirectory` request to the remote server for
     /// the given session and emits the response as a manager event.
     pub fn load_remote_repo_metadata_directory(
@@ -1546,7 +1692,7 @@ impl RemoteServerManager {
                 {
                     Ok(resp) => {
                         if let Some(update) =
-                            crate::repo_metadata_proto::proto_load_repo_metadata_directory_response_to_update(&resp)
+                            proto_load_repo_metadata_directory_response_to_update(&resp)
                         {
                             let _ = spawner
                                 .spawn(move |_me, ctx| {
@@ -1656,17 +1802,41 @@ impl RemoteServerManager {
             ClientEvent::BufferConflictDetected { path } => {
                 ctx.emit(RemoteServerManagerEvent::BufferConflictDetected { host_id, path });
             }
-            ClientEvent::DiffStateSnapshotReceived { snapshot } => {
-                ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived { host_id, snapshot });
+            ClientEvent::DiffStateSnapshotReceived {
+                repo_path,
+                mode,
+                snapshot,
+            } => {
+                ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
+                    host_id,
+                    repo_path,
+                    mode,
+                    snapshot,
+                });
             }
-            ClientEvent::DiffStateMetadataUpdateReceived { update } => {
+            ClientEvent::DiffStateMetadataUpdateReceived {
+                repo_path,
+                mode,
+                update,
+            } => {
                 ctx.emit(RemoteServerManagerEvent::DiffStateMetadataUpdateReceived {
                     host_id,
+                    repo_path,
+                    mode,
                     update,
                 });
             }
-            ClientEvent::DiffStateFileDeltaReceived { delta } => {
-                ctx.emit(RemoteServerManagerEvent::DiffStateFileDeltaReceived { host_id, delta });
+            ClientEvent::DiffStateFileDeltaReceived {
+                repo_path,
+                mode,
+                delta,
+            } => {
+                ctx.emit(RemoteServerManagerEvent::DiffStateFileDeltaReceived {
+                    host_id,
+                    repo_path,
+                    mode,
+                    delta,
+                });
             }
             ClientEvent::Disconnected => {
                 // Handled by the drain loop's completion callback.

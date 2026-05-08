@@ -1,6 +1,10 @@
 use crate::auth::auth_state::AuthState;
+use crate::code_review::diff_state::DiffMode;
+use crate::remote_server::diff_state_tracker::DiffModelKey;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
+use warp_util::standardized_path::StandardizedPath;
 use warpui::App;
 
 use super::super::diff_state_tracker::RemoteDiffStateManager;
@@ -118,5 +122,58 @@ fn empty_authenticate_clears_auth_token() {
         });
 
         assert_eq!(model.auth_token().as_deref(), None);
+    });
+}
+
+// ── Diff state: connection cleanup ──────────────────────────────────
+
+#[test]
+fn deregister_connection_cleans_up_diff_state_subscriptions() {
+    App::test((), |mut app| async move {
+        let mut model = test_model(&mut app);
+        let conn = uuid::Uuid::new_v4();
+
+        // Register the connection.
+        let (tx, _rx) = async_channel::unbounded();
+        model.connection_senders.insert(conn, tx);
+
+        // Subscribe the connection to diff state via the manager.
+        let key = DiffModelKey {
+            repo_path: StandardizedPath::try_from_local(Path::new("/repo")).unwrap(),
+            mode: DiffMode::Head,
+        };
+        let key2 = key.clone();
+        let key3 = key.clone();
+        model.diff_states.update(&mut app, |mgr, _ctx| {
+            mgr.subscribe_connection(key, conn);
+        });
+        let has_sub = model.diff_states.read(&app, |mgr, _ctx| {
+            !mgr.subscribed_connections(&key2).is_empty()
+        });
+        assert!(has_sub);
+
+        // Simulate deregister_connection's diff state cleanup.
+        model.diff_states.update(&mut app, |mgr, _ctx| {
+            mgr.remove_connection(conn);
+        });
+        let has_sub = model.diff_states.read(&app, |mgr, _ctx| {
+            !mgr.subscribed_connections(&key3).is_empty()
+        });
+        assert!(!has_sub);
+    });
+}
+
+#[test]
+fn diff_states_starts_empty() {
+    App::test((), |mut app| async move {
+        let model = test_model(&mut app);
+        let key = DiffModelKey {
+            repo_path: StandardizedPath::try_from_local(Path::new("/repo")).unwrap(),
+            mode: DiffMode::Head,
+        };
+        let empty = model.diff_states.read(&app, |mgr, _ctx| {
+            mgr.subscribed_connections(&key).is_empty()
+        });
+        assert!(empty);
     });
 }

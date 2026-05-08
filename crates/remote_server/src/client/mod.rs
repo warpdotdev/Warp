@@ -15,17 +15,20 @@ use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
     client_message, get_fragment_metadata_from_hash_response, server_message, Abort, Authenticate,
-    BufferEdit, ClientMessage, CloseBuffer, DeleteFile, DiffStateFileDelta,
-    DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex, ErrorCode,
-    FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash,
-    GetFragmentMetadataFromHashSuccess, IndexCodebase, Initialize, InitializeResponse,
-    LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse, RunCommandRequest,
-    RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
+    BufferEdit, ClientMessage, CloseBuffer, DeleteFile, DiffMode, DiffStateFileDelta,
+    DiffStateMetadataUpdate, DiffStateSnapshot, DiscardFilesRequest, DropCodebaseIndex, ErrorCode,
+    FileStatusInfo, FragmentMetadataLookupErrorCode, GetDiffState, GetDiffStateResponse,
+    GetFragmentMetadataFromHash, GetFragmentMetadataFromHashSuccess, IndexCodebase, Initialize,
+    InitializeResponse, LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse,
+    OpenBuffer, OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse,
+    RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped,
+    TextEdit, UnsubscribeDiffState, WriteFile,
 };
+use crate::repo_metadata_proto::{proto_snapshot_to_update, proto_to_repo_metadata_update};
 
 use crate::protocol::{self, ProtocolError, RequestId};
 use warp_core::{safe_error, safe_warn, SessionId};
+use warp_util::standardized_path::StandardizedPath;
 use warpui::r#async::TransportStream;
 
 /// Default request timeout (2 minutes).
@@ -60,6 +63,9 @@ pub enum ClientError {
         code: FragmentMetadataLookupErrorCode,
         message: String,
     },
+
+    #[error("Discard files failed: {0}")]
+    DiscardFailed(String),
 }
 
 /// Events received from the remote server, delivered through the event
@@ -93,19 +99,30 @@ pub enum ClientEvent {
         path: String,
         new_server_version: u64,
         expected_client_version: u64,
-        edits: Vec<crate::proto::TextEdit>,
+        edits: Vec<TextEdit>,
     },
     /// The file changed on disk while the client had unsaved edits.
     /// The server did NOT apply the change; the client should show a
     /// conflict resolution banner.
     BufferConflictDetected { path: String },
-    /// A full diff state snapshot was pushed by the server (NewDiffsComputed).
-    DiffStateSnapshotReceived { snapshot: DiffStateSnapshot },
-    /// A metadata-only diff state update was pushed by the server
-    /// (MetadataRefreshed or CurrentBranchChanged).
-    DiffStateMetadataUpdateReceived { update: DiffStateMetadataUpdate },
-    /// A single-file diff delta was pushed by the server (SingleFileUpdated).
-    DiffStateFileDeltaReceived { delta: DiffStateFileDelta },
+    /// A full diff state snapshot was pushed by the server.
+    DiffStateSnapshotReceived {
+        repo_path: StandardizedPath,
+        mode: DiffMode,
+        snapshot: DiffStateSnapshot,
+    },
+    /// A metadata-only diff state update was pushed by the server.
+    DiffStateMetadataUpdateReceived {
+        repo_path: StandardizedPath,
+        mode: DiffMode,
+        update: DiffStateMetadataUpdate,
+    },
+    /// A single-file diff delta was pushed by the server.
+    DiffStateFileDeltaReceived {
+        repo_path: StandardizedPath,
+        mode: DiffMode,
+        delta: DiffStateFileDelta,
+    },
 }
 
 /// Parameters for the `Initialize` handshake, sent to the daemon at
@@ -748,11 +765,11 @@ impl RemoteServerClient {
     fn push_message_to_event(msg: ServerMessage) -> Option<ClientEvent> {
         match msg.message? {
             server_message::Message::RepoMetadataSnapshot(snapshot) => {
-                let update = crate::repo_metadata_proto::proto_snapshot_to_update(&snapshot)?;
+                let update = proto_snapshot_to_update(&snapshot)?;
                 Some(ClientEvent::RepoMetadataSnapshotReceived { update })
             }
             server_message::Message::RepoMetadataUpdate(push) => {
-                let update = crate::repo_metadata_proto::proto_to_repo_metadata_update(&push)?;
+                let update = proto_to_repo_metadata_update(&push)?;
                 Some(ClientEvent::RepoMetadataUpdated { update })
             }
             server_message::Message::CodebaseIndexStatusesSnapshot(snapshot) => {
@@ -798,13 +815,64 @@ impl RemoteServerClient {
                 Some(ClientEvent::BufferConflictDetected { path: push.path })
             }
             server_message::Message::DiffStateSnapshot(snapshot) => {
-                Some(ClientEvent::DiffStateSnapshotReceived { snapshot })
+                let Some(repo_path) = StandardizedPath::try_new(&snapshot.repo_path).ok() else {
+                    log::warn!(
+                        "DiffStateSnapshot: invalid repo_path: {}",
+                        snapshot.repo_path
+                    );
+                    return None;
+                };
+                let Some(mode) = snapshot.mode.clone() else {
+                    log::warn!(
+                        "DiffStateSnapshot: missing mode for repo_path: {}",
+                        snapshot.repo_path
+                    );
+                    return None;
+                };
+                Some(ClientEvent::DiffStateSnapshotReceived {
+                    repo_path,
+                    mode,
+                    snapshot,
+                })
             }
             server_message::Message::DiffStateMetadataUpdate(update) => {
-                Some(ClientEvent::DiffStateMetadataUpdateReceived { update })
+                let Some(repo_path) = StandardizedPath::try_new(&update.repo_path).ok() else {
+                    log::warn!(
+                        "DiffStateMetadataUpdate: invalid repo_path: {}",
+                        update.repo_path
+                    );
+                    return None;
+                };
+                let Some(mode) = update.mode.clone() else {
+                    log::warn!(
+                        "DiffStateMetadataUpdate: missing mode for repo_path: {}",
+                        update.repo_path
+                    );
+                    return None;
+                };
+                Some(ClientEvent::DiffStateMetadataUpdateReceived {
+                    repo_path,
+                    mode,
+                    update,
+                })
             }
             server_message::Message::DiffStateFileDelta(delta) => {
-                Some(ClientEvent::DiffStateFileDeltaReceived { delta })
+                let Some(repo_path) = StandardizedPath::try_new(&delta.repo_path).ok() else {
+                    log::warn!("DiffStateFileDelta: invalid repo_path: {}", delta.repo_path);
+                    return None;
+                };
+                let Some(mode) = delta.mode.clone() else {
+                    log::warn!(
+                        "DiffStateFileDelta: missing mode for repo_path: {}",
+                        delta.repo_path
+                    );
+                    return None;
+                };
+                Some(ClientEvent::DiffStateFileDeltaReceived {
+                    repo_path,
+                    mode,
+                    delta,
+                })
             }
             other => {
                 safe_warn!(
@@ -812,6 +880,106 @@ impl RemoteServerClient {
                     full: ("Unhandled push message variant: {other:?}")
                 );
                 None
+            }
+        }
+    }
+
+    /// Sends a `GetDiffState` request and awaits the response.
+    pub async fn get_diff_state(
+        &self,
+        repo_path: &StandardizedPath,
+        mode: DiffMode,
+    ) -> Result<GetDiffStateResponse, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::GetDiffState(GetDiffState {
+                repo_path: repo_path.to_string(),
+                mode: Some(mode),
+            })),
+        };
+
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::GetDiffState,
+            )
+            .await?;
+
+        match response.message {
+            Some(server_message::Message::GetDiffStateResponse(resp)) => Ok(resp),
+            other => {
+                safe_error!(
+                    safe: ("Remote server unexpected response for GetDiffState"),
+                    full: ("Remote server unexpected response for GetDiffState: response={other:?}")
+                );
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Sends an `UnsubscribeDiffState` notification (fire-and-forget).
+    pub fn unsubscribe_diff_state(&self, repo_path: &StandardizedPath, mode: DiffMode) {
+        let msg = ClientMessage {
+            request_id: String::new(),
+            message: Some(client_message::Message::UnsubscribeDiffState(
+                UnsubscribeDiffState {
+                    repo_path: repo_path.to_string(),
+                    mode: Some(mode),
+                },
+            )),
+        };
+        self.send_notification(msg);
+    }
+
+    /// Sends a `DiscardFiles` request and awaits the response.
+    pub async fn discard_files(
+        &self,
+        repo_path: &StandardizedPath,
+        files: Vec<FileStatusInfo>,
+        should_stash: bool,
+        branch_name: Option<String>,
+        mode: DiffMode,
+    ) -> Result<(), ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::DiscardFiles(DiscardFilesRequest {
+                repo_path: repo_path.to_string(),
+                files,
+                should_stash,
+                branch_name,
+                mode: Some(mode),
+            })),
+        };
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::DiscardFiles,
+            )
+            .await?;
+        match response.message {
+            Some(server_message::Message::DiscardFilesResponse(resp)) => match resp.result {
+                Some(crate::proto::discard_files_response::Result::Success(_)) => Ok(()),
+                Some(crate::proto::discard_files_response::Result::Error(e)) => {
+                    Err(ClientError::DiscardFailed(e.message))
+                }
+                None => {
+                    safe_error!(
+                        safe: ("Remote server empty result for DiscardFiles"),
+                        full: ("Remote server empty result for DiscardFiles")
+                    );
+                    Err(ClientError::UnexpectedResponse)
+                }
+            },
+            other => {
+                safe_error!(
+                    safe: ("Remote server unexpected response for DiscardFiles"),
+                    full: ("Remote server unexpected response for DiscardFiles: response={other:?}")
+                );
+                Err(ClientError::UnexpectedResponse)
             }
         }
     }

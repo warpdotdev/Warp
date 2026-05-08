@@ -2365,6 +2365,11 @@ impl CodeReviewView {
                 }
                 ctx.notify();
             }
+            DiffStateModelEvent::ConnectionLost => {
+                // Don't clear loaded state — keep stale diffs visible
+                // so the user can still see what they were looking at.
+                ctx.notify();
+            }
         }
     }
 
@@ -2494,6 +2499,12 @@ impl CodeReviewView {
                     repo.state = CodeReviewViewState::Error(err);
                 }
                 ctx.notify();
+                return;
+            }
+            DiffState::Disconnected => {
+                // Disconnected state is handled via the ConnectionLost event
+                // path, which preserves stale diffs. If invalidate_all is
+                // called while disconnected (e.g. from a stale push), ignore.
                 return;
             }
             DiffState::Loaded => (),
