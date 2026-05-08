@@ -13,9 +13,10 @@ use crate::ai::ambient_agents::{AgentConfigSnapshot, AmbientAgentTask, AmbientAg
 use crate::ai::artifacts::Artifact;
 use crate::auth::AuthStateProvider;
 use crate::server::server_api::ai::{
-    AIClient, AgentMessageHeader, AgentRunEvent, AgentSource, ArtifactType, ExecutionLocation,
-    ListAgentMessagesRequest, ReadAgentMessageResponse, RunSortBy, RunSortOrder,
-    SendAgentMessageRequest, SendAgentMessageResponse, SpawnAgentRequest, TaskListFilter,
+    normalized_optional_prompt, AIClient, AgentMessageHeader, AgentRunEvent, AgentSource,
+    ArtifactType, ExecutionLocation, ListAgentMessagesRequest, ReadAgentMessageResponse, RunSortBy,
+    RunSortOrder, SendAgentMessageRequest, SendAgentMessageResponse, SpawnAgentRequest,
+    TaskListFilter, UserQueryMode,
 };
 use crate::server::server_api::ServerApi;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -193,6 +194,14 @@ fn sort_order_from_arg(arg: RunSortOrderArg) -> RunSortOrder {
     }
 }
 
+fn prompt_and_mode(prompt: String) -> (Option<String>, UserQueryMode) {
+    let Some(prompt) = normalized_optional_prompt(prompt) else {
+        return (None, UserQueryMode::Normal);
+    };
+    let (prompt, mode) = extract_user_query_mode(prompt);
+    (normalized_optional_prompt(prompt), mode)
+}
+
 /// Run a message-related CLI command.
 pub fn run_message(
     ctx: &mut AppContext,
@@ -268,8 +277,6 @@ impl AmbientAgentRunner {
                 return;
             }
 
-            // TODO: Consider making the server's prompt field optional when skill is provided,
-            // rather than sending an empty string for skill-only invocations.
             let prompt_string = match prompt {
                 Some(Prompt::PlainText(text)) => text,
                 Some(Prompt::SavedPrompt(id)) => {
@@ -313,7 +320,6 @@ impl AmbientAgentRunner {
                         }
                     }
                 }
-                // Skill-only invocation: use empty prompt, skill provides instructions
                 None => String::new(),
             };
 
@@ -473,7 +479,7 @@ impl AmbientAgentRunner {
                 None
             };
 
-            let (prompt, mode) = extract_user_query_mode(prompt_string);
+            let (prompt, mode) = prompt_and_mode(prompt_string);
             let request = SpawnAgentRequest {
                 prompt,
                 mode,
@@ -490,7 +496,7 @@ impl AmbientAgentRunner {
                 parent_run_id: None,
                 runtime_skills: vec![],
                 referenced_attachments: vec![],
-                conversation_id: None,
+                conversation_id: args.conversation.clone(),
                 initial_snapshot_token: None,
             };
 

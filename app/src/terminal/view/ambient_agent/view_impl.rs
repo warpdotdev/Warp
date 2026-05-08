@@ -149,7 +149,12 @@ impl TerminalView {
                     let prompt = ambient_agent_view_model
                         .as_ref(ctx)
                         .request()
-                        .map(|request| display_user_query_with_mode(request.mode, &request.prompt))
+                        .and_then(|request| {
+                            request
+                                .prompt
+                                .as_deref()
+                                .map(|prompt| display_user_query_with_mode(request.mode, prompt))
+                        })
                         .unwrap_or_default();
                     if !prompt.is_empty() {
                         self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
@@ -170,21 +175,21 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::FollowupDispatched => {
-                if FeatureFlag::CloudModeSetupV2.is_enabled() {
-                    ambient_agent_view_model.update(ctx, |model, ctx| {
-                        model.start_new_setup_command_group(ctx);
-                    });
-                }
-                self.update_active_ambient_agent_conversation_status(
-                    ConversationStatus::InProgress,
-                    None,
-                    ctx,
-                );
                 let pending_prompt = ambient_agent_view_model
                     .as_ref(ctx)
                     .pending_followup_prompt()
                     .map(str::to_owned);
                 if let Some(prompt) = pending_prompt {
+                    if FeatureFlag::CloudModeSetupV2.is_enabled() {
+                        ambient_agent_view_model.update(ctx, |model, ctx| {
+                            model.start_new_setup_command_group(ctx);
+                        });
+                    }
+                    self.update_active_ambient_agent_conversation_status(
+                        ConversationStatus::InProgress,
+                        None,
+                        ctx,
+                    );
                     self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
                 }
                 ctx.notify();

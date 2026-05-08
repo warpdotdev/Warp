@@ -818,11 +818,18 @@ fn test_non_owned_tombstone_is_removed_for_followup_and_reinserted_after_complet
             );
 
             view.start_cloud_followup_from_tombstone(task_id, ctx);
-            assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
+            assert_eq!(view.pending_cloud_followup_task_id, None);
             assert!(view.conversation_ended_tombstone_view_id.is_none());
             assert_eq!(
                 view.model.lock().block_list().block_heights().items().len(),
                 initial_block_height_items
+            );
+            assert!(ambient_agent_view_model.as_ref(ctx).is_waiting_for_session());
+            assert_eq!(
+                ambient_agent_view_model
+                    .as_ref(ctx)
+                    .pending_followup_prompt(),
+                None
             );
 
             view.handle_ambient_agent_event(

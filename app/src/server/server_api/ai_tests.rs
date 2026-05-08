@@ -35,6 +35,15 @@ fn ambient_agent_headers_for_task_overrides_existing_cloud_agent_header() {
 }
 
 #[test]
+fn serialize_promptless_run_followup_request() {
+    let request = RunFollowupRequest { message: None };
+
+    let json = serde_json::to_value(request).unwrap();
+
+    assert_eq!(json, serde_json::json!({}));
+}
+
+#[test]
 fn test_deserialize_file_artifact_download_response() {
     let json = r#"{
         "artifact_uid": "artifact-123",
@@ -1011,7 +1020,7 @@ fn build_run_followup_url_routes_to_run_followups() {
 #[test]
 fn serialize_run_followup_request() {
     let request = RunFollowupRequest {
-        message: "continue from here".to_string(),
+        message: Some("continue from here".to_string()),
     };
 
     let json = serde_json::to_value(request).unwrap();

@@ -12117,7 +12117,11 @@ impl Input {
                 }
 
                 let prompt = command.trim().to_owned();
-                if prompt.is_empty() {
+                let is_promptless_handoff = prompt.is_empty()
+                    && self
+                        .ambient_agent_view_model()
+                        .is_some_and(|model| model.as_ref(ctx).is_local_to_cloud_handoff());
+                if prompt.is_empty() && !is_promptless_handoff {
                     return;
                 }
 

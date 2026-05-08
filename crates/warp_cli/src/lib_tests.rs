@@ -1048,22 +1048,20 @@ fn schedule_create_accepts_personal_scope() {
 
 #[test]
 fn schedule_create_rejects_multiple_scopes() {
-    assert!(
-        Args::try_parse_from([
-            "warp",
-            "schedule",
-            "create",
-            "--name",
-            "test",
-            "--cron",
-            "0 9 * * 1",
-            "--prompt",
-            "hello",
-            "--team",
-            "--personal",
-        ])
-        .is_err()
-    );
+    assert!(Args::try_parse_from([
+        "warp",
+        "schedule",
+        "create",
+        "--name",
+        "test",
+        "--cron",
+        "0 9 * * 1",
+        "--prompt",
+        "hello",
+        "--team",
+        "--personal",
+    ])
+    .is_err());
 }
 
 #[test]
@@ -1210,20 +1208,18 @@ fn environment_create_description_max_length() {
 
     // 241 characters should be rejected
     let invalid_description = "a".repeat(241);
-    assert!(
-        Args::try_parse_from([
-            "warp",
-            "environment",
-            "create",
-            "--name",
-            "test-env",
-            "--description",
-            &invalid_description,
-            "--docker-image",
-            "ubuntu:latest",
-        ])
-        .is_err()
-    );
+    assert!(Args::try_parse_from([
+        "warp",
+        "environment",
+        "create",
+        "--name",
+        "test-env",
+        "--description",
+        &invalid_description,
+        "--docker-image",
+        "ubuntu:latest",
+    ])
+    .is_err());
 }
 
 #[test]
@@ -1399,6 +1395,34 @@ fn agent_run_cloud_accepts_snapshot_flags() {
             60
         )))
     );
+}
+
+#[test]
+fn agent_run_cloud_accepts_conversation_without_prompt() {
+    let args = Args::try_parse_from([
+        "warp",
+        "agent",
+        "run-cloud",
+        "--conversation",
+        "conversation-123",
+    ])
+    .unwrap();
+
+    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
+        panic!("Expected `warp agent run-cloud` command");
+    };
+    let CliCommand::Agent(AgentCommand::RunCloud(run_args)) = boxed_cmd.as_ref() else {
+        panic!("Expected `warp agent run-cloud` command");
+    };
+
+    assert_eq!(run_args.conversation.as_deref(), Some("conversation-123"));
+    assert!(run_args.prompt_arg.prompt.is_none());
+    assert!(run_args.prompt_arg.saved_prompt.is_none());
+}
+
+#[test]
+fn agent_run_cloud_rejects_without_prompt_skill_or_conversation() {
+    assert!(Args::try_parse_from(["warp", "agent", "run-cloud", "--model", "gpt-4o"]).is_err());
 }
 
 #[test]

@@ -20098,17 +20098,6 @@ impl TerminalView {
             return false;
         };
 
-        if prompt.trim().is_empty() {
-            self.input.update(ctx, |input, ctx| {
-                input.reset_after_cloud_followup_submission(ctx);
-                input.set_input_mode_agent(true, ctx);
-            });
-            self.update_pane_configuration(ctx);
-            self.focus_input_box(ctx);
-            ctx.notify();
-            return true;
-        }
-
         let Some(ambient_agent_view_model) = self.ambient_agent_view_model.clone() else {
             self.restore_followup_prompt_after_failed_submission(&prompt, ctx);
             self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);

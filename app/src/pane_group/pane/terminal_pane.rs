@@ -34,7 +34,7 @@ use crate::{
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
-    server::server_api::ai::{SpawnAgentRequest, UserQueryMode},
+    server::server_api::ai::{normalized_optional_prompt, SpawnAgentRequest, UserQueryMode},
     session_management::SessionNavigationData,
     terminal::cli_agent_sessions::CLIAgentSessionsModel,
     terminal::{
@@ -1544,7 +1544,7 @@ fn launch_remote_child(
         }
     };
     let spawn_request = SpawnAgentRequest {
-        prompt: request.prompt,
+        prompt: normalized_optional_prompt(request.prompt),
         mode: UserQueryMode::Normal,
         config: Some(AgentConfigSnapshot {
             environment_id,

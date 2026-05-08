@@ -10,7 +10,7 @@ use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent::{conversation::AIConversationId, extract_user_query_mode};
+use crate::ai::agent::{conversation::AIConversationId, extract_user_query_mode, UserQueryMode};
 use crate::ai::ambient_agents::spawn::{spawn_task, submit_run_followup, AmbientAgentEvent};
 use crate::ai::ambient_agents::task::HarnessConfig;
 use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
@@ -31,7 +31,8 @@ use crate::server::ids::{ServerId, SyncId};
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::server::server_api::ai::InitialSnapshotToken;
 use crate::server::server_api::ai::{
-    AgentConfigSnapshot, AmbientAgentTaskState, AttachmentInput, SpawnAgentRequest,
+    normalized_optional_prompt, AgentConfigSnapshot, AmbientAgentTaskState, AttachmentInput,
+    SpawnAgentRequest,
 };
 use crate::server::server_api::{
     AIApiError, ClientError, CloudAgentCapacityError, ServerApiProvider,
@@ -763,15 +764,15 @@ impl AmbientAgentViewModel {
             .active_execution_session_id
             .or(self.last_ended_execution_session_id);
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+        let message = normalized_optional_prompt(prompt);
         let stream = submit_run_followup(
-            prompt.clone(),
+            message.clone(),
             task_id,
             previous_session_id,
             ai_client,
             None,
         );
-
-        self.pending_followup_prompt = Some(prompt);
+        self.pending_followup_prompt = message;
         self.status = Status::WaitingForSession {
             progress: AgentProgress::new(),
             kind: SessionStartupKind::Followup,
@@ -870,7 +871,7 @@ impl AmbientAgentViewModel {
     ) {
         let config = Some(self.build_default_spawn_config(ctx));
 
-        let (prompt, mode) = extract_user_query_mode(prompt);
+        let (prompt, mode) = prompt_and_mode(prompt);
         let request = SpawnAgentRequest {
             prompt,
             mode,
@@ -1310,10 +1311,8 @@ impl AmbientAgentViewModel {
         handoff.submission_state = HandoffSubmissionState::Starting;
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
 
-        // Build the spawn config so the env selector chip + `/plan` / `/orchestrate`
-        // mode prefix propagate into the request, matching a regular cloud-mode spawn.
         let config = Some(self.build_default_spawn_config(ctx));
-        let (prompt, mode) = extract_user_query_mode(prompt);
+        let (prompt, mode) = prompt_and_mode(prompt);
         let request = SpawnAgentRequest {
             prompt,
             mode,
@@ -1372,6 +1371,14 @@ impl AmbientAgentViewModel {
         // This provides immediate UI feedback to the user.
         self.handle_cancellation(ctx);
     }
+}
+
+fn prompt_and_mode(prompt: String) -> (Option<String>, UserQueryMode) {
+    let Some(prompt) = normalized_optional_prompt(prompt) else {
+        return (None, UserQueryMode::Normal);
+    };
+    let (prompt, mode) = extract_user_query_mode(prompt);
+    (normalized_optional_prompt(prompt), mode)
 }
 
 /// Events emitted by the ambient agent view model.

@@ -182,6 +182,10 @@ where
     serializer.serialize_str(public_api_user_query_mode(*mode))
 }
 
+pub(crate) fn normalized_optional_prompt(prompt: impl AsRef<str>) -> Option<String> {
+    let prompt = prompt.as_ref();
+    (!prompt.trim().is_empty()).then(|| prompt.to_string())
+}
 impl TaskStatusUpdate {
     /// Create a status update with just a message (no error code).
     pub fn message(message: impl Into<String>) -> Self {
@@ -203,7 +207,8 @@ impl TaskStatusUpdate {
 /// JSON payload sent to the public `POST /agent/run` API.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SpawnAgentRequest {
-    pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
     /// The public API accepts lowercase mode strings (`normal`, `plan`, or `orchestrate`).
     #[serde(serialize_with = "serialize_user_query_mode_for_public_api")]
     pub mode: UserQueryMode,
@@ -293,7 +298,8 @@ pub struct ForkConversationResponse {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RunFollowupRequest {
-    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 // --- Orchestrations V2 messaging types ---

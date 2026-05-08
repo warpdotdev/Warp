@@ -846,7 +846,7 @@ impl TerminalView {
             return;
         }
 
-        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.clone() else {
             self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
             return;
         };
@@ -856,13 +856,10 @@ impl TerminalView {
             return;
         }
         self.remove_conversation_ended_tombstone(ctx);
-
-        self.pending_cloud_followup_task_id = Some(task_id);
-        self.input.update(ctx, |input, ctx| {
-            input.reset_after_cloud_followup_submission(ctx);
-            input.set_input_mode_agent(true, ctx);
+        ambient_agent_view_model.update(ctx, |model, ctx| {
+            model.submit_cloud_followup(String::new(), ctx);
         });
-        self.focus_input_box(ctx);
+        self.update_pane_configuration(ctx);
         ctx.notify();
     }
 

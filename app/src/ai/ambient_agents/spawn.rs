@@ -127,7 +127,7 @@ pub fn spawn_task(
 }
 
 pub fn submit_run_followup(
-    message: String,
+    message: Option<String>,
     run_id: AmbientAgentTaskId,
     previous_session_id: Option<SessionId>,
     ai_client: Arc<dyn AIClient>,

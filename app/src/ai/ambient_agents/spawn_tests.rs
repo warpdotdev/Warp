@@ -56,7 +56,7 @@ async fn followup_submits_before_polling_and_ignores_previous_session_id() {
         let submitted = submitted.clone();
         move |observed_run_id, request| {
             assert_eq!(observed_run_id.to_string(), run_id().to_string());
-            assert_eq!(request.message, "continue from here");
+            assert_eq!(request.message.as_deref(), Some("continue from here"));
             submitted.store(true, Ordering::SeqCst);
             Ok(())
         }
@@ -91,7 +91,7 @@ async fn followup_submits_before_polling_and_ignores_previous_session_id() {
 
     let ai_client = Arc::new(mock);
     let mut stream = Box::pin(submit_run_followup(
-        "continue from here".to_string(),
+        Some("continue from here".to_string()),
         run_id(),
         Some(previous_session_id),
         ai_client,
@@ -124,6 +124,56 @@ async fn followup_submits_before_polling_and_ignores_previous_session_id() {
 }
 
 #[tokio::test]
+async fn promptless_followup_omits_message() {
+    use futures::StreamExt;
+
+    let previous_session_id = SessionId::new();
+    let new_session_id = SessionId::new();
+    let mut mock = MockAIClient::new();
+
+    mock.expect_submit_run_followup()
+        .times(1)
+        .returning(move |observed_run_id, request| {
+            assert_eq!(observed_run_id.to_string(), run_id().to_string());
+            assert_eq!(request.message, None);
+            Ok(())
+        });
+    mock.expect_get_ambient_agent_task()
+        .times(1)
+        .returning(move |_| {
+            Ok(task_with(
+                AmbientAgentTaskState::InProgress,
+                Some(new_session_id.to_string()),
+                Some("https://example.com/session/new".to_string()),
+            ))
+        });
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        None,
+        run_id(),
+        Some(previous_session_id),
+        ai_client,
+        None,
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected state changed")
+        .expect("expected ok");
+    assert!(matches!(event, AmbientAgentEvent::StateChanged { .. }));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected session started")
+        .expect("expected ok");
+    assert!(matches!(event, AmbientAgentEvent::SessionStarted { .. }));
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
 async fn followup_api_error_does_not_poll() {
     use futures::StreamExt;
 
@@ -135,7 +185,7 @@ async fn followup_api_error_does_not_poll() {
 
     let ai_client = Arc::new(mock);
     let mut stream = Box::pin(submit_run_followup(
-        "continue".to_string(),
+        Some("continue".to_string()),
         run_id(),
         Some(SessionId::new()),
         ai_client,
@@ -171,7 +221,7 @@ async fn followup_terminal_failure_surfaces_status_message() {
 
     let ai_client = Arc::new(mock);
     let mut stream = Box::pin(submit_run_followup(
-        "continue".to_string(),
+        Some("continue".to_string()),
         run_id(),
         Some(SessionId::new()),
         ai_client,
@@ -223,7 +273,7 @@ async fn followup_without_previous_session_id_accepts_joinable_session() {
 
     let ai_client = Arc::new(mock);
     let mut stream = Box::pin(submit_run_followup(
-        "continue".to_string(),
+        Some("continue".to_string()),
         run_id(),
         None,
         ai_client,
@@ -274,7 +324,7 @@ async fn followup_without_previous_session_id_errors_if_run_finishes_before_sess
 
     let ai_client = Arc::new(mock);
     let mut stream = Box::pin(submit_run_followup(
-        "continue".to_string(),
+        Some("continue".to_string()),
         run_id(),
         None,
         ai_client,
@@ -359,7 +409,7 @@ async fn poll_retries_transient_429_errors() {
 
     let ai_client = Arc::new(mock);
     let request = crate::server::server_api::ai::SpawnAgentRequest {
-        prompt: "test".to_string(),
+        prompt: Some("test".to_string()),
         mode: crate::ai::agent::UserQueryMode::Normal,
         config: None,
         title: None,
@@ -425,7 +475,7 @@ async fn poll_fails_on_permanent_http_error() {
 
     let ai_client = Arc::new(mock);
     let request = crate::server::server_api::ai::SpawnAgentRequest {
-        prompt: "test".to_string(),
+        prompt: Some("test".to_string()),
         mode: crate::ai::agent::UserQueryMode::Normal,
         config: None,
         title: None,
@@ -491,7 +541,7 @@ async fn poll_gives_up_after_max_transient_retries() {
 
     let ai_client = Arc::new(mock);
     let request = crate::server::server_api::ai::SpawnAgentRequest {
-        prompt: "test".to_string(),
+        prompt: Some("test".to_string()),
         mode: crate::ai::agent::UserQueryMode::Normal,
         config: None,
         title: None,
@@ -552,7 +602,7 @@ async fn poll_stops_on_terminal_failure_like_state() {
 
     let ai_client = Arc::new(mock);
     let request = crate::server::server_api::ai::SpawnAgentRequest {
-        prompt: "test".to_string(),
+        prompt: Some("test".to_string()),
         mode: UserQueryMode::Normal,
         config: None,
         title: None,
@@ -696,7 +746,7 @@ async fn poll_for_session_join_info_waits_until_link_is_available() {
 
     let ai_client = Arc::new(mock);
     let request = crate::server::server_api::ai::SpawnAgentRequest {
-        prompt: "test".to_string(),
+        prompt: Some("test".to_string()),
         mode: UserQueryMode::Normal,
         config: None,
         title: None,

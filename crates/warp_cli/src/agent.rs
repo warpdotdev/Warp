@@ -383,7 +383,7 @@ pub struct SnapshotArgs {
         clap::ArgGroup::new("prompt_group")
             .required(true)
             .multiple(true)
-            .args(["prompt", "saved_prompt", "skill"])
+            .args(["prompt", "saved_prompt", "skill", "conversation"])
     )
 )]
 pub struct RunCloudArgs {
