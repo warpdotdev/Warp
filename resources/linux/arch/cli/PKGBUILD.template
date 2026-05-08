@@ -1,9 +1,9 @@
 pkgname=warp-cli@@CHANNEL_SUFFIX@@
 pkgver=@@VERSION@@
 pkgrel=@@RELEASE@@
-pkgdesc="Warp command line interface"
+pkgdesc="Warper command line interface"
 arch=('@@ARCH@@')
-url="https://warp.dev"
+url="https://github.com/ruslanvakhitov/warper"
 license=('custom')
 depends=(
 	'curl'

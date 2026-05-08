@@ -2,14 +2,14 @@
 # Package Spec
 ###############################################################################
 
-Summary:     Warp, the Rust-based terminal for developers and teams
+Summary:     Warper, the local-first agentic terminal
 Name:        warp-terminal@@CHANNEL_SUFFIX@@
 Version:     @@VERSION@@
 Release:     @@RELEASE@@
-Vendor:      Denver Technologies, Inc.
-Url:         https://warp.dev
-Packager:    Warp Linux Maintainers <linux-maintainers@warp.dev>
-License:     https://warp.dev/terms-of-service
+Vendor:      Warper contributors
+Url:         https://github.com/ruslanvakhitov/warper
+Packager:    Warper contributors <warper@localhost>
+License:     Apache-2.0
 
 Requires: 	 xdg-utils, (libvulkan.so.1()(64bit) or libEGL.so.1()(64bit)), (libwayland-egl.so.1()(64bit) if (libwayland-client.so.0()(64bit) and libEGL.so.1()(64bit))), libxcb.so.1()(64bit), libxkbcommon-x11.so.0()(64bit), libX11.so.6()(64bit), libX11-xcb.so.1()(64bit), libXcursor.so.1()(64bit), libXi.so.6()(64bit)
 Recommends:  libgallium_dri.so()(64bit), adwaita-icon-theme
@@ -28,10 +28,9 @@ prefix:      /opt
 ###############################################################################
 
 %description
-Warp is a modern, Rust-based terminal with AI built in so teams can
-build great software, faster. Bringing collaboration to the command line,
-Warp lets teams save and share commands for streamlined onboarding and
-incident response.
+Warper is a local-first, Rust-based terminal with OpenRouter-powered AI built in.
+It is a forked desktop app that removes hosted Warp services from the runtime
+path while preserving local terminal and agent workflows.
 
 ###############################################################################
 # Build rule - how does the package get built?

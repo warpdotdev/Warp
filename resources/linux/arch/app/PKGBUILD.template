@@ -1,9 +1,9 @@
 pkgname=warp-terminal@@CHANNEL_SUFFIX@@
 pkgver=@@VERSION@@
 pkgrel=@@RELEASE@@
-pkgdesc="Warp, the Rust-based terminal for developers and teams"
+pkgdesc="Warper, the local-first agentic terminal"
 arch=('@@ARCH@@')
-url="https://warp.dev"
+url="https://github.com/ruslanvakhitov/warper"
 license=('custom')
 depends=(
 	'curl'
