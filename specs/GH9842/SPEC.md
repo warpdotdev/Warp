@@ -91,8 +91,7 @@ without dispatching it. The user edits, then submits manually.
   - Rendered as a 16×16 pencil glyph at the trailing edge of each
     suggestion card.
   - Keyboard-focusable; participates in the suggestion list's
-    existing roving-focus / `tabindex` model.
-  - `aria-label="Edit suggestion before sending"`.
+    existing roving-focus model.
   - On focus or hover, surfaces a tooltip: *"Click to send,
     [⌥/Ctrl]-click or this icon to edit first"* (with the modifier
     matching the host OS).
@@ -101,6 +100,60 @@ without dispatching it. The user edits, then submits manually.
   - Pixel parity with the existing card layout is NOT required; the
     icon uses the existing icon-button base style and the card's
     existing padding.
+
+#### Accessibility contract — native Warp UI (NOT browser DOM)
+
+The previous draft referenced web-only accessibility primitives
+(`tabindex`, `aria-label`). Warp's UI is native (GPUI-rendered)
+and does not have a browser DOM to attach those attributes to.
+This section names the equivalent native primitives the
+implementation MUST use, verified against the existing codebase:
+
+- **Accessibility label.** The edit icon implements
+  `accessibility_label()` (the trait method already used by
+  Warp search items, slash-command items, profile pickers,
+  etc. — see `app/src/terminal/input/{prompts,profiles,
+  slash_commands,...}/search_item.rs::accessibility_label`,
+  `app/src/search/data_source.rs`). The value MUST be the
+  literal string `"Edit suggestion before sending"`. This is
+  the assistive-tech-readable name (replaces the prior
+  `aria-label` reference; it is NOT a DOM attribute, it is
+  the native `accessibility_label` value surfaced through
+  Warp's AT bridge — UIA on Windows, NSAccessibility on
+  macOS, AT-SPI / `accessibility_content_text` on Linux).
+- **Focus / tab order.** The edit icon participates in Warp's
+  native focus system (`FocusHandle` / `PaneFocusHandle`),
+  not browser tab order. Concretely, the suggestion list's
+  existing roving-focus state is extended to treat the edit
+  icon as a focusable peer of the suggestion card such that
+  Tab moves focus suggestion-card → edit-icon → next-
+  suggestion-card → next-edit-icon, and Shift+Tab reverses.
+  No `tabindex` attribute is set (Warp has no DOM); the
+  effect is implemented through Warp's existing focus-handle
+  registration on the icon element. Activation via the
+  existing `KeyboardAction::Confirm` (Enter) and a Space
+  binding routed through the same handler dispatches
+  `InsertPromptSuggestionAsDraft`.
+- **Validation target.** Accessibility behavior is validated
+  against the **native AT bridge**, not against DOM-snapshot
+  tools. Acceptable validation:
+  - macOS: Accessibility Inspector reports the icon with
+    role = button, label = `"Edit suggestion before
+    sending"`, and that VoiceOver announces the label on
+    focus.
+  - Windows: Inspect.exe / Accessibility Insights reports
+    the equivalent UIA `Name` property and a button-like
+    `LocalizedControlType`.
+  - Linux: Accerciser / `dogtail` reports the equivalent
+    AT-SPI `accessible-name`.
+  Automated coverage in CI uses Warp's existing accessibility
+  testing harness (the same one exercised by the
+  `accessibility_content_text` and search-bar accessibility
+  tests, e.g. `app/src/search/search_bar.rs` and
+  `app/src/search/command_search/searcher_test.rs::
+  accessibility_label`). Browser-DOM tools (Lighthouse,
+  axe-core, Cypress a11y) are NOT applicable and MUST NOT
+  be used as the validation target.
 - B8. Sequential composition (NOT out of scope in V1). Users may
   insert multiple suggestions in a row. Each insert applies the
   B2 replace-with-confirm rule against the current draft. The
@@ -116,9 +169,17 @@ without dispatching it. The user edits, then submits manually.
 - A2. **Edit icon affordance.** Clicking the pencil icon on a
   suggestion card inserts the suggestion text into the agent
   input, fires no send action, and lands the caret at the end of
-  the inserted text. The icon is keyboard-focusable, has
-  `aria-label="Edit suggestion before sending"`, and Enter/Space
-  while focused dispatches the same insert action.
+  the inserted text. The icon is keyboard-focusable through
+  Warp's native focus system (it acquires a `FocusHandle` and
+  participates in the suggestion list's roving-focus order),
+  exposes the native accessibility label
+  `"Edit suggestion before sending"` via the existing
+  `accessibility_label()` trait method (verified against
+  `app/src/search/data_source.rs` and friends), and Enter/Space
+  while focused dispatches the same insert action. Validation
+  happens through the native AT bridge (Accessibility Inspector
+  on macOS, Inspect / Accessibility Insights on Windows,
+  Accerciser on Linux), NOT through DOM-based tooling.
 - A3. **Modifier-click affordance.** Alt-click on macOS/Linux and
   Ctrl-click on Windows on a suggestion card inserts the
   suggestion text identically to A2.
@@ -183,8 +244,21 @@ without dispatching it. The user edits, then submits manually.
 - T2. Clicking the edit icon on the same fixture dispatches the
   same action through the same path.
 - T3. Edit icon: keyboard activation via Enter and Space when the
-  icon is focused dispatches the insert action; `tabindex` and
-  `aria-label` present.
+  icon is focused dispatches the insert action. Native
+  accessibility assertions (NOT DOM):
+  - The icon's `accessibility_label()` returns the literal
+    string `"Edit suggestion before sending"` (verified by
+    direct call against the same trait used by
+    `app/src/search/data_source.rs`,
+    `app/src/terminal/input/{prompts,profiles,
+    slash_commands,...}/search_item.rs::accessibility_label`).
+  - The icon registers a `FocusHandle` and is reachable in the
+    suggestion list's roving-focus order without injecting a
+    `tabindex` attribute (Warp has no DOM).
+  - Native AT-bridge validation: macOS Accessibility Inspector,
+    Windows Inspect / Accessibility Insights, and Linux
+    Accerciser report the icon with role = button and the
+    expected accessible name.
 - T4. Plain click still dispatches the existing send action.
 - T5. Empty-draft path: insert-as-draft against an empty input
   fills the input with the suggestion text, caret at end, no
