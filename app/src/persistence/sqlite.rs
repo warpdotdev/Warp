@@ -234,6 +234,11 @@ fn establish_connection(database_url: &str, read_only: bool) -> Result<SqliteCon
     Ok(conn)
 }
 
+/// Set up SQLite [error logging](https://www.sqlite.org/errlog.html)
+///
+/// ## Safety
+/// Setting up SQLite logging is not thread-safe. No other SQLite calls may be made while this
+/// function is running.
 unsafe fn init_logging() {
     use std::ffi::{c_char, c_int, c_void, CStr};
     use std::panic;
@@ -388,7 +393,7 @@ pub(super) fn init_db() -> Result<SqliteConnection> {
 }
 
 /// Creates or connects to the database at `database_path` and runs any migrations.
-pub(super) fn setup_database(database_path: &Path) -> Result<SqliteConnection> {
+fn setup_database(database_path: &Path) -> Result<SqliteConnection> {
     let db_url = database_path
         .to_str()
         .ok_or_else(|| anyhow!("Failed to convert db path to a string"))?;

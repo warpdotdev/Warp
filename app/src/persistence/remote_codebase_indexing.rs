@@ -1,6 +1,7 @@
+use anyhow::{anyhow, Context, Result};
+use diesel::{connection::SimpleConnection, sqlite::SqliteConnection, Connection};
+use diesel_migrations::MigrationHarness;
 use std::path::{Path, PathBuf};
-
-use anyhow::{Context, Result};
 
 const REMOTE_CODEBASE_INDEXING_SQLITE_FILE_NAME: &str = "index.sqlite";
 const REMOTE_CODEBASE_INDEXING_DIR_NAME: &str = "codebase-indexes";
@@ -17,9 +18,35 @@ pub fn initialize_remote_codebase_indexing_storage() {
 
 fn initialize_at_paths(database_path: &Path, shared_snapshots_dir: &Path) -> Result<()> {
     ensure_remote_codebase_indexing_paths(database_path, shared_snapshots_dir)?;
-    super::sqlite::setup_database(database_path)?;
+    setup_remote_codebase_indexing_database(database_path)?;
     ensure_owner_only_file(database_path)?;
     Ok(())
+}
+
+fn setup_remote_codebase_indexing_database(database_path: &Path) -> Result<SqliteConnection> {
+    let db_url = database_path
+        .to_str()
+        .ok_or_else(|| anyhow!("Failed to convert remote codebase indexing db path to a string"))?;
+    let mut conn = SqliteConnection::establish(db_url)?;
+
+    conn.batch_execute(
+        r#"
+        PRAGMA foreign_keys = ON;
+        PRAGMA busy_timeout = 1000;
+    "#,
+    )?;
+    conn.batch_execute(
+        r#"
+        PRAGMA journal_mode=WAL;
+        PRAGMA wal_autocheckpoint=500;
+    "#,
+    )
+    .context("Failed to enable WAL for remote codebase indexing database")?;
+
+    conn.run_pending_migrations(persistence::MIGRATIONS)
+        .map_err(|e| anyhow!(e))
+        .context("Failed to perform remote codebase indexing database migrations")?;
+    Ok(conn)
 }
 
 fn remote_codebase_indexing_database_path() -> PathBuf {
@@ -207,7 +234,7 @@ mod tests {
     fn setup_database_migration_creates_remote_indexing_tables() {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
         let database_path = tempdir.path().join("index.sqlite");
-        let mut conn = super::super::sqlite::setup_database(&database_path)
+        let mut conn = setup_remote_codebase_indexing_database(&database_path)
             .expect("database should initialize");
 
         conn.test_transaction::<_, diesel::result::Error, _>(|conn| {
@@ -225,7 +252,7 @@ mod tests {
     fn setup_database_migration_enforces_remote_indexing_unique_keys() {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
         let database_path = tempdir.path().join("index.sqlite");
-        let mut conn = super::super::sqlite::setup_database(&database_path)
+        let mut conn = setup_remote_codebase_indexing_database(&database_path)
             .expect("database should initialize");
         let cache = cache_row(Some("root-hash"));
         let user_state = user_state_row("identity-key", "ready");
