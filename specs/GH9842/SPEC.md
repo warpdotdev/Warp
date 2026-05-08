@@ -50,22 +50,43 @@ without dispatching it. The user edits, then submits manually.
 - B5. The existing inline-banner prompt-suggestion model
   (`app/src/terminal/view/inline_banner/prompt_suggestions.rs`)
   is the data source; no schema change.
-- B6. Telemetry. Insert-as-draft reuses the existing
-  `prompt_suggestion.action` event (same category, same surface
-  payload, same private-field rules) with a new `action_type`
-  enum value `insert_as_draft` alongside the existing `send`.
-  - `category = "suggestion"` (existing).
-  - `source` = the existing source field already populated by the
-    suggestion's origin (banner, autocomplete, etc.) — no new field.
-  - The suggestion category is derived only from existing
-    `PromptSuggestion` fields, in this order:
-    `static_prompt_suggestion_name = Some(name)` maps to
-    `static:{name}`; otherwise `coding_query_context.is_some()` maps
-    to `coding_query`; otherwise `should_start_new_conversation`
-    maps to `new_conversation` when true and `follow_up` when false.
-    Never derive the category from `prompt`, `label`, `id`, or the
-    user's edited result.
-  - No new event type, no new private payload fields.
+- B6. Telemetry. V1 adds a NEW telemetry event,
+  `TelemetryEvent::PromptSuggestionInsertedAsDraft`, that mirrors
+  the payload shape of the existing
+  `TelemetryEvent::PromptSuggestionAccepted` event (verified in
+  `app/src/server/telemetry/events.rs`). The Warp client follows
+  an event-per-action pattern (separate `PromptSuggestionAccepted`,
+  `StaticPromptSuggestionAccepted`, `PromptSuggestionShown`, etc.);
+  V1 stays consistent with that pattern instead of introducing a
+  unified `prompt_suggestion.action` event with an `action_type`
+  field.
+  - **Telemetry events (verified from
+    `app/src/server/telemetry/events.rs`):**
+    - `PromptSuggestionAccepted { id: String,
+      view: PromptSuggestionViewType,
+      interaction_source: InteractionSource }` — existing.
+    - `StaticPromptSuggestionAccepted { id: String,
+      view: PromptSuggestionViewType,
+      interaction_source: InteractionSource }` — existing.
+    - `PromptSuggestionShown { ... }` — existing.
+    - `StaticPromptSuggestionsBannerShown { ... }` — existing.
+    - `ZeroStatePromptSuggestionUsed { ... }` — existing.
+    - `PromptSuggestionInsertedAsDraft { id: String,
+      view: PromptSuggestionViewType,
+      interaction_source: InteractionSource }` — **new in V1**.
+  - The new event reuses the same three fields (`id`,
+    `view`, `interaction_source`) as `PromptSuggestionAccepted`. No
+    additional payload fields. `interaction_source` is `Button` for
+    edit-icon click and `Keybinding` for modifier-click.
+  - For static prompt suggestions inserted as draft, V1 emits
+    `PromptSuggestionInsertedAsDraft` (single new event covers both
+    static and dynamic suggestions; the suggestion `id` is enough to
+    join with prior `*Shown` events on the server side).
+  - The fictional `prompt_suggestion.action` event with `category`,
+    `source`, and `action_type` is NOT introduced — it conflicts
+    with the verified event-per-action shape currently in code.
+  - No private payload fields are added; opt-out behavior matches
+    the existing `PromptSuggestionAccepted` event exactly.
 - B7. Edit-icon affordance & accessibility.
   - Rendered as a 16×16 pencil glyph at the trailing edge of each
     suggestion card.
@@ -113,10 +134,12 @@ without dispatching it. The user edits, then submits manually.
   suggestion banner remains visible; clicking another suggestion
   prompts the replace-confirm dialog again. Banner dismisses only
   on send, manual close, or context loss.
-- A8. Telemetry. The `prompt_suggestion.action` event fires exactly
-  once per insert with `action_type = "insert_as_draft"`. Existing
-  `category` and `source` fields are reused; no new payload field
-  is added. Respects global telemetry opt-out.
+- A8. Telemetry. The new `PromptSuggestionInsertedAsDraft` event
+  fires exactly once per insert with `id`, `view`, and
+  `interaction_source` populated identically to the existing
+  `PromptSuggestionAccepted` event. No new payload fields are
+  introduced. Respects global telemetry opt-out (matching
+  `PromptSuggestionAccepted` opt-out behavior).
 
 ## Implementation pointers
 
@@ -125,11 +148,33 @@ without dispatching it. The user edits, then submits manually.
 - `TerminalAction::ResolvePromptSuggestion(...)` (search:
   `app/src/terminal/view/init.rs`) is today's "send-it-now" path.
   Add a sibling `InsertPromptSuggestionAsDraft(PromptSuggestion)`
-  action that targets the agent input editor's insert-at-caret
-  path. Keep the full `PromptSuggestion` available until telemetry
-  is emitted so the category can be derived from existing fields.
+  action. Keep the full `PromptSuggestion` available until
+  telemetry is emitted so identifiers can be derived from existing
+  fields.
+- **V1 input behavior — replace, NOT insert-at-caret.** V1 sets the
+  agent input's text via the existing `replace_buffer_content` API
+  (verified: see `Input::replace_buffer_content` used in
+  `app/src/workspace/view.rs` and `app/src/pane_group/mod.rs`).
+  Concretely:
+  - When the input buffer is empty, V1 calls
+    `input.replace_buffer_content(&suggestion.prompt, ctx)`. The
+    suggestion text becomes the entire draft content.
+  - When the input buffer has user text (length > 0), V1 first
+    shows the B2 replace-confirm dialog. On `Replace`, V1 calls
+    `input.replace_buffer_content(&suggestion.prompt, ctx)`,
+    replacing the entire prior draft. On `Cancel`, no buffer
+    mutation occurs.
+  - In both branches the caret lands at the end of the inserted
+    text (existing behavior of `replace_buffer_content`).
+  - The earlier "insert at caret" wording is removed from V1 — V1
+    is replace-only. Insert-at-caret (preserve surrounding draft,
+    insert at current cursor position) is **deferred to V1.5** as
+    an additional mode toggled by a future setting; out of scope
+    here.
 - The agent-input editor lives in
-  `app/src/ai/blocklist/agent_view/agent_input_footer/...`.
+  `app/src/ai/blocklist/agent_view/agent_input_footer/...`. The
+  `Input::replace_buffer_content(text: &str, ctx)` entry point is
+  the single API V1 uses; no new editor APIs are introduced.
 
 ## Test plan
 
@@ -150,14 +195,19 @@ without dispatching it. The user edits, then submits manually.
 - T7. Sequential composition: two consecutive insert-as-draft
   actions each prompt confirm (when draft non-empty); banner
   remains visible across both.
-- T8. Telemetry: `prompt_suggestion.action` event fires exactly
-  once per insert with `action_type = "insert_as_draft"`, reusing
-  existing `category` and `source` fields and using the B6
-  category derivation without suggestion text. Respects global
-  telemetry opt-out.
+- T8. Telemetry: `PromptSuggestionInsertedAsDraft` event fires
+  exactly once per insert. Payload (`id`, `view`,
+  `interaction_source`) matches the existing
+  `PromptSuggestionAccepted` shape. `interaction_source = Button`
+  for edit-icon click; `interaction_source = Keybinding` for
+  modifier-click. Respects global telemetry opt-out.
 
 ## Out of scope
 
+- **Insert-at-caret (V1.5).** Inserting suggestion text at the
+  current caret position while preserving the surrounding draft.
+  Deferred from V1; tracked as a follow-up mode togglable from
+  settings.
 - Caret-insert / append-with-newline behavior for non-empty drafts
   (V1 is replace-with-confirm; future TECH may relax).
 - A "don't ask again" persistence option for the replace-confirm
