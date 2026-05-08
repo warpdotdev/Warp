@@ -12,10 +12,11 @@ Make `Cmd +` / `Cmd -` / `Cmd 0` (and equivalent Command Palette / menu actions)
 
 - Keyboard shortcuts (`zoom_in`, `zoom_out`, `zoom_reset`) and any explicit `zoom_to_level` action mutate ONLY the focused window's zoom state.
 - Command Palette zoom commands and View menu zoom items behave identically — focused-window-scoped.
+- Pinch / trackpad zoom gestures mutate ONLY the focused window's zoom — same scoping as keyboard and palette inputs.
 - New windows open at the user's global zoom default (the value in Settings → Appearance → Zoom).
 - All tabs and splits inside a single window share that window's zoom level. Switching tab or focused split inside the same window does not change the zoom.
 - The Settings → Appearance → Zoom UI label is updated to disambiguate it as the default for new windows, not a global override.
-- Optional one-shot "Apply to all open windows" button gives users a fast escape hatch when they want to re-sync everything.
+- A REQUIRED "Apply to all open windows" button gives users a fast one-click way to re-sync every open window's zoom to the global default.
 
 ## Non-Goals
 
@@ -23,13 +24,18 @@ Make `Cmd +` / `Cmd -` / `Cmd 0` (and equivalent Command Palette / menu actions)
 - Per-monitor adaptive zoom that auto-scales when a window moves between displays.
 - Persisting per-window zoom across app restart (V1.5 candidate — see Open Questions).
 - Changing the underlying zoom mechanism, range, or step size.
-- Touch / trackpad pinch-zoom semantics (already focused-window-scoped where supported).
 
 ## Behavior Contract
 
 ### B1. Zoom actions are focused-window-scoped
 
-`zoom_in`, `zoom_out`, `zoom_reset`, and any `zoom_to_level(value)` action mutate the zoom-level field on the FOCUSED window's per-window state object only. Other open windows observe no change.
+ALL zoom inputs are focused-window-scoped. This includes:
+
+- Keyboard shortcuts: `zoom_in`, `zoom_out`, `zoom_reset`, and any `zoom_to_level(value)` action.
+- Command Palette zoom actions and View menu zoom items.
+- Pinch / trackpad zoom gestures (two-finger pinch on macOS trackpads, equivalent gestures on other platforms).
+
+Each input mutates the zoom-level field on the FOCUSED window's per-window state object only. Other open windows observe no change.
 
 ### B2. New windows inherit the global default
 
@@ -37,7 +43,12 @@ When a new Warp window is opened (via `Cmd N`, "New Window", or any other entry 
 
 ### B3. Tabs and splits share window zoom
 
-All tabs and splits inside a window share that window's zoom-level value. Creating a new tab or split, switching the active tab, or moving focus between splits does not change the rendered zoom. Moving a tab to a different window adopts the destination window's zoom.
+All tabs and splits inside a window share that window's zoom-level value. Creating a new tab or split, switching the active tab, or moving focus between splits does not change the rendered zoom.
+
+Tab moves between windows:
+
+- **Move to existing window**: when a tab is moved (drag-to-window or shortcut "move tab to window") from window A (zoom 1.5x) into existing window B (zoom 1.0x), the moved tab adopts window B's zoom (1.0x). The tab content re-renders at the destination window's zoom. There is no per-tab zoom memory; zoom belongs to the containing window, not the tab.
+- **Drag-out spawns a new window**: when a tab is dragged OUT of a window in a way that spawns a NEW window (rather than dropping it into an existing one), the new window starts at the GLOBAL default zoom — NOT the source window's zoom. This matches B2 (new windows always start at the global default).
 
 ### B4. In-memory only in V1
 
@@ -49,18 +60,31 @@ The Settings → Appearance → Zoom control is relabeled to "Default zoom for n
 
 ### B6. Settings change does not retro-apply
 
-Changing the global default in Settings ONLY affects subsequently-opened windows. Already-open windows keep their current per-window zoom. An explicit "Apply to all open windows" button next to the setting resets every open window to the new default value.
+Changing the global default in Settings ONLY affects subsequently-opened windows. Already-open windows keep their current per-window zoom.
+
+The "Apply to all open windows" button (see B8) is the explicit user-driven mechanism to re-sync open windows to the current global default.
 
 ### B7. Clamping is per-window
 
 Existing min/max zoom clamps (e.g., 0.5x..3.0x) apply per window. Each window can independently be at its own clamped value; reaching the max in one window does not affect another window's range.
+
+### B8. "Apply to all open windows" button (REQUIRED)
+
+The "Apply to all open windows" button is a REQUIRED V1 control. It lives in Settings → Appearance → Zoom, immediately adjacent to the global zoom-default field.
+
+Behavior:
+
+- **Action**: clicking the button sets every open window's per-window zoom to the current global default. After the click, every window — including any new ones opened later — renders at the global default. (Subsequent per-window zoom changes still scope to that window only, per B1.)
+- **Enabled state**: the button is enabled ONLY when at least one open window is currently at a zoom level that differs from the global default.
+- **Disabled state**: when every open window already matches the global default, the button is disabled (greyed out) with the tooltip "All windows match the default".
+- **State updates**: the enabled/disabled state recomputes whenever any open window's zoom changes or when the global default changes.
 
 ## Settings / API surface
 
 - `appearance.zoom_level` (existing): unchanged in schema, semantics, and storage. Now documented as "default for new windows". User-facing label updated to match.
 - No new persisted settings in V1.
 - Internal: per-window state object gains a `zoom_level: f32` field initialized from `appearance.zoom_level` at window-creation time.
-- New UI control: "Apply to all open windows" button in Settings → Appearance → Zoom. Resets every open window's per-window zoom to the current global default.
+- New UI control (REQUIRED in V1): "Apply to all open windows" button in Settings → Appearance → Zoom. Resets every open window's per-window zoom to the current global default. Enabled only when at least one open window differs from the default; otherwise disabled with tooltip "All windows match the default" (see B8).
 
 ## Acceptance Criteria
 
@@ -72,6 +96,8 @@ Existing min/max zoom clamps (e.g., 0.5x..3.0x) apply per window. Each window ca
 - A6. Changing the global default from 1.0x to 1.25x does not change zoom in any already-open window.
 - A7. Clicking "Apply to all open windows" resets every open window to the current global default.
 - A8. Min/max clamps work per window: A can be at 3.0x while B is at 1.0x, and `Cmd +` in B still increases B without affecting A.
+- A_pinch_per_window_scope. With windows A and B open at 1.0x, performing a pinch-zoom-in gesture inside window A increases A's rendered zoom only; B's rendered zoom is unchanged. Pinch-zoom-out is equivalently scoped.
+- A_apply_to_all_button_resets_all_open. With three open windows at 1.5x, 1.25x, and 1.0x respectively and a global default of 1.0x, clicking "Apply to all open windows" resets all three windows to 1.0x. After the click, opening a new window also produces 1.0x. The button transitions from enabled (because windows differed) to disabled (all match default) and exposes the tooltip "All windows match the default" in its disabled state.
 
 ## Implementation Pointers
 
@@ -100,12 +126,15 @@ Net-new modules: none expected. The change is mostly relocating where the zoom v
 - T6. Integration: "Apply to all open windows" emits zoom updates for every open window.
 - T7. Unit: per-window clamping — independent windows can sit at independent clamped values.
 - T8. Visual / snapshot: render two windows at different zooms and assert they differ.
+- T_pinch_zoom_per_window. Integration: simulate a pinch-zoom gesture in window A while window B is also open. Assert window A's zoom-level field changed and window B's did not. Repeat for pinch-out (zoom-decrease) gesture.
+- T_tab_move_adopts_dest_zoom. Integration: with window A at 1.5x and window B at 1.0x, move a tab from A to B (drag-to-window or "move tab to window" shortcut). Assert: the tab now renders at 1.0x; the tab carries no per-tab zoom memory; further zoom changes in B affect the moved tab in lockstep with the rest of B.
+- T_tab_move_to_new_window_uses_global_default. Integration: with window A at 1.5x and the global default at 1.0x, drag a tab OUT of A in a way that spawns a NEW window. Assert: the new window opens at 1.0x (global default), NOT 1.5x (source-window zoom).
+- T_apply_to_all_button_enabled_state. Unit: with all open windows matching the global default, the button is disabled and exposes tooltip "All windows match the default". When any window's zoom is changed to a non-default value, the button becomes enabled. After clicking the button, all windows match the default and the button returns to disabled.
 
 ## Open Questions
 
 - V1.5: should per-window zoom persist across app restart by mapping a stable window identity (e.g., saved-window-config ID, or display ID) to a stored zoom? Suggest yes, keyed by saved window/workspace config rather than ephemeral window instance.
-- Should the "Apply to all open windows" button live next to the global default in Settings, or in the View menu, or both? Suggest Settings only for V1 to keep menu surface area small.
-- Touch trackpad pinch-zoom: confirm it already mutates only the focused window. If not, fold into the same scoping change.
+- Should the "Apply to all open windows" button ALSO appear in the View menu (in addition to Settings)? Suggest Settings only for V1 to keep menu surface area small; revisit in V1.5 if users ask for menu access.
 
 ## Telemetry
 
