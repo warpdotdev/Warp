@@ -60,7 +60,7 @@ The full set of bare-left gestures and their ON-mode behavior:
 | Drag (down → move → up) | Intercepted; Warp's native drag-select (existing B3 contract). | No. |
 | `Shift+left-drag` | Intercepted; native selection (no regression from Setting OFF). | No. |
 | `Option+left-<anything>` (click, drag, etc.) | See B4 — inverse modifier forwards to TUI. | Yes. |
-| `Cmd+left-click` and other already-defined modifier+left variants (e.g. link follow) | Existing behavior preserved (B4 also). | Per existing rules. |
+| `Cmd+left-click` and other already-defined modifier+left variants (e.g. link follow, macOS `Ctrl+left-click` right-click stand-in) | Existing Warp local handler runs (link follow, OS open, etc.). The new B3 routing latch does not subsume this. Routes via `MouseRoutingDecision::DeferToLocalHandler` — see Implementation Pointers. | No (handled locally; never forwarded to TUI). |
 
 Click-count detection reuses Warp's existing click-count timing/tolerance heuristics — the spec does not redefine when consecutive clicks are coalesced into a double or triple click.
 
@@ -156,26 +156,55 @@ A working reference implementation exists at https://github.com/spalagu/warp/tre
   }
   ```
 
-  Return type changes from `bool` to a tri-state `MouseRoutingDecision`:
+  Return type changes from `bool` to a tetra-state
+  `MouseRoutingDecision` so that pre-existing local Warp handlers
+  (link follow on `Cmd+click`, future modifier+left handlers) are
+  NOT lumped in with TUI forwarding:
 
   ```rust
   pub enum MouseRoutingDecision {
-      InterceptByWarp,
-      ForwardToTui,
-      FollowExistingLatch,   // mid-gesture move/up: read the per-gesture latch
+      InterceptByWarp,        // Warp native selection / caret model
+      DeferToLocalHandler,    // Warp's existing modifier+left handler
+                              // (e.g. Cmd+click link follow). NOT
+                              // forwarded to the TUI.
+      ForwardToTui,           // mouse-reporting forward
+      FollowExistingLatch,    // mid-gesture move/up: read the
+                              // per-gesture latch
   }
   ```
 
   Routing rules expressed against `MouseEventContext`:
-  - `is_left_button == false` → return `ForwardToTui` (existing right/middle/scroll rules apply elsewhere; this function does not own them).
-  - `is_left_button == true && event_kind != MouseDown` → return `FollowExistingLatch` (mouse-move and mouse-up consult the per-gesture map; do not recompute).
-  - `is_left_button == true && event_kind == MouseDown && modifiers.cmd_or_meta` → return `ForwardToTui` for the existing `Cmd+left-click` handler (link follow, OS open). The new B3/B4 routing latch does NOT subsume modifier-keyed left clicks. The same exemption applies to `Ctrl+left-click` on macOS where it acts as a right-click stand-in. Modifier-keyed left clicks bypass the new routing entirely and follow their existing handlers.
-  - `is_left_button == true && event_kind == MouseDown && modifiers.alt_or_option` → return `ForwardToTui` (B4 inverse-modifier opt-out).
-  - `is_left_button == true && event_kind == MouseDown && modifiers.shift` → return `InterceptByWarp` (existing Shift-bypass; preserved in both setting states).
-  - `is_left_button == true && event_kind == MouseDown && setting_on && bare-or-shift-only` → return `InterceptByWarp`.
+  - `is_left_button == false` → return `ForwardToTui` (existing
+    right/middle/scroll rules apply elsewhere; this function does
+    not own them).
+  - `is_left_button == true && event_kind != MouseDown` → return
+    `FollowExistingLatch` (mouse-move and mouse-up consult the
+    per-gesture map; do not recompute).
+  - `is_left_button == true && event_kind == MouseDown &&
+    modifiers.cmd_or_meta` → return `DeferToLocalHandler`. This
+    preserves Warp's existing `Cmd+left-click` handler (link
+    follow, OS open) — the click is NOT forwarded to the TUI and
+    is NOT intercepted as native selection. The new B3/B4 routing
+    latch does NOT subsume modifier-keyed left clicks. The same
+    handling applies to `Ctrl+left-click` on macOS (which Warp
+    today treats as a right-click stand-in via a local handler):
+    `DeferToLocalHandler` so the existing right-click-stand-in
+    handler runs, NOT `ForwardToTui`.
+  - `is_left_button == true && event_kind == MouseDown &&
+    modifiers.alt_or_option && setting_on` → return `ForwardToTui`
+    (B4 inverse-modifier opt-out).
+  - `is_left_button == true && event_kind == MouseDown &&
+    modifiers.shift` → return `InterceptByWarp` (existing
+    Shift-bypass; preserved in both setting states).
+  - `is_left_button == true && event_kind == MouseDown &&
+    setting_on && bare-or-shift-only` → return `InterceptByWarp`.
   - Otherwise → return `ForwardToTui`.
 
-  Any future left-button modifier handler MUST add an explicit branch in this function before the bare-left rule; the function MUST consider the FULL modifier state, not just `is_left_button`.
+  Any future left-button modifier handler MUST add an explicit
+  branch in this function before the bare-left rule, returning
+  `DeferToLocalHandler` (not `ForwardToTui`) if it is owned by
+  Warp's local code path. The function MUST consider the FULL
+  modifier state, not just `is_left_button`.
 - **Per-gesture routing latch.** The latch lives at the mouse-event-dispatch layer (the same site that decides intercept-vs-forward today, i.e. the callers of `should_intercept_mouse`). Maintain a per-gesture routing map keyed on `(button, gesture_id)`:
   - On left-button mouse-down: compute the routing decision from `should_intercept_mouse(...)` once, insert `(Left, gesture_id) → Decision` into the map.
   - On any subsequent left-button mouse-move / mouse-up belonging to the same gesture: read the decision from the map; do NOT recompute via `should_intercept_mouse`.
@@ -201,7 +230,40 @@ A working reference implementation exists at https://github.com/spalagu/warp/tre
 - **Callsites to update (7 total).**
   - `app/src/terminal/block_list_element.rs` — 3 callsites.
   - `app/src/terminal/alt_screen/alt_screen_element.rs` — 4 callsites.
-  - Each callsite must pass `is_left_button` and `option_held` derived from the originating mouse event AND consult the per-gesture routing map before recomputing.
+  - Each callsite MUST construct a full `MouseEventContext` from
+    the originating mouse event and pass it to
+    `should_intercept_mouse(...)`. Concretely, the callsite is
+    responsible for populating EVERY field of `MouseEventContext`:
+    - `is_left_button` — `true` only for `LeftMouseDown`,
+      `LeftMouseDragged`, `LeftMouseUp`.
+    - `event_kind` — mapped from the originating event variant
+      (`MouseDown` for `LeftMouseDown`, `MouseMove` for
+      `LeftMouseDragged`, `MouseUp` for `LeftMouseUp`).
+    - `modifiers` — the FULL `ModifierState` from the originating
+      event (`shift`, `ctrl`, `alt_or_option`, `cmd_or_meta`).
+      Callsites MUST NOT pass a partial modifier state (e.g.
+      `option_held` only); doing so would silently break
+      `Shift+drag`, `Cmd+click`, and any future modifier handler.
+    - `click_count` — the click count from the same click-count
+      detector that already drives word-/line-select outside
+      alt-screen. Required at every callsite so double/triple
+      semantics in B3 work correctly.
+    - `gesture_id` — obtained from `GestureSession` (see
+      "gesture_id source" above): the active id for `MouseMove`
+      / `MouseUp`, the newly-allocated id for `MouseDown`. Never
+      `Default::default()`; never absent.
+  - On `MouseDown` the callsite computes the routing decision via
+    `should_intercept_mouse(...)` and inserts
+    `(Left, gesture_id) → Decision` into the per-gesture routing
+    map BEFORE acting on the decision. On subsequent `MouseMove` /
+    `MouseUp` the callsite reads the latched decision from the map
+    and dispatches accordingly (`InterceptByWarp` →
+    Warp selection model; `DeferToLocalHandler` → existing
+    Warp local handler; `ForwardToTui` → mouse-reporting
+    forward). It does NOT recompute `should_intercept_mouse` for
+    move/up.
+  - Right-click, middle-click, and scroll callsites are NOT in
+    this list and continue to use their existing routing.
 - **Click-count semantics.** Reuse Warp's existing click-count detection (the same path that today drives word-select on double-click outside alt-screen). No new click-count tracker is introduced.
 - **Settings UI.** Add a toggle row in `app/src/settings_view/features_page.rs` under the existing AltScreenReporting section. Subtitle text per the Settings/API surface table above.
 - **Keybinding context.** Expose `terminal_native_left_drag_select` in `app/src/settings_view/mod.rs` alongside other AltScreenReporting context flags.
