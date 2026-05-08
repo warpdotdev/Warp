@@ -184,6 +184,8 @@ impl ModelSelector {
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
                 HarnessAvailabilityEvent::Changed => {
+                    // Retry restore in case model metadata just arrived.
+                    me.maybe_restore_harness_model_from_settings(ctx);
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }

@@ -171,12 +171,27 @@ impl HostSelector {
 
     pub fn set_default_host(&mut self, slug: String, ctx: &mut ViewContext<Self>) {
         let host = Host::SelfHosted { slug };
+        self.default_host = Some(host.clone());
+
+        // If the user has a saved selection, preserve it instead of
+        // unconditionally overwriting with the default.
+        let saved_slug = CloudAgentSettings::as_ref(ctx)
+            .last_selected_host
+            .value()
+            .clone();
+        if saved_slug.is_some() {
+            // The constructor already applied the saved selection;
+            // just refresh the menu so the new default appears as an option.
+            self.refresh_menu(ctx);
+            return;
+        }
+
+        // No saved preference — use the default host.
         let label = host.display_name().to_string();
-        self.selected = host.clone();
+        self.selected = host;
         self.button.update(ctx, |button, ctx| {
-            button.set_label(label.clone(), ctx);
+            button.set_label(label, ctx);
         });
-        self.default_host = Some(host);
         self.refresh_menu(ctx);
     }
 
