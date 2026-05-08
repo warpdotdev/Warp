@@ -272,6 +272,30 @@ fn test_action_open_file_editor_parse_with_path_only() {
 }
 
 #[test]
+fn test_action_open_file_editor_parse_with_line_only() {
+    let url = Url::parse(&format!(
+        "{}://action/open_file_editor?path=/tmp/test.rs&line=120",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+
+    let action = Action::parse(&url).unwrap();
+    match action {
+        Action::OpenFileEditor { path, line_col } => {
+            assert_eq!(path, PathBuf::from("/tmp/test.rs"));
+            assert_eq!(
+                line_col,
+                Some(LineAndColumnArg {
+                    line_num: 120,
+                    column_num: None,
+                })
+            );
+        }
+        _ => panic!("unexpected action: {action:?}"),
+    }
+}
+
+#[test]
 fn test_action_open_file_editor_parse_with_line_and_column() {
     let url = Url::parse(&format!(
         "{}://action/open_file_editor?path=/tmp/test.rs&line=120&column=8",
@@ -307,6 +331,33 @@ fn test_action_open_file_editor_parse_decodes_percent_encoded_path() {
     match action {
         Action::OpenFileEditor { path, line_col } => {
             assert_eq!(path, PathBuf::from("/tmp/hello world.rs"));
+            assert_eq!(
+                line_col,
+                Some(LineAndColumnArg {
+                    line_num: 1,
+                    column_num: None,
+                })
+            );
+        }
+        _ => panic!("unexpected action: {action:?}"),
+    }
+}
+
+#[test]
+fn test_action_open_file_editor_parse_expands_home_dir() {
+    let url = Url::parse(&format!(
+        "{}://action/open_file_editor?path=~/tmp/test.rs&line=1",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+
+    let action = Action::parse(&url).unwrap();
+    match action {
+        Action::OpenFileEditor { path, line_col } => {
+            assert_eq!(
+                path,
+                PathBuf::from(shellexpand::tilde("~/tmp/test.rs").into_owned())
+            );
             assert_eq!(
                 line_col,
                 Some(LineAndColumnArg {
@@ -711,14 +762,6 @@ fn test_open_file_executable_sh_routes_to_execute() {
     std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
     let action = classify_open_file_action(&p);
     assert_eq!(action, OpenFileAction::ExecuteInSession);
-    assert!(should_handle_open_file_action(
-        action,
-        OpenFileOrigin::FileUrl
-    ));
-    assert!(!should_handle_open_file_action(
-        action,
-        OpenFileOrigin::OpenFileEditorUri
-    ));
 }
 
 #[test]

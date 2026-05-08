@@ -683,7 +683,7 @@ fn parse_open_file_editor_url(url: &Url) -> Result<(PathBuf, Option<LineAndColum
         .find(|(k, _)| k == "path")
         .map(|(_, v)| v)
         .ok_or_else(|| anyhow!("missing path for open_file_editor action"))?;
-    let path = PathBuf::from(raw_path.into_owned());
+    let path = PathBuf::from(shellexpand::tilde(&raw_path).into_owned());
     ensure!(
         path.is_absolute(),
         "`path` must be absolute for open_file_editor action"
@@ -768,16 +768,10 @@ impl Action {
                     log::warn!("Could not parse path to open a new tab/window");
                     return;
                 };
-                open_file(window_id, path, None, OpenFileOrigin::PathAction, ctx);
+                open_file(window_id, path, ctx);
             }
             Self::OpenFileEditor { path, line_col } => {
-                open_file(
-                    primary_window_id,
-                    path.clone(),
-                    *line_col,
-                    OpenFileOrigin::OpenFileEditorUri,
-                    ctx,
-                );
+                open_file_editor(primary_window_id, path.clone(), *line_col, ctx);
             }
             Action::Docker => {
                 if let Err(err) = open_docker_container(url, ctx) {
@@ -1015,7 +1009,7 @@ pub fn handle_incoming_uri(url: &Url, ctx: &mut AppContext) {
     #[cfg(feature = "local_tty")]
     if url.scheme() == "file" {
         if let Ok(path) = url.to_file_path() {
-            open_file(primary_window_id, path, None, OpenFileOrigin::FileUrl, ctx);
+            open_file(primary_window_id, path, ctx);
         }
         return;
     }
@@ -1077,13 +1071,6 @@ enum OpenFileAction {
     ExecuteInSession,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OpenFileOrigin {
-    FileUrl,
-    PathAction,
-    OpenFileEditorUri,
-}
-
 /// Pure routing decision for `open_file`. Extracted so it can be unit-tested without
 /// standing up a full `AppContext`.
 fn classify_open_file_action(path: &Path) -> OpenFileAction {
@@ -1105,32 +1092,18 @@ fn classify_open_file_action(path: &Path) -> OpenFileAction {
     OpenFileAction::ExecuteInSession
 }
 
-fn should_handle_open_file_action(action: OpenFileAction, origin: OpenFileOrigin) -> bool {
-    origin != OpenFileOrigin::OpenFileEditorUri || action != OpenFileAction::ExecuteInSession
-}
-
 /// Handle an incoming file path from a URI.
 /// * Markdown files are opened as notebook panes.
 /// * For directories, open a new session at the directory path.
 /// * For other files, open a new session at the parent directory path, then possibly execute the
 ///   file.
-fn open_file(
-    window_id: Option<WindowId>,
-    path: PathBuf,
-    line_col: Option<LineAndColumnArg>,
-    origin: OpenFileOrigin,
-    ctx: &mut AppContext,
-) {
+fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
     let primary_window_and_view = window_id.and_then(|window_id| {
         ctx.root_view_id(window_id)
             .map(|view_id| (window_id, view_id))
     });
 
     let action = classify_open_file_action(&path);
-    if !should_handle_open_file_action(action, origin) {
-        log::warn!("open_file URI cannot execute files or open sessions");
-        return;
-    }
 
     if action == OpenFileAction::Notebook {
         if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
@@ -1175,16 +1148,8 @@ fn open_file(
             if let Some(workspaces) = ctx.views_of_type::<Workspace>(window_id) {
                 if let Some(workspace) = workspaces.into_iter().next() {
                     workspace.update(ctx, |workspace, ctx| {
-                        let source = if origin == OpenFileOrigin::OpenFileEditorUri {
-                            CodeSource::Link {
-                                path: path.clone(),
-                                range_start: line_col,
-                                range_end: None,
-                            }
-                        } else {
-                            CodeSource::Finder { path: path.clone() }
-                        };
-                        workspace.open_file_with_target(path, target, line_col, source, ctx);
+                        let source = CodeSource::Finder { path: path.clone() };
+                        workspace.open_file_with_target(path, target, None, source, ctx);
                     });
                 }
             }
@@ -1232,6 +1197,56 @@ fn open_file(
         }
 
         send_telemetry_from_app_ctx!(TelemetryEvent::OpenNewSessionFromFilePath, ctx);
+    }
+}
+
+fn open_file_editor(
+    primary_window_id: Option<WindowId>,
+    path: PathBuf,
+    line_col: Option<LineAndColumnArg>,
+    ctx: &mut AppContext,
+) {
+    #[cfg(feature = "local_fs")]
+    {
+        use crate::code::editor_management::CodeSource;
+        use crate::root_view::{open_new_with_workspace_source, NewWorkspaceSource};
+        use crate::util::{
+            file::external_editor::EditorSettings,
+            openable_file_type::resolve_file_target_to_open_in_warp,
+        };
+
+        let editor_settings = EditorSettings::as_ref(ctx);
+        let target = resolve_file_target_to_open_in_warp(&path, editor_settings, None);
+
+        let window_id = if let Some((wid, _)) = primary_window_id.and_then(|window_id| {
+            ctx.root_view_id(window_id)
+                .map(|view_id| (window_id, view_id))
+        }) {
+            wid
+        } else {
+            open_new_with_workspace_source(
+                NewWorkspaceSource::Session {
+                    options: Box::default(),
+                },
+                ctx,
+            )
+            .0
+        };
+
+        ctx.windows().show_window_and_focus_app(window_id);
+
+        if let Some(workspaces) = ctx.views_of_type::<Workspace>(window_id) {
+            if let Some(workspace) = workspaces.into_iter().next() {
+                workspace.update(ctx, |workspace, ctx| {
+                    let source = CodeSource::Link {
+                        path: path.clone(),
+                        range_start: line_col,
+                        range_end: None,
+                    };
+                    workspace.open_file_with_target(path, target, line_col, source, ctx);
+                });
+            }
+        }
     }
 }
 
