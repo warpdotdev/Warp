@@ -561,6 +561,13 @@ impl TerminalView {
             self.create_and_insert_ai_block(params, ctx);
         }
 
+        // Restored command blocks are inserted into the block list by
+        // `create_and_insert_ai_block` → `process_restored_outputs` without going through the
+        // normal `BlockCompleted` event path that initialises mouse states. Ensure every block
+        // index in the block list has mouse states so the label hover tooltip, bookmark button,
+        // and filter button work for these blocks.
+        self.ensure_mouse_states_for_all_blocks();
+
         blocks_created
     }
 
