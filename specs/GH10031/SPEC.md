@@ -34,18 +34,48 @@ updates without losing the final state.
   `rev-parse` call. The throttle in B3 caps these single
   invocations.
 
+### Base-directory invariant (deterministic invocation)
+
+- B-BASEDIR. **Every** `git rev-parse --show-toplevel
+  --git-common-dir` invocation MUST be run with an explicit
+  working directory equal to the active pane's CWD at the
+  moment the derivation is dispatched. Implementations MUST
+  pass that CWD as the child process's working directory (e.g.,
+  `Command::current_dir(...)` in Rust) and MUST NOT rely on the
+  parent process's ambient CWD.
+- B-BASEDIR-1. The CWD value used for B-BASEDIR is the SAME
+  CWD that determined whether to fire the derivation (the
+  latest CWD at dispatch time per B3). For trailing-edge
+  re-derivation, this is the latest-known CWD when the throttle
+  window elapses — not the CWD that originally opened the
+  window.
+- B-BASEDIR-2. `git rev-parse` may return absolute or relative
+  path strings depending on invocation context and git
+  version. Relative outputs MUST be resolved against the SAME
+  CWD that was passed to `current_dir` for that invocation,
+  BEFORE canonicalization. The resolution rule is:
+  ```
+  resolve(p, cwd) = if is_absolute(p) { p } else { join(cwd, p) }
+  ```
+
 ### Path normalization (canonicalization)
 
-- B-CANON. Both output paths are normalized before comparison
-  via `canonical(p)` — the canonical path of `p` after symlink
-  resolution and conversion to an absolute path (`std::fs::
-  canonicalize` semantics). The repo-context tuple is:
+- B-CANON. Both output paths are first resolved against the
+  invocation CWD per B-BASEDIR-2, then normalized via
+  `canonical(p)` — the canonical path after symlink resolution
+  and conversion to absolute (`std::fs::canonicalize`
+  semantics). The repo-context comparison key is therefore:
   ```
-  (canonical(top_level), canonical(git_common_dir))
+  ( canonical(resolve(top_level,      cwd)),
+    canonical(resolve(git_common_dir, cwd)) )
   ```
+  using the SAME `cwd` that was passed to `git rev-parse` for
+  this invocation.
 - B-CANON-1. Implementations MUST NOT compare raw `git
   rev-parse` output strings — git can return relative or
-  partially-resolved paths depending on invocation context.
+  partially-resolved paths depending on invocation context, and
+  must always be resolved against the explicit invocation CWD
+  per B-BASEDIR before any comparison.
 - B-CANON-2. Consequences:
   - Same repo, different SUBDIRECTORY of the same worktree →
     same canonical tuple → no `RepoContextChanged` event.
@@ -78,10 +108,19 @@ updates without losing the final state.
     guarantees the final state is correct after a burst.
   - Skip the spawn entirely if CWD hasn't changed since the
     last completed derivation.
-- B3-budget. Net effect: at most one derivation immediately
-  plus one trailing derivation per 250ms burst per pane. Steady
-  state: ≤2 derivations per 250ms window per pane, ≤4 per
-  second per pane.
+- B3-budget. **Sustained-rate cap (strict).** The throttle
+  window is exactly 250ms. Each window admits AT MOST one
+  leading-edge derivation plus AT MOST one trailing-edge
+  derivation — a hard cap of 2 derivations per 250ms window
+  per pane. The sustained maximum rate is therefore
+  **1 derivation per 250ms = 4 per second per pane**.
+  Implementations MUST NOT amortize multiple trailing-edge
+  re-derivations into a single window (e.g., by coalescing
+  several windows' trailing edges into one batch); each
+  window's trailing edge fires at most once and uses the
+  latest CWD at the moment that window elapses. Bursts longer
+  than one window are governed by per-window enforcement, not
+  by a global moving-rate budget.
 
 ### Worktree vs different repo
 
@@ -114,9 +153,30 @@ updates without losing the final state.
     state
   - any open PR or diff panels for the prior repo → collapse
     to "no repo" empty state
+- B5-INVALIDATE. **The clear path also invalidates the
+  per-pane cached repo-context tuple.** When
+  `RepoMetadataCleared` is emitted, the cached canonical tuple
+  for that pane is set to `None` (i.e., "no last-known repo
+  context"). This is required because subsequent CWD updates
+  use tuple equality to short-circuit redundant derivations
+  (B-CANON / B2). If the cached tuple were left at the prior
+  repo's value, returning to that same repo later would
+  appear to be "no change" and the `RepoContextChanged` event
+  would NOT re-fire — leaving the metadata surface stale.
+  Setting the cache to `None` forces the next successful
+  derivation to be treated as a fresh transition.
+- B5-RETURN. As a direct consequence of B5-INVALIDATE: after a
+  non-git clear, the **next CWD update — even if it returns to
+  a previously-tracked repo — MUST re-run `git rev-parse`** and
+  re-emit `RepoContextChanged`, refreshing the full metadata
+  surface. The "tuple equality" short-circuit cannot suppress
+  this refresh because the cached tuple is `None`.
 - B5a. Subsequent CWD changes that remain outside any repo do
   NOT re-fire `RepoMetadataCleared`; the cleared state is
-  sticky until a new resolvable repo context appears.
+  sticky until a new resolvable repo context appears. (This is
+  consistent with B5-INVALIDATE: while the cached tuple stays
+  `None`, repeated `git rev-parse` failures produce no new
+  events.)
 - B5b. No event other than `RepoMetadataCleared` is emitted on
   this path; the prior `RepoContextChanged` is NOT emitted with
   empty fields.
@@ -182,8 +242,36 @@ updates without losing the final state.
 - T-TRAILING. Burst of 10 CWD changes within 250ms results in
   exactly 2 derivation processes and the final metadata
   reflects the LAST CWD.
+- T_throttle_burst. **Strict per-window cap.** 10 CWD changes
+  within 100ms (well under the 250ms window) produce AT MOST
+  2 derivations: one leading-edge at the start of the window
+  and at most one trailing-edge when the window elapses. The
+  final metadata reflects the LAST CWD in the burst. Assertion:
+  `derivation_count <= 2`.
 - T-CLEAR-STICKY. `cd` non-git → non-git emits no further
   `RepoMetadataCleared`.
+- T_return_to_repo_after_leaving. **Cache invalidation on
+  clear.** Sequence:
+  1. Pane CWD = `/repo-A/src` → `RepoContextChanged` fires;
+     cached tuple = `(canonical(/repo-A), …)`.
+  2. Pane CWD = `/tmp` (non-git) → `RepoMetadataCleared` fires;
+     cached tuple is invalidated to `None`.
+  3. Pane CWD = `/repo-A/src` again (returning to the same
+     repo) → `git rev-parse` MUST re-run and
+     `RepoContextChanged` MUST fire again, refreshing the full
+     metadata surface. Assertion: the second
+     `RepoContextChanged` is observed (NOT suppressed by tuple
+     equality), even though the canonical tuple equals the
+     pre-clear value.
+- T_basedir_explicit_cwd. **Deterministic invocation.** Spawn
+  the derivation with pane CWD = `/repo-A/sub`. Verify the
+  child process for `git rev-parse` was spawned with
+  `current_dir = /repo-A/sub`. Mock git to return a relative
+  output `../`; verify the resolution uses `/repo-A/sub` as
+  the base, yielding canonical `/repo-A`. Repeat with the
+  trailing-edge re-derivation while CWD has advanced to
+  `/repo-A/sub2`; verify the trailing invocation's
+  `current_dir` is `/repo-A/sub2`, not `/repo-A/sub`.
 
 ## Out of scope
 
