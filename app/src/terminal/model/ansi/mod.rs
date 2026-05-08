@@ -1386,7 +1386,7 @@ where
                 // CSI ? 996 n — query current color preference (dark/light mode)
                 match next_param_or(0) {
                     996 => handler.report_color_scheme(writer),
-                    _ => unhandled!(),
+                    arg => log::warn!("Ignoring unsupported private DSR query: CSI ? {arg} n"),
                 }
             }
             ('P', None) => handler.delete_chars(next_param_or(1) as usize),

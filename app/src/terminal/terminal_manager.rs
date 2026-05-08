@@ -10,7 +10,6 @@ use crate::{
     appearance::Appearance,
     settings::{BlockVisibilitySettings, DebugSettings, InputModeSettings},
 };
-use warp_core::ui::theme::ColorScheme;
 
 use super::{
     color,
@@ -105,12 +104,12 @@ pub(super) fn create_terminal_model(
     let is_ai_ugc_telemetry_enabled =
         should_collect_ai_ugc_telemetry(ctx, PrivacySettings::as_ref(ctx).is_telemetry_enabled);
 
-    let is_dark =
-        Appearance::as_ref(ctx).theme().inferred_color_scheme() == ColorScheme::LightOnDark;
-    let mut model = TerminalModel::new(
+    let color_scheme = Appearance::as_ref(ctx).theme().inferred_color_scheme();
+    TerminalModel::new(
         restored_blocks.map(|v| v.as_slice()),
         sizes,
         terminal_colors_list(ctx),
+        color_scheme,
         channel_event_proxy,
         ctx.background_executor().clone(),
         should_show_bootstrap_block,
@@ -122,9 +121,7 @@ pub(super) fn create_terminal_model(
         is_ai_ugc_telemetry_enabled,
         startup_directory,
         shell_state,
-    );
-    model.set_color_scheme(is_dark);
-    model
+    )
 }
 
 pub(super) fn terminal_colors_list(ctx: &AppContext) -> color::List {

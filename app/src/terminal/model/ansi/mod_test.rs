@@ -477,6 +477,14 @@ fn parse_private_dsr_color_scheme_query() {
 }
 
 #[test]
+fn parse_unsupported_private_dsr_is_ignored() {
+    // CSI ? 995 n — unsupported private DSR should be ignored.
+    static BYTES: &[u8] = &[0x1b, b'[', b'?', b'9', b'9', b'5', b'n'];
+    let (_, handler) = parse_bytes(BYTES);
+    assert!(!handler.report_color_scheme_called);
+}
+
+#[test]
 fn parse_dcs_ssh() {
     let bytes = hex_encoded_dcs_string(
         r#"{

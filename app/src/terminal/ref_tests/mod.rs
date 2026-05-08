@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json as json;
+use warp_core::ui::theme::ColorScheme;
 
 use warpui::r#async::executor::Background;
 
@@ -124,6 +125,7 @@ fn ref_test(dir: &Path) {
         None, /* restored_blocks */
         sizes,
         color::List::from(&Colors::default()),
+        ColorScheme::LightOnDark,
         channel_event_proxy,
         Arc::new(Background::default()),
         false, /* should_show_bootstrap_block */

@@ -84,6 +84,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use warp_core::features::FeatureFlag;
 use warp_core::semantic_selection::SemanticSelection;
+use warp_core::ui::theme::ColorScheme;
 pub use warp_terminal::model::BlockIndex;
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 use warpui::assets::asset_cache::Asset;
@@ -477,18 +478,8 @@ pub struct TerminalModel {
     /// Default colors to render characters.
     colors: color::List,
 
-    /// Whether the current Warp theme is dark mode (`true`) or light mode (`false`).
-    /// Updated by the view whenever the active theme changes. Used to respond to
-    /// `CSI ? 996 n` (color scheme query) and to emit unsolicited `CSI ? 997 ; Ps n`
-    /// notifications when `CSI ? 2031 h` (dark/light notifications) is enabled.
-    ///
-    /// `TerminalModel::new` initializes this to `true` (dark) as a safe fallback.
-    /// In normal app flow, `create_terminal_model` eagerly seeds it from the current
-    /// `Appearance`, and the first `AppearanceEvent::ThemeChanged` subscription fire
-    /// can update it again if needed. The raw `true` default is therefore mainly
-    /// observable in tests or direct `TerminalModel::new` call sites before any
-    /// appearance-driven initialization or theme event arrives.
-    is_dark_mode: bool,
+    /// Current terminal color scheme classification for `CSI ? 996 n`/`CSI ? 997 ; Ps n`.
+    color_scheme: ColorScheme,
 
     /// Color overrides set via escape sequence. If a color is not set here, the view determines the
     /// color based on the theme.
@@ -1062,6 +1053,7 @@ impl TerminalModel {
             restored_blocks,
             sizes,
             colors,
+            ColorScheme::LightOnDark,
             event_proxy,
             background_executor,
             should_show_bootstrap_block,
@@ -1104,6 +1096,7 @@ impl TerminalModel {
         restored_blocks: Option<&[SerializedBlockListItem]>,
         sizes: BlockSize,
         colors: color::List,
+        color_scheme: ColorScheme,
         event_proxy: ChannelEventListener,
         background_executor: Arc<Background>,
         should_show_bootstrap_block: bool,
@@ -1148,7 +1141,7 @@ impl TerminalModel {
             title: None,
             custom_title: None,
             colors,
-            is_dark_mode: true,
+            color_scheme,
             override_colors: color::OverrideList::empty(),
             event_proxy,
             pending_legacy_ssh_session: None,
@@ -1192,6 +1185,7 @@ impl TerminalModel {
         restored_blocks: Option<&[SerializedBlockListItem]>,
         sizes: BlockSize,
         colors: color::List,
+        color_scheme: ColorScheme,
         event_proxy: ChannelEventListener,
         background_executor: Arc<Background>,
         should_show_bootstrap_block: bool,
@@ -1208,6 +1202,7 @@ impl TerminalModel {
             restored_blocks,
             sizes,
             colors,
+            color_scheme,
             event_proxy,
             background_executor,
             should_show_bootstrap_block,
@@ -1270,6 +1265,7 @@ impl TerminalModel {
             None,
             sizes,
             colors,
+            ColorScheme::LightOnDark,
             event_proxy,
             background_executor,
             false,
@@ -1891,16 +1887,22 @@ impl TerminalModel {
         self.colors = colors;
     }
 
-    /// Updates the stored dark/light mode state.
-    /// Called by the view whenever the active Warp theme changes.
-    /// `is_dark` should be `true` when the theme has a dark background.
-    pub fn set_color_scheme(&mut self, is_dark: bool) {
-        self.is_dark_mode = is_dark;
+    /// Updates stored color scheme classification and returns whether to emit a theme notification.
+    pub fn set_color_scheme(&mut self, color_scheme: ColorScheme) -> bool {
+        let classification_changed = self.color_scheme != color_scheme;
+        self.color_scheme = color_scheme;
+
+        classification_changed
+            && self.is_term_mode_set(TermMode::DARK_LIGHT_NOTIFICATIONS)
+            && self
+                .block_list()
+                .active_block()
+                .is_active_and_long_running()
     }
 
     /// Returns `true` when the current stored theme is dark mode.
     pub fn is_dark_mode(&self) -> bool {
-        self.is_dark_mode
+        self.color_scheme == ColorScheme::LightOnDark
     }
 
     pub fn raw_grid_for_ref_tests(&self) -> &GridHandler {
@@ -2539,10 +2541,10 @@ impl ansi::Handler for TerminalModel {
     }
 
     fn report_color_scheme<W: std::io::Write>(&mut self, writer: &mut W) {
-        log::trace!("Reporting color scheme: is_dark={}", self.is_dark_mode);
+        log::trace!("Reporting color scheme: is_dark={}", self.is_dark_mode());
         // CSI ? 997 ; 1 n  → dark mode
         // CSI ? 997 ; 2 n  → light mode
-        let code: u8 = if self.is_dark_mode { 1 } else { 2 };
+        let code: u8 = if self.is_dark_mode() { 1 } else { 2 };
         let response = format!("\x1b[?997;{code}n");
         let _ = writer.write_all(response.as_bytes());
     }
@@ -2838,6 +2840,8 @@ impl ansi::Handler for TerminalModel {
         // how to turn it off (and will never do so).  We forcibly unset the
         // mode to avoid getting stuck in this state.
         self.unset_mode(Mode::BracketedPaste);
+        // Mode `?2031` should not persist across command boundaries.
+        self.unset_mode(Mode::DarkLightNotifications);
 
         // Similar to bracketed paste, above, make sure we quit out of the
         // alt screen if we're currently in it.  This prevents issues where we

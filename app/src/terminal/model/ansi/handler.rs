@@ -68,8 +68,7 @@ pub trait Handler {
 
     /// Report color scheme in response to `CSI ? 996 n`.
     /// Writes `CSI ? 997 ; 1 n` for dark mode or `CSI ? 997 ; 2 n` for light mode.
-    /// Default implementation is a no-op; override in the top-level handler that has
-    /// access to the current color scheme.
+    /// Default implementation is a no-op.
     fn report_color_scheme<W: io::Write>(&mut self, _: &mut W) {}
 
     /// Move cursor forward `cols`.

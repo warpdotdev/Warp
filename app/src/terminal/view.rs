@@ -21274,22 +21274,20 @@ impl TerminalView {
     fn handle_theme_change(&mut self, ctx: &mut ViewContext<Self>) {
         let appearance = Appearance::as_ref(ctx);
         let colors = color::List::from(&appearance.theme().clone().into());
-        // LightOnDark = light foreground on dark background = dark mode.
-        let is_dark = appearance.theme().inferred_color_scheme() == ColorScheme::LightOnDark;
+        let color_scheme = appearance.theme().inferred_color_scheme();
         let should_notify = {
             let mut model = self.model.lock();
-            let classification_changed = model.is_dark_mode() != is_dark;
             model.update_colors(colors);
-            model.set_color_scheme(is_dark);
-            // Only notify if the dark/light classification changed. Switching between
-            // two themes that are both dark (or both light) does not warrant a
-            // notification.
-            classification_changed && model.is_term_mode_set(TermMode::DARK_LIGHT_NOTIFICATIONS)
+            model.set_color_scheme(color_scheme)
         };
         self.colors = colors;
         if should_notify {
             // CSI ? 997 ; 1 n = dark mode, CSI ? 997 ; 2 n = light mode
-            let code: u8 = if is_dark { 1 } else { 2 };
+            let code: u8 = if color_scheme == ColorScheme::LightOnDark {
+                1
+            } else {
+                2
+            };
             let notification = format!("\x1b[?997;{code}n");
             self.write_to_pty(notification.into_bytes(), ctx);
         }
