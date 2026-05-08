@@ -138,3 +138,36 @@ fn effective_disable_reason_preserves_other_disable_reasons() {
         Some(DisableReason::AdminDisabled),
     );
 }
+
+#[test]
+fn local_openai_backend_routes_all_models_with_api_key_when_enabled() {
+    let keys = ai::api_keys::ApiKeys {
+        openai: Some("sk-test".to_string()),
+        ..Default::default()
+    };
+
+    assert!(local_openai_backend_routes_all_models_with_api_key(
+        true,
+        Some(&keys),
+    ));
+}
+
+#[test]
+fn local_openai_backend_requires_toggle_and_openai_key_for_provider_access() {
+    let keys_without_openai = ai::api_keys::ApiKeys {
+        anthropic: Some("sk-ant-test".to_string()),
+        ..Default::default()
+    };
+
+    assert!(!local_openai_backend_routes_all_models_with_api_key(
+        true,
+        Some(&keys_without_openai),
+    ));
+    assert!(!local_openai_backend_routes_all_models_with_api_key(
+        false,
+        Some(&ai::api_keys::ApiKeys {
+            openai: Some("sk-test".to_string()),
+            ..Default::default()
+        }),
+    ));
+}
