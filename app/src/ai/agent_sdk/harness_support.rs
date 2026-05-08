@@ -7,7 +7,7 @@ use anyhow::Result;
 use warp_cli::agent::OutputFormat;
 use warp_cli::harness_support::{
     FinishTaskArgs, HarnessSupportArgs, HarnessSupportCommand, NotifyUserArgs, ReportArtifactArgs,
-    ReportArtifactCommand, ReportErrorShutdownArgs, TaskStatus,
+    ReportArtifactCommand, ReportShutdownArgs, TaskStatus,
 };
 use warp_cli::GlobalOptions;
 use warp_core::features::FeatureFlag;
@@ -43,11 +43,8 @@ pub fn run(
         HarnessSupportCommand::FinishTask(finish_args) => {
             finish_task(ctx, runner, finish_args, global_options.output_format)
         }
-        HarnessSupportCommand::ReportCleanShutdown => {
-            report_clean_shutdown(ctx, runner, global_options.output_format)
-        }
-        HarnessSupportCommand::ReportErrorShutdown(shutdown_args) => {
-            report_error_shutdown(ctx, runner, shutdown_args, global_options.output_format)
+        HarnessSupportCommand::ReportShutdown(shutdown_args) => {
+            report_shutdown(ctx, runner, shutdown_args, global_options.output_format)
         }
     }
 }
@@ -209,44 +206,14 @@ fn finish_task(
     Ok(())
 }
 
-/// Report a clean shutdown of the agent process.
-fn report_clean_shutdown(
+/// Report that the agent process is shutting down.
+///
+/// Routes to `report_clean_shutdown` or `report_error_shutdown` on the API client
+/// depending on whether error arguments were provided.
+fn report_shutdown(
     ctx: &mut AppContext,
     runner: ModelHandle<HarnessSupportRunner>,
-    output_format: OutputFormat,
-) -> Result<()> {
-    runner.update(ctx, |_, ctx| {
-        let client = ServerApiProvider::as_ref(ctx).get_harness_support_client();
-
-        ctx.spawn(
-            async move { client.report_clean_shutdown().await },
-            move |_, result, ctx| match result {
-                Ok(()) => {
-                    match output_format {
-                        OutputFormat::Json | OutputFormat::Ndjson => {
-                            println!("{{}}");
-                        }
-                        OutputFormat::Pretty | OutputFormat::Text => {
-                            println!("Shutdown reported.");
-                        }
-                    }
-                    ctx.terminate_app(TerminationMode::ForceTerminate, None);
-                }
-                Err(err) => {
-                    super::report_fatal_error(err, ctx);
-                }
-            },
-        );
-    });
-
-    Ok(())
-}
-
-/// Report an error shutdown of the agent process.
-fn report_error_shutdown(
-    ctx: &mut AppContext,
-    runner: ModelHandle<HarnessSupportRunner>,
-    args: ReportErrorShutdownArgs,
+    args: ReportShutdownArgs,
     output_format: OutputFormat,
 ) -> Result<()> {
     runner.update(ctx, |_, ctx| {
@@ -254,9 +221,15 @@ fn report_error_shutdown(
 
         ctx.spawn(
             async move {
-                client
-                    .report_error_shutdown(args.error_category, args.error_message)
-                    .await
+                match (args.error_category, args.error_message) {
+                    (Some(category), Some(message)) => {
+                        client.report_error_shutdown(category, message).await
+                    }
+                    (None, None) => client.report_clean_shutdown().await,
+                    _ => anyhow::bail!(
+                        "--error-category and --error-message must be provided together"
+                    ),
+                }
             },
             move |_, result, ctx| match result {
                 Ok(()) => {
