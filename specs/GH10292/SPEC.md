@@ -62,8 +62,49 @@ The following collapsible blocks within an agent message are in scope:
 - Tool-call blocks.
 - Plan-step entries.
 
-Any future "agent sub-block" type that has a start event in the conversation
-timeline should adopt the same treatment.
+#### B1.1. Plan-step row definition (single source of truth)
+
+A "plan-step row" is a single rendered row in the agent's plan-and-todo
+list (the UI rendered by
+`app/src/ai/blocklist/prompt/plan_and_todo_list.rs`) that corresponds to
+ONE entry in the agent's plan-or-TODO list. Each plan-step row has the
+SAME timestamp affordance as a reasoning or tool-call sub-block:
+
+- **Identity.** A plan-step row is identified by the `(message_id,
+  plan_step_index)` pair from the conversation event stream.
+- **Start event.** The row's start timestamp is the
+  `PlanStepStarted { message_id, plan_step_index, started_at }` event
+  emitted by the agent orchestrator (the same emitter used for
+  reasoning-phase and tool-call start events — see
+  `app/src/ai/blocklist/orchestration_events.rs`). If the orchestrator
+  emits a `PlanStepCreated` event before `PlanStepStarted`, the
+  `started_at` from `PlanStepStarted` is the authoritative start time;
+  `PlanStepCreated`'s timestamp is NOT used for the elapsed counter.
+- **Completion event.** The row's elapsed counter freezes and is
+  replaced by the final duration when a
+  `PlanStepCompleted { message_id, plan_step_index, completed_at,
+  outcome }` event arrives, where `outcome` is one of
+  `"completed"`, `"failed"`, or `"cancelled"`. All three terminal
+  outcomes freeze the elapsed counter; the row label may render
+  outcome-specific styling but the timestamp affordance is identical.
+- **Skipped / never-started rows.** A plan-step row that the agent
+  marks `skipped` without ever emitting `PlanStepStarted` shows NO
+  timestamp affordance (no collapsed timestamp, no expanded
+  `Started …`). This is the only kind of plan-step row in scope that
+  does not carry the affordance, and it is intentional — there is no
+  start time to render.
+- **Editing / re-ordering.** If the user edits the plan and the
+  orchestrator re-emits `PlanStepStarted` for an already-started row,
+  the most-recent `started_at` wins (later events supersede earlier).
+- **Pause-and-resume.** If the orchestrator emits
+  `PlanStepPaused` and later `PlanStepResumed`, the elapsed counter
+  is computed as cumulative active time (sum of resumed-minus-started
+  intervals). The `Started` label still shows the FIRST
+  `started_at` so the absolute time is stable across pauses.
+
+Any future "agent sub-block" type that has a start event in the
+conversation event stream (`orchestration_events.rs`) should adopt the
+same treatment.
 
 ### B2. Collapsed-row format
 
@@ -96,11 +137,19 @@ collapsed and expanded rows are visually consistent.
   AM/PM marker per locale (e.g. `AM`/`PM` in en-US; `a.m.`/`p.m.` in
   some locales). Example: `11:42:07 AM`.
 - **Older than 24 hours** (in any mode that resolves to absolute):
-  prefix with the locale-appropriate short date in
-  `YYYY-MM-DD <time>` form. Example (24h): `2026-05-08 11:42:07`;
-  example (12h): `2026-05-08 11:42:07 AM`.
-- The locale governs the short date and the AM/PM marker only; the
-  digit/colon ordering of the time portion is fixed for parity.
+  prefix with a short date in **ISO-8601 `YYYY-MM-DD`** form,
+  joined to the time portion by a single space. V1 deliberately
+  uses ISO-8601 — NOT a locale-aware short date — so the rendered
+  form is unambiguous in transcripts, logs, and screenshots
+  regardless of the user's locale. Example (24h):
+  `2026-05-08 11:42:07`. Example (12h): `2026-05-08 11:42:07 AM`.
+  This rule supersedes earlier wording that called the date
+  "locale-appropriate"; locale governs ONLY the AM/PM marker, not
+  the date format. A locale-aware short date may be revisited in
+  V1.5.
+- The locale governs the AM/PM marker only; the digit/colon
+  ordering of the time portion AND the ISO date prefix are fixed
+  for parity.
 
 ### B2.2. Forced `relative` mode beyond 60 minutes
 
@@ -151,11 +200,27 @@ all. Its precedence is defined in B6.
 
 ### B4. Live-update cadence
 
-- Relative timestamps refresh every 5 seconds when their row is visible.
-- The single most-recent in-progress phase refreshes every 1 second.
+The cadences below are stated as **periods** (one tick every N
+seconds), not as Hz frequencies. The "5 Hz subscriber" / "5 Hz" wording
+that appeared elsewhere in earlier drafts was incorrect and is
+superseded by this section.
+
+- **Relative-timestamp ticker** — fires once every **5 seconds**
+  (period = 5 s, frequency = 0.2 Hz). Drives re-render of every visible
+  collapsed row whose timestamp is rendered in relative form.
+- **In-progress elapsed-counter ticker** — fires once every **1 second**
+  (period = 1 s, frequency = 1 Hz). Drives the elapsed counter on the
+  single most-recent in-progress phase (B3) and the most-recent
+  in-progress relative timestamp.
 - Absolute timestamps do not refresh.
-- A single coalesced ticker drives all visible rows; per-row timers are not
+- A single coalesced ticker pair (one 5 s + one 1 s) drives all visible
+  rows for an entire conversation list; per-row timers are not
   permitted (see Implementation Pointers).
+- Implementation Pointers and Tests in this spec MUST refer to these
+  cadences as `5 s` and `1 s` respectively. The earlier `5 Hz` /
+  `1 Hz + 5 Hz` phrasing is wrong; the correct phrasing is
+  "1 s ticker + 5 s ticker" (or "1 Hz + 0.2 Hz" if expressed in
+  frequency).
 
 ### B5. Locale & 12h/24h
 
@@ -181,7 +246,10 @@ The two settings are orthogonal but interact:
 - `agent.subblock_timestamp_show_in_expanded` controls VISIBILITY in the
   EXPANDED view ONLY. It has no effect on the collapsed row.
 
-The full 3 × 2 matrix:
+The full **4 × 2 matrix** (four `format` values × two
+`show_in_expanded` values; the format-`"off"` row collapses both
+`show_in_expanded` cases to identical "hidden" output, but the matrix
+is still 4 × 2 in shape):
 
 | `format`     | `show_in_expanded` | Collapsed row timestamp | Expanded header timestamp |
 | ------------ | ------------------ | ----------------------- | ------------------------- |
@@ -308,23 +376,30 @@ No new public API. The values flow through the existing settings store.
     - When `now - started_at <= 24 h`: time-only form per B2.1
       (`HH:MM:SS` or `h:MM:SS AM/PM`).
     - When `now - started_at > 24 h`: date-prefixed form per B2.1.
-  - `(internal)` `fn format_date_prefix(date: SystemTime, locale: &Locale) -> String`
-    used by `format_absolute` only. The locale resolver from
-    `app/src/util/time_format.rs` plus `time.use_24h` are the inputs; if no
-    locale-aware short-date helper exists yet, V1 uses the locale-neutral
-    ISO-8601 form `YYYY-MM-DD` as a deterministic fallback. V1.5 may swap in a
-    locale-aware short date.
+  - `(internal)` `fn format_date_prefix(date: SystemTime) -> String`
+    used by `format_absolute` only. V1 always returns the ISO-8601
+    short date `YYYY-MM-DD` (locale-independent). The locale parameter
+    is intentionally NOT taken — V1 does not use a locale-aware short
+    date per B2.1. A locale-aware variant may be added in V1.5 behind a
+    separate setting; until then, ISO-8601 is the single rendered form.
 - A SINGLE shared helper rule: all sub-block renderers (reasoning, tool-call,
   plan-step) call into `relative_time.rs` for both the collapsed and expanded
   forms. No renderer should hand-roll its own time string. The expanded view's
   in-progress elapsed counter (B3) calls `human_readable_precise_duration`
   from `app/src/util/time_format.rs` once per 1 Hz tick — do NOT introduce a
   parallel implementation.
-- `(new module or co-located in agent_view)` Coalesced ticker for live-update
-  cadence — single 1 Hz + 5 Hz subscriber per conversation list. Suggested
-  location: `app/src/ai/blocklist/agent_view/timestamp_ticker.rs`. The 1 Hz
-  subscriber drives BOTH the most-recent in-progress relative timestamp AND
-  the expanded-view elapsed counter (B3). No per-row timers.
+- `(new module or co-located in agent_view)` Coalesced ticker for
+  live-update cadence — a single PAIR of subscribers per conversation
+  list: ONE with a 1-second period (the "1 s ticker") and ONE with a
+  5-second period (the "5 s ticker"). Frequencies in Hz: 1 Hz and
+  0.2 Hz respectively. Earlier wording referring to a "5 Hz
+  subscriber" was wrong; that is 5 fires per second, not the desired
+  cadence. Suggested location:
+  `app/src/ai/blocklist/agent_view/timestamp_ticker.rs`. The 1 s
+  ticker drives BOTH the most-recent in-progress relative timestamp
+  AND the expanded-view elapsed counter (B3). The 5 s ticker drives
+  re-render of every other visible relative timestamp. No per-row
+  timers.
 - Tool-call and plan-step rendering: tool calls flow through the same agent
   output renderer above (`view_impl/output.rs`); plan-step UI is rendered via
   `app/src/ai/blocklist/prompt/plan_and_todo_list.rs`. Both pick up the
@@ -370,13 +445,15 @@ No new public API. The values flow through the existing settings store.
   aria-label MUST include the elapsed counter while in-progress (e.g. "Started
   at 11:42:07, 4 seconds elapsed") and the final duration once complete.
 - T11. Timer coalescing: rendering 50 sub-block rows registers exactly one
-  1 Hz subscriber and one 5 Hz subscriber against the ticker.
-- T_show_in_expanded_matrix. The 3 × 2 matrix in B6.1 is exercised end-to-end
+  1-second ticker subscriber and one 5-second ticker subscriber against
+  the coalesced ticker (NOT a 5 Hz / 5-fires-per-second subscriber —
+  the second cadence is one fire every 5 seconds, i.e. 0.2 Hz).
+- T_show_in_expanded_matrix. The 4 × 2 matrix in B6.1 is exercised end-to-end
   per cell: for each combination of `format ∈ {"off", "absolute", "relative",
-  "auto"}` × `show_in_expanded ∈ {true, false}`, the test asserts the exact
-  collapsed-row and expanded-header rendering described in B6.1's table. This
-  includes the format-`"off"` override (both `show_in_expanded` values yield
-  identical hidden output).
+  "auto"}` × `show_in_expanded ∈ {true, false}` (8 cells total), the test
+  asserts the exact collapsed-row and expanded-header rendering described in
+  B6.1's table. This includes the format-`"off"` override (both
+  `show_in_expanded` values yield identical hidden output).
 
 ## Open Questions
 
