@@ -142,7 +142,7 @@ pub enum CLIAgent {
     Auggie,
     CursorCli,
     Goose,
-Hermes,
+    Hermes,
     Vibe,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
@@ -163,7 +163,7 @@ impl CLIAgent {
             CLIAgent::Auggie => "auggie",
             CLIAgent::CursorCli => "agent",
             CLIAgent::Goose => "goose",
-CLIAgent::Hermes => "hermes",
+            CLIAgent::Hermes => "hermes",
             CLIAgent::Vibe => "vibe",
             CLIAgent::Unknown => "",
         }
@@ -210,7 +210,7 @@ CLIAgent::Hermes => "hermes",
             CLIAgent::Auggie => "Auggie",
             CLIAgent::CursorCli => "Cursor",
             CLIAgent::Goose => "Goose",
-CLIAgent::Hermes => "Hermes",
+            CLIAgent::Hermes => "Hermes",
             CLIAgent::Vibe => "Mistral Vibe",
             CLIAgent::Unknown => "CLI Agent",
         }
@@ -230,7 +230,7 @@ CLIAgent::Hermes => "Hermes",
             CLIAgent::Auggie => Some(Icon::AuggieLogo),
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
             CLIAgent::Goose => Some(Icon::GooseLogo),
-CLIAgent::Hermes => None,
+            CLIAgent::Hermes => None,
             // Vibe is recognized but ships without a brand asset. The brand color
             // still drives the toolbar tile; an `Icon::MistralLogo` can be wired
             // up in a follow-up once an officially licensed SVG is available.
@@ -263,7 +263,7 @@ CLIAgent::Hermes => None,
             CLIAgent::Auggie => &[SkillProvider::Agents],
             CLIAgent::CursorCli => &[SkillProvider::Agents],
             CLIAgent::Goose => &[SkillProvider::Agents],
-CLIAgent::Hermes => &[SkillProvider::Agents],
+            CLIAgent::Hermes => &[SkillProvider::Agents],
             CLIAgent::Vibe => &[SkillProvider::Agents],
             CLIAgent::Unknown => &[],
         }
@@ -305,7 +305,7 @@ CLIAgent::Hermes => &[SkillProvider::Agents],
             CLIAgent::Auggie => Some(AUGGIE_COLOR),
             CLIAgent::CursorCli => Some(CURSOR_COLOR),
             CLIAgent::Goose => Some(GOOSE_COLOR),
-CLIAgent::Hermes => Some(HERMES_PURPLE),
+            CLIAgent::Hermes => Some(HERMES_PURPLE),
             CLIAgent::Vibe => Some(MISTRAL_ORANGE),
             CLIAgent::Unknown => None,
         }
@@ -570,7 +570,7 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Auggie => CLIAgentType::Auggie,
             CLIAgent::CursorCli => CLIAgentType::Cursor,
             CLIAgent::Goose => CLIAgentType::Goose,
-CLIAgent::Hermes => CLIAgentType::Hermes,
+            CLIAgent::Hermes => CLIAgentType::Hermes,
             CLIAgent::Vibe => CLIAgentType::Vibe,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
