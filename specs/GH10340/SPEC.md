@@ -93,19 +93,51 @@ Review's existing content-based find bar. The two are independent:
   insensitive, plain text — no regex in V1) embedded in the file-list panel
   header.
 
+UI placement (authoritative — the file-list panel is the panel that displays
+the changed-file list, distinct from the Code Review header):
+
+The file-list panel header lays out, top to bottom:
+
+1. **Filter input** — left-aligned, full width minus toolbar actions.
+2. **Flat/Tree toggle** — right-aligned button group on the same row as
+   (or directly below, depending on width) the filter input.
+3. **Kebab/overflow menu** — sits at the right edge of the toolbar row and
+   contains:
+   - "Compact folders" (toggle, default ON; B2)
+   - "Group renames by old path" (toggle, default OFF; B9)
+   - "Hide non-matching files when filtering" (toggle, default OFF; B6c)
+
+ALL toggles (Flat/Tree, filter input, Compact folders, rename grouping,
+hide-non-matches) live in the **file-list panel header** — NOT in the Code
+Review header component. See Implementation Pointers for the exact module.
+
 Filter behavior:
 
-- Positioned at the top of the file-list panel, **above** the Flat/Tree
-  toggle.
 - Filters the changed-files set only; it never searches diff content.
 - In Tree mode, files whose names match the filter cause their parent
-  folders to auto-expand. Non-matching siblings are dimmed by default; the
-  existing "Show all" toggle keeps siblings fully visible.
-- In Flat mode, non-matching files are hidden by default; "Show all" keeps
-  them dimmed instead of hidden.
+  folders to auto-expand. Non-matching siblings are **dimmed** by default
+  (see B6c for the toggle that hides them entirely).
+- In Flat mode, non-matching files are **dimmed** by default. (Same toggle
+  in B6c hides them when ON.)
 - The filter value is preserved when the user toggles Flat ↔ Tree.
 - The filter is window-local and cleared when the review session closes;
   it is not persisted across reviews or restarts.
+
+### B6c. Hide-non-matches toggle
+
+Setting key: `code.review.file_list.hide_non_matches_when_filtering`
+(`bool`, default `false`).
+
+- When `false` (default): non-matching files/folders are **dimmed** but
+  remain visible in both Flat and Tree modes. This applies in both modes
+  identically.
+- When `true`: non-matching files are **hidden** entirely from the list. In
+  Tree mode, folders whose entire descendant set is non-matching are also
+  hidden; folders with at least one matching descendant remain visible
+  (auto-expanded as in B6).
+- Surfaced as the "Hide non-matching files when filtering" entry in the
+  file-list panel header kebab menu (see B6 UI placement).
+- Persisted per user across restarts.
 
 ### B6a. Selected file definition
 
@@ -158,11 +190,20 @@ the old folder. The toggle is window-local and not persisted in V1.
 
 - `code.review.file_list_mode` — `"flat"` | `"tree"`, default `"flat"`.
 - `code.review.tree_compact_folders` — `bool`, default `true`.
+- `code.review.file_list.hide_non_matches_when_filtering` — `bool`, default
+  `false`. Controls B6c.
+- `code.review.file_list.group_renames_by_old_path` — `bool`, default
+  `false`. Controls the rename-grouping inversion described in B9.
 
-UI placement:
+UI placement (all in the **file-list panel header**, NOT the Code Review
+header — see B6 for the authoritative layout):
 
-- Header button group "Flat | Tree".
-- Overflow menu entry "Compact folders" (toggle).
+- Filter input (B6).
+- "Flat | Tree" button group.
+- Kebab/overflow menu entries:
+  - "Compact folders" (toggle, default ON).
+  - "Group renames by old path" (toggle, default OFF).
+  - "Hide non-matching files when filtering" (toggle, default OFF).
 
 ## Acceptance Criteria
 
@@ -175,18 +216,40 @@ UI placement:
 - A6. Search filter works in both modes; in Tree mode, parent folders of
   matching files auto-expand.
 - A7. Keyboard navigation (arrows, Enter, Cmd-click) behaves per B5–B7.
-- A8. `code.review.file_list_mode` and `code.review.tree_compact_folders`
-  persist across restart.
+- A8. `code.review.file_list_mode`, `code.review.tree_compact_folders`,
+  `code.review.file_list.hide_non_matches_when_filtering`, and
+  `code.review.file_list.group_renames_by_old_path` all persist across
+  restart.
+- A9_hide_non_matches_default. With the filter active and
+  `hide_non_matches_when_filtering = false` (default), non-matching files
+  remain visible but dimmed in both Flat and Tree modes.
+- A10_hide_non_matches_on. With the filter active and
+  `hide_non_matches_when_filtering = true`, non-matching files are hidden
+  entirely; in Tree mode, folders containing zero matching descendants are
+  also hidden, while folders with at least one matching descendant remain
+  visible and auto-expanded.
+- A_rename_grouping_default. With
+  `group_renames_by_old_path = false` (default), renamed files appear under
+  their NEW path's parent folder, with the old path shown as subtitle, and
+  contribute exactly once to the new folder's count and aggregate.
+- A_rename_grouping_toggle. With
+  `group_renames_by_old_path = true`, renamed files appear under their OLD
+  path's parent folder, with the new path shown as subtitle, and contribute
+  exactly once to the old folder's count and aggregate.
 
 ## Implementation Pointers
 
-- New code under `app/src/code_review/file_list/` for the tree data model and
-  Tree-mode renderer; reuse the existing flat renderer.
+- New code under `app/src/code_review/file_list/` for the tree data model
+  and Tree-mode renderer; reuse the existing flat renderer.
 - Build a tree from the flat path list once per file-list update; cache
   expanded-state by path for the active review.
 - Reuse existing diff-open routing on file-row activation.
-- Wire the header button group and overflow toggle into the existing Code
-  Review header component.
+- Wire the filter input, Flat/Tree button group, and kebab/overflow menu
+  into the **file-list panel header** component (the panel that displays
+  the changed-file list, located under `app/src/code_review/file_list/`).
+  These controls do **not** live in `app/src/code_review/code_review_header/`
+  — that module remains the Code Review pane's top-level header (PR
+  selector, etc.) and is unmodified by this spec.
 
 ## Tests
 
@@ -198,8 +261,23 @@ UI placement:
 - T5. Keyboard arrow navigation in Tree mode (including parent/child moves).
 - T6. Folder-level `+/-` aggregation matches sum of descendants.
 - T7. Cmd-click on folder toggles all descendants.
-- T8. Settings persistence across restart for both new keys.
+- T8. Settings persistence across restart for all four keys
+  (`file_list_mode`, `tree_compact_folders`,
+  `hide_non_matches_when_filtering`, `group_renames_by_old_path`).
 - T9. Tree construction performance: ≤16ms for 1000 changed files.
+- T_hide_non_matches_default. Filter active,
+  `hide_non_matches_when_filtering = false` → non-matches dimmed and
+  visible in both Flat and Tree modes.
+- T_hide_non_matches_on. Filter active,
+  `hide_non_matches_when_filtering = true` → non-matches hidden; Tree-mode
+  folders with no matching descendants are hidden, while folders with at
+  least one matching descendant remain visible and auto-expanded.
+- T_rename_grouping_default. Renamed file `a/old.rs → b/new.rs` with
+  `group_renames_by_old_path = false` → row appears under `b/` with title
+  `new.rs (was a/old.rs)`; counts/stats accrue only to `b/`, not `a/`.
+- T_rename_grouping_toggled. Same renamed file with
+  `group_renames_by_old_path = true` → row appears under `a/` with title
+  `old.rs (now b/new.rs)`; counts/stats accrue only to `a/`, not `b/`.
 
 ## Open Questions
 
