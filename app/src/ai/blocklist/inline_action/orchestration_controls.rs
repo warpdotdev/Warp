@@ -10,6 +10,7 @@ use ai::agent::action::RunAgentsExecutionMode;
 use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationExecutionMode};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use warpui::elements::{
     ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Expanded, Flex,
@@ -32,8 +33,8 @@ use warp_core::ui::theme::Fill;
 
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::harness_display;
-use crate::ai::llms::LLMProvider;
 use crate::appearance::Appearance;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::ui_components::blended_colors;
@@ -51,6 +52,8 @@ pub const ORCHESTRATION_PICKER_BORDER_WIDTH: f32 = 1.;
 pub const ORCHESTRATION_PICKER_FONT_SIZE: f32 = 14.;
 pub const ORCHESTRATION_PICKER_RADIUS: f32 = 4.;
 pub const ORCHESTRATION_PICKER_MAX_WIDTH: f32 = 205.;
+
+const DEFAULT_MODEL_LABEL: &str = "Default model";
 
 // ── Action trait ────────────────────────────────────────────────────
 
@@ -159,6 +162,23 @@ impl OrchestrationEditState {
                 )
             }
             RunAgentsExecutionMode::Local | RunAgentsExecutionMode::Remote { .. } => None,
+        }
+    }
+
+    /// Fills in empty fields from the approved orchestration config.
+    /// When the LLM omits harness/model/execution_mode to inherit from
+    /// the active config, the raw request arrives with defaults (empty
+    /// harness, empty model, Local mode). This resolves those to the
+    /// config values so the UI shows the intended settings.
+    pub fn resolve_from_config(&mut self, config: &OrchestrationConfig) {
+        if self.harness_type.is_empty() && !config.harness_type.is_empty() {
+            self.harness_type = config.harness_type.clone();
+        }
+        if self.model_id.is_empty() && !config.model_id.is_empty() {
+            self.model_id = config.model_id.clone();
+        }
+        if !self.execution_mode.is_remote() && config.execution_mode.is_remote() {
+            self.execution_mode = Self::from_orchestration_config(config).execution_mode;
         }
     }
 
@@ -292,66 +312,102 @@ pub fn new_standard_picker_dropdown<A: OrchestrationControlAction, V: View>(
     })
 }
 
-/// Populates the model picker with all available models (no harness filter).
-pub fn populate_model_picker<A: OrchestrationControlAction, V: View>(
-    dropdown: &ViewHandle<Dropdown<A>>,
-    initial_model_id: &str,
-    ctx: &mut ViewContext<V>,
-) {
-    populate_model_picker_for_harness(dropdown, initial_model_id, "", ctx);
-}
-
-/// Returns whether the given LLM matches the harness filter.
-/// Claude → Anthropic only, Codex → OpenAI only, Oz/empty → all.
-fn matches_harness_filter(harness: Option<Harness>, provider: &LLMProvider) -> bool {
-    match harness {
-        Some(Harness::Claude) => matches!(provider, LLMProvider::Anthropic),
-        Some(Harness::Codex) => matches!(provider, LLMProvider::OpenAI),
-        Some(Harness::Oz)
-        | Some(Harness::Gemini)
-        | Some(Harness::OpenCode)
-        | Some(Harness::Unknown)
-        | None => true,
-    }
-}
-
-/// Populates the model picker, filtering choices by harness.
-/// Claude → Anthropic models only, Codex → OpenAI models only,
-/// Oz/empty → all models.
+/// Populates the model picker based on the active harness.
+///
+/// - **Oz / empty**: shows the Warp LLM catalog (existing behavior).
+/// - **Local Codex**: shows only a "Default model" entry (no model delivery
+///   possible for local Codex children).
+/// - **Other non-Oz harnesses**: shows "Default model" at the top, followed
+///   by the server-provided harness model catalog from
+///   `HarnessAvailabilityModel::models_for()`.
 pub fn populate_model_picker_for_harness<A: OrchestrationControlAction, V: View>(
     dropdown: &ViewHandle<Dropdown<A>>,
     initial_model_id: &str,
     harness_type: &str,
+    is_local: bool,
     ctx: &mut ViewContext<V>,
 ) {
     let initial_model_id = initial_model_id.to_string();
     let harness_type = harness_type.to_string();
     dropdown.update(ctx, |dropdown, ctx_dropdown| {
-        let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
-        let all_choices: Vec<_> = llm_prefs.get_base_llm_choices_for_agent_mode().collect();
         let harness = Harness::parse_orchestration_harness(&harness_type);
-        let choices: Vec<_> = all_choices
-            .into_iter()
-            .filter(|llm| matches_harness_filter(harness, &llm.provider))
-            .collect();
-        let selected_display_name = choices
-            .iter()
-            .find(|llm| llm.id.to_string() == initial_model_id)
-            .map(|llm| llm.menu_display_name());
-        let items = available_model_menu_items(
-            choices,
-            move |llm| DropdownAction::SelectActionAndClose(A::model_changed(llm.id.to_string())),
-            None,
-            None,
-            false,
-            false,
-            ctx_dropdown,
-        );
-        dropdown.set_rich_items(items, ctx_dropdown);
-        if let Some(name) = &selected_display_name {
-            dropdown.set_selected_by_name(name, ctx_dropdown);
+        match harness {
+            Some(Harness::Oz) | None => {
+                // Oz / unset: current behavior — Warp LLM catalog.
+                let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
+                let choices: Vec<_> = llm_prefs.get_base_llm_choices_for_agent_mode().collect();
+                let selected_display_name = choices
+                    .iter()
+                    .find(|llm| llm.id.to_string() == initial_model_id)
+                    .map(|llm| llm.menu_display_name());
+                let items = available_model_menu_items(
+                    choices,
+                    move |llm| {
+                        DropdownAction::SelectActionAndClose(A::model_changed(llm.id.to_string()))
+                    },
+                    None,
+                    None,
+                    false,
+                    false,
+                    ctx_dropdown,
+                );
+                dropdown.set_rich_items(items, ctx_dropdown);
+                if let Some(name) = &selected_display_name {
+                    dropdown.set_selected_by_name(name, ctx_dropdown);
+                }
+            }
+            Some(Harness::Codex) if is_local => {
+                // Local Codex: only "Default model" entry.
+                let items = vec![default_model_menu_item::<A>()];
+                dropdown.set_rich_items(items, ctx_dropdown);
+                dropdown.set_selected_by_name(DEFAULT_MODEL_LABEL, ctx_dropdown);
+            }
+            Some(harness) => {
+                // Non-Oz harness: "Default model" at top, then server-provided
+                // harness models.
+                let mut items: Vec<MenuItem<DropdownAction<A>>> =
+                    vec![default_model_menu_item::<A>()];
+                let availability = HarnessAvailabilityModel::as_ref(ctx_dropdown);
+                if let Some(models) = availability.models_for(harness) {
+                    for model in models {
+                        let model_id = model.id.clone();
+                        let fields = MenuItemFields::new(&model.display_name)
+                            .with_on_select_action(DropdownAction::SelectActionAndClose(
+                                A::model_changed(model_id),
+                            ));
+                        items.push(MenuItem::Item(fields));
+                    }
+                }
+                // Find display name before set_rich_items borrows ctx_dropdown mutably.
+                let selected_display_name = if initial_model_id.is_empty() {
+                    Some(DEFAULT_MODEL_LABEL.to_string())
+                } else {
+                    availability
+                        .models_for(harness)
+                        .and_then(|models| {
+                            models
+                                .iter()
+                                .find(|m| m.id == initial_model_id)
+                                .map(|m| m.display_name.clone())
+                        })
+                        .or_else(|| Some(DEFAULT_MODEL_LABEL.to_string()))
+                };
+                dropdown.set_rich_items(items, ctx_dropdown);
+                if let Some(name) = &selected_display_name {
+                    dropdown.set_selected_by_name(name, ctx_dropdown);
+                }
+            }
         }
     });
+}
+
+/// Creates a "Default model" menu item that emits an empty model_id.
+fn default_model_menu_item<A: OrchestrationControlAction>() -> MenuItem<DropdownAction<A>> {
+    MenuItem::Item(
+        MenuItemFields::new(DEFAULT_MODEL_LABEL).with_on_select_action(
+            DropdownAction::SelectActionAndClose(A::model_changed(String::new())),
+        ),
+    )
 }
 
 /// Returns whether the given model_id is present in the harness-filtered
@@ -360,28 +416,50 @@ pub fn populate_model_picker_for_harness<A: OrchestrationControlAction, V: View>
 pub fn is_model_in_filtered_choices<V: View>(
     model_id: &str,
     harness_type: &str,
+    is_local: bool,
     ctx: &mut ViewContext<V>,
 ) -> bool {
-    let llm_prefs = LLMPreferences::as_ref(ctx);
     let harness = Harness::parse_orchestration_harness(harness_type);
-    llm_prefs
-        .get_base_llm_choices_for_agent_mode()
-        .filter(|llm| matches_harness_filter(harness, &llm.provider))
-        .any(|llm| llm.id.to_string() == model_id)
+    match harness {
+        Some(Harness::Oz) | None => {
+            let llm_prefs = LLMPreferences::as_ref(ctx);
+            llm_prefs
+                .get_base_llm_choices_for_agent_mode()
+                .any(|llm| llm.id.to_string() == model_id)
+        }
+        Some(Harness::Codex) if is_local => model_id.is_empty(),
+        Some(harness) => {
+            // Empty string is always valid (the "Default model" entry).
+            if model_id.is_empty() {
+                return true;
+            }
+            let availability = HarnessAvailabilityModel::as_ref(ctx);
+            availability
+                .models_for(harness)
+                .is_some_and(|models| models.iter().any(|m| m.id == model_id))
+        }
+    }
 }
 
-/// Returns the model_id of the first model in the harness-filtered set,
-/// or `None` if the filtered set is empty.
+/// Returns the default model_id for the given harness.
+///
+/// For Oz this is the first Warp LLM; for non-Oz harnesses it is an empty
+/// string (the "Default model" entry).
 pub fn first_filtered_model_id<V: View>(
     harness_type: &str,
     ctx: &mut ViewContext<V>,
 ) -> Option<String> {
-    let llm_prefs = LLMPreferences::as_ref(ctx);
     let harness = Harness::parse_orchestration_harness(harness_type);
-    llm_prefs
-        .get_base_llm_choices_for_agent_mode()
-        .find(|llm| matches_harness_filter(harness, &llm.provider))
-        .map(|llm| llm.id.to_string())
+    match harness {
+        Some(Harness::Oz) | None => {
+            let llm_prefs = LLMPreferences::as_ref(ctx);
+            llm_prefs
+                .get_base_llm_choices_for_agent_mode()
+                .next()
+                .map(|llm| llm.id.to_string())
+        }
+        Some(_) => Some(String::new()),
+    }
 }
 
 pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
@@ -391,26 +469,57 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
 ) {
     let initial_harness = initial_harness.to_string();
     dropdown.update(ctx, |dropdown, ctx_dropdown| {
+        let availability = HarnessAvailabilityModel::as_ref(ctx_dropdown);
+        let harnesses = availability.available_harnesses();
+
+        // Sort enabled harnesses before disabled ones, preserving
+        // relative order within each group.
+        // Filter out Gemini — it is not yet supported as a multi-agent
+        // harness and causes an infinite "Spawning agents" hang.
+        let mut sorted: Vec<_> = harnesses
+            .iter()
+            .filter(|entry| entry.harness != Harness::Gemini)
+            .collect();
+        sorted.sort_by_key(|entry| !entry.enabled);
+
+        // Resolve the target harness so we can match by enum variant
+        // even when the `initial_harness` string is "claude" but the
+        // cached entry.harness deserialized as Unknown.
+        let target_harness = Harness::parse_orchestration_harness(&initial_harness);
+
         let mut items: Vec<MenuItem<DropdownAction<A>>> = Vec::new();
         let mut selected_idx = None;
-        // TODO: Re-enable Harness::Gemini once it is supported as
-        // a multi-agent harness (currently causes an infinite
-        // "Spawning agents" hang).
-        for (idx, harness) in [Harness::Oz, Harness::Claude, Harness::Codex]
-            .into_iter()
-            .enumerate()
-        {
-            let mut fields = MenuItemFields::new(harness_display::display_name(harness))
+        for (idx, entry) in sorted.iter().enumerate() {
+            let harness = entry.harness;
+            // Use the server-provided display_name for the label so stale
+            // cache entries (where harness deserializes as Unknown) still
+            // show the correct name.
+            let mut fields = MenuItemFields::new(&entry.display_name)
                 .with_icon(harness_display::icon_for(harness));
             if let Some(color) = harness_display::brand_color(harness) {
                 fields = fields.with_override_icon_color(Fill::from(color));
             }
             let harness_str = harness.to_string();
-            fields = fields.with_on_select_action(DropdownAction::SelectActionAndClose(
-                A::harness_changed(harness_str.clone()),
-            ));
+            if entry.enabled {
+                fields = fields.with_on_select_action(DropdownAction::SelectActionAndClose(
+                    A::harness_changed(harness_str.clone()),
+                ));
+            } else {
+                fields = fields.with_disabled(true);
+            }
+            // Match by harness string first, then fall back to matching
+            // the display_name against the client-side name for the target
+            // harness. This handles stale cache entries where entry.harness
+            // is Unknown but entry.display_name is still correct.
             if harness_str.eq_ignore_ascii_case(&initial_harness) {
                 selected_idx = Some(idx);
+            } else if selected_idx.is_none() {
+                if let Some(target) = target_harness {
+                    let target_display = harness_display::display_name(target);
+                    if entry.display_name == target_display {
+                        selected_idx = Some(idx);
+                    }
+                }
             }
             items.push(MenuItem::Item(fields));
         }
@@ -510,7 +619,127 @@ pub fn populate_host_picker<A: OrchestrationControlAction, V: View>(
     });
 }
 
-// ── Picker selection sync ───────────────────────────────────────────
+/// Normalizes a harness_type string for use as a HashMap key in
+/// per-harness model memory. Empty string (the wire representation
+/// of Oz) is mapped to "oz" so saves and lookups are consistent.
+pub fn harness_save_key(harness_type: &str) -> &str {
+    if harness_type.is_empty() {
+        "oz"
+    } else {
+        harness_type
+    }
+}
+
+// ── Shared action helpers ───────────────────────────────────────────
+
+/// Handles a harness change for both card views: saves the current
+/// model for the old harness, restores a previously saved model for
+/// the new harness (if still valid), falls back to a caller-provided
+/// base model id or the first available model, and repopulates the
+/// model picker.
+///
+/// Does NOT call `sync_picker_selections` — the harness picker
+/// dispatched this action and must not be re-entered.
+pub fn apply_harness_change<A: OrchestrationControlAction, V: View>(
+    state: &mut OrchestrationEditState,
+    memory: &mut HashMap<String, String>,
+    handles: &OrchestrationPickerHandles<A>,
+    new_harness_type: &str,
+    fallback_base_model_id: impl FnOnce(&mut ViewContext<V>) -> Option<String>,
+    ctx: &mut ViewContext<V>,
+) {
+    // Save current model for the old harness.
+    let old_key = harness_save_key(&state.harness_type).to_string();
+    memory.insert(old_key, state.model_id.clone());
+    state.harness_type = new_harness_type.to_string();
+
+    let is_local = !state.execution_mode.is_remote();
+    // Try to restore a previously saved model for this harness.
+    let new_key = harness_save_key(new_harness_type);
+    let restored = memory
+        .get(new_key)
+        .filter(|id| is_model_in_filtered_choices(id, new_harness_type, is_local, ctx))
+        .cloned();
+    if let Some(saved_id) = restored {
+        state.model_id = saved_id;
+    } else if !is_model_in_filtered_choices(&state.model_id, new_harness_type, is_local, ctx) {
+        // No saved model — fall back to conversation base model
+        // for Oz, or default for non-Oz.
+        let reset_id = fallback_base_model_id(ctx)
+            .filter(|id| is_model_in_filtered_choices(id, new_harness_type, is_local, ctx))
+            .or_else(|| first_filtered_model_id(new_harness_type, ctx))
+            .unwrap_or_default();
+        state.model_id = reset_id;
+    }
+    if let Some(handle) = &handles.model_picker {
+        populate_model_picker_for_harness(handle, &state.model_id, new_harness_type, is_local, ctx);
+    }
+}
+
+/// Handles an execution-mode toggle for both card views: toggles the
+/// mode, revalidates/resets the model_id if invalid for the new mode,
+/// repopulates the model picker, and syncs all picker selections.
+pub fn apply_execution_mode_change<A: OrchestrationControlAction, V: View>(
+    state: &mut OrchestrationEditState,
+    handles: &OrchestrationPickerHandles<A>,
+    is_remote: bool,
+    fallback_base_model_id: impl FnOnce(&mut ViewContext<V>) -> Option<String>,
+    ctx: &mut ViewContext<V>,
+) {
+    state.toggle_execution_mode_to_remote(is_remote);
+    let is_local = !state.execution_mode.is_remote();
+    if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
+        let reset_id = fallback_base_model_id(ctx)
+            .filter(|id| is_model_in_filtered_choices(id, &state.harness_type, is_local, ctx))
+            .or_else(|| first_filtered_model_id(&state.harness_type, ctx))
+            .unwrap_or_default();
+        state.model_id = reset_id;
+    }
+    if let Some(handle) = &handles.model_picker {
+        populate_model_picker_for_harness(
+            handle,
+            &state.model_id,
+            &state.harness_type,
+            is_local,
+            ctx,
+        );
+    }
+    sync_picker_selections(state, handles, ctx);
+}
+
+// ── Picker repopulation + selection sync ──
+
+/// Repopulates both the harness and model pickers from the current
+/// server-provided data, revalidates `state.model_id` against the
+/// updated catalog (resetting to default if the model disappeared),
+/// then re-syncs dropdown selections.
+pub fn repopulate_all_pickers<A: OrchestrationControlAction, V: View>(
+    state: &mut OrchestrationEditState,
+    handles: &OrchestrationPickerHandles<A>,
+    ctx: &mut ViewContext<V>,
+) {
+    if let Some(handle) = &handles.harness_picker {
+        populate_harness_picker(handle, &state.harness_type, ctx);
+    }
+    // Revalidate model_id: if the previously selected model is no longer
+    // in the catalog (e.g. server removed it), reset to default.
+    let is_local = !state.execution_mode.is_remote();
+    if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
+        if let Some(first_id) = first_filtered_model_id(&state.harness_type, ctx) {
+            state.model_id = first_id;
+        }
+    }
+    if let Some(handle) = &handles.model_picker {
+        populate_model_picker_for_harness(
+            handle,
+            &state.model_id,
+            &state.harness_type,
+            is_local,
+            ctx,
+        );
+    }
+    sync_picker_selections(state, handles, ctx);
+}
 
 pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
     state: &OrchestrationEditState,
@@ -519,13 +748,30 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
 ) {
     if let Some(model_picker) = handles.model_picker.clone() {
         let target_model_id = state.model_id.clone();
+        let harness_type = state.harness_type.clone();
         model_picker.update(ctx, |dropdown, ctx_dropdown| {
-            let display_name = {
-                let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
-                llm_prefs
-                    .get_base_llm_choices_for_agent_mode()
-                    .find(|llm| llm.id.to_string() == target_model_id)
-                    .map(|llm| llm.menu_display_name())
+            let harness = Harness::parse_orchestration_harness(&harness_type);
+            let display_name = match harness {
+                Some(Harness::Oz) | None => {
+                    let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
+                    llm_prefs
+                        .get_base_llm_choices_for_agent_mode()
+                        .find(|llm| llm.id.to_string() == target_model_id)
+                        .map(|llm| llm.menu_display_name())
+                }
+                Some(harness) => {
+                    if target_model_id.is_empty() {
+                        Some(DEFAULT_MODEL_LABEL.to_string())
+                    } else {
+                        let availability = HarnessAvailabilityModel::as_ref(ctx_dropdown);
+                        availability.models_for(harness).and_then(|models| {
+                            models
+                                .iter()
+                                .find(|m| m.id == target_model_id)
+                                .map(|m| m.display_name.clone())
+                        })
+                    }
+                }
             };
             if let Some(name) = &display_name {
                 dropdown.set_selected_by_name(name, ctx_dropdown);
@@ -533,10 +779,14 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
         });
     }
     if let Some(harness_picker) = handles.harness_picker.clone() {
-        let target =
-            Harness::parse_orchestration_harness(&state.harness_type).unwrap_or(Harness::Oz);
-        let display = harness_display::display_name(target).to_string();
+        let harness_type = state.harness_type.clone();
         harness_picker.update(ctx, |dropdown, ctx_dropdown| {
+            let target = Harness::parse_orchestration_harness(&harness_type).unwrap_or(Harness::Oz);
+            // Use the server-provided display_name from HarnessAvailabilityModel
+            // so the selection matches the labels (which also use display_name).
+            let display = HarnessAvailabilityModel::as_ref(ctx_dropdown)
+                .display_name_for(target)
+                .to_string();
             dropdown.set_selected_by_name(&display, ctx_dropdown);
         });
     }
