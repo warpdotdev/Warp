@@ -9,13 +9,17 @@ flow is friction for the most common case.
 
 ## Goal
 
-Add a boolean setting `editor.review_panel_open_maximized` (default
-`false`) that, when enabled, opens the review panel pre-maximised.
-The non-maximised default flow is unchanged.
+Add a boolean setting `code.editor.review_panel.open_maximized`
+(default `false`) that, when enabled, opens the review panel
+pre-maximised. The non-maximised default flow is unchanged.
+
+The TOML key uses the existing `code.editor.*` namespace already in
+use by other code-editor settings in this surface, with the
+`review_panel` sub-namespace grouping panel-specific preferences.
 
 ## Behavior contract
 
-- B1. New setting `editor.review_panel_open_maximized: bool`,
+- B1. New setting `code.editor.review_panel.open_maximized: bool`,
   default `false`, `SyncToCloud::Globally(RespectUserSyncSetting::Yes)`
   (matches the convention for UI prefs in
   `app/src/settings/code.rs:19/29/40/48`).
@@ -52,11 +56,16 @@ The non-maximised default flow is unchanged.
 
 ## Test plan
 
-- T1. Setting round-trips through TOML.
+- T1. Setting round-trips through TOML under the
+  `code.editor.review_panel.open_maximized` key.
 - T2. Action dispatch with setting ON produces the maximised
   variant; OFF produces the side-panel variant.
 - T3. Snapshot test: with setting OFF, the rendered tree is
   identical to the current build.
+- T4. Runtime toggle: toggling
+  `code.editor.review_panel.open_maximized` while the review panel
+  is closed updates subsequent open behavior; toggling while the
+  panel is open does not affect the active panel size (matches A3).
 
 ## Out of scope
 
