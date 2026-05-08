@@ -3324,11 +3324,15 @@ impl AIConversation {
 
         // Create serialized blocks from the extracted command blocks
         for command_block in command_blocks {
-            // Find the exchange that contains this command block's message ID for PWD.
-            let pwd = message_id_to_exchange
+            // Find the exchange that contains this command block's message ID for PWD and
+            // a fallback timestamp. The exchange start time is used as a last-resort fallback
+            // when proto-level timestamps are unavailable, because `restore_block` treats
+            // `start_ts: None` as "block was never started" and skips `start()`/`finish()`,
+            // which leaves the block in an unfinished state with zero height.
+            let (pwd, exchange_time) = message_id_to_exchange
                 .get(command_block.message_id.as_str())
-                .map(|e| e.working_directory.clone())
-                .unwrap_or(fallback_pwd.clone());
+                .map(|e| (e.working_directory.clone(), Some(e.start_time)))
+                .unwrap_or((fallback_pwd.clone(), None));
 
             let serialized_block = SerializedBlock {
                 id: BlockId::new(),
@@ -3342,8 +3346,8 @@ impl AIConversation {
                 node_version: None,
                 exit_code: command_block.exit_code,
                 did_execute: true,
-                start_ts: command_block.start_ts,
-                completed_ts: command_block.completed_ts,
+                start_ts: command_block.start_ts.or(exchange_time),
+                completed_ts: command_block.completed_ts.or(exchange_time),
                 ps1: None,
                 rprompt: None,
                 honor_ps1: false,
