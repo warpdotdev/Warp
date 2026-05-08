@@ -25,14 +25,23 @@ at its boundary is free to hit the parent.
 V1 applies to ALL blocklist-embedded scrollable containers, not
 just code diffs. Affected container types include, at minimum:
 
-- code-diff scroll containers (the original GH-9808 case)
-- file-tree / directory-tree panels
-- inline data tables
-- inline log / output panels
+- code-diff scroll containers embedded inside the blocklist (the
+  original GH-9808 case): the inline-action diff view in
+  `app/src/ai/blocklist/inline_action/code_diff_view.rs`.
+- file-tree / directory-tree panels rendered inside a blocklist
+  entry.
+- inline data tables rendered inside a blocklist entry.
+- inline log / output panels rendered inside a blocklist entry.
 
-Implementation pointers below enumerate the concrete component
-identifiers that mark a container as
-"blocklist-embedded scrollable".
+**Standalone (non-blocklist) diff viewers are explicitly out of
+scope for V1.** The standalone diff viewer in
+`app/src/code/diff_viewer.rs` is rendered inside the Code panel,
+not as a child of the blocklist viewport, and therefore has no
+parent blocklist gesture to clamp against. It follows native
+scroll-chaining semantics and is unaffected by V1. (See "Out of
+scope" below.) Implementation pointers below list ONLY blocklist-
+embedded containers; the earlier standalone-diff entry has been
+removed to keep scope consistent.
 
 ### Direction coverage (vertical AND horizontal)
 
@@ -52,28 +61,41 @@ wide inline table). The behavior contract is per-axis:
 #### Multi-axis (diagonal) gestures
 
 For containers that can scroll on both axes, a diagonal gesture
-must be locked to a single axis to apply the clamp deterministically:
+must be locked to a single primary axis at gesture start so that
+ownership is decided exactly once. There is **no mid-gesture
+ownership transfer**, even for ambiguous diagonals.
 
-1. **Primary-axis selection.** A gesture is classified by the
-   accumulated delta of its first event. If `|dy| >= 0.7 * (|dx| + |dy|)`
-   the gesture is **vertical-primary**; if
-   `|dx| >= 0.7 * (|dx| + |dy|)` it is **horizontal-primary**.
-2. **Ambiguous diagonal.** If neither axis crosses the 70%
-   threshold on the first event, the gesture is **axis-locked by
-   first boundary collision**: the first axis whose boundary the
-   inner container is already at decides ownership for that axis;
-   if neither is at a boundary, the gesture is provisionally
-   inner-owned on both axes and the lock resolves to whichever
-   axis the inner container hits a boundary in first within the
-   same gesture window. Once locked, the lock persists for the
-   gesture window.
-3. **Per-axis ownership.** Once primary axis is selected,
-   ownership is resolved per B-OWN below using only that axis's
-   boundary state. The non-primary-axis component of the gesture
-   continues to be applied to the inner container if it can
-   scroll in that direction (i.e., the lock affects which
-   container owns scroll-chaining, not whether each axis scrolls
-   the inner container).
+1. **Primary-axis selection (decided at first event).** A
+   gesture is classified by the accumulated delta of its first
+   event. If `|dy| >= 0.7 * (|dx| + |dy|)` the gesture is
+   **vertical-primary**; if `|dx| >= 0.7 * (|dx| + |dy|)` it is
+   **horizontal-primary**.
+2. **Ambiguous diagonal — axis lock at gesture start (NOT mid-
+   gesture).** If neither axis crosses the 70% threshold on the
+   first event, the primary axis is selected at that same
+   instant by the inner container's boundary state at gesture
+   start, in this fixed priority order:
+   1. If the inner container is at its boundary on EXACTLY ONE
+      axis at gesture start, that axis is the primary axis (so
+      the parent owns the gesture for that axis, per B-OWN).
+   2. If the inner container is at boundaries on BOTH axes at
+      gesture start, the **vertical axis is the primary axis**
+      (deterministic tie-break; vertical is the dominant scroll
+      axis in the blocklist).
+   3. If the inner container is at neither boundary at gesture
+      start, the **vertical axis is the primary axis**
+      (deterministic default; inner owns the gesture per B-OWN).
+   In all three sub-cases the primary axis is chosen at gesture
+   start, ownership is resolved exactly once per B-OWN, and the
+   binding does NOT change mid-gesture even if the inner
+   container subsequently hits a boundary on either axis.
+3. **Per-axis ownership and effects.** Once the primary axis is
+   selected and ownership is resolved per B-OWN below using only
+   that axis's gesture-start boundary state, the non-primary
+   axis is **always** applied to the inner container (if it can
+   scroll in that direction) for the duration of the gesture
+   window. The lock controls scroll-chaining ownership of the
+   primary axis only; it does not gate the non-primary axis.
 
 ## Behavior contract
 
@@ -91,15 +113,24 @@ must be locked to a single axis to apply the clamp deterministically:
   container even after it reaches its top/bottom (or left/right)
   edge. Remaining delta is discarded for the inner container and
   NOT propagated to the parent.
-- B2. The "gesture window" is detected by the existing
-  scroll-event-stream timing: events within ≤200ms of each other
-  belong to the same gesture (matches macOS/Windows trackpad
-  inertia conventions).
+- B2. **Gesture-window timing (single canonical rule).** Two
+  consecutive scroll events belong to the same gesture window if
+  and only if the time gap between them is **strictly less than
+  200ms** (`gap < 200ms`). A gap of **exactly 200ms or more**
+  (`gap >= 200ms`) ends the gesture and starts a new one; the
+  next event after such a gap is the first event of a new
+  gesture and re-evaluates ownership per B-OWN. (This matches
+  macOS/Windows trackpad inertia conventions.) All references
+  to the gesture-window threshold elsewhere in this spec
+  (B3, B-OWN, A2, T2) use this same `gap < 200ms` rule;
+  earlier inconsistent phrasings (`<=200ms`, `>=200ms`,
+  `>200ms`) are replaced by this single canonical rule.
 - B3. When the parent blocklist owns a gesture because the first
   event started while the inner container was already at its
-  boundary, every subsequent scroll event in that same ≤200ms
-  gesture window keeps bubbling to the parent. After a 200ms gap,
-  ownership is re-evaluated from the next scroll event.
+  boundary, every subsequent scroll event whose gap from the
+  previous event is `< 200ms` keeps bubbling to the parent.
+  Once a `>= 200ms` gap occurs, ownership is re-evaluated from
+  the next scroll event.
 - B4. Same behavior at top AND bottom edges (vertical) AND at
   left AND right edges (horizontal).
 
@@ -107,9 +138,10 @@ must be locked to a single axis to apply the clamp deterministically:
 
 - B-OWN. **Boundary state at gesture start is the sole binding
   decision point.** When a new wheel/trackpad gesture starts (the
-  first event after ≥200ms of input idleness), ownership is
-  resolved exactly once from the inner container's boundary state
-  in the gesture's primary-axis direction at that instant:
+  first event after a `>= 200ms` gap of input idleness, per B2),
+  ownership is resolved exactly once from the inner container's
+  boundary state in the gesture's primary-axis direction at that
+  instant:
   - inner container can scroll in primary-axis direction → inner
     owns the entire gesture
   - inner container is at its boundary in that direction → parent
@@ -117,12 +149,44 @@ must be locked to a single axis to apply the clamp deterministically:
 - B-OWN-1. Implementers MUST NOT bubble the first delta to the
   inner container and then later "discover" the boundary and
   re-route remaining deltas to the parent. There is no mid-gesture
-  transfer of ownership. Once a gesture is bound to a container
-  on its first event, it stays bound until 200ms of input
-  idleness ends the gesture.
-- B-OWN-2. The 200ms gesture window applies only to gestures that
-  have already started. It does not "split" a single gesture into
-  inner-then-parent halves.
+  transfer of ownership, including for ambiguous diagonals (see
+  Multi-axis (diagonal) gestures above). Once a gesture is bound
+  to a container on its first event, it stays bound until a
+  `>= 200ms` gap of input idleness ends the gesture.
+- B-OWN-2. The gesture window (`gap < 200ms` rule from B2)
+  applies only to gestures that have already started. It does
+  not "split" a single gesture into inner-then-parent halves.
+
+### Per-axis ownership representation (state model)
+
+The owner is represented as **two independent per-axis owners**
+plus a single shared gesture-window timer, NOT as a single enum
+value:
+
+```rust
+struct GestureOwnership {
+    vertical:   AxisOwner,       // Inner | Parent | None
+    horizontal: AxisOwner,       // Inner | Parent | None
+    last_event: Option<Instant>, // shared B2 gesture-window timer
+}
+
+enum AxisOwner { Inner, Parent, None }
+```
+
+This per-axis representation is required so that single-axis
+gestures (vertical-only or horizontal-only) leave the unused
+axis at `None` while the other axis carries `Inner` or `Parent`,
+and so that the spec's "primary axis owns scroll-chaining; the
+non-primary axis is always applied to the inner container"
+contract from Multi-axis (diagonal) gestures is representable
+without a special "mixed" state. A single flat enum like
+`{ InnerVertical, InnerHorizontal, Parent, None }` is
+explicitly rejected: it cannot represent "primary axis = vertical
+parent-owned; non-primary axis = horizontal inner-owned" within
+the same gesture, which is the exact case Multi-axis (diagonal)
+gestures requires. The earlier implementation hint that listed
+`InnerVertical | InnerHorizontal | Parent | None` is replaced by
+this `GestureOwnership` struct.
 
 ### Scrollbar clicks (Warp custom scrollbar hit-test contract)
 
@@ -148,23 +212,37 @@ are dropped.
     area still respects the gesture-window contract above; only
     actual click/drag pointer input bypasses.
 - B5a. **"Scrollbar target" defined (Warp scrollbar hit-test).**
-  A scrollbar pointer hit is determined by Warp's scrollbar
-  module via the following hit-test contract:
+  V1 introduces a NEW small hit-test helper on the existing
+  scrollbar geometry. The helper is added in this spec because
+  the equivalent function does not exist today in
+  `crates/warpui_core/src/elements/shared_scrollbar.rs` (verified
+  on the spec branch — `shared_scrollbar.rs` exposes
+  `ScrollbarGeometry { track_bounds, thumb_bounds, ... }`,
+  `compute_scrollbar_geometry(...)`,
+  `scroll_delta_for_pointer_movement(...)`, etc., but does NOT
+  expose a `ScrollbarTarget` enum or `hit_test()` function).
+  The new helper is a pure function over the existing geometry
+  fields, not new persistent state:
 
   ```rust
+  // To be added to
   // crates/warpui_core/src/elements/shared_scrollbar.rs
   pub enum ScrollbarTarget {
-      Track,   // pointer over the track region (track_bounds minus thumb_bounds)
-      Thumb,   // pointer over the thumb region (thumb_bounds)
+      Track,   // pointer over track_bounds but NOT over thumb_bounds
+      Thumb,   // pointer over thumb_bounds
       None,    // pointer not over scrollbar geometry
   }
 
+  // Pure helper over the existing ScrollbarGeometry struct.
+  // No new state; reads track_bounds / thumb_bounds only.
   pub fn hit_test(point: Vector2F, geometry: &ScrollbarGeometry)
-      -> ScrollbarTarget;
+      -> ScrollbarTarget {
+      // Pseudocode reference:
+      //   if geometry.thumb_bounds.contains(point) { Thumb }
+      //   else if geometry.track_bounds.contains(point) { Track }
+      //   else { None }
+  }
   ```
-
-  `ScrollbarGeometry` is the existing `track_bounds` /
-  `thumb_bounds` data exposed by `shared_scrollbar.rs`.
 
   Pointer events whose hit-test returns `Track` or `Thumb` are
   scrollbar pointer events and bypass the gesture clamp. Pointer
@@ -185,8 +263,8 @@ in tests.
 - A1. Scroll up in a long inner container; reach top; same
   gesture continues — blocklist does NOT scroll. Scrollbar at the
   inner container's top remains visible.
-- A2. Stop scrolling for >200ms, scroll up again — blocklist
-  scrolls normally.
+- A2. Stop scrolling for `>= 200ms` (per B2 canonical rule),
+  scroll up again — blocklist scrolls normally.
 - A3. Click or drag the inner container's scrollbar (Warp
   scrollbar `hit_test()` returns `Track` or `Thumb` per B5a) —
   the inner container scrolls as before, with no parent gesture
@@ -227,10 +305,14 @@ extended as new containers are added.
 | Container type    | File path                                                     | Component identifier                                         |
 | ----------------- | ------------------------------------------------------------- | ------------------------------------------------------------ |
 | Code diff (inline action) | `app/src/ai/blocklist/inline_action/code_diff_view.rs` | The diff view's outer scrollable wrapper (constructed via the shared scrollable element from `warpui_core`) |
-| Code diff (standalone)    | `app/src/code/diff_viewer.rs`                          | `diff_viewer` scrollable region                              |
-| File tree         | `app/src/code/file_tree/view.rs`, `view/render.rs`            | File-tree view's scrollable wrapper                          |
+| File tree (blocklist-embedded) | `app/src/code/file_tree/view.rs`, `view/render.rs`   | File-tree view's scrollable wrapper, when rendered inside a blocklist entry |
 | Inline tables (markdown) | `crates/ai/src/gfm_table.rs`                            | GFM table rendered into `crates/editor/src/render/element/table.rs`; the table cell's scrollable wrapper when content overflows |
 | Log / output panels | `app/src/terminal/block_list_viewport.rs`                   | Block-list viewport's embedded output regions                |
+
+The standalone diff viewer (`app/src/code/diff_viewer.rs`) is
+**not** in this table because it is rendered in the Code panel,
+not inside the blocklist viewport, and is out of scope for V1
+(see Scope and Out of scope).
 
 The shared clamp lives in the `Scrollable` /
 `new_scrollable` element family in
@@ -240,12 +322,16 @@ as an opt-in flag on the scrollable wrapper (e.g.,
 constructing the wrapper with the flag set, rather than
 duplicating gesture-window state across containers.
 
-The 200ms gesture-window state is implementable as
-`last_scroll_time: Option<Instant>` plus a current gesture
-owner (`InnerVertical`, `InnerHorizontal`, `Parent`, or `None`)
-on the wrapper's view state; a new event >200ms after
-`last_scroll_time` is treated as a new gesture and re-evaluates
-ownership from boundary state per B-OWN.
+The 200ms gesture-window state is implementable as the
+`GestureOwnership` struct above (per-axis owners +
+`last_event: Option<Instant>` shared timer) on the wrapper's
+view state. A new event whose gap from `last_event` is
+`>= 200ms` (per B2) is treated as the first event of a new
+gesture and re-evaluates per-axis ownership from boundary state
+per B-OWN. A flat single-enum owner is explicitly rejected
+because it cannot represent the per-axis cases required by
+Multi-axis (diagonal) gestures (see "Per-axis ownership
+representation" above).
 
 Scrollbar pointer hit-testing resolves via the
 `ScrollbarTarget` hit-test API on the existing scrollbar geometry
@@ -289,9 +375,22 @@ Scope.
   `25/35 >= 0.7`); assert vertical boundary determines ownership
   and horizontal component still scrolls the inner container.
   Then feed `(dx, dy) = (25, 10)` and assert horizontal-primary
-  classification. Then feed `(dx, dy) = (15, 15)` (ambiguous);
-  assert axis-lock by first boundary collision per Direction
-  coverage.
+  classification. Then feed `(dx, dy) = (15, 15)` (ambiguous,
+  neither axis crosses 70%); assert primary-axis selection at
+  gesture start per Multi-axis (diagonal) gestures rule 2:
+  - inner at vertical boundary only at gesture start → primary =
+    vertical, parent owns vertical for the gesture, horizontal
+    still scrolls inner.
+  - inner at horizontal boundary only at gesture start →
+    primary = horizontal, parent owns horizontal, vertical
+    still scrolls inner.
+  - inner at both boundaries → primary = vertical (deterministic
+    tie-break), parent owns vertical, horizontal still scrolls
+    inner if it can.
+  - inner at neither boundary → primary = vertical (default),
+    inner owns vertical, horizontal also scrolls inner.
+  In every sub-case, hitting a boundary mid-gesture does NOT
+  transfer ownership.
 - T_wheel_over_scrollbar. Wheel events whose cursor is over the
   scrollbar track go through the gesture state machine and are
   NOT classified as scrollbar clicks (per A8 / B5a).
@@ -303,5 +402,6 @@ Scope.
 - Configurable threshold (200ms is a hard-coded constant; can be
   tuned per platform if profiling shows misfires).
 - Non-blocklist-embedded scroll containers (e.g., top-level app
-  panels, modal scroll regions) — those follow native browser /
-  OS scroll-chaining semantics and are unaffected by V1.
+  panels, modal scroll regions, the standalone diff viewer in
+  `app/src/code/diff_viewer.rs`) — those follow native browser
+  / OS scroll-chaining semantics and are unaffected by V1.
