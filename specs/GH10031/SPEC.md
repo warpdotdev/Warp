@@ -153,31 +153,34 @@ intermediate CWD instead of the final one.
     guarantees the final state is correct after a burst.
   - Skip the spawn entirely if CWD hasn't changed since the
     last completed derivation.
-- B3-budget. **Sustained-rate cap (canonical, single rule).**
-  The throttle window is exactly 250ms. Within any single
-  250ms window per pane, **AT MOST 2 derivation processes may
-  be spawned**: at most one leading-edge derivation at the
-  start of the window, plus at most one trailing-edge
-  derivation when the window elapses. The sustained maximum
-  spawn rate is therefore **2 derivations per 250ms window =
-  8 derivations per second per pane** (peak / per-window
-  cap). Across longer-running, fully back-to-back windows
-  with continuous CWD changes the throughput averages out to
-  the trailing-edge-per-window contribution — i.e., one
-  trailing derivation reflecting the latest CWD per 250ms
-  window, **4 trailing derivations per second per pane** —
-  because each subsequent window's leading edge is
-  short-circuited by B3 ("skip the spawn entirely if CWD
-  hasn't changed since the last completed derivation") when
-  the previous trailing derivation already covered the same
-  CWD. Implementations MUST NOT amortize multiple trailing
-  edges across windows into a single batch (each window's
-  trailing edge fires at most once with the LATEST CWD at the
-  moment that window elapses). Bursts longer than one window
-  are governed by per-window enforcement, not by a global
-  moving-rate budget. This single B3-budget rule supersedes
-  earlier wording that conflated the per-window peak (8/s)
-  with the steady-state trailing rate (4/s).
+- B3-budget. **Per-pane derivation-rate cap (canonical, single
+  rule — supersedes any earlier wording).** The throttle window
+  is exactly 250ms.
+  - **Per-window cap (the only normative bound):** Within any
+    single 250ms window per pane, AT MOST 2 derivation
+    processes may be spawned — at most ONE leading-edge
+    derivation at the start of the window, and at most ONE
+    trailing-edge derivation when the window elapses.
+  - **Peak rate (informative):** 2 derivations per 250ms window
+    = **8 derivations per second per pane PEAK**. This is the
+    only "8/s" number used in this spec and refers strictly to
+    the worst-case per-window peak.
+  - **Steady-state rate (informative):** Under continuous CWD
+    churn, each window after the first short-circuits its
+    leading edge via the "skip if CWD unchanged since last
+    completed derivation" rule in B3, because the prior
+    window's trailing derivation already covered the latest
+    CWD. The result is one trailing derivation per window =
+    **4 derivations per second per pane STEADY-STATE**.
+  - The two numbers are not contradictory: PEAK (8/s) is the
+    worst-case per-window upper bound; STEADY-STATE (4/s) is
+    the long-run average under sustained churn. Both derive
+    from the single normative per-window cap of 2.
+  - Implementations MUST NOT batch / amortize trailing edges
+    across windows; each window's trailing edge fires at most
+    once with the LATEST CWD at the moment that window elapses.
+    Bursts longer than one window are governed by per-window
+    enforcement, NOT by a global moving-rate budget.
 
 ### Worktree vs different repo
 
