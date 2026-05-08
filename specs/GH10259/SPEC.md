@@ -215,14 +215,79 @@ no probabilistic backoff.
 - V1.5 (deferred — see Open Questions): persist via stable summary-text hash
   scoped to the rendering surface.
 
+### B9.1. Surface-mode rendering (interactive vs non-interactive)
+
+The renderer is used in surfaces that have very different interaction
+contracts. Surfaces fall into one of two MODES, decided per render call:
+
+- **Interactive mode.** Default for surfaces where the rendered
+  `FormattedText` is the primary content the user reads and acts on
+  (agent message bodies, README previews, changelog entries, login
+  failure notifications). Full B3/B4/B10 disclosure behavior applies:
+  click/keyboard toggle, focus ring, native-or-custom-widget rendering.
+- **Non-interactive mode.** Used for surfaces where the rendered
+  text is a SECONDARY summary or preview, NOT the primary read target
+  (notably the **conversation list row preview**, where the row's
+  click target is "open this conversation" — NOT "toggle a disclosure
+  inside the row's preview"). In this mode:
+  - `<details>` always renders **with the body collapsed and inert**.
+    The summary text is shown as plain inline text; the body is not
+    rendered into the DOM at all.
+  - The summary chevron is NOT shown (no toggle affordance).
+  - The summary element is NOT focusable, NOT keyboard-activatable,
+    has NO `role="button"`, and NO `aria-expanded` /
+    `aria-controls`. It is rendered as inert inline content with
+    accessible name = the summary text.
+  - The row's existing click handler (e.g. "open this conversation")
+    is preserved and is the ONLY click target for the row. A click
+    on the rendered summary text routes to the row's handler — never
+    to a toggle.
+  - The `open` attribute on `<details>` is IGNORED in this mode (the
+    body is always collapsed and never rendered into the preview), so
+    a long agent-authored body cannot accidentally bloat the preview
+    line height.
+  - All other markdown (paragraphs, inline code, bold/italic) renders
+    normally; only `<details>` is mode-shifted.
+- **Mode selection.** The rendering site picks the mode explicitly via
+  the `FormattedText` rendering options (e.g. a
+  `DetailsRenderMode { Interactive, NonInteractivePreview }` parameter
+  on the renderer call). The conversation list preview surfaces — and
+  any future preview surface where the rendered text is not the primary
+  click target — pass `NonInteractivePreview`. All other surfaces use
+  the default `Interactive`. This selection is decided at the call site,
+  not inferred from heuristics.
+- **Resource limits unchanged.** B8.1's depth + count caps still apply
+  in non-interactive mode; over-cap blocks fall through to plain-text
+  rendering exactly as in interactive mode.
+
 ### B10. Accessibility
 
 - Render as native `<details>` / `<summary>` element when the underlying view
   layer supports them, OR an equivalent ARIA pattern when using a custom
   widget:
   - `role="group"` on the disclosure container.
-  - `aria-expanded` on the summary toggle.
-  - `aria-controls` linking the summary to its body region.
+  - **Summary toggle is an activatable control with a focusable target.**
+    The custom-widget path MUST give the summary element ALL of:
+    - `role="button"` on the summary element (disclosure-button
+      pattern). This is the activatable role; without it, AT users
+      cannot interact with the toggle.
+    - `tabindex="0"` so the summary participates in the tab order
+      (the native `<summary>` is implicitly focusable; the custom
+      path is not, so an explicit tabindex is required).
+    - `aria-expanded="true"` when the body is open, `aria-expanded="false"`
+      when collapsed. The attribute is updated on every toggle.
+    - `aria-controls` pointing at the body region's renderer-generated
+      `id` per B8.2 (the only way the summary is wired to the body).
+    - Keyboard activation handlers for both Enter and Space (B4) on the
+      summary element. The handlers MUST call `preventDefault` for
+      Space so the page does not scroll while focus is on the toggle.
+    - Visible focus ring matching B4's "consistent with links,
+      code-copy buttons, etc." requirement; the focus ring MUST appear
+      on the summary element itself, not on a parent or descendant, so
+      keyboard users can see the focused toggle.
+  - The native-element path (`<details>` / `<summary>`) inherits all of
+    the above from the browser/native widget and the custom-widget
+    requirements above DO NOT apply.
 - Screen readers must announce open/closed state and the accessible name from
   the rendered summary text.
 
@@ -406,6 +471,41 @@ The change is internal to the markdown rendering pipeline:
   `<summary>` inside `<summary>` (inner treated as inline plain text);
   empty `<summary>` (fallback `"Details"`); block element inside
   `<summary>` (collapsed to inline).
+- T_multi_summary_concat. Multi-`<summary>`-sibling normalization (B1
+  + B7.1): input `<details><summary>One</summary><summary>Two</summary>
+  <summary>Three</summary>body</details>` is normalized at parse time
+  to a single `<details>` with one summary whose text is `One Two
+  Three` (concatenated with single-space separators) and body
+  `body`. Inline markdown inside each sibling summary is preserved
+  through the concatenation (e.g. bold and links remain rendered).
+  Asserts the concatenated count equals exactly the number of
+  sibling `<summary>` tags MINUS zero (i.e. all are folded; none are
+  dropped). Verified for both 2-sibling and 5-sibling inputs.
+- T_summary_hoist_with_concat. Combined hoist + concat case from B7.1:
+  input `<details>prefix<summary>A</summary>middle<summary>B</summary>
+  body</details>` normalizes to a single summary `A B`, body
+  `prefix middle body` (in original order, prefix and middle become
+  body content). Asserts ordering is preserved.
+- T_non_interactive_mode. Non-interactive (preview) rendering per
+  B9.1: input `<details><summary>S</summary>body</details>` rendered
+  via the conversation-list-preview surface emits the summary text
+  inline with NO chevron, NO focusable element, NO \`role=\"button\"\`,
+  NO \`aria-expanded\`, NO \`aria-controls\`, and NO body region in
+  the DOM. A click on the rendered summary triggers the row's
+  parent click handler, NOT a toggle. The B9.1 \`open\`-ignored rule
+  is exercised: \`<details open>...</details>\` renders identically
+  to the closed form in this mode (the \`open\` attribute does not
+  cause body emission).
+- T_custom_widget_activatable_role. Custom-widget accessibility
+  contract per B10: when the renderer takes the custom-widget path
+  (i.e. native \`<details>\`/\`<summary>\` is not used), the rendered
+  summary element has \`role=\"button\"\`, \`tabindex=\"0\"\`,
+  \`aria-expanded\` reflecting current state, and an
+  \`aria-controls\` ID matching the body region's renderer-generated
+  \`id\`. Tab focuses the summary; Enter and Space each toggle the
+  state and update \`aria-expanded\`; Space activation does NOT
+  scroll the surrounding scroll container. Focus ring is visible on
+  the summary itself, not on a parent or descendant.
 
 ## Open Questions
 
