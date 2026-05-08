@@ -277,9 +277,7 @@ impl HarnessSelector {
     }
 }
 
-/// Builds the menu items from harness availability data, using the canonical
-/// display name from the model so stale cached server data cannot show an
-/// outdated label.
+/// Builds the menu items from harness availability data.
 fn build_menu_items(
     availability: &HarnessAvailabilityModel,
     hover_background: Fill,
