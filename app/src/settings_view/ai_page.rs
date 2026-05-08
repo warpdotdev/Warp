@@ -37,16 +37,18 @@ use crate::settings::{
 };
 use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use crate::terminal::CLIAgent;
+use crate::ui_components::buttons::{icon_button, text_button};
 use crate::view_components::{
     action_button::{ActionButton, ButtonSize, SecondaryTheme},
     FilterableDropdown, SubmittableTextInput, SubmittableTextInputEvent,
 };
 use crate::workspaces::user_workspaces::UserWorkspacesEvent;
-use ::ai::api_keys::{ApiKeyManager, ApiKeys};
+use ::ai::api_keys::{ApiKeyManager, ApiKeys, CustomApiEndpoint, ProviderType};
 use enum_iterator::all;
 use itertools::Itertools;
 use regex::Regex;
 use settings::{Setting, ToggleableSetting};
+use std::borrow::Cow;
 use strum::IntoEnumIterator;
 use warp_core::channel::ChannelState;
 use warp_core::context_flag::ContextFlag;
@@ -62,7 +64,8 @@ use warpui::keymap::ContextPredicate;
 use warpui::ui_components::slider::SliderStateHandle;
 use warpui::{
     elements::{
-        Container, Flex, FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, ParentElement,
+        Container, Flex, FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, Padding,
+        ParentElement,
     },
     ui_components::{
         button::ButtonVariant,
@@ -135,7 +138,6 @@ use crate::{
 use crate::{report_error, report_if_error, send_telemetry_from_ctx};
 use crate::{TelemetryEvent, UserWorkspaces};
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Not;
@@ -451,6 +453,10 @@ pub struct AISettingsPageView {
     thinking_display_mode_dropdown: ViewHandle<Dropdown<AISettingsPageAction>>,
     #[cfg(feature = "local_fs")]
     conversation_layout_dropdown: ViewHandle<Dropdown<AISettingsPageAction>>,
+
+    // Custom endpoint form state
+    custom_endpoint_form_visible: bool,
+    custom_endpoint_provider_type: ProviderType,
 
     // Profile views
     profile_views: Vec<ViewHandle<ExecutionProfileView>>,
@@ -1433,6 +1439,8 @@ impl AISettingsPageView {
             conversation_layout_dropdown,
             profile_views,
             add_profile_button,
+            custom_endpoint_form_visible: false,
+            custom_endpoint_provider_type: ProviderType::OpenAI,
         }
     }
 
@@ -1510,6 +1518,7 @@ impl AISettingsPageView {
                 }
                 widgets.push(Box::new(CLIAgentWidget::default()));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
+                widgets.push(Box::new(CustomEndpointsWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(AgentAttributionWidget::default()));
                 widgets.push(Box::new(OtherAIWidget::default()));
@@ -1550,6 +1559,7 @@ impl AISettingsPageView {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
+                widgets.push(Box::new(CustomEndpointsWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(AgentAttributionWidget::default()));
                 widgets.push(Box::new(OtherAIWidget::default()));
@@ -2278,6 +2288,10 @@ pub enum AISettingsPageAction {
         pattern: String,
         agent: Option<CLIAgent>,
     },
+    DeleteCustomEndpoint(String),
+    ToggleCustomEndpointForm,
+    SaveCustomEndpoint(CustomApiEndpoint),
+    SetCustomEndpointProviderType(ProviderType),
 }
 
 impl From<&AISettingsPageAction> for LoginGatedFeature {
@@ -3025,6 +3039,29 @@ impl TypedActionView for AISettingsPageView {
                         .agent_attribution_enabled
                         .toggle_and_save_value(ctx));
                 });
+                ctx.notify();
+            }
+            AISettingsPageAction::DeleteCustomEndpoint(id) => {
+                ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                    manager.remove_custom_endpoint(id, ctx);
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::SaveCustomEndpoint(endpoint) => {
+                ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                    manager.add_custom_endpoint(endpoint.clone(), ctx);
+                });
+                // Reset form state
+                self.custom_endpoint_form_visible = false;
+                self.custom_endpoint_provider_type = ProviderType::OpenAI;
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleCustomEndpointForm => {
+                self.custom_endpoint_form_visible = !self.custom_endpoint_form_visible;
+                ctx.notify();
+            }
+            AISettingsPageAction::SetCustomEndpointProviderType(ptype) => {
+                self.custom_endpoint_provider_type = ptype.clone();
                 ctx.notify();
             }
         }
@@ -6636,6 +6673,425 @@ impl SettingsWidget for ApiKeysWidget {
                     .finish(),
             );
         }
+
+        Container::new(column.finish())
+            .with_margin_bottom(HEADER_PADDING)
+            .finish()
+    }
+}
+
+/// Widget for managing custom/third-party API endpoints.
+/// Allows users to configure self-hosted or third-party LLM endpoints
+/// that are compatible with OpenAI or Anthropic APIs.
+struct CustomEndpointsWidget {
+    name_editor: ViewHandle<EditorView>,
+    url_editor: ViewHandle<EditorView>,
+    api_key_editor: ViewHandle<EditorView>,
+    models_editor: ViewHandle<EditorView>,
+    add_button: ViewHandle<ActionButton>,
+    /// Mouse state handles for interactive elements
+    save_button_mouse_state: MouseStateHandle,
+    provider_type_mouse_states: [MouseStateHandle; 3],
+}
+
+impl CustomEndpointsWidget {
+    fn new(ctx: &mut ViewContext<<Self as SettingsWidget>::View>) -> Self {
+        let mut create_editor = |placeholder: &str, is_password: bool| {
+            ctx.add_typed_action_view(move |ctx| {
+                let appearance = Appearance::as_ref(ctx);
+                let options = SingleLineEditorOptions {
+                    is_password,
+                    text: TextOptions {
+                        font_size_override: Some(appearance.ui_font_size()),
+                        font_family_override: Some(appearance.ui_font_family()),
+                        text_colors_override: Some(TextColors {
+                            default_color: appearance.theme().active_ui_text_color(),
+                            disabled_color: appearance.theme().disabled_ui_text_color(),
+                            hint_color: appearance.theme().disabled_ui_text_color(),
+                        }),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                let mut editor = EditorView::single_line(options, ctx);
+                editor.set_placeholder_text(placeholder, ctx);
+                editor
+            })
+        };
+
+        let name_editor = create_editor("Endpoint Name", false);
+        let url_editor = create_editor("https://api.example.com/v1", false);
+        let api_key_editor = create_editor("API Key", true);
+        let models_editor = create_editor("model-1, model-2 (comma separated, optional)", false);
+
+        let add_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("+ Add Custom Endpoint", SecondaryTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(AISettingsPageAction::ToggleCustomEndpointForm);
+            })
+        });
+
+        Self {
+            name_editor,
+            url_editor,
+            api_key_editor,
+            models_editor,
+            add_button,
+            save_button_mouse_state: MouseStateHandle::default(),
+            provider_type_mouse_states: [
+                MouseStateHandle::default(),
+                MouseStateHandle::default(),
+                MouseStateHandle::default(),
+            ],
+        }
+    }
+
+    fn delete_endpoint(&self, id: &str, ctx: &mut ViewContext<AISettingsPageView>) {
+        ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.remove_custom_endpoint(id, ctx);
+        });
+    }
+
+    fn render_endpoints_list(
+        &self,
+        appearance: &Appearance,
+        app: &AppContext,
+        is_enabled: bool,
+    ) -> Box<dyn Element> {
+        let api_key_manager = ApiKeyManager::as_ref(app);
+        let endpoints = api_key_manager.custom_endpoints();
+
+        let mut column = Flex::column().with_spacing(8.);
+
+        if endpoints.is_empty() {
+            column.add_child(
+                Container::new(
+                    Text::new(
+                        "No custom endpoints configured. Add one to use your own API endpoint.",
+                        appearance.ui_font_family(),
+                        CONTENT_FONT_SIZE,
+                    )
+                    .with_color(
+                        if is_enabled {
+                            appearance
+                                .theme()
+                                .sub_text_color(appearance.theme().surface_2())
+                        } else {
+                            appearance.theme().disabled_ui_text_color()
+                        }
+                        .into(),
+                    )
+                    .finish(),
+                )
+                .with_padding(Padding::uniform(16.))
+                .with_background(appearance.theme().surface_2())
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .finish(),
+            );
+        } else {
+            for endpoint in endpoints {
+                let endpoint_card =
+                    self.render_endpoint_card(appearance, app, endpoint, is_enabled);
+                column.add_child(endpoint_card);
+            }
+        }
+
+        column.finish()
+    }
+
+    fn render_endpoint_card(
+        &self,
+        appearance: &Appearance,
+        app: &AppContext,
+        endpoint: &CustomApiEndpoint,
+        is_enabled: bool,
+    ) -> Box<dyn Element> {
+        let provider_type_text = match endpoint.provider_type {
+            ProviderType::OpenAI => "OpenAI Compatible",
+            ProviderType::Anthropic => "Anthropic Compatible",
+            ProviderType::Custom => "Custom",
+        };
+
+        let delete_endpoint = endpoint.clone();
+        let delete_button = icon_button(appearance, Icon::X, false, MouseStateHandle::default())
+            .build()
+            .on_click(move |ctx, _, _| {
+                let id = delete_endpoint.id.clone();
+                let action = AISettingsPageAction::DeleteCustomEndpoint(id);
+                ctx.dispatch_typed_action(action);
+            })
+            .finish();
+
+        let mut header_row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        header_row.add_child(
+            Expanded::new(
+                1.,
+                Text::new(
+                    &endpoint.name,
+                    appearance.ui_font_family(),
+                    CONTENT_FONT_SIZE,
+                )
+                .with_color(styles::header_font_color(is_enabled, app).into())
+                .finish(),
+            )
+            .finish(),
+        );
+
+        header_row.add_child(delete_button);
+
+        let mut info_column = Flex::column().with_spacing(4.);
+        info_column.add_child(header_row.finish());
+
+        info_column.add_child(
+            Text::new(
+                format!("{} • {}", endpoint.url, provider_type_text),
+                appearance.ui_font_family(),
+                CONTENT_FONT_SIZE,
+            )
+            .with_color(
+                appearance
+                    .theme()
+                    .sub_text_color(appearance.theme().surface_2())
+                    .into(),
+            )
+            .finish(),
+        );
+
+        if !endpoint.models.is_empty() {
+            let models_text = if endpoint.models.len() > 3 {
+                format!("{} models", endpoint.models.len())
+            } else {
+                endpoint.models.join(", ")
+            };
+            info_column.add_child(
+                Text::new(models_text, appearance.ui_font_family(), CONTENT_FONT_SIZE)
+                    .with_color(
+                        appearance
+                            .theme()
+                            .sub_text_color(appearance.theme().surface_2())
+                            .into(),
+                    )
+                    .finish(),
+            );
+        }
+
+        Container::new(info_column.finish())
+            .with_padding(Padding::uniform(12.))
+            .with_background(appearance.theme().surface_2())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+            .finish()
+    }
+
+    fn render_add_form(
+        &self,
+        appearance: &Appearance,
+        app: &AppContext,
+        current_provider_type: &ProviderType,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let header_font_color = theme.active_ui_text_color();
+
+        let provider_types = [
+            (ProviderType::OpenAI, "OpenAI", 0usize),
+            (ProviderType::Anthropic, "Anthropic", 1usize),
+            (ProviderType::Custom, "Custom", 2usize),
+        ];
+
+        let mut provider_row = Flex::row()
+            .with_spacing(8.)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        for (ptype, label, idx) in provider_types {
+            let is_selected = current_provider_type == &ptype;
+            let mouse_state = self.provider_type_mouse_states[idx].clone();
+            let bg_color = if is_selected {
+                theme.accent()
+            } else {
+                theme.surface_2()
+            };
+            let text_color = if is_selected {
+                theme.active_ui_text_color()
+            } else {
+                theme.sub_text_color(theme.surface_2())
+            };
+
+            let button = text_button(appearance, label, mouse_state).with_style(
+                UiComponentStyles::default()
+                    .set_background(bg_color.into())
+                    .set_font_color(text_color.into())
+                    .set_border_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+                    .set_border_width(1.)
+                    .set_border_color(theme.outline().into()),
+            );
+
+            let selected_type = ptype;
+            let provider_button = button.build().on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(AISettingsPageAction::SetCustomEndpointProviderType(
+                    selected_type.clone(),
+                ));
+            });
+
+            provider_row.add_child(Box::new(provider_button));
+        }
+
+        let render_field = |label: &str, editor: &ViewHandle<EditorView>| {
+            let mut col = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_spacing(4.);
+
+            col.add_child(
+                Text::new(label, appearance.ui_font_family(), CONTENT_FONT_SIZE)
+                    .with_color(header_font_color.into())
+                    .finish(),
+            );
+
+            col.add_child(ChildView::new(editor).finish());
+
+            col.finish()
+        };
+
+        // Create save button that reads editor values and dispatches action
+        let name_editor = self.name_editor.clone();
+        let url_editor = self.url_editor.clone();
+        let api_key_editor = self.api_key_editor.clone();
+        let models_editor = self.models_editor.clone();
+        let provider_type = current_provider_type.clone();
+
+        let save_button = text_button(
+            appearance,
+            "Save Endpoint",
+            self.save_button_mouse_state.clone(),
+        )
+        .with_style(
+            UiComponentStyles::default()
+                .set_background(theme.accent().into())
+                .set_font_color(theme.active_ui_text_color().into())
+                .set_border_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+                .set_border_width(1.)
+                .set_border_color(theme.outline().into()),
+        );
+
+        let save_btn = save_button.build().on_click(move |ctx, app, _| {
+            let name = name_editor.as_ref(app).buffer_text(app);
+            let url = url_editor.as_ref(app).buffer_text(app);
+            let api_key = api_key_editor.as_ref(app).buffer_text(app);
+            let models_text = models_editor.as_ref(app).buffer_text(app);
+
+            let models: Vec<String> = models_text
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            let endpoint = CustomApiEndpoint {
+                id: uuid::Uuid::new_v4().to_string(),
+                name,
+                url,
+                api_key: if api_key.is_empty() {
+                    None
+                } else {
+                    Some(api_key)
+                },
+                provider_type: provider_type.clone(),
+                models,
+            };
+
+            ctx.dispatch_typed_action(AISettingsPageAction::SaveCustomEndpoint(endpoint));
+        });
+
+        let mut form = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_spacing(12.);
+
+        form.add_child(provider_row.finish());
+        form.add_child(render_field("Name", &self.name_editor));
+        form.add_child(render_field("URL", &self.url_editor));
+        form.add_child(render_field("API Key", &self.api_key_editor));
+        form.add_child(render_field("Models", &self.models_editor));
+
+        form.add_child(
+            Container::new(Box::new(save_btn))
+                .with_margin_top(8.)
+                .finish(),
+        );
+
+        Container::new(form.finish())
+            .with_padding(Padding::uniform(16.))
+            .with_background(theme.surface_2())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+            .finish()
+    }
+}
+
+impl SettingsWidget for CustomEndpointsWidget {
+    type View = AISettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "custom api endpoint third party self hosted llm openai anthropic provider"
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        // Only show this widget if the feature flag is enabled
+        if !FeatureFlag::CustomApiEndpoints.is_enabled() {
+            return Container::new(Flex::column().finish()).finish();
+        }
+
+        let ai_settings = AISettings::as_ref(app);
+        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
+        let is_byo_enabled = UserWorkspaces::as_ref(app).is_byo_api_key_enabled();
+        let is_enabled = is_any_ai_enabled && is_byo_enabled;
+
+        let mut column = Flex::column()
+            .with_child(render_separator(appearance))
+            .with_child(
+                build_sub_header(
+                    appearance,
+                    "Custom API Endpoints",
+                    Some(styles::header_font_color(is_enabled, app)),
+                )
+                .with_padding_bottom(HEADER_PADDING)
+                .finish(),
+            )
+            .with_child(
+                Container::new(
+                    render_ai_setting_description(
+                        "Configure custom LLM endpoints (OpenAI or Anthropic compatible) with your own API keys. These endpoints are stored locally and never synced to the cloud.",
+                        is_enabled,
+                        app,
+                    ),
+                )
+                .with_margin_bottom(16.)
+                .finish(),
+            )
+            .with_child(self.render_endpoints_list(appearance, app, is_enabled));
+
+        if view.custom_endpoint_form_visible {
+            column.add_child(
+                Container::new(self.render_add_form(
+                    appearance,
+                    app,
+                    &view.custom_endpoint_provider_type,
+                ))
+                .with_margin_top(16.)
+                .finish(),
+            );
+        }
+
+        // Add button: toggles the add form
+        let button = self.add_button.clone();
+        column.add_child(
+            Container::new(button.as_ref(app).render(app))
+                .with_margin_top(16.)
+                .finish(),
+        );
 
         Container::new(column.finish())
             .with_margin_bottom(HEADER_PADDING)

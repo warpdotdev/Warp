@@ -248,3 +248,43 @@ pub fn highlight(button: Button, appearance: &Appearance) -> Button {
                 .set_font_color(appearance.theme().foreground().into()),
         )
 }
+
+/// Creates a simple text button with hover and click states.
+pub fn text_button(
+    appearance: &Appearance,
+    label: &str,
+    mouse_state_handle: MouseStateHandle,
+) -> Button {
+    let theme = appearance.theme();
+
+    let default_styles = UiComponentStyles::default()
+        .set_font_color(theme.foreground().into())
+        .set_padding(Coords::uniform(8.))
+        .set_border_radius(CornerRadius::with_all(Radius::Pixels(BORDER_RADIUS)));
+
+    let hovered_styles = UiComponentStyles::default()
+        .set_background(theme.surface_2().into())
+        .set_font_color(theme.foreground().into())
+        .set_padding(Coords::uniform(8.))
+        .set_border_radius(CornerRadius::with_all(Radius::Pixels(BORDER_RADIUS)));
+
+    let clicked_styles = UiComponentStyles::default()
+        .set_background(theme.surface_3().into())
+        .set_font_color(theme.foreground().into())
+        .set_padding(Coords::uniform(8.))
+        .set_border_radius(CornerRadius::with_all(Radius::Pixels(BORDER_RADIUS)));
+
+    let disabled_styles = UiComponentStyles::default()
+        .set_font_color(theme.disabled_ui_text_color().into())
+        .set_padding(Coords::uniform(8.))
+        .set_border_radius(CornerRadius::with_all(Radius::Pixels(BORDER_RADIUS)));
+
+    Button::new(
+        mouse_state_handle,
+        default_styles,
+        Some(hovered_styles),
+        Some(clicked_styles),
+        Some(disabled_styles),
+    )
+    .with_text_label(label.to_string())
+}

@@ -3,6 +3,7 @@ pub mod api_keys;
 pub mod aws_credentials;
 pub mod llm_id;
 
+pub use api_keys::{CustomApiEndpoint, ProviderType};
 pub use llm_id::LLMId;
 pub mod diff_validation;
 pub mod document;

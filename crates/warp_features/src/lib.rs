@@ -864,6 +864,11 @@ pub enum FeatureFlag {
     /// (`~/.git-credentials`, `~/.config/gh/hosts.yaml`) and runs the
     /// background refresh loop that keeps them fresh during a task run.
     GitCredentialRefresh,
+
+    /// Enables support for custom/third-party API endpoint configuration.
+    /// Users can add their own LLM endpoints (OpenAI-compatible, Anthropic-compatible,
+    /// or custom) with API keys and model lists for use with Agent Mode.
+    CustomApiEndpoints,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
