@@ -28,13 +28,17 @@ fn setup_remote_codebase_indexing_database(database_path: &Path) -> Result<Sqlit
         .to_str()
         .ok_or_else(|| anyhow!("Failed to convert remote codebase indexing db path to a string"))?;
     let mut conn = SqliteConnection::establish(db_url)?;
-
+    // Enforce foreign keys and wait briefly instead of failing immediately if
+    // another connection has the database locked.
     conn.batch_execute(
         r#"
         PRAGMA foreign_keys = ON;
         PRAGMA busy_timeout = 1000;
     "#,
     )?;
+
+    // Use WAL mode so reads can continue while writes are happening, with
+    // automatic checkpointing once the log reaches 500 pages.
     conn.batch_execute(
         r#"
         PRAGMA journal_mode=WAL;
