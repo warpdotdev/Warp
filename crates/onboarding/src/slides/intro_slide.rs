@@ -77,11 +77,12 @@ impl IntroSlide {
         let theme = appearance.theme();
 
         let logo_fill = internal_colors::fg_overlay_4(theme);
-        let logo =
-            ConstrainedBox::new(Icon::new("bundled/svg/warp-logo-neutral.svg", logo_fill).finish())
-                .with_width(64.)
-                .with_height(64.)
-                .finish();
+        let logo = ConstrainedBox::new(
+            Icon::new("bundled/svg/warper-logo-neutral.svg", logo_fill).finish(),
+        )
+        .with_width(64.)
+        .with_height(64.)
+        .finish();
 
         let base_color: ColorU = internal_colors::fg_overlay_4(theme).into();
         let shimmer_color: ColorU = theme.foreground().into();

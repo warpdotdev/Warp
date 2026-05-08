@@ -213,7 +213,8 @@ impl GetStartedView {
             .with_children([
                 Container::new(
                     ConstrainedBox::new(
-                        Icon::new("bundled/svg/warp-logo-neutral.svg", theme.foreground()).finish(),
+                        Icon::new("bundled/svg/warper-logo-neutral.svg", theme.foreground())
+                            .finish(),
                     )
                     .with_height(40.)
                     .with_width(40.)

@@ -74,7 +74,7 @@ impl IntentionSlide {
 
         let logo_fill = internal_colors::fg_overlay_4(theme);
         let logo = ConstrainedBox::new(
-            AssetIcon::new("bundled/svg/warp-logo-neutral.svg", logo_fill).finish(),
+            AssetIcon::new("bundled/svg/warper-logo-neutral.svg", logo_fill).finish(),
         )
         .with_width(64.)
         .with_height(64.)
