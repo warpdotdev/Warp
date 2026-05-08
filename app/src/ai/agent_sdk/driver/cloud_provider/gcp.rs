@@ -21,7 +21,7 @@ pub(crate) struct GcpCloudProvider {
 }
 
 impl GcpCloudProvider {
-    const PROVIDER_NAME: &'static str = "gcp";
+    pub(super) const PROVIDER_NAME: &'static str = "gcp";
 
     pub fn new(config: &GcpProviderConfig, run_id: &str) -> Result<Self> {
         let federation_config = GcpFederationConfig {

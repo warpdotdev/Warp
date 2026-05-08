@@ -54,14 +54,33 @@ pub(crate) trait CloudProvider: Send {
 pub(crate) fn load_providers(
     providers: &ProvidersConfig,
     run_id: &str,
+    identity_federation_enabled: bool,
 ) -> Result<Vec<Box<dyn CloudProvider>>> {
     let mut result: Vec<Box<dyn CloudProvider>> = Vec::new();
 
     if let Some(aws) = &providers.aws {
+        log::info!("Detected AWS cloud provider configuration");
+        if !identity_federation_enabled {
+            return Err(CloudProviderSetupError::new(
+                aws::AwsCloudProvider::PROVIDER_NAME,
+                anyhow::anyhow!(
+                    "AWS cloud provider auth was requested, but Oz identity federation is disabled"
+                ),
+            ));
+        }
         result.push(Box::new(aws::AwsCloudProvider::new(aws, run_id)?));
     }
 
     if let Some(gcp) = &providers.gcp {
+        log::info!("Detected GCP cloud provider configuration");
+        if !identity_federation_enabled {
+            return Err(CloudProviderSetupError::new(
+                gcp::GcpCloudProvider::PROVIDER_NAME,
+                anyhow::anyhow!(
+                    "GCP cloud provider auth was requested, but Oz identity federation is disabled"
+                ),
+            ));
+        }
         result.push(Box::new(gcp::GcpCloudProvider::new(gcp, run_id)?));
     }
 

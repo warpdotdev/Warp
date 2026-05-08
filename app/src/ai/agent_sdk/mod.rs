@@ -1295,14 +1295,17 @@ impl AgentDriverRunner {
             })
             .await??;
 
-        if FeatureFlag::OzIdentityFederation.is_enabled() {
+        if !environment.providers.is_empty() {
             let run_id = driver_options
                 .task_id
                 .map(|id| id.to_string())
                 .unwrap_or_else(|| "local".to_string());
-            driver_options.cloud_providers =
-                driver::cloud_provider::load_providers(&environment.providers, &run_id)
-                    .map_err(AgentDriverError::CloudProviderSetupFailed)?;
+            driver_options.cloud_providers = driver::cloud_provider::load_providers(
+                &environment.providers,
+                &run_id,
+                FeatureFlag::OzIdentityFederation.is_enabled(),
+            )
+            .map_err(AgentDriverError::CloudProviderSetupFailed)?;
         }
 
         driver_options.environment = Some(environment);

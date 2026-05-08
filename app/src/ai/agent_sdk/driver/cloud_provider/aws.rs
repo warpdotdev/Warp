@@ -31,7 +31,7 @@ pub(crate) struct AwsCloudProvider {
 }
 
 impl AwsCloudProvider {
-    const PROVIDER_NAME: &'static str = "aws";
+    pub(super) const PROVIDER_NAME: &'static str = "aws";
 
     pub fn new(config: &AwsProviderConfig, run_id: &str) -> Result<Self> {
         // The `tempfile` crate defaults to creating temporary files with user-only permissions.

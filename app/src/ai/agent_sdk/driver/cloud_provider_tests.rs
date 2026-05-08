@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::OsString, path::PathBuf};
+use std::{collections::HashMap, error::Error as _, ffi::OsString, path::PathBuf};
 
 use crate::ai::cloud_environments::{AwsProviderConfig, GcpProviderConfig, ProvidersConfig};
 
@@ -37,7 +37,7 @@ fn extract_cloud_providers_empty_when_no_providers() {
         gcp: None,
         aws: None,
     };
-    let providers = load_providers(&config, "run-1").unwrap();
+    let providers = load_providers(&config, "run-1", false).unwrap();
     assert!(providers.is_empty());
 }
 
@@ -49,7 +49,7 @@ fn extract_cloud_providers_creates_aws_provider() {
             role_arn: "arn:aws:iam::111111111111:role/TestRole".to_string(),
         }),
     };
-    let providers = load_providers(&config, "run-42").unwrap();
+    let providers = load_providers(&config, "run-42", true).unwrap();
     assert_eq!(providers.len(), 1);
 
     let vars = providers[0].env_vars().unwrap();
@@ -92,7 +92,7 @@ fn extract_cloud_providers_creates_gcp_provider() {
         }),
         aws: None,
     };
-    let providers = load_providers(&config, "run-1").unwrap();
+    let providers = load_providers(&config, "run-1", true).unwrap();
     assert_eq!(providers.len(), 1);
 
     let vars = providers[0].env_vars().unwrap();
@@ -112,7 +112,7 @@ fn collect_provider_env_vars_merges_all_providers() {
             role_arn: "arn:aws:iam::999:role/R".to_string(),
         }),
     };
-    let providers = load_providers(&config, "id-7").unwrap();
+    let providers = load_providers(&config, "id-7", true).unwrap();
     assert_eq!(providers.len(), 2);
 
     let mut vars = HashMap::new();
@@ -123,4 +123,24 @@ fn collect_provider_env_vars_merges_all_providers() {
     assert!(vars.contains_key(&OsString::from("AWS_ROLE_SESSION_NAME")));
     // GCP variables.
     assert!(vars.contains_key(&OsString::from("GOOGLE_APPLICATION_CREDENTIALS")));
+}
+
+#[test]
+fn load_providers_errors_when_requested_but_identity_federation_disabled() {
+    let config = ProvidersConfig {
+        gcp: None,
+        aws: Some(AwsProviderConfig {
+            role_arn: "arn:aws:iam::111111111111:role/TestRole".to_string(),
+        }),
+    };
+
+    let err = match load_providers(&config, "run-42", false) {
+        Ok(_) => panic!("requested provider should fail when federation is disabled"),
+        Err(err) => err,
+    };
+
+    assert!(err.to_string().contains("aws setup failed"));
+    assert!(err.source().is_some_and(|source| source
+        .to_string()
+        .contains("Oz identity federation is disabled")));
 }
