@@ -1,5 +1,7 @@
-// Adapted from the rmcp fork's `transport::sse_client` module.
-// Original source: https://github.com/modelcontextprotocol/rust-sdk
+// This file contains code copied from the rmcp crate (https://github.com/modelcontextprotocol/rust-sdk),
+// originally located at `crates/rmcp/src/transport/sse_client.rs`.
+// Used under the terms of the Apache License, Version 2.0.
+// See https://github.com/modelcontextprotocol/rust-sdk/blob/main/LICENSE for the full license text.
 //
 // Reference: <https://html.spec.whatwg.org/multipage/server-sent-events.html>
 

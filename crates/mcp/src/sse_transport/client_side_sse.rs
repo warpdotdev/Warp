@@ -1,5 +1,7 @@
-// Adapted from the rmcp fork's `transport::common::client_side_sse` module.
-// Original source: https://github.com/modelcontextprotocol/rust-sdk
+// This file contains code copied from the rmcp crate (https://github.com/modelcontextprotocol/rust-sdk),
+// originally located at `crates/rmcp/src/transport/common/client_side_sse.rs`.
+// Used under the terms of the Apache License, Version 2.0.
+// See https://github.com/modelcontextprotocol/rust-sdk/blob/main/LICENSE for the full license text.
 
 use std::{
     future::Future,
