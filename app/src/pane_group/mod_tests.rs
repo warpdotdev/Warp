@@ -74,6 +74,7 @@ use crate::{
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
 use repo_metadata::{repositories::DetectedRepositories, watcher::DirectoryWatcher};
+use session_sharing_protocol::sharer::SessionSourceType;
 use std::collections::HashMap;
 use uuid::Uuid;
 use warp_core::features::FeatureFlag;
@@ -84,6 +85,7 @@ use super::child_agent::{
     HiddenChildAgentTaskContext,
 };
 use super::*;
+use crate::app_state::{LeafContents, PaneNodeSnapshot};
 use crate::terminal::resizable_data::ResizableData;
 use ai::{
     index::full_source_code_embedding::manager::CodebaseIndexManager,
@@ -594,6 +596,42 @@ fn test_restored_remote_hidden_child_pane_enters_existing_ambient_session() {
                 "remote child restore should view the existing ambient session"
             );
             assert_eq!(active_conversation_id, Some(child_conversation_id));
+        });
+    });
+}
+
+#[test]
+fn test_shared_ambient_session_without_ambient_view_model_snapshots_as_ambient_agent() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let pane_group = mock_pane_group(&mut app, Default::default());
+
+        pane_group.update(&mut app, |panes, ctx| {
+            let pane_id = get_newly_created_pane_id(panes, &[]);
+            let task_id = new_ambient_agent_task_id();
+            let terminal_view = panes
+                .terminal_view_from_pane_id(pane_id, ctx)
+                .expect("initial pane should have a terminal view");
+
+            terminal_view.update(ctx, |view, _ctx| {
+                assert!(
+                    view.ambient_agent_view_model().is_none(),
+                    "plain shared-session viewers do not have cloud-mode view models"
+                );
+                let mut model = view.model.lock();
+                model.set_shared_session_status(SharedSessionStatus::reader());
+                model.set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                    task_id: Some(task_id.to_string()),
+                });
+            });
+
+            let PaneNodeSnapshot::Leaf(leaf) = panes.snapshot(ctx) else {
+                panic!("expected single-pane snapshot");
+            };
+            let LeafContents::AmbientAgent(snapshot) = leaf.contents else {
+                panic!("expected ambient agent snapshot");
+            };
+            assert_eq!(snapshot.task_id, Some(task_id));
         });
     });
 }

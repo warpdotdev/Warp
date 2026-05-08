@@ -427,13 +427,30 @@ impl PaneContent for TerminalPane {
         // Capture the current input_config from the AI input model
         let current_input_config = view.input_config(app.as_ref());
 
-        if view.model.lock().shared_session_status().is_viewer() {
+        let (is_shared_session_viewer, is_conversation_transcript_viewer, ambient_agent_task_id) = {
+            let model = view.model.lock();
+            (
+                model.shared_session_status().is_viewer(),
+                model.is_conversation_transcript_viewer(),
+                model.ambient_agent_task_id(),
+            )
+        };
+
+        if is_shared_session_viewer {
             // We save and restore ambient agent sessions
             // (restoring the shared session if it's still open and the conversation transcript otherwise).
             if let Some(ambient_model) = view.ambient_agent_view_model() {
                 let ambient_model = ambient_model.as_ref(app);
                 let task_id = ambient_model.task_id();
 
+                return LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
+                    uuid: self.uuid.clone(),
+                    task_id,
+                });
+            }
+
+            let task_id = ambient_agent_task_id;
+            if task_id.is_some() {
                 return LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
                     uuid: self.uuid.clone(),
                     task_id,
@@ -452,10 +469,10 @@ impl PaneContent for TerminalPane {
                 conversation_ids_to_restore: vec![],
                 active_conversation_id: None,
             })
-        } else if view.model.lock().is_conversation_transcript_viewer() {
+        } else if is_conversation_transcript_viewer {
             // Conversation transcript viewers (opened from the conversation list)
             // can be restored via the ambient agent task if one exists.
-            let task_id = view.model.lock().ambient_agent_task_id();
+            let task_id = ambient_agent_task_id;
             if task_id.is_some() {
                 LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
                     uuid: self.uuid.clone(),
