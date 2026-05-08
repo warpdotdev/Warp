@@ -80,7 +80,7 @@ impl AuthSecretFtuxView {
         ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let name_editor = make_single_line_editor(Some("NICKNAME"), ctx);
+        let name_editor = make_single_line_editor(Some("NICKNAME"), false, ctx);
 
         ctx.subscribe_to_view(&name_editor, |me, _, event, ctx| {
             me.handle_form_editor_nav(0, event, ctx);
@@ -257,7 +257,7 @@ impl AuthSecretFtuxView {
         };
         let mut editors = Vec::with_capacity(info.fields.len());
         for (field_idx, field) in info.fields.iter().enumerate() {
-            let editor = make_single_line_editor(Some(field.label), ctx);
+            let editor = make_single_line_editor(Some(field.label), true, ctx);
             let editor_index = field_idx + 1;
             ctx.subscribe_to_view(&editor, move |me, _, event, ctx| {
                 me.handle_form_editor_nav(editor_index, event, ctx);
@@ -548,6 +548,7 @@ impl AuthSecretFtuxView {
 
 fn make_single_line_editor(
     placeholder: Option<&str>,
+    is_password: bool,
     ctx: &mut ViewContext<AuthSecretFtuxView>,
 ) -> ViewHandle<EditorView> {
     let placeholder = placeholder.map(str::to_owned);
@@ -561,6 +562,7 @@ fn make_single_line_editor(
                 propagate_and_no_op_vertical_navigation_keys:
                     PropagateAndNoOpNavigationKeys::Always,
                 propagate_and_no_op_escape_key: PropagateAndNoOpEscapeKey::PropagateFirst,
+                is_password,
                 ..Default::default()
             },
             ctx,

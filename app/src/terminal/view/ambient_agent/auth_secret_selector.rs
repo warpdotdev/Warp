@@ -395,7 +395,7 @@ fn build_main_menu_items(
                 items.push(MenuItem::Item(fields));
             }
         }
-        AuthSecretFetchState::Loading => {
+        AuthSecretFetchState::NotFetched | AuthSecretFetchState::Loading => {
             items.push(MenuItem::Item(
                 MenuItemFields::new("Loading…")
                     .with_font_size_override(ITEM_FONT_SIZE)
@@ -404,7 +404,7 @@ fn build_main_menu_items(
                     .with_override_text_color(header_text_color),
             ));
         }
-        AuthSecretFetchState::NotFetched | AuthSecretFetchState::Failed(_) => {
+        AuthSecretFetchState::Failed(_) => {
             items.push(MenuItem::Item(
                 MenuItemFields::new("Unable to load secrets")
                     .with_font_size_override(ITEM_FONT_SIZE)
