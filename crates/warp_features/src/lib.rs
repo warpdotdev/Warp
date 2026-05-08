@@ -869,6 +869,9 @@ pub enum FeatureFlag {
     /// (`~/.git-credentials`, `~/.config/gh/hosts.yaml`) and runs the
     /// background refresh loop that keeps them fresh during a task run.
     GitCredentialRefresh,
+
+    /// Replaces the raw harness CLI command with a styled header showing CLI name + status icon.
+    HarnessSessionHeader,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -952,6 +955,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::NamedAgents,
     FeatureFlag::GitCredentialRefresh,
     FeatureFlag::HandoffCloudCloud,
+    FeatureFlag::HarnessSessionHeader,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
