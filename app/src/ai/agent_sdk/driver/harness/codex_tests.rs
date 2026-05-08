@@ -429,7 +429,8 @@ fn prepare_codex_config_toml_writes_model_when_specified() {
     let working_dir = tmp.path().join("workspace");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), Some("gpt-5.5")).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), Some("gpt-5.5"))
+        .unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert_eq!(cfg["model"].as_str(), Some("gpt-5.5"));
@@ -448,7 +449,8 @@ fn prepare_codex_config_toml_writes_model_migration_for_older_model() {
     let working_dir = tmp.path().join("workspace");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), Some("gpt-5.2")).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), Some("gpt-5.2"))
+        .unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert_eq!(cfg["model"].as_str(), Some("gpt-5.2"));
@@ -467,7 +469,8 @@ fn prepare_codex_config_toml_skips_model_for_default_sentinel() {
     let working_dir = tmp.path().join("workspace");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), Some("default")).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), Some("default"))
+        .unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert!(

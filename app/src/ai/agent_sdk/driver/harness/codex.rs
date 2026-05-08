@@ -649,10 +649,7 @@ fn set_codex_openai_base_url(doc: &mut toml_edit::DocumentMut, base_url: &str) {
     doc[CODEX_OPENAI_BASE_URL_KEY] = toml_edit::value(base_url);
 }
 
-fn set_codex_model(
-    doc: &mut toml_edit::DocumentMut,
-    third_party_harness_model_id: Option<&str>,
-) {
+fn set_codex_model(doc: &mut toml_edit::DocumentMut, third_party_harness_model_id: Option<&str>) {
     let Some(model_id) =
         third_party_harness_model_id.filter(|id| !id.is_empty() && *id != "default")
     else {
