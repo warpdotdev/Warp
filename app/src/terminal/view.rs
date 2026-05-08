@@ -17136,6 +17136,15 @@ impl TerminalView {
             self.alt_screen_context_menu(position, true, ctx);
         } else {
             self.alt_mouse_action(&mouse_state.set_point(point), ctx);
+            self.alt_mouse_action(
+                &MouseState::new(
+                    MouseButton::Right,
+                    MouseAction::Released,
+                    *mouse_state.modifiers(),
+                )
+                .set_point(point),
+                ctx,
+            );
         }
     }
 

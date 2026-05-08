@@ -68,19 +68,61 @@ fn command_token_enables_smart_mouse(token: &str, ctx: &AppContext) -> bool {
         .any(|launcher| launcher == token)
 }
 
+fn skip_wrapper_options(
+    tokens: &[String],
+    mut index: usize,
+    options_with_values: &[&str],
+) -> usize {
+    while index < tokens.len() {
+        let token = tokens[index].as_str();
+        if token == "--" {
+            return index + 1;
+        }
+        if !token.starts_with('-') || token == "-" {
+            return index;
+        }
+        let option_name = token.split('=').next().unwrap_or(token);
+        index += 1;
+        if options_with_values.contains(&option_name) && !token.contains('=') {
+            index += 1;
+        }
+    }
+    index
+}
+
 fn command_looks_like_tmux(command: &str, ctx: &AppContext) -> bool {
     let tokens = shlex::split(command)
         .unwrap_or_else(|| command.split_whitespace().map(ToOwned::to_owned).collect());
 
-    for token in tokens {
+    let mut index = 0;
+    while let Some(token) = tokens.get(index) {
         let token = token.as_str();
         if token.contains('=') && !token.starts_with('-') {
+            index += 1;
             continue;
         }
-        if matches!(token, "command" | "exec" | "env" | "nohup" | "sudo") {
-            continue;
+        match token {
+            "command" | "exec" | "nohup" => {
+                index += 1;
+                continue;
+            }
+            "env" => {
+                index = skip_wrapper_options(&tokens, index + 1, &["-u", "--unset", "-C", "-S"]);
+                continue;
+            }
+            "sudo" => {
+                index = skip_wrapper_options(
+                    &tokens,
+                    index + 1,
+                    &[
+                        "-a", "-C", "-c", "-D", "-g", "-h", "-p", "-R", "-r", "-T", "-t", "-U",
+                        "-u",
+                    ],
+                );
+                continue;
+            }
+            _ => return command_token_enables_smart_mouse(token, ctx),
         }
-        return command_token_enables_smart_mouse(token, ctx);
     }
     false
 }

@@ -1879,6 +1879,21 @@ fn test_alt_screen_smart_mouse_allows_configured_tmux_launcher() {
 }
 
 #[test]
+fn test_alt_screen_smart_mouse_allows_wrapper_options_before_tmux_launcher() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _smart_mouse = FeatureFlag::SmartAltScreenMouseHandling.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+        terminal.update(&mut app, |view, ctx| {
+            enter_sgr_alt_screen_for_command(view, Some("env -u FOO sudo -E tmux"), true, None);
+            let model = view.model.lock();
+            assert!(should_use_smart_mouse_handling(&model, false, ctx));
+        });
+    })
+}
+
+#[test]
 fn test_alt_screen_smart_mouse_does_not_hardcode_omx_launcher() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
@@ -2102,10 +2117,20 @@ fn test_alt_screen_smart_mouse_right_click_routing_with_sgr_mouse() {
         let click_point = Point::new(1, 2);
         let expected_passthrough = terminal.read(&app, |view, _ctx| {
             let model = view.model.lock();
-            MouseState::new(MouseButton::Right, MouseAction::Pressed, Default::default())
+            vec![
+                MouseState::new(MouseButton::Right, MouseAction::Pressed, Default::default())
+                    .set_point(click_point)
+                    .to_escape_sequence(&*model)
+                    .unwrap(),
+                MouseState::new(
+                    MouseButton::Right,
+                    MouseAction::Released,
+                    Default::default(),
+                )
                 .set_point(click_point)
                 .to_escape_sequence(&*model)
-                .unwrap()
+                .unwrap(),
+            ]
         });
 
         macro_rules! rerender {
@@ -2135,7 +2160,7 @@ fn test_alt_screen_smart_mouse_right_click_routing_with_sgr_mouse() {
                 presenter.clone(),
             );
         }));
-        assert_eq!(*pty_writes.borrow(), vec![expected_passthrough]);
+        assert_eq!(*pty_writes.borrow(), expected_passthrough);
 
         pty_writes.borrow_mut().clear();
         terminal.update(&mut app, |view, _ctx| {
