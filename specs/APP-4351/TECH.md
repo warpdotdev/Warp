@@ -36,7 +36,7 @@ Add to `crates/remote_server/proto/remote_server.proto`.
 **Client → Server:**
 - `GetDiffState { repo_path, mode }` — request/response. The server responds with a `GetDiffStateResponse` (snapshot or error), then pushes subsequent changes. Follows the `NavigatedToDirectory` → `NavigatedToDirectoryResponse` + `RepoMetadataSnapshot` pattern.
 - `UnsubscribeDiffState { repo_path, mode }` — notification (fire-and-forget). Tells the server the client no longer needs updates for this (repo, mode).
-- `DiscardFilesRequest { repo_path, files, should_stash, branch_name? }` — request/response. Runs `git restore`/`git stash`/`git rm` on the remote filesystem for the specified files. `files` is a list of `FileStatusInfo { path, status }`. `should_stash` controls whether changes are stashed (recoverable) or discarded. `branch_name` specifies the branch to restore against (absent means HEAD).
+- `DiscardFilesRequest { repo_path, files, should_stash, branch_name?, mode }` — request/response. Runs `git restore`/`git stash`/`git rm` on the remote filesystem for the specified files. `files` is a list of `FileStatusInfo { path, status }`. `should_stash` controls whether changes are stashed (recoverable) or discarded. `branch_name` specifies the branch to restore against (absent means HEAD). `mode` identifies which `(repo, mode)` diff state model the server should use — the server looks up the exact model via `DiffModelKey` rather than picking an arbitrary model for the repo.
 
 **Server → Client:**
 - `GetDiffStateResponse` — `oneof result { DiffStateSnapshot snapshot, DiffStateError error }`. Matches the `WriteFileResponse`/`RunCommandResponse` pattern.
@@ -81,33 +81,31 @@ No new state enum — the existing `DiffState` has the right variants (`NotInRep
 
 ### 3. Server-side GlobalDiffStateModel
 
-New file: `app/src/remote_server/diff_state_server.rs`.
+New file: `app/src/remote_server/diff_state_tracker.rs`.
 
 ```rust path=null start=null
 #[derive(Hash, Eq, PartialEq, Clone)]
-struct ServerDiffStateKey {
+struct DiffModelKey {
     repo_path: StandardizedPath,
     mode: DiffMode,
 }
 
 pub struct GlobalDiffStateModel {
-    states: HashMap<ServerDiffStateKey, ModelHandle<LocalDiffStateModel>>,
-    /// connection → keys: used to clean up all subscriptions on connection drop.
-    keys_by_connection: HashMap<ConnectionId, HashSet<ServerDiffStateKey>>,
-    /// key → connections: used to fan out repo events to subscribers.
-    connections_by_key: HashMap<ServerDiffStateKey, HashSet<ConnectionId>>,
+    states: HashMap<DiffModelKey, ModelHandle<LocalDiffStateModel>>,
+    /// key → connections: used for push fan-out and orphan detection.
+    key_to_connections: HashMap<DiffModelKey, HashSet<ConnectionId>>,
 }
 ```
 
-`ServerDiffStateKey` uses `StandardizedPath` (not `RepositoryIdentifier`) because the server daemon only manages local-to-the-remote-host repositories — the `Remote` variant of `RepositoryIdentifier` is never used on the server side. This matches the existing `ServerModel` convention where per-connection state is keyed on `StandardizedPath` (e.g. `snapshot_sent_roots_by_connection`).
+`DiffModelKey` uses `StandardizedPath` (not `RepositoryIdentifier`) because the server daemon only manages local-to-the-remote-host repositories — the `Remote` variant of `RepositoryIdentifier` is never used on the server side. This matches the existing `ServerModel` convention where per-connection state is keyed on `StandardizedPath` (e.g. `snapshot_sent_roots_by_connection`).
 
 **Per-(repo, mode) models with immutable mode.** The server keys models on `(repo_path, mode)`.
 
 **Lifecycle:**
 1. `GetDiffState` arrives as a request. `GlobalDiffStateModel` looks up or creates a `LocalDiffStateModel` for the key. If already loaded, responds immediately. If loading, uses `ctx.spawn` to respond once `NewDiffsComputed` fires. Reuses `Repository` handles from `DetectedRepositories` (already detected by prior `NavigatedToDirectory`). If no repository has been detected yet (e.g. `GetDiffState` arrives before `NavigatedToDirectory`), responds with `DiffStateError` — the client retries after `NavigatedToDirectory` completes.
 2. After responding, subsequent model events are pushed to subscribed connections only via `send_to_diff_state_subscribers(key, msg)`, which looks up `connections_by_key[key]`. Targeted sends avoid broadcasting large diff payloads (~500KB–2MB).
-3. `UnsubscribeDiffState` removes the key from both maps. If no connection subscribes to the key, the model is dropped.
-4. `deregister_connection(conn_id)` removes the connection from `keys_by_connection` and from every corresponding entry in `connections_by_key`, dropping orphaned models.
+3. `UnsubscribeDiffState` calls `unsubscribe_connection` for the specific key. If no subscribers remain, the model is dropped.
+4. `remove_connection(conn_id)` iterates `key_to_connections` to find all keys the connection belongs to and calls `unsubscribe_connection` for each, dropping orphaned models.
 
 **Event → push mapping:**
 - `NewDiffsComputed` → full `DiffStateSnapshot`

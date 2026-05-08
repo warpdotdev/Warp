@@ -2,6 +2,7 @@ use crate::auth::auth_state::AuthState;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::super::diff_state_tracker::GlobalDiffStateModel;
 use super::super::proto::{Authenticate, Initialize};
 use super::super::server_buffer_tracker::ServerBufferTracker;
 use super::{PendingFileOps, ServerModel};
@@ -17,6 +18,7 @@ fn test_model() -> ServerModel {
         pending_file_ops: PendingFileOps::new(),
         auth_state: Arc::new(AuthState::new_logged_out_for_test()),
         buffers: ServerBufferTracker::new(),
+        diff_states: GlobalDiffStateModel::new(),
     }
 }
 

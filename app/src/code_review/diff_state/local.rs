@@ -533,8 +533,13 @@ impl LocalDiffStateModel {
                         DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(repo_path, ctx)
                     {
                         me.set_active_repository(repo_handle, ctx);
+                        return;
                     }
                 }
+                // Repo detection completed but found no repository.
+                // Emit so subscribers (e.g. the server model) can drain
+                // pending responses with the NotInRepository state.
+                ctx.emit(DiffStateModelEvent::NewDiffsComputed(None));
             });
         }
         model
@@ -563,6 +568,11 @@ impl LocalDiffStateModel {
                 Err(err) => DiffState::Error(err.clone()),
             },
         }
+    }
+
+    /// Returns the current diff metadata, if available.
+    pub fn metadata(&self) -> Option<&DiffMetadata> {
+        self.metadata.as_ref()
     }
 
     pub fn diff_mode(&self) -> DiffMode {
@@ -1536,6 +1546,19 @@ impl LocalDiffStateModel {
     ) -> Option<GitDiffData> {
         let diffs = Self::load_diffs_for_repo(repo_path, mode, false).await;
         diffs.changes.ok().map(|diff| diff.into())
+    }
+
+    /// Load diff data with `content_at_head` for a given mode without
+    /// requiring an existing model instance. Used by the remote server to
+    /// serve late-joining subscribers that need `content_at_head` for editor
+    /// rendering, without disturbing the model's state.
+    #[cfg(feature = "local_fs")]
+    pub async fn load_diffs_with_content_for_mode(
+        mode: DiffMode,
+        repo_path: PathBuf,
+    ) -> Option<GitDiffWithBaseContent> {
+        let diffs = Self::load_diffs_for_repo(repo_path, mode, false).await;
+        diffs.changes.ok()
     }
 
     async fn load_diffs_for_repo(
