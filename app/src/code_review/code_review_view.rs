@@ -183,6 +183,7 @@ use super::{
     git_dialog::{GitDialog, GitDialogEvent, GitDialogKind},
     GlobalCodeReviewEvent, GlobalCodeReviewModel,
 };
+#[cfg(not(target_family = "wasm"))]
 use crate::code::buffer_location::FileLocation;
 use crate::code::ShowCommentEditorProvider;
 #[cfg(not(target_family = "wasm"))]
