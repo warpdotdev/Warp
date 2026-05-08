@@ -24,28 +24,11 @@ use itertools::Itertools;
 use prost::Message;
 use std::ops::Not;
 
-use crate::ai::agent::api::convert_conversation::proto_timestamp_to_local_datetime;
-
 use super::DEFAULT_AI_BLOCK_HEIGHT;
-
-/// A RunShellCommandResult paired with the tool call message timestamp (start)
-/// and the tool call result message timestamp (end).
-struct RunShellCommandResultWithTimestamps {
-    result: api::RunShellCommandResult,
-    /// Estimated timestamp when the command started.
-    /// Note that this may not be perfectly accurate, because it may come from the tool call timestamp
-    /// which is when the agent made the tool call, before the command actually started.
-    start_ts: Option<DateTime<Local>>,
-    /// Estimated timestamp when the command finished.
-    /// Note that this may not be perfectly accurate, because it may come from the tool call result timestamp
-    /// which is when the server receives the result, after the command actually finished.
-    completed_ts: Option<DateTime<Local>>,
-}
 
 use crate::ai::agent::task::helper::MessageExt;
 use crate::ai::agent::AIAgentActionResultType;
 use crate::ai::agent::CreateDocumentsRequest;
-use crate::ai::agent::MessageId;
 use crate::ai::agent::{
     AIAgentAction, AIAgentActionType, AIAgentOutputMessage, AIAgentOutputMessageType,
     CreateDocumentsResult, EditDocumentsResult,
@@ -581,10 +564,25 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         let conversation_id = restored.ai_conversation.id();
-        log::info!(
-            "Restoring conversation after view creation: {}",
-            conversation_id
-        );
+        log::info!("Restoring conversation after view creation: {conversation_id}",);
+
+        // Insert command blocks into the existing blocklist first, mirroring the
+        // quit/restart path where blocks are passed to the TerminalModel constructor.
+        // This ensures command_block_indices_for_exchanges finds them and AI blocks
+        // get command_block_index = Some(...), so process_restored_outputs doesn't
+        // need to create blocks itself.
+        let serialized_items = restored.ai_conversation.to_serialized_blocklist_items();
+        if !serialized_items.is_empty() {
+            let mut model = self.model.lock();
+            let block_list = model.block_list_mut();
+            for item in &serialized_items {
+                match item {
+                    crate::ai::blocklist::SerializedBlockListItem::Command { block } => {
+                        block_list.insert_restored_block(block);
+                    }
+                }
+            }
+        }
 
         // Calculate height for AI blocks
         let size_info = *self.size_info;
@@ -592,6 +590,7 @@ impl TerminalView {
             .into_pixels()
             .to_lines(size_info.cell_height_px());
 
+        // Now compute block indices — the just-inserted command blocks will be found.
         let exchanges = exchanges_for_blocklist(&restored.ai_conversation);
         let command_block_indices = {
             let terminal_model = self.model.lock();
@@ -897,59 +896,11 @@ impl TerminalView {
         }
     }
 
-    /// Helper function to find a run shell command result tool call result from a conversation's tasks
-    /// given the message ID of the run shell command tool call.
-    /// Returns the RunShellCommandResult along with the tool call message timestamp (start)
-    /// and the tool call result message timestamp (end).
-    fn find_run_shell_command_result_for_message(
-        conversation: &AIConversation,
-        message_id: &MessageId,
-    ) -> Option<RunShellCommandResultWithTimestamps> {
-        // Find the tool call message and extract its timestamp (command start time)
-        // and the tool_call_id.
-        let (tool_call_id, tool_call_ts) = conversation
-            .all_tasks()
-            .filter_map(|task| task.source())
-            .find_map(|api_task| {
-                let msg = api_task
-                    .messages
-                    .iter()
-                    .find(|msg| msg.id == **message_id)?;
-                let tool_call = msg.tool_call()?;
-                let ts = msg
-                    .timestamp
-                    .as_ref()
-                    .map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos));
-                Some((tool_call.tool_call_id.clone(), ts))
-            })?;
-
-        // Find the result and extract the result message's timestamp (command end time).
-        let (result, result_message_id) =
-            conversation.find_run_shell_command_result(&tool_call_id)?;
-        let result_ts = conversation
-            .all_tasks()
-            .filter_map(|task| task.source())
-            .find_map(|api_task| {
-                api_task
-                    .messages
-                    .iter()
-                    .find(|msg| msg.id == result_message_id)
-                    .and_then(|msg| {
-                        msg.timestamp
-                            .as_ref()
-                            .map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos))
-                    })
-            });
-
-        Some(RunShellCommandResultWithTimestamps {
-            result,
-            start_ts: tool_call_ts,
-            completed_ts: result_ts,
-        })
-    }
-
-    /// Process code diffs from AI output messages and apply them to the AI block for rendering
-    /// Also creates shell command blocks for RequestCommandOutput actions that have results
+    /// Process code diffs from AI output messages and apply them to the AI block for rendering.
+    /// Command blocks should already exist in the blocklist (inserted by
+    /// `to_serialized_blocklist_items` + `insert_restored_block` before AI blocks are created).
+    /// If `should_create_requested_command_block` is true, it means the command block was not
+    /// found in the blocklist, which is unexpected — we log a warning and create a fallback block.
     fn process_restored_outputs(
         &mut self,
         ai_block: &mut AIBlock,
@@ -981,25 +932,38 @@ impl TerminalView {
                     id: msg_id,
                     ..
                 } if should_create_requested_command_block => {
-                    // Get the tool call result and timestamps from the conversation's tasks.
-                    let cmd_result_with_timestamps =
+                    // This path should not normally be reached — command blocks should have been
+                    // inserted into the blocklist before AI blocks are created. Log a warning
+                    // and create a fallback block without timestamps.
+                    log::warn!(
+                        "process_restored_outputs: unexpectedly creating command block for \
+                         RequestCommandOutput (msg_id: {msg_id:?}, action_id: {id:?}). \
+                         Command blocks should be pre-inserted via to_serialized_blocklist_items."
+                    );
+
+                    // Defensive fallback: look up the result and create the block without timestamps.
+                    let cmd_result =
                         BlocklistAIHistoryModel::handle(ctx).read(ctx, |history_model, _| {
                             history_model
                                 .conversation(&conversation_id)
                                 .and_then(|conversation| {
-                                    Self::find_run_shell_command_result_for_message(
-                                        conversation,
-                                        msg_id,
-                                    )
+                                    let tool_call_id = conversation
+                                        .all_tasks()
+                                        .filter_map(|task| task.source())
+                                        .find_map(|api_task| {
+                                            api_task
+                                                .messages
+                                                .iter()
+                                                .find(|m| m.id == **msg_id)
+                                                .and_then(|m| m.tool_call())
+                                                .map(|tc| tc.tool_call_id.clone())
+                                        })?;
+                                    conversation
+                                        .find_run_shell_command_result(&tool_call_id)
+                                        .map(|(result, _)| result)
                                 })
                         });
-                    if let Some(RunShellCommandResultWithTimestamps {
-                        result: cmd_result,
-                        start_ts,
-                        completed_ts,
-                    }) = cmd_result_with_timestamps
-                    {
-                        // Check if the command finished successfully
+                    if let Some(cmd_result) = cmd_result {
                         if let Some(api::run_shell_command_result::Result::CommandFinished(
                             api::ShellCommandFinished {
                                 output: command_output,
@@ -1008,7 +972,6 @@ impl TerminalView {
                             },
                         )) = &cmd_result.result
                         {
-                            // Create a dummy block with the command and its output
                             let mut model = self.model.lock();
                             let block_list = model.block_list_mut();
                             block_list.create_restored_command_block(
@@ -1018,8 +981,8 @@ impl TerminalView {
                                 *exit_code,
                                 Some(id.clone()),
                                 Some(conversation_id),
-                                start_ts,
-                                completed_ts,
+                                None,
+                                None,
                             );
                         }
                     }
@@ -1293,8 +1256,12 @@ impl TerminalView {
 
 /// Returns block indices where `AIBlock`s created for the given `exchanges` should be inserted.
 ///
-/// The block indices are based on start timestamp of the exchange, such that the blocks and
-/// `AIBlocks` are ordered chronologically after insertion.
+/// For each exchange, finds the first command block whose timestamp is after the exchange's
+/// start time. The AI block should be inserted before that command block.
+///
+/// Blocks in the blocklist may not be sorted by timestamp (e.g. when `insert_restored_block`
+/// appends blocks at the end during `restore_conversation_after_view_creation`), so we scan
+/// all command blocks for each exchange rather than relying on a forward-only cursor.
 ///
 /// The returned vec is guaranteed to have `exchange_count` len.
 fn command_block_indices_for_exchanges<'a>(
@@ -1318,28 +1285,34 @@ fn command_block_indices_for_exchanges<'a>(
         })
         .collect();
 
-    // For each exchange timestamp, find the first command block after it
     let mut result = Vec::with_capacity(exchange_count);
-    let mut command_block_idx = 0;
 
     for exchange_timestamp in exchanges.map(|exchange| exchange.start_time) {
-        // Advance through command blocks until we find one after the exchange timestamp
-        while command_block_idx < command_blocks.len()
-            && command_blocks[command_block_idx].1 <= exchange_timestamp
-        {
-            command_block_idx += 1;
+        // Find the command block with the smallest timestamp that is still after the
+        // exchange timestamp. We iterate backwards because `insert_restored_block`
+        // appends blocks at the end of the blocklist, so the tail may be out of
+        // timestamp order while the prefix is sorted. Iterating backwards lets us
+        // track the best candidate and stop as soon as we see a block at or before
+        // the exchange timestamp (everything earlier is also <=).
+        let mut best: Option<(BlockIndex, DateTime<Local>)> = None;
+        for &(idx, ts) in command_blocks.iter().rev() {
+            if ts > exchange_timestamp {
+                // This block is after the exchange; remember it if it's the
+                // earliest such block we've seen.
+                if best.is_none_or(|(_, best_ts)| ts < best_ts) {
+                    best = Some((idx, ts));
+                }
+            } else {
+                // We've reached a block at or before the exchange timestamp.
+                // Since the prefix of the blocklist is sorted, all earlier
+                // blocks are also <= exchange_timestamp, so we can stop.
+                break;
+            }
         }
 
-        // If we found a command block after this timestamp, use its index
-        // Otherwise, the AI block should be appended (None)
-        let block_index = if command_block_idx < command_blocks.len() {
-            Some(command_blocks[command_block_idx].0)
-        } else {
-            None
-        };
-
-        result.push(block_index);
+        result.push(best.map(|(idx, _)| idx));
     }
 
     result
 }
+

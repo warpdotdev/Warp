@@ -98,8 +98,8 @@ pub(crate) struct CommandBlockInfo {
     pub(crate) output: String,
     pub(crate) exit_code: ExitCode,
     pub(crate) ai_metadata: Option<String>,
-    /// The api message ID that this command block was extracted from.
-    /// Used to find the corresponding exchange for timestamp and PWD.
+    /// The api message ID of the tool call that initiated this command.
+    /// Used to find the corresponding exchange for PWD and start_ts fallback.
     pub(crate) message_id: String,
     /// Estimated timestamp when the command started.
     /// Note that this may not be perfectly accurate, because it may come from the tool call timestamp
@@ -3097,7 +3097,25 @@ impl AIConversation {
             return command_blocks;
         };
 
-        self.extract_command_blocks_from_messages(&api_task.messages, &mut command_blocks);
+        // Build a map from message ID to exchange for timestamp lookups.
+        // The exchange's start_time (derived from CurrentTime input context) is used as
+        // the completed_ts for command blocks whose tool call result is in that exchange.
+        let message_id_to_exchange: HashMap<&str, &AIAgentExchange> = self
+            .all_exchanges()
+            .into_iter()
+            .flat_map(|exchange| {
+                exchange
+                    .added_message_ids
+                    .iter()
+                    .map(move |mid| (&**mid, exchange))
+            })
+            .collect();
+
+        self.extract_command_blocks_from_messages(
+            &api_task.messages,
+            &message_id_to_exchange,
+            &mut command_blocks,
+        );
 
         command_blocks
     }
@@ -3109,9 +3127,10 @@ impl AIConversation {
     fn extract_command_blocks_from_messages(
         &self,
         messages: &[api::Message],
+        message_id_to_exchange: &HashMap<&str, &AIAgentExchange>,
         command_blocks: &mut Vec<CommandBlockInfo>,
     ) {
-        // Build a map from tool_call_id to (RunShellCommandResult, result_message_id, result_timestamp)
+        // Build a map from tool_call_id to (RunShellCommandResult, result_message_id, result_proto_timestamp)
         // for efficient lookup within this message set.
         let tool_call_results: HashMap<
             &str,
@@ -3151,6 +3170,7 @@ impl AIConversation {
                                 // Recursively extract from subtask (in case of nested summarization).
                                 self.extract_command_blocks_from_messages(
                                     &subtask_source.messages,
+                                    message_id_to_exchange,
                                     command_blocks,
                                 );
                             }
@@ -3166,9 +3186,10 @@ impl AIConversation {
                 {
                     let tool_call_id = &tool_call.tool_call_id;
                     let command = &run_cmd.command;
+                    log::info!("Found run shell command {tool_call_id:?} {command:?}");
 
                     // Find the corresponding tool call result in this message set.
-                    if let Some((cmd_result, result_message_id, result_ts)) =
+                    if let Some((cmd_result, result_message_id, result_proto_ts)) =
                         tool_call_results.get(tool_call_id.as_str())
                     {
                         if let Some(api::run_shell_command_result::Result::CommandFinished(
@@ -3179,17 +3200,32 @@ impl AIConversation {
                             },
                         )) = &cmd_result.result
                         {
-                            // Use the tool call message timestamp as the start time,
-                            // and the result message timestamp as the completed time.
-                            // Note that this is not perfectly accurate, because the tool call start time
-                            // is when the agent made the tool call, before when the command actually started.
-                            // The tool call result timestamp is also when the server receives the result, after
-                            // the command actually finished.
-                            // Durations are thus longer than in reality.
+                            log::info!("Found run shell command result for tool call {tool_call_id:?} {command:?}");
+                            // start_ts: tool call message's proto timestamp.
+                            // This should always be populated.
                             let start_ts = message
                                 .timestamp
                                 .as_ref()
                                 .map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos));
+                            if start_ts.is_none() {
+                                log::error!(
+                                    "RunShellCommand tool call message has no timestamp (message_id: {message_id})"
+                                );
+                            }
+
+                            // completed_ts: prefer the exchange start_time of the exchange
+                            // containing the result message. This is derived from the CurrentTime
+                            // input context and is a better proxy for "command finished" than the
+                            // result message's proto timestamp. Fall back to result proto ts.
+                            let exchange_start_time = message_id_to_exchange
+                                .get(*result_message_id)
+                                .map(|exchange| exchange.start_time);
+                            let completed_ts = message_id_to_exchange
+                                .get(*result_message_id)
+                                .map(|exchange| exchange.start_time)
+                                .or(*result_proto_ts);
+                            log::info!("Timestamp for tool call {tool_call_id:?} {command:?} is {start_ts:?} {completed_ts:?}. Exchange start time is {exchange_start_time:?}. Result proto ts is {result_proto_ts:?}.");
+
                             command_blocks.push(CommandBlockInfo {
                                 command: command.clone(),
                                 output: command_output.clone(),
@@ -3205,11 +3241,17 @@ impl AIConversation {
                                     ))
                                     .unwrap_or_default(),
                                 ),
-                                message_id: (*result_message_id).to_string(),
+                                // Use the tool call message ID (not the result message ID)
+                                // so that to_serialized_blocklist_items looks up the exchange
+                                // where the command was initiated — the right exchange for PWD
+                                // and the start_ts fallback.
+                                message_id: message_id.clone(),
                                 start_ts,
-                                completed_ts: *result_ts,
+                                completed_ts,
                             });
                         }
+                    } else {
+                        log::warn!("No run shell command result found for tool call {tool_call_id:?} {command:?}");
                     }
                 }
             }
@@ -3306,6 +3348,7 @@ impl AIConversation {
 
         // Extract all command blocks from the task messages
         let command_blocks = self.extract_command_blocks();
+        log::info!("Extracted {} command blocks for conversation {}", command_blocks.len(), self.id());
 
         // Build a map from message ID to exchange for quick lookup
         let mut message_id_to_exchange: HashMap<&str, &AIAgentExchange> = HashMap::new();
@@ -3356,7 +3399,7 @@ impl AIConversation {
                 is_background: false,
                 prompt_snapshot: None,
                 ai_metadata: command_block.ai_metadata,
-                is_local: Some(true),
+                is_local: None,
                 agent_view_visibility: Some(
                     AgentViewVisibility::new_from_conversation(self.id).into(),
                 ),
