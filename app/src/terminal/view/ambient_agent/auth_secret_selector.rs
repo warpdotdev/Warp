@@ -42,13 +42,13 @@ const SIDECAR_HORIZONTAL_GAP: f32 = 4.;
 
 const MENU_MAX_HEIGHT: f32 = 280.;
 
-const BUTTON_TOOLTIP: &str = "Auth secret";
+const BUTTON_TOOLTIP: &str = "API key";
 
-const MENU_HEADER_LABEL: &str = "Auth secret";
+const MENU_HEADER_LABEL: &str = "API key";
 
 const SIDECAR_HEADER_LABEL: &str = "Choose a type";
 
-const NO_SECRET_LABEL: &str = "No secret";
+const NO_SECRET_LABEL: &str = "No API key";
 
 const NEW_ITEM_LABEL: &str = "New";
 
@@ -145,7 +145,7 @@ impl AuthSecretSelector {
         ctx.subscribe_to_model(
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
-                HarnessAvailabilityEvent::AuthSecretsLoaded { .. }
+                HarnessAvailabilityEvent::AuthSecretsLoaded
                 | HarnessAvailabilityEvent::AuthSecretCreated { .. } => {
                     me.refresh_menu(ctx);
                     me.refresh_button(ctx);

@@ -140,7 +140,7 @@ impl AuthSecretFtuxDropdown {
         ctx.subscribe_to_model(
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
-                HarnessAvailabilityEvent::AuthSecretsLoaded { .. }
+                HarnessAvailabilityEvent::AuthSecretsLoaded
                 | HarnessAvailabilityEvent::AuthSecretCreated { .. } => {
                     me.refresh_menu(ctx);
                     ctx.notify();
@@ -366,7 +366,7 @@ impl AuthSecretFtuxDropdown {
 
         items.push(MenuItem::Item(
             MenuItemFields::new_with_label(
-                "Skip setting a secret",
+                "Skip setting an API key",
                 "Choose this if authentication is set up in the environment",
             )
             .with_font_size_override(FONT_SIZE)

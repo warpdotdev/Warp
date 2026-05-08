@@ -874,8 +874,11 @@ impl AmbientAgentViewModel {
         let harness_auth_secrets =
             self.harness_auth_secret_name
                 .as_ref()
-                .map(|name| HarnessAuthSecretsConfig {
-                    claude_auth_secret_name: Some(name.clone()),
+                .and_then(|name| match selected_harness {
+                    Harness::Claude => Some(HarnessAuthSecretsConfig {
+                        claude_auth_secret_name: Some(name.clone()),
+                    }),
+                    _ => None,
                 });
 
         AgentConfigSnapshot {

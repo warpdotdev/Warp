@@ -59,17 +59,9 @@ pub struct AuthSecretEntry {
 
 pub enum HarnessAvailabilityEvent {
     Changed,
-    AuthSecretsLoaded {
-        #[allow(dead_code)]
-        harness: Harness,
-    },
-    AuthSecretCreated {
-        harness: Harness,
-        name: String,
-    },
-    AuthSecretCreationFailed {
-        error: String,
-    },
+    AuthSecretsLoaded,
+    AuthSecretCreated { harness: Harness, name: String },
+    AuthSecretCreationFailed { error: String },
 }
 
 pub struct HarnessAvailabilityModel {
@@ -190,7 +182,7 @@ impl HarnessAvailabilityModel {
                             .collect();
                         me.auth_secrets
                             .insert(harness, AuthSecretFetchState::Loaded(entries));
-                        ctx.emit(HarnessAvailabilityEvent::AuthSecretsLoaded { harness });
+                        ctx.emit(HarnessAvailabilityEvent::AuthSecretsLoaded);
                     }
                     Err(e) => {
                         let msg = e.to_string();
@@ -218,7 +210,7 @@ impl HarnessAvailabilityModel {
         let create_future =
             manager
                 .as_ref(ctx)
-                .create_secret(SecretOwner::CurrentUser, name.clone(), value, None);
+                .create_secret(SecretOwner::CurrentUser, name, value, None);
         ctx.spawn(create_future, move |me, result, ctx| match result {
             Ok(secret) => {
                 let entry = AuthSecretEntry {
@@ -260,6 +252,11 @@ impl HarnessAvailabilityModel {
                     if new_harnesses != me.harnesses {
                         me.harnesses = new_harnesses;
                         me.cache(ctx);
+                        // Invalidate cached auth secrets so the next menu open refetches.
+                        let stale: Vec<Harness> = me.auth_secrets.keys().copied().collect();
+                        for harness in stale {
+                            me.invalidate_auth_secrets(harness);
+                        }
                         ctx.emit(HarnessAvailabilityEvent::Changed);
                     }
                 }

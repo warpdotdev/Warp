@@ -513,6 +513,10 @@ impl Input {
         if harness == Harness::Oz {
             return false;
         }
+        // Skip FTUX for harnesses that have no auth secret types defined.
+        if crate::ai::auth_secret_types::auth_secret_types_for_harness(harness).is_empty() {
+            return false;
+        }
         if let Some(ftux_view) = self.auth_secret_ftux_view() {
             if ftux_view.as_ref(app).has_creation_state() {
                 return true;
@@ -539,7 +543,7 @@ impl Input {
         column.add_child(self.render_cloud_mode_v2_top_row(app));
 
         if self.should_show_auth_secret_ftux(app) {
-            column.add_child(self.render_auth_secret_ftux_content(appearance, app));
+            column.add_child(self.render_auth_secret_ftux_content());
         } else {
             column.add_child(self.render_cloud_mode_v2_input_container(appearance, app));
         }
@@ -552,11 +556,7 @@ impl Input {
         .finish()
     }
 
-    fn render_auth_secret_ftux_content(
-        &self,
-        _appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
+    fn render_auth_secret_ftux_content(&self) -> Box<dyn Element> {
         match self.auth_secret_ftux_view() {
             Some(view) => ChildView::new(view).finish(),
             None => Empty::new().finish(),
