@@ -617,8 +617,8 @@ impl Element for AdaptivePickerRow {
             return Vector2F::zero();
         }
 
-        let total_horizontal = self.picker_width * n as f32
-            + self.spacing * n.saturating_sub(1) as f32;
+        let total_horizontal =
+            self.picker_width * n as f32 + self.spacing * n.saturating_sub(1) as f32;
 
         self.is_vertical = total_horizontal > constraint.max.x();
 
