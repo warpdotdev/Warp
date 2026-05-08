@@ -32,7 +32,15 @@ deltas, Shift-wheel, and a horizontal scrollbar all drive it.
   shrinks but remains positive, clamp `h_offset` down to the new
   maximum so blank shifted columns are never rendered.
 - B2. Horizontal scroll inputs:
-  - Trackpad two-finger horizontal swipe (native macOS/Windows).
+  - Trackpad two-finger horizontal swipe (native macOS, Windows,
+    and Linux). On Linux, two-finger horizontal swipe is sourced
+    from libinput's horizontal scroll axis, matching the existing
+    Warp Linux trackpad gesture support. If a Linux platform/session
+    does not deliver horizontal-axis events from the windowing system
+    (e.g. constrained Wayland compositors, some X11 driver setups),
+    Shift + scroll wheel and the horizontal scrollbar drag remain the
+    documented fallback inputs and the behavior contract is otherwise
+    unchanged.
   - Shift + scroll wheel.
   - A new horizontal scrollbar at the bottom of the pane,
     visible only when content exceeds pane width.
@@ -42,26 +50,88 @@ deltas, Shift-wheel, and a horizontal scrollbar all drive it.
   independent.
 - B5. Selection and click-to-position respect the horizontal
   offset — the user clicks where they see, not where the
-  underlying buffer column is.
-- B6. Auto-scroll on new output: by default the pane snaps back
+  underlying buffer column is. Hit-testing uses the same terminal
+  grid column model as rendering (see B8).
+- B6. Auto-scroll on new output: the pane snaps back
   to horizontal offset 0 only when all of these are true:
-  - `terminal.h_scroll_snap_on_new_output = true`.
+  - `terminal.horizontal_scroll.snap_on_new_output = true`
+    (per-pane override `pane.horizontal_snap_on_new_output` takes
+    precedence when set).
   - The terminal is pinned to the live bottom when the output event
     is applied, not viewing scrollback.
-  - The output event advances terminal content by appending a
-    completed rendered row, creating a new prompt, or creating a new
-    command block.
-  Do not snap for partial writes to the current row, prompt redraws
-  that do not advance the rendered row, cursor-only updates,
-  alternate-screen/TUI updates, or output that arrives while the
-  user is viewing scrollback.
-- B7. Persist `terminal.h_scroll_snap_on_new_output` in the
+  - The pane is on the primary screen, not the alternate screen.
+    Alternate-screen / TUI applications (vim, htop, less, etc.) own
+    their column model and never trigger snap.
+  - The output event commits a completed rendered row strictly
+    below the current bottom-of-buffer position — i.e. a true
+    line-append. Tailing logs that emit `\n`-terminated full lines
+    DO trigger snap. Excluded: partial writes to the current row
+    (no `\n` yet), CR-then-rewrite prompt redraws (cursor returns
+    to column 0 of the same row), in-place line edits via `\x1b[K`
+    or other erase sequences, cursor-only updates, and any output
+    that arrives while the user is viewing scrollback.
+  Implementation hint: distinguish "new line committed below
+  viewport" from "in-place line update" by tracking the cursor row's
+  relationship to bottom-of-buffer at the moment the output event is
+  applied — only transitions that move the committed bottom row
+  index forward count as line-append.
+- B7. Persist `terminal.horizontal_scroll.snap_on_new_output` in the
   existing `TerminalSettings` settings group
   (`app/src/terminal/settings.rs`) with TOML path
-  `terminal.h_scroll_snap_on_new_output`, default `true`, and the
-  same global sync behavior as other non-private terminal settings.
-  V1 exposes it through the settings file/schema only; no first-class
-  Settings UI toggle is required.
+  `terminal.horizontal_scroll.snap_on_new_output`, boolean,
+  default `true`, with the same global sync behavior as other
+  non-private terminal settings. V1 exposes it through the
+  settings file/schema and surfaces a first-class toggle under
+  Settings → Terminal → Scrolling labelled "Snap horizontal scroll
+  on new output". A per-pane override is available via tab/pane
+  config `pane.horizontal_snap_on_new_output` (boolean, optional;
+  when present, takes precedence over the global setting for that
+  pane).
+- B8. Offset and column model. `h_offset` is measured in TERMINAL
+  GRID COLUMNS, not characters or bytes. The column model matches
+  Warp's existing terminal grid:
+  - Wide glyphs (CJK, emoji, double-width box drawing) occupy 2
+    grid columns.
+  - Combining marks and zero-width joiners occupy 0 grid columns
+    (they attach to the preceding cell).
+  - Tabs expand to the next tab stop based on the terminal's
+    existing tab-width configuration.
+  An `h_offset` of N columns scrolls each rendered row so that grid
+  column N is the leftmost visible column. If column N falls inside
+  a wide glyph (i.e. the glyph started at column N-1 and spans
+  columns N-1 and N), the partially-clipped left edge renders per
+  the existing terminal grid render rules — typically a half-block
+  or whitespace placeholder cell — not an attempt to redraw the
+  truncated half of the glyph. Selection, hit-testing, and the
+  scrollbar thumb all use this same column model so the offset →
+  buffer-column mapping is bijective for whole-cell positions and
+  consistently rounded for fractional positions.
+
+### Offset clamping & reset rules
+
+Per-pane horizontal scroll state is `(h_offset, max_observed_columns)`
+where `max_observed_columns` is the longest visible row's grid-column
+length within the current visible buffer range. Clamping rules:
+
+- On pane resize: re-clamp to
+  `h_offset = clamp(h_offset, 0, max_observed_columns - viewport_columns)`.
+  If `max_observed_columns - viewport_columns` is negative
+  (longest line now fits), clamp to 0 and hide the scrollbar.
+- On vertical scroll: do NOT auto-reset `h_offset` to 0. Recompute
+  `max_observed_columns` against the new visible window's longest
+  line; if shorter than `h_offset + viewport_columns`, clamp
+  `h_offset` down to `max(max_observed_columns - viewport_columns, 0)`.
+  Auto-reset to 0 happens only when explicitly required by the snap
+  setting (B6) — never silently on vertical scroll.
+- On line-wrap toggled ON: hide the horizontal scrollbar; preserve
+  `h_offset` internally without applying it to rendering. Toggling
+  line-wrap OFF restores the preserved `h_offset`, re-clamped to the
+  current `max_observed_columns`.
+- On long-line set changes (rows appended, edited in place, or
+  evicted from scrollback): recompute `max_observed_columns` against
+  the current visible buffer range and clamp `h_offset` per the rules
+  above. Never render blank shifted columns: if clamping cannot keep
+  `h_offset` valid against any non-empty viewport, snap to 0.
 
 ## Acceptance criteria
 
@@ -74,14 +144,28 @@ deltas, Shift-wheel, and a horizontal scrollbar all drive it.
   affordance appears.
 - A4. While pinned to the live bottom, a completed new shell output
   row snaps back to offset 0 when
-  `h_scroll_snap_on_new_output = true`.
+  `terminal.horizontal_scroll.snap_on_new_output = true`.
 - A5. Horizontal scrollbar appears only when content exceeds pane
   width.
-- A6. With `h_scroll_snap_on_new_output = false`, completed new
-  shell output preserves the current horizontal offset.
+- A6. With `terminal.horizontal_scroll.snap_on_new_output = false`,
+  completed new shell output preserves the current horizontal offset.
 - A7. Resizing the pane, toggling line-wrap on, or vertically
   scrolling to shorter visible content clamps or resets `h_offset`
-  according to B1a, with no blank shifted columns.
+  according to B1a and the Offset clamping & reset rules section,
+  with no blank shifted columns.
+- A8. In alternate-screen / TUI mode (vim, htop, less), no snap
+  occurs regardless of the setting; the alternate screen owns its
+  own column layout and h_offset is preserved as-is for the
+  duration of the alt-screen session.
+- A9. Wide glyphs (CJK, emoji), combining marks, and tabs scroll
+  consistently — selection at the visible-leftmost cell of an
+  h-scrolled row resolves to the same logical column as the
+  rendered cell, including correct handling of half-clipped wide
+  glyphs at the left edge.
+- A10. On Linux with libinput two-finger horizontal swipe events
+  available, the gesture scrolls horizontally; on Linux platforms
+  without horizontal-axis events, Shift+wheel and scrollbar drag
+  are the documented inputs and tests cover those paths.
 
 ## Implementation pointers
 
@@ -109,8 +193,22 @@ deltas, Shift-wheel, and a horizontal scrollbar all drive it.
 - T7. Resize / line-wrap toggle / vertical scroll to shorter
   content clamps or resets h_offset and hides the scrollbar when
   max offset is 0.
-- T8. Partial-row writes, prompt redraws, alternate-screen updates,
-  and output received while viewing scrollback preserve h_offset.
+- T8. Partial-row writes, prompt redraws (CR-then-rewrite), in-place
+  line edits via `\x1b[K`, alternate-screen updates, and output
+  received while viewing scrollback all preserve h_offset.
+- T9. Wide glyph (CJK / emoji), combining mark, and tab column
+  accounting: with h_offset landing inside a wide glyph, the
+  partially-clipped left edge renders per existing grid rules and
+  selection at that column resolves to the correct logical buffer
+  column.
+- T10. Per-pane override: when `pane.horizontal_snap_on_new_output`
+  is set, it overrides the global
+  `terminal.horizontal_scroll.snap_on_new_output` for that pane
+  only; other panes follow the global setting.
+- T11. Linux trackpad: with libinput horizontal-axis events
+  available, two-finger swipe scrolls; with horizontal events
+  absent, Shift+wheel and scrollbar drag scroll and the gesture
+  is silently ignored (no errors).
 
 ## Out of scope
 
