@@ -163,6 +163,11 @@ pub enum CodeViewAction {
     ToggleMaximized,
     #[cfg(feature = "local_fs")]
     CopyFilePath,
+    /// Open the active code tab's file in the platform's file manager
+    /// (Finder on macOS, Explorer on Windows). No-op when the active tab has
+    /// no resolvable local path.
+    #[cfg(feature = "local_fs")]
+    RevealInFinder,
     #[cfg(feature = "local_fs")]
     RenderMarkdown,
     DragOverIndex {
@@ -1966,10 +1971,20 @@ impl CodeView {
 
         #[cfg(feature = "local_fs")]
         if let Some(path) = self.local_path(ctx) {
+            let reveal_label = if cfg!(target_os = "macos") {
+                "Reveal in Finder"
+            } else if cfg!(target_os = "windows") {
+                "Reveal in Explorer"
+            } else {
+                "Reveal in file manager"
+            };
             items.extend([
                 MenuItem::Separator,
                 MenuItemFields::new(i18n::tr(ctx, I18nKey::CodeCopyFilePath))
                     .with_on_select_action(CodeViewAction::CopyFilePath)
+                    .into_item(),
+                MenuItemFields::new(reveal_label)
+                    .with_on_select_action(CodeViewAction::RevealInFinder)
                     .into_item(),
             ]);
 
@@ -2130,6 +2145,16 @@ impl TypedActionView for CodeView {
                 if let Some(path) = self.local_path(ctx) {
                     ctx.clipboard()
                         .write(ClipboardContent::plain_text(path.display().to_string()));
+                }
+            }
+            #[cfg(feature = "local_fs")]
+            CodeViewAction::RevealInFinder => {
+                if let Some(path) = self.local_path(ctx) {
+                    ctx.open_file_path_in_explorer(&path);
+                } else {
+                    log::warn!(
+                        "Reveal in Finder requested, but the active code tab has no local file path"
+                    );
                 }
             }
             #[cfg(feature = "local_fs")]

@@ -1645,5 +1645,5 @@ pub fn format_command_text(text: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "requested_command_test.rs"]
+#[path = "requested_command_tests.rs"]
 mod tests;

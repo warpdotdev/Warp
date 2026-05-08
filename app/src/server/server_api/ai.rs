@@ -1412,6 +1412,14 @@ impl AIClient for ServerApi {
                         harness: convert_harness(h.harness).into(),
                         display_name: h.display_name,
                         enabled: h.enabled,
+                        available_models: h
+                            .available_models
+                            .into_iter()
+                            .map(|m| crate::ai::harness_availability::HarnessModelInfo {
+                                id: m.id.into_inner(),
+                                display_name: m.display_name,
+                            })
+                            .collect(),
                     })
                     .collect())
             }
@@ -2859,5 +2867,5 @@ impl StoreClient for ServerApi {
 }
 
 #[cfg(test)]
-#[path = "ai_test.rs"]
+#[path = "ai_tests.rs"]
 mod tests;

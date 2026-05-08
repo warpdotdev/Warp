@@ -4520,7 +4520,7 @@ fn test_drag_and_drop_files_applies_path_transformer() {
     });
 }
 
-#[path = "vim_handler_test.rs"]
+#[path = "vim_handler_tests.rs"]
 mod vim_handler_tests;
 
 #[path = "marked_text_tests.rs"]

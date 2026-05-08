@@ -436,13 +436,14 @@ Plain content with no variables.
 fn test_build_bundled_skill_context() {
     let context = build_bundled_skill_context();
 
-    // At least 4 entries: server_url, cli_binary_name, url_scheme, settings_file_path.
+    // At least 5 entries: server_url, cli_binary_name, url_scheme, settings_file_path, keybindings_file_path.
     // settings_schema_path is only present when bundled_resources_dir() returns Some.
-    assert!(context.len() >= 4);
+    assert!(context.len() >= 5);
     assert!(context.contains_key("warp_server_url"));
     assert!(context.contains_key("warp_cli_binary_name"));
     assert!(context.contains_key("warp_url_scheme"));
     assert!(context.contains_key("settings_file_path"));
+    assert!(context.contains_key("keybindings_file_path"));
 
     assert_eq!(
         context.get("warp_server_url").unwrap(),
@@ -459,6 +460,12 @@ fn test_build_bundled_skill_context() {
     assert_eq!(
         context.get("settings_file_path").unwrap(),
         &crate::settings::user_preferences_toml_file_path()
+            .display()
+            .to_string()
+    );
+    assert_eq!(
+        context.get("keybindings_file_path").unwrap(),
+        &crate::keyboard::keybinding_file_path()
             .display()
             .to_string()
     );

@@ -589,6 +589,17 @@ jobs:
       - name: Validate repo-sync markers
         uses: warpdotdev/repo-sync/actions/validate-markers@main
 
+      - name: Check for incorrectly named test files
+        run: |
+          # Test files should end in _tests.rs, not _test.rs.
+          bad_files=$(find . -name '*_test.rs')
+          if [ -n "$bad_files" ]; then
+            while IFS= read -r f; do
+              echo "::error file=$f::Test file should be named ${f/_test.rs/_tests.rs} (use _tests.rs, not _test.rs)"
+            done <<< "$bad_files"
+            exit 1
+          fi
+
   wasm-lint:
     name: Formatting + Clippy (wasm)
     timeout-minutes: 20

@@ -75,6 +75,27 @@ fn test_possible_file_paths_in_word_multibyte() {
 }
 
 #[test]
+fn test_possible_file_paths_in_tree_output() {
+    let word = "│└──alpha.md";
+    let possible_paths = possible_file_paths_in_word(word).collect_vec();
+    assert!(possible_paths.contains(&"alpha.md"));
+}
+
+#[test]
+fn test_possible_file_paths_in_tree_output_multibyte_filename() {
+    let word = "│└──音楽.md";
+    let possible_paths = possible_file_paths_in_word(word).collect_vec();
+    assert!(possible_paths.contains(&"音楽.md"));
+}
+
+#[test]
+fn test_possible_file_paths_in_tree_output_absolute_path_leaf() {
+    let word = "│└──/tmp/foo.md";
+    let possible_paths = possible_file_paths_in_word(word).collect_vec();
+    assert!(possible_paths.contains(&"/tmp/foo.md"));
+}
+
+#[test]
 fn test_possible_file_paths_in_word_skips_oversized_token() {
     let oversized = "a".repeat(MAX_WORD_LEN_FOR_FILE_PATH + 1);
     assert!(possible_file_paths_in_word(&oversized).next().is_none());

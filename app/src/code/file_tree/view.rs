@@ -1298,7 +1298,7 @@ impl FileTreeView {
                         {
                             Some(state.entry.clone())
                         }
-                        Some(IndexedRepoState::Pending) => {
+                        Some(IndexedRepoState::Pending(_)) => {
                             // Repo is being (re-)indexed. Keep whatever entry
                             // we already have so the tree doesn't flash to a
                             // loading state during the transition.
@@ -1577,7 +1577,7 @@ impl FileTreeView {
                 Some(IndexedRepoState::Indexed(state)) => {
                     root_dir.entry = state.entry.clone();
                 }
-                Some(IndexedRepoState::Pending) => {
+                Some(IndexedRepoState::Pending(_)) => {
                     // Repo is being (re-)indexed. Keep whatever entry we already
                     // have so the tree doesn't flash back to a loading state
                     // during the Pending → Indexed transition.

@@ -703,9 +703,13 @@ impl BlocklistAIHistoryModel {
         });
     }
 
-    /// Sets the active conversation ID. The active conversation is the one we're currently or have most recently streamed outputs for.
-    /// If you want to set what conversation the next query should follow up in / what is selected in the input selector,
-    /// use `context_model.set_pending_query_state` instead.
+    /// Sets the active conversation ID, transferring ownership from any other
+    /// terminal view that currently holds it.
+    ///
+    /// Use this when the user **explicitly navigates** to a conversation in a
+    /// different view (e.g. from the conversation history or command palette).
+    /// For automatic follow-ups during tool-call cycles, use [`Self::mark_active_conversation_id`]
+    /// instead — it updates the active pointer without touching other views.
     pub fn set_active_conversation_id(
         &mut self,
         conversation_id: AIConversationId,
@@ -717,7 +721,7 @@ impl BlocklistAIHistoryModel {
             .get(&terminal_view_id)
             .is_some_and(|conversation_ids| conversation_ids.contains(&conversation_id))
         {
-            log::warn!(
+            log::error!(
                 "Attempted to set active conversation ID for terminal view ID that does not own that conversation."
             );
             return;
@@ -762,6 +766,40 @@ impl BlocklistAIHistoryModel {
                 previous_terminal_view_id,
                 new_terminal_view_id: terminal_view_id,
             });
+        }
+
+        self.active_conversation_for_terminal_view
+            .insert(terminal_view_id, conversation_id);
+
+        ctx.emit(BlocklistAIHistoryEvent::SetActiveConversation {
+            conversation_id,
+            terminal_view_id,
+        });
+    }
+
+    /// Marks a conversation as the active conversation for a terminal view
+    /// **without** removing it from other views.
+    ///
+    /// This is the non-transferring counterpart to [`Self::set_active_conversation_id`].
+    /// Use this during automatic follow-ups and request sending where the
+    /// conversation already belongs to this view and we only need to update
+    /// the "most recently streamed" pointer.
+    pub fn mark_active_conversation_id(
+        &mut self,
+        conversation_id: AIConversationId,
+        terminal_view_id: EntityId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self
+            .live_conversation_ids_for_terminal_view
+            .get(&terminal_view_id)
+            .is_some_and(|conversation_ids| conversation_ids.contains(&conversation_id))
+        {
+            log::warn!(
+                "mark_active_conversation_id: conversation {conversation_id:?} is not in \
+                 terminal view {terminal_view_id:?} live list, skipping"
+            );
+            return;
         }
 
         self.active_conversation_for_terminal_view
@@ -1719,7 +1757,17 @@ impl BlocklistAIHistoryModel {
 
             for conversation_id in conversation_ids {
                 if let Some(conversation) = self.conversations_by_id.get(conversation_id) {
-                    for exchange in conversation.root_task_exchanges() {
+                    // For child agent conversations, skip the first exchange — it
+                    // contains the synthetic orchestrator prompt, not user input.
+                    // TODO(QUALITY-636): Replace positional skip with an
+                    // `is_agent_initiated` field on the MAA UserQuery proto
+                    // message so the flag survives server restoration.
+                    let skip_count = if conversation.is_child_agent_conversation() {
+                        1
+                    } else {
+                        0
+                    };
+                    for exchange in conversation.root_task_exchanges().skip(skip_count) {
                         if let Some(query) = ai_exchange_to_query_history(exchange, history_order) {
                             live_queries_vec.push(query);
                         }
@@ -1740,7 +1788,12 @@ impl BlocklistAIHistoryModel {
 
             for conversation_id in conversation_ids {
                 if let Some(conversation) = self.conversations_by_id.get(conversation_id) {
-                    for exchange in conversation.root_task_exchanges() {
+                    let skip_count = if conversation.is_child_agent_conversation() {
+                        1
+                    } else {
+                        0
+                    };
+                    for exchange in conversation.root_task_exchanges().skip(skip_count) {
                         if let Some(query) = ai_exchange_to_query_history(exchange, history_order) {
                             cleared_queries_vec.push(query);
                         }
@@ -2070,6 +2123,7 @@ impl BlocklistAIHistoryModel {
         self.all_conversations_metadata.clear();
         self.agent_id_to_conversation_id.clear();
         self.server_token_to_conversation_id.clear();
+        self.children_by_parent.clear();
     }
 }
 
@@ -2555,5 +2609,5 @@ pub const FORK_PREFIX: &str = "(Fork) ";
 pub const PRE_REWIND_PREFIX: &str = "(Pre-Rewind) ";
 
 #[cfg(test)]
-#[path = "history_model_test.rs"]
+#[path = "history_model_tests.rs"]
 mod tests;
