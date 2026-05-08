@@ -1527,3 +1527,141 @@ fn test_vim_z_followed_by_non_z_clears_pending() {
         assert_eq!(cursor_position(&editor, &app), (2, 0));
     });
 }
+
+#[test]
+fn test_vim_ctrl_d_moves_cursor_down() {
+    let _feature_flag_guard = FeatureFlag::VimCodeEditor.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_code_editor_app(&mut app);
+        let editor = add_code_editor(
+            "line 1
+            line 2
+            line 3
+            line 4
+            line 5
+            line 6
+            line 7
+            line 8",
+            &mut app,
+        );
+
+        layout_editor_view(&mut app, &editor).await;
+
+        set_cursor_position(&editor, 1, 0, &mut app);
+        let (start_row, _) = cursor_position(&editor, &app);
+        editor.update(&mut app, |view, ctx| {
+            view.vim_keystroke(&Keystroke::parse("ctrl-d").unwrap(), ctx);
+        });
+        let (after_row, _) = cursor_position(&editor, &app);
+        assert!(
+            after_row > start_row,
+            "ctrl-d should move cursor down (start_row={}, after_row={})",
+            start_row,
+            after_row
+        );
+        assert_eq!(vim_mode(&editor, &app), Some(VimMode::Normal));
+    });
+}
+
+#[test]
+fn test_vim_ctrl_u_moves_cursor_up() {
+    let _feature_flag_guard = FeatureFlag::VimCodeEditor.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_code_editor_app(&mut app);
+        let editor = add_code_editor(
+            "line 1
+            line 2
+            line 3
+            line 4
+            line 5
+            line 6
+            line 7
+            line 8",
+            &mut app,
+        );
+
+        layout_editor_view(&mut app, &editor).await;
+
+        set_cursor_position(&editor, 7, 0, &mut app);
+        let (start_row, _) = cursor_position(&editor, &app);
+        editor.update(&mut app, |view, ctx| {
+            view.vim_keystroke(&Keystroke::parse("ctrl-u").unwrap(), ctx);
+        });
+        let (after_row, _) = cursor_position(&editor, &app);
+        assert!(
+            after_row < start_row,
+            "ctrl-u should move cursor up (start_row={}, after_row={})",
+            start_row,
+            after_row
+        );
+        assert_eq!(vim_mode(&editor, &app), Some(VimMode::Normal));
+    });
+}
+
+#[test]
+fn test_vim_ctrl_d_consumes_pending_count() {
+    let _feature_flag_guard = FeatureFlag::VimCodeEditor.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_code_editor_app(&mut app);
+        // Use a buffer big enough that scrolling won't max the cursor at the bottom.
+        let buffer: String = (1..=200)
+            .map(|i| format!("line {}\n", i))
+            .collect::<String>();
+        let editor = add_code_editor(buffer.as_str(), &mut app);
+
+        layout_editor_view(&mut app, &editor).await;
+
+        // After `2<C-d>`, the pending count of 2 must be consumed by ctrl-d. A
+        // following `j` should move the cursor down exactly 1 line, not 2.
+        set_cursor_position(&editor, 1, 0, &mut app);
+        vim_user_insert(&editor, "2", &mut app);
+        editor.update(&mut app, |view, ctx| {
+            view.vim_keystroke(&Keystroke::parse("ctrl-d").unwrap(), ctx);
+        });
+        let (after_scroll_row, _) = cursor_position(&editor, &app);
+        vim_user_insert(&editor, "j", &mut app);
+        let (after_j_row, _) = cursor_position(&editor, &app);
+        assert_eq!(
+            after_j_row,
+            after_scroll_row + 1,
+            "j after `2<C-d>` should move down 1, not 2 (after_scroll_row={}, after_j_row={})",
+            after_scroll_row,
+            after_j_row
+        );
+    });
+}
+
+#[test]
+fn test_vim_ctrl_d_clears_pending_operator() {
+    let _feature_flag_guard = FeatureFlag::VimCodeEditor.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_code_editor_app(&mut app);
+        let editor = add_code_editor(
+            "alpha bravo charlie
+            delta echo foxtrot
+            golf hotel india",
+            &mut app,
+        );
+
+        layout_editor_view(&mut app, &editor).await;
+
+        // After `d<C-d>`, the pending `d` operator must be cleared. A following
+        // `w` should move forward by word, not delete a word.
+        set_cursor_position(&editor, 1, 0, &mut app);
+        let original = buffer_text(&editor, &app);
+        vim_user_insert(&editor, "d", &mut app);
+        editor.update(&mut app, |view, ctx| {
+            view.vim_keystroke(&Keystroke::parse("ctrl-d").unwrap(), ctx);
+        });
+        vim_user_insert(&editor, "w", &mut app);
+        assert_eq!(
+            buffer_text(&editor, &app),
+            original,
+            "w after `d<C-d>` should not delete (pending d should be cleared)"
+        );
+    });
+}
