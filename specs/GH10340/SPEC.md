@@ -184,7 +184,16 @@ are placed in the tree as follows by default:
 An overflow toggle "Group renames by old path" (default OFF) inverts this
 attribution: when ON, renamed files are grouped under the parent folder of
 their OLD path, the new path appears as the subtitle, and stats accrue to
-the old folder. The toggle is window-local and not persisted in V1.
+the old folder.
+
+**Authoritative persistence contract for this toggle.** The toggle is
+backed by the persisted setting
+`code.review.file_list.group_renames_by_old_path` (`bool`, default
+`false`) defined in Settings / API surface. It persists across restarts
+on a per-user basis, identical to the other kebab-menu toggles (Compact
+folders, Hide non-matching files when filtering). Earlier wording that
+described this toggle as "window-local and not persisted" is superseded
+by this contract — the persisted setting is the single source of truth.
 
 ## Settings / API surface
 
@@ -236,6 +245,22 @@ header — see B6 for the authoritative layout):
   `group_renames_by_old_path = true`, renamed files appear under their OLD
   path's parent folder, with the new path shown as subtitle, and contribute
   exactly once to the old folder's count and aggregate.
+- A_telemetry_pane_opened. When the Code Review pane opens, the existing
+  `CodeReview.PaneOpened` event is emitted exactly once and includes a
+  `file_list_mode` field whose value matches the active mode at open time
+  (`"flat"` or `"tree"`).
+- A_telemetry_mode_toggle. Toggling Flat ↔ Tree mid-session emits exactly
+  one `CodeReview.FileListModeToggled` event per toggle, with payload
+  `{ from, to }` reflecting the transition (and `from != to`). Switching
+  reviews/PRs without toggling does NOT emit this event.
+- A_telemetry_filter_debounce. Using the file-list filter emits exactly
+  one `CodeReview.FileListFiltered` event per filter session — defined
+  as a contiguous span of typing terminated by either (a) clearing the
+  filter input or (b) the file-list filter input losing focus. Rapid
+  keystrokes within a session coalesce into a single event whose
+  `results_count` is the result count at session end. Payload is
+  `{ mode, results_count }` and contains no other fields. The event is
+  NOT emitted when the filter input is empty.
 
 ## Implementation Pointers
 
@@ -278,6 +303,26 @@ header — see B6 for the authoritative layout):
 - T_rename_grouping_toggled. Same renamed file with
   `group_renames_by_old_path = true` → row appears under `a/` with title
   `old.rs (now b/new.rs)`; counts/stats accrue only to `a/`, not `b/`.
+- T_telemetry_pane_opened_flat. Open the Code Review pane with
+  `code.review.file_list_mode = "flat"`; assert exactly one
+  `CodeReview.PaneOpened` event is emitted with
+  `file_list_mode == "flat"`.
+- T_telemetry_pane_opened_tree. Same as above with
+  `code.review.file_list_mode = "tree"`; assert
+  `file_list_mode == "tree"`.
+- T_telemetry_mode_toggle. Open in Flat, toggle to Tree, toggle back to
+  Flat; assert exactly two `CodeReview.FileListModeToggled` events with
+  payloads `{ from: "flat", to: "tree" }` then
+  `{ from: "tree", to: "flat" }`.
+- T_telemetry_filter_debounce. Type "fo", "foo", "foob" rapidly into the
+  filter input; clear the input. Assert exactly ONE
+  `CodeReview.FileListFiltered` event was emitted, with `mode` matching
+  the active mode and `results_count` equal to the count after the last
+  keystroke before clearing. Repeat with focus-loss as the terminator
+  (instead of clearing); same single-event invariant.
+- T_telemetry_filter_no_event_on_empty. Focus the filter input, type
+  nothing, then blur. Assert NO `CodeReview.FileListFiltered` event
+  was emitted.
 
 ## Open Questions
 
