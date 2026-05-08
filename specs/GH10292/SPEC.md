@@ -1,4 +1,8 @@
-# Start Timestamp on Collapsed Agent Reasoning Phases (GH-10292)
+# Start Timestamp on Collapsed Agent Sub-Blocks (GH-10292)
+
+> Note: setting was renamed mid-spec from the earlier draft
+> `agent.reasoning_phase_timestamp_format` to `agent.subblock_timestamp_format`
+> for accuracy across affected sub-block types (reasoning, tool calls, plan steps).
 
 ## Summary
 
@@ -63,15 +67,55 @@ timeline should adopt the same treatment.
 ▸ <kind>… (<time>)
 ```
 
-`<time>` is the start timestamp of the sub-block. Default formatting rule:
+`<time>` is the start timestamp of the sub-block. Default formatting rule
+(`auto`):
 
 - RELATIVE if the start was within the last 60 minutes
   (e.g. `just now`, `34s ago`, `2m ago`).
 - ABSOLUTE if older
-  (e.g. `11:42:07` for 24h locale, `11:42 AM` for 12h locale).
+  (rendered per the canonical absolute-time format defined in B2.1).
 
 The `(<time>)` token is rendered as a secondary, lower-contrast label so it
 does not visually compete with the kind label.
+
+### B2.1. Canonical absolute-time format
+
+Every absolute timestamp shown by this feature — collapsed row, expanded header,
+or `aria-label` — uses the SAME canonical form. Seconds are ALWAYS included so
+collapsed and expanded rows are visually consistent.
+
+- **24-hour mode** (`time.use_24h = true`):
+  `HH:MM:SS` — zero-padded; locale-independent for the time portion.
+  Example: `11:42:07`.
+- **12-hour mode** (`time.use_24h = false`):
+  `h:MM:SS AM/PM` — hour NOT zero-padded; minutes/seconds zero-padded;
+  AM/PM marker per locale (e.g. `AM`/`PM` in en-US; `a.m.`/`p.m.` in
+  some locales). Example: `11:42:07 AM`.
+- **Older than 24 hours** (in any mode that resolves to absolute):
+  prefix with the locale-appropriate short date in
+  `YYYY-MM-DD <time>` form. Example (24h): `2026-05-08 11:42:07`;
+  example (12h): `2026-05-08 11:42:07 AM`.
+- The locale governs the short date and the AM/PM marker only; the
+  digit/colon ordering of the time portion is fixed for parity.
+
+### B2.2. Forced `relative` mode beyond 60 minutes
+
+When the user explicitly sets the format to `"relative"` (NOT `"auto"`), the
+relative form must extend past the 60-minute window:
+
+| Age range | Format | Example |
+| --- | --- | --- |
+| < 5 s | `just now` | `just now` |
+| 5 s – < 60 s | `<N>s ago` | `34s ago` |
+| 60 s – < 60 min | `<N>m ago` | `2m ago`, `59m ago` |
+| 60 min – < 120 min | `<N>m ago` (rounded down) | `60m ago`, `119m ago` |
+| 2 h – < 48 h | `<N>h ago` (rounded down) | `2h ago`, `47h ago` |
+| 48 h – < 7 d | `<N>d ago` (rounded down) | `2d ago`, `6d ago` |
+| ≥ 7 d | `<N>w ago` (rounded down) | `1w ago`, `12w ago` |
+
+All ranges round DOWN to the unit shown (floor division). This applies ONLY
+when the user has explicitly chosen `"relative"`. The default `"auto"` mode
+continues to switch to absolute past the 60-minute mark per B2.
 
 ### B3. Expanded-row header
 
@@ -81,8 +125,8 @@ duration:
 - Completed phase: `Started 11:42:07 · 4.3s`
 - In-progress phase: `Started 11:42:07 · running…` and updates as it runs.
 
-Absolute time in the expanded header is always rendered, regardless of B2's
-relative/absolute choice for the collapsed row.
+Absolute time in the expanded header is always rendered using B2.1's canonical
+form, regardless of B2's relative/absolute choice for the collapsed row.
 
 ### B4. Live-update cadence
 
@@ -100,12 +144,12 @@ relative/absolute choice for the collapsed row.
 
 ### B6. Setting
 
-`agent.reasoning_phase_timestamp_format` controls collapsed-row formatting:
+`agent.subblock_timestamp_format` controls collapsed-row formatting:
 
 - `"off"` — no timestamp on collapsed or expanded rows.
-- `"absolute"` — always absolute time.
-- `"relative"` — always relative time.
-- `"auto"` (default) — relative ≤ 60 min, absolute beyond.
+- `"absolute"` — always absolute time per B2.1.
+- `"relative"` — always relative time per B2.2 (extends past 60 min).
+- `"auto"` (default) — relative ≤ 60 min, absolute beyond per B2.1.
 
 ### B7. Accessibility
 
@@ -121,13 +165,19 @@ relative/absolute choice for the collapsed row.
 
 | Setting | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `agent.reasoning_phase_timestamp_format` | enum `"off" \| "absolute" \| "relative" \| "auto"` | `"auto"` | Drives collapsed-row format. |
-| `agent.reasoning_phase_timestamp_show_in_expanded` | bool | `true` | When `false`, B3 is suppressed. |
+| `agent.subblock_timestamp_format` | enum `"off" \| "absolute" \| "relative" \| "auto"` | `"auto"` | Drives collapsed-row format for reasoning, tool-call, and plan-step sub-blocks. |
+| `agent.subblock_timestamp_show_in_expanded` | bool | `true` | When `false`, B3 is suppressed. |
 
-UI placement: Settings → Agents → "Reasoning phase timestamps":
+UI placement: Settings → Agents → "Agent sub-block timestamps":
 
-- Radio group bound to `agent.reasoning_phase_timestamp_format`.
-- Checkbox bound to `agent.reasoning_phase_timestamp_show_in_expanded`.
+- Radio group bound to `agent.subblock_timestamp_format`.
+- Checkbox bound to `agent.subblock_timestamp_show_in_expanded`.
+
+The label "Agent sub-block timestamps" reflects the broader scope of this
+feature — it covers reasoning phases, tool-call blocks, and plan-step blocks,
+not just reasoning. The earlier draft used the narrower
+`agent.reasoning_phase_timestamp_format` / "Reasoning phase timestamps" naming;
+the renamed form is the canonical version going forward.
 
 No new public API. The values flow through the existing settings store.
 
@@ -151,46 +201,73 @@ No new public API. The values flow through the existing settings store.
 
 ## Implementation Pointers
 
-- Collapsed row component: `app/src/agent/conversation/reasoning_block.rs`.
-- Tool-call block: `app/src/agent/conversation/tool_call_block.rs`.
-- Plan-step block: `app/src/agent/conversation/plan_step.rs`.
-- Reuse the existing relative-timestamp helper if one exists (search for
-  `relative_time::format` or similar). Otherwise add
-  `app/src/util/relative_time.rs` with:
-  - `fn format_relative(now: Instant, started_at: Instant) -> String`
+> Paths verified against the worktree at spec time. Modules that don't yet
+> exist are marked `(new module)` so reviewers can distinguish net-new files
+> from edits to existing files.
+
+- Agent block output renderer (collapsed/expanded reasoning header lives here
+  today; "Thinking" label and `thinking_display_mode` are wired in this file):
+  `app/src/ai/blocklist/block/view_impl/output.rs`.
+- Agent block view container:
+  `app/src/ai/blocklist/agent_view/agent_view_block.rs`.
+- Settings (existing `ThinkingDisplayMode` enum is the closest precedent for
+  the new `subblock_timestamp_format` enum and lives alongside other
+  AI/agent settings): `app/src/settings/ai.rs`.
+- Settings UI placement (Agents page — radio group + checkbox land here):
+  `app/src/settings_view/ai_page.rs`.
+- Settings migration / initialization (mirror the
+  `KeepThinkingExpanded → ThinkingDisplayMode` migration pattern when adding
+  the new enum, see lines around 121–155): `app/src/settings/initializer.rs`.
+- Conversation event stream / per-phase start & completion events
+  (timestamps surfaced here come from this stream, not a new timing source):
+  `app/src/ai/blocklist/orchestration_events.rs` and
+  `app/src/ai/agent/conversation_yaml.rs`.
+- `(new module)` Time-formatting helper:
+  `app/src/util/relative_time.rs` (no existing equivalent found in
+  `app/src/util/`). Module exposes:
+  - `fn format_relative_auto(now: SystemTime, started_at: SystemTime) -> RelativeOrAbsolute`
+    (caps at 60 min, then signals fallthrough to absolute).
+  - `fn format_relative_extended(now: SystemTime, started_at: SystemTime) -> String`
+    (implements B2.2 ranges past 60 min; used only for forced `"relative"`).
   - `fn format_absolute(started_at: SystemTime, use_24h: bool, locale: &Locale) -> String`
-- Live-update timer must be a single coalesced ticker per conversation list,
-  fanning out to subscribed components. No per-row timers; a conversation with
-  N visible reasoning rows must allocate at most one 1 Hz subscriber and one
-  5 Hz aggregate refresher.
-- Settings wiring: extend the existing settings schema for the agent surface;
-  thread the resolved format enum into the three block components via the
-  existing context/props mechanism.
+    (implements B2.1; emits date-prefixed form when older than 24 h).
+- `(new module or co-located in agent_view)` Coalesced ticker for live-update
+  cadence — single 1 Hz + 5 Hz subscriber per conversation list. Suggested
+  location: `app/src/ai/blocklist/agent_view/timestamp_ticker.rs`. No
+  per-row timers.
+- Tool-call and plan-step rendering: tool calls flow through the same agent
+  output renderer above (`view_impl/output.rs`); plan-step UI is rendered via
+  `app/src/ai/blocklist/prompt/plan_and_todo_list.rs`. Both pick up the
+  resolved `subblock_timestamp_format` via the existing settings context.
 - Sub-blocks' start time must come from the existing conversation event stream;
   do not introduce a parallel timing source.
 
 ## Tests
 
-- T1. `format_relative` returns `just now` < 5 s, `Ns ago` < 60 s, `Nm ago` < 60 min.
-- T2. `format_relative` falls through to `format_absolute` past 60 minutes
-  when called via the `auto` adapter.
+- T1. `format_relative_auto` returns `just now` < 5 s, `Ns ago` < 60 s,
+  `Nm ago` < 60 min.
+- T2. `format_relative_auto` signals fallthrough to `format_absolute` past 60
+  minutes; `auto` adapter renders the canonical absolute form per B2.1.
 - T3. Expanded view shows correct duration once a phase emits a completion
   event.
 - T4. In-progress phase shows `running…` and the duration label updates as
   the ticker fires.
 - T5. Setting `"off"` removes the timestamp DOM/aria-label entirely.
 - T6. Setting `"absolute"` and `"relative"` force the corresponding format
-  regardless of age.
-- T7. `time.use_24h = true` renders `11:42:07`; `false` renders `11:42:07 AM`
-  (or locale-equivalent 12h form). OS-fallback path is exercised when the
-  setting is unset.
+  regardless of age. Forced `"relative"` exercises B2.2 ranges:
+  `60m ago`, `2h ago`, `2d ago`, `1w ago`.
+- T7. Absolute form rendering per B2.1: `time.use_24h = true` renders
+  `11:42:07`; `time.use_24h = false` renders `11:42:07 AM`. A start time older
+  than 24 h prefixes the locale date (e.g. `2026-05-08 11:42:07` /
+  `2026-05-08 11:42:07 AM`). OS-fallback path is exercised when the setting
+  is unset.
 - T8. Tool-call block and plan-step block receive identical treatment per
   B1–B3.
 - T9. Stepping the mock clock by 5 s causes all visible relative-formatted
   rows to re-render with the new value.
 - T10. `aria-label` audit for collapsed and expanded rows matches the visible
-  text.
-- T11. Timer coalescing: rendering 50 reasoning rows registers exactly one
+  text, including the canonical absolute form when applicable.
+- T11. Timer coalescing: rendering 50 sub-block rows registers exactly one
   1 Hz subscriber and one 5 Hz subscriber against the ticker.
 
 ## Open Questions
@@ -206,5 +283,5 @@ No new public API. The values flow through the existing settings store.
 
 No new events. The existing per-phase start/complete events already carry the
 timing data this spec surfaces. If usage signals are required later, add a
-single `agent.reasoning_phase_timestamp.format_changed` event tied to the
+single `agent.subblock_timestamp.format_changed` event tied to the
 setting toggle (out of scope for V1).
