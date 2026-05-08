@@ -79,6 +79,22 @@ When the setting is `true`, `Option+left-<anything>` (click, double-click, drag,
 
 The setting takes effect immediately for new mouse-down events that begin AFTER the user changes it. Setting changes that occur during an in-flight gesture do not change that gesture's routing — see B6.
 
+### B5a. First-enable educational toast (V1: yes)
+
+The first time a user enables `terminal.native_left_drag_select_enabled` after install, Warp shows a one-time educational toast explaining the inverse-modifier escape hatch. This was an open question in round 1; V1 ships it.
+
+- **Trigger.** Fires once per Warp install on the first transition of `terminal.native_left_drag_select_enabled` from `false` → `true`.
+- **Content (literal).** *"Bare left-drag now selects text natively. To forward drag to TUI applications, hold Option (⌥) while dragging."*
+- **Style.** Standard Warp toast in the existing notification region; non-blocking; visually consistent with other settings-toggle toasts.
+- **Dismissal.**
+  - Auto-dismisses after **8 seconds**, OR
+  - On user click anywhere on the toast (including its close affordance).
+- **Persistence — never shown again after first time.** Tracked via a local sidecar at `~/.config/warp/seen_toasts.json` keyed by toast id `native_left_drag_select_first_enable`. The sidecar is local-only (NOT cloud-synced) so disabling and re-enabling the setting on the same install does not re-show the toast. Disabling-then-re-enabling on a fresh install on a different machine MAY re-show it (this is intentional — local sidecar is per install).
+- **Setting interaction.**
+  - If the user toggles to `true`, sees the toast, then toggles to `false` and back to `true` later, the toast does NOT show again.
+  - If the user toggles to `true` for the first time while a left-button gesture is in flight, the toast appears AFTER the in-flight gesture ends (the routing latch in B6 is unaffected).
+- **Telemetry note.** No new telemetry fields. The toast emits the existing `toast_shown` and `toast_dismissed` events with id `native_left_drag_select_first_enable` if those events already exist; otherwise no telemetry beyond the existing `setting.changed` already covered.
+
 ### B6. Routing latch (in-flight gesture invariant)
 
 The route for any left-button gesture is decided ONCE at the mouse-down event and LATCHED for the rest of the gesture's lifetime.
@@ -128,12 +144,60 @@ Keybinding context flag: `terminal_native_left_drag_select` (boolean) exposed fo
 A working reference implementation exists at https://github.com/spalagu/warp/tree/feat/left-drag-select-default. The pointers below mirror that branch's structure.
 
 - **Setting definition.** Add `native_left_drag_select_enabled` to `app/src/terminal/alt_screen_reporting.rs` next to `mouse_reporting_enabled`.
-- **Interception logic.** Extend `should_intercept_mouse()` in `app/src/terminal/alt_screen/mod.rs` (verified existing function: `pub fn should_intercept_mouse(model: &TerminalModel, shift: bool, ctx: &AppContext) -> bool`) with the additional inputs needed for left-button routing: `is_left_button: bool` and `option_held: bool`. When the setting is on and `is_left_button == true`, return `true` (intercept) for bare and `Shift`-modified events; return `false` when `Option` is held (forward to TUI).
+- **Interception logic.** Extend `should_intercept_mouse()` in `app/src/terminal/alt_screen/mod.rs` (verified existing function: `pub fn should_intercept_mouse(model: &TerminalModel, shift: bool, ctx: &AppContext) -> bool`) so that it carries enough modifier and event-kind information to preserve every existing modifier-keyed left-click behavior (e.g., `Cmd+left-click` link follow, OS-specific link openers, future modifier handlers). Concretely, the function MUST take a single `MouseEventContext` struct rather than a single `shift: bool`, with the following fields:
+
+  ```rust
+  pub struct MouseEventContext {
+      pub is_left_button: bool,                 // true for Left / LeftDrag
+      pub event_kind: MouseEventKind,           // MouseDown | MouseMove | MouseUp
+      pub modifiers: ModifierState,             // shift, ctrl, alt_or_option, cmd_or_meta
+      pub click_count: u8,                      // 1 for single, 2 double, 3 triple, etc.
+      pub gesture_id: GestureId,                // see "gesture_id source" below
+  }
+  ```
+
+  Return type changes from `bool` to a tri-state `MouseRoutingDecision`:
+
+  ```rust
+  pub enum MouseRoutingDecision {
+      InterceptByWarp,
+      ForwardToTui,
+      FollowExistingLatch,   // mid-gesture move/up: read the per-gesture latch
+  }
+  ```
+
+  Routing rules expressed against `MouseEventContext`:
+  - `is_left_button == false` → return `ForwardToTui` (existing right/middle/scroll rules apply elsewhere; this function does not own them).
+  - `is_left_button == true && event_kind != MouseDown` → return `FollowExistingLatch` (mouse-move and mouse-up consult the per-gesture map; do not recompute).
+  - `is_left_button == true && event_kind == MouseDown && modifiers.cmd_or_meta` → return `ForwardToTui` for the existing `Cmd+left-click` handler (link follow, OS open). The new B3/B4 routing latch does NOT subsume modifier-keyed left clicks. The same exemption applies to `Ctrl+left-click` on macOS where it acts as a right-click stand-in. Modifier-keyed left clicks bypass the new routing entirely and follow their existing handlers.
+  - `is_left_button == true && event_kind == MouseDown && modifiers.alt_or_option` → return `ForwardToTui` (B4 inverse-modifier opt-out).
+  - `is_left_button == true && event_kind == MouseDown && modifiers.shift` → return `InterceptByWarp` (existing Shift-bypass; preserved in both setting states).
+  - `is_left_button == true && event_kind == MouseDown && setting_on && bare-or-shift-only` → return `InterceptByWarp`.
+  - Otherwise → return `ForwardToTui`.
+
+  Any future left-button modifier handler MUST add an explicit branch in this function before the bare-left rule; the function MUST consider the FULL modifier state, not just `is_left_button`.
 - **Per-gesture routing latch.** The latch lives at the mouse-event-dispatch layer (the same site that decides intercept-vs-forward today, i.e. the callers of `should_intercept_mouse`). Maintain a per-gesture routing map keyed on `(button, gesture_id)`:
   - On left-button mouse-down: compute the routing decision from `should_intercept_mouse(...)` once, insert `(Left, gesture_id) → Decision` into the map.
   - On any subsequent left-button mouse-move / mouse-up belonging to the same gesture: read the decision from the map; do NOT recompute via `should_intercept_mouse`.
   - On gesture end (mouse-up or gesture-cancel/focus-loss/mouse-capture-loss): remove the entry.
   - The map is local to the dispatch layer; it does not cross terminal boundaries. Right/middle/scroll buttons each maintain their own per-gesture entries if they need analogous semantics, but those follow existing rules and are out of scope for this spec.
+
+- **gesture_id source (where the identifier comes from).** The dispatch layer that already feeds `should_intercept_mouse` receives `Event::LeftMouseDown { position, click_count, modifiers, .. }`, `Event::LeftMouseDragged { position, modifiers, .. }`, and `Event::LeftMouseUp { position, modifiers, .. }` (verified call sites: `app/src/terminal/alt_screen/alt_screen_element.rs:889-941`). The current event stream does NOT expose a stable per-gesture identifier today, so V1 introduces a small new module:
+
+  - **`GestureSession` `(new)`** — lives in the existing event-dispatch crate alongside the input event types (target module: `app/src/terminal/input/gesture.rs` `(new module)`, re-exported from `app/src/terminal/input/mod.rs`). Owned by the same struct that today consumes `Event::LeftMouseDown`/`Dragged`/`Up`. Responsibilities:
+    1. On every `Event::LeftMouseDown`, increment a `u64` counter and assign that value as the gesture's `GestureId`.
+    2. Track the active left-button gesture in an `Option<ActiveGesture { id: GestureId, last_seen_at: Instant }>` field.
+    3. Tag every subsequent `Event::LeftMouseDragged` and `Event::LeftMouseUp` with the same `GestureId` until either:
+       - `Event::LeftMouseUp` arrives (latch released, `ActiveGesture = None`), OR
+       - 200 ms elapse with no `LeftMouseDragged`/`LeftMouseUp` for the active gesture (idle timeout — release the latch defensively to avoid leaking a stale id when a platform drops the up event), OR
+       - A focus-loss / window-deactivate / mouse-capture-loss event arrives (release the latch).
+    4. After release, also drop the corresponding entry from the routing map maintained above.
+
+  - **Platform integration.** On platforms where the windowing layer already exposes a stable per-pointer-interaction identifier (e.g., macOS `NSEvent.eventNumber` for a button-down sequence; Linux/Windows winit `DeviceId` plus a sequence counter), `GestureSession` MAY adopt that platform id directly instead of allocating its own counter. V1 does not require platform parity here — the internal counter is the authoritative source; platform ids are an optimization.
+
+  - **No re-entrancy across terminals.** `GestureSession` is per-input-dispatcher (one per terminal-input owner). A second terminal pane has its own `GestureSession`. Right/middle/scroll buttons do NOT participate in `GestureSession`; they keep their existing rules.
+
+  - **Why a new module instead of reusing existing event ids.** The existing `Event::LeftMouseDown`/`Dragged`/`Up` carry no shared correlation field today (verified). Without `GestureSession` the per-gesture latch cannot be keyed reliably; mid-drag `should_intercept_mouse` calls would have no way to consult the original mouse-down's decision. The `(new)` marker in this section reflects that this struct does not exist yet and is introduced by this spec.
 - **Callsites to update (7 total).**
   - `app/src/terminal/block_list_element.rs` — 3 callsites.
   - `app/src/terminal/alt_screen/alt_screen_element.rs` — 4 callsites.
@@ -159,11 +223,13 @@ A working reference implementation exists at https://github.com/spalagu/warp/tre
 - **T12.** Routing latch — setting toggle mid-drag: with the setting `false`, send a left-down event (latches to forward-to-TUI); toggle the setting to `true`; send the corresponding mouse-move and mouse-up. Assert all three events were forwarded to the TUI and Warp produced no native selection. Repeat the inverse: start with the setting `true`, latch to intercept, toggle to `false` mid-drag, assert Warp's native selection completes through mouse-up.
 - **T13.** Routing latch — modifier release mid-drag in ON mode: with the setting `true`, send a bare left-down (latches to intercept), simulate `Option` being pressed mid-drag; assert the in-flight gesture remains intercepted by Warp through mouse-up. Inverse: send `Option+left-down` (latches to forward), release `Option` mid-drag; assert the gesture is still forwarded to the TUI through mouse-up.
 - **T14.** New gesture after toggle uses new value: after T12 completes, the very next mouse-down should compute its latch from the now-current setting value (and current modifier state), not from the previous gesture's latch. Verified for both toggle directions.
+- **T_first_enable_toast.** First-enable toast appears once: with a clean install (no `~/.config/warp/seen_toasts.json` entry for `native_left_drag_select_first_enable`), toggle the setting `false` → `true` and assert (a) the toast appears with the literal copy from B5a, (b) it auto-dismisses after 8s when no click occurs, (c) the sidecar gains the entry, (d) toggling `true` → `false` → `true` again does NOT show the toast a second time on the same install, (e) clicking the toast within the 8s window dismisses it immediately and still records the sidecar entry.
 
 ## Open Questions
 
-- **Educational toast on first enable.** When a user enables the setting for the first time, should we surface a one-time dismissable toast explaining `Option+drag` as the forward escape hatch? Recommendation: **yes, dismissable**. iTerm2 users expect this; new users will not discover the modifier otherwise. Open for product input.
 - **Naming alternatives.** `native_left_drag_select_enabled` is descriptive but long. Alternatives: `prefer_native_left_select`, `left_drag_selects_natively`. Recommendation: keep proposed name for clarity in settings search.
+
+(The previous Open Question about the first-enable educational toast is now resolved as **yes** in V1 — see B5a above.)
 
 ## Telemetry
 
