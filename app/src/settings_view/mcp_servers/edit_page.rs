@@ -1,10 +1,10 @@
-#[cfg(not(target_family = "wasm"))]
+#[cfg(feature = "local_fs")]
 use std::sync::Arc;
 use std::{collections::HashMap, path::Path};
-
+#[cfg(feature = "local_fs")]
 #[cfg(not(target_family = "wasm"))]
 use diesel::SqliteConnection;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(feature = "local_fs")]
 use parking_lot::Mutex;
 use pathfinder_geometry::vector::vec2f;
 use uuid::Uuid;
@@ -39,9 +39,7 @@ use crate::{
     banner::{Banner, BannerTextContent},
     cloud_object::{CloudObject, Space},
     code::editor::view::{CodeEditorRenderOptions, CodeEditorView},
-    persistence::{
-        database_file_path_for_scope, establish_ro_connection, ModelEvent, PersistenceScope,
-    },
+    persistence::ModelEvent,
     server::{
         cloud_objects::update_manager::InitiatedBy,
         telemetry::{MCPTemplateCreationSource, TelemetryEvent},
@@ -60,6 +58,11 @@ use crate::{
     },
     workspace::ToastStack,
     GlobalResourceHandlesProvider,
+};
+
+#[cfg(feature = "local_fs")]
+use crate::persistence::{
+    database_file_path_for_scope, establish_ro_connection, PersistenceScope,
 };
 
 const DEFAULT_JSON_TEXT: &str = r#"{
@@ -126,7 +129,7 @@ pub struct MCPServersEditPageView {
     log_out_icon_button_mouse_handle: MouseStateHandle,
     editing_disabled_banner: ViewHandle<Banner<()>>,
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(feature = "local_fs")]
     #[allow(dead_code)]
     database_connection: Option<Arc<Mutex<SqliteConnection>>>,
 }
@@ -194,7 +197,7 @@ impl MCPServersEditPageView {
             .with_icon(Icon::Warning)
         });
 
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(feature = "local_fs")]
         let database_connection = database_file_path_for_scope(&PersistenceScope::App)
             .to_str()
             .and_then(|db_url| {
@@ -216,7 +219,7 @@ impl MCPServersEditPageView {
             log_out_icon_button_mouse_handle: Default::default(),
             editing_disabled_banner,
 
-            #[cfg(not(target_family = "wasm"))]
+            #[cfg(feature = "local_fs")]
             database_connection,
         }
     }
