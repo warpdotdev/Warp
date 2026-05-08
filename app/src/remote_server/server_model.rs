@@ -1380,6 +1380,11 @@ impl ServerModel {
 
     /// Handles `OpenBuffer` by opening the file via `GlobalBufferModel`.
     /// The response is sent asynchronously when `BufferLoaded` fires.
+    ///
+    /// When `force_reload` is set, the server re-reads the file from disk
+    /// even if the buffer is already loaded. This broadcasts a
+    /// `BufferUpdatedPush` to other connections and responds with the
+    /// fresh content via `OpenBufferResponse`.
     fn handle_open_buffer(
         &mut self,
         msg: OpenBuffer,
@@ -1388,8 +1393,9 @@ impl ServerModel {
         ctx: &mut ModelContext<Self>,
     ) -> HandlerOutcome {
         log::info!(
-            "Handling OpenBuffer path={} (request_id={request_id})",
-            msg.path
+            "Handling OpenBuffer path={} force_reload={} (request_id={request_id})",
+            msg.path,
+            msg.force_reload,
         );
 
         let path = PathBuf::from(&msg.path);
@@ -1403,6 +1409,21 @@ impl ServerModel {
         self.buffers
             .track_open_buffer(msg.path.clone(), file_id, buffer_state.buffer);
         self.buffers.add_connection(file_id, conn_id);
+
+        // If already loaded and force_reload is requested, re-read from disk.
+        // The response is sent asynchronously when `BufferLoaded` fires.
+        if msg.force_reload && gbm.as_ref(ctx).buffer_loaded(file_id) {
+            gbm.update(ctx, |gbm, ctx| {
+                gbm.force_reload_server_local(file_id, ctx);
+            });
+            self.buffers.insert_pending(
+                file_id,
+                request_id.clone(),
+                conn_id,
+                PendingBufferRequestKind::OpenBuffer,
+            );
+            return HandlerOutcome::Async(None);
+        }
 
         // If already loaded, respond immediately.
         if gbm.as_ref(ctx).buffer_loaded(file_id) {

@@ -372,6 +372,11 @@ message RepoMetadataUpdatePush {
 // The server reads the file, starts watching it, and returns the content.
 message OpenBuffer {
   string path = 1;
+  // When true, the server discards any in-memory buffer state and re-reads
+  // the file from disk. Used by the client to resolve conflicts ("accept
+  // server" / discard local edits). Other connections that have the buffer
+  // open receive a BufferUpdatedPush with the fresh content.
+  bool force_reload = 2;
 }
 
 // Server → client: response to OpenBuffer with the initial file content.

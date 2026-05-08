@@ -405,11 +405,21 @@ impl RemoteServerClient {
     }
 
     /// Opens a buffer on the remote host for bidirectional syncing.
-    pub async fn open_buffer(&self, path: String) -> Result<OpenBufferResponse, ClientError> {
+    ///
+    /// When `force_reload` is true, the server discards any in-memory buffer
+    /// state and re-reads the file from disk. Used to resolve conflicts.
+    pub async fn open_buffer(
+        &self,
+        path: String,
+        force_reload: bool,
+    ) -> Result<OpenBufferResponse, ClientError> {
         let request_id = RequestId::new();
         let msg = ClientMessage {
             request_id: request_id.to_string(),
-            message: Some(client_message::Message::OpenBuffer(OpenBuffer { path })),
+            message: Some(client_message::Message::OpenBuffer(OpenBuffer {
+                path,
+                force_reload,
+            })),
         };
         let response = self.send_request(request_id, msg).await?;
         match response.message {
