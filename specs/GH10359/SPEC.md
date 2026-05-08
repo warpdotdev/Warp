@@ -419,6 +419,64 @@ session. The contract is:
   launch; the restored conversations do NOT reappear.
 - T9. Back-to-back bulk deletes: second delete commits the
   first; undo only restores the second batch.
+- T_select_all_visible_overscan_invariant. With virtualization
+  configured to render 5 overscan rows above and below the
+  viewport: scroll so that rows 100..120 are visible inside the
+  viewport rectangle (rows 95..99 and 121..125 are materialized
+  but outside the visible rectangle). Invoke "Select all visible"
+  → exactly rows 100..120 are selected. Re-run with overscan
+  set to 50 in the same scroll position → still exactly rows
+  100..120 are selected. The result is independent of overscan.
+- T_select_all_visible_no_post_scroll_capture. After "Select all
+  visible" returns, scroll the list. Newly-visible rows are NOT
+  added to the selection set.
+- T_optimistic_reconcile_forbidden. Bulk delete 5 ids; server
+  returns `forbidden` for one id, `deleted` for the other 4. The
+  forbidden id is re-inserted at its original list position with
+  an inline error indicator and a Retry affordance; the snackbar
+  count reads "Deleted 4 conversations".
+- T_optimistic_reconcile_all_failed. Bulk delete 3 ids; server
+  returns `error` for all 3. Snackbar is dismissed (count ↓ 0)
+  and an error chip surfaces. No tombstones remain.
+- T_undo_timer_starts_after_final_batch. Bulk delete 1,200 ids
+  → splits into 3 batches. Batch 1 returns at t=200ms, batch 2
+  at t=400ms, batch 3 at t=900ms. Snackbar displays
+  "Undo" only at t=900ms. Timer-to-commit fires at t=5,900ms,
+  not earlier. Undo at t=2,000ms restores the full 1,200-id
+  batch (subject to per-id reconciliation). Undo at t=6,500ms
+  is a no-op.
+- T_select_all_over_100_warning. With 247 conversations matching
+  filter, "Select all" surfaces `Select all 247? [Confirm]
+  [Cancel]` chip. Cancel → no selection; Confirm → all 247
+  selected.
+- T_batch_endpoint_post_method. Inspect the network request for
+  bulk delete: method is `POST`, path is
+  `/api/conversations:batchDelete`, body is
+  `{ "ids": [...] }`. No `DELETE` request is issued during bulk
+  delete (single-row delete continues to use `DELETE` and is
+  unaffected).
+- T_auth_unauthenticated_401. Issue a batchDelete without a
+  session token → response is `401 Unauthorized` with NO
+  `results` body, NO state mutation, NO tombstone created.
+- T_auth_per_id_forbidden_isolated. Authenticated user A deletes
+  a batch of 3 ids: id1 (own), id2 (owned by user B, not in any
+  shared workspace), id3 (own). Response: id1 → `deleted`,
+  id2 → `forbidden`, id3 → `deleted`. id3 is NOT poisoned by
+  id2's failure.
+- T_auth_restore_other_user_forbidden. User A deletes id1.
+  Within the 5s window, user B (different session) attempts
+  `batchRestore { ids: [id1] }` → `forbidden`. id1 is NOT
+  restored on user B's side; user A's tombstone is untouched.
+- T_auth_no_existence_leak. Authenticated user A requests
+  batchDelete for id_x where id_x exists but belongs to user B
+  (no shared workspace). Response is `forbidden`, never
+  `not_found`. Authenticated user A requests batchDelete for
+  id_y that does not exist anywhere → `not_found`.
+- T_rate_limit_keyed_by_user. User A and user B share the same
+  source IP. User A issues 10 batch deletes in 60s → 11th
+  returns `429`. User B's first batch in the same window is
+  NOT rate-limited (rate limit is per authenticated user id,
+  not per IP).
 
 ## Open Questions
 
@@ -440,12 +498,14 @@ session. The contract is:
 - Q4. ~~Does the storage layer need a server-side bulk-delete
   endpoint, or is per-row deletion fanned-out client-side
   acceptable for V1?~~ **Resolved**: V1 uses a single batch
-  endpoint (`DELETE /api/conversations`) with explicit per-id
-  results, a 500-id batch cap, exponential-backoff retry, and
-  tombstone-based undo. See **Storage / API contract** above.
-  Client-side fan-out is rejected because it leaves
-  partial-failure semantics undefined and makes server-side rate
-  limiting and accounting unreliable.
+  endpoint (`POST /api/conversations:batchDelete`) with explicit
+  per-id results, a 500-id batch cap, exponential-backoff retry,
+  and tombstone-based undo. See **Storage / API contract** above
+  for the full request/response shape and the rationale for using
+  `POST` instead of `DELETE` (HTTP intermediaries inconsistently
+  forward bodies on `DELETE`). Client-side fan-out is rejected
+  because it leaves partial-failure semantics undefined and makes
+  server-side rate limiting and accounting unreliable.
 
 ## Telemetry
 
