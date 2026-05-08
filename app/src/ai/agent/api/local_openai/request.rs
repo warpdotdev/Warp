@@ -3,9 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::anyhow;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use prost::Message as _;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 use warp_multi_agent_api as api;
 
@@ -24,7 +24,7 @@ use super::types::{
     ResponsesRequestBody,
 };
 use super::{
-    ProviderError, RequestParams, build_local_openai_system_prompt, conversation_state_store,
+    build_local_openai_system_prompt, conversation_state_store, ProviderError, RequestParams,
 };
 use crate::ai::agent::api::r#impl::get_supported_tools;
 
@@ -756,7 +756,10 @@ fn serialize_read_skill_result(result: &ReadSkillResult) -> Value {
 
 fn serialize_file_context(file: &FileContext) -> Value {
     let mut value = serde_json::Map::new();
-    value.insert("file_path".to_string(), Value::String(file.file_name.clone()));
+    value.insert(
+        "file_path".to_string(),
+        Value::String(file.file_name.clone()),
+    );
     if let Some(line_range) = &file.line_range {
         value.insert(
             "line_range".to_string(),
@@ -766,7 +769,10 @@ fn serialize_file_context(file: &FileContext) -> Value {
 
     match &file.content {
         AnyFileContent::StringContent(content) => {
-            value.insert("content_type".to_string(), Value::String("text".to_string()));
+            value.insert(
+                "content_type".to_string(),
+                Value::String("text".to_string()),
+            );
             value.insert("content".to_string(), Value::String(content.clone()));
         }
         AnyFileContent::BinaryContent(content) => {
@@ -774,10 +780,7 @@ fn serialize_file_context(file: &FileContext) -> Value {
                 "content_type".to_string(),
                 Value::String("binary".to_string()),
             );
-            value.insert(
-                "content".to_string(),
-                Value::String("<binary>".to_string()),
-            );
+            value.insert("content".to_string(), Value::String("<binary>".to_string()));
             value.insert(
                 "size_bytes".to_string(),
                 Value::Number((content.len() as u64).into()),

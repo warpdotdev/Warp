@@ -9,6 +9,8 @@ use crate::{
     appearance::Appearance, channel::ChannelState, themes::theme::ColorScheme,
     workspace::WorkspaceAction,
 };
+use serde::Deserialize;
+use std::{path::Path, sync::OnceLock};
 use warpui::{
     assets::asset_cache::AssetSource,
     elements::{
@@ -18,6 +20,9 @@ use warpui::{
     ui_components::components::UiComponent,
     AppContext, Entity, View, ViewContext, ViewHandle,
 };
+
+const ABOUT_PAGE_VERSION_PLACEHOLDER: &str = "v#.##.###";
+const BUNDLED_VERSION_METADATA_PATH: &str = "bundled/metadata/version.json";
 
 pub struct AboutPageView {
     page: PageType<Self>,
@@ -50,6 +55,12 @@ struct AboutPageWidget {
     copy_version_button_mouse_state: MouseStateHandle,
 }
 
+/// Stores the bundled Warp version written by the release packaging scripts.
+#[derive(Deserialize)]
+struct BundledVersionMetadata {
+    warp_version: String,
+}
+
 impl SettingsWidget for AboutPageWidget {
     type View = AboutPageView;
 
@@ -72,7 +83,7 @@ impl SettingsWidget for AboutPageWidget {
             "bundled/svg/warp-logo-with-dark-title.svg"
         };
 
-        let version = ChannelState::app_version().unwrap_or("v#.##.###");
+        let version = about_page_version();
 
         let version_text = ui_builder
             .span(version.to_string())
@@ -129,6 +140,62 @@ impl SettingsWidget for AboutPageWidget {
     }
 }
 
+/// Returns the version string shown on the About page.
+fn about_page_version() -> &'static str {
+    ChannelState::app_version()
+        .or_else(bundled_app_version)
+        .unwrap_or(ABOUT_PAGE_VERSION_PLACEHOLDER)
+}
+
+/// Returns the packaged Warp version from bundled metadata when available.
+fn bundled_app_version() -> Option<&'static str> {
+    static BUNDLED_APP_VERSION: OnceLock<Option<String>> = OnceLock::new();
+
+    BUNDLED_APP_VERSION
+        .get_or_init(load_bundled_app_version)
+        .as_deref()
+}
+
+/// Loads the packaged Warp version from the bundled metadata file on disk.
+fn load_bundled_app_version() -> Option<String> {
+    let resources_dir = warp_core::paths::bundled_resources_dir()?;
+    let version_metadata_path = resources_dir.join(BUNDLED_VERSION_METADATA_PATH);
+    load_bundled_app_version_from_path(&version_metadata_path)
+}
+
+/// Reads and parses the bundled Warp version metadata file from the given path.
+fn load_bundled_app_version_from_path(version_metadata_path: &Path) -> Option<String> {
+    let contents = match std::fs::read_to_string(version_metadata_path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(err) => {
+            log::warn!(
+                "Failed to read bundled version metadata from {}: {err:#}",
+                version_metadata_path.display()
+            );
+            return None;
+        }
+    };
+
+    match serde_json::from_str::<BundledVersionMetadata>(&contents) {
+        Ok(metadata) if metadata.warp_version.is_empty() => {
+            log::warn!(
+                "Bundled version metadata at {} is missing warp_version",
+                version_metadata_path.display()
+            );
+            None
+        }
+        Ok(metadata) => Some(metadata.warp_version),
+        Err(err) => {
+            log::warn!(
+                "Failed to parse bundled version metadata from {}: {err:#}",
+                version_metadata_path.display()
+            );
+            None
+        }
+    }
+}
+
 impl SettingsPageMeta for AboutPageView {
     fn section() -> SettingsSection {
         SettingsSection::About
@@ -154,5 +221,39 @@ impl SettingsPageMeta for AboutPageView {
 impl From<ViewHandle<AboutPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<AboutPageView>) -> Self {
         SettingsPageViewHandle::About(view_handle)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_bundled_app_version_from_path;
+
+    /// Confirms that valid bundled metadata is surfaced as the About page version.
+    #[test]
+    fn loads_bundled_version_metadata_when_present() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+        let version_metadata_path = temp_dir.path().join("version.json");
+        std::fs::write(
+            &version_metadata_path,
+            r#"{"warp_version":"v0.2026.05.08.06.21.oss"}"#,
+        )
+        .expect("version metadata should be written");
+
+        let version = load_bundled_app_version_from_path(&version_metadata_path);
+
+        assert_eq!(version.as_deref(), Some("v0.2026.05.08.06.21.oss"));
+    }
+
+    /// Confirms that malformed bundled metadata does not produce a misleading version string.
+    #[test]
+    fn ignores_invalid_bundled_version_metadata() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+        let version_metadata_path = temp_dir.path().join("version.json");
+        std::fs::write(&version_metadata_path, r#"{"warp_version":42}"#)
+            .expect("version metadata should be written");
+
+        let version = load_bundled_app_version_from_path(&version_metadata_path);
+
+        assert_eq!(version, None);
     }
 }

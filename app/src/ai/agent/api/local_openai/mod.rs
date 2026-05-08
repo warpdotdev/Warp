@@ -27,8 +27,8 @@ use warpui::r#async::Timer;
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::task::TaskId;
-use crate::server::server_api::ServerApi;
 use crate::server::retry_strategies::is_transient_http_error;
+use crate::server::server_api::ServerApi;
 
 use super::{Event, RequestParams, ResponseStream};
 use request::{

@@ -18,7 +18,9 @@ use warp_core::ui::theme::Fill;
 use crate::ai::blocklist::agent_view::agent_input_footer::AgentInputButtonTheme;
 use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
 use crate::ai::harness_display::icon_for as harness_icon_for;
-use crate::ai::llms::{effective_disable_reason_for_model, LLMId, LLMPreferences, LLMPreferencesEvent};
+use crate::ai::llms::{
+    effective_disable_reason_for_model, LLMId, LLMPreferences, LLMPreferencesEvent,
+};
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys,
     SingleLineEditorOptions, TextOptions,
