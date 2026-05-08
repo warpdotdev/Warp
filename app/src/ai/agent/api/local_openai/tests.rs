@@ -2144,7 +2144,7 @@ fn local_backend_retry_stops_after_output_or_max_attempts() {
     assert!(should_retry_local_backend_error(&error, 1, false));
     assert!(!should_retry_local_backend_error(
         &error,
-        MAX_ATTEMPTS,
+        LOCAL_OPENAI_MAX_ATTEMPTS,
         false
     ));
     assert!(!should_retry_local_backend_error(&error, 1, true));

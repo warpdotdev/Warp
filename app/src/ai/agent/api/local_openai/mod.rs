@@ -27,10 +27,8 @@ use warpui::r#async::Timer;
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::task::TaskId;
-use crate::ai::agent_sdk::retry::{
-    is_transient_http_error, BACKOFF_FACTOR, BACKOFF_JITTER, INITIAL_BACKOFF, MAX_ATTEMPTS,
-};
 use crate::server::server_api::ServerApi;
+use crate::server::retry_strategies::is_transient_http_error;
 
 use super::{Event, RequestParams, ResponseStream};
 use request::{
@@ -39,6 +37,18 @@ use request::{
 };
 use stream::handle_responses_stream_message;
 use types::{LocalConversationState, StreamingResponsesAccumulator};
+
+/// Maximum local backend stream attempts, including the initial attempt.
+const LOCAL_OPENAI_MAX_ATTEMPTS: usize = 3;
+
+/// Initial delay before retrying a failed local backend stream.
+const LOCAL_OPENAI_INITIAL_BACKOFF: Duration = Duration::from_millis(500);
+
+/// Exponential multiplier applied to the local backend retry delay.
+const LOCAL_OPENAI_BACKOFF_FACTOR: f32 = 2.0;
+
+/// Maximum jitter fraction applied to local backend retry delays.
+const LOCAL_OPENAI_BACKOFF_JITTER: f32 = 0.3;
 
 /// Defines the system prompt template sent to the local OpenAI-compatible Responses model.
 pub(super) const LOCAL_OPENAI_SYSTEM_PROMPT: &str = r###"# Warp
@@ -373,7 +383,7 @@ pub fn generate_local_openai_responses_output(
         let mut cancellation_future = Box::pin(cancellation_rx);
         let mut stream_finished = false;
         let mut retry_attempt = 1usize;
-        let mut retry_delay = INITIAL_BACKOFF;
+        let mut retry_delay = LOCAL_OPENAI_INITIAL_BACKOFF;
 
         'retry: loop {
             let mut has_emitted_provider_output = false;
@@ -383,13 +393,13 @@ pub fn generate_local_openai_responses_output(
                 Err(error) => {
                     if should_retry_local_backend_error(&error, retry_attempt, false) {
                         log::warn!(
-                            "Local OpenAI Responses backend failed before streaming began on attempt {retry_attempt}/{MAX_ATTEMPTS}, retrying: {error:#}"
+                            "Local OpenAI Responses backend failed before streaming began on attempt {retry_attempt}/{LOCAL_OPENAI_MAX_ATTEMPTS}, retrying: {error:#}"
                         );
                         match wait_for_local_backend_retry_delay(cancellation_future, retry_delay).await {
                             Ok(next_cancellation_future) => {
                                 cancellation_future = next_cancellation_future;
                                 retry_attempt += 1;
-                                retry_delay = retry_delay.mul_f32(BACKOFF_FACTOR);
+                                retry_delay = retry_delay.mul_f32(LOCAL_OPENAI_BACKOFF_FACTOR);
                                 continue 'retry;
                             }
                             Err(()) => {
@@ -451,7 +461,7 @@ pub fn generate_local_openai_responses_output(
                                             has_emitted_provider_output,
                                         ) {
                                             log::warn!(
-                                                "Failed to translate local OpenAI Responses event on attempt {retry_attempt}/{MAX_ATTEMPTS}, retrying: {error:#}"
+                                                "Failed to translate local OpenAI Responses event on attempt {retry_attempt}/{LOCAL_OPENAI_MAX_ATTEMPTS}, retrying: {error:#}"
                                             );
                                             break;
                                         }
@@ -477,7 +487,7 @@ pub fn generate_local_openai_responses_output(
                                     has_emitted_provider_output,
                                 ) {
                                     log::warn!(
-                                        "Local OpenAI Responses stream failed on attempt {retry_attempt}/{MAX_ATTEMPTS}, retrying: {error:#}"
+                                        "Local OpenAI Responses stream failed on attempt {retry_attempt}/{LOCAL_OPENAI_MAX_ATTEMPTS}, retrying: {error:#}"
                                     );
                                     break;
                                 }
@@ -514,13 +524,13 @@ pub fn generate_local_openai_responses_output(
                 has_emitted_provider_output,
             ) {
                 log::warn!(
-                    "Local OpenAI Responses stream ended early on attempt {retry_attempt}/{MAX_ATTEMPTS}, retrying"
+                    "Local OpenAI Responses stream ended early on attempt {retry_attempt}/{LOCAL_OPENAI_MAX_ATTEMPTS}, retrying"
                 );
                 match wait_for_local_backend_retry_delay(cancellation_future, retry_delay).await {
                     Ok(next_cancellation_future) => {
                         cancellation_future = next_cancellation_future;
                         retry_attempt += 1;
-                        retry_delay = retry_delay.mul_f32(BACKOFF_FACTOR);
+                        retry_delay = retry_delay.mul_f32(LOCAL_OPENAI_BACKOFF_FACTOR);
                         continue 'retry;
                     }
                     Err(()) => {
@@ -557,7 +567,7 @@ fn should_retry_local_backend_error(
     has_emitted_provider_output: bool,
 ) -> bool {
     !has_emitted_provider_output
-        && attempt < MAX_ATTEMPTS
+        && attempt < LOCAL_OPENAI_MAX_ATTEMPTS
         && is_retryable_local_backend_error(error)
 }
 
@@ -598,7 +608,10 @@ async fn wait_for_local_backend_retry_delay(
     delay: Duration,
 ) -> Result<Pin<Box<oneshot::Receiver<()>>>, ()> {
     match select(
-        Box::pin(Timer::after(duration_with_jitter(delay, BACKOFF_JITTER))),
+        Box::pin(Timer::after(duration_with_jitter(
+            delay,
+            LOCAL_OPENAI_BACKOFF_JITTER,
+        ))),
         cancellation_future,
     )
     .await
