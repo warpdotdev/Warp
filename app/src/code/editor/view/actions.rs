@@ -34,7 +34,7 @@ use warpui::{
     elements::Axis,
     event::ModifiersState,
     keymap::{EditableBinding, FixedBinding, Keystroke, PerPlatformKeystroke},
-    units::Pixels,
+    units::{IntoPixels, Pixels},
     AppContext, TypedActionView, ViewContext, WeakViewHandle,
 };
 
@@ -508,8 +508,24 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(text_entry.clone())
         .with_key_binding("cmdorctrl-/"),
         EditableBinding::new("editor_view:delete", "Delete", CodeEditorViewAction::Delete)
-            .with_context_predicate(text_entry.clone())
+            .with_context_predicate(
+                text_entry.clone() & !id!("VimNormalMode") & !id!("VimVisualMode"),
+            )
             .with_key_binding("ctrl-d"),
+        EditableBinding::new(
+            "editor_view:vim_scroll_half_page_down",
+            "Scroll down half a page (vim)",
+            CodeEditorViewAction::ScrollHalfPageDown,
+        )
+        .with_context_predicate(text_entry.clone() & (id!("VimNormalMode") | id!("VimVisualMode")))
+        .with_key_binding("ctrl-d"),
+        EditableBinding::new(
+            "editor_view:vim_scroll_half_page_up",
+            "Scroll up half a page (vim)",
+            CodeEditorViewAction::ScrollHalfPageUp,
+        )
+        .with_context_predicate(text_entry.clone() & (id!("VimNormalMode") | id!("VimVisualMode")))
+        .with_key_binding("ctrl-u"),
         EditableBinding::new(
             "editor_view:cut_word_left",
             "Cut word left",
@@ -616,6 +632,8 @@ pub enum CodeEditorViewAction {
     ToggleComment,
     ScrollVertical(Pixels),
     ScrollHorizontal(Pixels),
+    ScrollHalfPageDown,
+    ScrollHalfPageUp,
     SelectUp,
     SelectDown,
     SelectLeft,
@@ -753,6 +771,8 @@ impl CodeEditorViewAction {
             Self::WindowsCtrlC => true,
             Self::ScrollVertical(_)
             | Self::ScrollHorizontal(_)
+            | Self::ScrollHalfPageDown
+            | Self::ScrollHalfPageUp
             | Self::SelectUp
             | Self::SelectDown
             | Self::SelectLeft
@@ -867,6 +887,32 @@ impl TypedActionView for CodeEditorView {
                     render_state.scroll_horizontal(*delta, ctx);
                 })
             }),
+            ScrollHalfPageDown => {
+                let model = self.model.as_ref(ctx);
+                let half = (model.lines_in_viewport(ctx) / 2).max(1);
+                let scroll_pixels = (-(half as f32 * model.line_height(ctx))).into_pixels();
+                self.model.update(ctx, |model, ctx| {
+                    for _ in 0..half {
+                        model.move_down(ctx);
+                    }
+                    model.render_state().update(ctx, |render_state, ctx| {
+                        render_state.scroll(scroll_pixels, ctx);
+                    });
+                });
+            }
+            ScrollHalfPageUp => {
+                let model = self.model.as_ref(ctx);
+                let half = (model.lines_in_viewport(ctx) / 2).max(1);
+                let scroll_pixels = (half as f32 * model.line_height(ctx)).into_pixels();
+                self.model.update(ctx, |model, ctx| {
+                    for _ in 0..half {
+                        model.move_up(ctx);
+                    }
+                    model.render_state().update(ctx, |render_state, ctx| {
+                        render_state.scroll(scroll_pixels, ctx);
+                    });
+                });
+            }
             SelectUp => self.model.update(ctx, |model, ctx| {
                 model.select_up(ctx);
             }),
