@@ -20,13 +20,12 @@ use super::{
     anonymous_id::get_or_create_anonymous_id,
     auth_manager::user_persistence::PersistedUser,
     credentials::Credentials,
-    user::{
-        AnonymousUserType, FirebaseAuthTokens, PersonalObjectLimits, PrincipalType, User,
-    },
-    #[cfg(any(not(target_family = "wasm"), test))]
-    user::UserMetadata,
+    user::{AnonymousUserType, FirebaseAuthTokens, PersonalObjectLimits, PrincipalType, User},
     UserUid, API_KEY_PREFIX,
 };
+
+#[cfg(any(not(target_family = "wasm"), test))]
+use super::user::UserMetadata;
 
 const ANONYMOUS_USER_NOTIFICATION_BLOCK_TIMER: Duration = Duration::days(7);
 
