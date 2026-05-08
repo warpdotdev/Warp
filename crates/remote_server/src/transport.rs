@@ -107,7 +107,8 @@ impl Error {
             Self::UnsupportedArch { arch } => Some(format!("Unsupported architecture: {arch}")),
             Self::ScriptFailed { exit_code, stderr } => {
                 let truncated = if stderr.len() > MAX_STDERR_DISPLAY_LEN {
-                    format!("{}…", &stderr[..MAX_STDERR_DISPLAY_LEN])
+                    let boundary = stderr.floor_char_boundary(MAX_STDERR_DISPLAY_LEN);
+                    format!("{}…", &stderr[..boundary])
                 } else {
                     stderr.clone()
                 };

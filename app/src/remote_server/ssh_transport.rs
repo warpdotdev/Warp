@@ -140,7 +140,22 @@ impl RemoteTransport for SshTransport {
                 remote_server::setup::CHECK_TIMEOUT,
             )
             .await?;
-            Ok(output.status.success())
+            // `test -x` exits 0 when present+executable, 1 when missing.
+            // Anything else (e.g. SSH exit 255 for a dead connection, or
+            // signal termination) is a transport-level failure.
+            match output.status.code() {
+                Some(0) => Ok(true),
+                Some(1) => Ok(false),
+                Some(code) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    Err(Error::Other(anyhow::anyhow!(
+                        "binary check exited with code {code}: {stderr}"
+                    )))
+                }
+                None => Err(Error::Other(anyhow::anyhow!(
+                    "binary check terminated by signal"
+                ))),
+            }
         })
     }
 
