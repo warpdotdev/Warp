@@ -1,5 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Preinstall check for the Warp remote-server binary.
+#
+# POSIX sh — intentionally avoids bash-only features so this runs on
+# hosts that have /bin/sh but no /bin/bash (Alpine, BusyBox, etc.).
 #
 # Emits a structured key=value summary on stdout. Exits 0 on success.
 # A non-zero exit indicates a probe-level failure; the client treats

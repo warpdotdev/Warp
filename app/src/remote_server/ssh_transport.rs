@@ -18,7 +18,7 @@ use remote_server::manager::RemoteServerExitStatus;
 use remote_server::setup::{
     parse_uname_output, remote_server_daemon_dir, PreinstallCheckResult, RemotePlatform,
 };
-use remote_server::ssh::{ssh_args, SshCommandError};
+use remote_server::ssh::{ssh_args, RemoteShell, SshCommandError};
 use remote_server::transport::{Connection, Error, RemoteTransport};
 
 /// SSH transport: connects via a ControlMaster socket.
@@ -109,9 +109,12 @@ impl RemoteTransport for SshTransport {
     ) -> Pin<Box<dyn Future<Output = Result<PreinstallCheckResult, Error>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
-            match remote_server::ssh::run_ssh_script(
+            // Use POSIX sh — the preinstall check script is sh-compatible
+            // and this lets it run on hosts without bash.
+            match remote_server::ssh::run_ssh_script_with_shell(
                 &socket_path,
                 remote_server::setup::PREINSTALL_CHECK_SCRIPT,
+                RemoteShell::Sh,
                 remote_server::setup::CHECK_TIMEOUT,
             )
             .await
@@ -200,9 +203,12 @@ impl RemoteTransport for SshTransport {
                 "Installing remote server binary to {}",
                 remote_server::setup::remote_server_binary()
             );
-            match remote_server::ssh::run_ssh_script(
+            // Use POSIX sh — the install script is sh-compatible and
+            // this lets it run on hosts without bash.
+            match remote_server::ssh::run_ssh_script_with_shell(
                 &socket_path,
                 &script,
+                RemoteShell::Sh,
                 remote_server::setup::INSTALL_TIMEOUT,
             )
             .await
@@ -323,7 +329,7 @@ async fn scp_install_fallback(socket_path: &Path) -> anyhow::Result<()> {
     // threading the platform through the trait.
     let platform = detect_remote_platform(socket_path)
         .await
-        .map_err(|e| anyhow::anyhow!("SCP fallback: {e:#}"))?;
+        .map_err(|e| anyhow::anyhow!("SCP fallback: {e}"))?;
 
     let url = remote_server::setup::download_tarball_url(&platform);
     let remote_tarball_path = format!(
@@ -379,7 +385,14 @@ async fn scp_install_fallback(socket_path: &Path) -> anyhow::Result<()> {
 
     let script = remote_server::setup::install_script(Some(&remote_tarball_path));
 
-    let output = remote_server::ssh::run_ssh_script(socket_path, &script, timeout).await?;
+    // Use POSIX sh for the extraction script as well.
+    let output = remote_server::ssh::run_ssh_script_with_shell(
+        socket_path,
+        &script,
+        RemoteShell::Sh,
+        timeout,
+    )
+    .await?;
     if output.status.success() {
         Ok(())
     } else {

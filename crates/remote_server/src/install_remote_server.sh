@@ -1,5 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Installs the Warp remote server binary on a remote host.
+#
+# POSIX sh — intentionally avoids bash-only features so this runs on
+# hosts that have /bin/sh but no /bin/bash (Alpine, BusyBox, etc.).
 #
 # Placeholders (substituted at runtime by setup.rs):
 #   {download_base_url}         — e.g. https://app.warp.dev/download/cli
@@ -14,8 +17,8 @@ set -e
 
 arch=$(uname -m)
 case "$arch" in
-  x86_64)        arch_name=x86_64 ;;
-  aarch64|arm64) arch_name=aarch64 ;;
+  x86_64)                arch_name=x86_64 ;;
+  aarch64|arm64|armv8l)  arch_name=aarch64 ;;
   *) echo "unsupported arch: $arch" >&2; exit 2 ;;
 esac
 

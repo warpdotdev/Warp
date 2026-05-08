@@ -100,6 +100,15 @@ pub enum UnsupportedReason {
     NonGlibc {
         name: String,
     },
+    /// The remote host's CPU architecture is not supported by the
+    /// prebuilt remote-server binary (e.g. `armv7l`, `i686`, `mips`).
+    UnsupportedArch {
+        arch: String,
+    },
+    /// The remote host's OS kernel is not supported (e.g. `FreeBSD`).
+    UnsupportedOs {
+        os: String,
+    },
 }
 
 impl PreinstallCheckResult {
@@ -240,6 +249,11 @@ impl RemoteArch {
 ///
 /// The expected format is `<os> <arch>`, e.g. `Linux x86_64` or `Darwin arm64`.
 /// Takes the last line to skip any shell initialization output.
+///
+/// Returns a typed [`crate::transport::Error`] so the caller can
+/// distinguish genuinely-unsupported architectures/OSes
+/// (`UnsupportedOs` / `UnsupportedArch`) from parse failures (`Other`)
+/// and route them appropriately.
 pub fn parse_uname_output(
     output: &str,
 ) -> std::result::Result<RemotePlatform, crate::transport::Error> {
