@@ -81,28 +81,79 @@ is redacted.
 #### B1.1 — Command matching normalization
 
 `command_pattern` does **not** apply to the raw command string
-verbatim. Before matching, Warp normalizes the command:
+verbatim. Before matching, Warp normalizes the command into a
+*subcommand path string* and a separate *argv set*. The
+`command_pattern` regex matches ONLY against the subcommand path
+string. Trailing resource-name positionals are NOT included in the
+string `command_pattern` matches against — they are separated into
+the argv set.
 
 1. **Argv parse:** Split using shell-aware tokenization (the same
    parser used elsewhere in Warp). Quoting and escaping are
    respected.
 2. **Subcommand path extraction:** For known multi-word CLIs
    (`kubectl`, `aws`, `gcloud`, `vault`, `op`, `gh`, `doppler`,
-   `bw`), extract the ordered sequence of non-flag positionals
-   that form the subcommand path (e.g.,
-   `kubectl get secret`, `aws secretsmanager get-secret-value`).
-3. **Argument-order independence:** Flags (`-n ns`, `--namespace=ns`,
-   `-o yaml`) and additional positionals (resource names) are
-   collected into a *set*. The match operates on the tuple
-   `(subcommand_path, normalized_argv_set)`. This means
-   `kubectl -n ns get secret foo` and `kubectl get secret -n ns foo`
-   both match a rule keyed on subcommand path `kubectl get secret`.
-4. **Pattern semantics:** `command_pattern` is a Rust regex matched
-   against the normalized subcommand path string (a single
-   space-joined string like `kubectl get secret`). Optional
-   `argv_contains` and `argv_excludes` fields (arrays of regexes)
-   further constrain the match against the normalized argv set when
-   present.
+   `bw`), the normalizer walks the argv from index 0 and consumes
+   tokens into the subcommand path **only while the token is a
+   non-flag verb-like segment recognized by the per-CLI subcommand
+   table**. Resource names, IDs, and other free-form positionals
+   are NOT part of the subcommand path; they go into the argv set.
+
+   Concretely:
+
+   - `kubectl get secret foo`
+       - subcommand path: `kubectl get secret`
+       - argv set: `{ "foo" }`
+   - `aws secretsmanager get-secret-value --secret-id my/secret`
+       - subcommand path: `aws secretsmanager get-secret-value`
+       - argv set: `{ "--secret-id", "my/secret" }`
+   - `kubectl -n ns get secret foo`
+       - subcommand path: `kubectl get secret`
+       - argv set: `{ "-n", "ns", "foo" }`
+   - `kubectl get secrets-config foo`
+       - subcommand path: `kubectl get secrets-config`
+         (because `secrets-config` is NOT in the verb table; the
+         normalizer leaves it in the path because it sits where a
+         subcommand would, but the per-rule regex anchored on
+         `secrets?(\s|$)` rejects it — see negative tests in T10).
+
+   The CLI-aware verb tables that drive the walk live in code, not
+   in user config; users do not need to learn the internal verb
+   tables to write rules. The default rules in B1.2 are written
+   against the same tables.
+
+3. **Argv set:** Everything that is not in the subcommand path —
+   flags, flag values, resource names, file paths, anything else —
+   ends up here as an unordered set. Rules use `argv_contains` /
+   `argv_excludes` to constrain on this set.
+
+4. **Pattern semantics (canonical):** `command_pattern` is a Rust
+   regex matched against the **subcommand path string** described
+   above. **It is NOT matched against any string that includes the
+   trailing resource-name positionals.** A rule that wants to
+   require/forbid a resource name uses `argv_contains` /
+   `argv_excludes`; the resource-name positional never appears in
+   the string `command_pattern` is run against.
+
+   The trailing `(\s|$)` boundary in the V1 default patterns
+   (e.g., `^kubectl\s+get\s+secrets?(\s|$)`) exists for one reason
+   only: to allow zero-or-more **subcommand-path** tokens to follow
+   without admitting near-miss tokens. The end-of-string case
+   (`$`) covers `kubectl get secret` with no further subcommand
+   tokens; the whitespace case (`\s`) covers a deeper subcommand
+   that may extend the path within the verb table (e.g., a future
+   `kubectl get secret some-known-verb`). It does NOT exist to
+   admit trailing resource names — those are not in the matched
+   string at all.
+
+5. **Why this matters.** The round-2 review surfaced an internal
+   inconsistency where the prior wording could be read as either
+   "subcommand path only" or "subcommand path including trailing
+   positionals." The canonical answer is **subcommand path only**.
+   This is the single contract; reviewers should reject any spec
+   text or code comment that suggests otherwise. T_command_match_contract
+   (added in Test plan) asserts the contract on every default
+   rule and on a synthetic adversarial input.
 
 #### B1.2 — Default command-output rules (regex form)
 
@@ -135,12 +186,37 @@ so users can override or disable them (see B3).
 ```toml
 [[redaction.multiline_rules]]
 id = "default-pem-private-key"
-start_pattern = "-----BEGIN [A-Z ]+PRIVATE KEY-----"
-end_pattern = "-----END [A-Z ]+PRIVATE KEY-----"
+# IMPORTANT: the algorithm-prefix segment uses `[A-Z ]*` (zero-or-more,
+# not one-or-more), so the bare `-----BEGIN PRIVATE KEY-----` form
+# (PKCS#8, no algorithm tag) is matched alongside the algorithm-tagged
+# variants such as `BEGIN RSA PRIVATE KEY`, `BEGIN EC PRIVATE KEY`,
+# `BEGIN OPENSSH PRIVATE KEY`, `BEGIN ENCRYPTED PRIVATE KEY`. This
+# closes the round-2 critical gap where `[A-Z ]+` left bare PKCS#8
+# private keys unredacted in both output and pasted input. The
+# trailing optional space inside `[A-Z ]*` is preserved so a stray
+# space before "PRIVATE" still matches.
+start_pattern = "-----BEGIN [A-Z ]*PRIVATE KEY-----"
+end_pattern = "-----END [A-Z ]*PRIVATE KEY-----"
 replacement = "[redacted: PEM key block]"
 inclusive = true
 applies_to = ["output", "input"]
 ```
+
+The above pattern matches every form of PEM private-key block that
+the OpenSSL / OpenSSH / cryptography ecosystems emit:
+
+| Form                                              | BEGIN/END line                                 | Matched by V1 default? |
+| ------------------------------------------------- | ---------------------------------------------- | ---------------------- |
+| Bare PKCS#8                                       | `-----BEGIN PRIVATE KEY-----`                  | YES (zero-or-more handles the empty algorithm segment) |
+| PKCS#1 RSA                                        | `-----BEGIN RSA PRIVATE KEY-----`              | YES |
+| SEC1 EC                                           | `-----BEGIN EC PRIVATE KEY-----`               | YES |
+| OpenSSH                                           | `-----BEGIN OPENSSH PRIVATE KEY-----`          | YES |
+| Encrypted PKCS#8                                  | `-----BEGIN ENCRYPTED PRIVATE KEY-----`        | YES |
+| DSA                                               | `-----BEGIN DSA PRIVATE KEY-----`              | YES |
+
+Acceptance test T16 (added in Test plan) is the regression guard
+that fixes this critical gap and asserts the bare PKCS#8 form is
+redacted both on the output stream and on the pasted-input path.
 
 The redaction layer walks the stream line-by-line. When
 `start_pattern` matches, all subsequent lines are buffered until
@@ -187,9 +263,12 @@ is protected by default. Users may scope rules narrower if needed.
 V1 ships defaults for the most common cases:
 
 - The 12 command-output rules listed in B1.2.
-- PEM private-key blocks (RSA, EC, OPENSSH) → multiline (B2),
-  applied to both output and input
-  (`id = "default-pem-private-key"`, `inclusive = true`).
+- PEM private-key blocks (bare PKCS#8 with no algorithm prefix,
+  plus RSA, EC, OPENSSH, ENCRYPTED, DSA — see B2 algorithm-form
+  table) → multiline (B2), applied to both output and input
+  (`id = "default-pem-private-key"`, `inclusive = true`,
+  `start_pattern = "-----BEGIN [A-Z ]*PRIVATE KEY-----"` —
+  `[A-Z ]*` is zero-or-more so the bare form matches).
 - Generic env-style `\bAKIA[0-9A-Z]{16}\b` (already handled by
   single-line redaction; called out so users don't add a
   duplicate).
@@ -404,6 +483,52 @@ post-cap content ever leaks once redaction is active:
 - T15 = lint test: a deliberately-broken commit constructs the
   agent-bound message struct from raw `String` without going
   through `redact_for_agent` and the clippy lint flags it.
+- T16 = **PEM bare-PKCS#8 critical regression test** (closes the
+  round-2 critical gap). Six fixtures, each a complete BEGIN..END
+  PEM block:
+  - `-----BEGIN PRIVATE KEY-----` (bare PKCS#8, NO algorithm tag)
+  - `-----BEGIN RSA PRIVATE KEY-----`
+  - `-----BEGIN EC PRIVATE KEY-----`
+  - `-----BEGIN OPENSSH PRIVATE KEY-----`
+  - `-----BEGIN ENCRYPTED PRIVATE KEY-----`
+  - `-----BEGIN DSA PRIVATE KEY-----`
+
+  For each fixture:
+    - Output path: insert into a captured command output stream;
+      assert the entire BEGIN..END range is replaced with
+      `[redacted: PEM key block]`, including BEGIN and END lines
+      (because `inclusive = true`).
+    - Input path: insert into the agent prompt-paste path; assert
+      the same redaction before send.
+
+  The bare PKCS#8 case is the explicit regression guard for the
+  `[A-Z ]+` → `[A-Z ]*` fix; this case MUST fail under the prior
+  pattern and pass under the new one. CI fails if any of the six
+  fixtures leaks a single key byte to the agent stream.
+
+- T_command_match_contract = **Command-matching contract test**
+  (closes the round-2 important "internally inconsistent" gap on
+  whether `command_pattern` sees trailing resource positionals).
+  Drive the normalizer with the following inputs and assert the
+  documented (subcommand_path, argv_set) split:
+
+  | Input                                       | Expected subcommand_path             | Expected argv_set                          |
+  | ------------------------------------------- | ------------------------------------ | ------------------------------------------ |
+  | `kubectl get secret foo`                    | `kubectl get secret`                 | `{"foo"}`                                  |
+  | `kubectl -n ns get secret foo`              | `kubectl get secret`                 | `{"-n", "ns", "foo"}`                      |
+  | `aws secretsmanager get-secret-value --secret-id my/s` | `aws secretsmanager get-secret-value` | `{"--secret-id", "my/s"}`              |
+  | `vault kv get kv/data/app/prod`             | `vault kv get`                       | `{"kv/data/app/prod"}`                     |
+  | `kubectl get secrets-config foo`            | `kubectl get secrets-config`         | `{"foo"}` (rule rejects via regex anchor)  |
+
+  Then assert that the V1 default `command_pattern` regexes
+  (B1.2) are matched ONLY against the subcommand_path string and
+  that `match("kubectl get secret", default_kubectl_get_secret)` is
+  `Some(_)` while `match("kubectl get secret foo", ...)` is NEVER
+  invoked by the matcher (the resource name is in the argv set,
+  not in the matched string). A test double for the matcher
+  records the exact strings it sees and fails if any contains a
+  trailing resource positional. Asserts the canonical "subcommand
+  path only" contract end-to-end.
 
 ## Out of scope (V1)
 
