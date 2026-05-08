@@ -132,6 +132,21 @@ impl Default for SafeReadOpts {
 - B6. All four helpers stream-read for files larger than 1 MiB and
   short-circuit on the size check before allocating the full
   buffer.
+- B8. **Non-regular file handling**: before any open, the helpers
+  check `Metadata::file_type()`. Only regular files (`is_file()`)
+  and symlink targets that resolve to regular files (when
+  `opts.follow_symlinks == true`) are read. Every other file type
+  — directories, FIFOs/named pipes, character devices, block
+  devices, Unix sockets — returns
+  `SafeReadError::Io { source: ErrorKind::InvalidInput, path }`
+  immediately. This is a hard rule with no opt-out: the helpers
+  never read from streams of unknown length, never block waiting
+  for FIFO writers, and never read from `/dev/random`, `/dev/zero`,
+  `/dev/urandom`, or comparable special devices. The "stream
+  without known length" wording in B7 has been removed because no
+  such stream is ever read; if a future revision adds support for
+  FIFOs it must specify a hard read deadline and a separate opts
+  flag.
 
 ### Error precedence (B7)
 
@@ -145,15 +160,21 @@ a single call:
    `SafeReadError::Io` with `ErrorKind::InvalidInput`.
 2. **Open / metadata I/O errors** (permission denied, not found,
    etc.). Returns `SafeReadError::Io { source }`.
-3. **Size check** against `opts.max_bytes`. Evaluated from
-   `Metadata::len()` for regular files before any read; for streams
-   without a known length, evaluated incrementally during the
-   streaming read at B6's 1 MiB threshold. Returns
+3. **Non-regular file rejection** (per B8). If
+   `Metadata::file_type()` is anything other than a regular file
+   (or a symlink resolving to a regular file when
+   `follow_symlinks` is on), returns
+   `SafeReadError::Io { source: ErrorKind::InvalidInput, path }`
+   without opening the file.
+4. **Size check** against `opts.max_bytes`. Evaluated from
+   `Metadata::len()` for regular files before any read. Because
+   B8 rejects every non-regular file, no streaming size check is
+   needed for unknown-length sources. Returns
    `SafeReadError::TooLarge`.
-4. **Binary check** (text helpers only) — runs against the first
+5. **Binary check** (text helpers only) — runs against the first
    8 KiB chunk as it streams in. Returns
    `SafeReadError::BinaryContent`.
-5. **UTF-8 validation** (text helpers only) — runs against the
+6. **UTF-8 validation** (text helpers only) — runs against the
    complete payload after the binary check passes. Returns
    `SafeReadError::InvalidUtf8`.
 
@@ -256,6 +277,37 @@ pub enum SafeReadError {
 
 `BinaryContent` and `InvalidUtf8` are non-retryable: callers must
 either use `read_bytes` or surface the failure to the user.
+
+### Path redaction in telemetry and logs
+
+`SafeReadError` carries the full `PathBuf` so the immediate caller
+can surface it to the local user (e.g., a toast or editor error
+banner). It is **never** safe to forward that path verbatim to
+remote telemetry, crash reports, or shared logs. The spec imposes
+the following rules on every emit site that consumes
+`SafeReadError`:
+
+1. `Display`/`Debug` impls on `SafeReadError` redact the full path
+   to the file's basename (`PathBuf::file_name()`) plus its
+   classification (e.g., `"<binary>/skill.md"`,
+   `"<too-large>/changelog.txt"`). The full path is reachable only
+   via the explicit `path()` accessor, which is documented as
+   "local-only — do not log".
+2. The `call_site: &'static str` field is the canonical telemetry
+   key for *where* the read came from. Telemetry events emit
+   `{ call_site, error_kind, byte_size_bucket }`; they do not emit
+   `path`, `path.file_name()`, or any other user-content-derived
+   field.
+3. Server-side error logs (warp-internal trace pipelines) follow
+   the same rule: paths are redacted to basename, dollar amounts
+   and absolute paths are scrubbed by the existing log-redaction
+   layer, and raw file contents from the failed read are never
+   logged.
+4. A unit test (`T_path_redaction`) constructs each
+   `SafeReadError` variant with an absolute path containing a
+   home-directory prefix, formats it with `Display` and `Debug`,
+   and asserts the formatted output contains only the basename and
+   never the parent directory components.
 
 ## Lint enforcement
 
@@ -426,6 +478,36 @@ file or module head) so the allowlist is auditable from source:
 Production code outside these patterns has no escape hatch other than
 migrating to `safe_read`.
 
+#### Allow-attribute audit
+
+Rust permits `#[allow(clippy::disallowed_methods)]` at the function,
+module, or crate level, which would silently defeat this lint. To
+keep the "no escape hatch" rule meaningful, the V1 PR adds a
+build-time audit test (`tests/disallowed_methods_allow_audit.rs`)
+that walks every `.rs` file under `app/` and `crates/` and fails CI
+if it finds:
+
+1. `#[allow(clippy::disallowed_methods)]` outside the path
+   allowlist above.
+2. `#[allow(clippy::disallowed_methods)]` listed in a multi-lint
+   `#[allow(...)]` group outside the allowlist (the audit greps
+   tokens, not exact attribute strings).
+3. `#![allow(clippy::disallowed_methods)]` at any crate root (this
+   would defeat the V2 deny entirely).
+4. The same checks for `#[expect(...)]` (Rust 1.81+ alternative
+   spelling) and tool-prefixed forms (e.g.,
+   `#[allow(clippy :: disallowed_methods)]` with whitespace).
+
+Adding a new allow-site to production code requires (a) a code
+review approval explicitly citing `disallowed_methods`, (b) an
+update to the path allowlist above, and (c) a matching update to
+the audit test's allowlist constant. The audit is the only
+sanctioned mechanism for granting an exemption; ad-hoc `#[allow]`
+attributes fail CI.
+
+The audit fixture lives in `crates/warp_files/tests/` because that
+crate already owns the `safe_read` module and its test deps.
+
 ### Warn → deny promotion plan
 
 - **V1**: every workspace crate root carries
@@ -518,8 +600,15 @@ Identified via `git grep "fs::read"` in app/src and crates/:
 - `crates/warp_files/src/error.rs` (new — `SafeReadError` enum).
 - `crates/warp_files/src/opts.rs` (new — `SafeReadOpts` struct,
   `BinaryCheck` enum, and the `Default` impl).
-- `.clippy.toml` (new file — disallowed-methods data only; no
-  severity is set here).
+- `.clippy.toml` (**modified — existing workspace-root file**).
+  Per the "Lint data: `.clippy.toml`" section above, this file
+  already exists with `disallowed-macros`, `disallowed-types`,
+  and a populated `disallowed-methods` array. The V1 PR appends
+  exactly the four new entries shown there to the existing
+  `disallowed-methods` array; it does not create a new file,
+  remove or reorder existing entries, or touch
+  `disallowed-macros` / `disallowed-types`. No severity field is
+  added.
 - Crate-root attributes: `#![warn(clippy::disallowed_methods)]` added
   to the `lib.rs` / `main.rs` of every production crate in the
   workspace in V1; flipped to `#![deny(...)]` in V2. The exact set
