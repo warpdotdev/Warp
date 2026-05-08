@@ -111,6 +111,11 @@ impl HarnessAvailabilityModel {
     }
 
     pub fn display_name_for(&self, harness: Harness) -> &str {
+        // Always use the canonical client-side name for the Oz harness so stale
+        // cached data or older server versions cannot surface the old "Oz" label.
+        if harness == Harness::Oz {
+            return harness_display::display_name(harness);
+        }
         self.harnesses
             .iter()
             .find(|h| h.harness == harness)
