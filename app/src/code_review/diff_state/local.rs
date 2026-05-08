@@ -1426,6 +1426,7 @@ impl LocalDiffStateModel {
 
     /// Gets the merge base between HEAD and the specified branch
     async fn get_merge_base(repo_path: &Path, branch: &str) -> Result<String> {
+        log::debug!("[GIT OPERATION] local.rs get_merge_base git merge-base HEAD {branch}");
         let output = run_git_command(repo_path, &["merge-base", "HEAD", branch]).await?;
         Ok(output.trim().to_string())
     }
@@ -1480,6 +1481,7 @@ impl LocalDiffStateModel {
         let main_branch_name = detect_main_branch(&repo_path).await?;
         let current_branch_name = detect_current_branch(&repo_path).await?;
 
+        log::debug!("[GIT OPERATION] local.rs load_metadata_for_repo git rev-parse HEAD");
         let has_head_commit = run_git_command(&repo_path, &["rev-parse", "HEAD"])
             .await
             .is_ok();
@@ -1698,6 +1700,9 @@ impl LocalDiffStateModel {
 
     async fn file_statuses_against_head(repo_path: &Path) -> Result<Vec<(PathBuf, GitFileStatus)>> {
         // First, get the list of changed files with their status
+        log::debug!(
+            "[GIT OPERATION] local.rs file_statuses_against_head git --no-optional-locks status --untracked-files=all --branch --porcelain=2 -z"
+        );
         let status_output = run_git_command(
             repo_path,
             &[
@@ -1778,6 +1783,9 @@ impl LocalDiffStateModel {
 
         match (mode, merge_base) {
             (DiffMode::Head, _) => {
+                log::debug!(
+                    "[GIT OPERATION] local.rs file_status_for_path git status -- {rel_str}"
+                );
                 let output = run_git_command(
                     repo_path,
                     &[
@@ -1794,6 +1802,9 @@ impl LocalDiffStateModel {
                 Ok(statuses.into_iter().find(|(p, _)| *p == relative))
             }
             (_, Some(base)) => {
+                log::debug!(
+                    "[GIT OPERATION] local.rs file_status_for_path git diff --name-status -z {base} -- {rel_str}"
+                );
                 let diff_output = run_git_command(
                     repo_path,
                     &["diff", "--name-status", "-z", base, "--", rel_str],
@@ -1809,6 +1820,9 @@ impl LocalDiffStateModel {
 
                 // The file may be untracked (not in the base diff). Fall back to
                 // `git status` scoped to this path to detect untracked files.
+                log::debug!(
+                    "[GIT OPERATION] local.rs file_status_for_path git status -- {rel_str} (untracked fallback)"
+                );
                 let status_output =
                     run_git_command(repo_path, &["status", "--porcelain=2", "-z", "--", rel_str])
                         .await?;
@@ -1830,6 +1844,9 @@ impl LocalDiffStateModel {
             .unwrap_or_else(|_| file.to_path_buf());
         let rel_str = relative.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?;
 
+        log::debug!(
+            "[GIT OPERATION] local.rs is_file_binary git diff --numstat {commit} -- {rel_str}"
+        );
         let output =
             match run_git_command(repo_path, &["diff", "--numstat", commit, "--", rel_str]).await {
                 Ok(o) => o,
@@ -1935,6 +1952,9 @@ impl LocalDiffStateModel {
         repo_path: &Path,
         merge_base: &str,
     ) -> Result<Vec<(PathBuf, GitFileStatus)>> {
+        log::debug!(
+            "[GIT OPERATION] local.rs file_statuses_against_base git diff --name-status -z {merge_base}"
+        );
         let diff_output =
             run_git_command(repo_path, &["diff", "--name-status", "-z", merge_base]).await?;
 
@@ -1946,6 +1966,9 @@ impl LocalDiffStateModel {
         };
 
         // Also get untracked files, as they should be included in branch comparisons
+        log::debug!(
+            "[GIT OPERATION] local.rs file_statuses_against_base git status --untracked-files=all --porcelain=2 -z"
+        );
         let status_output = run_git_command(
             repo_path,
             &["status", "--untracked-files=all", "--porcelain=2", "-z"],
@@ -2049,6 +2072,9 @@ impl LocalDiffStateModel {
         };
 
         // Get the diff between working directory and merge base with full patch output
+        log::debug!(
+            "[GIT OPERATION] local.rs diff_metadata_against_specific_branch git diff --name-status -z {merge_base}"
+        );
         let diff_output =
             run_git_command(repo_path, &["diff", "--name-status", "-z", &merge_base]).await?;
 
@@ -2060,6 +2086,9 @@ impl LocalDiffStateModel {
         };
 
         // Also get untracked files, as they should be included in branch comparisons
+        log::debug!(
+            "[GIT OPERATION] local.rs diff_metadata_against_specific_branch git status --untracked-files=all --porcelain=2 -z"
+        );
         let status_output = run_git_command(
             repo_path,
             &["status", "--untracked-files=all", "--porcelain=2", "-z"],
@@ -2246,12 +2275,18 @@ impl LocalDiffStateModel {
                 // all content as additions, which is the correct representation.
                 Some(String::new())
             }
-            _ => (run_git_command(
-                repo_path,
-                &["show", &format!("HEAD:{}", file_path.to_str()?)],
-            )
-            .await)
-                .ok(),
+            _ => {
+                log::debug!(
+                    "[GIT OPERATION] local.rs get_file_content_at_head git show HEAD:{}",
+                    file_path.display()
+                );
+                (run_git_command(
+                    repo_path,
+                    &["show", &format!("HEAD:{}", file_path.to_str()?)],
+                )
+                .await)
+                    .ok()
+            }
         }
     }
 
@@ -2378,6 +2413,10 @@ impl LocalDiffStateModel {
             }
         };
 
+        log::debug!(
+            "[GIT OPERATION] local.rs get_file_diff git {}",
+            diff_args.join(" ")
+        );
         let diff_output = match run_git_command(repo_path, &diff_args).await {
             Ok(output) => output,
             Err(error) => {
@@ -2630,6 +2669,9 @@ impl LocalDiffStateModel {
         repo_path: &Path,
         commit: &str,
     ) -> Result<HashMap<PathBuf, GitNumStatMetadata>> {
+        log::debug!(
+            "[GIT OPERATION] local.rs get_diff_metadata_using_numstat git diff --numstat {commit}"
+        );
         let numstat_output = match run_git_command(repo_path, &["diff", "--numstat", commit]).await
         {
             Ok(output) => output,
@@ -2686,6 +2728,9 @@ impl LocalDiffStateModel {
         file_path: &str,
         commit: &str,
     ) -> Option<String> {
+        log::debug!(
+            "[GIT OPERATION] local.rs get_file_content_at_commit git show {commit}:{file_path}"
+        );
         run_git_command(repo_path, &["show", &format!("{commit}:{file_path}")])
             .await
             .ok()
