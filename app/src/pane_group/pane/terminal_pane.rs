@@ -373,6 +373,17 @@ impl PaneContent for TerminalPane {
             }
         });
         let active_session = terminal_view.as_ref(ctx).active_session().clone();
+        let ambient_session_registrations = pane_stack
+            .as_ref(ctx)
+            .entries()
+            .iter()
+            .filter_map(|(_, terminal_view)| {
+                terminal_view
+                    .as_ref(ctx)
+                    .ambient_agent_task_id_for_details_panel(ctx)
+                    .map(|task_id| (terminal_view.id(), task_id))
+            })
+            .collect::<Vec<_>>();
         ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
             model.register_agent_view_controller(
                 &agent_view_controller,
@@ -380,6 +391,9 @@ impl PaneContent for TerminalPane {
                 terminal_view_id,
                 ctx,
             );
+            for (terminal_view_id, task_id) in ambient_session_registrations {
+                model.register_ambient_session(terminal_view_id, task_id, ctx);
+            }
         });
     }
 
@@ -402,6 +416,10 @@ impl PaneContent for TerminalPane {
         // Unsubscribe from all views in the pane stack.
         let pane_stack = self.view.as_ref(ctx).pane_stack().clone();
         let contents = pane_stack.as_ref(ctx).entries().to_vec();
+        let terminal_view_ids = contents
+            .iter()
+            .map(|(_, view)| view.id())
+            .collect::<Vec<_>>();
         for (manager, view) in contents {
             // Notify the view that it's being detached so it can react appropriately
             // (e.g. the shared-session viewer tears down its network only when the detach
@@ -418,7 +436,10 @@ impl PaneContent for TerminalPane {
         // restored, so this is safe to run unconditionally.
         let terminal_view_id = self.terminal_view(ctx).id();
         ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
-            model.unregister_agent_view_controller(terminal_view_id, ctx);
+            for terminal_view_id in terminal_view_ids {
+                model.unregister_agent_view_controller(terminal_view_id, ctx);
+                model.unregister_ambient_session(terminal_view_id, ctx);
+            }
         });
 
         // Clean up any active CLI agent session so its notification is removed.
