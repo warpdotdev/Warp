@@ -8,6 +8,7 @@
 
 use std::{io::sink, sync::Arc};
 
+use pathfinder_geometry::vector::Vector2F;
 use warp_core::command::ExitCode;
 use warpui::r#async::executor::Background;
 
@@ -23,6 +24,7 @@ use super::{
     block::{Block, BlockId, BlockSize},
     blocks::BlockList,
     bootstrap::BootstrapStage,
+    iterm_image::{ITermImage, ITermImageDimensionUnit, ITermImageMetadata},
     terminal_model::BlockIndex,
     ObfuscateSecrets, TerminalModel,
 };
@@ -33,6 +35,21 @@ pub fn block_size() -> BlockSize {
         block_padding: block_padding(),
         max_block_scroll_limit: 1000,
         warp_prompt_height_lines: 0.6,
+    }
+}
+
+pub fn test_iterm_image(image_id: u32) -> ITermImage {
+    ITermImage {
+        metadata: ITermImageMetadata {
+            id: image_id,
+            desired_width: Some((1, ITermImageDimensionUnit::Cell)),
+            desired_height: Some((1, ITermImageDimensionUnit::Cell)),
+            preserve_aspect_ratio: false,
+            name: "test.png".to_string(),
+            inline: true,
+            image_size: Vector2F::new(10.0, 10.0),
+        },
+        data: vec![0],
     }
 }
 
