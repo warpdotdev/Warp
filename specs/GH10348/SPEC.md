@@ -146,8 +146,16 @@ The config file is TOML. The setting key is read as a TOML basic string, which h
 
 **Non-standard `\xXX` is NOT a valid TOML escape** and will fail TOML parsing if used. Earlier drafts of this spec referenced `\x0b` and `\x0c` for vertical tab and form feed; those references were incorrect. The valid encodings are:
 
-- Vertical tab (U+000B) — encode as ``. (TOML has no single-character escape for VT.)
-- Form feed (U+000C) — encode as `\f` (or ``).
+- Vertical tab (U+000B) — encode as the 4-hex-digit Unicode escape `\u000B`. TOML has no single-character escape for VT, so this is the only valid form.
+- Form feed (U+000C) — encode as `\f` (preferred, single-character) OR `\u000C` (Unicode escape). Both forms are equivalent at parse time.
+
+Copy-pasteable TOML literal that includes the full whitespace floor (space, tab, newline, CR, VT, FF) PLUS the path/punct chars from B1, suitable to paste directly into config:
+
+```toml
+editor.word_delimiters = "/.-_:= \t\n\r\u000B\f"
+```
+
+A simpler form `"/.-_:= \t\n\r"` (no VT/FF) also works — VT and FF are added back at runtime by the B5 whitespace floor regardless of whether they appear in the user-provided string.
 
 Whitespace can be entered literally inside the string OR via the corresponding escape. The two are equivalent.
 
@@ -257,7 +265,9 @@ All criteria below match the canonical algorithm in B2.
 - **A3.** With default set, on `/path/to/file|` the first Delete Word Left removes only `file`, leaving `/path/to/|`. (Rule 3: char left=`e` ∉ D, consume just the non-delimiter run `file`.)
 - **A4.** Per-context override applies only in that input context; other contexts use the editor default or their own override (per B4).
 - **A5.** Missing/empty setting value falls back to the built-in default from B1 (per B6.5).
-- **A6.** Whitespace-only setting value is rejected as invalid; runtime falls back to the built-in default and logs a warning; Settings UI shows inline error (per B6.5).
+- **A6.** Whitespace-only setting value is rejected as invalid; the runtime falls back per the B6.5 fallback chain (which is per-context — NOT a flat fall-back to the built-in default in every case) and logs a warning; the Settings UI shows an inline error (per B6.5).
+  - **A6.a.** For the global `editor.word_delimiters`: a whitespace-only value falls back to the built-in default from B1.
+  - **A6.b.** For per-context overrides `terminal.word_delimiters` and `agent.word_delimiters`: a whitespace-only value falls THROUGH to the resolved `editor.word_delimiters` (which itself may be the user value or the B1 default per the B4 chain), NOT directly to the B1 built-in default. This matches the B6.5 per-context override fallthrough rule and is verified by T9g.
 - **A7.** Whitespace remains a delimiter even when the user provides a value with no whitespace; the whitespace floor is always present in the effective `D` (per B5).
 - **A8.** Delimiter run collapse: consecutive delimiters form a single boundary run consumed atomically by Rule 2 (per B7).
 - **A9.** Move Cursor Word Left / Right use the same `D` and the same run rules as Delete Word Left / Right (per B3).
@@ -270,7 +280,11 @@ All criteria below match the canonical algorithm in B2.
 - **Resolution helper.** Add `resolve_word_delimiters(context: InputContext) -> String` in the same module, implementing the B4 fallback chain. `InputContext` enum: `Terminal`, `Agent`, `Editor`.
 - **Key handler dispatch.** Update `app/src/editor/key_handler.rs` so the four shortcut handlers (Delete Word Left, Delete Word Right, Move Cursor Word Left, Move Cursor Word Right) call into `WordBoundaryClassifier` instead of the existing whitespace-only check.
 - **Whitespace floor.** Inside `WordBoundaryClassifier`, OR the user's set with the fixed whitespace set so B5 holds without callsite branching.
-- **Settings schema.** Add the three keys to `app/src/settings/editor.rs` (and matching terminal/agent settings modules). All three are optional `Option<String>` except `editor.word_delimiters`, which has the literal default.
+- **Settings schema.** Add the three keys to `app/src/settings/editor.rs` (and matching terminal/agent settings modules). **All three are typed as `Option<String>` with NO literal default in the schema** — this is required to keep "absent" and "empty string" both meaning "use B1 default" per B6.5, and to keep the Settings UI hint/"Reset to default" indicator state consistent. Specifically:
+  - `editor.word_delimiters: Option<String>` — schema default is `None`; the B1 character set is applied at RESOLUTION TIME by `resolve_word_delimiters(InputContext::Editor)`, NOT at schema-load time.
+  - `terminal.word_delimiters: Option<String>`, `agent.word_delimiters: Option<String>` — same `Option<String>` shape, same `None` default; resolved per the B4 chain.
+  - **Why NOT a literal schema default for `editor.word_delimiters`.** A literal schema default would (a) make the on-disk TOML look populated even when the user never set it, (b) cause the Settings UI to render the value in the field rather than as a hint with the "Reset to default" indicator (per B6.5), and (c) break the B6.5 contract that "Key absent" and "empty string" are indistinguishable at runtime. Resolving the default at access time is the only shape that satisfies all three.
+  - The B1 default character set lives as a `const DEFAULT_WORD_DELIMITERS: &str = ...` next to `WordBoundaryClassifier` (NOT in the settings schema), and is consumed only by `resolve_word_delimiters` when the resolved option is `None` or empty.
 - **Settings UI.** Add the input row plus live-preview component under `app/src/settings_view/editor_page.rs`. Reuse the existing text-input component; the preview is a small custom widget rendering arrow markers at each computed boundary.
 - **No persistence migration** — these are additive optional keys.
 
