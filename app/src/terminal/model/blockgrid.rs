@@ -249,7 +249,9 @@ impl BlockGrid {
     /// grid-finish time (precmd or preexec), leaving the grid contentless. If the grid_cursor
     /// is not at (0,0), we can assume the grid contains content that will persist through finish.
     pub fn should_show_as_empty_when_finished(&self) -> bool {
-        self.finished_len() == 0
+        let has_visible_images = self.grid_handler().has_visible_images();
+
+        (self.finished_len() == 0 && !has_visible_images)
             || !self.has_visible_content()
             || self.contains_only_input_buffer_sequence()
     }
