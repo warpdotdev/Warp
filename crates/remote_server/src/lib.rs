@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod client;
+pub mod codebase_index_proto;
 pub mod host_id;
 pub mod manager;
 pub mod protocol;

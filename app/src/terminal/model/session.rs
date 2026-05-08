@@ -165,6 +165,9 @@ impl Sessions {
                     sessions.set_remote_server_setup_state(*session_id, state.clone());
                     ctx.notify();
                 }
+                RemoteServerManagerEvent::BufferUpdated { .. } => {
+                    // Handled directly by GlobalBufferModel's subscription.
+                }
                 RemoteServerManagerEvent::SessionConnecting { .. }
                 | RemoteServerManagerEvent::SessionDeregistered { .. }
                 | RemoteServerManagerEvent::SessionConnectionFailed { .. }
@@ -174,6 +177,8 @@ impl Sessions {
                 | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
                 | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
                 | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
+                | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
+                | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. }
                 | RemoteServerManagerEvent::BinaryCheckComplete { .. }
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }
@@ -1771,5 +1776,5 @@ pub mod testing {
 }
 
 #[cfg(test)]
-#[path = "session_test.rs"]
+#[path = "session_tests.rs"]
 mod test;

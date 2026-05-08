@@ -469,6 +469,7 @@ fn cloud_mode_terminal_for_test(app: &mut App) -> ViewHandle<TerminalView> {
 #[test]
 fn test_on_session_share_ended_enables_followup_input_without_tombstone_for_owned_ambient_session()
 {
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
     let _flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
 
     App::test((), |mut app| async move {
@@ -511,7 +512,52 @@ fn test_on_session_share_ended_enables_followup_input_without_tombstone_for_owne
 }
 
 #[test]
+fn test_on_session_share_ended_inserts_tombstone_for_owned_ambient_session_without_handoff() {
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(false);
+    let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = terminal_view_for_viewer(&mut app);
+        let task = create_cloud_mode_task_for_user(TEST_USER_UID);
+        let task_id = task.task_id;
+
+        AgentConversationsModel::handle(&app).update(&mut app, |model, _| {
+            model.insert_task_for_test(task);
+        });
+        let initial_block_height_items = terminal.read(&app, |view, _| {
+            view.model.lock().block_list().block_heights().items().len()
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                    task_id: Some(task_id.to_string()),
+                });
+            view.on_session_share_ended(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let final_block_height_items =
+                view.model.lock().block_list().block_heights().items().len();
+            assert_eq!(final_block_height_items, initial_block_height_items + 2);
+            assert!(view.conversation_ended_tombstone_view_id.is_some());
+            assert_eq!(view.pending_cloud_followup_task_id, None);
+            assert_eq!(
+                view.input()
+                    .as_ref(ctx)
+                    .editor()
+                    .as_ref(ctx)
+                    .interaction_state(ctx),
+                InteractionState::Selectable
+            );
+        });
+    });
+}
+
+#[test]
 fn test_on_session_share_ended_clears_frozen_followup_input_for_owned_ambient_session() {
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
     let _flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
 
     App::test((), |mut app| async move {
@@ -876,7 +922,7 @@ fn test_on_ambient_agent_execution_ended_refreshes_open_details_panel_to_termina
 }
 
 #[test]
-fn test_on_ambient_agent_execution_ended_does_not_insert_tombstone_without_handoff() {
+fn test_on_ambient_agent_execution_ended_inserts_tombstone_without_handoff() {
     let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(false);
     let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
 
@@ -893,8 +939,8 @@ fn test_on_ambient_agent_execution_ended_does_not_insert_tombstone_without_hando
         terminal.read(&app, |view, _| {
             let final_block_height_items =
                 view.model.lock().block_list().block_heights().items().len();
-            assert_eq!(final_block_height_items, initial_block_height_items);
-            assert!(view.conversation_ended_tombstone_view_id.is_none());
+            assert_eq!(final_block_height_items, initial_block_height_items + 1);
+            assert!(view.conversation_ended_tombstone_view_id.is_some());
         });
     });
 }

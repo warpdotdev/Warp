@@ -12,6 +12,7 @@ use crate::{
             BlocklistAIInputModel,
         },
         execution_profiles::profiles::AIExecutionProfilesModel,
+        harness_availability::HarnessAvailabilityModel,
         AIRequestUsageModel,
     },
     appearance::Appearance,
@@ -743,8 +744,14 @@ impl AgentInputFooter {
         });
 
         let v2_model_selector = if FeatureFlag::CloudModeInputV2.is_enabled() {
+            let ambient_agent_view_model_for_selector = ambient_agent_view_model.clone();
             let view = ctx.add_typed_action_view(|ctx| {
-                ModelSelector::new(menu_positioning_provider.clone(), terminal_view_id, ctx)
+                ModelSelector::new(
+                    menu_positioning_provider.clone(),
+                    terminal_view_id,
+                    ambient_agent_view_model_for_selector,
+                    ctx,
+                )
             });
             ctx.subscribe_to_view(&view, |_, _, event, ctx| match event {
                 ModelSelectorEvent::MenuVisibilityChanged { open } => {
@@ -861,6 +868,11 @@ impl AgentInputFooter {
     }
 
     fn render_cloud_mode_v2_footer(&self, app: &AppContext) -> Box<dyn Element> {
+        // `app` is only consumed under the `voice_input` cfg below; reference it here so the
+        // parameter doesn't trip the unused-variable lint when the feature is disabled.
+        #[cfg(not(feature = "voice_input"))]
+        let _ = app;
+
         let mut left = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -883,16 +895,20 @@ impl AgentInputFooter {
 
         right = right.with_child(ChildView::new(&self.file_button).finish());
 
-        // The V2 model selector is Oz-specific; hide it for other harnesses
-        // until they support model selection.
-        let is_oz_harness =
-            self.ambient_agent_view_model
+        if let Some(model_selector) = self.v2_model_selector.as_ref() {
+            // Only show the model selector when the active harness has available models.
+            // Some harnesses (e.g. Gemini) may not have any server-provided model options.
+            let show_selector = self
+                .ambient_agent_view_model
                 .as_ref()
-                .is_some_and(|ambient_agent_model| {
-                    ambient_agent_model.as_ref(app).selected_harness() == Harness::Oz
+                .map(|m| m.as_ref(app).selected_harness())
+                .is_none_or(|harness| match harness {
+                    Harness::Oz | Harness::Unknown => true,
+                    _ => HarnessAvailabilityModel::as_ref(app)
+                        .models_for(harness)
+                        .is_some_and(|models| !models.is_empty()),
                 });
-        if is_oz_harness {
-            if let Some(model_selector) = self.v2_model_selector.as_ref() {
+            if show_selector {
                 right = right.with_child(ChildView::new(model_selector).finish());
             }
         }
@@ -982,10 +998,10 @@ impl AgentInputFooter {
         }
         #[cfg(not(target_family = "wasm"))]
         {
-            if self.plugin_operation_in_progress {
-                return None;
-            }
-            if !FeatureFlag::HOANotifications.is_enabled() {
+            if self.plugin_operation_in_progress
+                || self.terminal_model.lock().is_shared_ambient_agent_session()
+                || !FeatureFlag::HOANotifications.is_enabled()
+            {
                 return None;
             }
 

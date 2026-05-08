@@ -220,8 +220,15 @@ enum AgentHarness {
   OZ
 }
 
+"""A single model available for a third-party harness."""
+type HarnessModel {
+  displayName: String!
+  id: ID!
+}
+
 """A harness available to the requesting user."""
 type HarnessInfo {
+  availableModels: [HarnessModel!]!
   displayName: String!
   enabled: Boolean!
   harness: AgentHarness!

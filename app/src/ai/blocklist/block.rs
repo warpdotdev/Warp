@@ -1224,7 +1224,7 @@ impl AIBlock {
                 | AmbientAgentViewModelEvent::Failed { .. }
                 | AmbientAgentViewModelEvent::NeedsGithubAuth
                 | AmbientAgentViewModelEvent::Cancelled
-                | AmbientAgentViewModelEvent::HarnessCommandStarted => ctx.notify(),
+                | AmbientAgentViewModelEvent::HarnessCommandStarted { .. } => ctx.notify(),
                 _ => {}
             });
         }

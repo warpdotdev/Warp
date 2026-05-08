@@ -530,11 +530,18 @@ impl BlocklistAIController {
             let AgentViewControllerEvent::ExitedAgentView {
                 conversation_id,
                 final_exchange_count,
+                is_exit_before_new_entrance,
                 ..
             } = event
             else {
                 return;
             };
+
+            // Skip if this exit is part of an in-place switch — cancelling here
+            // would kill an in-flight stream every time the user navigates.
+            if *is_exit_before_new_entrance {
+                return;
+            }
 
             // If we exited a brand-new empty conversation, there's nothing meaningful to cancel.
             if *final_exchange_count == 0 {
@@ -1422,7 +1429,7 @@ impl BlocklistAIController {
         }
 
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
-            history.set_active_conversation_id(conversation_id, self.terminal_view_id, ctx);
+            history.mark_active_conversation_id(conversation_id, self.terminal_view_id, ctx);
         });
 
         if !FeatureFlag::AgentView.is_enabled() && trigger == FollowUpTrigger::Auto {
@@ -2332,8 +2339,8 @@ impl BlocklistAIController {
             stream_id: response_stream_id.clone(),
         });
         if !is_passive_request {
-            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                history_model.set_active_conversation_id(
+            history_model.update(ctx, |history_model, ctx| {
+                history_model.mark_active_conversation_id(
                     conversation_data.id,
                     self.terminal_view_id,
                     ctx,
@@ -2822,9 +2829,10 @@ impl BlocklistAIController {
             // persisting the conversation.
             history_model.update_conversation_cost_and_usage_for_request(
                 conversation_id,
-                finished_event
-                    .request_cost
-                    .map(|cost| RequestCost::new(cost.exact.into())),
+                finished_event.request_cost.map(|cost| {
+                    // Total credits charged for this request = inference (`exact`) + platform.
+                    RequestCost::new(f64::from(cost.exact) + f64::from(cost.platform_credits))
+                }),
                 finished_event.token_usage,
                 finished_event.conversation_usage_metadata.take(),
                 did_request_contain_user_query,

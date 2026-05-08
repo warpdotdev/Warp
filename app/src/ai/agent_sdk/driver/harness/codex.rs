@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -11,11 +12,11 @@ use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 use warp_cli::agent::Harness;
-use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner, SingletonEntity};
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::mcp::JSONTransportType;
 use crate::server::server_api::harness_support::{upload_to_target, HarnessSupportClient};
 use crate::server::server_api::ServerApi;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
@@ -30,7 +31,9 @@ use super::codex_transcript::{
     CodexTranscriptEnvelope,
 };
 use super::json_utils::read_json_file_or_default;
-use super::{write_temp_file, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness};
+use super::{
+    write_temp_file, HarnessRunner, JSONMCPServer, ResumePayload, SavePoint, ThirdPartyHarness,
+};
 
 pub(crate) struct CodexHarness;
 
@@ -52,20 +55,6 @@ impl ThirdPartyHarness for CodexHarness {
 
     fn install_docs_url(&self) -> Option<&'static str> {
         Some("https://developers.openai.com/codex/cli")
-    }
-
-    fn prepare_environment_config(
-        &self,
-        working_dir: &Path,
-        system_prompt: Option<&str>,
-        secrets: &HashMap<String, ManagedSecretValue>,
-    ) -> Result<(), AgentDriverError> {
-        prepare_codex_environment_config(working_dir, system_prompt, secrets).map_err(|error| {
-            AgentDriverError::HarnessConfigSetupFailed {
-                harness: self.cli_agent().command_prefix().to_owned(),
-                error,
-            }
-        })
     }
 
     /// Fetch the codex transcript for the current task's conversation and wrap it into a
@@ -96,7 +85,21 @@ impl ThirdPartyHarness for CodexHarness {
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
+        resolved_env_vars: &HashMap<OsString, OsString>,
+        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
+        // Prepare the environment config files.
+        prepare_codex_environment_config(
+            working_dir,
+            system_prompt,
+            resolved_env_vars,
+            resolved_mcp_servers,
+        )
+        .map_err(|error| AgentDriverError::HarnessConfigSetupFailed {
+            harness: self.cli_agent().command_prefix().to_owned(),
+            error,
+        })?;
+
         // The ResumePayload shouldn't contain non-Codex information, error if it does.
         let codex_resume = resume.map(CodexResumeInfo::try_from).transpose()?;
 
@@ -176,7 +179,7 @@ impl CodexHarnessRunner {
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<CodexResumeInfo>,
     ) -> Result<Self, AgentDriverError> {
-        let temp_file = write_temp_file("oz_prompt_", prompt)?;
+        let temp_file = write_temp_file("oz_prompt_", prompt, ".txt")?;
         let prompt_path = temp_file.path().display().to_string();
 
         let (session_id, preexisting_conversation_id, transcript_path) = match resume {
@@ -439,7 +442,8 @@ const CODEX_OPENAI_BASE_URL: &str = "https://us.api.openai.com/v1";
 fn prepare_codex_environment_config(
     working_dir: &Path,
     system_prompt: Option<&str>,
-    secrets: &HashMap<String, ManagedSecretValue>,
+    resolved_env_vars: &HashMap<OsString, OsString>,
+    resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
 ) -> Result<()> {
     let home_dir =
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
@@ -449,12 +453,16 @@ fn prepare_codex_environment_config(
         write_codex_agents_override(&codex_dir, prompt)?;
     }
 
-    match resolve_openai_api_key(secrets) {
+    match resolve_openai_api_key(resolved_env_vars) {
         Some(api_key) => prepare_codex_auth(&codex_dir.join(CODEX_AUTH_FILE_NAME), &api_key)?,
         None => log::info!("No OPENAI_API_KEY available; skipping Codex auth.json seed"),
     }
 
-    prepare_codex_config_toml(&codex_dir.join(CODEX_CONFIG_TOML_FILE_NAME), working_dir)?;
+    prepare_codex_config_toml(
+        &codex_dir.join(CODEX_CONFIG_TOML_FILE_NAME),
+        working_dir,
+        resolved_mcp_servers,
+    )?;
     Ok(())
 }
 
@@ -535,24 +543,25 @@ fn write_codex_auth_json(path: &Path, auth: &CodexAuthDotJson) -> Result<()> {
     Ok(())
 }
 
-/// Returns the OpenAI API key for Codex auth, preferring the `OPENAI_API_KEY` env
-/// var so the seeded `auth.json` matches the credential the launched Codex process
-/// will see. [`AgentDriver::new`] skips a managed `OPENAI_API_KEY` secret when the
-/// env var is already set, so we mirror that precedence here.
-fn resolve_openai_api_key(secrets: &HashMap<String, ManagedSecretValue>) -> Option<String> {
+/// Returns the OpenAI API key for Codex auth.
+///
+/// Checks the worker-injected process env first (not in the resolved map since
+/// `build_secret_env_vars` skips env vars already present in the process env),
+/// then falls back to the resolved secret env vars map.
+fn resolve_openai_api_key(resolved_env_vars: &HashMap<OsString, OsString>) -> Option<String> {
+    // Worker-injected process env wins.
     if let Ok(value) = std::env::var(OPENAI_API_KEY_ENV) {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_owned());
         }
     }
-    if let Some(ManagedSecretValue::RawValue { value }) = secrets.get(OPENAI_API_KEY_ENV) {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_owned());
-        }
-    }
-    None
+    // Otherwise use the resolved value from the secrets map.
+    resolved_env_vars
+        .get(OsStr::new(OPENAI_API_KEY_ENV))
+        .and_then(|v| v.to_str())
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
 }
 
 /// Edit `~/.codex/config.toml` via `toml_edit` to seed the harness defaults
@@ -561,7 +570,11 @@ fn resolve_openai_api_key(secrets: &HashMap<String, ManagedSecretValue>) -> Opti
 ///   set the projects to `trusted`.
 /// - base URL: set `openai_base_url = "<US data-residency endpoint>"` so we
 ///   hit the regional host our API keys require.
-fn prepare_codex_config_toml(config_toml_path: &Path, working_dir: &Path) -> Result<()> {
+fn prepare_codex_config_toml(
+    config_toml_path: &Path,
+    working_dir: &Path,
+    resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+) -> Result<()> {
     let existing = match fs::read_to_string(config_toml_path) {
         Ok(content) => content,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -597,6 +610,8 @@ fn prepare_codex_config_toml(config_toml_path: &Path, working_dir: &Path) -> Res
         let key = child_repo.to_string_lossy().into_owned();
         set_codex_project_trust_level(&mut doc, &key, CODEX_TRUST_LEVEL_TRUSTED);
     }
+
+    write_codex_mcp_servers(&mut doc, resolved_mcp_servers);
 
     if let Some(parent) = config_toml_path.parent() {
         fs::create_dir_all(parent).with_context(|| {
@@ -653,6 +668,71 @@ fn set_codex_project_trust_level(
         .expect("project entry is a table");
     proj_tbl.set_implicit(false);
     proj_tbl["trust_level"] = toml_edit::value(trust_level);
+}
+
+/// Write resolved MCP servers into `[mcp_servers.<name>]` sections in the Codex config.
+fn write_codex_mcp_servers(
+    doc: &mut toml_edit::DocumentMut,
+    servers: &HashMap<String, JSONMCPServer>,
+) {
+    if servers.is_empty() {
+        return;
+    }
+    if !doc.contains_table("mcp_servers") {
+        let mut tbl = toml_edit::Table::new();
+        tbl.set_implicit(true);
+        doc.insert("mcp_servers", toml_edit::Item::Table(tbl));
+    }
+    let mcp_tbl = doc["mcp_servers"]
+        .as_table_mut()
+        .expect("mcp_servers table inserted above");
+
+    for (name, server) in servers {
+        let entry = mcp_tbl
+            .entry(name)
+            .or_insert_with(toml_edit::table)
+            .as_table_mut()
+            .expect("mcp_servers entry is a table");
+        entry.set_implicit(false);
+
+        match &server.transport_type {
+            JSONTransportType::CLIServer {
+                command,
+                args,
+                env,
+                working_directory,
+            } => {
+                entry["command"] = toml_edit::value(command.as_str());
+                if !args.is_empty() {
+                    let mut arr = toml_edit::Array::new();
+                    for arg in args {
+                        arr.push(arg.as_str());
+                    }
+                    entry["args"] = toml_edit::value(arr);
+                }
+                if !env.is_empty() {
+                    let mut env_tbl = toml_edit::InlineTable::new();
+                    for (k, v) in env {
+                        env_tbl.insert(k, v.as_str().into());
+                    }
+                    entry["env"] = toml_edit::value(env_tbl);
+                }
+                if let Some(cwd) = working_directory {
+                    entry["cwd"] = toml_edit::value(cwd.as_str());
+                }
+            }
+            JSONTransportType::SSEServer { url, headers } => {
+                entry["url"] = toml_edit::value(url.as_str());
+                if !headers.is_empty() {
+                    let mut hdrs_tbl = toml_edit::InlineTable::new();
+                    for (k, v) in headers {
+                        hdrs_tbl.insert(k, v.as_str().into());
+                    }
+                    entry["http_headers"] = toml_edit::value(hdrs_tbl);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
