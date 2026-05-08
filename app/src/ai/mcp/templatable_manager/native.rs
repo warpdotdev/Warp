@@ -286,14 +286,13 @@ impl TemplatableMCPServerManager {
             _ => {}
         });
 
-        let database_connection =
-            database_file_path_for_scope(&PersistenceScope::App)
-                .to_str()
-                .and_then(|db_url| {
-                    establish_ro_connection(db_url)
-                        .ok()
-                        .map(|conn| Arc::new(Mutex::new(conn)))
-                });
+        let database_connection = database_file_path_for_scope(&PersistenceScope::App)
+            .to_str()
+            .and_then(|db_url| {
+                establish_ro_connection(db_url)
+                    .ok()
+                    .map(|conn| Arc::new(Mutex::new(conn)))
+            });
 
         let mut me = Self {
             cloud_templatable_mcp_servers: Default::default(),

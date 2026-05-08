@@ -195,14 +195,13 @@ impl MCPServersEditPageView {
         });
 
         #[cfg(not(target_family = "wasm"))]
-        let database_connection =
-            database_file_path_for_scope(&PersistenceScope::App)
-                .to_str()
-                .and_then(|db_url| {
-                    establish_ro_connection(db_url)
-                        .ok()
-                        .map(|conn| Arc::new(Mutex::new(conn)))
-                });
+        let database_connection = database_file_path_for_scope(&PersistenceScope::App)
+            .to_str()
+            .and_then(|db_url| {
+                establish_ro_connection(db_url)
+                    .ok()
+                    .map(|conn| Arc::new(Mutex::new(conn)))
+            });
 
         Self {
             server_card_item_id: None,
