@@ -14,6 +14,8 @@
 pub(super) mod proxy;
 
 use super::server_model::{ConnectionId, ServerModel};
+#[cfg(feature = "local_fs")]
+use crate::persistence::remote_codebase_indexing::initialize_remote_codebase_indexing_storage;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use warpui::r#async::executor;
@@ -69,10 +71,7 @@ pub(crate) fn launch_daemon(identity_key: &str, ctx: &mut warpui::AppContext) {
 
     let _ = std::fs::write(&pid_path, std::process::id().to_string());
     #[cfg(feature = "local_fs")]
-    ctx.add_singleton_model(|_ctx| {
-        crate::persistence::remote_codebase_indexing::RemoteCodebaseIndexingPersistence::initialize(
-        )
-    });
+    initialize_remote_codebase_indexing_storage();
 
     ctx.add_singleton_model(move |ctx| {
         let spawner = ctx.spawner();

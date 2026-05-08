@@ -12,6 +12,7 @@ impl AppTelemetryContextProvider {
         Box::new(Self {})
     }
 }
+
 impl TelemetryContextProvider for AppTelemetryContextProvider {
     fn user_id(&self, ctx: &AppContext) -> Option<String> {
         let auth_state = AuthStateProvider::as_ref(ctx).get();

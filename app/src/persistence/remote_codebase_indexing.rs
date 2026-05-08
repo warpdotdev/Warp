@@ -1,79 +1,26 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use diesel::sqlite::SqliteConnection;
-use diesel::RunQueryDsl;
-use persistence::model::{RemoteCodebaseIndexCache, RemoteCodebaseIndexUserState};
-use warpui::{Entity, SingletonEntity};
-
-use super::schema;
 
 const REMOTE_CODEBASE_INDEXING_SQLITE_FILE_NAME: &str = "index.sqlite";
 const REMOTE_CODEBASE_INDEXING_DIR_NAME: &str = "codebase-indexes";
 const SHARED_CACHE_DIR_NAME: &str = "shared";
 const SNAPSHOTS_DIR_NAME: &str = "snapshots";
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct RemoteCodebaseIndexingData {
-    pub shared_caches: Vec<RemoteCodebaseIndexCache>,
-    pub user_states: Vec<RemoteCodebaseIndexUserState>,
-}
-
-pub struct RemoteCodebaseIndexingPersistence {
-    bootstrap_data: RemoteCodebaseIndexingData,
-    database_path: PathBuf,
-    shared_snapshots_dir: PathBuf,
-}
-
-impl RemoteCodebaseIndexingPersistence {
-    pub fn initialize() -> Self {
-        let database_path = remote_codebase_indexing_database_path();
-        let shared_snapshots_dir = remote_codebase_indexing_shared_snapshots_dir();
-        match Self::initialize_at_paths(database_path.clone(), shared_snapshots_dir.clone()) {
-            Ok(persistence) => persistence,
-            Err(err) => {
-                log::error!("Failed to initialize remote codebase indexing persistence: {err:#}");
-                Self {
-                    bootstrap_data: RemoteCodebaseIndexingData::default(),
-                    database_path,
-                    shared_snapshots_dir,
-                }
-            }
-        }
-    }
-
-    pub fn bootstrap_data(&self) -> &RemoteCodebaseIndexingData {
-        &self.bootstrap_data
-    }
-
-    pub fn database_path(&self) -> &Path {
-        &self.database_path
-    }
-
-    pub fn shared_snapshots_dir(&self) -> &Path {
-        &self.shared_snapshots_dir
-    }
-
-    fn initialize_at_paths(database_path: PathBuf, shared_snapshots_dir: PathBuf) -> Result<Self> {
-        ensure_remote_codebase_indexing_paths(&database_path, &shared_snapshots_dir)?;
-        let mut conn = super::sqlite::setup_database(&database_path)?;
-        ensure_owner_only_file(&database_path)?;
-        let bootstrap_data = read_remote_codebase_indexing_data(&mut conn)
-            .context("reading remote codebase indexing bootstrap data")?;
-
-        Ok(Self {
-            bootstrap_data,
-            database_path,
-            shared_snapshots_dir,
-        })
+pub fn initialize_remote_codebase_indexing_storage() {
+    let database_path = remote_codebase_indexing_database_path();
+    let shared_snapshots_dir = remote_codebase_indexing_shared_snapshots_dir();
+    if let Err(err) = initialize_at_paths(&database_path, &shared_snapshots_dir) {
+        log::error!("Failed to initialize remote codebase indexing persistence: {err:#}");
     }
 }
 
-impl Entity for RemoteCodebaseIndexingPersistence {
-    type Event = ();
+fn initialize_at_paths(database_path: &Path, shared_snapshots_dir: &Path) -> Result<()> {
+    ensure_remote_codebase_indexing_paths(database_path, shared_snapshots_dir)?;
+    super::sqlite::setup_database(database_path)?;
+    ensure_owner_only_file(database_path)?;
+    Ok(())
 }
-
-impl SingletonEntity for RemoteCodebaseIndexingPersistence {}
 
 fn remote_codebase_indexing_database_path() -> PathBuf {
     remote_codebase_indexing_dir().join(REMOTE_CODEBASE_INDEXING_SQLITE_FILE_NAME)
@@ -151,25 +98,15 @@ fn ensure_owner_only_file(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_remote_codebase_indexing_data(
-    conn: &mut SqliteConnection,
-) -> Result<RemoteCodebaseIndexingData, diesel::result::Error> {
-    Ok(RemoteCodebaseIndexingData {
-        shared_caches: schema::remote_codebase_index_cache::dsl::remote_codebase_index_cache
-            .load::<RemoteCodebaseIndexCache>(conn)?,
-        user_states:
-            schema::remote_codebase_index_user_state::dsl::remote_codebase_index_user_state
-                .load::<RemoteCodebaseIndexUserState>(conn)?,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
     use diesel::Connection;
+    use diesel::RunQueryDsl;
     use persistence::model::{NewRemoteCodebaseIndexCache, NewRemoteCodebaseIndexUserState};
 
     use super::*;
+    use crate::persistence::schema;
 
     fn cache_row(repo_root_hash: Option<&str>) -> NewRemoteCodebaseIndexCache {
         let now = Utc::now().naive_utc();
@@ -218,71 +155,15 @@ mod tests {
         (tempdir, database_path, shared_snapshots_dir)
     }
 
-    fn seed_remote_indexing_rows(database_path: &Path) {
-        std::fs::create_dir_all(
-            database_path
-                .parent()
-                .expect("database path should have parent"),
-        )
-        .expect("database parent should be created");
-        let mut conn = super::super::sqlite::setup_database(database_path)
-            .expect("database should initialize");
-        diesel::insert_into(schema::remote_codebase_index_cache::table)
-            .values(cache_row(Some("root-hash")))
-            .execute(&mut conn)
-            .expect("cache row should insert");
-        diesel::insert_into(schema::remote_codebase_index_user_state::table)
-            .values(user_state_row("identity-key", "ready"))
-            .execute(&mut conn)
-            .expect("user state row should insert");
-        diesel::insert_into(schema::remote_codebase_index_user_state::table)
-            .values(user_state_row("other-identity-key", "disabled"))
-            .execute(&mut conn)
-            .expect("user state row should insert");
-    }
-
     #[test]
-    fn initialize_reads_empty_remote_indexing_rows() {
+    fn initialize_creates_remote_indexing_database_and_snapshot_dir() {
         let (_tempdir, database_path, shared_snapshots_dir) = test_paths();
 
-        let persistence = RemoteCodebaseIndexingPersistence::initialize_at_paths(
-            database_path,
-            shared_snapshots_dir,
-        )
-        .expect("persistence should initialize");
+        initialize_at_paths(&database_path, &shared_snapshots_dir)
+            .expect("persistence should initialize");
 
-        assert_eq!(persistence.bootstrap_data().shared_caches, Vec::new());
-        assert_eq!(persistence.bootstrap_data().user_states, Vec::new());
-    }
-
-    #[test]
-    fn initialize_reads_seeded_shared_and_identity_scoped_remote_indexing_rows() {
-        let (_tempdir, database_path, shared_snapshots_dir) = test_paths();
-        seed_remote_indexing_rows(&database_path);
-
-        let persistence = RemoteCodebaseIndexingPersistence::initialize_at_paths(
-            database_path.clone(),
-            shared_snapshots_dir.clone(),
-        )
-        .expect("persistence should initialize");
-
-        assert_eq!(persistence.database_path(), database_path);
-        assert_eq!(persistence.shared_snapshots_dir(), shared_snapshots_dir);
-        assert_eq!(persistence.bootstrap_data().shared_caches.len(), 1);
-        assert_eq!(
-            persistence.bootstrap_data().shared_caches[0]
-                .root_hash
-                .as_deref(),
-            Some("root-hash")
-        );
-        let user_states = &persistence.bootstrap_data().user_states;
-        assert_eq!(user_states.len(), 2);
-        assert!(user_states.iter().any(|state| {
-            state.identity_key == "identity-key" && state.index_status == "ready"
-        }));
-        assert!(user_states.iter().any(|state| {
-            state.identity_key == "other-identity-key" && state.index_status == "disabled"
-        }));
+        assert!(database_path.exists());
+        assert!(shared_snapshots_dir.exists());
     }
 
     #[cfg(unix)]
@@ -292,11 +173,8 @@ mod tests {
 
         let (_tempdir, database_path, shared_snapshots_dir) = test_paths();
 
-        RemoteCodebaseIndexingPersistence::initialize_at_paths(
-            database_path.clone(),
-            shared_snapshots_dir.clone(),
-        )
-        .expect("persistence should initialize");
+        initialize_at_paths(&database_path, &shared_snapshots_dir)
+            .expect("persistence should initialize");
 
         let codebase_index_dir = database_path.parent().expect("database should have parent");
         assert_eq!(
