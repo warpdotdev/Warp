@@ -1,6 +1,7 @@
 //! Banner shown when the remote-server binary check, installation, or connection fails on the remote host.
 //! We fall back to the existing Warpification behavior and display this banner so the user knows why advanced features are unavailable.
 
+use remote_server::transport::UserFacingError;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::{
@@ -28,43 +29,16 @@ pub enum SshRemoteServerFailedBannerEvent {
     Dismissed,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum SshRemoteServerFailureKind {
-    BinaryCheck,
-    BinaryInstall,
-    Launch,
-}
-
-impl SshRemoteServerFailureKind {
-    fn description(self) -> &'static str {
-        match self {
-            Self::BinaryCheck => {
-                "The SSH extension binary could not be verified on the remote host"
-            }
-            Self::BinaryInstall => {
-                "The binary could not be written or executed on the remote host"
-            }
-            Self::Launch => "The SSH extension could not be started on the remote host",
-        }
-    }
-}
-
 pub struct SshRemoteServerFailedBanner {
     session_id: SessionId,
-    kind: SshRemoteServerFailureKind,
-    error: String,
+    error: UserFacingError,
     close_mouse_state: MouseStateHandle,
 }
 
 impl SshRemoteServerFailedBanner {
-    pub fn new(
-        session_id: SessionId,
-        kind: SshRemoteServerFailureKind,
-        error: String,
-    ) -> Self {
+    pub fn new(session_id: SessionId, error: UserFacingError) -> Self {
         Self {
             session_id,
-            kind,
             error,
             close_mouse_state: MouseStateHandle::default(),
         }
@@ -103,49 +77,49 @@ impl View for SshRemoteServerFailedBanner {
         .finish();
 
         let title = Text::new(
-            "Could not establish connection to host",
+            self.error.title.to_string(),
             appearance.ui_font_family(),
             font_size,
         )
         .with_color(fg_color)
         .finish();
 
-        let body = Text::new(BANNER_BODY, appearance.ui_font_family(), small_font_size)
-            .soft_wrap(true)
-            .with_color(muted_color)
-            .finish();
-
-        // Red box with the error message.
-        let error_text_content = self.error.trim();
-        let error_box_text = if error_text_content.is_empty() {
-            self.kind.description().to_owned()
-        } else {
-            error_text_content.to_owned()
-        };
-
-        let ansi_red = AnsiColorIdentifier::Red.to_ansi_color(&theme.terminal_colors().normal);
-        let error_bg = theme.ansi_overlay_1(ansi_red);
-        let error_text_color = theme.ansi_fg_red();
-
-        let error_text = Text::new(
-            error_box_text,
+        let body = Text::new(
+            BANNER_BODY.to_string(),
             appearance.ui_font_family(),
             small_font_size,
         )
         .soft_wrap(true)
-        .with_color(error_text_color)
+        .with_color(muted_color)
         .finish();
 
-        let error_element = Container::new(error_text)
-            .with_background(error_bg)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-            .with_uniform_padding(12.)
-            .finish();
+        let error_container = {
+            let ansi_red = AnsiColorIdentifier::Red.to_ansi_color(&theme.terminal_colors().normal);
+            let error_bg = theme.ansi_overlay_1(ansi_red);
+            let error_text_color = theme.ansi_fg_red();
 
-        let error_container = Container::new(error_element)
-            .with_margin_top(8.)
-            .with_horizontal_margin(24.)
-            .finish();
+            let red_box_text = if let Some(detail) = &self.error.detail {
+                format!("{}. {}", self.error.body, detail)
+            } else {
+                format!("{}.", self.error.body)
+            };
+
+            let error_text = Text::new(red_box_text, appearance.ui_font_family(), small_font_size)
+                .soft_wrap(true)
+                .with_color(error_text_color)
+                .finish();
+
+            let error_box = Container::new(error_text)
+                .with_background(error_bg)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .with_uniform_padding(12.)
+                .finish();
+
+            Container::new(error_box)
+                .with_margin_top(8.)
+                .with_horizontal_margin(24.)
+                .finish()
+        };
 
         // Close (X) button
         let close_icon_color = muted_color;
@@ -188,13 +162,15 @@ impl View for SshRemoteServerFailedBanner {
             .with_margin_left(24.)
             .finish();
 
-        let content = Flex::column()
+        let mut content = Flex::column()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_child(header_row)
-            .with_child(body_container)
-            .with_child(error_container)
-            .finish();
+            .with_child(body_container);
+
+        content = content.with_child(error_container);
+
+        let content = content.finish();
 
         Container::new(content)
             .with_background(internal_colors::fg_overlay_1(theme))

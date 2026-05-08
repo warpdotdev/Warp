@@ -22,94 +22,119 @@ use crate::client::{ClientEvent, RemoteServerClient};
 use crate::manager::RemoteServerExitStatus;
 use crate::setup::{PreinstallCheckResult, RemotePlatform};
 
-/// Error returned by [`RemoteTransport::detect_platform`].
+/// Structured error for user-facing display in the SSH remote-server
+/// failed banner. Separates the always-visible title and body from the
+/// optional technical detail.
+#[derive(Clone, Debug)]
+pub struct UserFacingError {
+    /// Short headline, e.g. "Could not establish connection to host".
+    pub title: &'static str,
+    /// Always-visible explanation of what went wrong.
+    pub body: String,
+    /// Optional technical detail shown in the red error box (stderr,
+    /// timeout duration, unsupported OS/arch). `None` when the
+    /// underlying error doesn't carry anything useful for the user.
+    pub detail: Option<String>,
+}
+
+/// The setup stage that failed, used to generate context-appropriate
+/// user-facing messages from a [`Error`].
+#[derive(Clone, Copy, Debug)]
+pub enum SetupStage {
+    DetectPlatform,
+    PreinstallCheck,
+    CheckBinary,
+    InstallBinary,
+    Launch,
+}
+
+impl SetupStage {
+    fn action_description(self) -> &'static str {
+        match self {
+            Self::DetectPlatform => "detect remote platform",
+            Self::PreinstallCheck => "run preinstall check",
+            Self::CheckBinary => "verify SSH extension",
+            Self::InstallBinary => "install SSH extension",
+            Self::Launch => "start SSH extension",
+        }
+    }
+}
+
+/// Unified error type for all [`RemoteTransport`] setup methods
+/// (detect_platform, run_preinstall_check, check_binary, install_binary).
+///
+/// Each variant captures enough structured information for both
+/// logging/telemetry (`Display` impl) and user-facing banners
+/// ([`user_facing_error`]).
+///
+/// [`user_facing_error`]: Error::user_facing_error
 #[derive(Debug, thiserror::Error)]
-pub enum DetectPlatformError {
-    /// The platform detection command timed out.
-    #[error("platform detection timed out")]
+pub enum Error {
+    /// The operation timed out.
+    #[error("timed out")]
     TimedOut,
-    /// The remote host reported an OS that is not supported by the
-    /// prebuilt remote-server binary.
+    /// The remote host reported an OS not supported by the prebuilt binary.
     #[error("unsupported OS: {os}")]
     UnsupportedOs { os: String },
-    /// The remote host reported a CPU architecture that is not
-    /// supported by the prebuilt remote-server binary.
+    /// The remote host reported a CPU architecture not supported by the prebuilt binary.
     #[error("unsupported architecture: {arch}")]
     UnsupportedArch { arch: String },
+    /// A remote script ran but exited with a non-zero code.
+    #[error("script failed (exit {exit_code}): {stderr}")]
+    ScriptFailed { exit_code: i32, stderr: String },
     /// Any other transport-level or unexpected failure.
     #[error(transparent)]
     Other(anyhow::Error),
 }
 
-impl DetectPlatformError {
-    /// Returns a user-facing error message for display in the UI banner.
-    /// Starts with a generic description, followed by specific details when available.
-    pub fn user_facing_message(&self) -> String {
-        match self {
-            Self::Other(_) => "Failed to detect remote platform".into(),
-            _ => format!("Failed to detect remote platform: {self}"),
+/// Maximum number of stderr bytes to include in the user-facing detail
+/// for `ScriptFailed` errors. Keeps the banner reasonable even when a
+/// remote script dumps a large amount of output.
+const MAX_STDERR_DISPLAY_LEN: usize = 512;
+
+impl Error {
+    /// Converts this error into a [`UserFacingError`] suitable for the
+    /// SSH remote-server failed banner, using `stage` to provide
+    /// context-appropriate copy.
+    pub fn user_facing_error(&self, stage: SetupStage) -> UserFacingError {
+        let title = "Could not establish connection to host";
+        let body = format!("Failed to {}", stage.action_description());
+        let detail = match self {
+            Self::TimedOut => {
+                Some("The operation timed out — check your network connection".into())
+            }
+            Self::UnsupportedOs { os } => Some(format!("Unsupported OS: {os}")),
+            Self::UnsupportedArch { arch } => Some(format!("Unsupported architecture: {arch}")),
+            Self::ScriptFailed { exit_code, stderr } => {
+                let truncated = if stderr.len() > MAX_STDERR_DISPLAY_LEN {
+                    format!("{}…", &stderr[..MAX_STDERR_DISPLAY_LEN])
+                } else {
+                    stderr.clone()
+                };
+                Some(format!("Script exited with code {exit_code}: {truncated}"))
+            }
+            Self::Other(e) => {
+                let msg = format!("{e:#}");
+                if msg.is_empty() {
+                    None
+                } else {
+                    Some(msg)
+                }
+            }
+        };
+        UserFacingError {
+            title,
+            body,
+            detail,
         }
     }
 }
 
-impl From<crate::ssh::SshCommandError> for DetectPlatformError {
+impl From<crate::ssh::SshCommandError> for Error {
     fn from(err: crate::ssh::SshCommandError) -> Self {
         match err {
             crate::ssh::SshCommandError::TimedOut { .. } => Self::TimedOut,
             other => Self::Other(other.into()),
-        }
-    }
-}
-
-/// Error returned by [`RemoteTransport::run_preinstall_check`].
-#[derive(Debug, thiserror::Error)]
-pub enum PreinstallCheckError {
-    /// The preinstall check script ran but exited with a non-zero code.
-    #[error("preinstall check script failed (exit {code}): {stderr}")]
-    ScriptFailed { code: i32, stderr: String },
-    /// Any other transport-level or unexpected failure.
-    #[error(transparent)]
-    Other(anyhow::Error),
-}
-
-/// Error returned by [`RemoteTransport::check_binary`].
-#[derive(Debug, thiserror::Error)]
-pub enum CheckBinaryError {
-    /// The binary check command timed out.
-    #[error("binary check timed out")]
-    TimedOut,
-    /// Any other transport-level or unexpected failure.
-    #[error(transparent)]
-    Other(anyhow::Error),
-}
-
-impl CheckBinaryError {
-    /// Returns a user-facing error message for display in the UI banner.
-    pub fn user_facing_message(&self) -> String {
-        match self {
-            Self::Other(_) => "Failed to check for SSH extension".into(),
-            _ => format!("Failed to check for SSH extension: {self}"),
-        }
-    }
-}
-
-/// Error returned by [`RemoteTransport::install_binary`].
-#[derive(Debug, thiserror::Error)]
-pub enum InstallBinaryError {
-    /// The install script timed out.
-    #[error("install timed out")]
-    TimedOut,
-    /// Any other transport-level or unexpected failure.
-    #[error(transparent)]
-    Other(anyhow::Error),
-}
-
-impl InstallBinaryError {
-    /// Returns a user-facing error message for display in the UI banner.
-    pub fn user_facing_message(&self) -> String {
-        match self {
-            Self::Other(_) => "Failed to install SSH extension".into(),
-            _ => format!("Failed to install SSH extension: {self}"),
         }
     }
 }
@@ -158,11 +183,11 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// Detects the remote host's OS and architecture by running `uname -sm`.
     ///
     /// Returns the parsed [`RemotePlatform`] on success, or a
-    /// [`DetectPlatformError`] if the command fails or the output cannot
+    /// [`Error`] if the command fails or the output cannot
     /// be parsed.
     fn detect_platform(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<RemotePlatform, DetectPlatformError>> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = Result<RemotePlatform, Error>> + Send>>;
 
     /// Runs the preinstall check script ([`crate::setup::PREINSTALL_CHECK_SCRIPT`])
     /// over the existing connection and parses its structured stdout into
@@ -180,7 +205,7 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// caller treats as inconclusive (fail open).
     fn run_preinstall_check(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<PreinstallCheckResult, PreinstallCheckError>> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = Result<PreinstallCheckResult, Error>> + Send>>;
 
     /// Checks whether the remote server binary is present on the remote host.
     ///
@@ -191,7 +216,7 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// Returns `Ok(true)` if the binary is installed and executable,
     /// `Ok(false)` if it is definitively not installed, and
     /// `Err(_)` if the check failed (e.g. timeout or unreachable).
-    fn check_binary(&self) -> Pin<Box<dyn Future<Output = Result<bool, CheckBinaryError>> + Send>>;
+    fn check_binary(&self) -> Pin<Box<dyn Future<Output = Result<bool, Error>> + Send>>;
 
     /// Checks whether the remote host already has an existing install
     /// of the remote server binary.
@@ -212,9 +237,7 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     ///
     /// Returns `Ok(())` if the install succeeded, and
     /// `Err(_)` if the install failed (e.g. timeout or script error).
-    fn install_binary(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = Result<(), InstallBinaryError>> + Send>>;
+    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
 
     /// Establish a new connection to the remote server.
     ///

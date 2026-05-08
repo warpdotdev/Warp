@@ -19,7 +19,7 @@ use crate::setup::RemoteServerSetupState;
 use crate::setup::UnsupportedReason;
 #[cfg(not(target_family = "wasm"))]
 use crate::transport::Connection;
-use crate::transport::{CheckBinaryError, InstallBinaryError, RemoteTransport};
+use crate::transport::{Error, RemoteTransport};
 use crate::HostId;
 use repo_metadata::RepoMetadataUpdate;
 use serde::Serialize;
@@ -325,7 +325,7 @@ pub enum RemoteServerManagerEvent {
     /// - `Err(_)` means the check itself failed (e.g. SSH error or timeout).
     BinaryCheckComplete {
         session_id: SessionId,
-        result: Result<bool, Arc<CheckBinaryError>>,
+        result: Result<bool, Arc<Error>>,
         /// The detected remote platform (OS + arch) from `uname -sm`.
         /// `None` if detection failed or was not attempted.
         remote_platform: Option<RemotePlatform>,
@@ -349,7 +349,7 @@ pub enum RemoteServerManagerEvent {
     /// - `Err(_)` means the install failed and carries the failure reason (SSH error, timeout, script error, etc.).
     BinaryInstallComplete {
         session_id: SessionId,
-        result: Result<(), Arc<InstallBinaryError>>,
+        result: Result<(), Arc<Error>>,
     },
 
     // --- Telemetry events ---

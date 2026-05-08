@@ -21,7 +21,7 @@ use crate::{send_telemetry_from_ctx, TelemetryEvent};
 use remote_server::setup::{
     PreinstallCheckResult, PreinstallStatus, RemoteLibc, RemotePlatform, UnsupportedReason,
 };
-use remote_server::transport::{CheckBinaryError, InstallBinaryError};
+use remote_server::transport::Error;
 
 use super::pty_controller::{EventLoopSender, PtyController};
 
@@ -213,7 +213,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
     fn on_binary_check_complete(
         &mut self,
         session_id: SessionId,
-        result: Result<bool, Arc<CheckBinaryError>>,
+        result: Result<bool, Arc<Error>>,
         preinstall_check: Option<PreinstallCheckResult>,
         has_old_binary: bool,
         ctx: &mut ModelContext<Self>,
@@ -466,7 +466,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
     fn on_binary_install_complete(
         &mut self,
         session_id: SessionId,
-        result: Result<(), Arc<InstallBinaryError>>,
+        result: Result<(), Arc<Error>>,
         ctx: &mut ModelContext<Self>,
     ) {
         let expected = match &self.state {

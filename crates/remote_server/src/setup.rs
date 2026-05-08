@@ -242,28 +242,28 @@ impl RemoteArch {
 /// Takes the last line to skip any shell initialization output.
 pub fn parse_uname_output(
     output: &str,
-) -> std::result::Result<RemotePlatform, crate::transport::DetectPlatformError> {
-    use crate::transport::DetectPlatformError;
+) -> std::result::Result<RemotePlatform, crate::transport::Error> {
+    use crate::transport::Error;
 
     let line = output
         .lines()
         .last()
-        .ok_or_else(|| DetectPlatformError::Other(anyhow!("empty uname output")))
+        .ok_or_else(|| Error::Other(anyhow!("empty uname output")))
         .map(str::trim)?;
 
     let mut parts = line.split_whitespace();
     let os_str = parts
         .next()
-        .ok_or_else(|| DetectPlatformError::Other(anyhow!("missing OS in uname output: {line}")))?;
-    let arch_str = parts.next().ok_or_else(|| {
-        DetectPlatformError::Other(anyhow!("missing arch in uname output: {line}"))
-    })?;
+        .ok_or_else(|| Error::Other(anyhow!("missing OS in uname output: {line}")))?;
+    let arch_str = parts
+        .next()
+        .ok_or_else(|| Error::Other(anyhow!("missing arch in uname output: {line}")))?;
 
     let os = match os_str {
         "Linux" => RemoteOs::Linux,
         "Darwin" => RemoteOs::MacOs,
         other => {
-            return Err(DetectPlatformError::UnsupportedOs {
+            return Err(Error::UnsupportedOs {
                 os: other.to_string(),
             })
         }
@@ -273,7 +273,7 @@ pub fn parse_uname_output(
         "x86_64" => RemoteArch::X86_64,
         "aarch64" | "arm64" | "armv8l" => RemoteArch::Aarch64,
         other => {
-            return Err(DetectPlatformError::UnsupportedArch {
+            return Err(Error::UnsupportedArch {
                 arch: other.to_string(),
             })
         }
