@@ -39,22 +39,23 @@ use warpui::{AppContext, SingletonEntity};
 type CheckmarkStatusGetter = dyn 'static + Fn(&mut AppContext) -> bool;
 
 const ENABLE_SHELL_DEBUG_MODE_MENU_ITEM_NAME: &str =
-    "Enable Shell Debug Mode (-x) for New Sessions";
+    "新規セッションでシェルデバッグモード (-x) を有効化";
 const DISABLE_SHELL_DEBUG_MODE_MENU_ITEM_NAME: &str =
-    "Disable Shell Debug Mode (-x) for New Sessions";
-const ENABLE_IN_BAND_GENERATORS_MENU_ITEM_NAME: &str = "Enable In-band Generators for New Sessions";
+    "新規セッションでシェルデバッグモード (-x) を無効化";
+const ENABLE_IN_BAND_GENERATORS_MENU_ITEM_NAME: &str =
+    "新規セッションでインバンドジェネレーターを有効化";
 const DISABLE_IN_BAND_GENERATORS_MENU_ITEM_NAME: &str =
-    "Disable in-band generators for new sessions";
-const ENABLE_PTY_RECORDING: &str = "Enable PTY Recording Mode (warp.pty.recording)";
-const DISABLE_PTY_RECORDING: &str = "Disable PTY Recording Mode (warp.pty.recording)";
-const SHOW_BOOTSTRAP_BLOCK_MENU_ITEM_NAME: &str = "Show Initialization Block";
-const HIDE_BOOTSTRAP_BLOCK_MENU_ITEM_NAME: &str = "Hide Initialization Block";
-const SHOW_IN_BAND_COMMAND_BLOCKS_MENU_ITEM_NAME: &str = "Show In-band Command Blocks";
-const HIDE_IN_BAND_COMMAND_BLOCKS_MENU_ITEM_NAME: &str = "Hide In-band Command Blocks";
-const SHOW_SSH_COMMAND_BLOCKS_MENU_ITEM_NAME: &str = "Show Warpified SSH Blocks";
-const HIDE_SSH_COMMAND_BLOCKS_MENU_ITEM_NAME: &str = "Hide Warpified SSH Blocks";
+    "新規セッションでインバンドジェネレーターを無効化";
+const ENABLE_PTY_RECORDING: &str = "PTY 記録モードを有効化 (warp.pty.recording)";
+const DISABLE_PTY_RECORDING: &str = "PTY 記録モードを無効化 (warp.pty.recording)";
+const SHOW_BOOTSTRAP_BLOCK_MENU_ITEM_NAME: &str = "初期化ブロックを表示";
+const HIDE_BOOTSTRAP_BLOCK_MENU_ITEM_NAME: &str = "初期化ブロックを非表示";
+const SHOW_IN_BAND_COMMAND_BLOCKS_MENU_ITEM_NAME: &str = "インバンドコマンドブロックを表示";
+const HIDE_IN_BAND_COMMAND_BLOCKS_MENU_ITEM_NAME: &str = "インバンドコマンドブロックを非表示";
+const SHOW_SSH_COMMAND_BLOCKS_MENU_ITEM_NAME: &str = "Warp 化 SSH ブロックを表示";
+const HIDE_SSH_COMMAND_BLOCKS_MENU_ITEM_NAME: &str = "Warp 化 SSH ブロックを非表示";
 const EXPORT_DEFAULT_SETTINGS_CSV_MENU_ITEM_NAME: &str =
-    "Export Default Settings as CSV to home dir";
+    "既定設定を CSV としてホームディレクトリへ書き出す";
 
 const SETTINGS_CSV_FILE_NAME: &str = "warp_default_settings.csv";
 const MAX_RECENT_REPOS_IN_MENU: usize = 10;
@@ -80,9 +81,9 @@ pub fn menu_bar(ctx: &mut AppContext) -> MenuBar {
 // To create submenus, we could use MenuItem::Custom(CustomMenuItem::new_with_submenu(...))
 pub fn dock_menu() -> Menu {
     Menu::new(
-        "New Window",
+        "新規ウィンドウ",
         vec![MenuItem::Custom(CustomMenuItem::new(
-            "New Window",
+            "新規ウィンドウ",
             move |ctx| {
                 ctx.dispatch_global_action("root_view:open_new", &());
                 ctx.dispatch_global_action("workspace:save_app", &());
@@ -98,11 +99,89 @@ fn custom_shortcut(action: CustomAction) -> Option<Keystroke> {
 }
 
 fn default_name(action: CustomAction, ctx: &AppContext) -> String {
-    ctx.description_for_custom_action(action.into(), bindings::MAC_MENUS_CONTEXT)
+    let name = ctx
+        .description_for_custom_action(action.into(), bindings::MAC_MENUS_CONTEXT)
         .unwrap_or_else(|| {
             debug_assert!(false, "action should have a name: {action:?}");
             "<NO DESCRIPTION>".into()
-        })
+        });
+    japanese_menu_name(&name)
+}
+
+fn japanese_menu_name(name: &str) -> String {
+    match name {
+        "New Terminal Tab" | "Create new tab" => "新規ターミナルタブ",
+        "New Agent Tab" => "新規エージェントタブ",
+        "New Cloud Agent Tab" => "新規クラウドエージェントタブ",
+        "New File" => "新規ファイル",
+        "About Warp" => "Warp について",
+        "Open Settings" => "設定を開く",
+        "Open Settings: Appearance" => "設定を開く: 外観",
+        "Open Settings: Keyboard Shortcuts" => "設定を開く: キーボードショートカット",
+        "Open Settings: AI" => "設定を開く: AI",
+        "Open Settings: MCP Servers" => "設定を開く: MCP サーバー",
+        "Configure keyboard shortcuts" => "キーボードショートカットを設定",
+        "Refer a Friend" => "友だちを招待",
+        "View Changelog" => "変更履歴を表示",
+        "Undo" => "元に戻す",
+        "Redo" => "やり直す",
+        "Cut" => "切り取り",
+        "Copy" => "コピー",
+        "Paste" => "貼り付け",
+        "Select All" => "すべて選択",
+        "Clear Editor" => "エディターをクリア",
+        "Find" => "検索",
+        "Go to Line" => "行へ移動",
+        "Focus Input" => "入力欄にフォーカス",
+        "Toggle command palette" => "コマンドパレットを切り替え",
+        "Toggle navigation palette" => "ナビゲーションパレットを切り替え",
+        "Open repository" => "リポジトリを開く",
+        "Close focused panel" => "フォーカス中のパネルを閉じる",
+        "Close Window" => "ウィンドウを閉じる",
+        "Close current session" => "現在のセッションを閉じる",
+        "Close other tabs" => "他のタブを閉じる",
+        "Close tabs to the right" => "右側のタブを閉じる",
+        "Move tab left" => "タブを左へ移動",
+        "Move tab right" => "タブを右へ移動",
+        "Toggle Warp Drive" => "Warp Drive を切り替え",
+        "Open global search" => "グローバル検索を開く",
+        "Toggle project explorer" => "プロジェクトエクスプローラーを切り替え",
+        "Toggle Agent conversation list view" => "エージェント会話リストを切り替え",
+        "History" => "履歴",
+        "Command Search" => "コマンド検索",
+        "Workflows" => "ワークフロー",
+        "New Agent Mode Pane" => "新規エージェントペイン",
+        "Attach Selection as Agent Mode Context" => "選択範囲をエージェントのコンテキストに追加",
+        "AI Search" => "AI 検索",
+        "Open AI Rules" => "AI ルールを開く",
+        "Open MCP Servers" => "MCP サーバーを開く",
+        "Clear Blocks" => "ブロックをクリア",
+        "Select Block Above" => "上のブロックを選択",
+        "Select Block Below" => "下のブロックを選択",
+        "Select All Blocks" => "すべてのブロックを選択",
+        "Copy Block" => "ブロックをコピー",
+        "Copy Block Command" => "ブロックのコマンドをコピー",
+        "Copy Block Output" => "ブロックの出力をコピー",
+        "Find Within Block" => "ブロック内を検索",
+        "Create Block Permalink" => "ブロックの固定リンクを作成",
+        "View Shared Blocks" => "共有ブロックを表示",
+        "Toggle Bookmark Block" => "ブロックのブックマークを切り替え",
+        "Create a new personal notebook" => "個人ノートブックを作成",
+        "Create a new team notebook" => "チームノートブックを作成",
+        "Create a new personal workflow" => "個人ワークフローを作成",
+        "Create a new team workflow" => "チームワークフローを作成",
+        "Create a new personal prompt" => "個人 AI プロンプトを作成",
+        "Create a new team prompt" => "チーム AI プロンプトを作成",
+        "Create new personal environment variables" => "個人環境変数を作成",
+        "Create new team environment variables" => "チーム環境変数を作成",
+        "Search Drive" => "Drive を検索",
+        "Open Team Settings" => "チーム設定を開く",
+        "Share Pane Contents" => "ペイン内容を共有",
+        "Share Current Session" => "現在のセッションを共有",
+        "Send feedback (opens external link)" => "フィードバックを送信",
+        _ => name,
+    }
+    .to_owned()
 }
 
 fn non_updateable_custom_item(action: CustomAction, ctx: &AppContext) -> MenuItem {
@@ -166,7 +245,7 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
     ];
 
     menu_items.push(MenuItem::Custom(CustomMenuItem::new_with_submenu(
-        "Preferences",
+        "環境設定",
         |_| (),
         no_updates,
         None,
@@ -187,14 +266,14 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
 
     menu_items.push(MenuItem::Separator);
     menu_items.push(link_menu_item(
-        "Privacy Policy...",
+        "プライバシーポリシー...",
         links::PRIVACY_POLICY_URL.into(),
     ));
 
     let debug_menu_items = debug_menu_items();
     if !debug_menu_items.is_empty() {
         menu_items.push(MenuItem::Custom(CustomMenuItem::new_with_submenu(
-            "Debug",
+            "デバッグ",
             |_| (),
             no_updates,
             None,
@@ -208,7 +287,7 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
     menu_items.push(MenuItem::Standard(StandardAction::ShowAllApps));
     menu_items.push(MenuItem::Separator);
     menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-        "Set Warp as Default Terminal",
+        "Warp を既定のターミナルに設定",
         move |ctx| {
             DefaultTerminal::handle(ctx).update(ctx, |default_terminal, ctx| {
                 default_terminal.make_warp_default(ctx)
@@ -228,7 +307,7 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
     )));
     menu_items.push(MenuItem::Separator);
     menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-        "Log out",
+        "ログアウト",
         auth::maybe_log_out,
         move |_, ctx| {
             let is_anonymous = AuthStateProvider::handle(ctx)
@@ -252,7 +331,7 @@ fn make_new_file_menu(ctx: &AppContext) -> Menu {
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::OpenRepository, ctx),
         MenuItem::Custom(CustomMenuItem::new_with_submenu(
-            "Open Recent",
+            "最近使った項目",
             |_| (),
             |_props, ctx| {
                 let recent_repos = generate_recent_repos_for_menu(ctx);
@@ -270,7 +349,7 @@ fn make_new_file_menu(ctx: &AppContext) -> Menu {
         updateable_custom_item_without_checkmark(CustomAction::CloseWindow, ctx),
     ]);
 
-    Menu::new("File", file_menu_options)
+    Menu::new("ファイル", file_menu_options)
 }
 
 fn make_new_edit_menu(ctx: &AppContext) -> Menu {
@@ -299,7 +378,7 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
     ];
     let group_5 = vec![
         MenuItem::Custom(CustomMenuItem::new(
-            "Use Warp's Prompt",
+            "Warp のプロンプトを使用",
             move |ctx| ctx.dispatch_global_action("app:toggle_user_ps1", &()),
             move |_props, ctx| MenuItemPropertyChanges {
                 checked: Some(
@@ -312,7 +391,7 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
             None,
         )),
         MenuItem::Custom(CustomMenuItem::new(
-            "Copy on Select within the Terminal",
+            "ターミナル内の選択時にコピー",
             move |ctx| {
                 ctx.dispatch_global_action("app:toggle_copy_on_select", &());
             },
@@ -338,7 +417,7 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
     edit_menu_items.push(MenuItem::Separator);
 
     edit_menu_items.push(MenuItem::Custom(CustomMenuItem::new_with_submenu(
-        "Synchronize Inputs",
+        "入力を同期",
         |_| (),
         no_updates,
         None,
@@ -370,7 +449,7 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
 
     edit_menu_items.extend(group_5);
 
-    Menu::new("Edit", edit_menu_items)
+    Menu::new("編集", edit_menu_items)
 }
 
 fn make_new_view_menu(ctx: &AppContext) -> Menu {
@@ -390,7 +469,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
         updateable_custom_item_without_checkmark(CustomAction::Workflows, ctx),
         MenuItem::Separator,
         MenuItem::Custom(CustomMenuItem::new(
-            "Toggle Mouse Reporting",
+            "マウスレポートを切り替え",
             move |ctx| {
                 ctx.dispatch_global_action("workspace:toggle_mouse_reporting", &());
             },
@@ -407,7 +486,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
             None,
         )),
         MenuItem::Custom(CustomMenuItem::new(
-            "Toggle Scroll Reporting",
+            "スクロールレポートを切り替え",
             move |ctx| {
                 ctx.dispatch_global_action("workspace:toggle_scroll_reporting", &());
             },
@@ -422,7 +501,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
             None,
         )),
         MenuItem::Custom(CustomMenuItem::new(
-            "Toggle Focus Reporting",
+            "フォーカスレポートを切り替え",
             move |ctx| {
                 ctx.dispatch_global_action("workspace:toggle_focus_reporting", &());
             },
@@ -448,7 +527,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
     items.extend([
         MenuItem::Separator,
         MenuItem::Custom(CustomMenuItem::new(
-            "Compact Mode",
+            "コンパクトモード",
             move |ctx| {
                 TerminalSettings::handle(ctx).update(ctx, |terminal_settings, ctx| {
                     let current_value = *terminal_settings.spacing_mode;
@@ -482,7 +561,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
         ]);
     }
 
-    Menu::new("View", items)
+    Menu::new("表示", items)
 }
 
 fn make_new_tab_menu(ctx: &AppContext) -> Menu {
@@ -509,7 +588,7 @@ fn make_new_tab_menu(ctx: &AppContext) -> Menu {
         updateable_custom_item_without_checkmark(CustomAction::CloseOtherTabs, ctx),
         updateable_custom_item_without_checkmark(CustomAction::CloseTabsRight, ctx),
     ];
-    Menu::new("Tab", items)
+    Menu::new("タブ", items)
 }
 
 fn make_new_ai_menu(ctx: &AppContext) -> Menu {
@@ -580,7 +659,7 @@ fn make_new_blocks_menu(ctx: &AppContext) -> Menu {
         items.extend(debug_items);
     }
 
-    Menu::new("Blocks", items)
+    Menu::new("ブロック", items)
 }
 
 fn make_new_drive_menu(ctx: &AppContext) -> Menu {
@@ -624,7 +703,7 @@ fn make_new_drive_menu(ctx: &AppContext) -> Menu {
         ])
     }
 
-    Menu::new("Drive", items)
+    Menu::new("ドライブ", items)
 }
 
 /// Returns [`MenuItem`]s that aid debugging to be included in the Block menu.
@@ -737,7 +816,7 @@ fn toggle_bootstrap_block_menu_item() -> MenuItem {
 
 fn make_new_window_menu() -> Menu {
     Menu::new(
-        "Window",
+        "ウィンドウ",
         vec![
             MenuItem::Standard(StandardAction::Minimize),
             MenuItem::Standard(StandardAction::Zoom),
@@ -846,7 +925,7 @@ fn debug_menu_items() -> Vec<MenuItem> {
         }
 
         debug_menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-            "Manually Toggle Network Status",
+            "ネットワーク状態を手動で切り替え",
             move |ctx| ctx.dispatch_global_action("workspace:toggle_debug_network_status", &()),
             no_updates,
             None,
@@ -880,7 +959,7 @@ fn debug_menu_items() -> Vec<MenuItem> {
         )));
 
         debug_menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-            "Create anonymous user",
+            "匿名ユーザーを作成",
             move |ctx| ctx.dispatch_global_action("workspace:debug_create_anonymous_user", &()),
             no_updates,
             None,
@@ -907,7 +986,7 @@ fn link_menu_item(title: &'static str, link: Cow<'static, str>) -> MenuItem {
 
 fn feedback_menu_item() -> MenuItem {
     MenuItem::Custom(CustomMenuItem::new(
-        "Send Feedback...",
+        "フィードバックを送信...",
         move |ctx| {
             // Route through the root-view action so workspace windows can open the
             // guided AI flow, while non-workspace windows still fall back to the
@@ -921,12 +1000,12 @@ fn feedback_menu_item() -> MenuItem {
 
 fn make_new_help_menu() -> Menu {
     Menu::new(
-        "Help",
+        "ヘルプ",
         vec![
             feedback_menu_item(),
-            link_menu_item("Warp Documentation...", links::USER_DOCS_URL.into()),
+            link_menu_item("Warp ドキュメント...", links::USER_DOCS_URL.into()),
             link_menu_item("GitHub Issues...", links::GITHUB_ISSUES_URL.into()),
-            link_menu_item("Warp Slack Community...", links::SLACK_URL.into()),
+            link_menu_item("Warp Slack コミュニティ...", links::SLACK_URL.into()),
         ],
     )
 }
@@ -960,7 +1039,7 @@ fn make_launch_config_menu_items(ctx: &mut AppContext) -> Vec<MenuItem> {
 
     // TODO(vorporeal): use non_updateable_custom_item() here instead
     launch_config_menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-        "Save New...",
+        "新規保存...",
         custom_action_dispatcher(CustomAction::SaveCurrentConfig),
         no_updates,
         custom_shortcut(CustomAction::SaveCurrentConfig),
@@ -975,13 +1054,13 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
     // shows its dedicated keystroke instead.
     let mut new_elements_menu = vec![
         MenuItem::Custom(CustomMenuItem::new(
-            "New Window",
+            "新規ウィンドウ",
             open_new_window,
             no_updates,
             Some(Keystroke::parse("cmd-n").expect("Valid keystroke")),
         )),
         MenuItem::Custom(CustomMenuItem::new(
-            "New Terminal Tab",
+            "新規ターミナルタブ",
             open_new_default_tab_or_window,
             move |_props: &MenuItemProperties, ctx: &mut AppContext| {
                 let mut changes = MenuItemPropertyChanges::default();
@@ -1006,7 +1085,7 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
             Some(Keystroke::parse("cmd-t").expect("Valid keystroke")),
         )),
         MenuItem::Custom(CustomMenuItem::new(
-            "New Agent Tab",
+            "新規エージェントタブ",
             open_new_agent_tab_or_window,
             move |_props: &MenuItemProperties, ctx: &mut AppContext| {
                 let mut changes = MenuItemPropertyChanges::default();
@@ -1042,7 +1121,7 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
     let reopen_session_action_updater =
         custom_action_updater(CustomAction::ReopenClosedSession, Box::new(|_| false));
     new_elements_menu.push(MenuItem::Custom(CustomMenuItem::new(
-        "Reopen closed session",
+        "閉じたセッションを再度開く",
         |ctx| {
             UndoCloseStack::handle(ctx).update(ctx, |stack, ctx| {
                 stack.undo_close(ctx);
@@ -1057,7 +1136,7 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
     )));
 
     new_elements_menu.push(MenuItem::Custom(CustomMenuItem::new_with_submenu(
-        "Launch Configurations",
+        "起動構成",
         |_| (),
         |_props, ctx| MenuItemPropertyChanges {
             submenu: Some(Some(make_launch_config_menu_items(ctx))),
