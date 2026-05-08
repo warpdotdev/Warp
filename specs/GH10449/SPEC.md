@@ -55,72 +55,143 @@ shows `<used>/<allowance>`, directly analogous to the existing
     the existing status-bar warning token).
   - `≥95%` used → red / danger foreground (uses the existing
     status-bar danger token).
-- "Unlimited" plan: when the billing source returns
-  `plan == "unlimited"` (or equivalent), display `∞` glyph and
-  use default foreground regardless of `used`.
-- Indeterminate state (used or allowance is null/missing while
-  scope is otherwise valid): display `—/—` and tooltip explains
-  "Usage data unavailable for this scope."
+- "Unlimited" plan: see B1a.ii (plan-overlay) row for unlimited.
+- Missing-data display: see B1a.i. The data-state table is the
+  single source of truth and supersedes any older wording about
+  `—/—` indeterminate rendering.
 
-### B1a. Display state matrix
+### B1a. Display state matrix (single source of truth)
 
-The Billing & Usage state model exposes a small set of plan and
-account states. Each maps to ONE concrete status-bar render. The
-segment never invents new visual variants — every state below
-reuses already-defined status-bar tokens.
+This table is THE canonical map from data state to render. Any
+prior wording elsewhere in this spec that conflicts with this
+table is superseded by the table. Every state below reuses
+already-defined status-bar tokens — the segment never invents
+new visual variants.
 
-| Billing & Usage state | Segment glyph / text | Color tokens | Tooltip | Click action |
+#### B1a.i Data-state table (data fetch lifecycle)
+
+These rows cover what the segment shows for ANY combination of
+fetch lifecycle and missing-field state. Plan/account states
+(unlimited, enterprise, delinquent, restricted, add-ons) are
+overlaid in the next subsection.
+
+| Data state | Display | Color tokens | Tooltip |
+|---|---|---|---|
+| Loading (initial fetch, no cached value) | `…/—` | Neutral default fg | "Fetching usage…" |
+| Loading (initial fetch, cached value present) | last cached `<used>/<allowance>` with subtle dim | Dim default fg | "Refreshing… last updated <Xs> ago" |
+| Success — both `used` and `allowance` known | `<used>/<allowance>` | <80% default · 80–94% warning (`status_bar_warning_fg`) · ≥95% danger (`status_bar_danger_fg`) | "<scope> · <period> · resets <reset_date>" |
+| Success — `allowance` missing, `used` known | `<used>/—` | Neutral default fg; thresholds NOT applied | "Allowance unknown" |
+| Success — `used` missing, `allowance` known | `—/<allowance>` | Neutral default fg; thresholds NOT applied | "Usage unknown" |
+| Success — both `used` and `allowance` missing | Segment hidden | n/a | n/a |
+| Stale (≥30s since last successful fetch, retrying) | last known `<used>/<allowance>` plus a single dot indicator (e.g. `89/2500 ·`) | Dim default fg | "Stale: <Xs> since last update" |
+| Failed (≥5 min consecutive failures) | Segment hidden | n/a | n/a |
+| Unauthorized (no billing-view permission for current scope) | Segment hidden | n/a | n/a |
+
+Notes:
+- "Both missing" and "Failed" hide the segment entirely. Hide is
+  preferred over showing `—/—` to avoid misleading screenshots.
+- The 30s stale window in B2 marks the segment as stale; the
+  ≥5 min window in this table is the upper bound that flips it to
+  "Failed" and hides it. Resume display once a fetch succeeds.
+- Rows above replace any prior wording around indeterminate
+  display, hide-on-failure timing, or `—/—` rendering elsewhere
+  in this spec; if older wording disagrees, this table wins.
+
+#### B1a.ii Plan / account state overlay
+
+Layered on top of the data-state table above. When the data is
+"Success", the plan/account state determines the SHAPE of the
+displayed value and whether thresholds apply.
+
+| Plan / account state | Segment glyph / text | Color tokens | Tooltip | Click action |
 |---|---|---|---|---|
-| Unlimited plan | `∞` glyph (or "Unlimited" if locale lacks the glyph) | Default fg; thresholds NOT applied | "Unlimited plan · current monthly billing usage: $X" if a USD figure is exposed by the existing billing source, else "Unlimited plan" | Open Settings → Billing & Usage |
-| Usage-based / metered | `<used>/<allowance>` (integers) | <80% default · 80–94% warning · ≥95% danger | "<scope> · Monthly allowance · resets <date>" | Open Settings → Billing & Usage |
-| Add-on credits on top of base allowance | `<used>/<base>+<addon>` (e.g. `89/2500+500`) | Thresholds computed against `(base + addon_total)` | "<scope> · Base 2500 (resets <date>) · Add-on 500 (expires <date>) · Add-on 250 (expires <date>)" | Open Settings → Billing & Usage |
-| Enterprise plan with contract limit | `<used>/<allowance>` | Same threshold rules as metered | "<scope> · Enterprise · resets <date>" | Open Settings → Billing & Usage |
+| Unlimited plan (`is_unlimited == true`) | `∞` glyph (or "Unlimited" if locale lacks the glyph) | Default fg; thresholds NOT applied | "Unlimited plan · current monthly billing usage: $X" if a USD figure is exposed by the existing billing source, else "Unlimited plan" | Open Settings → Billing & Usage |
+| Usage-based / metered (`is_unlimited == false`, no add-ons) | `<used>/<allowance>` (integers) | Per data-state table thresholds | "<scope> · Monthly allowance · resets <date>" | Open Settings → Billing & Usage |
+| Add-on credits on top of base allowance (one or more add-ons returned) | `<used>/<base>+<addon_total>` (e.g. `89/2500+750`) | Thresholds computed against `(base + addon_total)` | See B1a.iii | Open Settings → Billing & Usage |
+| Enterprise plan with contract limit | `<used>/<allowance>` | Same thresholds as metered | "<scope> · Enterprise · resets <date>" | Open Settings → Billing & Usage |
 | Enterprise plan, no contract numeric limit | Plan name only ("Enterprise"); no numeric usage | Default fg; thresholds NOT applied | "Enterprise plan · usage tracked centrally" | Open Settings → Billing & Usage |
 | Delinquent (account past due) | `!` glyph | Danger fg | "Account past due" | Open Settings → Billing & Usage → Payment |
 | Restricted (admin-disabled) | Lock glyph | Default fg | "Restricted by admin" | Open Settings → Billing & Usage (informational) |
-| Missing allowance (used known, allowance unknown) | `<used>/—` | Default fg; thresholds NOT applied (avoid false alarms) | "Allowance unknown" | Open Settings → Billing & Usage |
-| Indeterminate (both null while scope is valid) | `—/—` | Default fg | "Usage data unavailable for this scope." | Open Settings → Billing & Usage |
 | Signed-out / no billing context | Segment hidden | n/a | n/a | n/a |
 
-The "+addon" display only renders when the billing source
-explicitly returns one or more add-on credit pools attached to
-the current scope; if the API does not surface add-ons for the
-account, the segment falls back to the metered render.
+#### B1a.iii Multiple add-on pools
+
+When the billing source returns multiple add-on credit pools
+attached to the current scope (verified field:
+`bonus_grants: Vec<BonusGrant>` on `AIRequestUsageModel`, see
+`app/src/ai/request_usage_model.rs:175`), V1 renders:
+
+- Display: `<used>/<base>+<addon_total>`, where `addon_total` is
+  the **sum of every UNEXPIRED add-on grant** at render time. If
+  some grants have expired, expired grants are excluded from the
+  sum.
+- Threshold computation: against `(base + addon_total)`. If
+  `addon_total` is 0 (all expired), the segment falls back to
+  the base-only `<used>/<allowance>` render.
+- Tooltip lists EACH add-on on its own line, in the form
+  `Add-on <name>: <amount> (expires <expires_at>)`. Example:
+  ```
+  Acme Workspace · Base 2500 (resets Dec 1)
+  Add-on Boost: 500 (expires Dec 15)
+  Add-on Top-up: 250 (expires Jan 2)
+  ```
+- Sorting in the tooltip: ascending by `expires_at`, oldest
+  expiry first (so the soonest-to-vanish add-on is at the top).
+- The "+addon" display only renders when at least one add-on
+  with `expires_at > now` is present. If no add-ons are surfaced,
+  the segment falls back to the metered render.
 
 ### B2. Refresh & caching (subscription model)
 
-- Source of truth: the same Billing & Usage state stream that
-  powers Settings → Billing & Usage. The status-bar segment MUST
-  NOT introduce a second fetch pipeline, second client, or
-  second polling loop.
-- ONE shared, ref-counted subscription per process. The
-  status-bar segment is a downstream observer of the existing
-  Billing & Usage state stream. New observers (additional
-  status-bar segments coming online in other windows or tabs,
-  the Billing pane opening, etc.) ATTACH to the existing
-  subscription via ref-count rather than triggering a new fetch
-  or starting an additional polling loop. Last observer detaching
-  drops the subscription.
+- **Verified owner: `AIRequestUsageModel`.** The existing singleton
+  model `AIRequestUsageModel` (defined in
+  `app/src/ai/request_usage_model.rs`, registered as a
+  `SingletonEntity` via `ctx.add_singleton_model(...)` in
+  `app/src/lib.rs:1251`) is the ONE owner of usage and bonus-grant
+  state for the process. It already:
+  - Owns `request_limit_info: RequestLimitInfo` and
+    `bonus_grants: Vec<BonusGrant>`.
+  - Owns `last_update_time: Option<Instant>`.
+  - Caches usage to private user preferences via
+    `cache_request_limit_info` for next-launch hydration.
+  - Spawns the GraphQL fetch via
+    `AIRequestUsageModel::refresh_request_usage_async`.
+  - Emits `AIRequestUsageModelEvent::RequestUsageUpdated` to
+    subscribers.
+- **Status-bar segment is a passive observer.** The new chip
+  subscribes via the existing warpui pattern already used by the
+  Billing pane and the buy-credits banner — verified call site:
+  `ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx),
+  |me, event, ctx| { ... })` (see `app/src/terminal/buy_credits_banner.rs:75`
+  and `app/src/workspace/view/free_tier_limit_hit_modal.rs:68`).
+  The segment NEVER calls `refresh_request_usage_async` itself,
+  NEVER spawns its own polling loop, and NEVER opens its own
+  GraphQL client. It reads via
+  `AIRequestUsageModel::as_ref(ctx).request_limit()` (used elsewhere
+  in `app/src/terminal/input.rs:12788`) and re-renders on
+  `RequestUsageUpdated`.
+- **Single-fetch invariant.** Because `AIRequestUsageModel` is a
+  warpui `SingletonEntity`, the per-process single-instance
+  invariant is structural, not advisory: spawning N status-bar
+  chips (in N windows / panes) attaches N subscribers to the SAME
+  singleton — there is no additional fetch loop per chip.
 - Cache TTL: ≤2s after the most-recent agent-turn-completion
   event for the active conversation. The segment subscribes to
   the same agent-turn completion signal already used by the
   conversation list and the Billing pane; it does NOT subscribe
   per-segment to billing fetches directly.
-- Background refresh: when the shared subscription is alive,
-  refresh on a 60s floor PLUS on every agent-turn completion
-  (debounced to ≤2s). Refresh cadence is owned by the shared
-  subscription, not by individual segments.
-- Multiple windows / tabs: every additional visible segment is a
-  no-op observer on the shared subscription. Per process there
-  is exactly ONE billing fetch loop regardless of how many
-  windows or tabs render the segment.
-- On fetch error: retain the last successfully-fetched value, and
-  show a stale indicator in the tooltip ("Last updated 12s ago,
-  retrying").
-- After 30s of consecutive fetch failures, hide the segment
-  entirely. Resume display once a fetch succeeds. Hide-on-failure
-  is computed from the shared subscription's error counter, not
-  per-segment.
+- Background refresh cadence is OWNED by `AIRequestUsageModel`
+  and the call sites that already invoke
+  `refresh_request_usage_async` (auth state changes, post agent
+  turn, manual settings refresh). The status-bar chip does NOT
+  add a new refresh trigger.
+- Stale display: when `last_update_time` is older than 30s the
+  chip switches to the "Stale" row of B1a.i. After ≥5 min of
+  consecutive failed/missing updates the chip switches to the
+  "Failed" row of B1a.i (segment hidden); display resumes once
+  `RequestUsageUpdated` fires successfully. Hide-on-failure is
+  computed from `AIRequestUsageModel::last_update_time()`, not
+  from a per-segment counter.
 
 ### B3. Scope (workspace selector)
 
@@ -183,11 +254,34 @@ account, the segment falls back to the metered render.
   - Type: `bool`
   - Default: `false` (opt-in)
   - Sync: `SyncToCloud::Globally(RespectUserSyncSetting::Yes)`,
-    consistent with other Appearance settings.
+    consistent with other Appearance and `status_bar.show_*`
+    visibility toggles. The toggle's `bool` value is the ONLY
+    field synced — see "Sync & privacy" below.
   - TOML namespace: `[status_bar]` table,
     `show_ai_credits = false`.
+- **Sync & privacy (synced-setting justification):**
+  - Why synced: this setting represents a user preference for
+    chrome density (whether the credits chip is shown in the
+    bottom status bar). It pattern-matches every other
+    `status_bar.show_*` visibility toggle, which are all synced
+    today. A user enabling the chip on their laptop expects it
+    to also appear on their desktop; sync delivers that.
+  - What is actually synced: ONLY the `bool` value of
+    `status_bar.show_ai_credits`. NO usage value, NO allowance,
+    NO scope name, NO workspace identifier, NO plan tier, NO
+    reset date, NO add-on data is ever synced via this setting.
+    The setting is a pure UI-visibility toggle; all billing data
+    flows through `AIRequestUsageModel`'s existing fetch and
+    cache, not through cloud-synced settings storage.
+  - Per-device override: users who want the chip on one device
+    but not another use the existing per-device override
+    mechanism that already covers every other
+    `status_bar.show_*` setting (the same `RespectUserSyncSetting`
+    family, which honors a user's per-device decision to opt out
+    of settings sync globally). No segment-specific override
+    is added.
 - No new billing API endpoint. Reuses the existing usage fetch
-  consumed by the Billing & Usage pane.
+  consumed by the Billing & Usage pane via `AIRequestUsageModel`.
 - No new color tokens. Reuses existing status-bar `warning` and
   `danger` foreground tokens.
 
@@ -229,22 +323,31 @@ account, the segment falls back to the metered render.
 
 ## Implementation Pointers
 
-These pointers reference verified paths in the current codebase
-(`git ls-files | grep -iE "(billing|status_bar|appearance)"`).
+These pointers reference verified paths in the current codebase.
 Where no module exists yet, the pointer is marked `(new module)`.
 
-- Billing data source (existing):
-  - `app/src/billing/mod.rs` — current billing module entrypoint.
-    Extend with a thin observable that the status-bar segment can
-    attach to. Do NOT introduce a parallel fetch loop.
-  - `app/src/settings_view/billing_and_usage/mod.rs`,
-    `app/src/settings_view/billing_and_usage_page.rs`,
+- Usage state owner (existing, verified):
+  - `app/src/ai/request_usage_model.rs` — `AIRequestUsageModel`
+    is the singleton owner of `request_limit_info`,
+    `bonus_grants`, `last_update_time`, GraphQL fetch via
+    `refresh_request_usage_async`, and emits
+    `AIRequestUsageModelEvent::RequestUsageUpdated`.
+  - `app/src/lib.rs:1251` — singleton registration site:
+    `ctx.add_singleton_model(|ctx| AIRequestUsageModel::new(ai_client, ctx))`.
+  - Existing observer call sites the segment will mirror:
+    - `app/src/terminal/buy_credits_banner.rs:75` — pattern for
+      `ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), ...)`.
+    - `app/src/workspace/view/free_tier_limit_hit_modal.rs:68` —
+      identical subscription pattern.
+    - `app/src/terminal/input.rs:12788` — read-only access via
+      `AIRequestUsageModel::as_ref(ctx).request_limit()`.
+- Billing & Usage pane (existing):
+  - `app/src/settings_view/billing_and_usage_page.rs`,
     `app/src/settings_view/billing_and_usage/usage_history_model.rs`
-    — current Billing & Usage pane. The status-bar segment
-    consumes the SAME state stream this pane subscribes to.
-  - `crates/graphql/src/api/billing.rs` — existing GraphQL
-    billing query layer. No new endpoint required; segment uses
-    whatever this layer already returns.
+    — `UsageHistoryModel` powers usage-history table only;
+    `AIRequestUsageModel` powers limit/used display. The
+    status-bar chip consumes ONLY `AIRequestUsageModel`; the
+    `UsageHistoryModel` is unaffected.
 - Status-bar segment (new):
   - The current "context remaining" footer chip lives in
     `app/src/ai/blocklist/agent_view/agent_input_footer/mod.rs`
@@ -316,24 +419,34 @@ module to keep the no-extra-pipeline invariant intact.
   — no `used`, `allowance`, `scope_name`, `workspace_id`,
   `plan_tier`, or `reset_at` fields.
 
+## Resolved questions (V1 decisions)
+
+The items below were Open Questions in round 1; each is now a V1
+decision and is referenced by behavior or acceptance criteria.
+This section exists for reviewer traceability only — the decision
+is the spec.
+
+- **R1. Unlimited plans, daily-spend USD.** V1: render `∞` only
+  (covered by B1a.ii Unlimited row); do NOT mix in USD daily-spend
+  here. Revisit when the sibling USD-spend spec (#10224) ships.
+- **R2. Default visibility.** V1: opt-in for everyone, including
+  metered-plan users (covered by B5 and the `false` default in
+  Settings / API surface). Promote via a one-time tooltip on the
+  Billing & Usage pane.
+- **R3. Unlimited glyph vs. word.** V1: glyph in the chip, word
+  ("Unlimited") in the tooltip and as the locale fallback when
+  the glyph is unavailable (B1a.ii Unlimited row).
+- **R4. Add-on threshold computation.** V1: thresholds are
+  computed against `(base + addon_total)`, with `addon_total`
+  being the sum of unexpired grants only (covered by B1a.iii and
+  used by A9). This matches what the Billing & Usage pane treats
+  as "available".
+
 ## Open Questions
 
-- Q1. For unlimited plans, should we instead show daily-spend in
-  USD as a more useful number? V1 proposal: no — show `∞` and
-  punt to the Billing pane for spend breakdown. Revisit once the
-  USD-spend spec (sibling PR #10224) ships.
-- Q2. Should the segment be visible by default for new users on
-  metered plans, since they are the audience that benefits most?
-  V1 proposal: keep opt-in to avoid surprising existing users
-  with new chrome; promote via a one-time tooltip on the Billing
-  pane.
-- Q3. Should we localize the `∞` glyph or render the literal word
-  "Unlimited"? V1 proposal: glyph, with the word in the tooltip.
-- Q4. For the add-on display `<used>/<base>+<addon>`, is the
-  threshold computed against `base + addon_total` or against
-  `base` alone with add-ons treated as overflow buffer? V1
-  proposal: against `base + addon_total` (matches what the
-  Billing pane shows as "available").
+(None remain that are referenced by acceptance criteria. New
+items added in future revisions belong here only if they are
+NOT yet referenced by acceptance.)
 
 ## Telemetry
 
