@@ -56,9 +56,69 @@ users who rely on the existing visual.
 ### B3. Mode `clamp_to_text`
 
 When a line ends with the truecolor bg still active, the background paints
-only the cells that contain printed glyphs (or whitespace explicitly written).
-Cells past the last written column render with the terminal default
-background. Implicit BCE fill from cursor-to-EOL is suppressed for truecolor.
+only the cells that contain **explicitly written characters** — including
+explicitly written spaces (`\x20`) emitted by the program while truecolor
+bg was active. The bg-paint applies through the explicit space.
+
+Cells **without** a written character — implicit blank cells produced by
+EOL flood, erase ops, scroll-region reveals, insert/delete-line shifts,
+and block-finalization padding — render with the terminal default
+background. Implicit BCE fill is what `clamp_to_text` suppresses.
+
+This resolves the prior Open Question and supersedes any earlier
+acceptance language that conflicted with it: explicit spaces count as
+painted cells; only IMPLICIT blank cells are clamped to default bg.
+
+### B3a. Bg-fill paths covered by the mode
+
+The truecolor bg-fill suppression principle applies **uniformly** to all
+sources of bg-painted blank cells, not just cursor-to-EOL on `\r\n`. The
+mode is enforced at every site where the renderer would otherwise commit
+a bg-colored blank cell driven by an active truecolor `\x1b[48;2;R;G;Bm`
+state.
+
+Single guiding principle: **all bg-painted blank-cell production paths
+follow the active `terminal.truecolor_background_mode`. Modes apply
+uniformly across all sources of bg-painted cells.**
+
+The covered paths are:
+
+1. **Cursor-to-EOL on `\r\n` / `\n` / line wrap.** The original spec
+   case. Behavior:
+   - `flood`: paint with current truecolor bg from cursor to right edge.
+   - `clamp_to_text`: do not paint — cells render as default bg.
+   - `disabled`: do not paint — cells render as default bg.
+2. **Erase ops: Erase In Line `\x1b[K`, `\x1b[1K`, `\x1b[2K`; Erase In
+   Display `\x1b[J`, `\x1b[1J`, `\x1b[2J`, `\x1b[3J`.** When truecolor
+   bg is active at the time of the erase, the spec's mode rules apply
+   to the cleared cells:
+   - `flood`: cleared cells take the current truecolor bg.
+   - `clamp_to_text`: cleared cells render as default bg (no truecolor
+     bg-paint of cells without an explicit write).
+   - `disabled`: cleared cells render as default bg.
+3. **Insert/Delete Line (`\x1b[L`, `\x1b[M`).** Cells shifted in by these
+   ops follow the mode:
+   - `flood`: shifted-in cells paint with current truecolor bg.
+   - `clamp_to_text`: shifted-in cells render as default bg.
+   - `disabled`: shifted-in cells render as default bg.
+4. **Scroll-up / scroll-down regions (DECSTBM and friends).** Cells
+   revealed by scrolling follow the mode:
+   - `flood`: revealed cells paint with current truecolor bg.
+   - `clamp_to_text`: revealed cells render as default bg.
+   - `disabled`: revealed cells render as default bg.
+5. **Block finalization padding.** When Warp finalizes a command block
+   (e.g., adds bottom padding rows beneath the last line of output),
+   padding cells follow the mode under the bg state active at finalize
+   time:
+   - `flood`: padding cells paint with the active truecolor bg.
+   - `clamp_to_text`: padding cells render as default bg.
+   - `disabled`: padding cells render as default bg.
+6. **Cursor save/restore (DECSC / DECRC, `\x1b[s` / `\x1b[u`).** Saving
+   and restoring cursor state does **not** alter the active mode and
+   does not itself paint bg cells. The mode that applies after a
+   restore is the currently configured `terminal.truecolor_background_mode`.
+7. **256-color and 16-color BCE.** Out of scope of this setting in all
+   modes — see B7. Only truecolor (24-bit) bg fills are gated.
 
 ### B4. Mode `disabled`
 
@@ -89,31 +149,87 @@ output highlight, error block tint) are unaffected by this setting.
 
 ## Settings / API surface
 
-- `terminal.truecolor_background_mode`: enum, default `"flood"`. Stored in
-  user terminal settings.
-- `pane.truecolor_background_mode`: optional per-pane override in tab config.
-- Settings UI: Settings → Terminal → Appearance → "Truecolor background
-  painting" radio group:
-  - `Flood (default)` — paints the full line.
-  - `Clamp to text` — paints only behind printed text.
-  - `Disabled` — does not paint truecolor backgrounds.
+### User-level setting — verified against existing schema
+
+The setting is registered in `app/src/settings/` using the existing
+`define_settings_group!` macro pattern (sibling examples: `pane.rs`,
+`accessibility.rs`, `font.rs`). It lives on the terminal-appearance
+settings group and follows the existing `appearance.terminal.*` /
+`appearance.panes.*` namespace conventions.
+
+- Setting name: `truecolor_background_mode`.
+- Type: enum (`flood` | `clamp_to_text` | `disabled`).
+- Default: `flood`.
+- Serde representation: lowercase string (`"flood"`, `"clamp_to_text"`,
+  `"disabled"`).
+- TOML path: `appearance.terminal.truecolor_background_mode` (parallels
+  the verified `appearance.panes.should_dim_inactive_panes` style in
+  `app/src/settings/pane.rs`).
+- New module: `app/src/settings/truecolor_background_mode.rs`, wired
+  into the terminal-appearance settings group via the same
+  `define_settings_group!` registration pattern used by `pane.rs`.
+- `SupportedPlatforms::ALL`, `SyncToCloud::Globally(RespectUserSyncSetting::Yes)`,
+  `private: false` — matching the conventions of similar appearance
+  settings.
+
+### Per-pane / tab-config override — verified against existing schema
+
+The per-pane override lives on the tab-config schema in
+`app/src/tab_configs/tab_config.rs`. Tab configs already host pane-level
+options on `TabConfigPaneNode` / related structs; the override is added
+there:
+
+- Field name: `truecolor_background_mode`.
+- Type: `Option<TruecolorBackgroundMode>` (None = inherit user setting).
+- Serde representation: lowercase string when present.
+- TOML path on a pane node: `pane.truecolor_background_mode`.
+- Re-uses the enum defined in the new
+  `app/src/settings/truecolor_background_mode.rs` module so the user
+  setting and tab-config override share a single type.
+- Override resolution: per-pane value, if set, wins over the user-level
+  setting for that pane only. Sibling panes are unaffected.
+
+### Settings UI
+
+Settings → Terminal → Appearance → "Truecolor background painting"
+radio group:
+
+- `Flood (default)` — paints the full line.
+- `Clamp to text` — paints only behind explicitly written cells (incl.
+  explicit spaces).
+- `Disabled` — does not paint truecolor backgrounds.
 
 ## Acceptance Criteria
 
 - A1: Default mode is `flood` and matches current rendering byte-for-byte for
   a recorded `vim_24bitcolors_bce` reference test.
-- A2: `clamp_to_text` does not paint cells past the last printed glyph on
-  multi-line `git diff` colored output.
+- A2: `clamp_to_text` does not paint cells past the last **explicitly
+  written** cell on multi-line `git diff` colored output (i.e., implicit
+  EOL fill is suppressed).
+- A_clamp_explicit_spaces_painted: In `clamp_to_text`, an explicitly
+  written space (`\x20`) emitted while truecolor bg is active **is**
+  painted with the truecolor bg. Sequence
+  `\x1b[48;2;10;20;30m  text  \x1b[0m` paints all 4 spaces and the
+  `text` glyphs; only cells beyond the trailing explicit spaces fall
+  back to default bg.
+- A_clamp_implicit_blank_not_painted: In `clamp_to_text`, cells produced
+  by **implicit** bg-fill paths — EOL flood after `\r\n` / wrap, erase
+  ops (`\x1b[K`/`\x1b[J` and variants), insert/delete-line shifted-in
+  cells, scroll-region revealed cells, and block-finalization padding
+  rows — render as default bg even while truecolor bg is the active
+  state.
 - A3: `disabled` renders truecolor bg cells with the terminal default
   background; foreground colors remain intact.
 - A4: 256-color bg output is unchanged in `disabled` mode.
 - A5: Setting changes take effect for new output without restart.
 - A6: Already-rendered scrollback is not repainted on toggle.
-- A7: Per-pane tab-config override correctly overrides the global setting.
+- A7: Per-pane tab-config override at TOML path `pane.truecolor_background_mode`
+  correctly overrides the user-level
+  `appearance.terminal.truecolor_background_mode` for the affected pane only.
 
 ## Implementation Pointers
 
-Verified paths (via `git ls-files`):
+Verified paths (via `git ls-files` and `ls`):
 
 - ANSI parser / handler: `app/src/terminal/model/ansi/handler.rs`,
   `app/src/terminal/model/ansi/mod.rs`,
@@ -123,22 +239,40 @@ Verified paths (via `git ls-files`):
 - Existing truecolor BCE reference test fixtures:
   `app/src/terminal/ref_tests/data/vim_24bitcolors_bce/` (use as the
   flood-mode regression baseline).
-- Settings module: `app/src/settings/` — add a new file
-  `app/src/settings/truecolor_background_mode.rs` (new module) wired into
-  the existing terminal settings struct.
+- Settings module (verified): existing files like
+  `app/src/settings/pane.rs`, `app/src/settings/accessibility.rs`,
+  `app/src/settings/font.rs` use `define_settings_group!` (from
+  `app/src/settings/macros.rs`) with `toml_path` strings under the
+  `appearance.*` namespace. The new
+  `app/src/settings/truecolor_background_mode.rs` follows the same
+  pattern with `toml_path: "appearance.terminal.truecolor_background_mode"`.
+- Tab-config schema (verified): `app/src/tab_configs/tab_config.rs`
+  hosts `TabConfig`, `TabConfigPaneNode`, etc. The per-pane override
+  field is added on the pane-node struct and (de)serialized at
+  `pane.truecolor_background_mode`. Tests live alongside in
+  `app/src/tab_configs/tab_config_tests.rs`.
 
 Likely change shape:
 
-1. Add the enum + serde + default in the new settings module.
-2. Thread the mode into the renderer where truecolor bg cells are committed
-   to the grid, gating the BCE fill path on mode.
-3. Wire the Settings UI control under Terminal → Appearance.
+1. Add the enum + serde + default in the new settings module
+   `app/src/settings/truecolor_background_mode.rs` using
+   `define_settings_group!` with `toml_path:
+   "appearance.terminal.truecolor_background_mode"`.
+2. Add an `Option<TruecolorBackgroundMode>` field on the relevant
+   pane-node struct in `app/src/tab_configs/tab_config.rs` so per-pane
+   override is parsed at `pane.truecolor_background_mode`.
+3. Thread the resolved mode (per-pane override > user setting > default)
+   into the ANSI handler / grid renderer at every bg-fill site
+   enumerated in B3a — cursor-to-EOL, erase ops, insert/delete line,
+   scroll regions, block-finalization padding — gating the BCE fill
+   path on mode at each site rather than only at line-end.
+4. Wire the Settings UI control under Terminal → Appearance.
 
 ## Tests
 
 - T1: Flood mode matches `vim_24bitcolors_bce` recorded grid (regression).
 - T2: `clamp_to_text` against a synthetic multi-line diff recording — assert
-  cells beyond last glyph use default bg.
+  cells beyond the last **explicitly written** cell use default bg.
 - T3: `disabled` mode — truecolor bg cells render as default bg, fg color
   preserved.
 - T4: 256-color bg output unchanged across all three modes.
@@ -146,14 +280,40 @@ Likely change shape:
 - T6: Per-pane override changes a single pane without affecting siblings.
 - T7: Setting change applies to subsequent output only.
 - T8: Toggling the setting does not repaint scrollback.
+- T_clamp_explicit_spaces: In `clamp_to_text`, the sequence
+  `\x1b[48;2;10;20;30m  text  \x1b[0m` paints all 4 explicit spaces and
+  the `text` glyphs with the truecolor bg. (Aligns with
+  A_clamp_explicit_spaces_painted.)
+- T_clamp_eol_flood: After `\x1b[48;2;10;20;30mhello\r\n`, in
+  `clamp_to_text` the cells from after the `o` to right edge render as
+  default bg (no implicit EOL fill).
+- T_clamp_erase_in_line: After `\x1b[48;2;10;20;30m\x1b[K` (Erase In
+  Line, cursor to EOL), in `clamp_to_text` cleared cells render as
+  default bg; in `flood` they take truecolor bg.
+- T_clamp_erase_in_display: Same expectations as T_clamp_erase_in_line
+  for `\x1b[J` (clear to end of screen) and `\x1b[2J` (clear screen).
+- T_clamp_insert_delete_line: After `\x1b[L` / `\x1b[M` with truecolor
+  bg active, shifted-in cells render as default bg in `clamp_to_text`
+  and `disabled`; truecolor bg in `flood`.
+- T_clamp_scroll_region: Cells revealed by scroll-up/scroll-down within
+  a DECSTBM region follow the same mode rule.
+- T_clamp_block_padding: Block-finalization padding rows render as
+  default bg in `clamp_to_text` and `disabled`; truecolor bg in
+  `flood`.
+- T_per_pane_override_toml: Loading a tab-config TOML setting
+  `pane.truecolor_background_mode = "clamp_to_text"` produces a pane
+  whose resolved mode is `clamp_to_text` even when the user-level
+  `appearance.terminal.truecolor_background_mode` is `flood`.
 
 ## Open Questions
 
-- In `clamp_to_text`, should regular spaces (`\x20`) emitted between glyphs
-  be considered "written" cells (and therefore bg-painted)? Recommendation:
-  yes — explicit writes (including spaces) are bg-painted; clamp means "no
-  implicit fill past last write". This preserves intent for runs like
-  `\x1b[48;2;...m  text  \x1b[0m` while still suppressing the EOL flood.
+(The earlier question about whether explicitly written spaces count as
+"written" in `clamp_to_text` is now resolved in the spec body — explicit
+spaces **do** count as written cells and **are** painted with the
+truecolor bg. See B3, A_clamp_explicit_spaces_painted, and
+T_clamp_explicit_spaces.)
+
+- None outstanding for V1.
 
 ## Telemetry
 
