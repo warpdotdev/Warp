@@ -18,6 +18,7 @@ use warpui::{
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::AgentConversationsModel;
+use crate::code::buffer_location::FileLocation;
 #[cfg(feature = "local_fs")]
 use crate::code::file_tree::FileTreeEvent;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
@@ -83,14 +84,9 @@ pub enum LeftPanelEvent {
     WarpDrive(DrivePanelEvent),
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     OpenFileWithTarget {
-        path: PathBuf,
+        location: FileLocation,
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
-    },
-    /// Open a remote file in a code editor pane.
-    #[allow(dead_code)]
-    OpenRemoteFile {
-        remote_path: warp_util::remote_path::RemotePath,
     },
     NewConversationInNewTab,
     ShowDeleteConfirmationDialog {
@@ -733,7 +729,7 @@ impl LeftPanelView {
                 );
 
                 ctx.emit(LeftPanelEvent::OpenFileWithTarget {
-                    path: path.clone(),
+                    location: FileLocation::Local(path.clone()),
                     target,
                     line_col: Some(line_col),
                 });
@@ -766,7 +762,7 @@ impl LeftPanelView {
                 line_col,
             } => {
                 ctx.emit(LeftPanelEvent::OpenFileWithTarget {
-                    path: path.clone(),
+                    location: path.clone(),
                     target: target.clone(),
                     line_col: *line_col,
                 });
@@ -780,11 +776,6 @@ impl LeftPanelView {
                 ctx.emit(LeftPanelEvent::FileTree(
                     pane_group::Event::OpenDirectoryInNewTab { path: path.clone() },
                 ));
-            }
-            FileTreeEvent::OpenRemoteFile { remote_path } => {
-                ctx.emit(LeftPanelEvent::OpenRemoteFile {
-                    remote_path: remote_path.clone(),
-                });
             }
         }
     }

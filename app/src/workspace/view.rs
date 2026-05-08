@@ -86,7 +86,7 @@ use crate::app_state::{
     PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabSnapshot,
     TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
 };
-use crate::code::buffer_location::BufferLocation;
+use crate::code::buffer_location::FileLocation;
 use crate::code_review::diff_state::DiffStateModel;
 #[cfg(feature = "local_fs")]
 use crate::code_review::CodeReviewTelemetryEvent;
@@ -5924,17 +5924,27 @@ impl Workspace {
                 self.handle_warp_drive_event(drive_event, ctx);
             }
             LeftPanelEvent::OpenFileWithTarget {
-                path,
+                location,
                 target,
                 line_col,
             } => {
-                self.open_file_with_target(
-                    path.clone(),
-                    target.clone(),
-                    *line_col,
-                    CodeSource::FileTree { path: path.clone() },
-                    ctx,
-                );
+                let code_source = CodeSource::FileTree {
+                    location: Some(location.clone()),
+                };
+                match location {
+                    FileLocation::Local(path) => {
+                        self.open_file_with_target(
+                            path.clone(),
+                            target.clone(),
+                            *line_col,
+                            code_source,
+                            ctx,
+                        );
+                    }
+                    FileLocation::Remote(_) => {
+                        self.open_code(code_source, EditorLayout::SplitPane, None, false, &[], ctx);
+                    }
+                }
             }
             LeftPanelEvent::NewConversationInNewTab => {
                 self.add_terminal_tab_with_new_agent_view(ctx);
@@ -5952,12 +5962,6 @@ impl Workspace {
                     },
                     ctx,
                 );
-            }
-            LeftPanelEvent::OpenRemoteFile { remote_path } => {
-                let source = CodeSource::RemoteFileTree {
-                    remote_path: remote_path.clone(),
-                };
-                self.open_code(source, EditorLayout::SplitPane, None, false, &[], ctx);
             }
         }
     }
@@ -8111,7 +8115,7 @@ impl Workspace {
                     let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                         self.working_directories_model.update(ctx, |model, ctx| {
                             model.get_or_create_diff_state_model(
-                                BufferLocation::Local(rp.clone()),
+                                FileLocation::Local(rp.clone()),
                                 ctx,
                             )
                         })
@@ -8158,7 +8162,7 @@ impl Workspace {
         let repo_path = panel_context.repo_path.clone();
         let diff_state_model = repo_path.as_ref().and_then(|rp| {
             self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
+                model.get_or_create_diff_state_model(FileLocation::Local(rp.clone()), ctx)
             })
         });
         let Some(diff_state_model) = diff_state_model else {
@@ -8275,7 +8279,7 @@ impl Workspace {
             |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
                 let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                     self.working_directories_model.update(ctx, |model, ctx| {
-                        model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
+                        model.get_or_create_diff_state_model(FileLocation::Local(rp.clone()), ctx)
                     })
                 })?;
                 Some(CodeReviewPaneContext {
@@ -21048,7 +21052,7 @@ impl TypedActionView for Workspace {
                         let diff_state_model = repo_path.as_ref().and_then(|rp| {
                             self.working_directories_model.update(ctx, |model, ctx| {
                                 model.get_or_create_diff_state_model(
-                                    BufferLocation::Local(rp.clone()),
+                                    FileLocation::Local(rp.clone()),
                                     ctx,
                                 )
                             })

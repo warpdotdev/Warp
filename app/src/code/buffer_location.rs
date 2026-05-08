@@ -16,7 +16,6 @@ pub enum FileLocation {
 
 impl FileLocation {
     /// Returns the file name component for display (e.g. tab titles).
-    #[allow(dead_code)]
     pub fn display_name(&self) -> &str {
         match self {
             FileLocation::Local(path) => path
@@ -24,15 +23,6 @@ impl FileLocation {
                 .and_then(|n| n.to_str())
                 .unwrap_or_default(),
             FileLocation::Remote(remote) => remote.path.file_name().unwrap_or_default(),
-        }
-    }
-
-    /// Returns the file extension, if any. Used for language detection and icons.
-    #[allow(dead_code)]
-    pub fn extension(&self) -> Option<&str> {
-        match self {
-            FileLocation::Local(path) => path.extension().and_then(|e| e.to_str()),
-            FileLocation::Remote(remote) => remote.path.extension(),
         }
     }
 

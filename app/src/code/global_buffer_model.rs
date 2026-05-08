@@ -19,7 +19,10 @@ use warp_util::content_version::ContentVersion;
 use warp_util::file::{FileId, FileLoadError, FileSaveError};
 use warp_util::host_id::HostId;
 use warp_util::remote_path::RemotePath;
+use warp_util::standardized_path::StandardizedPath;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
+
+use remote_server::manager::RemoteServerManager;
 
 use super::buffer_location::{FileLocation, SyncClock};
 
@@ -269,37 +272,35 @@ impl GlobalBufferModel {
         if FeatureFlag::SshRemoteServer.is_enabled() {
             use remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
             let mgr = RemoteServerManager::handle(_ctx);
-            _ctx.subscribe_to_model(&mgr, |me, event, ctx| {
-                match event {
-                    RemoteServerManagerEvent::BufferUpdated {
+            _ctx.subscribe_to_model(&mgr, |me, event, ctx| match event {
+                RemoteServerManagerEvent::BufferUpdated {
+                    host_id,
+                    path,
+                    new_server_version,
+                    expected_client_version,
+                    edits,
+                } => {
+                    let char_edits: Vec<_> = edits
+                        .iter()
+                        .map(|e| CharOffsetEdit {
+                            start: CharOffset::from(e.start_offset as usize),
+                            end: CharOffset::from(e.end_offset as usize),
+                            text: e.text.clone(),
+                        })
+                        .collect();
+                    me.handle_buffer_updated_push(
                         host_id,
                         path,
-                        new_server_version,
-                        expected_client_version,
-                        edits,
-                    } => {
-                        let char_edits: Vec<_> = edits
-                            .iter()
-                            .map(|e| CharOffsetEdit {
-                                start: CharOffset::from(e.start_offset as usize),
-                                end: CharOffset::from(e.end_offset as usize),
-                                text: e.text.clone(),
-                            })
-                            .collect();
-                        me.handle_buffer_updated_push(
-                            host_id,
-                            path,
-                            *new_server_version,
-                            *expected_client_version,
-                            &char_edits,
-                            ctx,
-                        );
-                    }
-                    RemoteServerManagerEvent::BufferConflictDetected { host_id, path } => {
-                        me.handle_buffer_conflict_detected(host_id, path, ctx);
-                    }
-                    _ => {}
+                        *new_server_version,
+                        *expected_client_version,
+                        &char_edits,
+                        ctx,
+                    );
                 }
+                RemoteServerManagerEvent::BufferConflictDetected { host_id, path } => {
+                    me.handle_buffer_conflict_detected(host_id, path, ctx);
+                }
+                _ => {}
             });
         }
 
@@ -732,7 +733,7 @@ impl GlobalBufferModel {
             if let BufferSource::Remote { remote_path, .. } = &state.source {
                 let host_id = remote_path.host_id.clone();
                 let path = remote_path.path.as_str().to_string();
-                let manager = remote_server::manager::RemoteServerManager::handle(ctx);
+                let manager = RemoteServerManager::handle(ctx);
                 let Some(client) = manager.as_ref(ctx).client_for_host(&host_id).cloned() else {
                     return Err(FileSaveError::RemoteError(
                         "No remote server client available".to_string(),
@@ -1524,6 +1525,16 @@ impl GlobalBufferModel {
         ctx.spawn(sync_future, |_, _, _| {});
     }
 
+    /// Look up a remote buffer's `FileId` by host and path string.
+    ///
+    /// Uses the `location_to_id` BiMap for O(1) lookup instead of scanning
+    /// all buffer states.
+    fn find_remote_file_id(&self, host_id: &HostId, path: &str) -> Option<FileId> {
+        let std_path = StandardizedPath::try_new(path).ok()?;
+        let location = FileLocation::Remote(RemotePath::new(host_id.clone(), std_path));
+        self.location_to_id.get_by_left(&location).copied()
+    }
+
     // ── Remote buffer operations ──────────────────────────────────────
 
     /// Open a remote buffer identified by a `RemotePath`.
@@ -1563,7 +1574,7 @@ impl GlobalBufferModel {
 
         // Subscribe to buffer content changes so edits are sent back to the daemon.
         let client_for_sub = {
-            let manager = remote_server::manager::RemoteServerManager::handle(ctx);
+            let manager = RemoteServerManager::handle(ctx);
             manager.as_ref(ctx).client_for_host(&host_id).cloned()
         };
         log::info!(
@@ -1653,7 +1664,7 @@ impl GlobalBufferModel {
         );
 
         // Look up the client on the main thread, then send OpenBuffer asynchronously.
-        let manager = remote_server::manager::RemoteServerManager::handle(ctx);
+        let manager = RemoteServerManager::handle(ctx);
         let Some(client) = manager.as_ref(ctx).client_for_host(&host_id).cloned() else {
             log::warn!("[remote-buffer] No remote server client for host {host_id:?}");
             ctx.emit(GlobalBufferModelEvent::FailedToLoad {
@@ -1671,45 +1682,61 @@ impl GlobalBufferModel {
                     .await
                     .map_err(|e| format!("{e}"))
             },
-            move |me, result, ctx| match result {
-                Ok(response) => {
-                    log::info!(
-                        "[remote-buffer] OpenBuffer response: content_len={} server_version={}",
-                        response.content.len(),
-                        response.server_version,
-                    );
-                    let Some(state) = me.buffers.get_mut(&file_id) else {
-                        log::warn!("[remote-buffer] Buffer state missing for file_id={file_id:?}");
-                        return;
-                    };
-                    if let BufferSource::Remote { sync_clock, .. } = &mut state.source {
-                        *sync_clock = Some(SyncClock::from_wire(response.server_version, 0));
-                    }
-                    let Some(buffer) = state.buffer.upgrade(ctx) else {
-                        log::warn!("[remote-buffer] Buffer handle deallocated for file_id={file_id:?}");
-                        return;
-                    };
-                    let version = ContentVersion::new();
-                    buffer.update(ctx, |buffer, ctx| {
-                        buffer.replace_all(&response.content, ctx);
-                        buffer.set_version(version);
-                    });
-                    ctx.emit(GlobalBufferModelEvent::BufferLoaded {
-                        file_id,
-                        content_version: version,
-                    });
-                }
-                Err(error) => {
-                    log::warn!("[remote-buffer] Failed to open remote buffer: {error}");
-                    ctx.emit(GlobalBufferModelEvent::FailedToLoad {
-                        file_id,
-                        error: Rc::new(FileLoadError::DoesNotExist),
-                    });
-                }
+            move |me, result, ctx| {
+                me.apply_open_buffer_response(file_id, result, ctx);
             },
         );
 
         BufferState::new(file_id, buffer)
+    }
+
+    /// Shared handler for `OpenBuffer` RPC responses.
+    ///
+    /// On success, replaces the buffer content with the server's latest
+    /// on-disk content, resets the `SyncClock`, and emits `BufferLoaded`.
+    /// On failure, emits `FailedToLoad`.
+    fn apply_open_buffer_response(
+        &mut self,
+        file_id: FileId,
+        result: Result<remote_server::proto::OpenBufferResponse, String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        match result {
+            Ok(response) => {
+                log::info!(
+                    "[remote-buffer] OpenBuffer response: content_len={} server_version={}",
+                    response.content.len(),
+                    response.server_version,
+                );
+                let Some(state) = self.buffers.get_mut(&file_id) else {
+                    log::warn!("[remote-buffer] Buffer state missing for file_id={file_id:?}");
+                    return;
+                };
+                if let BufferSource::Remote { sync_clock, .. } = &mut state.source {
+                    *sync_clock = Some(SyncClock::from_wire(response.server_version, 0));
+                }
+                let Some(buffer) = state.buffer.upgrade(ctx) else {
+                    log::warn!("[remote-buffer] Buffer handle deallocated for file_id={file_id:?}");
+                    return;
+                };
+                let version = ContentVersion::new();
+                buffer.update(ctx, |buffer, ctx| {
+                    buffer.replace_all(&response.content, ctx);
+                    buffer.set_version(version);
+                });
+                ctx.emit(GlobalBufferModelEvent::BufferLoaded {
+                    file_id,
+                    content_version: version,
+                });
+            }
+            Err(error) => {
+                log::warn!("[remote-buffer] Failed to open remote buffer: {error}");
+                ctx.emit(GlobalBufferModelEvent::FailedToLoad {
+                    file_id,
+                    error: Rc::new(FileLoadError::DoesNotExist),
+                });
+            }
+        }
     }
 
     // ── Server-local buffer operations (daemon side) ────────────────
@@ -1783,24 +1810,10 @@ impl GlobalBufferModel {
             buffer.insert_at_char_offset_ranges(char_edits, new_version, ctx);
         });
 
-        // Do NOT update base_content_version here. That field tracks the
-        // last known on-disk version and should only change via FileSaved /
-        // FileUpdated events. Keeping it at the file-load version means the
-        // FileUpdated handler's has_no_user_edits check will correctly
-        // detect that the buffer has diverged from disk (client edits are
-        // real user edits) and take the version-conflict path, which
-        // forwards a BufferConflictDetected push to the client.
-
         true
     }
 
     /// Save a server-local buffer to disk.
-    ///
-    /// Uses the buffer's current `ContentVersion` as the save version so
-    /// that `FileSaved` → `set_base_content_version` produces a value
-    /// consistent with the buffer. Without this, a client edit arriving
-    /// between save and the file-watcher `FileUpdated` event would
-    /// create a permanent version mismatch.
     #[cfg(feature = "local_fs")]
     pub fn save_server_local(
         &mut self,
@@ -1899,11 +1912,7 @@ impl GlobalBufferModel {
     /// On failure, emits `FailedToLoad` (the caller should keep the current
     /// buffer state so the user can retry).
     #[cfg_attr(not(feature = "local_tty"), allow(dead_code))]
-    pub fn reopen_remote_buffer(
-        &mut self,
-        file_id: FileId,
-        ctx: &mut ModelContext<Self>,
-    ) {
+    pub fn reopen_remote_buffer(&mut self, file_id: FileId, ctx: &mut ModelContext<Self>) {
         let Some(state) = self.buffers.get(&file_id) else {
             return;
         };
@@ -1914,7 +1923,7 @@ impl GlobalBufferModel {
         let path_str = remote_path.path.as_str().to_string();
         let host_id = remote_path.host_id.clone();
 
-        let manager = remote_server::manager::RemoteServerManager::handle(ctx);
+        let manager = RemoteServerManager::handle(ctx);
         let Some(client) = manager.as_ref(ctx).client_for_host(&host_id).cloned() else {
             log::warn!("[remote-buffer] reopen: no client for host {host_id:?}");
             ctx.emit(GlobalBufferModelEvent::FailedToLoad {
@@ -1937,39 +1946,8 @@ impl GlobalBufferModel {
                     .await
                     .map_err(|e| format!("{e}"))
             },
-            move |me, result, ctx| match result {
-                Ok(response) => {
-                    log::info!(
-                        "[remote-buffer] Reopen response: content_len={} server_version={}",
-                        response.content.len(),
-                        response.server_version,
-                    );
-                    let Some(state) = me.buffers.get_mut(&file_id) else {
-                        return;
-                    };
-                    if let BufferSource::Remote { sync_clock, .. } = &mut state.source {
-                        *sync_clock = Some(SyncClock::from_wire(response.server_version, 0));
-                    }
-                    let Some(buffer) = state.buffer.upgrade(ctx) else {
-                        return;
-                    };
-                    let version = ContentVersion::new();
-                    buffer.update(ctx, |buffer, ctx| {
-                        buffer.replace_all(&response.content, ctx);
-                        buffer.set_version(version);
-                    });
-                    ctx.emit(GlobalBufferModelEvent::BufferLoaded {
-                        file_id,
-                        content_version: version,
-                    });
-                }
-                Err(error) => {
-                    log::warn!("[remote-buffer] Reopen failed: {error}");
-                    ctx.emit(GlobalBufferModelEvent::FailedToLoad {
-                        file_id,
-                        error: Rc::new(FileLoadError::DoesNotExist),
-                    });
-                }
+            move |me, result, ctx| {
+                me.apply_open_buffer_response(file_id, result, ctx);
             },
         );
     }
@@ -1988,16 +1966,7 @@ impl GlobalBufferModel {
     ) {
         log::info!("[remote-buffer] BufferConflictDetected: host={host_id} path={path}");
 
-        let file_id = self.buffers.iter().find_map(|(id, state)| {
-            if let BufferSource::Remote { remote_path, .. } = &state.source {
-                if remote_path.host_id == *host_id && remote_path.path.as_str() == path {
-                    return Some(*id);
-                }
-            }
-            None
-        });
-
-        let Some(file_id) = file_id else {
+        let Some(file_id) = self.find_remote_file_id(host_id, path) else {
             log::warn!("[remote-buffer] BufferConflictDetected for unknown buffer: {path}");
             return;
         };
@@ -2026,17 +1995,7 @@ impl GlobalBufferModel {
             edits.len()
         );
 
-        // Find the buffer by scanning for a Remote source with matching host+path.
-        let file_id = self.buffers.iter().find_map(|(id, state)| {
-            if let BufferSource::Remote { remote_path, .. } = &state.source {
-                if remote_path.host_id == *host_id && remote_path.path.as_str() == path {
-                    return Some(*id);
-                }
-            }
-            None
-        });
-
-        let Some(file_id) = file_id else {
+        let Some(file_id) = self.find_remote_file_id(host_id, path) else {
             log::warn!("[remote-buffer] BufferUpdatedPush for unknown remote buffer: {path}");
             return;
         };
@@ -2061,7 +2020,10 @@ impl GlobalBufferModel {
         let expected_cv = ContentVersion::from_raw(expected_client_version as usize);
         if sync_clock.server_push_matches(expected_cv) {
             // Accept the update — apply edits incrementally.
-            log::info!("[remote-buffer] Accepting push: applying {} edits", edits.len());
+            log::info!(
+                "[remote-buffer] Accepting push: applying {} edits",
+                edits.len()
+            );
             sync_clock.server_version = ContentVersion::from_raw(new_server_version as usize);
 
             let Some(buffer) = state.buffer.upgrade(ctx) else {

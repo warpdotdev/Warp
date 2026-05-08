@@ -3,8 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use warp_util::remote_path::RemotePath;
-
+use super::buffer_location::FileLocation;
 use crate::ai::skills::SkillOpenOrigin;
 use ai::skills::SkillReference;
 use serde::{Deserialize, Serialize};
@@ -120,8 +119,11 @@ pub enum CodeSource {
     AIAction { id: AIAgentActionId },
     /// Opened from project rules (WARP.md) file.
     ProjectRules { path: PathBuf },
-    /// Opened from file tree.
-    FileTree { path: PathBuf },
+    /// Opened from file tree (local or remote).
+    FileTree {
+        #[serde(skip)]
+        location: Option<FileLocation>,
+    },
     /// Opened from macOS Finder via "Open With".
     Finder { path: PathBuf },
     /// Opened from a skill.
@@ -130,9 +132,6 @@ pub enum CodeSource {
         path: PathBuf,
         origin: SkillOpenOrigin,
     },
-    /// Opened from the remote file tree.
-    #[serde(skip)]
-    RemoteFileTree { remote_path: RemotePath },
 }
 
 impl CodeSource {
@@ -146,27 +145,31 @@ impl CodeSource {
             | Self::ProjectRules { .. }
             | Self::FileTree { .. }
             | Self::Finder { .. }
-            | Self::Skill { .. }
-            | Self::RemoteFileTree { .. } => None,
+            | Self::Skill { .. } => None,
         }
     }
 
     pub fn path(&self) -> Option<PathBuf> {
         match self {
-            Self::New { .. } | Self::AIAction { .. } | Self::RemoteFileTree { .. } => None,
+            Self::New { .. } | Self::AIAction { .. } => None,
+            Self::FileTree { location, .. } => match location {
+                Some(FileLocation::Local(path)) => Some(path.clone()),
+                _ => None,
+            },
             Self::Link { path, .. }
             | Self::ProjectRules { path }
-            | Self::FileTree { path }
             | Self::Finder { path }
             | Self::Skill { path, .. } => Some(path.clone()),
         }
     }
 
-    /// Returns the remote path if this source is from a remote file tree.
+    /// Returns the `FileLocation` for file tree sources.
     #[allow(dead_code)]
-    pub fn remote_path(&self) -> Option<&RemotePath> {
+    pub fn file_location(&self) -> Option<&FileLocation> {
         match self {
-            Self::RemoteFileTree { remote_path } => Some(remote_path),
+            Self::FileTree {
+                location: Some(location),
+            } => Some(location),
             _ => None,
         }
     }
@@ -201,10 +204,12 @@ impl CodeSource {
             Self::Link { .. } => "link",
             Self::AIAction { .. } => "ai_action",
             Self::ProjectRules { .. } => "project_rules",
+            Self::FileTree {
+                location: Some(FileLocation::Remote(_)),
+            } => "remote_file_tree",
             Self::FileTree { .. } => "file_tree",
             Self::Finder { .. } => "finder",
             Self::Skill { .. } => "skill",
-            Self::RemoteFileTree { .. } => "remote_file_tree",
         }
     }
 
@@ -213,7 +218,13 @@ impl CodeSource {
     /// `AIAction` is ephemeral (tied to a live conversation) and should not
     /// be restored.
     pub fn is_restorable(&self) -> bool {
-        !matches!(self, Self::AIAction { .. } | Self::RemoteFileTree { .. })
+        !matches!(
+            self,
+            Self::AIAction { .. }
+                | Self::FileTree {
+                    location: Some(FileLocation::Remote(_)),
+                }
+        )
     }
 }
 

@@ -73,6 +73,7 @@ use crate::pane_group::{
 };
 
 use super::{
+    buffer_location::FileLocation,
     diff_viewer::DiffViewer,
     editor::view::{CodeEditorEvent, CodeEditorView},
     editor_management::{CodeManager, CodeSource},
@@ -373,7 +374,7 @@ impl CodeView {
     ) -> ViewHandle<LocalCodeEditorView> {
         ctx.add_typed_action_view(|ctx| {
             let mut editor = LocalCodeEditorView::new_with_global_buffer(
-                path,
+                FileLocation::Local(path.to_path_buf()),
                 |buffer_state, ctx| {
                     ctx.add_typed_action_view(|ctx| {
                         CodeEditorView::new(
@@ -412,15 +413,14 @@ impl CodeView {
     }
 
     /// Construct an editor for a remote file.
-    #[allow(dead_code)]
     fn construct_remote_editor(
         &mut self,
         remote_path: warp_util::remote_path::RemotePath,
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<LocalCodeEditorView> {
         ctx.add_typed_action_view(|ctx| {
-            LocalCodeEditorView::new_with_remote_global_buffer(
-                remote_path,
+            LocalCodeEditorView::new_with_global_buffer(
+                FileLocation::Remote(remote_path),
                 |buffer_state, ctx| {
                     ctx.add_typed_action_view(|ctx| {
                         CodeEditorView::new(
@@ -437,6 +437,8 @@ impl CodeView {
                         )
                     })
                 },
+                false,
+                None,
                 ctx,
             )
         })
@@ -485,7 +487,10 @@ impl CodeView {
         ctx: &mut ViewContext<Self>,
     ) -> TabData {
         // Check if the source is a remote file tree — if so, use the remote editor constructor.
-        if let CodeSource::RemoteFileTree { remote_path } = &self.source {
+        if let CodeSource::FileTree {
+            location: Some(FileLocation::Remote(remote_path)),
+        } = &self.source
+        {
             let remote_path = remote_path.clone();
             let code_editor = self.construct_remote_editor(remote_path, ctx);
             let editor = code_editor.as_ref(ctx).editor().clone();
@@ -876,20 +881,16 @@ impl CodeView {
 
     /// Set the title of the pane, which is the file path.
     fn set_title(&self, _unsaved_changes: bool, ctx: &mut ViewContext<Self>) {
-        let file_location = self.tab_at(self.active_tab_index).and_then(|t| {
-            t.editor_view.as_ref(ctx).file_location().cloned()
-        });
+        let file_location = self
+            .tab_at(self.active_tab_index)
+            .and_then(|t| t.editor_view.as_ref(ctx).file_location().cloned());
         let is_new = self
             .tab_at(self.active_tab_index)
             .is_some_and(|t| t.editor_view.as_ref(ctx).is_new_file());
 
         let title = match &file_location {
-            Some(crate::code::buffer_location::FileLocation::Local(path)) => {
-                path.display().to_string()
-            }
-            Some(crate::code::buffer_location::FileLocation::Remote(remote_path)) => {
-                remote_path.path.as_str().to_string()
-            }
+            Some(FileLocation::Local(path)) => path.display().to_string(),
+            Some(FileLocation::Remote(remote_path)) => remote_path.path.as_str().to_string(),
             None => "Untitled".to_string(),
         };
 
@@ -1936,7 +1937,8 @@ impl CodeView {
                     .as_ref()
                     .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()))
                     .or_else(|| {
-                        let name = tab.editor_view
+                        let name = tab
+                            .editor_view
                             .as_ref(app)
                             .file_location()
                             .map(|loc| loc.display_name().to_string())

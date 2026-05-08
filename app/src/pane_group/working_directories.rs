@@ -13,7 +13,7 @@ use warpui::{AppContext, SingletonEntity as _};
 use warpui::{Entity, EntityId, ModelContext};
 use warpui::{ModelHandle, ViewHandle};
 
-use crate::code::buffer_location::BufferLocation;
+use crate::code::buffer_location::FileLocation;
 #[cfg(feature = "local_fs")]
 use crate::code::file_tree::FileTreeView;
 use crate::code_review::comments::{
@@ -25,23 +25,23 @@ use crate::code_review::{
 };
 use crate::workspace::view::global_search::view::GlobalSearchView;
 
-/// Type-safe wrapper around the map of `BufferLocation` → `DiffStateModel`.
+/// Type-safe wrapper around the map of `FileLocation` → `DiffStateModel`.
 ///
 /// Enforces that local keys are always paired with local-backend models and
 /// remote keys with remote-backend models via dedicated insertion methods.
 #[cfg(feature = "local_fs")]
 #[derive(Default)]
 struct DiffStateModelMap {
-    models: HashMap<BufferLocation, ModelHandle<DiffStateModel>>,
+    models: HashMap<FileLocation, ModelHandle<DiffStateModel>>,
 }
 
 #[cfg(feature = "local_fs")]
 impl DiffStateModelMap {
-    fn get(&self, key: &BufferLocation) -> Option<&ModelHandle<DiffStateModel>> {
+    fn get(&self, key: &FileLocation) -> Option<&ModelHandle<DiffStateModel>> {
         self.models.get(key)
     }
 
-    /// Insert a model that was created from a `BufferLocation::Local` key.
+    /// Insert a model that was created from a `FileLocation::Local` key.
     fn insert_local(
         &mut self,
         path: PathBuf,
@@ -52,10 +52,10 @@ impl DiffStateModelMap {
             matches!(model.as_ref(ctx), DiffStateModel::Local(_)),
             "insert_local called with a remote-backend DiffStateModel",
         );
-        self.models.insert(BufferLocation::Local(path), model);
+        self.models.insert(FileLocation::Local(path), model);
     }
 
-    /// Insert a model that was created from a `BufferLocation::Remote` key.
+    /// Insert a model that was created from a `FileLocation::Remote` key.
     fn insert_remote(
         &mut self,
         remote_id: RemotePath,
@@ -66,10 +66,10 @@ impl DiffStateModelMap {
             matches!(model.as_ref(ctx), DiffStateModel::Remote(_)),
             "insert_remote called with a local-backend DiffStateModel",
         );
-        self.models.insert(BufferLocation::Remote(remote_id), model);
+        self.models.insert(FileLocation::Remote(remote_id), model);
     }
 
-    fn remove(&mut self, key: &BufferLocation) -> Option<ModelHandle<DiffStateModel>> {
+    fn remove(&mut self, key: &FileLocation) -> Option<ModelHandle<DiffStateModel>> {
         self.models.remove(key)
     }
 }
@@ -228,7 +228,7 @@ impl WorkingDirectoriesModel {
     /// If the model doesn't exist, it will be created.
     pub fn get_or_create_diff_state_model(
         &mut self,
-        key: BufferLocation,
+        key: FileLocation,
         ctx: &mut ModelContext<Self>,
     ) -> Option<ModelHandle<DiffStateModel>> {
         if let Some(model) = self.diff_state_models.get(&key) {
@@ -238,11 +238,11 @@ impl WorkingDirectoriesModel {
         let diff_state_model = ctx.add_model(|ctx| DiffStateModel::new(key.clone(), ctx));
 
         match key {
-            BufferLocation::Local(path) => {
+            FileLocation::Local(path) => {
                 self.diff_state_models
                     .insert_local(path, diff_state_model.clone(), ctx);
             }
-            BufferLocation::Remote(remote_id) => {
+            FileLocation::Remote(remote_id) => {
                 self.diff_state_models
                     .insert_remote(remote_id, diff_state_model.clone(), ctx);
             }
@@ -264,7 +264,7 @@ impl WorkingDirectoriesModel {
                 .values()
                 .all(|tab| !tab.contains(&repo_path))
             {
-                let key = BufferLocation::Local(repo_path);
+                let key = FileLocation::Local(repo_path);
                 if let Some(model) = self.diff_state_models.remove(&key) {
                     model.update(ctx, |model, ctx| {
                         model.stop_active_watcher(ctx);
@@ -702,7 +702,7 @@ impl WorkingDirectoriesModel {
 
     pub fn get_or_create_diff_state_model(
         &mut self,
-        _key: BufferLocation,
+        _key: FileLocation,
         _ctx: &mut ModelContext<Self>,
     ) -> Option<ModelHandle<DiffStateModel>> {
         None

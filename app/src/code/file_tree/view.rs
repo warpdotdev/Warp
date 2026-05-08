@@ -42,6 +42,7 @@ use warpui::{
 use warpui::{BlurContext, ModelHandle};
 
 use crate::code::active_file::{ActiveFileEvent, ActiveFileModel};
+use crate::code::buffer_location::FileLocation;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use crate::editor::{EditorOptions, EditorView, TextOptions};
 #[cfg(feature = "local_fs")]
@@ -2224,7 +2225,7 @@ impl FileTreeView {
         );
 
         ctx.emit(FileTreeEvent::OpenFile {
-            path: path.to_path_buf(),
+            path: FileLocation::Local(path.to_path_buf()),
             target,
             line_col: None,
         });
@@ -2253,7 +2254,11 @@ impl FileTreeView {
                             host_id.clone(),
                             (*metadata.path).clone(),
                         );
-                        ctx.emit(FileTreeEvent::OpenRemoteFile { remote_path });
+                        ctx.emit(FileTreeEvent::OpenFile {
+                            path: FileLocation::Remote(remote_path),
+                            target: FileTarget::CodeEditor(EditorLayout::SplitPane),
+                            line_col: None,
+                        });
                     }
                 } else {
                     let path = metadata.path.to_local_path_lossy();
@@ -2879,14 +2884,9 @@ pub enum FileTreeEvent {
     AttachAsContext { path: PathBuf },
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     OpenFile {
-        path: PathBuf,
+        path: FileLocation,
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
-    },
-    /// Open a remote file in the code editor.
-    #[allow(dead_code)]
-    OpenRemoteFile {
-        remote_path: warp_util::remote_path::RemotePath,
     },
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     FileRenamed {
