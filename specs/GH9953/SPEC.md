@@ -58,6 +58,67 @@ Note: Inter is NOT in the default fallback. Users who have Inter
 installed and want it as primary must explicitly configure
 `proportional_font_family` to include it.
 
+### Generic-family entries in the cascade
+
+The Default stacks above contain CSS generic-family keywords
+(`system-ui`, `sans-serif`) that are **not installed fonts** but
+are well-defined identifiers in CSS Fonts Module Level 4. These
+are **not subject to the "is the font installed?" check** in
+B1b's left-to-right cascade; they always resolve, by browser
+contract, to a real font picked by the platform's font-engine
+fallback chain.
+
+Concretely, the resolver classifies each family-list entry into
+one of three classes before B1b runs:
+
+1. **Generic-family keyword (always resolves).** The CSS generic
+   identifiers `system-ui`, `sans-serif`, `serif`, `monospace`,
+   `cursive`, `fantasy`, `ui-sans-serif`, `ui-serif`,
+   `ui-monospace`, `ui-rounded`, `math`, `fangsong`, `emoji`.
+   These are emitted to the CSS as-is (unquoted, lowercase) and
+   the underlying font engine (Skia / Chromium / WebKit / DWrite,
+   depending on the platform) maps them to a real font. The
+   resolver does NOT short-circuit on a generic-family match; it
+   simply emits the keyword and lets the font engine resolve.
+
+2. **Vendor-prefixed identifier (always resolves on the matching
+   platform).** Identifiers like `-apple-system`,
+   `-webkit-system-font`. These are treated identically to a
+   generic-family keyword on the platform that recognizes them
+   (the font engine resolves them) and behave as a "missing font"
+   on other platforms (the cascade falls through). This matches
+   Chromium / WebKit behavior.
+
+3. **Named family (subject to installed-font check).** Everything
+   else — quoted-string entries (`"Helvetica Neue"`,
+   `"Segoe UI"`, `"SF Pro Text"`) and unquoted custom identifiers
+   (`Cantarell`, `Ubuntu`, `Inter`). The installed-font check in
+   B1b applies ONLY to this class.
+
+This means cross-platform resolution of the macOS Default stack
+on a Linux device is well-defined:
+
+- `system-ui` (class 1) → resolved by the Linux font engine to a
+  platform default sans (typically Cantarell on GNOME, Noto Sans
+  elsewhere). The cascade does NOT fall through this entry on the
+  grounds that "system-ui isn't installed."
+- `-apple-system` (class 2) → not recognized on Linux, treated as
+  missing, cascade continues.
+- `"SF Pro Text"` (class 3) → not installed on Linux, cascade
+  continues.
+- `"Helvetica Neue"` (class 3) → not installed on most Linux
+  distros, cascade continues.
+- `sans-serif` (class 1) → resolved by the Linux font engine.
+  Cascade ends here regardless.
+
+The class-1 / class-2 / class-3 distinction is part of the public
+contract and is asserted by the new test
+`T_generic_families_resolve` (added in Test plan). Without this
+clarification, an implementer could reasonably interpret B1b as
+"every entry is checked against installed fonts, and `system-ui`
+is therefore always missing," which would force the cascade to
+fall through to the appended Default stack on every render.
+
 ## Behavior contract
 
 - B1. New setting `appearance.proportional_font_family:
@@ -85,18 +146,72 @@ installed and want it as primary must explicitly configure
   of the family list (used for storage, sync, and Settings UI
   display):
 
-  1. Each parsed family token is normalized:
-     - If the family name matches `<custom-ident>` (alphanumerics,
-       underscore, hyphen, no leading digit, no spaces, no special
-       chars): emit unquoted (e.g., `Arial`, `Open-Sans`).
-     - Otherwise (contains spaces, commas, quotes, or any character
-       outside `<custom-ident>`): emit double-quoted with
-       backslash-escaping for `"` and `\` (e.g.,
-       `"Helvetica Neue"`, `"My \"weird\" Font"`).
+  1. Each parsed family token is normalized in this order:
+     1. **Internal whitespace within an unquoted identifier
+        sequence is collapsed.** Multiple ASCII spaces between the
+        custom-ident tokens of a single family become a single
+        ASCII space. Tabs and other whitespace inside an unquoted
+        identifier sequence are rejected at parse time per CSS
+        Fonts L4 grammar.
+     2. **Case is preserved verbatim from user input.** No
+        case-folding is applied to family names at any layer —
+        storage, sync, settings UI, render. CSS family names are
+        case-insensitive at *match* time (handled by the font
+        engine, not by us), but the *stored* value preserves the
+        user's chosen case so a peer device sees the same string
+        the user typed. This rule applies to both unquoted and
+        quoted families:
+          - Unquoted `inter`, `Inter`, `INTER` are stored
+            byte-for-byte as the user wrote them.
+          - Quoted `"helvetica neue"`, `"Helvetica Neue"`, and
+            `"HELVETICA NEUE"` are stored byte-for-byte as the user
+            wrote them.
+     3. **Generic-family keywords are normalized to lowercase.**
+        The CSS generic identifiers enumerated in class 1 above
+        (`system-ui`, `sans-serif`, etc.) are matched
+        case-insensitively at parse time and stored
+        lowercase-canonical. This is the ONE exception to rule
+        1.ii and is necessary because CSS generic identifiers are
+        a closed set with a defined lowercase spelling; storing
+        `Sans-Serif` would be a category-confusion bug. Vendor-
+        prefixed identifiers (class 2: `-apple-system`,
+        `-webkit-system-font`) are likewise stored lowercase
+        because they are also a closed set.
+     4. **Quoting decision:**
+        - If, after rule 1.i, the family token matches
+          `<custom-ident>` (alphanumerics, underscore, hyphen, no
+          leading digit, no internal whitespace, no special chars):
+          emit unquoted (e.g., `Arial`, `Open-Sans`, `inter`).
+        - Otherwise (contains spaces, commas, quotes, or any
+          character outside `<custom-ident>`): emit double-quoted
+          with backslash-escaping for `"` and `\` (e.g.,
+          `"Helvetica Neue"`, `"My \"weird\" Font"`).
+        - Class-1 and class-2 entries are emitted unquoted in
+          their stored lowercase form (`system-ui`,
+          `-apple-system`).
   2. Families are joined with `, ` (comma + ASCII space).
   3. **Round-trip identity:** parsing the canonical serialization
      and re-canonicalizing MUST yield the same string. Tested by
      T_canonical_serialization.
+
+  Concretely, the case rule resolves the round-2 ambiguity:
+
+  | User input                              | Canonical stored value                            |
+  | --------------------------------------- | ------------------------------------------------- |
+  | `inter , "Open Sans" ,Arial`            | `inter, "Open Sans", Arial`                       |
+  | `Inter , "open sans" ,arial`            | `Inter, "open sans", arial`                       |
+  | `Helvetica Neue, sans-serif`            | `"Helvetica Neue", sans-serif`                    |
+  | `Helvetica  Neue,   Sans-Serif`         | `"Helvetica Neue", sans-serif`                    |
+  | `system-UI, "SF Pro Text"`              | `system-ui, "SF Pro Text"`                        |
+  | `SYSTEM-UI, "sf pro text"`              | `system-ui, "sf pro text"`                        |
+
+  Therefore A7 in this spec is updated: writing
+  `inter , "Open Sans" ,Arial` is stored as
+  `inter, "Open Sans", Arial`. The previous wording
+  ("`Inter, ...` (or the user's preferred case)") was the
+  ambiguity; the contract is now: **case preserved verbatim except
+  for generic and vendor-prefixed identifiers, which are
+  lowercased.**
 
   Values that fail to parse are rejected on save with an inline
   error in Settings; the previously-valid (already-canonical)
@@ -147,23 +262,95 @@ installed and want it as primary must explicitly configure
   stored family so the setting returns to `None` for the active
   platform.
 
-- B1e. **Render-time CSS construction (no string interpolation).**
-  The font family value MUST NEVER be concatenated into a CSS
-  string as raw user text. The renderer takes the **parsed token
-  list** (the structured representation produced in B1a, not the
-  stored canonical string) and constructs the CSS `font-family`
-  declaration by feeding each token through the same canonical
-  serializer. Equivalently: the path from user input to CSS is
-  always `String -> ParsedFamilyList -> CssString`, never
-  `String -> CssString`. This eliminates CSS injection vectors
-  via crafted family names (e.g., a family name containing
-  `</style><script>` cannot break out of the CSS context because
-  the serializer treats it as a quoted-string token and escapes
-  it).
+- B1e. **Render-time CSS construction (no string interpolation,
+  injection-safe at the actual insertion point).**
 
-  Implementation MUST use a token-list → CSS-string serialization
-  pass; the renderer MUST NOT pass user input through string
-  interpolation.
+  The threat model has two layers, and both MUST be addressed
+  because quoting alone does not protect against an HTML
+  `</style>` breakout when the CSS is later written into a
+  `<style>` text node. Round-2 review correctly noted that quoting
+  the CSS string is necessary but not sufficient.
+
+  **Layer 1 — quoted CSS string serialization (necessary).** The
+  renderer takes the **parsed token list** (the structured
+  representation produced in B1a, not the stored canonical
+  string) and constructs the CSS `font-family` declaration by
+  feeding each token through the same canonical serializer.
+  Equivalently: the path from user input to CSS is always
+  `String -> ParsedFamilyList -> CssString`, never
+  `String -> CssString`. CSS-level injection (a stray `;` or `}`
+  breaking out of the property declaration) is impossible because
+  named families are emitted as quoted CSS strings with `\` and
+  `"` escaped; class-1 / class-2 keywords are members of a closed
+  whitelist.
+
+  **Layer 2 — insertion-context safety (REQUIRED).** Quoted CSS
+  strings do NOT prevent an HTML `</style>` breakout because the
+  HTML tokenizer parses `<style>` text content with a single
+  rule: it ends the element on the next ASCII-case-insensitive
+  match of `</style`. If the rendered CSS string is ever inserted
+  into a `<style>` text node — which is how most browsers ship
+  rendered CSS — a family value containing `</style><script>`
+  would terminate the style element regardless of CSS quoting,
+  because the HTML parser does not interpret CSS quoting.
+
+  Therefore the renderer MUST use **one** of the two safe
+  insertion paths. Implementations choose path (a) where possible
+  and fall back to path (b) only when (a) is not available:
+
+  (a) **CSSOM / style-property assignment (preferred).** Construct
+      the rule via the CSSOM API, e.g.,
+      `CSSStyleDeclaration::setProperty("font-family", canonical_css)`
+      or by setting `element.style.fontFamily = canonical_css`.
+      The browser parses the value through the CSS parser, never
+      through the HTML tokenizer, so `</style>` is inert. This is
+      the V1 default for all V1-scope surfaces (Settings panes,
+      rendered Markdown).
+
+  (b) **`<style>`-text-node insertion with HTML-end-tag escaping
+      (fallback).** If the CSS must be embedded as a `<style>`
+      text node (e.g., a server-rendered initial paint), the
+      serializer emits the canonical CSS string with all
+      occurrences of `</` *inside the quoted family name* escaped
+      using the CSS hex-escape form `\3c\2f` (or the equivalent
+      `\<\/` with whitespace-terminated CSS escapes). This is in
+      addition to the Layer-1 escaping. The HTML tokenizer's
+      lookahead for `</style` therefore never matches inside the
+      quoted CSS string. Path (b) MUST NOT be used without this
+      additional escape pass.
+
+  **Implementation requirements:**
+
+  1. The renderer MUST NOT pass user input through string
+     interpolation directly into a `<style>` element's
+     `innerHTML` / `textContent` setter.
+  2. The CSS serializer exposes two entry points:
+     `to_css_for_style_property()` (Layer 1 only — for path (a))
+     and `to_css_for_inline_style_tag()` (Layer 1 + Layer 2 — for
+     path (b)). The type system enforces this: each call site
+     declares which path it uses.
+  3. The default V1 implementation uses path (a) at every V1-scope
+     insertion site (Settings panes, rendered Markdown). A
+     comment in the code documents that any future caller using
+     path (b) MUST call `to_css_for_inline_style_tag()`.
+
+  **Tests cover the actual render insertion path, not just the
+  serializer in isolation:**
+  - `T_render_no_injection_property_path` (renamed from
+    `T_render_no_injection`) — drives a real DOM render, sets
+    `font-family` to `"</style><script>alert(1)</script>"`, and
+    asserts (i) the script does NOT execute, (ii) the
+    `<style>`/CSSOM rule is well-formed, (iii) the family value
+    in the computed style is the canonical quoted string.
+  - `T_render_no_injection_style_tag_path` — drives a render path
+    that goes through `to_css_for_inline_style_tag()`, asserts
+    the emitted text contains `\3c\2f` (or equivalent) instead of
+    a raw `</`, and asserts the HTML parser tokenizes the
+    `<style>` element as a single text run.
+
+  Implementation MUST use the CSSOM/style-property path (a) for
+  V1; the test plan exercises both paths so future callers cannot
+  silently regress.
 
 - B2. New setting
   `appearance.proportional_font_size: f32`
@@ -228,14 +415,29 @@ installed and want it as primary must explicitly configure
   with an inline error; the previous canonical value is retained.
 - A7. Canonical-form round-trip: writing
   `inter , "Open Sans" ,Arial` (with stray spaces) is stored as
-  `Inter, "Open Sans", Arial` (or the user's preferred case).
-  Reading back yields the same canonical string.
-- A8. CSS-injection guard: a family value containing
-  `</style><script>alert(1)</script>` is parsed as a single
-  quoted-string token, stored canonically with proper escaping,
-  and serialized into the CSS `font-family` declaration as a
-  quoted CSS string. The injected token cannot break out of the
-  CSS context.
+  `inter, "Open Sans", Arial` (case preserved verbatim per
+  B1a.1.ii — `inter` stays lowercase if the user typed lowercase).
+  Reading back yields the same canonical string. Writing
+  `SYSTEM-UI, "SF Pro Text"` is stored as
+  `system-ui, "SF Pro Text"` (generic identifier lowercased,
+  named family preserved).
+- A8. CSS-injection guard at the actual render insertion path
+  (B1e). A family value containing
+  `</style><script>alert(1)</script>` is rendered into V1's
+  CSSOM / style-property insertion path (B1e Layer 2 path (a)),
+  and:
+  - The injected `<script>` does NOT execute (DOM render
+    asserts `window.__injected_alert__` is unset).
+  - The computed style's `font-family` reads back as the
+    canonical quoted CSS string with the malicious token escaped.
+  - The DOM tree contains zero `<script>` elements introduced by
+    the family value.
+
+  If a future caller chooses the `<style>`-text-node fallback
+  path (B1e Layer 2 path (b)), the same value MUST emit
+  `\3c\2f` (or equivalent CSS hex-escape) inside the quoted
+  family token so the HTML tokenizer cannot find a `</style`
+  match inside the embedded CSS.
 
 ## Implementation pointers
 
@@ -294,14 +496,67 @@ installed and want it as primary must explicitly configure
 - T_inter_not_in_default. The platform Default stack on each of
   macOS, Windows, and Linux does NOT contain `Inter`. Tested by
   asserting the literal Default stack strings.
-- T_render_no_injection. Setting
+- T_render_no_injection_property_path. Setting
   `proportional_font_family` to a value containing
-  `</style><script>alert(1)</script>` results in a CSS
-  `font-family` declaration in which the malicious token is
-  emitted as a quoted CSS string with proper escaping and does
-  not break out of the CSS rule. Confirmed by parsing the
-  rendered CSS back and asserting one quoted-string token plus
-  a closing semicolon.
+  `</style><script>window.__injected_alert__ = 1;</script>` and
+  rendering through the V1 default path (CSSOM /
+  style-property assignment, B1e path (a)) MUST:
+  1. Not execute the injected script (DOM render asserts
+     `window.__injected_alert__` is `undefined` and that the
+     computed `<head>` and target element trees contain ZERO
+     additional `<script>` nodes after the render).
+  2. Round-trip the family through `getComputedStyle`'s
+     `font-family` and produce the canonical quoted CSS string
+     with `\` and `"` properly escaped per B1a.
+  3. Pass on each V1 surface (Settings panes, rendered Markdown)
+     — driven via the actual render entry point, not a
+     synthetic harness.
+- T_render_no_injection_style_tag_path. The
+  `to_css_for_inline_style_tag()` serializer path (B1e path
+  (b)), invoked on the same payload, emits a CSS string in
+  which every `</` inside a quoted family token is replaced
+  with `\3c\2f` (or the equivalent whitespace-terminated CSS
+  escape). Asserts:
+  1. The emitted bytes contain ZERO occurrences of the literal
+     ASCII substring `</style` (case-insensitive) inside the
+     quoted CSS string.
+  2. Inserting the emitted bytes into a `<style>` text node and
+     parsing the document yields a `<style>` element whose text
+     content is the entire CSS rule (not truncated at the
+     attempted `</style>` breakout).
+  3. No script execution, no `<script>` element introduced.
+- T_generic_families_resolve. The B1b cascade does NOT treat
+  CSS generic-family keywords (class 1: `system-ui`,
+  `sans-serif`, `serif`, `monospace`, `cursive`, `fantasy`,
+  `ui-sans-serif`, `ui-serif`, `ui-monospace`, `ui-rounded`,
+  `math`, `fangsong`, `emoji`) and vendor-prefixed identifiers
+  (class 2: `-apple-system`, `-webkit-system-font`) as
+  "missing fonts" subject to the installed-font check. For each
+  platform Default stack defined in "Default font stacks":
+  - Render with that stack and assert the cascade does NOT
+    fall through past the first class-1 entry on the basis of
+    "not installed."
+  - Render with a deliberately fully-missing class-3 stack
+    `"FontA, FontB"` (no class-1 fallback) and assert the
+    appended platform Default stack is used.
+  - Render with `"FontA, FontB, sans-serif"` (class-3
+    misses + class-1 terminator) and assert the cascade
+    terminates at the class-1 entry without appending the
+    Default stack a second time.
+- T_canonical_case. Round-trip the user inputs in the case
+  table under B1a and assert each stored value matches the
+  canonical-form column byte-for-byte. Specifically:
+  - `inter , "Open Sans" ,Arial` → `inter, "Open Sans", Arial`
+    (no auto-capitalization).
+  - `Inter , "open sans" ,arial` → `Inter, "open sans", arial`.
+  - `Helvetica  Neue,   Sans-Serif` →
+    `"Helvetica Neue", sans-serif` (internal whitespace
+    collapsed in the unquoted form is moot here because spaces
+    force quoting; the test uses the leading whitespace +
+    Sans-Serif → sans-serif transformation).
+  - `system-UI, "SF Pro Text"` → `system-ui, "SF Pro Text"`
+    (generic identifier lowercased, named family preserved).
+  Tests A7 with the disambiguated case-rule.
 
 ## Out of scope
 
