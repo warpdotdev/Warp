@@ -1101,6 +1101,7 @@ impl BlocklistAIHistoryModel {
         source_conversation: &AIConversation,
         prefix: &str,
         preserve_task_ids: bool,
+        title_override: Option<&str>,
         app: &AppContext,
     ) -> Result<AIConversation, anyhow::Error> {
         let tasks: Vec<warp_multi_agent_api::Task> = source_conversation
@@ -1109,7 +1110,7 @@ impl BlocklistAIHistoryModel {
             .collect();
 
         let updated_tasks_with_new_ids =
-            update_forked_task_properties(tasks, prefix, preserve_task_ids);
+            update_forked_task_properties(tasks, prefix, preserve_task_ids, title_override);
         let Some(sqlite_sender) = GlobalResourceHandlesProvider::as_ref(app)
             .get()
             .model_event_sender
@@ -1197,6 +1198,7 @@ impl BlocklistAIHistoryModel {
         from_exchange_id: AIAgentExchangeId,
         fork_from_exact_exchange: bool,
         prefix: &str,
+        title_override: Option<&str>,
         app: &AppContext,
     ) -> Result<AIConversation, anyhow::Error> {
         let conversation = source_conversation;
@@ -1262,7 +1264,7 @@ impl BlocklistAIHistoryModel {
         }
 
         let updated_tasks_with_new_ids =
-            update_forked_task_properties(truncated_tasks, prefix, false);
+            update_forked_task_properties(truncated_tasks, prefix, false, title_override);
 
         let Some(sqlite_sender) = GlobalResourceHandlesProvider::as_ref(app)
             .get()
@@ -2554,6 +2556,7 @@ fn update_forked_task_properties(
     tasks: Vec<warp_multi_agent_api::Task>,
     prefix: &str,
     preserve_task_ids: bool,
+    title_override: Option<&str>,
 ) -> Vec<warp_multi_agent_api::Task> {
     if preserve_task_ids {
         return tasks
@@ -2565,7 +2568,10 @@ fn update_forked_task_properties(
                     .map(|deps| deps.parent_task_id.is_empty())
                     .unwrap_or(true);
                 if is_root {
-                    t.description = format!("{}{}", prefix, t.description);
+                    t.description = match title_override {
+                        Some(title) => title.to_owned(),
+                        None => format!("{prefix}{}", t.description),
+                    };
                 }
                 t
             })
@@ -2602,7 +2608,10 @@ fn update_forked_task_properties(
                 deps.parent_task_id =
                     get_new_task_id(&mut old_to_new_task_ids, &deps.parent_task_id).clone();
             } else {
-                t.description = format!("{}{}", prefix, t.description);
+                t.description = match title_override {
+                    Some(title) => title.to_owned(),
+                    None => format!("{prefix}{}", t.description),
+                };
             }
             t
         })
