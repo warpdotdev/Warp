@@ -6733,7 +6733,7 @@ impl ApiKeysWidget {
         );
 
         let description = render_ai_setting_description(
-            "When enabled, Warp Agent requests go directly from this client to the configured OpenAI-compatible /v1/responses endpoint. Your OpenAI API key and request payload will not be sent to Warp's /ai/multi-agent service on this path.",
+            "When enabled, Warp Agent requests go directly from this client to the configured OpenAI-compatible /v1/responses endpoint, regardless of which model is selected in Warp. Your OpenAI API key and request payload will not be sent to Warp's /ai/multi-agent service on this path.",
             is_enabled,
             app,
         );
