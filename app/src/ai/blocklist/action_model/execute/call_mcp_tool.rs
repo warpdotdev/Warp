@@ -141,10 +141,12 @@ impl CallMCPToolExecutor {
             ActionExecution::new_async(
                 async move {
                     reconnecting_peer
-                        .call_tool(rmcp::model::CallToolRequestParam {
-                            name: name_owned_inner.into(),
-                            arguments: Some(arguments),
-                        })
+                    .call_tool(rmcp::model::CallToolRequestParams {
+                        name: name_owned_inner.into(),
+                        arguments: Some(arguments),
+                        meta: None,
+                        task: None,
+                    })
                         .await
                 },
                 move |res, ctx| handle_call_tool_result(res, server_output_id, name_clone, ctx),

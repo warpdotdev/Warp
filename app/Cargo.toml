@@ -297,10 +297,10 @@ aws-credential-types = "1"
 aws-sdk-sts = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-types = "1"
 
+mcp.workspace = true
 rmcp = { workspace = true, features = [
     "auth",
     "transport-streamable-http-client-reqwest",
-    "transport-sse-client-reqwest",
     "transport-child-process",
 ] }
 notify-debouncer-full.workspace = true
