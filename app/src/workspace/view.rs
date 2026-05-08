@@ -17183,7 +17183,7 @@ impl Workspace {
             if vertical_tabs_active {
                 (
                     self.vertical_tabs_panel_open,
-                    "Tabs panel",
+                    crate::i18n::tr_static(ctx, "Tabs panel"),
                     WorkspaceAction::ToggleVerticalTabsPanel,
                     "workspace:toggle_vertical_tabs_panel",
                     "workspace:toggle_vertical_tabs_panel",
@@ -17196,13 +17196,19 @@ impl Workspace {
                         .copied()
                         .unwrap_or(ToolPanelView::WarpDrive)
                     {
-                        ToolPanelView::ProjectExplorer => "Project explorer",
-                        ToolPanelView::GlobalSearch { .. } => "Global search",
-                        ToolPanelView::WarpDrive => "Warp Drive",
-                        ToolPanelView::ConversationListView => "Agent conversations",
+                        ToolPanelView::ProjectExplorer => {
+                            i18n::tr(ctx, I18nKey::CodeProjectExplorer)
+                        }
+                        ToolPanelView::GlobalSearch { .. } => {
+                            crate::i18n::tr_static(ctx, "Global search")
+                        }
+                        ToolPanelView::WarpDrive => i18n::tr(ctx, I18nKey::WarpDriveLabel),
+                        ToolPanelView::ConversationListView => {
+                            crate::i18n::tr_static(ctx, "Agent conversations")
+                        }
                     }
                 } else {
-                    "Tools panel"
+                    crate::i18n::tr_static(ctx, "Tools panel")
                 };
                 (
                     self.active_tab_pane_group().as_ref(ctx).left_panel_open,
@@ -17250,13 +17256,15 @@ impl Workspace {
                 .copied()
                 .unwrap_or(ToolPanelView::WarpDrive)
             {
-                ToolPanelView::ProjectExplorer => "Project explorer",
-                ToolPanelView::GlobalSearch { .. } => "Global search",
-                ToolPanelView::WarpDrive => "Warp Drive",
-                ToolPanelView::ConversationListView => "Agent conversations",
+                ToolPanelView::ProjectExplorer => i18n::tr(ctx, I18nKey::CodeProjectExplorer),
+                ToolPanelView::GlobalSearch { .. } => crate::i18n::tr_static(ctx, "Global search"),
+                ToolPanelView::WarpDrive => i18n::tr(ctx, I18nKey::WarpDriveLabel),
+                ToolPanelView::ConversationListView => {
+                    crate::i18n::tr_static(ctx, "Agent conversations")
+                }
             }
         } else {
-            "Tools panel"
+            crate::i18n::tr_static(ctx, "Tools panel")
         };
 
         SavePosition::new(
@@ -17413,7 +17421,7 @@ impl Workspace {
             button
                 .with_tooltip(self.render_tab_bar_icon_button_tooltip(
                     appearance,
-                    "Code review panel".to_string(),
+                    crate::i18n::tr_static(ctx, "Code review panel").to_string(),
                     keybinding_name_to_display_string("workspace:toggle_right_panel", ctx),
                 ))
                 .build()
@@ -17484,7 +17492,11 @@ impl Workspace {
         Shrinkable::new(1.0, inner).finish()
     }
 
-    fn render_title_bar_search_bar(&self, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_title_bar_search_bar(
+        &self,
+        appearance: &Appearance,
+        ctx: &AppContext,
+    ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let text_color = theme.sub_text_color(theme.background());
 
@@ -17506,7 +17518,7 @@ impl Workspace {
                         Shrinkable::new(
                             1.,
                             Text::new_inline(
-                                "Search sessions, agents, files...",
+                                crate::i18n::tr_static(ctx, "Search sessions, agents, files..."),
                                 appearance.ui_font_family(),
                                 14.,
                             )
@@ -17695,7 +17707,8 @@ impl Workspace {
                         1.,
                         Clipped::new(
                             Container::new(
-                                Align::new(self.render_title_bar_search_bar(appearance)).finish(),
+                                Align::new(self.render_title_bar_search_bar(appearance, ctx))
+                                    .finish(),
                             )
                             .with_padding_left(TITLE_BAR_SEARCH_BAR_SLOT_PADDING)
                             .with_padding_right(TITLE_BAR_SEARCH_BAR_SLOT_PADDING)
@@ -17909,7 +17922,7 @@ impl Workspace {
                 WorkspaceAction::ToggleNotificationMailbox {
                     select_first: false,
                 },
-                "Notifications".to_string(),
+                i18n::tr(ctx, I18nKey::SettingsCategoryFeaturesNotifications).to_string(),
                 keybinding_name_to_display_string(TOGGLE_NOTIFICATION_MAILBOX_BINDING_NAME, ctx),
                 is_inbox_active,
                 false,
@@ -18186,10 +18199,11 @@ impl Workspace {
         const BUTTON_WIDTH: f32 = 24. + SIDE_MENU_WIDTH;
         const BUTTON_LEFT_MARGIN: f32 = 4.;
 
-        let new_tab_tool_tip_label_text = "New Tab".to_string();
+        let new_tab_tool_tip_label_text = i18n::tr(ctx, I18nKey::CodeExternalNewTab).to_string();
         let new_tab_tool_tip_sublabel_text =
             keybinding_name_to_display_string(NEW_TAB_BINDING_NAME, ctx);
-        let tab_configs_tool_tip_label_text = "Tab configs".to_string();
+        let tab_configs_tool_tip_label_text =
+            crate::i18n::tr_static(ctx, "Tab configs").to_string();
         let tab_configs_tool_tip_sublabel_text =
             keybinding_name_to_display_string(TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME, ctx);
         let appearance = Appearance::as_ref(ctx);

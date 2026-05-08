@@ -231,7 +231,13 @@ impl KeybindingRow {
                     if self.editor_open {
                         self.render_clicked(index, has_conflicting_binding, appearance, app)
                     } else {
-                        self.render_summary(None, background, has_conflicting_binding, appearance)
+                        self.render_summary(
+                            None,
+                            background,
+                            has_conflicting_binding,
+                            appearance,
+                            app,
+                        )
                     }
                 },
             );
@@ -255,6 +261,7 @@ impl KeybindingRow {
                 background,
                 has_conflicting_binding,
                 appearance,
+                app,
             ))
             .with_foreground_overlay(appearance.theme().keybinding_row_overlay())
             .finish()
@@ -273,6 +280,7 @@ impl KeybindingRow {
         background: Option<Fill>,
         has_conflicting_binding: bool,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let binding = &self.binding;
         let keystroke = match binding.trigger.clone() {
@@ -293,7 +301,7 @@ impl KeybindingRow {
         };
         let element = render_columns(
             render_text(
-                binding.description.in_context(DescriptionContext::Default),
+                &i18n::tr_text(app, binding.description.in_context(DescriptionContext::Default)),
                 None,
                 appearance,
             ),
@@ -355,6 +363,7 @@ impl KeybindingRow {
                     Some(appearance.theme().accent().into()),
                     has_conflicting_binding,
                     appearance,
+                    app,
                 ))
                 .with_child(
                     Container::new(new_shortcut_element)

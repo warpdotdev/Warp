@@ -611,7 +611,7 @@ impl AgentInputFooter {
         let stop_remote_control_button = ctx.add_typed_action_view(|ctx| {
             ActionButton::new(
                 crate::i18n::tr_static(ctx, "Stop sharing"),
-                AgentInputButtonTheme,
+                RemoteControlButtonTheme,
             )
             .with_icon(Icon::StopFilled)
             .with_icon_ansi_color(AnsiColorIdentifier::Red)
