@@ -57,10 +57,98 @@ behaviors.
 - Case-insensitive substring match.
 - Match is checked against each path component (folder names and the file
   basename) and against the full relative path string.
-- A folder match reveals all of the folder's children as in-context matches
-  (folder-as-context).
-- Matching is locale-insensitive for ASCII; Unicode normalized using NFC
-  before matching.
+- A folder match reveals all of the folder's descendants as in-context
+  matches (folder-as-context). See B2a for the precise descendant
+  semantics.
+- Matching is performed after NFC normalization, then full Unicode default
+  case folding. See B2b for the precise Unicode rules.
+
+### B2a. Folder-match descendant semantics
+
+When a folder name matches the query, the folder is itself a match and its
+**descendants are included** in the match set as "in-context" matches. The
+following rules govern visibility, counting, highlighting, and navigation
+of folder-match descendants. They apply consistently in both visibility
+modes (B3 dim mode and `dim_non_matches = false` hide mode).
+
+#### B2a.1. Visibility
+
+- **Dim mode** (`file_tree.search.dim_non_matches = true`, default): the
+  matched folder and ALL its descendants render at FULL emphasis (NOT
+  dimmed) — they are part of the match set. Other (non-matching, non-
+  descendant) tree nodes follow the normal dim rules in B3.
+- **Hide mode** (`file_tree.search.dim_non_matches = false`): the matched
+  folder and ALL its descendants render normally (visible). They are NOT
+  hidden, regardless of whether each individual descendant's name matches
+  the query.
+
+#### B2a.2. Match count (no double-count)
+
+A descendant counted via folder-match is NOT additionally counted if its
+own name also matches the query. Counting is the **union** of the direct-
+match set and the folder-match-descendant set, not their sum:
+
+- A direct file match counts once.
+- A direct folder match counts once for the folder itself; its descendants
+  each count once via the folder-match-descendant rule.
+- If a descendant's own name also matches the query, it still counts
+  exactly once.
+
+Total match count rendered next to the search box (B3) reflects this
+union cardinality.
+
+#### B2a.3. Highlighting
+
+- The matched folder name itself is highlighted (the matched substring is
+  emphasized in the rendered name).
+- Descendant rows brought in via folder-match are NOT individually
+  highlighted — they appear at full emphasis (per B2a.1) but no character-
+  range highlight is rendered on their names. (If a descendant's own name
+  ALSO directly matches the query, its name IS highlighted as a direct
+  match.) This prevents descendants from appearing as if they had directly
+  matched the query.
+
+#### B2a.4. Navigation
+
+`F3` / `Enter` (B4) cycles through the **union** match set: direct file
+matches AND descendants of folder matches (with the no-double-count rule
+in B2a.2 applied so each row is visited at most once per cycle). The cycle
+order is **depth-first, lexicographic** by path. Wraparound semantics are
+unchanged from B4.
+
+### B2b. Unicode normalization and case folding
+
+Both the query string and each candidate target string (path component or
+full relative path) are processed identically before substring matching:
+
+1. **NFC normalization** is applied to both query and target.
+2. **Unicode Default Case Folding (Unicode TR#21)** is then applied. This
+   is **full case folding** — i.e., uses the Unicode case folding mappings
+   with status `C` (common) PLUS status `F` (full). It is locale-
+   independent.
+   - In Rust, the equivalent is `str::to_lowercase()` on a valid UTF-8
+     string, which performs full Unicode lowercasing per
+     `SpecialCasing.txt`. Implementations MAY use this directly.
+   - Special locale-specific case mappings (notably the Turkish dotted
+     and dotless I, Azerbaijani, etc.) are **NOT** applied. The folding
+     is locale-independent default folding only.
+
+Notable consequences:
+
+- German `ß` (U+00DF) folds to `ss`. Therefore the query `MAUSS` matches
+  the file `Mauß.txt`, and the query `mauss` likewise matches.
+- Greek final-form sigma `ς` (U+03C2), middle/initial sigma `σ` (U+03C3),
+  and capital `Σ` (U+03A3) all fold to the same lowercase form under
+  default case folding. Therefore the query `Σ` matches `ς` and `σ`.
+- Turkish I/ı/İ/i: default case folding maps `I` → `i` and `İ` → `i̇`
+  (i + combining dot above) per Unicode default rules; the Turkish-
+  locale-specific mapping `I` → `ı` and `İ` → `i` is NOT applied. Users
+  who require Turkish-specific folding must obtain it via an explicit
+  future setting; V1 uses default folding only.
+
+Both NFC and case folding are applied once per keystroke to the query and
+once per (re-)indexed target string; matching is then byte-by-byte
+substring comparison on the folded forms.
 
 ### B3. Live filter
 
@@ -134,6 +222,27 @@ panel. Each panel-open starts with an empty search.
 - A7. `Esc` closes the search and restores prior focus and state.
 - A8. Clearing the input restores the prior selection and expand state.
 - A9. The match count is visible while the search box is open.
+- A_folder_match_visibility_dim. Folder name matches in dim mode
+  (`dim_non_matches = true`) → matched folder and ALL its descendants
+  render at full emphasis; descendants are NOT dimmed (per B2a.1).
+- A_folder_match_visibility_hide. Folder name matches in hide mode
+  (`dim_non_matches = false`) → matched folder and ALL its descendants
+  remain visible regardless of whether their individual names match (per
+  B2a.1).
+- A_folder_match_count_union. The match count reflects the **union** of
+  direct matches and folder-match descendants, with each row counted at
+  most once even if it qualifies via both rules (per B2a.2).
+- A_folder_match_highlight. Only the matched folder name itself receives
+  substring highlighting; descendant rows do NOT receive direct-match
+  highlighting unless their own names also match (per B2a.3).
+- A_folder_match_navigation. `F3` / `Enter` cycles through the union match
+  set in depth-first lexicographic order, visiting each row at most once
+  per cycle (per B2a.4).
+- A_unicode_default_folding. Case folding is Unicode Default Case Folding
+  (TR#21, status `C` + `F`) applied AFTER NFC normalization, locale-
+  independent (per B2b). Examples: query `MAUSS` matches `Mauß`; query
+  `Σ` matches `ς` and `σ`; Turkish-locale-specific I↔ı mapping is NOT
+  applied.
 
 ## Implementation Pointers
 
@@ -186,7 +295,42 @@ panel. Each panel-open starts with an empty search.
 - T7. Clearing the input restores the prior selection and expand state.
 - T8. Performance: live filter updates ≤16ms per keystroke on a
   5,000-node tree.
-- T9. Unicode + locale-insensitive matching (NFC normalized).
+- T9. Unicode + locale-insensitive matching: NFC normalization is applied
+  to both query and target, then full Unicode Default Case Folding (TR#21,
+  status `C` + `F`).
+- T_unicode_german_ss. Tree contains `Mauß.txt`. Query `MAUSS` matches
+  it; query `mauss` matches it; query `Mauß` matches it. (Default folding:
+  `ß` → `ss`.)
+- T_unicode_greek_sigma. Tree contains `final_ς.txt` and `middle_σ.rs`.
+  Query `Σ` (capital sigma) matches both. Query `σ` matches both. Query
+  `ς` (final-form sigma) matches both. (Default folding maps all three to
+  the same lowercased form.)
+- T_unicode_turkish_default_folding. Tree contains `İstanbul.txt` and
+  `istanbul.rs`. With default folding (locale-independent), query
+  `istanbul` matches `istanbul.rs`; query `i̇stanbul` (i + combining dot
+  above, the default-folded form of `İ`) matches `İstanbul.txt`. The
+  query `istanbul` does NOT match `İstanbul.txt` (Turkish-locale rule
+  `İ`→`i` is NOT applied), confirming locale-independent behavior.
+- T_folder_match_dim_visibility. With `dim_non_matches = true` (default),
+  query `src` against tree `src/{a.rs, b.rs}, other/{c.rs}` → folder
+  `src` matches; both `a.rs` and `b.rs` render at full emphasis (NOT
+  dimmed); `other/` and `c.rs` are dimmed.
+- T_folder_match_hide_visibility. With `dim_non_matches = false`, the
+  same query and tree → `src/{a.rs, b.rs}` are visible; `other/` and
+  `c.rs` are hidden.
+- T_folder_match_count_union. Query `src` against tree
+  `src/{a.rs, src_helper.rs}` → match count is 3 (folder `src` itself,
+  plus descendants `a.rs` and `src_helper.rs`). `src_helper.rs` is
+  counted once, NOT twice (once as folder-match-descendant, once as
+  direct match).
+- T_folder_match_highlight. Same tree as above → folder `src` row shows
+  `src` highlighted; `a.rs` row renders at full emphasis without any
+  highlight; `src_helper.rs` row shows `src` highlighted within its name
+  (because its own name directly matches).
+- T_folder_match_navigation_order. Tree
+  `proj/{src/{a.rs, b.rs}, tests/{a.rs}}`, query `src` → cycle order
+  with `F3`: folder `src` itself, then `src/a.rs`, then `src/b.rs`. (No
+  `tests/a.rs` — it is not in the union match set.)
 
 ## Open Questions
 
