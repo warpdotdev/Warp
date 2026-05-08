@@ -55,6 +55,39 @@ const SETTINGS_SIDEBAR_WIDTH_WITH_FOOTER: f32 = 248.;
 const SETTINGS_SECTION_BORDER_WIDTH: f32 = 1.;
 const SETTINGS_PAGE_HORIZONTAL_PADDING: f32 = 56.;
 const SETTINGS_PAGE_MAX_CONTENT_WIDTH: f32 = 800.;
+fn settings_sidebar_width_for_platform_page() -> f32 {
+    if FeatureFlag::SettingsFile.is_enabled() {
+        SETTINGS_SIDEBAR_WIDTH_WITH_FOOTER
+    } else {
+        SETTINGS_SIDEBAR_WIDTH_DEFAULT
+    }
+}
+
+fn api_key_table_width_chrome() -> f32 {
+    settings_sidebar_width_for_platform_page()
+        + SETTINGS_SECTION_BORDER_WIDTH
+        + SETTINGS_PAGE_HORIZONTAL_PADDING
+        + API_KEY_TABLE_LAYOUT_SAFETY_PADDING
+}
+
+fn api_key_table_min_non_resizable_columns_width(show_scope_column: bool) -> f32 {
+    if show_scope_column {
+        API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH + API_KEY_TABLE_MIN_SCOPE_COLUMN_WIDTH
+    } else {
+        API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH
+    }
+}
+
+fn compute_api_key_name_column_max_width(
+    window_width: f32,
+    min_width: f32,
+    min_non_resizable_columns_width: f32,
+    table_width_chrome: f32,
+) -> f32 {
+    let available_table_width =
+        (window_width - table_width_chrome).clamp(0., SETTINGS_PAGE_MAX_CONTENT_WIDTH);
+    (available_table_width - min_non_resizable_columns_width).max(min_width)
+}
 
 #[derive(Clone, Copy)]
 pub enum PlatformPageViewEvent {
@@ -500,22 +533,11 @@ impl PlatformPageWidget {
         appearance: &Appearance,
         view: &PlatformPageView,
     ) -> Box<dyn Element> {
-        let settings_sidebar_width = if FeatureFlag::SettingsFile.is_enabled() {
-            SETTINGS_SIDEBAR_WIDTH_WITH_FOOTER
-        } else {
-            SETTINGS_SIDEBAR_WIDTH_DEFAULT
-        };
-        let table_width_chrome = settings_sidebar_width
-            + SETTINGS_SECTION_BORDER_WIDTH
-            + SETTINGS_PAGE_HORIZONTAL_PADDING
-            + API_KEY_TABLE_LAYOUT_SAFETY_PADDING;
+        let table_width_chrome = api_key_table_width_chrome();
         let show_scope_column =
             FeatureFlag::TeamApiKeys.is_enabled() || FeatureFlag::NamedAgents.is_enabled();
-        let min_non_resizable_columns_width = if show_scope_column {
-            API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH + API_KEY_TABLE_MIN_SCOPE_COLUMN_WIDTH
-        } else {
-            API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH
-        };
+        let min_non_resizable_columns_width =
+            api_key_table_min_non_resizable_columns_width(show_scope_column);
         let mut header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
@@ -588,11 +610,12 @@ impl PlatformPageWidget {
         Resizable::new(width_handle, header_cell)
             .with_dragbar_side(DragBarSide::Right)
             .with_bounds_callback(Box::new(move |window_size| {
-                let available_table_width = (window_size.x() - table_width_chrome)
-                    .max(0.)
-                    .min(SETTINGS_PAGE_MAX_CONTENT_WIDTH);
-                let max_width =
-                    (available_table_width - min_non_resizable_columns_width).max(min_width);
+                let max_width = compute_api_key_name_column_max_width(
+                    window_size.x(),
+                    min_width,
+                    min_non_resizable_columns_width,
+                    table_width_chrome,
+                );
                 (min_width, max_width)
             }))
             .on_resize(|ctx, _| {
@@ -843,3 +866,7 @@ impl From<ViewHandle<PlatformPageView>> for SettingsPageViewHandle {
         SettingsPageViewHandle::OzCloudAPIKeys(view_handle)
     }
 }
+
+#[cfg(test)]
+#[path = "platform_page_tests.rs"]
+mod tests;
