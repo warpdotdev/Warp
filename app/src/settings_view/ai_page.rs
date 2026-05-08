@@ -6283,8 +6283,6 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
 struct ApiKeysWidget {
     openai_api_key_editor: ViewHandle<EditorView>,
     openai_base_url_editor: ViewHandle<EditorView>,
-    anthropic_api_key_editor: ViewHandle<EditorView>,
-    google_api_key_editor: ViewHandle<EditorView>,
     local_openai_model_override_editor: ViewHandle<EditorView>,
 
     can_use_warp_credits_with_byok: SwitchStateHandle,
@@ -6334,8 +6332,6 @@ impl ApiKeysWidget {
         let ApiKeys {
             openai: openai_key,
             openai_base_url,
-            anthropic: anthropic_key,
-            google: google_key,
             local_openai_model_override,
             ..
         } = ApiKeyManager::as_ref(ctx).keys().clone();
@@ -6423,18 +6419,6 @@ impl ApiKeysWidget {
                 ctx.notify();
             }
         });
-        create_api_key_editor!(
-            anthropic_api_key_editor,
-            anthropic_key,
-            set_anthropic_key,
-            "sk-ant-..."
-        );
-        create_api_key_editor!(
-            google_api_key_editor,
-            google_key,
-            set_google_key,
-            "AIzaSy..."
-        );
         let local_openai_model_override_editor = Self::create_api_value_editor(
             local_openai_model_override.as_ref(),
             "gpt-5.4 or your-provider-model",
@@ -6473,8 +6457,6 @@ impl ApiKeysWidget {
         });
 
         let openai_api_key_editor_clone = openai_api_key_editor.clone();
-        let anthropic_api_key_editor_clone = anthropic_api_key_editor.clone();
-        let google_api_key_editor_clone = google_api_key_editor.clone();
         let openai_base_url_editor_for_ai_toggle = openai_base_url_editor.clone();
         let local_openai_model_override_editor_for_ai_toggle =
             local_openai_model_override_editor.clone();
@@ -6484,16 +6466,6 @@ impl ApiKeysWidget {
                     && UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled();
                 AISettingsPageView::update_editor_interaction_state(
                     openai_api_key_editor_clone.clone(),
-                    is_enabled,
-                    ctx,
-                );
-                AISettingsPageView::update_editor_interaction_state(
-                    anthropic_api_key_editor_clone.clone(),
-                    is_enabled,
-                    ctx,
-                );
-                AISettingsPageView::update_editor_interaction_state(
-                    google_api_key_editor_clone.clone(),
                     is_enabled,
                     ctx,
                 );
@@ -6514,8 +6486,6 @@ impl ApiKeysWidget {
         Self {
             openai_api_key_editor,
             openai_base_url_editor,
-            anthropic_api_key_editor,
-            google_api_key_editor,
             local_openai_model_override_editor,
 
             can_use_warp_credits_with_byok: Default::default(),
@@ -6597,20 +6567,6 @@ impl ApiKeysWidget {
             appearance,
             "OpenAI Base URL",
             self.openai_base_url_editor.clone(),
-            is_enabled,
-            app,
-        ));
-        column.add_child(render_api_key_input(
-            appearance,
-            "Anthropic API Key",
-            self.anthropic_api_key_editor.clone(),
-            is_enabled,
-            app,
-        ));
-        column.add_child(render_api_key_input(
-            appearance,
-            "Google API Key",
-            self.google_api_key_editor.clone(),
             is_enabled,
             app,
         ));
@@ -6749,7 +6705,7 @@ impl SettingsWidget for ApiKeysWidget {
     type View = AISettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "api keys bring your own byo openai anthropic google claude gemini gpt custom model model id base url responses local backend compatible"
+        "api keys bring your own byo openai gpt custom model model id base url responses local backend compatible"
     }
 
     fn render(
