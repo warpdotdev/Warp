@@ -608,9 +608,12 @@ impl RequestedCommandView {
             .with_on_select_action(RequestedCommandViewAction::Accept)
             .into_item();
 
-            let auto_item = MenuItemFields::new_with_label("Auto-approve", auto_keystroke.as_str())
-                .with_on_select_action(RequestedCommandViewAction::AcceptAndAutoExecute)
-                .into_item();
+            let auto_item = MenuItemFields::new_with_label(
+                crate::i18n::tr_static(ctx, "Auto-approve"),
+                auto_keystroke.as_str(),
+            )
+            .with_on_select_action(RequestedCommandViewAction::AcceptAndAutoExecute)
+            .into_item();
 
             self.accept_split_button_menu.update(ctx, |menu, ctx| {
                 menu.set_items(vec![accept_item, auto_item], ctx);
@@ -1642,5 +1645,5 @@ pub fn format_command_text(text: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "requested_command_test.rs"]
+#[path = "requested_command_tests.rs"]
 mod tests;

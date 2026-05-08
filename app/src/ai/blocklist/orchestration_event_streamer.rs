@@ -4,13 +4,15 @@ use super::orchestration_events::{
     OrchestrationEventService, PendingEvent, PendingEventDetail,
 };
 use crate::ai::agent::{
-    conversation::AIConversationId, AIAgentExchangeId, AIAgentOutputMessageType,
-    ReceivedMessageInput,
+    conversation::{AIAgentHarness, AIConversationId, ConversationStatus},
+    AIAgentExchangeId, AIAgentOutputMessageType, ReceivedMessageInput,
 };
 use crate::ai::agent_events::{
     run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
     AgentEventDriverConfig, MessageHydrator, ServerApiAgentEventSource,
 };
+use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::server::retry_strategies::is_transient_http_error;
 use crate::server::server_api::ai::{AIClient, AgentRunEvent};
 use crate::server::server_api::{ServerApi, ServerApiProvider};
 use anyhow::anyhow;
@@ -20,16 +22,21 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
+use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
-use warpui::r#async::Timer;
+use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::{
     Entity, EntityId, GetSingletonModelHandle, ModelContext, SingletonEntity, UpdateModel,
 };
 
 /// Backoff schedule (seconds) for the post-restore
-/// `get_ambient_agent_task` retry: 1s, 2s, 5s, then 10s max.
+/// `get_ambient_agent_task` retry on transient errors: 1s, 2s, 5s, then 10s max.
 const RESTORE_FETCH_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
+/// Slower backoff for permanent HTTP errors (e.g. 404 for deleted runs).
+/// Retries still happen in case the error was spurious, but at a much
+/// lower frequency to avoid log spam.
+const RESTORE_FETCH_PERMANENT_BACKOFF_STEPS: &[u64] = &[30];
 /// How often (milliseconds) the drain timer checks for SSE events.
 const SSE_DRAIN_INTERVAL_MS: u64 = 500;
 
@@ -45,12 +52,54 @@ struct SseConnectionState {
     event_receiver: mpsc::UnboundedReceiver<SseStreamItem>,
     /// Generation counter; used to discard stale callbacks after reconnect.
     generation: u64,
+    /// Abort handle for the spawned SSE driver task, used to cancel on teardown.
+    abort_handle: futures::future::AbortHandle,
 }
 
 struct SseForwardingConsumer {
     tx: mpsc::UnboundedSender<SseStreamItem>,
     self_run_id: String,
     hydrator: MessageHydrator,
+    hydrate_new_messages: bool,
+}
+
+/// State for a wake-only listener. Unlike `SseConnectionState`, this listener
+/// never forwards or persists events; it stops on the first event and asks the
+/// controller to cold-start the dormant Claude run so the parent bridge can
+/// take over delivery.
+struct WakeConnectionState {
+    generation: u64,
+    task: SpawnedFutureHandle,
+}
+
+struct DormantClaudeWakeConsumer {
+    run_id: String,
+    wake_sequence: Option<i64>,
+}
+
+impl DormantClaudeWakeConsumer {
+    fn new(run_id: String) -> Self {
+        Self {
+            run_id,
+            wake_sequence: None,
+        }
+    }
+}
+
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl AgentEventConsumer for DormantClaudeWakeConsumer {
+    async fn on_event(
+        &mut self,
+        event: AgentRunEvent,
+    ) -> anyhow::Result<AgentEventConsumerControlFlow> {
+        if event.run_id != self.run_id {
+            return Ok(AgentEventConsumerControlFlow::Continue);
+        }
+
+        self.wake_sequence = Some(event.sequence);
+        Ok(AgentEventConsumerControlFlow::Stop)
+    }
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -60,10 +109,13 @@ impl AgentEventConsumer for SseForwardingConsumer {
         &mut self,
         event: AgentRunEvent,
     ) -> anyhow::Result<AgentEventConsumerControlFlow> {
-        let fetched_message = self
-            .hydrator
-            .hydrate_event_for_recipient(&event, &self.self_run_id)
-            .await;
+        let fetched_message = if self.hydrate_new_messages {
+            self.hydrator
+                .hydrate_event_for_recipient(&event, &self.self_run_id)
+                .await
+        } else {
+            None
+        };
 
         self.tx
             .unbounded_send(SseStreamItem {
@@ -98,8 +150,18 @@ struct ConversationStreamState {
     /// model id for `agent_sdk`) that need events delivered to this
     /// conversation.
     consumers: HashSet<EntityId>,
+    /// Execution harness from the task row, when available. Local harness
+    /// child conversations are created before they have server conversation
+    /// metadata, so this lets us recognize dormant local Claude children
+    /// without relying on `ServerAIConversationMetadata`.
+    harness: Option<Harness>,
     /// Active SSE connection, if one is open.
     sse_connection: Option<SseConnectionState>,
+    /// Active wake-only listener for dormant local Claude children, if one is
+    /// open. This is separate from generic SSE because generic delivery would
+    /// hydrate messages and advance the shared cursor before Claude's parent
+    /// bridge can consume them.
+    wake_connection: Option<WakeConnectionState>,
     /// Consecutive `get_ambient_agent_task` failure count for the
     /// post-restore retry loop; resets on success.
     restore_fetch_failures: usize,
@@ -123,13 +185,22 @@ pub struct OrchestrationEventStreamer {
     /// Monotonic counter for SSE connection generations. Ensures stale
     /// callbacks from replaced connections are discarded.
     next_sse_generation: u64,
+    /// Monotonic counter for wake-only listener generations. Ensures stale
+    /// callbacks from replaced listeners are discarded.
+    next_wake_generation: u64,
 }
 
 pub enum OrchestrationEventStreamerEvent {
-    // Reserved for future use (e.g., status signals to the controller).
+    DormantClaudeWakeReady { conversation_id: AIConversationId },
 }
 
 impl OrchestrationEventStreamer {
+    fn message_hydrator_for_run_id(&self, run_id: &str) -> MessageHydrator {
+        match run_id.parse::<AmbientAgentTaskId>() {
+            Ok(task_id) => MessageHydrator::for_task(self.server_api.clone(), task_id),
+            Err(_) => MessageHydrator::new(self.ai_client.clone()),
+        }
+    }
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let provider = ServerApiProvider::as_ref(ctx);
         let ai_client = provider.get_ai_client();
@@ -143,6 +214,7 @@ impl OrchestrationEventStreamer {
             server_api,
             streams: HashMap::new(),
             next_sse_generation: 0,
+            next_wake_generation: 0,
         }
     }
 
@@ -164,6 +236,7 @@ impl OrchestrationEventStreamer {
             server_api,
             streams: HashMap::new(),
             next_sse_generation: 0,
+            next_wake_generation: 0,
         }
     }
 
@@ -192,6 +265,7 @@ impl OrchestrationEventStreamer {
         // If the server-token event fired before this registration, pick
         // up the now-available child role here.
         self.ensure_self_run_id_watched(conversation_id, ctx);
+        self.spawn_task_harness_fetch_if_needed(conversation_id, ctx);
         self.reevaluate_eligibility(conversation_id, ctx);
     }
 
@@ -281,6 +355,12 @@ impl OrchestrationEventStreamer {
             } => {
                 self.on_restored_conversations(conversation_ids.clone(), ctx);
             }
+            BlocklistAIHistoryEvent::UpdatedConversationStatus {
+                conversation_id, ..
+            }
+            | BlocklistAIHistoryEvent::UpdatedConversationMetadata {
+                conversation_id, ..
+            } => self.reevaluate_eligibility(*conversation_id, ctx),
             BlocklistAIHistoryEvent::StartedNewConversation { .. }
             | BlocklistAIHistoryEvent::CreatedSubtask { .. }
             | BlocklistAIHistoryEvent::UpgradedTask { .. }
@@ -292,9 +372,10 @@ impl OrchestrationEventStreamer {
             | BlocklistAIHistoryEvent::UpdatedTodoList { .. }
             | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }
             | BlocklistAIHistoryEvent::SplitConversation { .. }
-            | BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
-            | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
-            | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. } => {}
+            | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
+            | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
+            | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
         }
     }
 
@@ -303,9 +384,56 @@ impl OrchestrationEventStreamer {
         conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
     ) {
+        self.spawn_task_harness_fetch_if_needed(conversation_id, ctx);
         if self.ensure_self_run_id_watched(conversation_id, ctx) {
             self.reevaluate_eligibility(conversation_id, ctx);
         }
+    }
+
+    fn spawn_task_harness_fetch_if_needed(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self
+            .streams
+            .get(&conversation_id)
+            .is_some_and(|stream| stream.harness.is_some())
+        {
+            return;
+        }
+        let Some(run_id) = self.self_run_id(conversation_id, ctx) else {
+            return;
+        };
+        let Ok(task_id) = run_id.parse::<crate::ai::ambient_agents::AmbientAgentTaskId>() else {
+            return;
+        };
+        let local_cursor = self
+            .streams
+            .get(&conversation_id)
+            .map(|stream| stream.event_cursor)
+            .unwrap_or(0);
+        let ai_client = self.ai_client.clone();
+        ctx.spawn(
+            async move { ai_client.get_ambient_agent_task(&task_id).await },
+            move |me, result, ctx| {
+                let task = match result {
+                    Ok(task) => task,
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to fetch task harness for {conversation_id:?} task_id={task_id}: {err:#}"
+                        );
+                        return;
+                    }
+                };
+                if let Some(stream) = me.streams.get_mut(&conversation_id) {
+                    stream.harness = agent_task_harness(&task).or(stream.harness);
+                    stream.event_cursor =
+                        local_cursor.max(task.last_event_sequence.unwrap_or(0));
+                }
+                me.reevaluate_eligibility(conversation_id, ctx);
+            },
+        );
     }
 
     /// Inserts `self_run_id` into the conversation's watched set if the
@@ -404,7 +532,8 @@ impl OrchestrationEventStreamer {
                 .retain(|id| !confirmed_ids.contains(id));
         }
 
-        let hydrator = MessageHydrator::new(self.ai_client.clone());
+        let hydrator =
+            self.message_hydrator_for_run_id(conversation.run_id().as_deref().unwrap_or_default());
         ctx.spawn(
             async move {
                 hydrator
@@ -440,7 +569,14 @@ impl OrchestrationEventStreamer {
         // Dropping the SSE receiver causes the driver task's next send
         // to fail and exit; the drain timer's `is_current` check then
         // no-ops on its next tick.
-        self.streams.remove(&conversation_id);
+        if let Some(mut stream) = self.streams.remove(&conversation_id) {
+            if let Some(connection) = stream.sse_connection.take() {
+                connection.abort_handle.abort();
+            }
+            if let Some(connection) = stream.wake_connection.take() {
+                connection.task.abort();
+            }
+        }
 
         // Prune the removed conversation's run_id from every other
         // tracked conversation's watched set, then re-evaluate eligibility
@@ -582,6 +718,7 @@ impl OrchestrationEventStreamer {
 
                     // Reset the retry counter on success.
                     stream.restore_fetch_failures = 0;
+                    stream.harness = agent_task_harness(&task).or(stream.harness);
 
                     // Merge the server cursor: use the max of SQLite and
                     // server values so we don't re-deliver events the
@@ -618,30 +755,41 @@ impl OrchestrationEventStreamer {
                 if !self.streams.contains_key(&conv_id) {
                     return;
                 }
-                log::warn!("Restore: get_agent_run failed for {conv_id:?}: {err:#}; will retry");
-                self.start_restore_fetch_retry_timer(conv_id, task_id, sqlite_cursor, ctx);
+                if is_transient_http_error(&err) {
+                    log::warn!(
+                        "Restore: get_agent_run failed for {conv_id:?}: {err:#}; will retry"
+                    );
+                } else {
+                    log::warn!("Restore: get_agent_run hit permanent error for {conv_id:?}: {err:#}; retrying with slow backoff");
+                }
+                self.start_restore_fetch_retry_timer(conv_id, task_id, sqlite_cursor, &err, ctx);
             }
         }
     }
 
     /// Schedules a retry of the post-restore `get_ambient_agent_task`
-    /// fetch after an exponential backoff (1s, 2s, 5s, 10s capped) keyed
-    /// on a per-conversation failure counter. The counter resets on
-    /// success.
+    /// fetch after an exponential backoff keyed on a per-conversation
+    /// failure counter. Uses a fast schedule (1-10s) for transient errors
+    /// and a slow schedule (30s) for permanent HTTP errors. The counter
+    /// resets on success.
     fn start_restore_fetch_retry_timer(
         &mut self,
         conv_id: AIConversationId,
         task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
         sqlite_cursor: i64,
+        err: &anyhow::Error,
         ctx: &mut ModelContext<Self>,
     ) {
+        let backoff_steps = if is_transient_http_error(err) {
+            RESTORE_FETCH_BACKOFF_STEPS
+        } else {
+            RESTORE_FETCH_PERMANENT_BACKOFF_STEPS
+        };
         let stream = self.streams.entry(conv_id).or_default();
         stream.restore_fetch_failures += 1;
         let failures = stream.restore_fetch_failures;
-        let step_index = failures
-            .saturating_sub(1)
-            .min(RESTORE_FETCH_BACKOFF_STEPS.len() - 1);
-        let backoff = Duration::from_secs(RESTORE_FETCH_BACKOFF_STEPS[step_index]);
+        let step_index = failures.saturating_sub(1).min(backoff_steps.len() - 1);
+        let backoff = Duration::from_secs(backoff_steps[step_index]);
         ctx.spawn(
             async move { Timer::after(backoff).await },
             move |me, _, ctx| {
@@ -706,6 +854,29 @@ impl OrchestrationEventStreamer {
             .is_some_and(|c| c.is_viewing_shared_session() || c.is_remote_child())
     }
 
+    fn should_skip_sse_for_dormant_local_claude_child(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &warpui::AppContext,
+    ) -> bool {
+        let Some(conversation) =
+            BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)
+        else {
+            return false;
+        };
+        conversation.is_child_agent_conversation()
+            && !conversation.is_remote_child()
+            && matches!(conversation.status(), ConversationStatus::Success)
+            && (conversation
+                .server_metadata()
+                .is_some_and(|metadata| metadata.harness == AIAgentHarness::ClaudeCode)
+                || self
+                    .streams
+                    .get(&conversation_id)
+                    .and_then(|stream| stream.harness)
+                    .is_some_and(|harness| harness == Harness::Claude))
+    }
+
     /// True iff this conversation should currently hold an SSE connection.
     /// A subscription is needed only when there is an active consumer in
     /// this process (an open agent view or an agent_sdk driver) AND the
@@ -718,10 +889,31 @@ impl OrchestrationEventStreamer {
         if self.is_remote_run_view(conversation_id, ctx) {
             return false;
         }
+        if self.should_skip_sse_for_dormant_local_claude_child(conversation_id, ctx) {
+            log::info!(
+                "Skipping generic SSE delivery for dormant local Claude child {conversation_id:?}; parent bridge will deliver wake events"
+            );
+            return false;
+        }
         let has_parent = BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&conversation_id)
             .is_some_and(|c| c.has_parent_agent());
         has_parent || self.is_parent_agent_conversation(conversation_id, ctx)
+    }
+
+    /// True iff this conversation should hold the wake-only listener used for
+    /// dormant local Claude children. Generic SSE intentionally stays closed
+    /// for these conversations so it cannot hydrate messages or advance the
+    /// server cursor before Claude's parent bridge starts.
+    fn is_dormant_claude_wake_listener_eligible(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &warpui::AppContext,
+    ) -> bool {
+        self.has_active_consumer(conversation_id)
+            && !self.is_remote_run_view(conversation_id, ctx)
+            && self.should_skip_sse_for_dormant_local_claude_child(conversation_id, ctx)
+            && self.self_run_id(conversation_id, ctx).is_some()
     }
 
     /// Returns the list of run_ids to subscribe to for `conversation_id`.
@@ -760,6 +952,131 @@ impl OrchestrationEventStreamer {
             (false, true) => self.teardown_sse(conversation_id, ctx),
             (false, false) => {}
         }
+
+        let wake_eligible = self.is_dormant_claude_wake_listener_eligible(conversation_id, ctx);
+        let wake_connected = self
+            .streams
+            .get(&conversation_id)
+            .is_some_and(|s| s.wake_connection.is_some());
+
+        match (wake_eligible, wake_connected) {
+            (true, false) => self.start_dormant_claude_wake_listener(conversation_id, ctx),
+            (true, true) => {}
+            (false, true) => self.teardown_dormant_claude_wake_listener(conversation_id),
+            (false, false) => {}
+        }
+    }
+
+    /// Opens a wake-only listener for a dormant local Claude child. The
+    /// listener observes the child's run_id, stops on the first event, and
+    /// emits a controller signal without enqueueing any event data or
+    /// persisting any cursor. The Claude parent bridge will consume the event
+    /// after the CLI has been relaunched.
+    fn start_dormant_claude_wake_listener(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(run_id) = self.self_run_id(conversation_id, ctx) else {
+            return;
+        };
+
+        let local_cursor = self
+            .streams
+            .get(&conversation_id)
+            .map(|s| s.event_cursor)
+            .unwrap_or(0);
+        let generation = self.next_wake_generation;
+        self.next_wake_generation += 1;
+
+        log::info!(
+            "Opening dormant Claude wake listener for {conversation_id:?} \
+             (gen={generation}, run_id={run_id:?}, since={local_cursor})"
+        );
+
+        let ai_client = self.ai_client.clone();
+        let source = ServerApiAgentEventSource::new(self.server_api.clone());
+        let task_run_id = run_id.clone();
+        let handle = ctx.spawn(
+            async move {
+                let since_sequence = resolve_dormant_claude_wake_cursor(
+                    ai_client,
+                    task_run_id.clone(),
+                    local_cursor,
+                )
+                .await;
+                let config = AgentEventDriverConfig::retry_forever(
+                    vec![task_run_id.clone()],
+                    since_sequence,
+                );
+                let mut consumer = DormantClaudeWakeConsumer::new(task_run_id);
+                run_agent_event_driver(source, config, &mut consumer).await?;
+                Ok::<_, anyhow::Error>(consumer.wake_sequence)
+            },
+            move |me, result, ctx| {
+                let is_current = me
+                    .streams
+                    .get(&conversation_id)
+                    .and_then(|s| s.wake_connection.as_ref())
+                    .is_some_and(|c| c.generation == generation);
+                if !is_current {
+                    return;
+                }
+
+                if let Some(stream) = me.streams.get_mut(&conversation_id) {
+                    stream.wake_connection = None;
+                }
+
+                match result {
+                    Ok(Some(sequence)) => {
+                        log::info!(
+                            "Dormant Claude wake listener observed event for \
+                             {conversation_id:?} at sequence {sequence}"
+                        );
+                        ctx.emit(OrchestrationEventStreamerEvent::DormantClaudeWakeReady {
+                            conversation_id,
+                        });
+                    }
+                    Ok(None) => {
+                        log::warn!(
+                            "Dormant Claude wake listener stopped for {conversation_id:?} \
+                             without observing an event"
+                        );
+                        if me.is_dormant_claude_wake_listener_eligible(conversation_id, ctx) {
+                            me.start_dormant_claude_wake_listener(conversation_id, ctx);
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Dormant Claude wake listener failed for {conversation_id:?} \
+                             (gen={generation}): {err:#}"
+                        );
+                        if me.is_dormant_claude_wake_listener_eligible(conversation_id, ctx) {
+                            me.start_dormant_claude_wake_listener(conversation_id, ctx);
+                        }
+                    }
+                }
+            },
+        );
+
+        let stream = self.streams.entry(conversation_id).or_default();
+        stream.wake_connection = Some(WakeConnectionState {
+            generation,
+            task: handle,
+        });
+    }
+
+    fn teardown_dormant_claude_wake_listener(&mut self, conversation_id: AIConversationId) {
+        if let Some(stream) = self.streams.get_mut(&conversation_id) {
+            if let Some(connection) = stream.wake_connection.take() {
+                log::info!(
+                    "Tearing down dormant Claude wake listener for {conversation_id:?} \
+                     (gen={})",
+                    connection.generation
+                );
+                connection.task.abort();
+            }
+        }
     }
 
     /// Opens a long-lived SSE connection for `conversation_id`. Events
@@ -781,21 +1098,12 @@ impl OrchestrationEventStreamer {
             .unwrap_or(0);
 
         let server_api = self.server_api.clone();
-        let ai_client = self.ai_client.clone();
 
         let self_run_id = self.self_run_id(conversation_id, ctx).unwrap_or_default();
 
         let (tx, rx) = mpsc::unbounded();
         let generation = self.next_sse_generation;
         self.next_sse_generation += 1;
-
-        self.streams
-            .entry(conversation_id)
-            .or_default()
-            .sse_connection = Some(SseConnectionState {
-            event_receiver: rx,
-            generation,
-        });
 
         log::info!(
             "Opening SSE stream for {conversation_id:?} (gen={generation}, \
@@ -804,14 +1112,15 @@ impl OrchestrationEventStreamer {
 
         let config = AgentEventDriverConfig::retry_forever(run_ids.clone(), cursor);
         let source = ServerApiAgentEventSource::new(server_api);
-        let hydrator = MessageHydrator::new(ai_client);
+        let hydrator = self.message_hydrator_for_run_id(&self_run_id);
 
-        ctx.spawn(
+        let handle = ctx.spawn(
             async move {
                 let mut consumer = SseForwardingConsumer {
                     tx,
                     self_run_id,
                     hydrator,
+                    hydrate_new_messages: true,
                 };
                 run_agent_event_driver(source, config, &mut consumer).await
             },
@@ -835,6 +1144,13 @@ impl OrchestrationEventStreamer {
                 }
             },
         );
+
+        let stream = self.streams.entry(conversation_id).or_default();
+        stream.sse_connection = Some(SseConnectionState {
+            event_receiver: rx,
+            generation,
+            abort_handle: handle.abort_handle(),
+        });
 
         // Start periodic event drain.
         self.start_sse_drain_timer(conversation_id, generation, ctx);
@@ -963,10 +1279,9 @@ impl OrchestrationEventStreamer {
         }
 
         // Track message IDs for server-side mark_delivered calls.
-        let message_ids: Vec<String> = events
+        let message_ids: Vec<String> = messages
             .iter()
-            .filter(|e| e.event_type == "new_message" && e.run_id == self_run_id)
-            .filter_map(|e| e.ref_id.clone())
+            .map(|message| message.message_id.clone())
             .collect();
         if !message_ids.is_empty() {
             self.streams
@@ -981,7 +1296,7 @@ impl OrchestrationEventStreamer {
             return;
         }
 
-        let pending = build_pending_events(messages, lifecycle_events);
+        let pending = build_pending_events(&events, messages, lifecycle_events);
         OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
             svc.enqueue_event_batch(conversation_id, pending, ctx);
         });
@@ -994,7 +1309,9 @@ impl OrchestrationEventStreamer {
         // discard already-fetched message bodies.
         self.drain_sse_events(conversation_id, ctx);
         if let Some(stream) = self.streams.get_mut(&conversation_id) {
-            stream.sse_connection = None;
+            if let Some(connection) = stream.sse_connection.take() {
+                connection.abort_handle.abort();
+            }
         }
 
         if self.is_eligible(conversation_id, ctx) {
@@ -1009,8 +1326,9 @@ impl OrchestrationEventStreamer {
         // Drain anything buffered so we don't lose hydrated messages.
         self.drain_sse_events(conversation_id, ctx);
         if let Some(stream) = self.streams.get_mut(&conversation_id) {
-            if stream.sse_connection.take().is_some() {
+            if let Some(connection) = stream.sse_connection.take() {
                 log::info!("Tearing down SSE for {conversation_id:?} (no longer eligible)");
+                connection.abort_handle.abort();
             }
         }
     }
@@ -1021,6 +1339,35 @@ impl Entity for OrchestrationEventStreamer {
 }
 
 impl SingletonEntity for OrchestrationEventStreamer {}
+
+async fn resolve_dormant_claude_wake_cursor(
+    ai_client: Arc<dyn AIClient>,
+    run_id: String,
+    local_cursor: i64,
+) -> i64 {
+    let Ok(task_id) = run_id.parse::<AmbientAgentTaskId>() else {
+        return local_cursor;
+    };
+
+    match ai_client.get_ambient_agent_task(&task_id).await {
+        Ok(task) => local_cursor.max(task.last_event_sequence.unwrap_or(0)),
+        Err(err) => {
+            log::warn!(
+                "Failed to read server cursor for dormant Claude wake listener \
+                 run {run_id}: {err:#}; using local cursor {local_cursor}"
+            );
+            local_cursor
+        }
+    }
+}
+
+fn agent_task_harness(task: &crate::ai::ambient_agents::task::AmbientAgentTask) -> Option<Harness> {
+    task.agent_config_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.harness.as_ref())
+        .map(|config| config.harness_type)
+        .filter(|harness| *harness != Harness::Unknown)
+}
 
 fn parse_occurred_at(s: &str) -> prost_types::Timestamp {
     chrono::DateTime::parse_from_rfc3339(s)
@@ -1083,20 +1430,32 @@ fn convert_lifecycle_events(events: &[AgentRunEvent], self_run_id: &str) -> Vec<
 }
 
 fn build_pending_events(
+    events: &[AgentRunEvent],
     messages: Vec<ReceivedMessageInput>,
     lifecycle_events: Vec<api::AgentEvent>,
 ) -> Vec<PendingEvent> {
     let mut pending = Vec::with_capacity(messages.len() + lifecycle_events.len());
     for msg in &messages {
+        let metadata = events
+            .iter()
+            .find(|event| {
+                event.event_type == "new_message"
+                    && event.ref_id.as_deref() == Some(msg.message_id.as_str())
+            })
+            .map(|event| (event.sequence, event.occurred_at.clone()));
+        let (sequence, occurred_at) =
+            metadata.unwrap_or_else(|| (0, chrono::Utc::now().to_rfc3339()));
         pending.push(PendingEvent {
             event_id: msg.message_id.clone(),
             source_agent_id: msg.sender_agent_id.clone(),
             attempt_count: 0,
             detail: PendingEventDetail::Message {
+                sequence,
                 message_id: msg.message_id.clone(),
                 addresses: msg.addresses.clone(),
                 subject: msg.subject.clone(),
                 message_body: msg.message_body.clone(),
+                occurred_at,
             },
         });
     }

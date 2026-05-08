@@ -21,6 +21,7 @@ regex.workspace = true
 thiserror.workspace = true
 typed-path.workspace = true
 dunce.workspace = true
+event-listener.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 pin-project.workspace = true
@@ -33,4 +34,5 @@ windows.workspace = true
 gloo.workspace = true
 
 [dev-dependencies]
+futures-lite.workspace = true
 warpui.workspace = true

@@ -37,6 +37,7 @@ use crate::{
         auth_manager::LoginGatedFeature, auth_state::AuthState, auth_view_modal::AuthViewVariant,
         AuthManager, AuthStateProvider, UserUid,
     },
+    i18n::I18nKey,
     menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields},
     modal::{Modal, ModalEvent, ModalViewState},
     pricing::{PricingInfoModel, PricingInfoModelEvent},
@@ -329,10 +330,12 @@ impl BillingAndUsagePageView {
             }
         });
 
-        let load_more_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Load more", SecondaryTheme).on_click(|ctx| {
-                ctx.dispatch_typed_action(BillingAndUsagePageAction::RenderMoreUsageEntries);
-            })
+        let load_more_button = ctx.add_typed_action_view(|ctx| {
+            ActionButton::new(crate::i18n::tr_static(ctx, "Load more"), SecondaryTheme).on_click(
+                |ctx| {
+                    ctx.dispatch_typed_action(BillingAndUsagePageAction::RenderMoreUsageEntries);
+                },
+            )
         });
 
         let mut me = Self {
@@ -365,8 +368,8 @@ impl BillingAndUsagePageView {
     }
 
     fn build_page() -> PageType<Self> {
-        let categories = vec![Category::new(
-            "Billing and usage",
+        let categories = vec![Category::new_i18n(
+            I18nKey::SettingsCategoryBillingAndUsage,
             vec![
                 Box::new(PlanWidget::default()),
                 Box::new(UsageWidget::default()),
@@ -1167,7 +1170,7 @@ impl UsageWidget {
                     ButtonVariant::Secondary,
                     self.ambient_trial_new_agent_button.clone(),
                 )
-                .with_text_label("New agent".to_string())
+                .with_text_label(crate::i18n::tr_static(app, "New agent").to_string())
                 .with_style(UiComponentStyles {
                     font_color: Some(bg),
                     background: Some(fg.into()),
@@ -1204,7 +1207,7 @@ impl UsageWidget {
                     ButtonVariant::Secondary,
                     self.ambient_trial_buy_more_button.clone(),
                 )
-                .with_text_label("Buy more".to_string())
+                .with_text_label(crate::i18n::tr_static(app, "Buy more").to_string())
                 .with_style(UiComponentStyles {
                     background: Some(bg.into()),
                     font_size: Some(14.),
@@ -1826,7 +1829,10 @@ impl UsageWidget {
         let monthly_spend_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_children([
-                ui_builder.span("Monthly spend limit").build().finish(),
+                ui_builder
+                    .span(crate::i18n::tr_static(app, "Monthly spend limit"))
+                    .build()
+                    .finish(),
                 Shrinkable::new(1., Align::new(info_icon).left().finish()).finish(),
                 icon_button(
                     appearance,
@@ -2102,7 +2108,10 @@ impl UsageWidget {
                 .finish();
 
             let mut card_content_lower_children = vec![
-                ui_builder.span("One-time purchase").build().finish(),
+                ui_builder
+                    .span(crate::i18n::tr_static(app, "One-time purchase"))
+                    .build()
+                    .finish(),
                 buy_row.finish(),
             ];
 
@@ -2868,8 +2877,9 @@ impl UsageWidget {
                     let hoverable =
                         Hoverable::new(self.sort_icon_mouse_state.clone(), |mouse_state| {
                             if mouse_state.is_hovered() {
-                                let tooltip =
-                                    appearance.ui_builder().tool_tip("Sort by".to_string());
+                                let tooltip = appearance
+                                    .ui_builder()
+                                    .tool_tip(crate::i18n::tr_static(app, "Sort by").to_string());
 
                                 button.add_positioned_overlay_child(
                                     tooltip.build().finish(),
@@ -3373,6 +3383,7 @@ impl PlanWidget {
         &self,
         auth_state: &AuthState,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let button_styles = UiComponentStyles {
             font_size: Some(14.),
@@ -3394,7 +3405,7 @@ impl PlanWidget {
                 self.ui_state_handles.anonymous_user_sign_up_button.clone(),
             )
             .with_style(button_styles)
-            .with_text_label("Sign up".to_owned())
+            .with_text_label(crate::i18n::tr_static(app, "Sign up").to_owned())
             .build()
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(BillingAndUsagePageAction::SignupAnonymousUser);
@@ -3675,7 +3686,7 @@ impl SettingsWidget for PlanWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let account_info = if view.auth_state.is_anonymous_or_logged_out() {
-            self.render_anonymous_account_info(view.auth_state.as_ref(), appearance)
+            self.render_anonymous_account_info(view.auth_state.as_ref(), appearance, app)
         } else {
             self.render_account_info(view.auth_state.as_ref(), app, appearance)
         };

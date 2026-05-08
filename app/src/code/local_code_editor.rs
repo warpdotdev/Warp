@@ -29,6 +29,7 @@ use warp_util::{
     content_version::ContentVersion,
     file::{FileId, FileLoadError, FileSaveError},
     path::to_relative_path,
+    sync::Condition,
 };
 use warpui::{
     elements::{
@@ -52,15 +53,16 @@ use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 
 use crate::{
     code::{
+        buffer_location::BufferLocation,
         editor::model::HoverableLink,
         footer::{CodeFooterView, CodeFooterViewEvent},
         global_buffer_model::{BufferState, GlobalBufferModel},
         SaveOutcome, ShowFindReferencesCardProvider,
     },
     debounce::debounce,
+    i18n::{self, I18nKey},
     settings::AISettings,
     terminal::TerminalView,
-    util::sync::Condition,
 };
 use crate::{
     code::{editor::EditorReviewComment, global_buffer_model::GlobalBufferModelEvent},
@@ -1178,8 +1180,9 @@ impl LocalCodeEditorView {
     where
         T: FnOnce(BufferState, &mut ViewContext<Self>) -> ViewHandle<CodeEditorView>,
     {
-        let buffer_state = GlobalBufferModel::handle(ctx)
-            .update(ctx, |model, ctx| model.open(path.to_path_buf(), ctx));
+        let buffer_state = GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
+            model.open(BufferLocation::Local(path.to_path_buf()), ctx)
+        });
         let file_id = buffer_state.file_id;
         let editor = editor_constructor(buffer_state, ctx);
 
@@ -1531,6 +1534,10 @@ impl LocalCodeEditorView {
                     ctx.emit(LocalCodeEditorEvent::FailedToSave {
                         error: error.clone(),
                     });
+                }
+                GlobalBufferModelEvent::RemoteBufferConflict { .. }
+                | GlobalBufferModelEvent::ServerLocalBufferUpdated { .. } => {
+                    // Not relevant for local code editors.
                 }
             }
         });
@@ -1889,12 +1896,12 @@ impl LocalCodeEditorView {
     }
 
     /// Creates menu items for the context menu
-    fn context_menu_items(&self) -> Vec<MenuItem<LocalCodeEditorAction>> {
+    fn context_menu_items(&self, app: &AppContext) -> Vec<MenuItem<LocalCodeEditorAction>> {
         vec![
-            MenuItemFields::new("Go to definition")
+            MenuItemFields::new(i18n::tr(app, I18nKey::CodeGoToDefinition))
                 .with_on_select_action(LocalCodeEditorAction::GotoDefinition)
                 .into_item(),
-            MenuItemFields::new("Find references")
+            MenuItemFields::new(i18n::tr(app, I18nKey::CodeFindReferences))
                 .with_on_select_action(LocalCodeEditorAction::FindReferences)
                 .into_item(),
         ]
@@ -2099,6 +2106,7 @@ impl View for LocalCodeEditorView {
                 self.conflict_banner_mouse_states
                     .overwrite_mouse_state
                     .clone(),
+                app,
             );
             let mut col = Flex::column().with_child(banner);
 
@@ -2252,7 +2260,7 @@ impl TypedActionView for LocalCodeEditorView {
                 // Only show context menu if LSP is available
                 if self.is_lsp_server_available(ctx) {
                     self.context_menu_state.is_open = true;
-                    let menu_items = self.context_menu_items();
+                    let menu_items = self.context_menu_items(ctx);
                     self.context_menu.update(ctx, move |menu, ctx| {
                         menu.set_items(menu_items, ctx);
                         ctx.notify();
@@ -2277,6 +2285,7 @@ pub fn render_unsaved_changes_banner(
     appearance: &Appearance,
     discard_mouse_state: MouseStateHandle,
     overwrite_mouse_state: MouseStateHandle,
+    app: &AppContext,
 ) -> Box<dyn Element> {
     let left = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -2316,7 +2325,7 @@ pub fn render_unsaved_changes_banner(
             appearance
                 .ui_builder()
                 .button(ButtonVariant::Text, discard_mouse_state)
-                .with_text_label("Discard this version".into())
+                .with_text_label(i18n::tr(app, I18nKey::CodeDiscardThisVersion).into())
                 .with_style(UiComponentStyles {
                     height: Some(24.),
                     padding: Some(Coords {
@@ -2338,7 +2347,7 @@ pub fn render_unsaved_changes_banner(
                 appearance
                     .ui_builder()
                     .button(ButtonVariant::Outlined, overwrite_mouse_state)
-                    .with_text_label("Overwrite".into())
+                    .with_text_label(i18n::tr(app, I18nKey::CommonOverwrite).into())
                     .with_style(UiComponentStyles {
                         font_color: Some(appearance.theme().active_ui_text_color().into()),
                         ..Default::default()

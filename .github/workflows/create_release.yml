@@ -10,6 +10,10 @@
 name: Create Release
 on:
   workflow_call:
+    outputs:
+      release_tag:
+        description: The release tag prepared for this workflow invocation.
+        value: ${{ jobs.prepare_release.outputs.release_tag }}
     inputs:
       channel:
         description: The channel to create a release or release candidate for.
@@ -39,8 +43,16 @@ on:
         description: Build macOS artifacts.
         type: boolean
         default: true
+      build_macos_x86:
+        description: Build macOS x86_64 artifacts in addition to arm64.
+        type: boolean
+        default: false
       build_web:
         description: Build web artifacts.
+        type: boolean
+        default: true
+      build_cli:
+        description: Build CLI artifacts for supported platforms.
         type: boolean
         default: true
       should_publish:
@@ -128,8 +140,16 @@ on:
         description: Build macOS artifacts.
         type: boolean
         default: true
+      build_macos_x86:
+        description: Build macOS x86_64 artifacts in addition to arm64.
+        type: boolean
+        default: false
       build_web:
         description: Build web artifacts.
+        type: boolean
+        default: true
+      build_cli:
+        description: Build CLI artifacts for supported platforms.
         type: boolean
         default: true
       publish_sentry:
@@ -199,6 +219,7 @@ jobs:
       release_branch: ${{ steps.create_branch_and_tag.outputs.branch }}
       release_tag: ${{ steps.create_branch_and_tag.outputs.tag }}
       should_publish: ${{ steps.set_publish.outputs.should_publish }}
+      reused_existing_release: ${{ steps.create_branch_and_tag.outputs.reused_existing_release }}
     steps:
       - name: Checkout sources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -235,20 +256,41 @@ jobs:
               GIT_BRANCH_NAME="${GITHUB_REF}"
             fi
             GIT_BRANCH_NAME="${GIT_BRANCH_NAME#refs/heads/}"
-            source ./script/create_release_tag_and_branch --channel $CHANNEL --branch-name "$GIT_BRANCH_NAME"
-            echo "branch=$(git branch --show-current)" >> $GITHUB_OUTPUT
-            echo "tag=$tag" >> $GITHUB_OUTPUT
+            git fetch --tags origin
+            SOURCE_COMMIT="$(git rev-parse "${GIT_BRANCH_NAME}^{commit}")"
+            EXISTING_TAG_ON_COMMIT="$(
+              git tag --points-at "$SOURCE_COMMIT" --sort=-version:refname \
+                | grep "\.${CHANNEL}_[0-9][0-9]$" \
+                | head -n1 || true
+            )"
+            EXISTING_RELEASE_FOR_TAG=false
+            if [[ -n "$EXISTING_TAG_ON_COMMIT" ]] && gh release view "$EXISTING_TAG_ON_COMMIT" >/dev/null 2>&1; then
+              EXISTING_RELEASE_FOR_TAG=true
+            fi
+
+            if [[ -n "$EXISTING_TAG_ON_COMMIT" ]]; then
+              echo "branch=$GIT_BRANCH_NAME" >> $GITHUB_OUTPUT
+              echo "tag=$EXISTING_TAG_ON_COMMIT" >> $GITHUB_OUTPUT
+              echo "reused_existing_release=$EXISTING_RELEASE_FOR_TAG" >> $GITHUB_OUTPUT
+            else
+              source ./script/create_release_tag_and_branch --channel $CHANNEL --branch-name "$GIT_BRANCH_NAME"
+              echo "branch=$(git branch --show-current)" >> $GITHUB_OUTPUT
+              echo "tag=$tag" >> $GITHUB_OUTPUT
+              echo "reused_existing_release=false" >> $GITHUB_OUTPUT
+            fi
           else
             echo "branch=$(git branch --show-current)" >> $GITHUB_OUTPUT
             # Use a fake version tag that will pass package validation.
             echo "tag=v0.$GITHUB_SHA" >> $GITHUB_OUTPUT
+            echo "reused_existing_release=false" >> $GITHUB_OUTPUT
           fi
         shell: bash
         env:
           CHANNEL: ${{ steps.get-config.outputs.channel }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub release
-        if: ${{ steps.set_publish.outputs.should_publish == 'true' }}
+        if: ${{ steps.set_publish.outputs.should_publish == 'true' && steps.create_branch_and_tag.outputs.reused_existing_release != 'true' }}
         id: create_release
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
@@ -275,15 +317,11 @@ jobs:
     runs-on: ${{ inputs.runner_macos }}
     needs: prepare_release
     if: ${{ inputs.build_macos != false }}
-    timeout-minutes: 60
+    timeout-minutes: 200
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: aarch64
-            dmg_name_suffix: arm64
-          - arch: x86_64
-            dmg_name_suffix: x86_64
+        include: ${{ fromJSON(inputs.build_macos_x86 && '[{"arch":"aarch64","dmg_name_suffix":"arm64"},{"arch":"x86_64","dmg_name_suffix":"x86_64"}]' || '[{"arch":"aarch64","dmg_name_suffix":"arm64"}]') }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -347,6 +385,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_app.outputs.dmg_path }}
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -391,12 +430,21 @@ jobs:
       # break the macOS framework directory structure.
       - name: Create tar archive with build artifacts
         run: |
-          tar czfv build-artifacts.tar.gz \
-            ${{ steps.bundle_app.outputs.binary_path }} \
-            ${{ steps.bundle_app.outputs.dock_tile_plugin_dir }} \
-            ${{ steps.bundle_app.outputs.dsym_path }} \
-            ${{ steps.bundle_app.outputs.dsym_realpath }} \
-            ${{ steps.bundle_app.outputs.frameworks_dir }}
+          ARTIFACTS=(
+            "${{ steps.bundle_app.outputs.binary_path }}"
+            "${{ steps.bundle_app.outputs.dock_tile_plugin_dir }}"
+            "${{ steps.bundle_app.outputs.dsym_path }}"
+          )
+
+          if [[ -n "${{ steps.bundle_app.outputs.dsym_realpath }}" ]] && [[ -e "${{ steps.bundle_app.outputs.dsym_realpath }}" ]]; then
+            ARTIFACTS+=("${{ steps.bundle_app.outputs.dsym_realpath }}")
+          fi
+
+          if [[ -n "${{ steps.bundle_app.outputs.frameworks_dir }}" ]] && [[ -e "${{ steps.bundle_app.outputs.frameworks_dir }}" ]]; then
+            ARTIFACTS+=("${{ steps.bundle_app.outputs.frameworks_dir }}")
+          fi
+
+          tar czfv build-artifacts.tar.gz "${ARTIFACTS[@]}"
 
       - name: Archive ${{ matrix.arch }} build artifacts for universal build
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -411,8 +459,8 @@ jobs:
     name: Build Release (macOS Universal)
     runs-on: ${{ inputs.runner_macos }}
     needs: [prepare_release, release_macos_single_arch]
-    if: ${{ inputs.build_macos != false }}
-    timeout-minutes: 60
+    if: ${{ inputs.build_macos != false && inputs.build_macos_x86 != false }}
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -509,6 +557,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_app.outputs.dmg_path }}
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add DMG to GitHub release assets (retry 1/2)
@@ -521,6 +570,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_app.outputs.dmg_path }}
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add DMG to GitHub release assets (retry 2/2)
@@ -531,6 +581,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_app.outputs.dmg_path }}
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -561,14 +612,12 @@ jobs:
     name: Build Release (macOS CLI ${{ matrix.arch }})
     runs-on: ${{ inputs.runner_macos }}
     needs: prepare_release
-    if: ${{ inputs.build_macos != false }}
-    timeout-minutes: 60
+    if: ${{ inputs.build_macos != false && inputs.build_cli != false }}
+    timeout-minutes: 200
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: aarch64
-          - arch: x86_64
+        include: ${{ fromJSON(inputs.build_macos_x86 && '[{"arch":"aarch64"},{"arch":"x86_64"}]' || '[{"arch":"aarch64"}]') }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -628,6 +677,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: oz-${{ steps.get-config.outputs.channel }}-macos-${{ matrix.arch }}.tar.gz
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -672,12 +722,15 @@ jobs:
     runs-on: ${{ inputs.runner_linux_x86 }}
     needs: prepare_release
     if: ${{ inputs.build_linux != false }}
-    timeout-minutes: 60
+    timeout-minutes: 200
     env:
       # Automatically extract AppImages before running them instead of mounting
       # them with FUSE, which isn't available on GitHub runners (and this is
       # easier and less error-prone than trying to install it).
       APPIMAGE_EXTRACT_AND_RUN: "1"
+      # Cache the generated settings schema so prepare_bundled_resources only
+      # compiles and runs the generator once per job instead of per-package.
+      SETTINGS_SCHEMA_CACHE: ${{ github.workspace }}/.settings_schema_cache.json
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -805,6 +858,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_app.outputs.packages_dir }}/*
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload packages to Google Cloud Storage
@@ -833,8 +887,12 @@ jobs:
     name: Build Release (Linux CLI x86_64)
     runs-on: ${{ inputs.runner_linux_x86 }}
     needs: prepare_release
-    if: ${{ inputs.build_linux != false }}
-    timeout-minutes: 60
+    if: ${{ inputs.build_linux != false && inputs.build_cli != false }}
+    timeout-minutes: 200
+    env:
+      # Cache the generated settings schema so prepare_bundled_resources only
+      # compiles and runs the generator once per job instead of per-package.
+      SETTINGS_SCHEMA_CACHE: ${{ github.workspace }}/.settings_schema_cache.json
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -960,6 +1018,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_cli.outputs.packages_dir }}/*
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload CLI packages to Google Cloud Storage
@@ -983,6 +1042,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: oz-${{ steps.get-config.outputs.channel }}-linux-x86_64.tar.gz
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload CLI tar.gz to Google Cloud Storage
@@ -1008,12 +1068,15 @@ jobs:
     runs-on: ${{ inputs.runner_linux_arm }}
     needs: prepare_release
     if: ${{ inputs.build_linux != false && inputs.build_linux_arm != false }}
-    timeout-minutes: 60
+    timeout-minutes: 200
     env:
       # Automatically extract AppImages before running them instead of mounting
       # them with FUSE, which isn't available on GitHub runners (and this is
       # easier and less error-prone than trying to install it).
       APPIMAGE_EXTRACT_AND_RUN: "1"
+      # Cache the generated settings schema so prepare_bundled_resources only
+      # compiles and runs the generator once per job instead of per-package.
+      SETTINGS_SCHEMA_CACHE: ${{ github.workspace }}/.settings_schema_cache.json
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -1106,8 +1169,8 @@ jobs:
     name: Build Release (Linux CLI ARM)
     runs-on: ${{ inputs.runner_linux_arm }}
     needs: prepare_release
-    if: ${{ inputs.build_linux != false && inputs.build_linux_arm != false }}
-    timeout-minutes: 60
+    if: ${{ inputs.build_linux != false && inputs.build_linux_arm != false && inputs.build_cli != false }}
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -1184,8 +1247,12 @@ jobs:
     name: Bundle Release (Linux ARM)
     runs-on: ${{ inputs.runner_linux_x86 }}
     needs: [ prepare_release, build_linux_arm_binaries, build_linux_cli_arm_binaries ]
-    if: ${{ inputs.build_linux != false && inputs.build_linux_arm != false }}
-    timeout-minutes: 60
+    if: ${{ always() && inputs.build_linux != false && inputs.build_linux_arm != false && needs.build_linux_arm_binaries.result == 'success' && (inputs.build_cli == false || needs.build_linux_cli_arm_binaries.result == 'success') }}
+    timeout-minutes: 200
+    env:
+      # Cache the generated settings schema so prepare_bundled_resources only
+      # compiles and runs the generator once per job instead of per-package.
+      SETTINGS_SCHEMA_CACHE: ${{ github.workspace }}/.settings_schema_cache.json
     steps:
       - name: Checkout sources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -1323,18 +1390,21 @@ jobs:
       # Bundle the CLI packages
 
       - name: Download CLI build artifacts
+        if: ${{ inputs.build_cli != false }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: built-arm64-linux-cli-${{steps.get-config.outputs.channel}}
 
       - name: Unpackage CLI binaries
         id: unpackage_cli_binaries
+        if: ${{ inputs.build_cli != false }}
         run: |
           tar xzvf binaries-cli.tar.gz
         shell: bash
 
       - name: Bundle deb/rpm CLI packages
         id: bundle_cli
+        if: ${{ inputs.build_cli != false }}
         run: |
           script/bundle --channel $CHANNEL --skip-build --arch aarch64 --packages deb,rpm --artifact cli
         shell: bash
@@ -1343,11 +1413,13 @@ jobs:
           GIT_RELEASE_TAG: ${{ needs.prepare_release.outputs.release_tag }}
 
       - name: Package CLI tar.gz
+        if: ${{ inputs.build_cli != false }}
         run: |
           cp ${{ steps.bundle_cli.outputs.executable_path }} oz-${{ steps.get-config.outputs.channel }}
           tar czf oz-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz oz-${{ steps.get-config.outputs.channel }} -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
 
       - name: Bundle Arch Linux CLI package
+        if: ${{ inputs.build_cli != false }}
         uses: ./.github/actions/bundle_arch_package
         with:
           channel: ${{ steps.get-config.outputs.channel }}
@@ -1356,7 +1428,7 @@ jobs:
           artifact: cli
 
       - name: Upload CLI debugging symbols to Sentry
-        if: ${{ needs.prepare_release.outputs.should_publish == 'true' && inputs.publish_sentry == true }}
+        if: ${{ inputs.build_cli != false && needs.prepare_release.outputs.should_publish == 'true' && inputs.publish_sentry == true }}
         run: |
           script/sentry_upload_dif.sh
         env:
@@ -1368,13 +1440,17 @@ jobs:
       - name: Sign Arch Linux packages
         if: ${{ inputs.sign_linux == true }}
         run: |
-          # We technically only need to run `sign_arch_packages` once, as $APP_PKGDIR and $CLI_PKGDIR should be the same.
+          # We technically only need to run `sign_arch_packages` once when CLI packages exist,
+          # as $APP_PKGDIR and $CLI_PKGDIR should be the same.
           ./script/linux/sign_arch_packages "$APP_PKGDIR"
-          ./script/linux/sign_arch_packages "$CLI_PKGDIR"
+          if [[ "${BUILD_CLI}" == "true" ]]; then
+            ./script/linux/sign_arch_packages "$CLI_PKGDIR"
+          fi
         shell: bash
         env:
           APP_PKGDIR: ${{ steps.bundle_app.outputs.packages_dir }}
           CLI_PKGDIR: ${{ steps.bundle_cli.outputs.packages_dir }}
+          BUILD_CLI: ${{ inputs.build_cli }}
 
       - name: Add app packages to GitHub release assets
         if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
@@ -1382,22 +1458,25 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_app.outputs.packages_dir }}/*
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add CLI packages to GitHub release assets
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
-        if: ${{ needs.prepare_release.outputs.should_publish == 'true' && steps.bundle_cli.outputs.packages_dir != steps.bundle_app.outputs.packages_dir }}
+        if: ${{ inputs.build_cli != false && needs.prepare_release.outputs.should_publish == 'true' && steps.bundle_cli.outputs.packages_dir != steps.bundle_app.outputs.packages_dir }}
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_cli.outputs.packages_dir }}/*
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add CLI tar.gz to GitHub release assets
-        if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
+        if: ${{ inputs.build_cli != false && needs.prepare_release.outputs.should_publish == 'true' }}
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: oz-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload app packages to Google Cloud Storage
@@ -1415,7 +1494,7 @@ jobs:
 
       - name: Upload CLI packages to Google Cloud Storage
         uses: google-github-actions/upload-cloud-storage@e95a15f226403ed658d3e65f40205649f342ba2c # v1
-        if: ${{ needs.prepare_release.outputs.should_publish == 'true' && inputs.publish_gcs == true && steps.bundle_cli.outputs.packages_dir != steps.bundle_app.outputs.packages_dir }}
+        if: ${{ inputs.build_cli != false && needs.prepare_release.outputs.should_publish == 'true' && inputs.publish_gcs == true && steps.bundle_cli.outputs.packages_dir != steps.bundle_app.outputs.packages_dir }}
         with:
           path: ${{ steps.bundle_cli.outputs.packages_dir }}
           parent: false
@@ -1427,7 +1506,7 @@ jobs:
             cache-control: ${{ steps.get-config.outputs.gcs_cache_control_value }}
 
       - name: Upload CLI tar.gz to Google Cloud Storage
-        if: ${{ needs.prepare_release.outputs.should_publish == 'true' && inputs.publish_gcs == true }}
+        if: ${{ inputs.build_cli != false && needs.prepare_release.outputs.should_publish == 'true' && inputs.publish_gcs == true }}
         uses: google-github-actions/upload-cloud-storage@e95a15f226403ed658d3e65f40205649f342ba2c # v1
         with:
           path: oz-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
@@ -1442,14 +1521,14 @@ jobs:
           name: release-linux-arm64-${{ steps.get-config.outputs.channel }}
           path: |
             ${{ steps.bundle_app.outputs.packages_dir }}
-            oz-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
+            ${{ inputs.build_cli != false && format('oz-{0}-linux-aarch64.tar.gz', steps.get-config.outputs.channel) || '' }}
 
   release_web:
     name: Build Release (Web)
     runs-on: ${{ inputs.runner_web }}
     needs: prepare_release
     if: ${{ inputs.build_web != false }}
-    timeout-minutes: 60
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -1509,6 +1588,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_app.outputs.packages_dir }}/*
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -1563,7 +1643,7 @@ jobs:
     runs-on: ${{ inputs.runner_windows }}
     needs: prepare_release
     if: ${{ inputs.build_windows != false }}
-    timeout-minutes: 150
+    timeout-minutes: 200
     strategy:
       matrix:
         include: ${{ fromJSON(inputs.build_windows_arm && '[{"arch":"x64"},{"arch":"arm64"}]' || '[{"arch":"x64"}]') }}
@@ -1703,6 +1783,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare_release.outputs.release_tag }}
           files: ${{ steps.bundle_app.outputs.installer_path }}
+          overwrite_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -1752,10 +1833,10 @@ jobs:
           if [[ ${{ needs.release_macos_single_arch.result }} != 'success' ]]; then
               FAILED+=("MacOS Single Arch")
           fi
-          if [[ ${{ needs.release_macos_universal.result }} != 'success' ]]; then
+          if [[ "${{ inputs.build_macos_x86 }}" == "true" && ${{ needs.release_macos_universal.result }} != 'success' ]]; then
               FAILED+=("MacOS Universal")
           fi
-          if [[ ${{ needs.release_macos_cli.result }} != 'success' ]]; then
+          if [[ "${{ inputs.build_cli }}" == "true" && ${{ needs.release_macos_cli.result }} != 'success' ]]; then
             FAILED+=('MacOS CLI')
           fi
           if [[ ${{ needs.release_linux_x86.result }} != 'success' ]]; then
@@ -1764,7 +1845,7 @@ jobs:
           if [[ ${{ needs.release_linux_arm.result }} != 'success' ]]; then
               FAILED+=("Linux ARM64")
           fi
-          if [[ ${{ needs.release_linux_cli_x86.result }} != 'success' ]]; then
+          if [[ "${{ inputs.build_cli }}" == "true" && ${{ needs.release_linux_cli_x86.result }} != 'success' ]]; then
               FAILED+=("Linux CLI x86_64")
           fi
           if [[ ${{ needs.release_web.result }} != 'success' && ${{ inputs.channel }} != 'preview' ]]; then

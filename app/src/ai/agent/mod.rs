@@ -16,8 +16,6 @@ pub(super) mod util;
 pub use ai::agent::{action::*, action_result::*, AIAgentCitation, FileLocations};
 use warp_core::features::FeatureFlag;
 
-#[cfg(test)]
-mod suggestion_test;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::block::view_impl::output::are_all_text_sections_empty;
 use crate::ai::skills::SkillDescriptor;
@@ -27,6 +25,7 @@ use crate::code_review::comments::{
 };
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::server::server_api::AIApiError;
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 use ai::skills::ParsedSkill;
 use chrono::{DateTime, Local, TimeDelta};
 use comment::ReviewComment;
@@ -2454,6 +2453,7 @@ pub enum AIAgentInput {
 
     SummarizeConversation {
         prompt: Option<String>,
+        context: Arc<[AIAgentContext]>,
     },
 
     /// Invoke a skill. The skill content is passed as instructions to the agent.
@@ -2499,6 +2499,15 @@ pub enum AIAgentInput {
         trigger: Option<PassiveSuggestionTrigger>,
         suggestion: PassiveSuggestionResultType,
         context: Arc<[AIAgentContext]>,
+    },
+
+    /// Piggybacked orchestration config update from the plan card.
+    /// Sent on the next outbound request after the user edits the
+    /// config block or toggles approval.
+    OrchestrationConfigUpdate {
+        plan_id: String,
+        config: OrchestrationConfig,
+        status: OrchestrationConfigStatus,
     },
 }
 
@@ -2593,6 +2602,7 @@ impl Display for AIAgentInput {
                 write!(f, "EventsFromAgents({} events)", events.len())
             }
             Self::PassiveSuggestionResult { .. } => write!(f, "PassiveSuggestionResult"),
+            Self::OrchestrationConfigUpdate { .. } => write!(f, "OrchestrationConfigUpdate"),
         }
     }
 }
@@ -2650,7 +2660,8 @@ impl AIAgentInput {
             | Self::StartFromAmbientRunPrompt { .. }
             | Self::MessagesReceivedFromAgents { .. }
             | Self::EventsFromAgents { .. }
-            | Self::PassiveSuggestionResult { .. } => None,
+            | Self::PassiveSuggestionResult { .. }
+            | Self::OrchestrationConfigUpdate { .. } => None,
         }
     }
 
@@ -2745,9 +2756,10 @@ impl AIAgentInput {
             | Self::InvokeSkill { context, .. }
             | Self::StartFromAmbientRunPrompt { context, .. }
             | Self::PassiveSuggestionResult { context, .. } => Some(context),
-            Self::SummarizeConversation { .. }
-            | Self::MessagesReceivedFromAgents { .. }
-            | Self::EventsFromAgents { .. } => None,
+            Self::SummarizeConversation { context, .. } => Some(context),
+            Self::MessagesReceivedFromAgents { .. }
+            | Self::EventsFromAgents { .. }
+            | Self::OrchestrationConfigUpdate { .. } => None,
         }
     }
 
@@ -2778,7 +2790,8 @@ impl AIAgentInput {
             | Self::StartFromAmbientRunPrompt { .. }
             | Self::MessagesReceivedFromAgents { .. }
             | Self::EventsFromAgents { .. }
-            | Self::PassiveSuggestionResult { .. } => None,
+            | Self::PassiveSuggestionResult { .. }
+            | Self::OrchestrationConfigUpdate { .. } => None,
         }
     }
 
@@ -3060,5 +3073,5 @@ impl Suggestions {
 }
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

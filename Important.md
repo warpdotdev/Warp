@@ -1,3 +1,11 @@
+# 常用命令
+
+```pwsh
+.\script\windows\bundle.ps1 -Channel oss -Arch x64 -ReleaseTag "$(git describe --tags --always)"
+
+.\script\create_github_release.ps1 -AssetPath .\script\windows\Output\WarpOssSetup.exe -DryRun
+```
+
 # Local OpenAI Web Search 约定
 
 `app/src/ai/agent/api/local_openai` 现在支持 OpenAI Responses API 的 built-in `web_search` tool，但这条能力不是通过 Warp 的 `ToolType` / `tool_calls.rs` 内建函数分发实现的，而是直接把 `{ "type": "web_search" }` 放进 Responses 请求的 `tools` 里。后续如果再看这块，不要去 `built_in_tool_schema()` 或 `parse_tool_call()` 里找 `web_search` 的 function tool 分支。

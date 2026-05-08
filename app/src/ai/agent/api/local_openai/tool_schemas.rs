@@ -1,6 +1,6 @@
 //! OpenAI function schema registry for Warp's built-in local backend tools.
 
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use warp_multi_agent_api as api;
 
 /// Returns the OpenAI function schema for a built-in Warp tool, if one is exposed locally.
@@ -161,7 +161,7 @@ pub(super) fn built_in_tool_schema(tool_type: api::ToolType) -> Option<Value> {
             true,
         )),
         api::ToolType::FileGlob => None,
-        api::ToolType::FileGlob | api::ToolType::FileGlobV2 => Some(function_schema(
+        api::ToolType::FileGlobV2 => Some(function_schema(
             "file_glob",
             "Usage:\n- Use this tool when you need to find files by name patterns rather than content.\n- Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\".\n- Does not match directories (like `find -type f`).",
             json!({

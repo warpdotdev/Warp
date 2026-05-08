@@ -1928,6 +1928,7 @@ impl EnvironmentsPageWidget {
 
             if should_render_share_button {
                 let share_ui_builder = appearance.ui_builder().clone();
+                let share_tooltip = crate::i18n::tr_static(app, "Share").to_string();
                 let share_button_element = if is_card_hovered {
                     icon_button_with_color(
                         appearance,
@@ -1938,7 +1939,7 @@ impl EnvironmentsPageWidget {
                     )
                     .with_tooltip(move || {
                         share_ui_builder
-                            .tool_tip("Share".to_string())
+                            .tool_tip(share_tooltip.clone())
                             .build()
                             .finish()
                     })
@@ -1963,6 +1964,7 @@ impl EnvironmentsPageWidget {
             }
 
             let edit_ui_builder = appearance.ui_builder().clone();
+            let edit_tooltip = crate::i18n::tr_static(app, "Edit").to_string();
             let mut edit_button = icon_button_with_color(
                 appearance,
                 Icon::Pencil,
@@ -1974,7 +1976,7 @@ impl EnvironmentsPageWidget {
             if is_card_hovered {
                 edit_button = edit_button.with_tooltip(move || {
                     edit_ui_builder
-                        .tool_tip("Edit".to_string())
+                        .tool_tip(edit_tooltip.clone())
                         .build()
                         .finish()
                 });

@@ -16,7 +16,7 @@ use crate::{
 /// Renders a pending user query block with dimmed text and a "Queued" badge.
 /// Displayed when a follow-up prompt is queued via `/fork-and-compact <prompt>`,
 /// `/compact-and <prompt>`, `/queue <prompt>`, or for the initial prompt of a
-/// non-oz Cloud Mode run waiting for its harness CLI to start.
+/// Cloud Mode run waiting for its real shared-session transcript query to arrive.
 pub struct PendingUserQueryBlock {
     prompt: String,
     user_display_name: String,
@@ -35,18 +35,21 @@ impl PendingUserQueryBlock {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let close_button = show_close_button.then(|| {
-            ctx.add_typed_action_view(|_| {
-                ActionButton::new("Remove queued prompt", NakedTheme)
-                    .with_icon(Icon::X)
-                    .with_size(ButtonSize::XSmall)
-                    .on_click(|ctx| {
-                        ctx.dispatch_typed_action(PendingUserQueryBlockAction::Dismiss);
-                    })
+            ctx.add_typed_action_view(|ctx| {
+                ActionButton::new(
+                    crate::i18n::tr_static(ctx, "Remove queued prompt"),
+                    NakedTheme,
+                )
+                .with_icon(Icon::X)
+                .with_size(ButtonSize::XSmall)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(PendingUserQueryBlockAction::Dismiss);
+                })
             })
         });
         let send_now_button = show_send_now_button.then(|| {
-            ctx.add_typed_action_view(|_| {
-                ActionButton::new("Send now", NakedTheme)
+            ctx.add_typed_action_view(|ctx| {
+                ActionButton::new(crate::i18n::tr_static(ctx, "Send now"), NakedTheme)
                     .with_icon(Icon::Play)
                     .with_size(ButtonSize::XSmall)
                     .on_click(|ctx| {

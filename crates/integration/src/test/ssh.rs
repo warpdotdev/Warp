@@ -9,9 +9,9 @@ use warp::{
         step::new_step_with_default_assertions,
         subshell::{
             accept_tmux_install, assert_subshell_banner_is_showing,
-            assert_subshell_is_bootstrapped, enter_ssh_command, enter_ssh_password,
-            run_exit_command, setup_gcloud_sdk, trigger_subshell_bootstrap,
-            wait_for_password_prompt,
+            assert_subshell_is_bootstrapped, enter_ssh_command,
+            enter_ssh_command_with_remote_shell_override, enter_ssh_password, run_exit_command,
+            setup_gcloud_sdk, trigger_subshell_bootstrap, wait_for_password_prompt,
         },
         terminal::{
             assert_active_block_output_for_single_terminal_in_tab,
@@ -298,6 +298,33 @@ generate_can_bootstrap_tmux_ssh_test_for_shell!(test_install_tmux_ssh_into_zsh, 
 generate_long_running_block_ssh_test_for_shell!(test_ssh_into_fish, "fish", prompt_regex: r"\nfish@ubuntu-14-04 ~>$");
 generate_long_running_block_ssh_test_for_shell!(test_ssh_into_sh, "sh", prompt_regex: r"\n\$ $");
 generate_long_running_block_ssh_test_for_shell!(test_ssh_into_ash, "ash", prompt_regex: r"\n\$ $");
+
+/// Tests that `ssh ... -t '<shell --login>'` sessions are detected as interactive SSH.
+pub fn test_ssh_with_remote_shell_command_override() -> Builder {
+    new_builder()
+        // TODO(CORE-2333) PowerShell has no SSH wrapper.
+        .set_should_run_test(|| {
+            let (starter, _) = current_shell_starter_and_version();
+            starter.shell_type() != ShellType::PowerShell
+        })
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(setup_gcloud_sdk())
+        .with_step(enter_ssh_command_with_remote_shell_override(
+            "bash",
+            "zsh --login",
+        ))
+        .with_step(wait_for_password_prompt(0, "bash"))
+        .with_step(enter_ssh_password())
+        .with_step(assert_subshell_banner_is_showing())
+        .with_step(trigger_subshell_bootstrap())
+        .with_step(assert_subshell_is_bootstrapped(0, 0))
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(
+            new_step_with_default_assertions("Assert active block is part of a remote session")
+                .add_assertion(assert_active_block_is_remote("bash", "ubuntu-14-04")),
+        )
+        .with_step(verify_login_shell("zsh"))
+}
 
 /// Tests a regression with the startup shell setting and SSH proxies.
 /// See WAR-6337 for details - if `$SHELL` is not set to a valid executable file

@@ -33,10 +33,28 @@ eval set -- "$PARAMS"
 RELEASE_BRANCH_PREFIX="${CHANNEL}_release"
 
 git fetch --all --tags
+CURRENT_COMMIT="$(git rev-parse HEAD^{commit})"
+EXISTING_TAG_ON_COMMIT="$(
+  git tag --points-at "$CURRENT_COMMIT" \
+    | grep "\.${CHANNEL}_[0-9][0-9]$" \
+    | sort -r --version-sort \
+    | head -n1 || true
+)"
+
+finish_success() {
+    export tag
+    echo "$tag"
+    return 0 2>/dev/null || exit 0
+}
 
 if [[ "$GIT_BRANCH_NAME" == "$RELEASE_BRANCH_PREFIX/"* ]]; then
     echo >&2  "Already on release branch $GIT_BRANCH_NAME, not creating new one."
-    tag=$(git tag | grep "${GIT_BRANCH_NAME#"$RELEASE_BRANCH_PREFIX/"}" | sort -r --version-sort | head -n1)
+    tag="$(
+        git tag \
+          | grep "${GIT_BRANCH_NAME#"$RELEASE_BRANCH_PREFIX/"}" \
+          | sort -r --version-sort \
+          | head -n1 || true
+    )"
     echo >&2 "Current tag on branch is $tag"
     if git rev-parse "$tag" >/dev/null 2>&1; then
         # Tag already exists, increase the RC number
@@ -51,12 +69,18 @@ if [[ "$GIT_BRANCH_NAME" == "$RELEASE_BRANCH_PREFIX/"* ]]; then
         echo >&2 "Creating tag $tag"
         git tag "$tag"
         git push origin "$tag"
-        echo "$tag"
+        finish_success
     else
         echo >&2 "No tag found on release branch, something is wrong"
         exit 1
     fi
 else
+    if [[ -n "$EXISTING_TAG_ON_COMMIT" ]]; then
+        echo >&2 "Found existing tag $EXISTING_TAG_ON_COMMIT on current commit, reusing it."
+        tag="$EXISTING_TAG_ON_COMMIT"
+        finish_success
+    fi
+
     # Creating release branch and new tag and version _00
     date_formatted=$(date +'%Y.%m.%d.%H.%M')
     tag="v0.$date_formatted.${CHANNEL}_00"
@@ -68,7 +92,5 @@ else
     echo >&2 "Creating release branch $RELEASE_BRANCH_PREFIX/$release_branch_name"
     git checkout -b "$RELEASE_BRANCH_PREFIX/$release_branch_name"
     git push -u origin "$RELEASE_BRANCH_PREFIX/$release_branch_name"
-    echo "$tag"
+    finish_success
 fi
-
-export tag

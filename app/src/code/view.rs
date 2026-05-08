@@ -58,6 +58,7 @@ use warpui::{
 };
 
 use crate::{
+    i18n::{self, I18nKey},
     menu::{MenuItem, MenuItemFields},
     notebooks::file::{is_markdown_file, MarkdownDisplayMode},
     search::{files::icon::icon_from_file_path, ItemHighlightState},
@@ -162,6 +163,11 @@ pub enum CodeViewAction {
     ToggleMaximized,
     #[cfg(feature = "local_fs")]
     CopyFilePath,
+    /// Open the active code tab's file in the platform's file manager
+    /// (Finder on macOS, Explorer on Windows). No-op when the active tab has
+    /// no resolvable local path.
+    #[cfg(feature = "local_fs")]
+    RevealInFinder,
     #[cfg(feature = "local_fs")]
     RenderMarkdown,
     DragOverIndex {
@@ -892,24 +898,31 @@ impl CodeView {
 
     fn display_load_failure(window_id: WindowId, ctx: &mut ViewContext<Self>) {
         ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast = DismissibleToast::error(String::from("Failed to load file."))
-                .with_object_id("failed_to_load_file".to_string());
+            let toast = DismissibleToast::error(String::from(crate::i18n::tr_static(
+                ctx,
+                "Failed to load file.",
+            )))
+            .with_object_id("failed_to_load_file".to_string());
             toast_stack.add_ephemeral_toast(toast, window_id, ctx);
         });
     }
 
     fn display_save_failure(window_id: WindowId, ctx: &mut ViewContext<Self>) {
         ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast = DismissibleToast::error(String::from("Failed to save file."))
-                .with_object_id("failed_to_save_file".to_string());
+            let toast = DismissibleToast::error(String::from(crate::i18n::tr_static(
+                ctx,
+                "Failed to save file.",
+            )))
+            .with_object_id("failed_to_save_file".to_string());
             toast_stack.add_ephemeral_toast(toast, window_id, ctx);
         });
     }
 
     fn display_save_success(window_id: WindowId, ctx: &mut ViewContext<Self>) {
         ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast = DismissibleToast::success(String::from("File saved."))
-                .with_object_id("file_saved".to_string());
+            let toast =
+                DismissibleToast::success(String::from(crate::i18n::tr_static(ctx, "File saved.")))
+                    .with_object_id("file_saved".to_string());
             toast_stack.add_ephemeral_toast(toast, window_id, ctx);
         });
     }
@@ -1037,7 +1050,7 @@ impl CodeView {
                                     ButtonVariant::Outlined,
                                     tab.mouse_state_handles.reject_mouse_state.clone(),
                                 )
-                                .with_text_label("Reject".to_string())
+                                .with_text_label(i18n::tr(app, I18nKey::CommonReject).to_string())
                                 .build()
                                 .on_click(|ctx, _, _| {
                                     ctx.dispatch_typed_action(CodeViewAction::RejectPendingDiffs)
@@ -1055,7 +1068,9 @@ impl CodeView {
                                     ButtonVariant::Outlined,
                                     tab.mouse_state_handles.accept_mouse_state.clone(),
                                 )
-                                .with_text_label("Accept and save".to_string())
+                                .with_text_label(
+                                    i18n::tr(app, I18nKey::CodeAcceptAndSave).to_string(),
+                                )
                                 .build()
                                 .on_click(|ctx, _, _| {
                                     ctx.dispatch_typed_action(
@@ -1943,9 +1958,12 @@ impl CodeView {
         };
 
         let mut items = vec![
-            MenuItemFields::new_with_label("Close saved", &format!("{modifier_keys} U"))
-                .with_on_select_action(CodeViewAction::CloseSaved)
-                .into_item(),
+            MenuItemFields::new_with_label(
+                i18n::tr(ctx, I18nKey::CodeCloseSaved),
+                &format!("{modifier_keys} U"),
+            )
+            .with_on_select_action(CodeViewAction::CloseSaved)
+            .into_item(),
             MenuItemFields::toggle_pane_action(is_maximized)
                 .with_on_select_action(CodeViewAction::ToggleMaximized)
                 .into_item(),
@@ -1953,16 +1971,26 @@ impl CodeView {
 
         #[cfg(feature = "local_fs")]
         if let Some(path) = self.local_path(ctx) {
+            let reveal_label = if cfg!(target_os = "macos") {
+                "Reveal in Finder"
+            } else if cfg!(target_os = "windows") {
+                "Reveal in Explorer"
+            } else {
+                "Reveal in file manager"
+            };
             items.extend([
                 MenuItem::Separator,
-                MenuItemFields::new("Copy file path")
+                MenuItemFields::new(i18n::tr(ctx, I18nKey::CodeCopyFilePath))
                     .with_on_select_action(CodeViewAction::CopyFilePath)
+                    .into_item(),
+                MenuItemFields::new(reveal_label)
+                    .with_on_select_action(CodeViewAction::RevealInFinder)
                     .into_item(),
             ]);
 
             if is_markdown_file(&path) {
                 items.push(
-                    MenuItemFields::new("View Markdown preview")
+                    MenuItemFields::new(i18n::tr(ctx, I18nKey::CodeViewMarkdownPreview))
                         .with_on_select_action(CodeViewAction::RenderMarkdown)
                         .into_item(),
                 );
@@ -2117,6 +2145,16 @@ impl TypedActionView for CodeView {
                 if let Some(path) = self.local_path(ctx) {
                     ctx.clipboard()
                         .write(ClipboardContent::plain_text(path.display().to_string()));
+                }
+            }
+            #[cfg(feature = "local_fs")]
+            CodeViewAction::RevealInFinder => {
+                if let Some(path) = self.local_path(ctx) {
+                    ctx.open_file_path_in_explorer(&path);
+                } else {
+                    log::warn!(
+                        "Reveal in Finder requested, but the active code tab has no local file path"
+                    );
                 }
             }
             #[cfg(feature = "local_fs")]

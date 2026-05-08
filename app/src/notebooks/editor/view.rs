@@ -465,7 +465,7 @@ pub fn init(app: &mut AppContext) {
         .with_key_binding("ctrl-f"),
         EditableBinding::new(
             // This doesn't reuse the move_to_line_start naming from the terminal input editor to
-            // distinguish between soft-wrappped line and hard-wrapped line (paragraph) movement.
+            // distinguish between soft-wrapped line and hard-wrapped line (paragraph) movement.
             "editor_view:move_to_paragraph_start",
             "Move to start of paragraph",
             EditorViewAction::MoveToParagraphStart,
@@ -962,7 +962,7 @@ struct MouseStateHandles {
     secondary_link_mouse_handle: MouseStateHandle,
 }
 
-// Represents the states of an ongoing mouse event. Note that these states are mutally exclusive:
+// Represents the states of an ongoing mouse event. Note that these states are mutually exclusive:
 // If one is selecting, they couldn't be initiating task list toggling at the same time.
 enum OngoingMouseEvent {
     Selecting,
@@ -1880,6 +1880,18 @@ impl RichTextEditorView {
         };
 
         if let Some(url) = url {
+            if url.starts_with('#')
+                && (cmd || matches!(self.interaction_state(ctx), InteractionState::Selectable))
+            {
+                let scrolled = self
+                    .model
+                    .update(ctx, |model, ctx| model.scroll_to_matching_header(&url, ctx));
+                if scrolled {
+                    self.open_link = None;
+                    ctx.notify();
+                    return;
+                }
+            }
             // In read-only comment chips (Selectable), open the link directly on
             // click instead of showing a tooltip.
             if cmd || matches!(self.interaction_state(ctx), InteractionState::Selectable) {
@@ -2289,13 +2301,17 @@ impl RichTextEditorView {
 
         // Common secondary link actions:
         let ui_builder = appearance.ui_builder().clone();
+        let copy_link_tooltip = crate::i18n::tr_static(ctx, "Copy link").to_owned();
         tool_tip.add_child(
             Container::new(
                 appearance
                     .ui_builder()
                     .copy_button(12., self.mouse_states.copy_link_mouse_handle.clone())
                     .with_tooltip(move || {
-                        ui_builder.tool_tip("Copy link".to_owned()).build().finish()
+                        ui_builder
+                            .tool_tip(copy_link_tooltip.clone())
+                            .build()
+                            .finish()
                     })
                     .build()
                     .on_click(|ctx, _, _| ctx.dispatch_typed_action(EditorViewAction::CopyLink))
@@ -2347,7 +2363,7 @@ impl RichTextEditorView {
                             ButtonVariant::Text,
                             self.mouse_states.edit_link_mouse_handle.clone(),
                         )
-                        .with_text_label("Edit".to_string())
+                        .with_text_label(crate::i18n::tr_static(ctx, "Edit").to_string())
                         .build()
                         .on_click(|ctx, _, _| ctx.dispatch_typed_action(EditorViewAction::EditLink))
                         .finish(),
@@ -2746,7 +2762,10 @@ impl TypedActionView for RichTextEditorView {
                 }
                 let window_id = ctx.window_id();
                 crate::workspace::ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::default(String::from("Link copied"));
+                    let toast = DismissibleToast::default(String::from(crate::i18n::tr_static(
+                        ctx,
+                        "Link copied",
+                    )));
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
                 ctx.notify();

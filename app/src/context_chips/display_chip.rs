@@ -10,6 +10,7 @@ use crate::ai::{
 use crate::code::editor::{add_color, remove_color};
 use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;
 use crate::code_review::diff_state::DiffStats;
+use crate::context_chips::git_branch_on_click::GitBranchOnClickValue;
 use crate::context_chips::node_version_popup::{NodeVersionPopupEvent, NodeVersionPopupView};
 use crate::context_chips::spacing;
 use crate::settings::{AISettings, AISettingsChangedEvent, InputSettings};
@@ -443,17 +444,32 @@ pub struct DisplayChipConfig {
 #[derive(Debug, Clone)]
 pub struct GitBranch(String);
 
+impl GitBranch {
+    fn command(&self) -> String {
+        format_git_branch_command(&self.0)
+    }
+
+    fn icon_for_menu(&self) -> Icon {
+        let branch = GitBranchOnClickValue::decode(&self.0);
+        if branch.is_linked_worktree {
+            Icon::Dataflow02
+        } else {
+            Icon::GitBranch
+        }
+    }
+}
+
 impl GenericMenuItem for GitBranch {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
     fn name(&self) -> String {
-        self.0.clone()
+        GitBranchOnClickValue::decode(&self.0).branch_name
     }
 
     fn icon(&self, _app: &AppContext) -> Option<Icon> {
-        Some(Icon::GitBranch)
+        Some(self.icon_for_menu())
     }
 
     fn action_data(&self) -> String {
@@ -557,7 +573,7 @@ impl DisplayChip {
                         };
 
                         ctx.emit(PromptDisplayChipEvent::TryExecuteCommand(
-                            format_git_branch_command(&git_branch.name()),
+                            git_branch.command(),
                         ));
                         me.close_git_branch_menu(ctx);
                         ctx.notify();
@@ -1009,6 +1025,8 @@ impl DisplayChip {
             !self.is_shared_session_viewer && !self.is_cli_agent_session_active(app);
         let is_in_agent_view = self.is_in_agent_view;
         let chip_text = self.text.clone();
+        let change_git_branch_tooltip =
+            crate::i18n::tr_static(app, "Change git branch").to_string();
         let hover = Hoverable::new(self.mouse_state.clone(), move |state| {
             let hovered = state.is_hovered() && is_interactive;
             let mut config =
@@ -1023,7 +1041,7 @@ impl DisplayChip {
             if state.is_hovered() && is_interactive && !menu_open {
                 let tool_tip = appearance
                     .ui_builder()
-                    .tool_tip("Change git branch".to_string())
+                    .tool_tip(change_git_branch_tooltip.clone())
                     .build()
                     .finish();
                 stack.add_positioned_overlay_child(tool_tip, udi_tooltip_positioning());
@@ -1076,6 +1094,8 @@ impl DisplayChip {
             github_pr_display_text_from_url(&self.text).unwrap_or_else(|| self.text.clone());
         let url = self.text.clone();
         let is_in_agent_view = self.is_in_agent_view;
+        let view_pull_request_tooltip =
+            crate::i18n::tr_static(app, "View pull request").to_string();
 
         let hover = Hoverable::new(self.mouse_state.clone(), move |state| {
             let mut config =
@@ -1090,7 +1110,7 @@ impl DisplayChip {
             if state.is_hovered() {
                 let tool_tip = appearance
                     .ui_builder()
-                    .tool_tip("View pull request".to_string())
+                    .tool_tip(view_pull_request_tooltip.clone())
                     .build()
                     .finish();
                 stack.add_positioned_overlay_child(tool_tip, udi_tooltip_positioning());
@@ -1238,6 +1258,10 @@ impl DisplayChip {
         // agent session or CLI agent session.
         let is_cli_agent_active = self.is_cli_agent_session_active(app);
         let allow_show_menu = show_menu && !is_in_active_ambient_agent && !is_cli_agent_active;
+        let change_working_directory_tooltip =
+            crate::i18n::tr_static(app, "Change working directory").to_string();
+        let working_directory_tooltip =
+            crate::i18n::tr_static(app, "Working directory").to_string();
 
         let button = if allow_show_menu {
             let chip_text = self.text.clone();
@@ -1263,7 +1287,7 @@ impl DisplayChip {
                 if state.is_hovered() {
                     let tool_tip = appearance
                         .ui_builder()
-                        .tool_tip("Change working directory".to_string())
+                        .tool_tip(change_working_directory_tooltip.clone())
                         .build()
                         .finish();
 
@@ -1310,7 +1334,7 @@ impl DisplayChip {
                 if state.is_hovered() && !is_cli_agent_active {
                     let tool_tip = appearance
                         .ui_builder()
-                        .tool_tip("Working directory".to_string())
+                        .tool_tip(working_directory_tooltip.clone())
                         .build()
                         .finish();
 
@@ -1774,12 +1798,31 @@ impl ActionButtonTheme for EnterAgentViewButton {
     }
 }
 
-fn format_change_directory_command(dir_name: &str) -> String {
-    format!("cd '{}'", dir_name.replace("'", "'\\'''"))
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace("'", "'\\''"))
 }
 
-pub fn format_git_branch_command(branch_name: &str) -> String {
-    format!("git checkout {branch_name}")
+fn format_change_directory_command(dir_name: &str) -> String {
+    format!("cd {}", shell_single_quote(dir_name))
+}
+
+pub fn format_git_branch_command(encoded_git_branch_on_click_value: &str) -> String {
+    let branch = GitBranchOnClickValue::decode(encoded_git_branch_on_click_value);
+    if let Some(worktree_path) = branch.worktree_path {
+        return format_change_directory_command(&worktree_path);
+    }
+
+    if branch.is_linked_worktree {
+        return format!(
+            "echo {}",
+            shell_single_quote(&format!(
+                "Branch '{}' is already checked out in another worktree, but Warp couldn't find its path.",
+                branch.branch_name
+            ))
+        );
+    }
+
+    format!("git checkout {}", shell_single_quote(&branch.branch_name))
 }
 
 pub(crate) fn chip_container(
@@ -1881,5 +1924,5 @@ pub fn udi_icon_size(appearance: &Appearance, app: &AppContext) -> f32 {
 }
 
 #[cfg(test)]
-#[path = "display_chip_test.rs"]
+#[path = "display_chip_tests.rs"]
 mod tests;

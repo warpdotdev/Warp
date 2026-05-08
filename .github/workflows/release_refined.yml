@@ -1,0 +1,255 @@
+name: Sync Upstream Stable Or Release Warp Refined
+
+on:
+  schedule:
+    # Forks cannot subscribe to upstream release events directly, so poll daily.
+    - cron: "15 8 * * *"
+  # push:
+  #   branches:
+  #     - master
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Sync upstream stable into master, or release the current master branch as OSS.
+        required: true
+        type: choice
+        default: release_current_master
+        options:
+          - sync_upstream
+          - release_current_master
+      build_linux:
+        description: Build Linux x86_64 artifacts.
+        required: true
+        type: boolean
+        default: false
+      build_linux_arm:
+        description: Build Linux ARM artifacts.
+        required: true
+        type: boolean
+        default: false
+      build_windows:
+        description: Build Windows artifacts.
+        required: true
+        type: boolean
+        default: true
+      build_windows_arm:
+        description: Build Windows ARM artifacts.
+        required: true
+        type: boolean
+        default: false
+      build_macos:
+        description: Build macOS artifacts.
+        required: true
+        type: boolean
+        default: false
+      build_macos_x86:
+        description: Build macOS x86_64 artifacts in addition to arm64.
+        required: true
+        type: boolean
+        default: false
+      build_web:
+        description: Build web artifacts.
+        required: true
+        type: boolean
+        default: false
+      build_cli:
+        description: Build CLI artifacts for supported platforms.
+        required: true
+        type: boolean
+        default: false
+      runner_linux_x86:
+        description: Runner label for Linux x86_64 jobs.
+        required: true
+        type: string
+        default: ubuntu-latest
+      runner_linux_arm:
+        description: Runner label for Linux ARM jobs.
+        required: true
+        type: string
+        default: ubuntu-24.04-arm
+      runner_windows:
+        description: Runner label for Windows jobs.
+        required: true
+        type: string
+        default: windows-latest
+      runner_macos:
+        description: Runner label for macOS jobs.
+        required: true
+        type: string
+        default: macos-latest
+      runner_web:
+        description: Runner label for web jobs.
+        required: true
+        type: string
+        default: ubuntu-22.04
+
+permissions:
+  contents: write
+
+concurrency:
+  group: master-release
+  cancel-in-progress: false
+
+jobs:
+  sync_upstream_stable:
+    name: Sync upstream stable into master
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'sync_upstream') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Merge latest upstream stable tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream https://github.com/warpdotdev/warp.git
+          else
+            git remote add upstream https://github.com/warpdotdev/warp.git
+          fi
+
+          UPSTREAM_TAG="$(
+            gh api repos/warpdotdev/warp/releases --paginate \
+              | jq -r '[.[] | select(.name | startswith("Stable Release "))] | sort_by(.created_at) | last | .tag_name'
+          )"
+          if [[ -z "$UPSTREAM_TAG" || "$UPSTREAM_TAG" == "null" ]]; then
+            echo "::error::Could not determine the latest upstream stable release tag."
+            exit 1
+          fi
+
+          git fetch upstream "refs/tags/$UPSTREAM_TAG"
+          UPSTREAM_COMMIT="$(git rev-parse FETCH_HEAD^{})"
+
+          if git merge-base --is-ancestor "$UPSTREAM_COMMIT" HEAD; then
+            echo "Latest upstream stable tag $UPSTREAM_TAG is already present on master."
+            exit 0
+          fi
+
+          git merge --no-ff --no-edit "$UPSTREAM_COMMIT"
+          git push origin HEAD:refs/heads/master
+
+  create_release:
+    name: Create OSS release from master
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'release_current_master') }}
+    uses: ./.github/workflows/create_release.yml
+    with:
+      channel: oss
+      source_ref: refs/heads/master
+      build_linux: ${{ github.event_name == 'workflow_dispatch' && inputs.build_linux || true }}
+      build_linux_arm: ${{ github.event_name == 'workflow_dispatch' && inputs.build_linux_arm || false }}
+      build_windows: ${{ github.event_name == 'workflow_dispatch' && inputs.build_windows || true }}
+      build_windows_arm: ${{ github.event_name == 'workflow_dispatch' && inputs.build_windows_arm || false }}
+      build_macos: ${{ github.event_name == 'workflow_dispatch' && inputs.build_macos || true }}
+      build_macos_x86: ${{ github.event_name == 'workflow_dispatch' && inputs.build_macos_x86 || false }}
+      build_web: ${{ github.event_name == 'workflow_dispatch' && inputs.build_web || false }}
+      build_cli: ${{ github.event_name == 'workflow_dispatch' && inputs.build_cli || false }}
+      should_publish: true
+      publish_sentry: false
+      publish_gcs: false
+      publish_changelog: false
+      notify_slack: false
+      sign_macos: false
+      sign_windows: false
+      sign_linux: false
+      runner_macos: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_macos || 'macos-latest' }}
+      runner_linux_x86: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_linux_x86 || 'ubuntu-latest' }}
+      runner_linux_arm: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_linux_arm || 'ubuntu-24.04-arm' }}
+      runner_web: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_web || 'ubuntu-22.04' }}
+      runner_windows: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_windows || 'windows-latest' }}
+      bundle_features: nld_onnx_model
+    secrets: inherit
+
+  update_release_notes:
+    name: Update OSS release notes
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'release_current_master') }}
+    needs: create_release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Generate and update release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          AUTHOR_PATTERN: cesar|cesaryuan|cesaryuan@qq\.com
+          RELEASE_TAG: ${{ needs.create_release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "::error::The create_release workflow did not expose an OSS release tag."
+            exit 1
+          fi
+
+          # Refresh tags so this job can still resolve the release tag even if origin/master moved meanwhile.
+          echo "Refreshing tags before generating release notes for $RELEASE_TAG."
+          git fetch --force --tags origin
+
+          TARGET_COMMIT="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          echo "Generating release notes for tag $RELEASE_TAG at commit $TARGET_COMMIT."
+
+          mapfile -t MERGED_TAGS < <(git for-each-ref refs/tags --merged "$TARGET_COMMIT" --sort=-creatordate --format='%(refname:short)')
+
+          BASE_REF=""
+          for candidate in "${MERGED_TAGS[@]}"; do
+            [[ -z "$candidate" || "$candidate" == "$RELEASE_TAG" ]] && continue
+
+            candidate_commit="$(git rev-parse "${candidate}^{commit}")"
+            if [[ "$candidate_commit" == "$TARGET_COMMIT" ]]; then
+              continue
+            fi
+
+            BASE_REF="$candidate"
+            break
+          done
+
+          NOTES_PATH="$RUNNER_TEMP/${RELEASE_TAG}.md"
+          {
+            echo "# Release Notes"
+            if [[ -n "$BASE_REF" ]]; then
+              short_sha="${TARGET_COMMIT:0:8}"
+              echo "Commit range: [${BASE_REF}...${short_sha}](https://github.com/${REPO}/compare/${BASE_REF}...${TARGET_COMMIT})"
+            else
+              short_sha="${TARGET_COMMIT:0:8}"
+              echo "Commit: [${short_sha}](https://github.com/${REPO}/commit/${TARGET_COMMIT})"
+            fi
+            echo
+          } > "$NOTES_PATH"
+
+          LOG_RANGE="$TARGET_COMMIT"
+          if [[ -n "$BASE_REF" ]]; then
+            LOG_RANGE="${BASE_REF}..${TARGET_COMMIT}"
+          fi
+
+          mapfile -t SUBJECTS < <(
+            git log --no-merges --format='%an%x09%ae%x09%s' "$LOG_RANGE" \
+              | awk -F '\t' -v author_pattern="$AUTHOR_PATTERN" '
+                  $3 !~ /^Merge\b/ && ($1 ~ author_pattern || $2 ~ author_pattern) { print $3 }
+                '
+          )
+
+          if [[ "${#SUBJECTS[@]}" -eq 0 ]]; then
+            echo "No matching commit messages found." >> "$NOTES_PATH"
+          else
+            for subject in "${SUBJECTS[@]}"; do
+              echo "- $subject" >> "$NOTES_PATH"
+            done
+          fi
+
+          gh release edit "$RELEASE_TAG" \
+            --repo "$REPO" \
+            --title "OSS Release $RELEASE_TAG" \
+            --notes-file "$NOTES_PATH"

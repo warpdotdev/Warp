@@ -220,7 +220,7 @@ pub fn test_restore_snapshot_with_deleted_cwd() -> Builder {
 
 // Note: this test is brittle b/c it depends on sqlite having accurate paths to
 // the bash and zsh executables in the test runner. If we have a mechanism for it,
-// it would be nice to be able to modify the sqlite template to incldue the proper
+// it would be nice to be able to modify the sqlite template to include the proper
 // paths, rather than having to hardcode them in advance.
 pub fn test_session_restoration_with_multiple_shells() -> Builder {
     FeatureFlag::ShellSelector.set_enabled(true);

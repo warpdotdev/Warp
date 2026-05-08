@@ -376,7 +376,7 @@ pub struct Block {
     /// this is None.
     cloud_workflow_id: Option<SyncId>,
 
-    /// If the command inluded an env var invocation. If not this will be None.
+    /// If the command included an env var invocation. If not this will be None.
     cloud_env_var_collection_id: Option<SyncId>,
 
     /// The last time this block was painted (i.e.: visible in the window),
@@ -1102,6 +1102,10 @@ impl Block {
         self.output_grid.set_trim_trailing_blank_rows(trim);
     }
 
+    pub(in crate::terminal) fn enable_full_grid_clear_behavior(&mut self) {
+        self.output_grid.enable_full_grid_clear_behavior();
+    }
+
     pub fn set_restored_block_was_local(&mut self, was_local: bool) {
         debug_assert!(
             self.bootstrap_stage == BootstrapStage::RestoreBlocks,
@@ -1241,7 +1245,7 @@ impl Block {
         self.wakeup_after_delay();
     }
 
-    fn disable_reset_grid_checks(&mut self) {
+    pub(super) fn disable_reset_grid_checks(&mut self) {
         self.header_grid.disable_reset_grid_checks();
         self.output_grid.disable_reset_grid_checks();
     }
@@ -3323,5 +3327,5 @@ impl ansi::Handler for Block {
 }
 
 #[cfg(test)]
-#[path = "block_test.rs"]
+#[path = "block_tests.rs"]
 mod tests;

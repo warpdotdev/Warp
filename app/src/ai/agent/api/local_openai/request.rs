@@ -185,7 +185,7 @@ pub(super) fn convert_inputs_to_response_items(
             AIAgentInput::ActionResult { result, .. } => {
                 items.push(function_call_output_item(
                     result.id.to_string(),
-                    result.to_string(),
+                    serialize_tool_result_output(result),
                 ));
             }
             AIAgentInput::AutoCodeDiffQuery { query, context }

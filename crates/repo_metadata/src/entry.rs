@@ -29,7 +29,7 @@ pub enum BuildTreeError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IgnoredPathStrategy {
-    /// Do not include any ingored files or folders
+    /// Do not include any ignored files or folders
     Exclude,
 
     /// Lazy-load excluded directories
@@ -614,5 +614,5 @@ impl DirectoryEntry {
 }
 
 #[cfg(test)]
-#[path = "entry_test.rs"]
+#[path = "entry_tests.rs"]
 mod tests;

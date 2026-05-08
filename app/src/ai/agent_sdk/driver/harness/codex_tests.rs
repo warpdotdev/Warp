@@ -1,10 +1,16 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs;
+use std::sync::Arc;
 
 use serde_json::Value;
 use tempfile::TempDir;
+use uuid::Uuid;
 
+use super::super::codex_transcript::CodexTranscriptEnvelope;
 use super::*;
+use crate::ai::agent::conversation::AIConversationId;
+use crate::server::server_api::harness_support::MockHarnessSupportClient;
 
 #[test]
 fn prepare_codex_auth_writes_fresh_file_with_api_key_mode() {
@@ -80,13 +86,13 @@ fn prepare_codex_auth_writes_with_0600_perms() {
 }
 
 #[test]
-fn resolve_openai_api_key_returns_value_from_raw_value_secret() {
-    let secrets = HashMap::from([(
-        "OPENAI_API_KEY".to_string(),
-        ManagedSecretValue::raw_value("sk-from-secret"),
+fn resolve_openai_api_key_returns_value_from_resolved_map() {
+    let resolved = HashMap::from([(
+        OsString::from("OPENAI_API_KEY"),
+        OsString::from("sk-from-secret"),
     )]);
     assert_eq!(
-        resolve_openai_api_key(&secrets).as_deref(),
+        resolve_openai_api_key(&resolved).as_deref(),
         Some("sk-from-secret")
     );
 }
@@ -108,7 +114,7 @@ fn resolve_openai_api_key_falls_back_to_env_var() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_openai_api_key_returns_none_when_secrets_and_env_empty() {
+fn resolve_openai_api_key_returns_none_when_map_and_env_empty() {
     let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
     std::env::remove_var(OPENAI_API_KEY_ENV);
 
@@ -122,17 +128,17 @@ fn resolve_openai_api_key_returns_none_when_secrets_and_env_empty() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_openai_api_key_prefers_env_over_secret() {
-    // Mirrors `AgentDriver::new`'s precedence: an existing `OPENAI_API_KEY` env var
-    // wins over a managed secret so `auth.json` matches the launched process's env.
+fn resolve_openai_api_key_prefers_env_over_resolved_map() {
+    // Worker-injected env var wins over the resolved secret map because
+    // build_secret_env_vars skips secrets that collide with process env.
     let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
     std::env::set_var(OPENAI_API_KEY_ENV, "sk-from-env");
-    let secrets = HashMap::from([(
-        "OPENAI_API_KEY".to_string(),
-        ManagedSecretValue::raw_value("sk-from-secret"),
+    let resolved = HashMap::from([(
+        OsString::from("OPENAI_API_KEY"),
+        OsString::from("sk-from-secret"),
     )]);
 
-    let result = resolve_openai_api_key(&secrets);
+    let result = resolve_openai_api_key(&resolved);
 
     match prev {
         Some(v) => std::env::set_var(OPENAI_API_KEY_ENV, v),
@@ -143,15 +149,15 @@ fn resolve_openai_api_key_prefers_env_over_secret() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_openai_api_key_uses_secret_when_env_empty() {
+fn resolve_openai_api_key_uses_resolved_map_when_env_empty() {
     let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
     std::env::set_var(OPENAI_API_KEY_ENV, "   ");
-    let secrets = HashMap::from([(
-        "OPENAI_API_KEY".to_string(),
-        ManagedSecretValue::raw_value("sk-from-secret"),
+    let resolved = HashMap::from([(
+        OsString::from("OPENAI_API_KEY"),
+        OsString::from("sk-from-secret"),
     )]);
 
-    let result = resolve_openai_api_key(&secrets);
+    let result = resolve_openai_api_key(&resolved);
 
     match prev {
         Some(v) => std::env::set_var(OPENAI_API_KEY_ENV, v),
@@ -323,4 +329,89 @@ fn find_child_git_repos_returns_empty_when_dir_missing() {
     let tmp = TempDir::new().unwrap();
     let missing = tmp.path().join("does-not-exist");
     assert!(find_child_git_repos(&missing).is_empty());
+}
+
+#[test]
+fn codex_command_with_session_id_invokes_resume_subcommand() {
+    let uuid = Uuid::new_v4();
+    let cmd = codex_command("codex", Some(&uuid), "/tmp/prompt.txt");
+    assert!(
+        cmd.contains(&format!(
+            "resume --dangerously-bypass-approvals-and-sandbox {uuid}"
+        )),
+        "resume command should pass UUID to `resume`: {cmd}"
+    );
+    assert!(
+        cmd.contains("\"$(cat '/tmp/prompt.txt')\""),
+        "resume command should pipe prompt: {cmd}"
+    );
+}
+
+#[tokio::test]
+async fn fetch_resume_payload_maps_404_to_resume_state_missing() {
+    let mut mock = MockHarnessSupportClient::new();
+    mock.expect_fetch_transcript()
+        .returning(|| Err(anyhow::anyhow!("upstream returned status 404")));
+    let conversation_id = AIConversationId::new();
+
+    let result = CodexHarness
+        .fetch_resume_payload(&conversation_id, Arc::new(mock))
+        .await;
+
+    match result {
+        Err(AgentDriverError::ConversationResumeStateMissing { harness, .. }) => {
+            assert_eq!(harness, "codex");
+        }
+        other => panic!("expected ConversationResumeStateMissing, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn fetch_resume_payload_maps_other_errors_to_load_failed() {
+    let mut mock = MockHarnessSupportClient::new();
+    mock.expect_fetch_transcript()
+        .returning(|| Err(anyhow::anyhow!("connection reset")));
+    let conversation_id = AIConversationId::new();
+
+    let result = CodexHarness
+        .fetch_resume_payload(&conversation_id, Arc::new(mock))
+        .await;
+
+    assert!(
+        matches!(result, Err(AgentDriverError::ConversationLoadFailed(_))),
+        "expected ConversationLoadFailed, got {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn fetch_resume_payload_returns_codex_variant_on_success() {
+    let uuid = Uuid::new_v4();
+    let envelope = CodexTranscriptEnvelope {
+        cwd: "/cloud/work".into(),
+        session_id: uuid,
+        codex_version: Some("0.55.0".to_string()),
+        session_start_timestamp: None,
+        entries: vec![serde_json::json!({"type": "event_msg"})],
+    };
+    let bytes = serde_json::to_vec(&envelope).unwrap();
+
+    let mut mock = MockHarnessSupportClient::new();
+    mock.expect_fetch_transcript()
+        .returning(move || Ok(bytes::Bytes::from(bytes.clone())));
+    let conversation_id = AIConversationId::new();
+
+    let payload = CodexHarness
+        .fetch_resume_payload(&conversation_id, Arc::new(mock))
+        .await
+        .unwrap()
+        .unwrap();
+
+    match payload {
+        ResumePayload::Codex(info) => {
+            assert_eq!(info.session_id, uuid);
+            assert_eq!(info.conversation_id, conversation_id);
+            assert_eq!(info.envelope.codex_version.as_deref(), Some("0.55.0"));
+        }
+        other => panic!("expected ResumePayload::Codex, got {other:?}"),
+    }
 }

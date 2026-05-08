@@ -4,6 +4,7 @@ pub mod bonus_grant_notification_model;
 #[cfg(target_os = "macos")]
 mod cli_install;
 mod close_session_confirmation_dialog;
+pub(crate) mod cross_window_tab_drag;
 pub mod delete_conversation_confirmation_dialog;
 mod global_actions;
 pub mod header_toolbar_editor;
@@ -100,6 +101,7 @@ pub use toast_stack::ToastStack;
 
 pub fn init(app: &mut AppContext) {
     app.add_singleton_model(|_| WorkspaceRegistry::new());
+    app.add_singleton_model(|_| cross_window_tab_drag::CrossWindowTabDrag::new());
     use warpui::keymap::macros::*;
     app.register_binding_validator::<Workspace>(is_binding_pty_compliant);
 
@@ -910,6 +912,19 @@ pub fn init(app: &mut AppContext) {
     )
     .with_group(bindings::BindingGroup::Settings.as_str())
     .with_custom_action(CustomAction::RenameTab)
+    .with_context_predicate(id!("Workspace"))]);
+
+    // Pane rename — same shape as RenameActiveTab but acts on the focused pane
+    // in the active tab. Ships with no default keybinding so it surfaces in
+    // Settings → Keyboard shortcuts as remappable; resolves issue #9351, where
+    // the action existed only in the right-click context menu and was not
+    // reachable via the binding registry.
+    app.register_editable_bindings([EditableBinding::new(
+        "workspace:rename_active_pane",
+        "Rename the current pane",
+        WorkspaceAction::RenameActivePane,
+    )
+    .with_group(bindings::BindingGroup::Settings.as_str())
     .with_context_predicate(id!("Workspace"))]);
 
     app.register_editable_bindings([
