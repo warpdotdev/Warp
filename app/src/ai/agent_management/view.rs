@@ -35,7 +35,6 @@ use crate::ai::blocklist::format_credits;
 use crate::ai::conversation_details_panel::{
     ConversationDetailsData, ConversationDetailsPanel, ConversationDetailsPanelEvent,
 };
-use crate::ai::conversation_status_ui::render_status_element;
 use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::harness_display;
 use crate::app_state::PersistedAgentManagementFilters;
@@ -107,7 +106,6 @@ const CARD_CONTENT_PADDING: f32 = 12.;
 const CARD_BORDER_RADIUS: f32 = 4.;
 const CARD_MARGIN_BOTTOM: f32 = 8.;
 
-const STATUS_ICON_SIZE: f32 = 12.;
 const BUTTON_SIZE: f32 = 20.;
 /// Total size of the agent icon-with-status component rendered in each card's header row.
 const CARD_AGENT_ICON_SIZE: f32 = 20.;
@@ -1723,16 +1721,13 @@ impl AgentManagementView {
 
         let title_text = Text::new_inline(entry.display.title.clone(), font_family, font_size)
             .with_color(theme.active_ui_text_color().into());
-        let status_icon: Box<dyn Element> = match agent_conversation_entry_icon_variant(entry) {
-            Some(variant) => render_icon_with_status(
-                variant,
-                CARD_AGENT_ICON_SIZE,
-                0.,
-                theme,
-                internal_colors::fg_overlay_1(theme),
-            ),
-            None => render_status_element(&entry.display.status, STATUS_ICON_SIZE, appearance),
-        };
+        let status_icon = render_icon_with_status(
+            agent_conversation_entry_icon_variant(entry),
+            CARD_AGENT_ICON_SIZE,
+            0.,
+            theme,
+            internal_colors::fg_overlay_1(theme),
+        );
         let time_str = format_approx_duration_from_now_utc(entry.display.last_updated);
         let time_text = Text::new_inline(time_str, font_family, font_size)
             .with_color(theme.nonactive_ui_text_color().into());
