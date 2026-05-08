@@ -71,21 +71,6 @@ impl ThirdPartyHarness for ClaudeHarness {
         Some("https://code.claude.com/docs/en/quickstart")
     }
 
-    fn prepare_environment_config(
-        &self,
-        working_dir: &Path,
-        _system_prompt: Option<&str>,
-        resolved_env_vars: &HashMap<OsString, OsString>,
-        _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
-    ) -> Result<(), AgentDriverError> {
-        prepare_claude_environment_config(working_dir, resolved_env_vars).map_err(|error| {
-            AgentDriverError::HarnessConfigSetupFailed {
-                harness: self.cli_agent().command_prefix().to_owned(),
-                error,
-            }
-        })
-    }
-
     /// Fetch the Claude Code transcript for the current task's conversation and wrap it
     /// into a [`ResumePayload::Claude`]. Maps a server 404 to
     /// [`AgentDriverError::ConversationResumeStateMissing`] tagged as the `claude` harness
@@ -116,8 +101,17 @@ impl ThirdPartyHarness for ClaudeHarness {
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
+        resolved_env_vars: &HashMap<OsString, OsString>,
         resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
+        // Prepare the environment config files.
+        prepare_claude_environment_config(working_dir, resolved_env_vars).map_err(|error| {
+            AgentDriverError::HarnessConfigSetupFailed {
+                harness: self.cli_agent().command_prefix().to_owned(),
+                error,
+            }
+        })?;
+
         // The ResumePayload shouldn't contain non-Claude information, error if it does.
         let claude_resume = resume.map(ClaudeResumeInfo::try_from).transpose()?;
         // Claude treats the user-turn message as immediate intent, so the resumption preamble
@@ -566,7 +560,7 @@ async fn upload_transcript(
         .with_context(|| format!("Failed to get transcript upload target for {conversation_id}"))?;
     upload_to_target(client.http_client(), &target, body).await
 }
-fn prepare_claude_environment_config(
+pub(crate) fn prepare_claude_environment_config(
     working_dir: &Path,
     resolved_env_vars: &HashMap<OsString, OsString>,
 ) -> Result<()> {

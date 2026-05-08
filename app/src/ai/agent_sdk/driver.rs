@@ -258,9 +258,9 @@ pub struct AgentDriver {
     secrets: Arc<HashMap<String, ManagedSecretValue>>,
 
     /// Env vars passed to the terminal session, including resolved secrets, cloud
-    /// provider vars, task vars, and sandbox flags. Shared with
-    /// `prepare_environment_config` so harnesses can look up resolved secret
-    /// values without re-deriving precedence.
+    /// provider vars, task vars, and sandbox flags. Passed to
+    /// `build_runner` so harnesses can look up resolved secret values
+    /// without re-deriving precedence.
     resolved_env_vars: Arc<HashMap<OsString, OsString>>,
 
     output_format: OutputFormat,
@@ -1626,19 +1626,10 @@ impl AgentDriver {
             );
         }
 
-        // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
-        // Pass the terminal env vars (which include the resolved secrets) so harnesses
-        // can look up auth keys without re-deriving precedence.
         let resolved_env_vars = foreground
             .spawn(|me, _| Arc::clone(&me.resolved_env_vars))
             .await
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
-        harness.prepare_environment_config(
-            &working_dir,
-            system_prompt.as_deref(),
-            &resolved_env_vars,
-            &resolved_mcp_servers,
-        )?;
         let resume = foreground
             .spawn(|me, _| me.resume_payload.take())
             .await
@@ -1654,6 +1645,7 @@ impl AgentDriver {
                 server_api,
                 terminal_driver,
                 resume,
+                &resolved_env_vars,
                 &resolved_mcp_servers,
             )?
             .into();

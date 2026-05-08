@@ -34,7 +34,7 @@ use super::{
     OZ_MESSAGE_LISTENER_STATE_ROOT_ENV,
 };
 
-mod claude_code;
+pub(crate) mod claude_code;
 pub(crate) mod claude_transcript;
 mod codex;
 pub(crate) mod codex_transcript;
@@ -137,22 +137,6 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         validate_cli_installed(self.cli_agent().command_prefix(), self.install_docs_url())
     }
 
-    /// Prepare CLI-specific config files before launching the harness command.
-    ///
-    /// `resolved_env_vars` contains the already-resolved secret env vars produced by
-    /// `build_secret_env_vars`. Precedence (worker env > typed secrets > raw values)
-    /// has already been applied, so harnesses can look up values directly without
-    /// re-deriving which secret won.
-    fn prepare_environment_config(
-        &self,
-        _working_dir: &Path,
-        _system_prompt: Option<&str>,
-        _resolved_env_vars: &HashMap<OsString, OsString>,
-        _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
-    ) -> Result<(), AgentDriverError> {
-        Ok(())
-    }
-
     /// Fetch the harness-specific resume payload for an existing conversation.
     ///
     /// The driver calls this when the user passes `--conversation <id>` and the harness
@@ -173,14 +157,15 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
 
     /// Build a runner for executing this harness with the given prompt.
     ///
-    /// If `resume` is `Some`, the harness matches on its own [`ResumePayload`] variant and
-    /// reuses the stored session/conversation ids instead of minting fresh ones. Variants
-    /// belonging to other harnesses are ignored.
+    /// Responsible for all harness-specific setup: writing config files (auth,
+    /// trust, system prompt, MCP, etc.) and constructing the runner that will
+    /// execute the CLI command.
     ///
-    /// `resumption_prompt`, when non-empty, is a short user-turn preamble the server emits
-    /// during a resumed session. Each harness decides exactly how to surface it (e.g. Claude
-    /// prepends it to the user-turn prompt that gets piped into the CLI). Harnesses that
-    /// don't yet support resumption can ignore it.
+    /// `resolved_env_vars` contains already-resolved secret env vars (worker
+    /// env > typed secrets > raw values precedence already applied).
+    ///
+    /// If `resume` is `Some`, the harness matches on its own [`ResumePayload`]
+    /// variant and reuses stored session/conversation ids.
     #[allow(clippy::too_many_arguments)]
     fn build_runner(
         &self,
@@ -192,6 +177,7 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
+        resolved_env_vars: &HashMap<OsString, OsString>,
         resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError>;
 }

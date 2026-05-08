@@ -57,25 +57,6 @@ impl ThirdPartyHarness for CodexHarness {
         Some("https://developers.openai.com/codex/cli")
     }
 
-    fn prepare_environment_config(
-        &self,
-        working_dir: &Path,
-        system_prompt: Option<&str>,
-        resolved_env_vars: &HashMap<OsString, OsString>,
-        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
-    ) -> Result<(), AgentDriverError> {
-        prepare_codex_environment_config(
-            working_dir,
-            system_prompt,
-            resolved_env_vars,
-            resolved_mcp_servers,
-        )
-        .map_err(|error| AgentDriverError::HarnessConfigSetupFailed {
-            harness: self.cli_agent().command_prefix().to_owned(),
-            error,
-        })
-    }
-
     /// Fetch the codex transcript for the current task's conversation and wrap it into a
     /// [`ResumePayload::Codex`].
     async fn fetch_resume_payload(
@@ -104,8 +85,21 @@ impl ThirdPartyHarness for CodexHarness {
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
-        _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+        resolved_env_vars: &HashMap<OsString, OsString>,
+        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
+        // Prepare the environment config files.
+        prepare_codex_environment_config(
+            working_dir,
+            system_prompt,
+            resolved_env_vars,
+            resolved_mcp_servers,
+        )
+        .map_err(|error| AgentDriverError::HarnessConfigSetupFailed {
+            harness: self.cli_agent().command_prefix().to_owned(),
+            error,
+        })?;
+
         // The ResumePayload shouldn't contain non-Codex information, error if it does.
         let codex_resume = resume.map(CodexResumeInfo::try_from).transpose()?;
 
