@@ -13,7 +13,10 @@ use crate::{
         },
         agent_conversations_model::AgentConversationsModel,
         ambient_agents::github_auth_notifier::GitHubAuthNotifier,
-        ambient_agents::AmbientAgentTaskId,
+        ambient_agents::{
+            task::TaskCreatorInfo, AgentSource, AmbientAgentTask, AmbientAgentTaskId,
+            AmbientAgentTaskState,
+        },
         blocklist::{
             orchestration_event_streamer::OrchestrationEventStreamer,
             orchestration_events::OrchestrationEventService,
@@ -32,7 +35,7 @@ use crate::{
         skills::SkillManager,
         AIRequestUsageModel,
     },
-    auth::auth_manager::AuthManager,
+    auth::{auth_manager::AuthManager, user::TEST_USER_UID},
     changelog_model::ChangelogModel,
     cloud_object::model::persistence::CloudModel,
     cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions},
@@ -258,6 +261,36 @@ fn new_notebook(ctx: &mut ViewContext<PaneGroup>) -> ViewHandle<NotebookView> {
 
 fn new_ambient_agent_task_id() -> AmbientAgentTaskId {
     Uuid::new_v4().to_string().parse().unwrap()
+}
+
+fn ambient_agent_task_for_current_user(task_id: AmbientAgentTaskId) -> AmbientAgentTask {
+    let now = Utc::now();
+    AmbientAgentTask {
+        task_id,
+        parent_run_id: None,
+        title: "Owned task".to_string(),
+        state: AmbientAgentTaskState::Succeeded,
+        prompt: "test".to_string(),
+        created_at: now,
+        started_at: Some(now),
+        updated_at: now,
+        status_message: None,
+        source: Some(AgentSource::CloudMode),
+        session_id: None,
+        session_link: None,
+        creator: Some(TaskCreatorInfo {
+            creator_type: "USER".to_string(),
+            uid: TEST_USER_UID.to_string(),
+            display_name: None,
+        }),
+        conversation_id: None,
+        request_usage: None,
+        is_sandbox_running: false,
+        agent_config_snapshot: None,
+        artifacts: vec![],
+        last_event_sequence: None,
+        children: vec![],
+    }
 }
 
 fn mock_server_metadata() -> ServerMetadata {
@@ -673,6 +706,9 @@ fn test_ambient_transcript_restore_creates_cloud_mode_pane_when_handoff_enabled(
         let task_id = new_ambient_agent_task_id();
 
         pane_group.update(&mut app, |panes, ctx| {
+            AgentConversationsModel::handle(ctx).update(ctx, |model, _| {
+                model.insert_task_for_test(ambient_agent_task_for_current_user(task_id));
+            });
             panes.load_data_into_conversation_transcript_viewer(
                 cloud_conversation_with_ambient_task(task_id),
                 Some(task_id),
