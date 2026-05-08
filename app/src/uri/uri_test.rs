@@ -810,6 +810,29 @@ fn test_open_file_rust_source_still_opens_in_editor() {
 }
 
 #[test]
+#[cfg(unix)]
+fn test_open_file_editor_executable_sh_is_rejected() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("run.sh");
+    std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(classify_open_file_editor_action(&p), None);
+}
+
+#[test]
+#[cfg(feature = "local_fs")]
+fn test_open_file_editor_rust_source_opens_in_editor() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("main.rs");
+    std::fs::write(&p, b"fn main() {}\n").unwrap();
+    assert_eq!(
+        classify_open_file_editor_action(&p),
+        Some(OpenFileAction::Editor)
+    );
+}
+
+#[test]
 fn test_open_file_directory_routes_to_session() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(

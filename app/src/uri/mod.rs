@@ -1077,19 +1077,23 @@ fn classify_open_file_action(path: &Path) -> OpenFileAction {
     if is_markdown_file(path) {
         return OpenFileAction::Notebook;
     }
+    classify_open_file_editor_action(path).unwrap_or(OpenFileAction::ExecuteInSession)
+}
+
+fn classify_open_file_editor_action(path: &Path) -> Option<OpenFileAction> {
     if path.is_file() {
         if is_runnable_shell_script(path) {
-            return OpenFileAction::ExecuteInSession;
+            return None;
         }
         // Anything we can show in the editor opens there. The second branch catches
         // shebang scripts that `is_file_openable_in_warp` rejects on extension alone
         // (e.g. an extensionless `#!/bin/sh` file without the user-execute bit) so
         // they don't fall through to the executor and produce a `permission denied`.
         if is_file_openable_in_warp(path).is_some() || starts_with_shebang(path) {
-            return OpenFileAction::Editor;
+            return Some(OpenFileAction::Editor);
         }
     }
-    OpenFileAction::ExecuteInSession
+    None
 }
 
 /// Handle an incoming file path from a URI.
@@ -1214,6 +1218,11 @@ fn open_file_editor(
             file::external_editor::EditorSettings,
             openable_file_type::resolve_file_target_to_open_in_warp,
         };
+
+        if classify_open_file_editor_action(&path).is_none() {
+            log::warn!("open_file_editor action rejected non-openable path: {path:?}");
+            return;
+        }
 
         let editor_settings = EditorSettings::as_ref(ctx);
         let target = resolve_file_target_to_open_in_warp(&path, editor_settings, None);
