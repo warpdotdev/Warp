@@ -37,34 +37,69 @@ Out-of-scope surfaces for V1 (continue using existing typography):
 These surfaces may opt in in a follow-up; V1 keeps them on
 existing typography to minimize visual churn.
 
+## Default font stacks (per platform, no Inter)
+
+The platform Default stack is what Warp uses when
+`proportional_font_family` is `None`. Warp does **not** bundle the
+Inter typeface, so Inter is **not** in any platform Default stack.
+Users who have Inter installed locally and want Inter as their
+primary proportional font MUST opt in by setting
+`proportional_font_family` explicitly (e.g.,
+`"Inter, system-ui, sans-serif"`). The Default behavior is
+deterministic per-platform:
+
+| Platform   | Default stack                                                                |
+| ---------- | ---------------------------------------------------------------------------- |
+| macOS      | `system-ui, -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif`      |
+| Windows    | `system-ui, "Segoe UI Variable", "Segoe UI", sans-serif`                     |
+| Linux      | `system-ui, "Cantarell", "Ubuntu", "Liberation Sans", sans-serif`            |
+
+Note: Inter is NOT in the default fallback. Users who have Inter
+installed and want it as primary must explicitly configure
+`proportional_font_family` to include it.
+
 ## Behavior contract
 
 - B1. New setting `appearance.proportional_font_family:
   Option<String>`. `None` / omitted means "Default" and resolves to
-  a bundled-independent platform stack:
-  - macOS: system proportional UI font (`system-ui` / San
-    Francisco), then `-apple-system`, `BlinkMacSystemFont`,
-    then the system sans-serif fallback.
-  - Windows: `Segoe UI Variable`, then `Segoe UI`, then the system
-    sans-serif fallback.
-  - Linux: a system-available stack —
-    `system-ui, "Cantarell", "Ubuntu", "Liberation Sans",
-    "DejaVu Sans", "Noto Sans", sans-serif`.
-    Inter is preferred where the user has installed it, but is
-    **not bundled** with the app; absent Inter, the OS-provided
-    UI font is used.
+  the per-platform Default stack listed above. The stored value is
+  the **canonical serialization** (B1a) of the user-supplied
+  family list.
 
   All three settings (family, size, line-height) use
   `SyncToCloud::Globally(RespectUserSyncSetting::Yes)` like other
   appearance settings.
 
-- B1a. **Validation.** A non-empty user-supplied value is parsed
-  as a CSS family-list string. Allowed characters per family:
-  alphanumerics, ASCII spaces, hyphens, periods, and underscores.
-  Family names containing other characters MUST be quoted with
-  ASCII double-quotes; the only structural separator between
-  families is a comma. Values that fail to parse are rejected on
-  save with an inline error in Settings; the previously-valid
+- B1a. **Validation, parsing, and canonical serialization.** A
+  non-empty user-supplied value is parsed as a CSS font-family
+  list per CSS Fonts Module Level 4 grammar:
+
+  - Families are separated by commas.
+  - Each family is either an unquoted identifier sequence (one or
+    more `<custom-ident>` tokens joined by ASCII space), or a
+    double-quoted `<string>`.
+  - Inside a quoted string, `"` and `\` MUST be backslash-escaped
+    (`\"`, `\\`).
+
+  After successful parse, Warp stores a **canonical serialization**
+  of the family list (used for storage, sync, and Settings UI
+  display):
+
+  1. Each parsed family token is normalized:
+     - If the family name matches `<custom-ident>` (alphanumerics,
+       underscore, hyphen, no leading digit, no spaces, no special
+       chars): emit unquoted (e.g., `Arial`, `Open-Sans`).
+     - Otherwise (contains spaces, commas, quotes, or any character
+       outside `<custom-ident>`): emit double-quoted with
+       backslash-escaping for `"` and `\` (e.g.,
+       `"Helvetica Neue"`, `"My \"weird\" Font"`).
+  2. Families are joined with `, ` (comma + ASCII space).
+  3. **Round-trip identity:** parsing the canonical serialization
+     and re-canonicalizing MUST yield the same string. Tested by
+     T_canonical_serialization.
+
+  Values that fail to parse are rejected on save with an inline
+  error in Settings; the previously-valid (already-canonical)
   value is retained. Programmatic writes (e.g., from sync) that
   fail to parse are dropped, the family setting is cleared to
   `None` for this device, and a telemetry warning fires with the
@@ -73,10 +108,10 @@ existing typography to minimize visual churn.
 - B1b. **Missing-font fallback.** Resolution proceeds left-to-right
   through the parsed family list. If no listed family matches an
   installed font on the current OS, the platform Default stack
-  (B1) is appended as a final fallback. If the parsed family list
-  is empty after parsing, Default is used directly. The stored
-  value is never modified by fallback — it remains the user's
-  preference.
+  is appended as a final fallback. If the parsed family list is
+  empty after parsing, Default is used directly. The stored value
+  is never modified by fallback — it remains the user's preference
+  in canonical form.
 
 - B1c. **Per-platform sync schema.** All three settings sync as a
   per-platform map with a shared default key:
@@ -100,6 +135,10 @@ existing typography to minimize visual churn.
   - Reset-to-Default clears the active platform's key only,
     reverting that platform to either `default` or the platform
     Default stack / clamp default.
+  - Family values written across platforms are always canonical
+    form per B1a. A peer device receiving a value re-parses it on
+    read; if parse fails, B1a programmatic-write rules apply
+    (drop value, fire telemetry).
 
 - B1d. **Synced unsupported family.** A synced non-empty family
   that is unavailable on the current OS renders with the platform
@@ -107,6 +146,24 @@ existing typography to minimize visual churn.
   unavailable with a "Reset to Default" action. Reset clears the
   stored family so the setting returns to `None` for the active
   platform.
+
+- B1e. **Render-time CSS construction (no string interpolation).**
+  The font family value MUST NEVER be concatenated into a CSS
+  string as raw user text. The renderer takes the **parsed token
+  list** (the structured representation produced in B1a, not the
+  stored canonical string) and constructs the CSS `font-family`
+  declaration by feeding each token through the same canonical
+  serializer. Equivalently: the path from user input to CSS is
+  always `String -> ParsedFamilyList -> CssString`, never
+  `String -> CssString`. This eliminates CSS injection vectors
+  via crafted family names (e.g., a family name containing
+  `</style><script>` cannot break out of the CSS context because
+  the serializer treats it as a quoted-string token and escapes
+  it).
+
+  Implementation MUST use a token-list → CSS-string serialization
+  pass; the renderer MUST NOT pass user input through string
+  interpolation.
 
 - B2. New setting
   `appearance.proportional_font_size: f32`
@@ -127,7 +184,9 @@ existing typography to minimize visual churn.
   screenshot in the test plan.
 
 - B5. Settings → Appearance gets a "Proportional text" subsection
-  with these three controls and a live preview block.
+  with these three controls and a live preview block. Family input
+  shows canonical serialization; the inline error on parse failure
+  references the offending token.
 
 - B6. Existing fixed-pixel layouts that depend on the current
   cramped baseline are audited and migrated to em-relative or
@@ -137,9 +196,10 @@ existing typography to minimize visual churn.
 ## Acceptance criteria
 
 - A1. Default install on macOS, Windows, and Linux uses the
-  platform Default stack and renders Markdown side-by-side with
-  GitHub visually comparable (same paragraph fits in same vertical
-  space ±10%).
+  platform Default stack listed in "Default font stacks" (NO Inter
+  in the stack on any platform) and renders Markdown side-by-side
+  with GitHub visually comparable (same paragraph fits in same
+  vertical space ±10%).
 - A2. User can change the family in Settings → Appearance and the
   change applies to V1 surfaces (Settings panes and rendered
   Markdown) without restart. Out-of-scope surfaces (Surface
@@ -163,9 +223,19 @@ existing typography to minimize visual churn.
   read back on macOS only; Linux on the same account either reads
   its own platform key or falls back to `default` / platform
   Default stack per B1c.
-- A6. Invalid family input (e.g., a string with disallowed
-  punctuation) is rejected in Settings with an inline error; the
-  previous value is retained.
+- A6. Invalid family input (e.g., unbalanced quotes, illegal
+  characters in an unquoted identifier) is rejected in Settings
+  with an inline error; the previous canonical value is retained.
+- A7. Canonical-form round-trip: writing
+  `inter , "Open Sans" ,Arial` (with stray spaces) is stored as
+  `Inter, "Open Sans", Arial` (or the user's preferred case).
+  Reading back yields the same canonical string.
+- A8. CSS-injection guard: a family value containing
+  `</style><script>alert(1)</script>` is parsed as a single
+  quoted-string token, stored canonically with proper escaping,
+  and serialized into the CSS `font-family` declaration as a
+  quoted CSS string. The injected token cannot break out of the
+  CSS context.
 
 ## Implementation pointers
 
@@ -178,6 +248,11 @@ existing typography to minimize visual churn.
 - Settings sync layer: extend the existing per-setting sync codec
   to encode/decode the per-platform map in B1c. Existing scalar
   values from older clients deserialize into the `default` key.
+- Family-list parser/serializer is a single module exposing
+  `parse_family_list(s: &str) -> Result<FamilyList, ParseErr>` and
+  `serialize_family_list(list: &FamilyList) -> String`. The
+  renderer's CSS builder takes `&FamilyList`, not `&str`, to
+  enforce B1e at the type level.
 
 ## Test plan
 
@@ -208,6 +283,25 @@ existing typography to minimize visual churn.
   `proportional_font_family` to a family not installed on the
   current OS — local device renders with platform Default stack
   and Settings exposes Reset to Default.
+- T_canonical_serialization. Round-trip: a parsed family list,
+  re-serialized through the canonical serializer, parses again to
+  the same family list. Run on a fixture set including stray
+  spaces, missing/extra commas-around-spaces, mixed quoting.
+- T_canonical_quoting. Family names containing spaces are
+  emitted double-quoted; names containing `"` and `\` are emitted
+  with backslash-escaped quoted form; simple identifiers stay
+  unquoted.
+- T_inter_not_in_default. The platform Default stack on each of
+  macOS, Windows, and Linux does NOT contain `Inter`. Tested by
+  asserting the literal Default stack strings.
+- T_render_no_injection. Setting
+  `proportional_font_family` to a value containing
+  `</style><script>alert(1)</script>` results in a CSS
+  `font-family` declaration in which the malicious token is
+  emitted as a quoted CSS string with proper escaping and does
+  not break out of the CSS rule. Confirmed by parsing the
+  rendered CSS back and asserting one quoted-string token plus
+  a closing semicolon.
 
 ## Out of scope
 
