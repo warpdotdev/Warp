@@ -44,7 +44,10 @@ entirely (`disabled`).
 
 ### B1. Setting enum
 
-`terminal.truecolor_background_mode` enum: `"flood"` (default), `"clamp_to_text"`,
+The user-level setting key is **`appearance.terminal.truecolor_background_mode`**
+(matches the verified `appearance.*` namespace in `app/src/settings/pane.rs`
+and is the canonical key used everywhere in this spec — Settings/API, UI,
+acceptance, and tests). Enum values: `"flood"` (default), `"clamp_to_text"`,
 `"disabled"`.
 
 ### B2. Mode `flood` (default)
@@ -128,9 +131,40 @@ the user had emitted `\x1b[49m` (default bg) for the affected cells.
 
 ### B5. Per-pane override
 
-Setting applies to all terminal panes by default. Per-pane override via tab
-config `pane.truecolor_background_mode` is supported for power users running
-mixed workloads.
+Setting applies to all terminal panes by default. Power users running mixed
+workloads can override the mode on a specific pane via the tab-config TOML
+schema in `~/.warp/tab_configs/*.toml`.
+
+The verified schema (`app/src/tab_configs/tab_config.rs`,
+`TabConfigPaneNode`) stores pane fields as flat keys inside each `[[panes]]`
+array entry — there is **no** `[pane]` table. The override field is added
+as `truecolor_background_mode` directly on the pane entry. Exact valid TOML:
+
+```toml
+name = "Mixed mode example"
+
+[[panes]]
+id = "main"
+type = "terminal"
+truecolor_background_mode = "clamp_to_text"   # this pane only
+
+[[panes]]
+id = "logs"
+type = "terminal"
+# no key here — this pane inherits the user-level setting
+```
+
+Field semantics:
+
+- Field name on `TabConfigPaneNode`: `truecolor_background_mode`.
+- Type: `Option<TruecolorBackgroundMode>`. Absent / `None` ⇒ inherit the
+  user-level `appearance.terminal.truecolor_background_mode`.
+- Allowed values when present: `"flood"` | `"clamp_to_text"` | `"disabled"`.
+- Resolution: per-pane value (when `Some`) wins over the user-level setting
+  for that pane only; sibling panes are unaffected.
+- The `TabConfigPaneNode` struct is `#[serde(deny_unknown_fields)]`, so the
+  field must be added to the struct itself; it cannot be set via a nested
+  `[pane]` table.
 
 ### B6. Live application
 
@@ -182,7 +216,9 @@ there:
 - Field name: `truecolor_background_mode`.
 - Type: `Option<TruecolorBackgroundMode>` (None = inherit user setting).
 - Serde representation: lowercase string when present.
-- TOML path on a pane node: `pane.truecolor_background_mode`.
+- TOML key on a pane node: `truecolor_background_mode` (a flat key on a
+  `[[panes]]` array entry — see B5 for the full TOML example). There is no
+  `[pane]` table in the tab-config schema.
 - Re-uses the enum defined in the new
   `app/src/settings/truecolor_background_mode.rs` module so the user
   setting and tab-config override share a single type.
@@ -223,8 +259,9 @@ radio group:
 - A4: 256-color bg output is unchanged in `disabled` mode.
 - A5: Setting changes take effect for new output without restart.
 - A6: Already-rendered scrollback is not repainted on toggle.
-- A7: Per-pane tab-config override at TOML path `pane.truecolor_background_mode`
-  correctly overrides the user-level
+- A7: A per-pane tab-config override declared as a flat
+  `truecolor_background_mode = "<mode>"` key inside a `[[panes]]` array
+  entry correctly overrides the user-level
   `appearance.terminal.truecolor_background_mode` for the affected pane only.
 
 ## Implementation Pointers
@@ -300,10 +337,13 @@ Likely change shape:
 - T_clamp_block_padding: Block-finalization padding rows render as
   default bg in `clamp_to_text` and `disabled`; truecolor bg in
   `flood`.
-- T_per_pane_override_toml: Loading a tab-config TOML setting
-  `pane.truecolor_background_mode = "clamp_to_text"` produces a pane
-  whose resolved mode is `clamp_to_text` even when the user-level
-  `appearance.terminal.truecolor_background_mode` is `flood`.
+- T_per_pane_override_toml: Loading a tab-config TOML where a `[[panes]]`
+  entry contains the flat key `truecolor_background_mode = "clamp_to_text"`
+  (no `[pane]` table — flat field on the array entry, matching the verified
+  `TabConfigPaneNode` schema in `app/src/tab_configs/tab_config.rs`)
+  produces a pane whose resolved mode is `clamp_to_text` even when the
+  user-level `appearance.terminal.truecolor_background_mode` is `flood`.
+  Sibling `[[panes]]` entries without the key inherit the user-level value.
 
 ## Open Questions
 
