@@ -123,7 +123,7 @@ use crate::code_review::comments::{
     convert_insert_review_comments, AttachedReviewComment, PendingImportedReviewComment,
 };
 #[cfg(feature = "local_fs")]
-use crate::code_review::diff_state::DiffStateModel;
+use crate::code_review::diff_state::LocalDiffStateModel;
 use crate::code_review::diff_state::{DiffMode, GitDeltaPreference};
 #[cfg(feature = "local_fs")]
 use crate::code_review::git_status_update::{
@@ -6178,7 +6178,7 @@ impl TerminalView {
         let diff_mode_clone = diff_mode.clone();
         let repo_path_clone = repo_path.clone();
         let future = async move {
-            DiffStateModel::load_diff_data_for_mode(diff_mode_clone, repo_path_clone).await
+            LocalDiffStateModel::load_diff_data_for_mode(diff_mode_clone, repo_path_clone).await
         };
 
         ctx.spawn(future, move |_me, git_diff_data_opt, ctx| {

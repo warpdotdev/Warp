@@ -94,6 +94,7 @@ use crate::terminal::cli_agent::{
 };
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
+use crate::util::git::get_all_branches;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::resolve_file_target_with_editor_choice;
 #[cfg(feature = "local_fs")]
@@ -1456,7 +1457,7 @@ impl CodeReviewView {
         let fetched_repo_path = repo_path.clone();
         ctx.spawn(
             async move {
-                DiffStateModel::get_all_branches(&repo_path, None, false /* include_remotes */)
+                get_all_branches(&repo_path, None, false /* include_remotes */)
                     .await
             },
             move |me, branches_result, ctx| {

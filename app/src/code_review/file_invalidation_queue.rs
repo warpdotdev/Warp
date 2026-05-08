@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use warp_core::sync_queue::{IsTransientError, SyncQueueTaskTrait};
 
-use super::diff_state::{DiffMode, DiffStateModel, FileDiffAndContent};
+use super::diff_state::{DiffMode, FileDiffAndContent, LocalDiffStateModel};
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
@@ -38,9 +38,17 @@ impl SyncQueueTaskTrait for FileInvalidationTask {
         let mode = self.mode.clone();
         let merge_base = self.merge_base.clone();
         Box::pin(async move {
-            DiffStateModel::retrieve_diff_state(&repo_path, &file, &mode, merge_base.as_deref())
-                .await
-                .map_err(FileInvalidationError::from)
+            // File invalidation runs local git commands against a local repo path,
+            // so using LocalDiffStateModel directly is correct — remote repos use a
+            // separate mechanism and never go through this queue.
+            LocalDiffStateModel::retrieve_diff_state(
+                &repo_path,
+                &file,
+                &mode,
+                merge_base.as_deref(),
+            )
+            .await
+            .map_err(FileInvalidationError::from)
         })
     }
 }

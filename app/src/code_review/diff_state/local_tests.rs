@@ -1,17 +1,18 @@
 use super::*;
+use crate::util::git::{parse_range, parse_unified_diff_header, sort_branches_main_first};
 
 #[test]
 fn test_parse_range_with_comma() {
-    let (start, count) = LocalDiffStateModel::parse_range("10,5")
-        .expect("parse_range should succeed for range with count");
+    let (start, count) =
+        parse_range("10,5").expect("parse_range should succeed for range with count");
     assert_eq!(start, 10);
     assert_eq!(count, 5);
 }
 
 #[test]
 fn test_parse_range_without_comma() {
-    let (start, count) = LocalDiffStateModel::parse_range("10")
-        .expect("parse_range should succeed for range without count");
+    let (start, count) =
+        parse_range("10").expect("parse_range should succeed for range without count");
     assert_eq!(start, 10);
     assert_eq!(count, 1);
 }
@@ -19,7 +20,7 @@ fn test_parse_range_without_comma() {
 #[test]
 fn test_parse_unified_diff_header_basic() {
     let header = "@@ -10,5 +12,7 @@";
-    let parsed = LocalDiffStateModel::parse_unified_diff_header(header)
+    let parsed = parse_unified_diff_header(header)
         .expect("parse_unified_diff_header should succeed for basic header");
     assert_eq!(parsed.old_start_line, 10);
     assert_eq!(parsed.old_line_count, 5);
@@ -30,7 +31,7 @@ fn test_parse_unified_diff_header_basic() {
 #[test]
 fn test_parse_unified_diff_header_with_context() {
     let header = "@@ -4978,33 +4978,43 @@ impl TerminalView {";
-    let parsed = LocalDiffStateModel::parse_unified_diff_header(header)
+    let parsed = parse_unified_diff_header(header)
         .expect("parse_unified_diff_header should succeed for header with context");
     assert_eq!(parsed.old_start_line, 4978);
     assert_eq!(parsed.old_line_count, 33);
@@ -41,7 +42,7 @@ fn test_parse_unified_diff_header_with_context() {
 #[test]
 fn test_parse_unified_diff_header_single_line() {
     let header = "@@ -10 +12,3 @@";
-    let parsed = LocalDiffStateModel::parse_unified_diff_header(header)
+    let parsed = parse_unified_diff_header(header)
         .expect("parse_unified_diff_header should succeed for single line header");
     assert_eq!(parsed.old_start_line, 10);
     assert_eq!(parsed.old_line_count, 1);
@@ -52,7 +53,7 @@ fn test_parse_unified_diff_header_single_line() {
 #[test]
 fn test_sort_branches_main_first_empty() {
     let branches: Vec<(String, bool)> = vec![];
-    let result: Vec<_> = LocalDiffStateModel::sort_branches_main_first(&branches).collect();
+    let result: Vec<_> = sort_branches_main_first(&branches).collect();
     assert!(result.is_empty());
 }
 
@@ -63,7 +64,7 @@ fn test_sort_branches_main_first_no_main() {
         ("feature-b".to_string(), false),
         ("feature-c".to_string(), false),
     ];
-    let result: Vec<_> = LocalDiffStateModel::sort_branches_main_first(&branches).collect();
+    let result: Vec<_> = sort_branches_main_first(&branches).collect();
     // No main branches — order should be unchanged.
     assert_eq!(result, branches.iter().collect::<Vec<_>>());
 }
@@ -75,7 +76,7 @@ fn test_sort_branches_main_first_promotes_main() {
         ("main".to_string(), true),
         ("feature-b".to_string(), false),
     ];
-    let result: Vec<_> = LocalDiffStateModel::sort_branches_main_first(&branches)
+    let result: Vec<_> = sort_branches_main_first(&branches)
         .map(|(name, _)| name.as_str())
         .collect();
     assert_eq!(result, vec!["main", "feature-a", "feature-b"]);
@@ -88,7 +89,7 @@ fn test_sort_branches_main_first_main_already_first() {
         ("feature-a".to_string(), false),
         ("feature-b".to_string(), false),
     ];
-    let result: Vec<_> = LocalDiffStateModel::sort_branches_main_first(&branches)
+    let result: Vec<_> = sort_branches_main_first(&branches)
         .map(|(name, _)| name.as_str())
         .collect();
     assert_eq!(result, vec!["main", "feature-a", "feature-b"]);
@@ -103,7 +104,7 @@ fn test_sort_branches_main_first_preserves_recency_order_for_non_main() {
         ("older-feature".to_string(), false),
         ("oldest-feature".to_string(), false),
     ];
-    let result: Vec<_> = LocalDiffStateModel::sort_branches_main_first(&branches)
+    let result: Vec<_> = sort_branches_main_first(&branches)
         .map(|(name, _)| name.as_str())
         .collect();
     assert_eq!(
@@ -121,7 +122,7 @@ fn test_sort_branches_main_first_multiple_main_flags() {
         ("main".to_string(), true),
         ("master".to_string(), true),
     ];
-    let result: Vec<_> = LocalDiffStateModel::sort_branches_main_first(&branches)
+    let result: Vec<_> = sort_branches_main_first(&branches)
         .map(|(name, _)| name.as_str())
         .collect();
     // Both main-flagged entries appear first, non-main last.
@@ -131,11 +132,11 @@ fn test_sort_branches_main_first_multiple_main_flags() {
 #[test]
 fn test_parse_unified_diff_header_malformed() {
     let header = "not a diff header";
-    let result = LocalDiffStateModel::parse_unified_diff_header(header);
+    let result = parse_unified_diff_header(header);
     assert!(result.is_err());
 
     let header2 = "@@ incomplete";
-    let result2 = LocalDiffStateModel::parse_unified_diff_header(header2);
+    let result2 = parse_unified_diff_header(header2);
     assert!(result2.is_err());
 }
 
