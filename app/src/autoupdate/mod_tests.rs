@@ -1,3 +1,4 @@
+use ::channel_versions::{ChannelVersion, ChannelVersions};
 use chrono::{Local, TimeZone};
 use warpui::{App, ModelHandle, ReadModel, UpdateModel};
 
@@ -8,7 +9,11 @@ use crate::{
     },
 };
 
-use warp_core::execution_mode::{AppExecutionMode, ExecutionMode};
+use warp_core::{
+    channel::{AutoupdateConfig, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
+    execution_mode::{AppExecutionMode, ExecutionMode},
+    AppId,
+};
 
 use super::*;
 
@@ -287,6 +292,44 @@ fn make_version_info(version_string: impl Into<String>, is_rollback: bool) -> Ve
         version_for_new_users: None,
         cli_version: None,
     }
+}
+
+/// Builds a minimal channel manifest for autoupdate tests.
+fn make_channel_versions(oss_version: Option<&str>) -> ChannelVersions {
+    ChannelVersions {
+        dev: ChannelVersion::new(VersionInfo::new("v0.2023.05.15.08.04.dev_01".to_string())),
+        preview: ChannelVersion::new(VersionInfo::new(
+            "v0.2023.05.15.08.04.preview_01".to_string(),
+        )),
+        stable: ChannelVersion::new(VersionInfo::new(
+            "v0.2023.05.15.08.04.stable_01".to_string(),
+        )),
+        oss: oss_version.map(|version| ChannelVersion::new(VersionInfo::new(version.to_string()))),
+        changelogs: None,
+    }
+}
+
+/// Configures the OSS channel with a GitHub Releases-backed autoupdate source.
+fn set_oss_channel_state(releases_base_url: &str) {
+    ChannelState::set(ChannelState::new(
+        Channel::Oss,
+        ChannelConfig {
+            app_id: AppId::new("dev", "warp", "WarpOss"),
+            logfile_name: "warp-oss.log".into(),
+            server_config: WarpServerConfig::production(),
+            oz_config: OzConfig::production(),
+            telemetry_config: None,
+            crash_reporting_config: None,
+            autoupdate_config: Some(AutoupdateConfig {
+                releases_base_url: releases_base_url.to_string().into(),
+                channel_versions_url: Some(
+                    format!("{releases_base_url}/latest/download/channel_versions.json").into(),
+                ),
+                show_autoupdate_menu_items: true,
+            }),
+            mcp_static_config: None,
+        },
+    ));
 }
 
 /// When a download fails, `downloaded_update` must stay None so the next poll retries.
@@ -588,4 +631,37 @@ fn test_should_update() {
             }
         });
     });
+}
+
+#[test]
+fn test_oss_channel_version_manifest_entry_is_used() {
+    let versions = make_channel_versions(Some("v0.2023.05.15.08.04.oss_01"));
+    let version = channel_version_for_channel(&Channel::Oss, versions)
+        .expect("OSS channel manifest entry should be available");
+
+    assert_eq!(version.version, "v0.2023.05.15.08.04.oss_01");
+}
+
+#[test]
+fn test_oss_channel_version_manifest_requires_oss_entry() {
+    let versions = make_channel_versions(None);
+    let error = channel_version_for_channel(&Channel::Oss, versions)
+        .expect_err("OSS channel manifest selection should fail without an oss entry");
+
+    assert!(
+        error
+            .to_string()
+            .contains("missing the 'oss' channel entry"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn test_oss_release_assets_directory_url_uses_github_download_path() {
+    set_oss_channel_state("https://github.com/example/warp-refined/releases");
+
+    assert_eq!(
+        release_assets_directory_url(Channel::Oss, "v0.2023.05.15.08.04.oss_01"),
+        "https://github.com/example/warp-refined/releases/download/v0.2023.05.15.08.04.oss_01"
+    );
 }

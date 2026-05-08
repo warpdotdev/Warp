@@ -844,87 +844,90 @@ impl VersionInfoWidget {
             action: MainPageAction,
         }
 
-        let (status_content, call_to_action_content) =
-            if ContextFlag::PromptForVersionUpdates.is_enabled() {
-                let ansi_red: ColorU = appearance.theme().terminal_colors().bright.red.into();
-                match autoupdate::get_update_state(app) {
-                    AutoupdateStage::NoUpdateAvailable => (
-                        Some(StatusContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateUpToDate),
-                            color: faded_text_color,
-                        }),
-                        Some(CallToActionContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateCheckForUpdates),
-                            action: MainPageAction::CheckForUpdate,
-                        }),
-                    ),
-                    AutoupdateStage::CheckingForUpdate => (
-                        Some(StatusContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateChecking),
-                            color: faded_text_color,
-                        }),
-                        None,
-                    ),
-                    AutoupdateStage::DownloadingUpdate => (
-                        Some(StatusContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateDownloading),
-                            color: faded_text_color,
-                        }),
-                        None,
-                    ),
-                    AutoupdateStage::UpdateReady { .. } => (
-                        Some(StatusContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateAvailable),
-                            color: ansi_red,
-                        }),
-                        Some(CallToActionContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateRelaunchWarp),
-                            action: MainPageAction::Relaunch,
-                        }),
-                    ),
-                    AutoupdateStage::Updating { .. } => (
-                        Some(StatusContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateUpdating),
-                            color: faded_text_color,
-                        }),
-                        None,
-                    ),
-                    AutoupdateStage::UpdatedPendingRestart { .. } => (
-                        Some(StatusContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateInstalled),
-                            color: faded_text_color,
-                        }),
-                        Some(CallToActionContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateRelaunchWarp),
-                            action: MainPageAction::Relaunch,
-                        }),
-                    ),
-                    AutoupdateStage::UnableToUpdateToNewVersion { .. } => (
-                        Some(StatusContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateUnableToInstall),
-                            color: ansi_red,
-                        }),
-                        Some(CallToActionContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateManual),
-                            // note: the handler for this action is a no-op
-                            action: MainPageAction::DownloadUpdate,
-                        }),
-                    ),
-                    AutoupdateStage::UnableToLaunchNewVersion { .. } => (
-                        Some(StatusContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateUnableToLaunch),
-                            color: ansi_red,
-                        }),
-                        Some(CallToActionContent {
-                            text: i18n::tr(app, I18nKey::AccountUpdateManual),
-                            // note: the handler for this action is a no-op
-                            action: MainPageAction::DownloadUpdate,
-                        }),
-                    ),
-                }
-            } else {
-                (None, None)
-            };
+        let (status_content, call_to_action_content) = if ContextFlag::PromptForVersionUpdates
+            .is_enabled()
+            && FeatureFlag::Autoupdate.is_enabled()
+            && ChannelState::show_autoupdate_menu_items()
+        {
+            let ansi_red: ColorU = appearance.theme().terminal_colors().bright.red.into();
+            match autoupdate::get_update_state(app) {
+                AutoupdateStage::NoUpdateAvailable => (
+                    Some(StatusContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateUpToDate),
+                        color: faded_text_color,
+                    }),
+                    Some(CallToActionContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateCheckForUpdates),
+                        action: MainPageAction::CheckForUpdate,
+                    }),
+                ),
+                AutoupdateStage::CheckingForUpdate => (
+                    Some(StatusContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateChecking),
+                        color: faded_text_color,
+                    }),
+                    None,
+                ),
+                AutoupdateStage::DownloadingUpdate => (
+                    Some(StatusContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateDownloading),
+                        color: faded_text_color,
+                    }),
+                    None,
+                ),
+                AutoupdateStage::UpdateReady { .. } => (
+                    Some(StatusContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateAvailable),
+                        color: ansi_red,
+                    }),
+                    Some(CallToActionContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateRelaunchWarp),
+                        action: MainPageAction::Relaunch,
+                    }),
+                ),
+                AutoupdateStage::Updating { .. } => (
+                    Some(StatusContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateUpdating),
+                        color: faded_text_color,
+                    }),
+                    None,
+                ),
+                AutoupdateStage::UpdatedPendingRestart { .. } => (
+                    Some(StatusContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateInstalled),
+                        color: faded_text_color,
+                    }),
+                    Some(CallToActionContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateRelaunchWarp),
+                        action: MainPageAction::Relaunch,
+                    }),
+                ),
+                AutoupdateStage::UnableToUpdateToNewVersion { .. } => (
+                    Some(StatusContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateUnableToInstall),
+                        color: ansi_red,
+                    }),
+                    Some(CallToActionContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateManual),
+                        // note: the handler for this action is a no-op
+                        action: MainPageAction::DownloadUpdate,
+                    }),
+                ),
+                AutoupdateStage::UnableToLaunchNewVersion { .. } => (
+                    Some(StatusContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateUnableToLaunch),
+                        color: ansi_red,
+                    }),
+                    Some(CallToActionContent {
+                        text: i18n::tr(app, I18nKey::AccountUpdateManual),
+                        // note: the handler for this action is a no-op
+                        action: MainPageAction::DownloadUpdate,
+                    }),
+                ),
+            }
+        } else {
+            (None, None)
+        };
 
         let mut first_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)

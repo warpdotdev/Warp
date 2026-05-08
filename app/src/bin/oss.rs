@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use warp_core::{
-    channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
+    channel::{AutoupdateConfig, Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
     AppId,
 };
 
@@ -19,7 +19,7 @@ fn main() -> Result<()> {
             oz_config: OzConfig::production(),
             telemetry_config: None,
             crash_reporting_config: None,
-            autoupdate_config: None,
+            autoupdate_config: oss_autoupdate_config(),
             mcp_static_config: None,
         },
     );
@@ -29,6 +29,36 @@ fn main() -> Result<()> {
     ChannelState::set(state);
 
     warp::run()
+}
+
+/// Builds the OSS autoupdate configuration when a GitHub repository slug is available.
+fn oss_autoupdate_config() -> Option<AutoupdateConfig> {
+    let repository = oss_update_repository()?;
+    let releases_base_url = format!("https://github.com/{repository}/releases");
+    Some(AutoupdateConfig {
+        releases_base_url: releases_base_url.clone().into(),
+        channel_versions_url: Some(
+            format!("{releases_base_url}/latest/download/channel_versions.json").into(),
+        ),
+        show_autoupdate_menu_items: true,
+    })
+}
+
+/// Returns the GitHub repository slug used for OSS autoupdate assets.
+fn oss_update_repository() -> Option<String> {
+    std::env::var("WARP_OSS_UPDATE_REPOSITORY")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            option_env!("WARP_OSS_UPDATE_REPOSITORY")
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_owned)
+        })
+        .or_else(|| {
+            option_env!("GITHUB_REPOSITORY")
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_owned)
+        })
 }
 
 // If we're not using an external plist, embed the following as the Info.plist.

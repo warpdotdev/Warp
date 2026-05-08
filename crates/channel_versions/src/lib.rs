@@ -18,15 +18,22 @@ pub struct ChannelVersions {
     pub preview: ChannelVersion,
     pub stable: ChannelVersion,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oss: Option<ChannelVersion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changelogs: Option<ChannelChangelogs>,
 }
 
 impl std::fmt::Display for ChannelVersions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let oss = self
+            .oss
+            .as_ref()
+            .map(|version| format!("; oss: {version:?}"))
+            .unwrap_or_default();
         write!(
             f,
-            "dev: {:?}; preview: {:?}; stable: {:?}",
-            self.dev, self.preview, self.stable
+            "dev: {:?}; preview: {:?}; stable: {:?}{}",
+            self.dev, self.preview, self.stable, oss
         )
     }
 }

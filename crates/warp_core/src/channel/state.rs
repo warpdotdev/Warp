@@ -207,6 +207,16 @@ impl ChannelState {
             .unwrap_or_default()
     }
 
+    /// Returns the fully-qualified update manifest URL when this channel overrides it.
+    pub fn channel_versions_url() -> Option<Cow<'static, str>> {
+        CHANNEL_STATE
+            .lock()
+            .config
+            .autoupdate_config
+            .as_ref()
+            .and_then(|ac| ac.channel_versions_url.clone())
+    }
+
     pub fn firebase_api_key() -> Cow<'static, str> {
         CHANNEL_STATE
             .lock()

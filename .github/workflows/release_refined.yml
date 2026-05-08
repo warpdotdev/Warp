@@ -167,10 +167,45 @@ jobs:
       bundle_features: nld_onnx_model
     secrets: inherit
 
+  publish_update_manifest:
+    name: Publish OSS update manifest
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'release_current_master') }}
+    needs: create_release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate and upload channel_versions.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.create_release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "::error::The create_release workflow did not expose an OSS release tag."
+            exit 1
+          fi
+
+          jq -n --arg version "$RELEASE_TAG" \
+            '{
+              dev: {version: $version},
+              preview: {version: $version},
+              stable: {version: $version},
+              oss: {version: $version}
+            }' > channel_versions.json
+
+          gh release upload "$RELEASE_TAG" \
+            --repo "$REPO" \
+            --clobber \
+            channel_versions.json
+
   update_release_notes:
     name: Update OSS release notes
     if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'release_current_master') }}
-    needs: create_release
+    needs:
+      - create_release
+      - publish_update_manifest
     runs-on: ubuntu-latest
     steps:
       - name: Checkout master

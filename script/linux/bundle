@@ -196,6 +196,9 @@ if [[ "$ARTIFACT" == "cli" ]]; then
   FEATURES="$FEATURES,standalone"
 elif [[ "$ARTIFACT" == "app" ]]; then
   FEATURES="$FEATURES,gui,nld_improvements"
+  if [[ $RELEASE_CHANNEL = "oss" ]]; then
+    FEATURES="$FEATURES,autoupdate"
+  fi
 fi
 
 BUNDLE_ID="dev.warp.$APP_NAME"

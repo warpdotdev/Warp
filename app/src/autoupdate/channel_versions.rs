@@ -57,19 +57,25 @@ async fn fetch_channel_versions_from_json_storage(
     nonce: &str,
 ) -> Result<ChannelVersions> {
     log::info!("Fetching channel versions from GCP JSON storage");
+    let manifest_url = channel_versions_manifest_url(nonce);
     let res = client
-        .get(
-            format!(
-                "{}/channel_versions.json?r={}",
-                ChannelState::releases_base_url(),
-                nonce
-            )
-            .as_str(),
-        )
+        .get(manifest_url.as_str())
         .timeout(FETCH_CHANNEL_VERSIONS_TIMEOUT)
         .send()
         .await?;
     let versions: ChannelVersions = res.json().await?;
     log::info!("Received channel versions from GCP JSON storage: {versions}");
     Ok(versions)
+}
+
+/// Returns the manifest URL used to fetch channel version metadata.
+fn channel_versions_manifest_url(nonce: &str) -> String {
+    if let Some(url) = ChannelState::channel_versions_url() {
+        format!("{url}?r={nonce}")
+    } else {
+        format!(
+            "{}/channel_versions.json?r={nonce}",
+            ChannelState::releases_base_url()
+        )
+    }
 }

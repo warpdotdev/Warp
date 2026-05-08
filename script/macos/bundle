@@ -351,6 +351,9 @@ if [[ "$ARTIFACT" == cli ]]; then
   FEATURES="$FEATURES,standalone"
 elif [[ "$ARTIFACT" == app ]]; then
   FEATURES="$FEATURES,gui,nld_improvements"
+  if [[ $RELEASE_CHANNEL = "oss" ]]; then
+    FEATURES="$FEATURES,autoupdate"
+  fi
 fi
 
 # If we're building a universal bundle for the app artifact, make sure the additional target is available.

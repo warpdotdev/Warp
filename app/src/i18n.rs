@@ -1,6 +1,6 @@
 use crate::settings::{DisplayLanguage, LanguageSettings};
-use std::borrow::Cow;
 use settings::Setting as _;
+use std::borrow::Cow;
 use strum_macros::EnumIter;
 use warpui::{AppContext, SingletonEntity};
 

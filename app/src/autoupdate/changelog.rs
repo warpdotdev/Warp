@@ -42,7 +42,7 @@ pub async fn get_current_changelog(server_api: Arc<ServerApi>) -> Result<Option<
             Channel::Stable => Some(changelogs.stable),
             Channel::Preview => Some(changelogs.preview),
             Channel::Dev | Channel::Local => Some(changelogs.dev),
-            // Integration tests and the open-source build don't support autoupdate.
+            // Integration tests and the open-source build don't ship in-app changelog entries.
             Channel::Integration | Channel::Oss => None,
         }
         .and_then(|versions| {

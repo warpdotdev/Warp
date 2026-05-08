@@ -16,7 +16,7 @@ use crate::{
     channel::Channel, report_if_error, send_telemetry_from_ctx, server::datetime_ext::DateTimeExt,
     ChannelState,
 };
-use ::channel_versions::{ParsedVersion, VersionInfo};
+use ::channel_versions::{ChannelVersions, ParsedVersion, VersionInfo};
 use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, FixedOffset, NaiveDate};
 use rand::Rng as _;
@@ -778,12 +778,22 @@ async fn fetch_version(
     server_api: Arc<ServerApi>,
 ) -> Result<VersionInfo> {
     let versions = fetch_channel_versions(update_id, server_api.clone(), false, is_daily).await?;
+    channel_version_for_channel(channel, versions)
+}
 
+/// Selects the manifest entry that should drive autoupdate for the given channel.
+fn channel_version_for_channel(
+    channel: &Channel,
+    versions: ChannelVersions,
+) -> Result<VersionInfo> {
     let channel_version = match channel {
         Channel::Stable => versions.stable,
         Channel::Preview => versions.preview,
         Channel::Dev => versions.dev,
-        Channel::Integration | Channel::Local | Channel::Oss => {
+        Channel::Oss => versions
+            .oss
+            .context("OSS update manifest is missing the 'oss' channel entry")?,
+        Channel::Integration | Channel::Local => {
             // These channels don't ship release artifacts, so there's no
             // version to fetch. This branch is normally unreachable because
             // `AutoupdateState::register` gates the poll loop on the
@@ -791,13 +801,10 @@ async fn fetch_version(
             // can end up with `Autoupdate` enabled while running on one of
             // these channels. Return an error rather than panicking so the
             // poll loop just logs and bails.
-            anyhow::bail!(
-                "Local, integration, and open-source channel binaries don't support autoupdate"
-            );
+            anyhow::bail!("Local and integration channel binaries don't support autoupdate");
         }
     };
-    let version_info = channel_version.version_info();
-    Ok(version_info)
+    Ok(channel_version.version_info())
 }
 
 // This method is unimplemented on wasm, so we allow unused variables.
@@ -1155,8 +1162,9 @@ fn release_assets_directory_url(channel: Channel, version: &str) -> String {
             format!("{releases_base_url}/preview/{version}")
         }
         Channel::Dev => format!("{releases_base_url}/dev/{version}"),
-        Channel::Local | Channel::Integration | Channel::Oss => {
-            unreachable!("local/integration/oss autoupdate not supported");
+        Channel::Oss => format!("{releases_base_url}/download/{version}"),
+        Channel::Local | Channel::Integration => {
+            unreachable!("local/integration autoupdate not supported");
         }
     }
 }

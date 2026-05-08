@@ -36,11 +36,16 @@ fn main() -> Result<()> {
         .preview
         .version_info_for_execution_context(&context);
     let stable_version_info = versions.stable.version_info_for_execution_context(&context);
+    let oss_version_info = versions
+        .oss
+        .as_ref()
+        .map(|version| version.version_info_for_execution_context(&context));
 
     let transformed_versions = ChannelVersions {
         dev: ChannelVersion::new(dev_version_info),
         preview: ChannelVersion::new(preview_version_info),
         stable: ChannelVersion::new(stable_version_info),
+        oss: oss_version_info.map(ChannelVersion::new),
         changelogs: None,
     };
 

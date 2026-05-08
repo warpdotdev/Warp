@@ -112,6 +112,11 @@ pub struct RudderStackDestination {
 pub struct AutoupdateConfig {
     /// The base URL for fetching autoupdate versions and updated release bundles.
     pub releases_base_url: Cow<'static, str>,
+    /// An optional fully-qualified URL for the update manifest.
+    ///
+    /// When omitted, the client falls back to `{releases_base_url}/channel_versions.json`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_versions_url: Option<Cow<'static, str>>,
     /// Whether or not to display menu items relating to autoupdate.
     pub show_autoupdate_menu_items: bool,
 }
