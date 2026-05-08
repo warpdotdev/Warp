@@ -21,8 +21,8 @@ use warpui::{
     accessibility::{AccessibilityContent, ActionAccessibilityContent, WarpA11yRole},
     assets::asset_cache::AssetSource,
     elements::{
-        Align, Border, CacheOption, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
-        DispatchEventResult, Element, EventHandler, Flex, Hoverable, Icon, Image,
+        Align, Border, CacheOption, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+        Dismiss, DispatchEventResult, Element, EventHandler, Flex, Hoverable, Icon, Image,
         MainAxisAlignment, MainAxisSize, MouseInBehavior, MouseStateHandle, ParentElement, Radius,
         Rect, SavePosition, Shrinkable, Text,
     },
@@ -852,8 +852,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
                     1.,
                     Container::new(
                         ConstrainedBox::new(
-                            Image::new(AssetSource::Bundled { path }, CacheOption::BySize)
-                                .finish(),
+                            Image::new(AssetSource::Bundled { path }, CacheOption::BySize).finish(),
                         )
                         .with_width(icon_size)
                         .with_height(icon_size)

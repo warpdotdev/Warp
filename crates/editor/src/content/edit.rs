@@ -45,10 +45,7 @@ use warpui::text::char_slice;
 use super::{
     buffer::{StyledBufferBlock, StyledBufferRun, StyledTextBlock},
     mermaid_diagram::{mermaid_asset_source, mermaid_diagram_layout},
-    text::{
-        BufferBlockItem, BufferBlockStyle, CodeBlockType, FormattedTable, TableBlockCache,
-        table_from_internal_format_with_inline_markdown,
-    },
+    text::{BufferBlockItem, BufferBlockStyle, CodeBlockType, FormattedTable, TableBlockCache},
 };
 
 #[cfg(test)]
