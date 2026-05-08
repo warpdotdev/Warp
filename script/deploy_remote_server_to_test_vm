@@ -175,8 +175,46 @@ fi
 for REMOTE_USER in "${REMOTE_USERS[@]}"; do
   echo "==> Ensuring remote directory exists for ${REMOTE_USER}"
   "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p ~/$REMOTE_DIR"
+  echo "==> Stopping stale remote server daemons for ${REMOTE_USER}"
+  "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "bash -s -- '$REMOTE_DIR'" <<'REMOTE_SCRIPT'
+set -euo pipefail
 
-  echo "==> Uploading binary to ${REMOTE_USER}@${REMOTE_HOST}:~/$REMOTE_DIR/$BINARY_NAME"
+REMOTE_ROOT="$HOME/$1"
+mkdir -p "$REMOTE_ROOT"
+
+shopt -s nullglob
+for PID_FILE in "$REMOTE_ROOT"/*/server.pid; do
+  DAEMON_DIR="$(dirname "$PID_FILE")"
+  PID="$(cat "$PID_FILE" 2>/dev/null || true)"
+
+  if [[ "$PID" =~ ^[0-9]+$ ]] && [[ -d "/proc/$PID" ]]; then
+    CMDLINE="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
+    if [[ "$CMDLINE" == *remote-server-daemon* ]]; then
+      echo "Stopping stale remote-server daemon pid $PID"
+      kill "$PID" 2>/dev/null || true
+
+      for _ in {1..50}; do
+        if ! kill -0 "$PID" 2>/dev/null; then
+          break
+        fi
+        sleep 0.1
+      done
+
+      if kill -0 "$PID" 2>/dev/null; then
+        echo "Force-stopping stale remote-server daemon pid $PID"
+        kill -9 "$PID" 2>/dev/null || true
+      fi
+    fi
+  fi
+
+  rm -f "$DAEMON_DIR/server.sock" "$DAEMON_DIR/server.pid"
+done
+
+rm -f "$REMOTE_ROOT"/oz-integration-*.tmp.*
+REMOTE_SCRIPT
+
+  TMP_BINARY_NAME="$BINARY_NAME.tmp.${GITHUB_RUN_ID:-local}.$$.${REMOTE_USER}"
+  echo "==> Uploading binary to ${REMOTE_USER}@${REMOTE_HOST}:~/$REMOTE_DIR/$TMP_BINARY_NAME"
   "${SCP_CMD[@]}" -P "$REMOTE_PORT" \
     -o "ProxyCommand=$PROXY_COMMAND" \
     -o PreferredAuthentications=password \
@@ -184,9 +222,11 @@ for REMOTE_USER in "${REMOTE_USERS[@]}"; do
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     "$BUILT_BINARY" \
-    "${REMOTE_USER}@${REMOTE_HOST}:~/$REMOTE_DIR/$BINARY_NAME"
-  echo "==> Setting executable permissions for ${REMOTE_USER}"
-  "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "chmod 755 ~/$REMOTE_DIR/$BINARY_NAME"
+    "${REMOTE_USER}@${REMOTE_HOST}:~/$REMOTE_DIR/$TMP_BINARY_NAME"
+
+  echo "==> Installing binary for ${REMOTE_USER}"
+  "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" \
+    "chmod 755 ~/$REMOTE_DIR/$TMP_BINARY_NAME && mv -f ~/$REMOTE_DIR/$TMP_BINARY_NAME ~/$REMOTE_DIR/$BINARY_NAME && test -x ~/$REMOTE_DIR/$BINARY_NAME"
 done
 
 echo ""
