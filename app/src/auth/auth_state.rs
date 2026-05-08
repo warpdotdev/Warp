@@ -231,6 +231,7 @@ impl AuthState {
     ///
     /// Empty values are authoritative: an empty token clears bearer credentials, and an empty user
     /// ID clears the daemon user identity.
+    #[cfg(any(not(target_family = "wasm"), test))]
     pub(crate) fn apply_remote_server_auth_context(
         &self,
         auth_token: String,
@@ -241,6 +242,7 @@ impl AuthState {
         self.set_remote_server_user(user_id, user_email);
     }
 
+    #[cfg(any(not(target_family = "wasm"), test))]
     pub(crate) fn set_remote_server_bearer_token(&self, auth_token: String) {
         if auth_token.is_empty() {
             self.set_credentials(None);
@@ -249,6 +251,7 @@ impl AuthState {
         self.set_credentials(Some(Credentials::Bearer(auth_token)));
     }
 
+    #[cfg(any(not(target_family = "wasm"), test))]
     fn set_remote_server_user(&self, user_id: String, user_email: String) {
         let mut user = self.user.write();
         if user_id.is_empty() {
