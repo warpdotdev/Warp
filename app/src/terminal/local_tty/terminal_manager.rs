@@ -1476,19 +1476,23 @@ impl TerminalManager {
 
                 // Flush the initial input operations that the sharer performed
                 // in the latest buffer before the share was started.
-                let init_input_ops: Vec<CrdtOperation> = terminal_view
-                    .as_ref(ctx)
-                    .input()
-                    .as_ref(ctx)
-                    .latest_buffer_operations()
-                    .cloned()
-                    .collect();
-                network.update(ctx, |network, _ctx| {
-                    network.send_input_update(
-                        model.lock().block_list().active_block_id(),
-                        init_input_ops.iter(),
-                    );
-                });
+                // Skip for ambient agent sessions — the sharer is a headless
+                // worker whose input ops would cause a phantom cursor.
+                if !model.lock().is_shared_ambient_agent_session() {
+                    let init_input_ops: Vec<CrdtOperation> = terminal_view
+                        .as_ref(ctx)
+                        .input()
+                        .as_ref(ctx)
+                        .latest_buffer_operations()
+                        .cloned()
+                        .collect();
+                    network.update(ctx, |network, _ctx| {
+                        network.send_input_update(
+                            model.lock().block_list().active_block_id(),
+                            init_input_ops.iter(),
+                        );
+                    });
+                }
 
                 // Stream historical agent conversations so viewers have conversation and task context.
                 if FeatureFlag::AgentSharedSessions.is_enabled() {
@@ -2316,6 +2320,14 @@ impl TerminalManager {
                 // If the block ID has become stale by the time we get here,
                 // we don't need to send this update to the server.
                 if model.lock().block_list().active_block_id() != block_id {
+                    return;
+                }
+
+                // In cloud agent sessions the sharer is a headless worker
+                // that never interactively types in the rich input. Sending
+                // its CRDT selection ops would cause a phantom cursor to
+                // render on the viewer side.
+                if model.lock().is_shared_ambient_agent_session() {
                     return;
                 }
 
