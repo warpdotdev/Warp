@@ -1814,6 +1814,10 @@ impl GlobalBufferModel {
     }
 
     /// Save a server-local buffer to disk.
+    ///
+    /// Uses the buffer's current `ContentVersion` (not a fresh one) so that
+    /// `FileModel` can detect concurrent modifications between the save
+    /// request and the disk write completing.
     #[cfg(feature = "local_fs")]
     pub fn save_server_local(
         &mut self,
@@ -2041,7 +2045,6 @@ impl GlobalBufferModel {
                         (start..end, edit.text.clone())
                     })
                     .collect();
-
                 buffer.insert_at_char_offset_ranges(char_edits, new_version, ctx);
             });
 

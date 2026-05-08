@@ -17,6 +17,15 @@ pub enum PendingBufferRequestKind {
     ResolveConflict,
 }
 
+/// An in-flight buffer request awaiting a `GlobalBufferModelEvent` to
+/// correlate it back to the originating connection.
+#[derive(Clone, Debug)]
+pub struct PendingBufferRequest {
+    pub request_id: RequestId,
+    pub connection_id: ConnectionId,
+    pub kind: PendingBufferRequestKind,
+}
+
 /// Bridges the ServerModel's per-connection state with the GlobalBufferModel's
 /// tracked buffers. Manages:
 /// - Wire path → FileId mappings for open server-local buffers
@@ -37,7 +46,7 @@ pub struct ServerBufferTracker {
     /// `GlobalBufferModelEvent`s can be correlated back to the originating
     /// request and connection. Uses a `Vec` to support concurrent requests
     /// for the same buffer from different connections.
-    pending_requests: HashMap<FileId, Vec<(RequestId, ConnectionId, PendingBufferRequestKind)>>,
+    pending_requests: HashMap<FileId, Vec<PendingBufferRequest>>,
 }
 
 impl ServerBufferTracker {
@@ -165,7 +174,11 @@ impl ServerBufferTracker {
         self.pending_requests
             .entry(file_id)
             .or_default()
-            .push((request_id, conn_id, kind));
+            .push(PendingBufferRequest {
+                request_id,
+                connection_id: conn_id,
+                kind,
+            });
     }
 
     /// Retrieve and remove pending requests that match `kind` for the given
@@ -174,14 +187,14 @@ impl ServerBufferTracker {
         &mut self,
         file_id: &FileId,
         kind: PendingBufferRequestKind,
-    ) -> Vec<(RequestId, ConnectionId)> {
+    ) -> Vec<PendingBufferRequest> {
         let Some(entries) = self.pending_requests.get_mut(file_id) else {
             return Vec::new();
         };
         let mut matched = Vec::new();
-        entries.retain(|(req, conn, k)| {
-            if std::mem::discriminant(k) == std::mem::discriminant(&kind) {
-                matched.push((req.clone(), conn.to_owned()));
+        entries.retain(|req| {
+            if std::mem::discriminant(&req.kind) == std::mem::discriminant(&kind) {
+                matched.push(req.clone());
                 false // remove from the vec
             } else {
                 true // keep

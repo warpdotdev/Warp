@@ -323,7 +323,7 @@ impl ServerModel {
                             .sync_clock_for_server_local(*file_id)
                             .map(|c| c.server_version.as_u64());
 
-                        for (request_id, conn_id) in pending {
+                        for req in pending {
                             let message = match (&content, server_version) {
                                 (Some(content), Some(sv)) => {
                                     server_message::Message::OpenBufferResponse(
@@ -341,8 +341,8 @@ impl ServerModel {
                                 }),
                             };
                             me.send_server_message(
-                                Some(conn_id),
-                                Some(&request_id),
+                                Some(req.connection_id),
+                                Some(&req.request_id),
                                 message,
                             );
                         }
@@ -384,13 +384,13 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FileSaved { file_id } => {
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::SaveBuffer,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
                             server_message::Message::SaveBufferResponse(SaveBufferResponse {
                                 result: Some(save_buffer_response::Result::Success(
                                     SaveBufferSuccess {},
@@ -398,13 +398,13 @@ impl ServerModel {
                             }),
                         );
                     }
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::ResolveConflict,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
                             server_message::Message::ResolveConflictResponse(
                                 ResolveConflictResponse {
                                     result: Some(
@@ -418,13 +418,13 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FailedToSave { file_id, error } => {
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::SaveBuffer,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
                             server_message::Message::SaveBufferResponse(SaveBufferResponse {
                                 result: Some(save_buffer_response::Result::Error(
                                     FileOperationError {
@@ -434,13 +434,13 @@ impl ServerModel {
                             }),
                         );
                     }
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::ResolveConflict,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
                             server_message::Message::ResolveConflictResponse(
                                 ResolveConflictResponse {
                                     result: Some(resolve_conflict_response::Result::Error(
@@ -454,13 +454,13 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FailedToLoad { file_id, error } => {
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::OpenBuffer,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
                             server_message::Message::Error(ErrorResponse {
                                 code: ErrorCode::Internal.into(),
                                 message: format!("Failed to load buffer: {error}"),
