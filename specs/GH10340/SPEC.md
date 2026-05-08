@@ -82,12 +82,42 @@ Selecting a file row opens the diff using the same routing as Flat mode.
 - Cmd-click (macOS) / Ctrl-click (Windows/Linux) on a folder row toggles all
   descendants.
 
-### B6. Search / filter
+### B6. File-list filter contract
 
-The existing search/filter input filters files in both modes. In Tree mode,
-folders containing matches auto-expand to reveal the matches. Non-matching
-siblings are dimmed by default; a "Show all" toggle preserves siblings as
-fully visible.
+This spec introduces a **new file-list filter** that is distinct from Code
+Review's existing content-based find bar. The two are independent:
+
+- The **existing find bar** continues to operate inside the open diff editor
+  as a content search across diff text. It is unchanged by this spec.
+- The **new file-list filter** is a filename-substring filter (case-
+  insensitive, plain text — no regex in V1) embedded in the file-list panel
+  header.
+
+Filter behavior:
+
+- Positioned at the top of the file-list panel, **above** the Flat/Tree
+  toggle.
+- Filters the changed-files set only; it never searches diff content.
+- In Tree mode, files whose names match the filter cause their parent
+  folders to auto-expand. Non-matching siblings are dimmed by default; the
+  existing "Show all" toggle keeps siblings fully visible.
+- In Flat mode, non-matching files are hidden by default; "Show all" keeps
+  them dimmed instead of hidden.
+- The filter value is preserved when the user toggles Flat ↔ Tree.
+- The filter is window-local and cleared when the review session closes;
+  it is not persisted across reviews or restarts.
+
+### B6a. Selected file definition
+
+"Selected file" in the Code Review file list is defined as **the file whose
+diff is currently open in the main pane**. This matches today's Flat-mode
+behavior: clicking a file row opens its diff and that file becomes the
+selection. The selection is **window-local**; switching reviews/PRs or
+closing the review session resets it.
+
+Initial state: when a review opens with no diff yet selected, no file is
+selected. Toggling Flat ↔ Tree in this state does not preserve a selection;
+the new mode scrolls to the top of the list.
 
 ### B7. Keyboard navigation
 
@@ -99,9 +129,30 @@ fully visible.
 
 ### B8. Selection preservation across mode switch
 
-Switching between Flat and Tree preserves the currently selected file. Its
-row is auto-revealed in the new mode (parents expanded as needed in Tree
-mode; row scrolled into view in Flat mode).
+Switching between Flat and Tree preserves the currently selected file (as
+defined in B6a — the file whose diff is open in the main pane). Its row is
+auto-revealed in the new mode (parents expanded as needed in Tree mode; row
+scrolled into view in Flat mode). If no file is selected (no diff open),
+toggling the mode does not preserve a selection and the new mode scrolls to
+the top of the list.
+
+### B9. Renames and cross-directory placement
+
+Files with change kind `R` (renamed) — including cross-directory renames —
+are placed in the tree as follows by default:
+
+- The renamed file is grouped under the **parent folder of its NEW path**.
+- The row label shows the new filename, with the old path rendered as a
+  small subtitle, e.g. `bar.rs (was foo/bar.rs)`.
+- The rename counts **once** toward the new folder's "changes" count and
+  contributes its `+/-` line counts to the new folder's aggregate.
+- The rename is **never** double-counted (it does not appear in, nor
+  contribute stats to, the old folder).
+
+An overflow toggle "Group renames by old path" (default OFF) inverts this
+attribution: when ON, renamed files are grouped under the parent folder of
+their OLD path, the new path appears as the subtitle, and stats accrue to
+the old folder. The toggle is window-local and not persisted in V1.
 
 ## Settings / API surface
 
@@ -159,5 +210,19 @@ UI placement:
 
 ## Telemetry
 
-Extend the existing `code_review.opened` event with a `file_list_mode`
-field (`"flat"` | `"tree"`). No new event types are introduced.
+This spec extends the **existing** `CodeReview.PaneOpened` event and adds
+two new events. (Earlier drafts referenced an event name that did not match
+the current event taxonomy; the names below are the authoritative targets.)
+
+- `CodeReview.PaneOpened` (existing, extended): add an optional
+  `file_list_mode: "flat" | "tree"` field reflecting the active mode at the
+  time the pane opened.
+- `CodeReview.FileListModeToggled` (NEW): fired when the user toggles
+  between Flat and Tree mid-session. Payload: `{ from: "flat" | "tree",
+  to: "flat" | "tree" }`.
+- `CodeReview.FileListFiltered` (NEW): fired when the new file-list filter
+  (B6) is used. Debounced so it fires at most once per filter session
+  (i.e. once per contiguous span of typing terminated by clear or focus
+  loss). Payload: `{ mode: "flat" | "tree", results_count: number }`.
+
+No other event types are introduced.
