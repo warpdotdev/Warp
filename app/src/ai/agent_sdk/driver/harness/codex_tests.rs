@@ -367,6 +367,57 @@ fn write_codex_mcp_servers_sse_server() {
 }
 
 #[test]
+fn write_codex_mcp_servers_cli_server_with_cwd() {
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("config.toml");
+    let working_dir = tmp.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+
+    let servers = HashMap::from([(
+        "my-mcp".to_string(),
+        JSONMCPServer {
+            transport_type: JSONTransportType::CLIServer {
+                command: "node".to_string(),
+                args: vec!["server.js".to_string()],
+                env: HashMap::new(),
+                working_directory: Some("/opt/mcp-server".to_string()),
+            },
+        },
+    )]);
+    prepare_codex_config_toml(&config_path, &working_dir, &servers).unwrap();
+
+    let cfg = read_codex_config(&config_path);
+    let mcp = &cfg["mcp_servers"]["my-mcp"];
+    assert_eq!(mcp["command"].as_str(), Some("node"));
+    assert_eq!(mcp["cwd"].as_str(), Some("/opt/mcp-server"));
+}
+
+#[test]
+fn write_codex_mcp_servers_cli_server_without_cwd_omits_key() {
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("config.toml");
+    let working_dir = tmp.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+
+    let servers = HashMap::from([(
+        "my-mcp".to_string(),
+        JSONMCPServer {
+            transport_type: JSONTransportType::CLIServer {
+                command: "npx".to_string(),
+                args: vec![],
+                env: HashMap::new(),
+                working_directory: None,
+            },
+        },
+    )]);
+    prepare_codex_config_toml(&config_path, &working_dir, &servers).unwrap();
+
+    let cfg = read_codex_config(&config_path);
+    let mcp = &cfg["mcp_servers"]["my-mcp"];
+    assert!(mcp.get("cwd").is_none());
+}
+
+#[test]
 fn find_child_git_repos_returns_only_repo_children() {
     let tmp = TempDir::new().unwrap();
     let workspace = tmp.path().join("workspace");

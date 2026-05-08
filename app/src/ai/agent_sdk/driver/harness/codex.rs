@@ -697,7 +697,10 @@ fn write_codex_mcp_servers(
 
         match &server.transport_type {
             JSONTransportType::CLIServer {
-                command, args, env, ..
+                command,
+                args,
+                env,
+                working_directory,
             } => {
                 entry["command"] = toml_edit::value(command.as_str());
                 if !args.is_empty() {
@@ -713,6 +716,9 @@ fn write_codex_mcp_servers(
                         env_tbl.insert(k, v.as_str().into());
                     }
                     entry["env"] = toml_edit::value(env_tbl);
+                }
+                if let Some(cwd) = working_directory {
+                    entry["cwd"] = toml_edit::value(cwd.as_str());
                 }
             }
             JSONTransportType::SSEServer { url, headers } => {

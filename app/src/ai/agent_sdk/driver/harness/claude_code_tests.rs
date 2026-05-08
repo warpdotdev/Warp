@@ -151,6 +151,44 @@ fn serialize_claude_mcp_config_cli_server() {
 }
 
 #[test]
+fn serialize_claude_mcp_config_cli_server_with_cwd() {
+    let servers = HashMap::from([(
+        "test-server".to_string(),
+        JSONMCPServer {
+            transport_type: JSONTransportType::CLIServer {
+                command: "node".to_string(),
+                args: vec!["server.js".to_string()],
+                env: HashMap::new(),
+                working_directory: Some("/opt/mcp".to_string()),
+            },
+        },
+    )]);
+    let json = serialize_claude_mcp_config(&servers).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let server = &parsed["mcpServers"]["test-server"];
+    assert_eq!(server["cwd"], "/opt/mcp");
+}
+
+#[test]
+fn serialize_claude_mcp_config_cli_server_omits_cwd_when_none() {
+    let servers = HashMap::from([(
+        "test-server".to_string(),
+        JSONMCPServer {
+            transport_type: JSONTransportType::CLIServer {
+                command: "node".to_string(),
+                args: vec![],
+                env: HashMap::new(),
+                working_directory: None,
+            },
+        },
+    )]);
+    let json = serialize_claude_mcp_config(&servers).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let server = &parsed["mcpServers"]["test-server"];
+    assert!(server.get("cwd").is_none());
+}
+
+#[test]
 fn serialize_claude_mcp_config_sse_server() {
     let servers = HashMap::from([(
         "remote".to_string(),

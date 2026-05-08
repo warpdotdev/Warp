@@ -713,6 +713,8 @@ enum ClaudeMcpServerEntry {
         args: Vec<String>,
         #[serde(skip_serializing_if = "HashMap::is_empty")]
         env: HashMap<String, String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
     },
     #[serde(rename = "http")]
     Http {
@@ -726,11 +728,15 @@ impl ClaudeMcpServerEntry {
     fn from_json_mcp_server(server: &JSONMCPServer) -> Self {
         match &server.transport_type {
             JSONTransportType::CLIServer {
-                command, args, env, ..
+                command,
+                args,
+                env,
+                working_directory,
             } => Self::Stdio {
                 command: command.clone(),
                 args: args.clone(),
                 env: env.clone(),
+                cwd: working_directory.clone(),
             },
             JSONTransportType::SSEServer { url, headers } => Self::Http {
                 url: url.clone(),
