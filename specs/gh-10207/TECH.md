@@ -24,8 +24,16 @@ Root cause:
 Current PR ([#10234](https://github.com/warpdotdev/warp/pull/10234)) — reactive
 fallback:
 
-- On `ExceededMaxFileLimit`, retry `build_tree` with `max_depth=1` so the root
-  is `Indexed` with unloaded subdirectories. Lazy-load handles expansion.
+- On `ExceededMaxFileLimit`, retry `build_tree` with `max_depth=1` and the
+  same 100k file quota so the root is `Indexed` with unloaded subdirectories.
+  Lazy-load handles expansion.
+- **Edge case the current PR doesn't cover:** if the repo has >100k files
+  *directly* at the root (not in subdirectories), the depth-1 retry hits
+  `ExceededMaxFileLimit` again because the file quota is consumed at depth=1
+  for direct-child files (`entry.rs:214-220`). The repo lands back in
+  `IndexedRepoState::Failed` and the tree is empty — the original bug. This
+  is rare in practice (most repos spread files across subdirectories) but
+  the fix should remove it.
 - New `RepositoryIndexedWithLimit` event surfaces a transient toast in the
   file tree.
 - Skill watcher gains a `find_top_level_skill_directories_in_filesystem`
@@ -74,10 +82,23 @@ in this spec.**
   deeply-nested cases uniformly. The only cost is the partial walk on huge
   repos, paid once per session.
 
-**Followup (not this PR):** add a telemetry counter for
-`RepositoryIndexedWithLimit` events plus the time spent in the failed
-`build_tree`. If the partial-walk latency turns out to matter, revisit
-option 1 as an optimization layered on top.
+**One refinement to land with this spec:** the depth-1 retry should pass
+`None` for `remaining_file_quota` (`entry.rs:94`) instead of reusing
+`MAX_FILES_PER_REPO`. Cost is bounded by the count of root-level entries
+(directories return as unloaded immediately at depth=1; only direct-child
+files consume memory). For a hypothetical 1M-file root that's ~1M
+`FileMetadata` allocations (~100 bytes each → ~100 MB) — order of magnitude
+more than the typical case but still cheaper than the `Failed → empty tree`
+status quo, and it ensures every repo can at least show its top level.
+With this change, the only path that still fails is `read_dir` itself
+returning an error, which already maps to `BuildTreeError::IOError`.
+
+**Followup (not this PR):** add a telemetry counter on the persistent
+`indexed_with_limit` transition (and reuse the existing
+`RepoMetadataTelemetryEvent::BuildTreeFailed { error: "ExceededMaxFileLimit" }`
+already emitted at `local_model.rs:1001`) plus the time spent in the failed
+full-depth `build_tree`. If the partial-walk latency turns out to matter,
+revisit option 1 (pre-detection) as an optimization layered on top.
 
 ### Q2 — Is the toast necessary?
 
@@ -156,6 +177,13 @@ fixes.
   on the model) and asserts the resulting `FileTreeState.indexed_with_limit
   == true` with depth-1 children only. Also assert
   `RepositoryUpdated` fires (and `UpdatingRepositoryFailed` does not).
+- Unit (regression for the depth-1 quota gap noted in Context): a fixture
+  with `MAX_FILES_PER_REPO + 1` files placed *directly under the repo
+  root* (i.e. no intermediate directories). Without the unquoted retry the
+  fallback reproduces the original bug; with `remaining_file_quota = None`
+  on the depth-1 retry the test asserts `IndexedRepoState::Indexed` with
+  `indexed_with_limit == true` and the root entry containing all top-level
+  files.
 - Unit: `find_top_level_skill_directories_in_filesystem` honors gitignore.
   Add a fixture with a `.gitignore` excluding `.claude/skills` and a
   populated `.claude/skills/foo/SKILL.md`; assert the probe returns empty.
@@ -201,9 +229,12 @@ fixes.
   `ai::outline::native`, and `ai::index::full_source_code_embedding`, or
   surface the "codebase too large" status alongside the file-tree
   indicator so users see one consistent message.
-- Telemetry: counter for `RepositoryIndexedWithLimit`; histogram for
-  lazy-load entry-count and duration. Inform whether to raise
-  `LAZY_LOAD_FILE_LIMIT` or move lazy-load off the main thread.
+- Telemetry: counter on the `FileTreeState.indexed_with_limit` transition
+  (the existing `BuildTreeFailed { error: "ExceededMaxFileLimit" }`
+  telemetry at `local_model.rs:1001` already covers the trigger; add a
+  paired success counter for the depth-1 retry); histogram for lazy-load
+  entry-count and duration. Inform whether to raise `LAZY_LOAD_FILE_LIMIT`
+  or move lazy-load off the main thread.
 - Make `MAX_FILES_PER_REPO` configurable per-user (settings) so power
   users on large monorepos can opt into a higher limit at the cost of
   memory.
