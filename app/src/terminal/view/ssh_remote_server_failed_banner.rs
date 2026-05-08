@@ -15,7 +15,7 @@ use warpui::{
 
 use crate::{terminal::model::session::SessionId, ui_components::icons::Icon, Appearance};
 
-const BANNER_TITLE: &str = "Could not establish connection to host";
+const BANNER_TITLE: &str = "Couldn't connect to the Warp SSH extension";
 
 const BANNER_BODY: &str =
     "While advanced features like file browsing and code review are currently \
@@ -106,11 +106,14 @@ impl View for SshRemoteServerFailedBanner {
                 format!("{}.", self.error.body)
             };
 
-            let error_text =
-                Text::new(error_description, appearance.ui_font_family(), small_font_size)
-                .soft_wrap(true)
-                .with_color(error_text_color)
-                .finish();
+            let error_text = Text::new(
+                error_description,
+                appearance.ui_font_family(),
+                small_font_size,
+            )
+            .soft_wrap(true)
+            .with_color(error_text_color)
+            .finish();
 
             let error_box = Container::new(error_text)
                 .with_background(error_bg)
