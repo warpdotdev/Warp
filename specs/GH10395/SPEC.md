@@ -33,7 +33,7 @@ Any one of the following triggers candidate-duplicate state for the open PR:
 1. **Same issue reference.** Another open PR in the same repo references the same issue via `Closes #N`, `Fixes #N`, or `Resolves #N` (case-insensitive) in its body.
 2. **File-overlap.** For PRs touching ≥3 files, Jaccard similarity of changed-file path sets ≥ 0.50 with another open PR.
 3. **Small-PR heuristic.** For PRs touching 1–2 files, all changed paths match another open PR AND title TF-IDF cosine similarity ≥ 0.70.
-4. **Rapid-fire same author.** Same author submitting more than one open PR with ≥30% diff overlap within a 24-hour window. (Captures force-push-as-new-PR cases.)
+4. **Rapid-fire same author.** Same author submitting more than one open PR within a 24-hour window where the changed-file path sets have Jaccard similarity ≥ 0.30 (path-only overlap, identical to the metric used in B1.2). V1 explicitly does **not** compute line-level diff overlap; the term `diff overlap` is defined here as `|paths(A) ∩ paths(B)| / |paths(A) ∪ paths(B)|` over the changed-file path sets only. (Captures force-push-as-new-PR cases.) Line-level overlap is deferred to V1.5 (see Open Questions).
 
 ### B2. Surface in Code Review pane
 
@@ -58,17 +58,23 @@ The callout exposes a "Mark as not duplicate" button per candidate. Clicking it 
 
 #### B4a. Dismissal trust model
 
-The `<!-- warp-dup-dismiss pr=N -->` marker is **only respected when the comment author has WRITE access (or higher) to the repository**. This prevents external contributors from forging suppression markers to hide duplicate alerts from maintainers.
+The `<!-- warp-dup-dismiss pr=N -->` marker is **only respected when the comment author has actual `push` (write) permission or higher on the repository at the time the marker is evaluated**. This prevents external contributors — and lower-privileged org members — from forging suppression markers to hide duplicate alerts from maintainers.
 
-Server-side verification: the GitHub API exposes the comment author's permissions via the `author_association` field on each comment. Suppression is only applied when:
+**Authoritative permission check (required).** Trust is determined by an explicit per-author repository permission lookup, **not** by `author_association` alone. `author_association` only describes the author's relationship to the PR's discussion thread (e.g., `MEMBER` = member of the org that owns the repo, which does **not** imply repository write access). The detector calls:
 
 ```
-author_association ∈ { OWNER, MEMBER, COLLABORATOR }
+GET /repos/{owner}/{repo}/collaborators/{username}/permission
 ```
 
-Comments by external contributors (`author_association ∈ { CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, NONE, MANNEQUIN }`) carrying the same marker text are **IGNORED** — the candidate continues to surface in the callout as if the marker were absent. The detector logs a sanitized debug entry (no comment body, just `pr_number` + `author_association`) when a non-trusted marker is encountered.
+and treats the marker as trusted **only if** the response's `permission` field is one of `{ admin, maintain, write }`. The values `triage`, `read`, and `none` are rejected.
 
-The "Mark as not duplicate" UI button is only enabled for users whose GitHub identity has write access to the repo; non-write users see the button disabled with tooltip "Requires repo write access".
+The result of this lookup is cached per `(repo, username)` for 10 minutes to bound API cost; cache misses re-fetch on the next detection run.
+
+**`author_association` is used only as a fast-path negative filter** — comments with `author_association ∈ { CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, NONE, MANNEQUIN }` are rejected without making the permission API call, since these associations cannot correspond to write access. Comments with `author_association ∈ { OWNER, MEMBER, COLLABORATOR }` proceed to the authoritative `permission` lookup before being trusted.
+
+Comments whose author fails the permission check carrying the same marker text are **IGNORED** — the candidate continues to surface in the callout as if the marker were absent. The detector logs a sanitized debug entry (no comment body; only `pr_number`, `author_association`, and resolved `permission`) when a non-trusted marker is encountered.
+
+The "Mark as not duplicate" UI button is only enabled for users whose GitHub identity passes the same `permission ∈ { admin, maintain, write }` check against the repo; users without write permission see the button disabled with tooltip "Requires repo write access".
 
 ### B-Secret. Slack webhook secret-material handling
 
@@ -136,7 +142,7 @@ The user-level toggle and team-level external-routing config govern **independen
 
 ### B-Dedup. Persistent dedupe / cooldown for external signals
 
-External signals (Slack/Linear) are deduped by the tuple `(source_pr, candidate_pr, signal_type)` where `signal_type ∈ { same_issue_ref, file_overlap, small_pr_match, rapid_fire_same_author }`.
+External signals (Slack/Linear) are deduped by the **unordered pair** `({pr_a, pr_b}, signal_type)` where `signal_type ∈ { same_issue_ref, file_overlap, small_pr_match, rapid_fire_same_author }`. The pair is canonicalized by sorting the two PR numbers ascending before keying the dedupe store, so opening either PR in the pair produces the same key. This matches the spec's promise that the cooldown applies when **either** PR in the pair is opened — there is no separate `(A→B)` vs `(B→A)` cooldown.
 
 - Dedupe state is persisted in a **server-side store** (e.g., the team-settings DB or a per-team Redis namespace), not in process memory and not in client-side storage. This survives client app restarts, different reviewers opening the same PR, and Warp version upgrades.
 - TTL: **7 days**. Within the TTL window, the same tuple does **not** re-fire — even across review sessions, app restarts, or different reviewers opening either PR in the pair.
@@ -150,12 +156,12 @@ External signals (Slack/Linear) are deduped by the tuple `(source_pr, candidate_
 - A2. Two PRs touching ≥3 files with ≥50% Jaccard path-set overlap each show the other in their callout with signal label "X% file overlap".
 - A3. A 1–2 file PR matches another only when path sets are identical AND title cosine ≥ 0.70.
 - A4. A dismissed candidate stays hidden for that (PR, candidate) pair on subsequent opens, in both directions.
-- A5. The `MaintainerAlert.DuplicatePr` external signal is deduped by `(source_pr, candidate_pr, signal_type)` with a 7-day TTL on a **server-side persistent** store; it does not re-fire within TTL across sessions, app restarts, or different reviewers.
-- A5a. After the 7-day TTL elapses, the next detection of the same tuple re-fires the external signal exactly once and resets the TTL.
+- A5. The `MaintainerAlert.DuplicatePr` external signal is deduped by the canonical unordered pair `({pr_a, pr_b}, signal_type)` with a 7-day TTL on a **server-side persistent** store; it does not re-fire within TTL across sessions, app restarts, or different reviewers, and opening either PR in the pair hits the same dedupe key.
+- A5a. After the 7-day TTL elapses, the next detection of the same canonical pair re-fires the external signal exactly once and resets the TTL.
 - A6. With `code.review.duplicate_alert.enabled = false`, the **in-product callout** does not render for that user. Team-level external signals continue to fire (deduped per A5) regardless of any individual user's toggle.
 - A7. Clicking a candidate row opens that candidate PR in a new Code Review pane without replacing the current one.
-- A8. A `<!-- warp-dup-dismiss pr=N -->` marker on a comment whose `author_association ∈ {OWNER, MEMBER, COLLABORATOR}` is honored; the candidate is suppressed.
-- A9. The same marker text on a comment from an external contributor (`author_association ∈ {CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, NONE, MANNEQUIN}`) is **ignored** and the candidate continues to surface.
+- A8. A `<!-- warp-dup-dismiss pr=N -->` marker on a comment whose author returns `permission ∈ { admin, maintain, write }` from `GET /repos/{owner}/{repo}/collaborators/{username}/permission` is honored; the candidate is suppressed.
+- A9. The same marker text on a comment whose author returns `permission ∈ { triage, read, none }` (or whose `author_association` is in the negative-filter set `{CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, NONE, MANNEQUIN}`) is **ignored** and the candidate continues to surface — even if `author_association` is `MEMBER`.
 - A10. The Slack webhook URL is never returned by any API to a non-admin caller, never appears in logs/telemetry/error messages, and is rejected at save time if the URL scheme is not HTTPS.
 
 ## Implementation Pointers
@@ -180,14 +186,15 @@ New modules:
 - T2. File-set Jaccard ≥ 0.50 over ≥3 files produces a match; below 0.50 does not.
 - T3. Small-PR (1–2 files) path requires identical path set AND title cosine ≥ 0.70.
 - T4. Dismissal persists via PR-comment marker and is bidirectional.
-- T5. External signal does not re-fire for the same `(source_pr, candidate_pr, signal_type)` within the 7-day TTL.
-- T_dedup_ttl. After exactly 7 days have elapsed since the previous emission, the next detection of the same tuple re-fires once and resets the TTL.
+- T5. External signal does not re-fire for the same canonical unordered pair `({pr_a, pr_b}, signal_type)` within the 7-day TTL — and opening PR B after PR A within the window also does **not** re-fire (verifies bidirectional keying).
+- T_dedup_ttl. After exactly 7 days have elapsed since the previous emission, the next detection of the same canonical pair re-fires once and resets the TTL.
 - T_dedup_across_sessions. Dedupe state survives client restart, multiple reviewers opening either PR, and is read from the server-side store (not from in-process memory).
 - T6. User toggle OFF mutes the per-user in-product callout but does **not** suppress team-level external signals.
 - T7. Background re-detection picks up newly opened PRs without requiring pane refresh.
 - T8. Click navigation opens the candidate in a new pane.
-- T_dismissal_trust_collaborator_respected. A `warp-dup-dismiss` marker on a comment by an OWNER/MEMBER/COLLABORATOR suppresses the candidate.
-- T_dismissal_trust_external_ignored. The same marker text on a comment from a CONTRIBUTOR/FIRST_TIME_CONTRIBUTOR/NONE author is ignored; the candidate still surfaces.
+- T_dismissal_trust_write_respected. A `warp-dup-dismiss` marker on a comment whose author returns `permission ∈ { admin, maintain, write }` from the collaborators-permission API suppresses the candidate.
+- T_dismissal_trust_member_without_write_ignored. A marker on a comment whose `author_association = MEMBER` but whose collaborators-permission lookup returns `read` (e.g., an org member who is not a repo collaborator) is **ignored** and the candidate continues to surface — verifies that `author_association` alone is not trusted.
+- T_dismissal_trust_external_ignored. The same marker text on a comment from a CONTRIBUTOR/FIRST_TIME_CONTRIBUTOR/NONE author is rejected by the fast-path `author_association` filter without an API call; the candidate still surfaces.
 - T_webhook_secret_redacted. Logs, telemetry payloads, error messages, and panic traces produced during a Slack emission do not contain the webhook URL — only the literal `[redacted-slack-webhook]`.
 - T_webhook_admin_only. A non-admin team member's read of the webhook value returns the redacted display only; the API never returns the cleartext URL to non-admins.
 - T_webhook_https_only. Saving a webhook with `http://` scheme is rejected at validation time.
