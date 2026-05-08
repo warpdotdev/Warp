@@ -42,9 +42,13 @@ const MODAL_HEIGHT: f32 = 320.;
 const API_KEY_DOCS_URL: &str = "https://docs.warp.dev/reference/cli/api-keys";
 const API_KEY_NAME_COLUMN_DEFAULT_WIDTH: f32 = 220.;
 const API_KEY_NAME_COLUMN_MIN_WIDTH: f32 = 120.;
-const API_KEY_KEY_COLUMN_DEFAULT_WIDTH: f32 = 180.;
-const API_KEY_KEY_COLUMN_MIN_WIDTH: f32 = 110.;
-const API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH: f32 = 360.;
+const API_KEY_KEY_COLUMN_WIDTH: f32 = 180.;
+const API_KEY_METADATA_COLUMN_MIN_WIDTH: f32 = 80.;
+const API_KEY_ACTION_COLUMN_MIN_WIDTH: f32 = 48.;
+const API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH: f32 = API_KEY_KEY_COLUMN_WIDTH
+    + (API_KEY_METADATA_COLUMN_MIN_WIDTH * 3.)
+    + API_KEY_ACTION_COLUMN_MIN_WIDTH;
+const API_KEY_TABLE_MIN_SCOPE_COLUMN_WIDTH: f32 = API_KEY_METADATA_COLUMN_MIN_WIDTH;
 
 #[derive(Clone, Copy)]
 pub enum PlatformPageViewEvent {
@@ -354,14 +358,12 @@ impl APIKeyProperties {
 
 struct ApiKeyTableColumnWidths {
     name: ResizableStateHandle,
-    key: ResizableStateHandle,
 }
 
 impl Default for ApiKeyTableColumnWidths {
     fn default() -> Self {
         Self {
             name: resizable_state_handle(API_KEY_NAME_COLUMN_DEFAULT_WIDTH),
-            key: resizable_state_handle(API_KEY_KEY_COLUMN_DEFAULT_WIDTH),
         }
     }
 }
@@ -376,10 +378,6 @@ impl ApiKeyTableColumnWidths {
 
     fn name_width(&self) -> f32 {
         Self::width(&self.name)
-    }
-
-    fn key_width(&self) -> f32 {
-        Self::width(&self.key)
     }
 }
 #[derive(Default)]
@@ -496,6 +494,13 @@ impl PlatformPageWidget {
         appearance: &Appearance,
         view: &PlatformPageView,
     ) -> Box<dyn Element> {
+        let show_scope_column =
+            FeatureFlag::TeamApiKeys.is_enabled() || FeatureFlag::NamedAgents.is_enabled();
+        let min_non_resizable_columns_width = if show_scope_column {
+            API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH + API_KEY_TABLE_MIN_SCOPE_COLUMN_WIDTH
+        } else {
+            API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH
+        };
         let mut header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
@@ -504,14 +509,14 @@ impl PlatformPageWidget {
             "Name",
             view.api_key_table_column_widths.name.clone(),
             API_KEY_NAME_COLUMN_MIN_WIDTH,
+            min_non_resizable_columns_width,
         ));
-        header_row.add_child(self.render_resizable_header_cell(
-            appearance,
-            "Key",
-            view.api_key_table_column_widths.key.clone(),
-            API_KEY_KEY_COLUMN_MIN_WIDTH,
-        ));
-        if FeatureFlag::TeamApiKeys.is_enabled() || FeatureFlag::NamedAgents.is_enabled() {
+        header_row.add_child(
+            ConstrainedBox::new(self.render_header_cell(appearance, "Key"))
+                .with_width(API_KEY_KEY_COLUMN_WIDTH)
+                .finish(),
+        );
+        if show_scope_column {
             header_row.add_child(
                 Expanded::new(1., self.render_header_cell(appearance, "Scope")).finish(),
             );
@@ -539,6 +544,7 @@ impl PlatformPageWidget {
         label: &str,
         width_handle: ResizableStateHandle,
         min_width: f32,
+        min_non_resizable_columns_width: f32,
     ) -> Box<dyn Element> {
         let width = width_handle
             .lock()
@@ -565,8 +571,7 @@ impl PlatformPageWidget {
         Resizable::new(width_handle, header_cell)
             .with_dragbar_side(DragBarSide::Right)
             .with_bounds_callback(Box::new(move |window_size| {
-                let max_width = (window_size.x() - API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH)
-                    .max(min_width);
+                let max_width = (window_size.x() - min_non_resizable_columns_width).max(min_width);
                 (min_width, max_width)
             }))
             .on_resize(|ctx, _| {
@@ -619,7 +624,7 @@ impl PlatformPageWidget {
             .map(|dt| format!("{}", dt.format("%b %-d, %Y")))
             .unwrap_or_else(|| "Never".to_owned());
         let name_column_width = view.api_key_table_column_widths.name_width();
-        let key_column_width = view.api_key_table_column_widths.key_width();
+        let key_column_width = API_KEY_KEY_COLUMN_WIDTH;
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
