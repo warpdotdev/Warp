@@ -38,8 +38,11 @@ use crate::server::server_api::ai::{
 use crate::server::server_api::{
     AIApiError, ClientError, CloudAgentCapacityError, ServerApiProvider,
 };
+use crate::settings::PrivacySettings;
 use crate::terminal::view::ambient_agent::{SetupCommandGroupId, SetupCommandState};
 use crate::terminal::CLIAgent;
+use crate::workspaces::user_workspaces::UserWorkspaces;
+use crate::workspaces::workspace::AdminEnablementSetting;
 
 use super::AmbientAgentProgressUIState;
 
@@ -602,6 +605,7 @@ impl AmbientAgentViewModel {
             conversation_id: forked_conversation_id,
             initial_snapshot_token,
             agent_identity_uid: None,
+            snapshot_disabled: should_disable_snapshot(ctx).then_some(true),
         }
     }
 
@@ -1029,6 +1033,7 @@ impl AmbientAgentViewModel {
             referenced_attachments: vec![],
             conversation_id: None,
             initial_snapshot_token: None,
+            snapshot_disabled: should_disable_snapshot(ctx).then_some(true),
         };
 
         self.spawn_internal(request, ctx);
@@ -1568,6 +1573,17 @@ pub enum AmbientAgentViewModelEvent {
     UpdatedSetupCommandVisibility,
     /// The selected harness auth secret changed.
     AuthSecretSelected,
+}
+
+fn should_disable_snapshot(ctx: &AppContext) -> bool {
+    let privacy = PrivacySettings::as_ref(ctx);
+    if !privacy.is_cloud_conversation_storage_enabled {
+        return true;
+    }
+    matches!(
+        UserWorkspaces::as_ref(ctx).get_cloud_conversation_storage_enablement_setting(),
+        AdminEnablementSetting::Disable
+    )
 }
 
 impl Entity for AmbientAgentViewModel {

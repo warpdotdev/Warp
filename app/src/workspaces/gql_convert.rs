@@ -837,6 +837,11 @@ impl From<GqlWorkspaceSettings> for WorkspaceSettings {
                 .ambient_agent_settings
                 .as_ref()
                 .and_then(|s| s.default_host_slug.clone()),
+            warp_hosted_agents_enabled: gql_workspace_settings
+                .ambient_agent_settings
+                .as_ref()
+                .map(|s| s.warp_hosted_agents_enabled)
+                .unwrap_or(true),
         }
     }
 }

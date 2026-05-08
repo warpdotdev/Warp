@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 use crate::ai::request_usage_model::RequestLimitInfo;
 use crate::auth::AuthStateProvider;
 use crate::report_if_error;
+use crate::settings::PrivacySettings;
 use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use cfg_if::cfg_if;
@@ -1486,6 +1487,26 @@ define_settings_group!(AISettings, settings: [
         toml_path: "agents.warp_agent.other.agent_attribution_enabled",
         description: "Whether the Warp Agent adds an attribution co-author line to commit messages and pull requests it creates.",
     }
+
+    cloud_handoff_enabled: CloudHandoffEnabled {
+        type: bool,
+        default: true,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "agents.warp_agent.other.cloud_handoff_enabled",
+        description: "Whether local-to-cloud handoff is enabled.",
+    }
+
+    ampersand_handoff_enabled: AmpersandHandoffEnabled {
+        type: bool,
+        default: true,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "agents.warp_agent.other.ampersand_handoff_enabled",
+        description: "Whether the & prefix triggers cloud handoff compose mode.",
+    }
 ]);
 
 impl AISettings {
@@ -1666,6 +1687,34 @@ impl AISettings {
         FeatureFlag::Orchestration.is_enabled()
             && self.is_any_ai_enabled(app)
             && *self.orchestration_enabled
+    }
+
+    /// Returns true when local-to-cloud handoff is effectively enabled.
+    /// False when the user/org has disabled it, cloud conversations are off,
+    /// Warp-hosted agents are disabled, or AI is globally off.
+    pub fn is_cloud_handoff_enabled(&self, app: &warpui::AppContext) -> bool {
+        if !self.is_any_ai_enabled(app) || !*self.cloud_handoff_enabled {
+            return false;
+        }
+        if !crate::ai::blocklist::is_local_to_cloud_handoff_available() {
+            return false;
+        }
+        let privacy = PrivacySettings::as_ref(app);
+        if !privacy.is_cloud_conversation_storage_enabled {
+            return false;
+        }
+        let workspaces = UserWorkspaces::as_ref(app);
+        if matches!(
+            workspaces.get_cloud_conversation_storage_enablement_setting(),
+            crate::workspaces::workspace::AdminEnablementSetting::Disable
+        ) {
+            return false;
+        }
+        workspaces.is_warp_hosted_agents_enabled()
+    }
+
+    pub fn is_ampersand_handoff_enabled(&self, app: &warpui::AppContext) -> bool {
+        self.is_cloud_handoff_enabled(app) && *self.ampersand_handoff_enabled
     }
 
     /// Determines whether a quota reset banner should be displayed to the user.

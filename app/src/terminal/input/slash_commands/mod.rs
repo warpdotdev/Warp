@@ -896,9 +896,7 @@ impl Input {
             }
             #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
             move_to_cloud if command.name == commands::MOVE_TO_CLOUD.name => {
-                if !FeatureFlag::OzHandoff.is_enabled()
-                    || !FeatureFlag::HandoffLocalCloud.is_enabled()
-                {
+                if !AISettings::as_ref(ctx).is_cloud_handoff_enabled(ctx) {
                     return false;
                 }
                 let prompt = argument

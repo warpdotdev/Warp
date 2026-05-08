@@ -2041,7 +2041,7 @@ impl AgentInputFooter {
                 .is_enabled()
                 .then(|| ChildView::new(&self.fast_forward_button).finish()),
             AgentToolbarItemKind::HandoffToCloud => {
-                if !is_local_to_cloud_handoff_available() {
+                if !AISettings::as_ref(app).is_cloud_handoff_enabled(app) {
                     return None;
                 }
 

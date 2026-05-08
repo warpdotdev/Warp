@@ -1516,6 +1516,7 @@ impl AISettingsPageView {
                 if FeatureFlag::AgentModeComputerUse.is_enabled() {
                     widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
                 }
+                widgets.push(Box::new(CloudHandoffWidget::default()));
             }
             Some(AISubpage::WarpAgent) => {
                 // Oz page: global toggle + Active AI + Input + Other
@@ -1556,6 +1557,7 @@ impl AISettingsPageView {
                 if FeatureFlag::AgentModeComputerUse.is_enabled() {
                     widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
                 }
+                widgets.push(Box::new(CloudHandoffWidget::default()));
             }
             Some(AISubpage::Profiles) => {
                 if !FeatureFlag::UsageBasedPricing.is_enabled() {
@@ -2270,6 +2272,8 @@ pub enum AISettingsPageAction {
     #[cfg(feature = "local_fs")]
     SetConversationLayout(crate::util::file::external_editor::settings::OpenConversationPreference),
     ToggleOrchestration,
+    ToggleCloudHandoff,
+    ToggleAmpersandHandoff,
     ToggleShowConversationHistory,
     ToggleAutoToggleRichInput,
     ToggleAutoOpenRichInputOnCLIAgentStart,
@@ -3012,6 +3016,20 @@ impl TypedActionView for AISettingsPageView {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings
                         .show_conversation_history
+                        .toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleCloudHandoff => {
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.cloud_handoff_enabled.toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleAmpersandHandoff => {
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .ampersand_handoff_enabled
                         .toggle_and_save_value(ctx));
                 });
                 ctx.notify();
@@ -6303,6 +6321,154 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
         }
 
         column.finish()
+    }
+}
+
+#[derive(Default)]
+struct CloudHandoffWidget {
+    handoff_toggle: SwitchStateHandle,
+    ampersand_toggle: SwitchStateHandle,
+}
+
+impl SettingsWidget for CloudHandoffWidget {
+    type View = AISettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "cloud handoff ampersand & move to cloud local"
+    }
+
+    fn should_render(&self, _app: &AppContext) -> bool {
+        FeatureFlag::OzHandoff.is_enabled() && FeatureFlag::HandoffLocalCloud.is_enabled()
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        use crate::settings::PrivacySettings;
+
+        let ai_settings = AISettings::as_ref(app);
+        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
+
+        let privacy = PrivacySettings::as_ref(app);
+        let cloud_convos_off = !privacy.is_cloud_conversation_storage_enabled
+            || matches!(
+                UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
+                AdminEnablementSetting::Disable
+            );
+        let hosted_agents_off = !UserWorkspaces::as_ref(app).is_warp_hosted_agents_enabled();
+        let is_force_disabled = !is_any_ai_enabled || cloud_convos_off || hosted_agents_off;
+
+        let effective_handoff = !is_force_disabled && *ai_settings.cloud_handoff_enabled;
+        let effective_ampersand = effective_handoff && *ai_settings.ampersand_handoff_enabled;
+
+        let tooltip_text = if cloud_convos_off && hosted_agents_off {
+            "Cloud handoff requires cloud conversations and Warp-hosted agents to be enabled."
+        } else if cloud_convos_off {
+            "Cloud handoff requires cloud conversations to be enabled."
+        } else if hosted_agents_off {
+            "Cloud handoff requires Warp-hosted agents to be enabled by your organization."
+        } else {
+            ""
+        };
+
+        let ui_builder = appearance.ui_builder();
+
+        let handoff_toggle = if is_force_disabled {
+            let mut builder = ui_builder.switch(self.handoff_toggle.clone()).check(false);
+            if !tooltip_text.is_empty() {
+                builder = builder.with_tooltip(TooltipConfig {
+                    text: tooltip_text.to_string(),
+                    styles: ui_builder.default_tool_tip_styles(),
+                });
+            }
+            builder.disable().build().finish()
+        } else {
+            ui_builder
+                .switch(self.handoff_toggle.clone())
+                .check(*ai_settings.cloud_handoff_enabled)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleCloudHandoff);
+                })
+                .finish()
+        };
+
+        let handoff_row = build_toggle_element(
+            render_body_item_label::<AISettingsPageAction>(
+                "Cloud handoff".to_string(),
+                Some(styles::header_font_color(!is_force_disabled, app)),
+                None,
+                LocalOnlyIconState::Hidden,
+                ToggleState::Enabled,
+                appearance,
+            ),
+            handoff_toggle,
+            appearance,
+            None,
+        );
+
+        let ampersand_disabled = is_force_disabled || !*ai_settings.cloud_handoff_enabled;
+        let ampersand_toggle = if ampersand_disabled {
+            ui_builder
+                .switch(self.ampersand_toggle.clone())
+                .check(effective_ampersand)
+                .with_disabled(true)
+                .build()
+                .finish()
+        } else {
+            ui_builder
+                .switch(self.ampersand_toggle.clone())
+                .check(*ai_settings.ampersand_handoff_enabled)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleAmpersandHandoff);
+                })
+                .finish()
+        };
+
+        let ampersand_row = Container::new(build_toggle_element(
+            render_body_item_label::<AISettingsPageAction>(
+                "Use & to trigger handoff".to_string(),
+                Some(styles::header_font_color(!ampersand_disabled, app)),
+                None,
+                LocalOnlyIconState::Hidden,
+                ToggleState::Enabled,
+                appearance,
+            ),
+            ampersand_toggle,
+            appearance,
+            None,
+        ))
+        .with_padding_left(16.)
+        .finish();
+
+        Flex::column()
+            .with_child(render_separator(appearance))
+            .with_child(
+                build_sub_header(
+                    appearance,
+                    "Cloud Handoff",
+                    Some(styles::header_font_color(is_any_ai_enabled, app)),
+                )
+                .with_padding_bottom(HEADER_PADDING)
+                .finish(),
+            )
+            .with_child(handoff_row)
+            .with_child(render_ai_setting_description(
+                "Hand off local agent conversations to a cloud agent.",
+                !is_force_disabled,
+                app,
+            ))
+            .with_child(ampersand_row)
+            .with_child(render_ai_setting_description(
+                "Type & as the first character to enter cloud handoff compose mode.",
+                !ampersand_disabled,
+                app,
+            ))
+            .finish()
     }
 }
 

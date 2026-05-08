@@ -133,6 +133,7 @@ pub struct CodebaseContextSettings {
 pub struct AmbientAgentSettings {
     pub enable_warp_attribution: AdminEnablementSetting,
     pub default_host_slug: Option<String>,
+    pub warp_hosted_agents_enabled: bool,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]

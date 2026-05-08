@@ -13361,7 +13361,7 @@ impl Workspace {
         environment_id: Option<SyncId>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !FeatureFlag::OzHandoff.is_enabled() || !FeatureFlag::HandoffLocalCloud.is_enabled() {
+        if !AISettings::as_ref(ctx).is_cloud_handoff_enabled(ctx) {
             return;
         }
 

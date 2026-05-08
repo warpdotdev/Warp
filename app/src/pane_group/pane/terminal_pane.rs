@@ -1928,6 +1928,7 @@ fn launch_remote_child(
         conversation_id: None,
         initial_snapshot_token: None,
         agent_identity_uid: None,
+        snapshot_disabled: None,
     };
 
     new_terminal_view.update(ctx, |terminal_view, ctx| {

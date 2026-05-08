@@ -1482,6 +1482,12 @@ impl UserWorkspaces {
             .and_then(|team| team.organization_settings.default_host_slug.as_deref())
     }
 
+    pub fn is_warp_hosted_agents_enabled(&self) -> bool {
+        self.current_team()
+            .map(|team| team.organization_settings.warp_hosted_agents_enabled)
+            .unwrap_or(true)
+    }
+
     /// Returns the team-level agent attribution setting.
     ///
     /// Use this to decide whether the user's attribution toggle should be locked

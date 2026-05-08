@@ -759,6 +759,10 @@ pub struct SandboxedAgentSettings {
     pub execute_commands_denylist: Option<Vec<AgentModeCommandExecutionPredicate>>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorkspaceSettings {
     pub llm_settings: LlmSettings,
@@ -781,4 +785,8 @@ pub struct WorkspaceSettings {
     pub enable_warp_attribution: AdminEnablementSetting,
     #[serde(default)]
     pub default_host_slug: Option<String>,
+    /// Whether the org allows Warp-hosted cloud agents. Defaults to `true` when
+    /// `AmbientAgentSettings` is absent from the GraphQL response.
+    #[serde(default = "default_true")]
+    pub warp_hosted_agents_enabled: bool,
 }

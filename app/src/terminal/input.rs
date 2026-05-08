@@ -3843,7 +3843,7 @@ impl Input {
         ctx: &AppContext,
     ) -> bool {
         *edit_origin == EditOrigin::UserTyped
-            && is_local_to_cloud_handoff_available()
+            && AISettings::as_ref(ctx).is_ampersand_handoff_enabled(ctx)
             && FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()
             && self.ambient_agent_view_model().is_none()
