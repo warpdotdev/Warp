@@ -114,8 +114,7 @@ pub fn convert_keyboard_input_event(
         // Key::Character from it so the rest of the pipeline can handle it normally.
         #[cfg(windows)]
         Key::Unidentified(NativeKey::Windows(_)) if input.text.is_some() => {
-            let text = input.text.as_ref().unwrap();
-            Key::Character(text.to_lowercase().into())
+            rdp_key_from_text(input.text.as_deref().unwrap())
         }
         // On Windows, non-Latin keyboard layouts (Cyrillic, Greek, Arabic, etc.) translate
         // the physical key to a non-ASCII character even when Ctrl/Cmd is held. That makes
@@ -169,6 +168,17 @@ pub fn convert_keyboard_input_event(
     })
 }
 
+/// Synthesizes a `Key::Character` from raw text in RDP Unicode input mode.
+///
+/// In RDP Unicode mode (Windows App for iPad) both `physical_key` and `logical_key`
+/// are `Unidentified`; `input.text` is the only source of the typed character.
+/// We lowercase the text so that `get_input_key` can re-apply case based on the
+/// current `shift` state, matching the behaviour of normal Scancode-mode input.
+#[cfg(windows)]
+pub(super) fn rdp_key_from_text(text: &str) -> Key {
+    Key::Character(text.to_lowercase().into())
+}
+
 #[cfg(not(target_family = "wasm"))]
 /// Returns the base key without any modifiers applied, or `None` if it cannot be determined.
 fn get_key_without_modifiers(input: &winit::event::KeyEvent) -> Option<String> {
@@ -182,8 +192,7 @@ fn get_key_without_modifiers(input: &winit::event::KeyEvent) -> Option<String> {
     // as a best-effort base key (e.g. Shift+A sends text="A" → base "a").
     #[cfg(windows)]
     if let Some(text) = &input.text {
-        let lower = text.to_lowercase();
-        return convert_key(Key::Character(lower.into())).map(|k| k.to_string());
+        return convert_key(rdp_key_from_text(text)).map(|k| k.to_string());
     }
     None
 }

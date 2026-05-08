@@ -1,4 +1,6 @@
 use super::{convert_key, get_input_key, us_qwerty_fallback_for_chord};
+#[cfg(windows)]
+use super::rdp_key_from_text;
 use winit::keyboard::{Key, Key::Character, KeyCode, NativeKeyCode, PhysicalKey, SmolStr};
 
 #[test]
@@ -158,44 +160,57 @@ fn us_qwerty_fallback_returns_none_for_unidentified_physical_key() {
     }
 }
 
-// Tests for RDP Unicode mode fallback: when physical_key is Unidentified,
-// verify that convert_key still handles characters from logical_key correctly.
+// Tests for RDP Unicode mode fallback: exercises the Unidentified+text path
+// via rdp_key_from_text, which is the exact function called when both
+// physical_key and logical_key are Unidentified(Windows(_)) and text is Some.
+#[cfg(windows)]
 #[test]
-fn rdp_unicode_mode_convert_key_handles_ascii_character() {
-    // In RDP Unicode mode, logical_key carries the correct character.
-    // Verify convert_key produces the expected string for all printable ASCII.
-    for ascii in b'a'..=b'z' {
-        let c = char::from(ascii);
-        let key = Key::Character(SmolStr::new(c.to_string()));
+fn rdp_key_from_text_produces_lowercase_character() {
+    // Verify that rdp_key_from_text lowercases the input so that get_input_key
+    // can re-apply case from the shift modifier state downstream.
+    let cases = [
+        ("h", "h"),
+        ("H", "h"), // Shift held — text arrives as uppercase, must be lowercased
+        ("k", "k"),
+        ("1", "1"),
+        ("!", "!"), // punctuation — no case change
+    ];
+    for (text, expected) in cases {
+        let key = rdp_key_from_text(text);
         let result = convert_key(key);
         assert_eq!(
             result.as_deref(),
-            Some(c.to_string().as_str()),
-            "convert_key should return '{c}' for Character(\"{c}\")",
+            Some(expected),
+            "rdp_key_from_text({text:?}) should produce key '{expected}'",
         );
     }
 }
 
+#[cfg(windows)]
 #[test]
-fn rdp_unicode_mode_lowercase_fallback_for_key_without_modifiers() {
-    // Simulate what the get_key_without_modifiers fallback does:
-    // logical_key = "A" (Shift held in RDP mode) → lowercased → "a"
-    let shifted = Key::Character(SmolStr::new("A"));
-    if let Key::Character(c) = &shifted {
-        let lower = c.to_lowercase();
-        let result = convert_key(Key::Character(lower.into()));
-        assert_eq!(
-            result.as_deref(),
-            Some("a"),
-            "lowercased 'A' should produce key_without_modifiers = 'a'",
-        );
-    }
+fn rdp_key_from_text_roundtrips_through_get_input_key_without_shift() {
+    // Without shift, get_input_key should lowercase — same as rdp_key_from_text output.
+    let key = rdp_key_from_text("h");
+    let input_key = get_input_key(&key, false);
+    let result = convert_key(input_key);
+    assert_eq!(result.as_deref(), Some("h"));
+}
+
+#[cfg(windows)]
+#[test]
+fn rdp_key_from_text_roundtrips_through_get_input_key_with_shift() {
+    // With shift held, get_input_key should uppercase the lowercased character,
+    // producing the correct final key for shift+letter chords.
+    let key = rdp_key_from_text("H"); // Shift+H arrives as "H" in text
+    let input_key = get_input_key(&key, true); // shift=true
+    let result = convert_key(input_key);
+    assert_eq!(result.as_deref(), Some("H"));
 }
 
 #[test]
 fn rdp_unicode_mode_named_keys_still_convert() {
-    // Named keys (Enter, Escape, arrows) should convert correctly regardless
-    // of physical_key — they go through convert_key via the Named variant.
+    // Named keys (Enter, Escape, arrows) go through convert_key via the Named
+    // variant and must work regardless of physical_key being Unidentified.
     use winit::keyboard::NamedKey;
     let cases = [
         (Key::Named(NamedKey::Enter), "enter"),
