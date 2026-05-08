@@ -13624,9 +13624,26 @@ impl TerminalView {
             .input_mode
             .value();
         let inverted = input_mode.is_inverted_blocklist();
-        self.model
-            .lock()
-            .selection_to_string(semantic_selection, inverted, ctx)
+        let blocklist_selected_text =
+            self.model
+                .lock()
+                .selection_to_string(semantic_selection, inverted, ctx);
+        blocklist_selected_text.or_else(|| self.pending_user_query_selected_text(ctx))
+    }
+
+    /// Returns selected text from the pending user query block, if any.
+    fn pending_user_query_selected_text(&self, ctx: &AppContext) -> Option<String> {
+        let view_id = self.pending_user_query_view_id?;
+        self.rich_content_views
+            .iter()
+            .find_map(|rc| match rc.metadata() {
+                Some(RichContentMetadata::PendingUserQuery {
+                    pending_user_query_block_handle,
+                }) if pending_user_query_block_handle.id() == view_id => {
+                    pending_user_query_block_handle.as_ref(ctx).selected_text(ctx)
+                }
+                _ => None,
+            })
     }
 
     /// Gets the selected text from the terminal input editor, if any.
@@ -15525,6 +15542,12 @@ impl TerminalView {
             }
         }
 
+        if let Some(selected_text) = self.pending_user_query_selected_text(ctx) {
+            ctx.clipboard()
+                .write(ClipboardContent::plain_text(selected_text));
+            return;
+        }
+
         let semantic_selection = SemanticSelection::as_ref(ctx);
         if let Some(selected) = self.model.lock().selection_to_string(
             semantic_selection,
@@ -17225,9 +17248,10 @@ impl TerminalView {
         let selection_settings = SelectionSettings::handle(ctx);
         let semantic_selection = SemanticSelection::as_ref(ctx);
         let model = self.model.lock();
-        if let Some(selected) =
-            model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
-        {
+        let selected_text = model
+            .selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
+            .or_else(|| self.pending_user_query_selected_text(ctx));
+        if let Some(selected) = selected_text {
             selection_settings.update(ctx, |selection_settings, ctx| {
                 selection_settings
                     .maybe_copy_on_select(ClipboardContent::plain_text(selected), ctx);
@@ -18932,6 +18956,18 @@ impl TerminalView {
                         env_var_collection_block.clear_selection(ctx);
                     });
                 }
+                Some(RichContentMetadata::PendingUserQuery {
+                    pending_user_query_block_handle,
+                }) => {
+                    if exempt_rich_content_view_id
+                        .is_some_and(|view_id| pending_user_query_block_handle.id() == view_id)
+                    {
+                        continue;
+                    }
+                    pending_user_query_block_handle.update(ctx, |block, ctx| {
+                        block.clear_selection(ctx);
+                    });
+                }
                 Some(RichContentMetadata::WarpifySuccessBlock { .. }) => {
                     // TODO(Simon): We should be checking for WarpifySuccessBlocks here as well.
                     // The `WarpifySuccessBlock` implements a `SelectableArea`.
@@ -19867,9 +19903,10 @@ impl TerminalView {
             send_telemetry_from_ctx!(TelemetryEvent::ContextMenuCopySelectedText, ctx);
             let semantic_selection = SemanticSelection::as_ref(ctx);
             let model = self.model.lock();
-            if let Some(selected_text) =
-                model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
-            {
+            let selected_text = model
+                .selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
+                .or_else(|| self.pending_user_query_selected_text(ctx));
+            if let Some(selected_text) = selected_text {
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(selected_text));
             }
