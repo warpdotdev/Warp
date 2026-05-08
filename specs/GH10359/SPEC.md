@@ -53,11 +53,25 @@ risk of accidental destructive actions.
 
 - Per-row checkbox toggles the row's selection.
 - Header controls (precise semantics):
-  - **"Select all visible"** — selects only the rows currently
-    materialized in the virtualized list's DOM (i.e., the rows
-    actually rendered in the viewport plus any virtualization
-    overscan window). Rows that scroll into view AFTER the action
-    are NOT auto-selected. This is the **safe default**.
+  - **"Select all visible"** — selects every row that is at least
+    PARTIALLY inside the conversation list's scrollable viewport
+    rectangle at the moment the action is invoked. The selection
+    is computed from the conversation-list MODEL using the
+    viewport's scroll offset and item height — it is NOT driven by
+    the virtualization overscan window or the materialized DOM,
+    both of which are implementation details that can vary by
+    overscan factor or platform. Specifically:
+    - The set is `{ row | row.bottom > viewport.top AND
+      row.top < viewport.bottom }`, evaluated against the model
+      (not the DOM).
+    - Overscan-only rows (rendered for scroll smoothing but
+      outside the visible rectangle) are NOT included.
+    - Rows that scroll into view AFTER the action are NOT
+      auto-selected.
+    - The set is deterministic for a given (scroll offset, item
+      list, viewport size) tuple regardless of virtualization
+      configuration.
+    This is the **safe default**.
   - **"Select all"** — selects every conversation matching the
     current filter/search query, **including non-materialized
     rows** that the virtualization layer has not rendered. The
@@ -99,7 +113,25 @@ risk of accidental destructive actions.
   >
   > [Cancel] [Delete]
 - After confirmation, all N conversations are removed from the
-  list immediately with a fade-out transition.
+  list immediately with a fade-out transition (optimistic UI).
+- **Reconciling optimistic removal with per-id failure.** The
+  optimistic removal is reversed for any id that the server
+  reports as `"error"` or `"forbidden"` (and never tombstoned —
+  see Storage / API contract). The reconciliation is:
+  1. On confirmation, all N rows are removed from the rendered
+     list and added to the in-memory tombstone set.
+  2. The client issues the batched server request(s).
+  3. As each batch response arrives, ids returned with status
+     `"deleted"` or `"not_found"` remain removed and stay
+     tombstoned for the undo window. ids returned with status
+     `"error"` or `"forbidden"` are RE-INSERTED into the list at
+     their original positions, removed from the tombstone set,
+     and rendered with an inline error indicator and Retry
+     affordance.
+  4. The header chip and snackbar count are updated to reflect
+     the actual number of successfully tombstoned conversations.
+     If reconciliation reduces the count to 0, the snackbar is
+     dismissed and an error chip surfaces instead.
 
 ### B4. Undo
 
@@ -107,6 +139,23 @@ risk of accidental destructive actions.
   conversation list:
   > Deleted N conversations. **Undo**
 - The snackbar persists for 5 seconds.
+- **Undo-window start for multi-batch deletes.** When the
+  selection exceeds the 500-id batch cap and the client splits
+  into multiple sequential batches, the 5-second undo timer
+  starts when the **FINAL batch's response is received** (or its
+  retry budget is exhausted), NOT at confirmation time and NOT
+  per-batch. The snackbar appears with a progress indicator
+  during multi-batch processing
+  (`Deleting 1,200 conversations… (batch 2 of 3)`); it does NOT
+  show "Undo" until all batches have settled. This guarantees:
+  - The user never has the timer expire on later batches before
+    earlier batches return.
+  - "Undo" within the 5-second window restores the entire
+    selection (subject to per-id reconciliation in B3), not a
+    partial subset.
+  - For a single-batch delete (≤500 ids) this rule reduces to
+    "timer starts when the single batch response is received",
+    matching the simple case.
 - Clicking "Undo" within the 5-second window restores all
   deleted conversations to their original positions in the list,
   with their prior unread / pinned / starred state intact.
@@ -189,7 +238,18 @@ Bulk delete is implemented as a **single batch endpoint** rather
 than a client-side fan-out of per-row deletes. This bounds the
 failure surface and gives the server a single point of accounting.
 
-- Endpoint: `DELETE /api/conversations`
+- Endpoint: `POST /api/conversations:batchDelete`
+  - Method: **`POST`** with a JSON body. We deliberately do NOT
+    use `DELETE` here. Many HTTP intermediaries (CDNs, proxies,
+    some load balancers) and several client HTTP libraries either
+    drop or refuse to forward bodies on `DELETE` requests; the
+    behavior is implementation-defined per RFC 9110 §9.3.5. To
+    avoid that interop landmine for a feature whose blast radius
+    is destructive bulk deletion, we use a `POST` to a
+    `:batchDelete` action sub-resource (the same convention used
+    by Google Cloud APIs and recommended by AIP-165). Single-row
+    delete continues to use `DELETE /api/conversations/{id}`
+    unchanged — only the batch endpoint is `POST`.
   - Body: `{ ids: ["...", "...", ...] }`
   - Response: `{ results: [{ id, status, error_message? }, ...] }`
     where `status` is one of `"deleted" | "not_found" |
@@ -217,11 +277,73 @@ failure surface and gives the server a single point of accounting.
     backoff (250ms, 500ms, 1s). After exhaustion, surface a
     user-visible error in the snackbar with a "Retry" affordance.
 
-- **Undo endpoint**: `POST /api/conversations/restore`
+- **Undo endpoint**: `POST /api/conversations:batchRestore`
   - Body: `{ ids: ["...", "...", ...] }`
   - The server retains tombstone state for at least the 5-second
     client undo window plus a server-side grace period sufficient
     to cover clock skew and request latency.
+
+### Authentication & per-conversation authorization
+
+The destructive batch-delete and batch-restore endpoints are
+authenticated and authorized BY CONVERSATION, not just by user
+session. The contract is:
+
+- **Authentication.** Both `POST /api/conversations:batchDelete`
+  and `POST /api/conversations:batchRestore` require a valid Warp
+  user session token in the `Authorization` header, identical to
+  the existing single-row `DELETE /api/conversations/{id}`
+  endpoint. Unauthenticated requests return `401 Unauthorized`
+  with NO per-id `results` body — the request is rejected at the
+  edge before any id is processed.
+- **Per-conversation authorization (delete).** For each id in the
+  request body, the server independently verifies that the
+  authenticated user has delete permission on that conversation:
+  - The conversation's owning user must equal the authenticated
+    user, OR the authenticated user must hold an explicit
+    workspace role granting delete-conversation permission for
+    the conversation's workspace.
+  - Workspace-scoped conversations require the same workspace
+    membership and role check the server already enforces on
+    single-row delete.
+  - Authorization is checked AFTER the id is parsed but BEFORE
+    any tombstone/state mutation for that id.
+  - An id the user does not own and does not have workspace
+    permission for returns `status: "forbidden"` for that id with
+    NO `error_message` field that could leak conversation
+    existence (see "Information disclosure" below). The other ids
+    in the same batch are processed normally — one forbidden id
+    does not poison the batch.
+- **Per-conversation authorization (restore).** Restore uses the
+  STRICTER check:
+  - The id must be present in the server-side tombstone set
+    associated with the SAME authenticated user that issued the
+    delete. Restoring a tombstone created by a different user is
+    rejected with `status: "forbidden"` per id.
+  - Tombstones are scoped to `(user_id, conversation_id)` on the
+    server. There is no cross-user undo path.
+  - Restore can only resurrect conversations the user could
+    delete in the first place; workspace permission changes
+    between delete and restore that REVOKE delete permission also
+    revoke restore (returned as `"forbidden"`).
+- **Information disclosure.** `"not_found"` and `"forbidden"` are
+  intentionally distinct in the response so the client can render
+  accurate inline status, but the server MUST NOT leak whether a
+  conversation outside the user's authorization scope actually
+  exists. A request for an id that exists but belongs to another
+  user MUST return `"forbidden"`, never `"not_found"` and never
+  `"deleted"`. A request for an id that does not exist anywhere
+  returns `"not_found"`.
+- **Logging.** Every per-id `"forbidden"` outcome is logged
+  server-side with the authenticated user id, the requested
+  conversation id, and the reason; the client never sees those
+  details.
+- **Rate limit interaction.** The `429 Too Many Requests` rate
+  limit defined in "Bulk-delete safety limits" applies AFTER
+  authentication; an unauthenticated request gets `401`, not
+  `429`. The rate limit is keyed by authenticated user id, not by
+  IP, to prevent shared-network users from cross-rate-limiting
+  each other.
 
 ### Bulk-delete safety limits
 
@@ -307,9 +429,14 @@ failure surface and gives the server a single point of accounting.
   proposal: no — 5s is a fixed default matching macOS Finder's
   recover semantics. Revisit if accessibility feedback demands a
   longer window.
-- Q3. Should "Select all" warn before selecting >N (e.g., 500)
-  conversations? V1 proposal: no warning, but the confirmation
-  dialog already shows the count.
+- Q3. ~~Should "Select all" warn before selecting >N (e.g., 500)
+  conversations?~~ **Resolved**: V1 keeps the >100 confirmation
+  chip on "Select all" defined in B2 (`Select all 247?
+  [Confirm] [Cancel]`). The earlier "no warning" wording in this
+  question was inconsistent with B2 and is superseded — B2 is the
+  authoritative contract. The B3 delete confirmation always
+  shows the count as a second guardrail, but it does not replace
+  the >100 selection-time confirmation.
 - Q4. ~~Does the storage layer need a server-side bulk-delete
   endpoint, or is per-row deletion fanned-out client-side
   acceptable for V1?~~ **Resolved**: V1 uses a single batch
