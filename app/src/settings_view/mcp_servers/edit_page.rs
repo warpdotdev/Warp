@@ -1,12 +1,12 @@
 #[cfg(feature = "local_fs")]
-use std::sync::Arc;
-use std::{collections::HashMap, path::Path};
-#[cfg(feature = "local_fs")]
 #[cfg(not(target_family = "wasm"))]
 use diesel::SqliteConnection;
 #[cfg(feature = "local_fs")]
 use parking_lot::Mutex;
 use pathfinder_geometry::vector::vec2f;
+#[cfg(feature = "local_fs")]
+use std::sync::Arc;
+use std::{collections::HashMap, path::Path};
 use uuid::Uuid;
 use warp_core::{
     send_telemetry_from_ctx,
@@ -61,9 +61,7 @@ use crate::{
 };
 
 #[cfg(feature = "local_fs")]
-use crate::persistence::{
-    database_file_path_for_scope, establish_ro_connection, PersistenceScope,
-};
+use crate::persistence::{database_file_path_for_scope, establish_ro_connection, PersistenceScope};
 
 const DEFAULT_JSON_TEXT: &str = r#"{
     "": {
