@@ -1342,6 +1342,27 @@ impl BlockList {
         }
     }
 
+    pub fn finish_oz_environment_startup_commands_at_block(
+        &mut self,
+        block_id: &BlockId,
+        conversation_id: Option<AIConversationId>,
+    ) {
+        self.is_executing_oz_environment_startup_commands = false;
+        if let Some(block_index) = self.block_index_for_id(block_id) {
+            for block in self.blocks.iter_mut().skip(block_index.0) {
+                if block.is_background() || block.is_static() {
+                    continue;
+                }
+                block.unhide();
+                block.set_is_oz_environment_startup_command(false);
+                if let Some(conversation_id) = conversation_id {
+                    block.add_attached_conversation_id(conversation_id);
+                }
+            }
+        }
+        self.update_blocks_and_sumtree(None, None, |_| {}, |_| {});
+    }
+
     /// Resets the internal block object's index to its actual index in the block list.
     /// This does not move the block, but is necessary to be called after a move (inserting or removing blocks).
     /// Also updates the block ID to block index mapping.
@@ -2677,6 +2698,7 @@ impl BlockList {
 
         // Start the block and add the command
         self.active_block_mut().start();
+        self.active_block_mut().disable_reset_grid_checks();
         processor.parse_bytes(self, command.as_bytes(), &mut io::sink());
 
         // Simulate preexec to transition to Executing state
@@ -2921,6 +2943,7 @@ impl BlockList {
             self.active_block_mut().start_background(None);
         } else {
             self.active_block_mut().start();
+            self.active_block_mut().disable_reset_grid_checks();
         }
 
         if let Some(serialized_ai_metadata) = block.ai_metadata.as_ref().and_then(|ai_metadata| {
@@ -3920,7 +3943,7 @@ impl ToTotalIndex for BlockIndex {
 }
 
 #[cfg(test)]
-#[path = "blocks_test.rs"]
+#[path = "blocks_tests.rs"]
 mod tests;
 #[cfg(test)]
 pub use self::tests::insert_block;

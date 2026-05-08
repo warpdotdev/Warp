@@ -6,25 +6,31 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use warp_core::channel::ChannelState;
+use warp_core::safe_error;
 use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::platform::TerminationMode;
 use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
 use warpui::{Entity, ModelContext, SingletonEntity};
 
+use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
 use warp_files::{FileModel, FileModelEvent};
 use warp_util::content_version::ContentVersion;
 use warp_util::file::FileId;
 
 use super::proto::{
-    client_message, delete_file_response, run_command_response, server_message,
-    write_file_response, Abort, Authenticate, ClientMessage, DeleteFile, DeleteFileResponse,
-    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
-    FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
-    NavigatedToDirectoryResponse, ReadFileContextResponse, RunCommandError, RunCommandErrorCode,
-    RunCommandRequest, RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped,
-    WriteFile, WriteFileResponse, WriteFileSuccess,
+    client_message, delete_file_response, resolve_conflict_response, run_command_response,
+    save_buffer_response, server_message, write_file_response, Abort, Authenticate, BufferEdit,
+    BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatusesSnapshot, DeleteFile,
+    DeleteFileResponse, DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead,
+    FileContextProto, FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
+    ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, RunCommandError,
+    RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
+    SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
+    WriteFileResponse, WriteFileSuccess,
 };
+use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
 /// How long the daemon waits with no connections before exiting.
 pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 * 60);
@@ -34,6 +40,7 @@ pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
 use crate::ai::agent::FileLocations;
 use crate::ai::blocklist::{read_local_file_context, ReadFileContextResult};
+use crate::auth::auth_state::{AuthState, AuthStateProvider};
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,
 };
@@ -164,13 +171,11 @@ pub struct ServerModel {
     executors: HashMap<SessionId, Arc<LocalCommandExecutor>>,
     /// Tracks in-flight file write/delete operations and handles cleanup.
     pending_file_ops: PendingFileOps,
-    /// Daemon-wide bearer credential for the identity-scoped daemon.
-    ///
-    /// The token is written by Initialize when the client supplies a
-    /// non-empty credential, or by Authenticate during token rotation. It is
-    /// intentionally retained across proxy connection teardown and cleared
-    /// only by daemon process exit.
-    auth_token: Option<String>,
+    /// Daemon-wide auth credentials and user identity.
+    auth_state: Arc<AuthState>,
+    /// Tracks open buffers, per-buffer connection sets, and pending async
+    /// buffer requests (OpenBuffer, SaveBuffer).
+    buffers: ServerBufferTracker,
 }
 
 impl Entity for ServerModel {
@@ -195,7 +200,8 @@ impl ServerModel {
             host_id,
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
-            auth_token: None,
+            auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
+            buffers: ServerBufferTracker::new(),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -298,6 +304,175 @@ impl ServerModel {
                 } => {}
             });
         }
+        // Subscribe to GlobalBufferModel events for server-local buffers.
+        {
+            let gbm = GlobalBufferModel::handle(ctx);
+            ctx.subscribe_to_model(&gbm, |me, event, ctx| match event {
+                GlobalBufferModelEvent::BufferLoaded { file_id, .. } => {
+                    // Complete all pending OpenBuffer requests for this file.
+                    let pending = me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::OpenBuffer,
+                    );
+                    if !pending.is_empty() {
+                        let gbm = GlobalBufferModel::handle(ctx);
+                        let content = gbm.as_ref(ctx).content_for_file(*file_id, ctx);
+                        let server_version = gbm
+                            .as_ref(ctx)
+                            .sync_clock_for_server_local(*file_id)
+                            .map(|c| c.server_version.as_u64());
+
+                        for (request_id, conn_id) in pending {
+                            let message = match (&content, server_version) {
+                                (Some(content), Some(sv)) => {
+                                    server_message::Message::OpenBufferResponse(
+                                        OpenBufferResponse {
+                                            content: content.clone(),
+                                            server_version: sv,
+                                        },
+                                    )
+                                }
+                                _ => server_message::Message::Error(ErrorResponse {
+                                    code: ErrorCode::Internal.into(),
+                                    message: format!(
+                                        "Buffer loaded but content or sync clock unavailable for file {file_id:?}"
+                                    ),
+                                }),
+                            };
+                            me.send_server_message(
+                                Some(conn_id),
+                                Some(&request_id),
+                                message,
+                            );
+                        }
+                    }
+                }
+                GlobalBufferModelEvent::ServerLocalBufferUpdated {
+                    file_id,
+                    edits,
+                    new_server_version,
+                    expected_client_version,
+                } => {
+                    // Push incremental edits to all connections that have this buffer open.
+                    let Some(conns) = me.buffers.connections_for_buffer(file_id) else {
+                        return;
+                    };
+                    // Find the path for this file_id.
+                    let path = me.buffers.path_for_file_id(*file_id).unwrap_or_default();
+
+                    let proto_edits: Vec<TextEdit> = edits
+                        .iter()
+                        .map(|edit| TextEdit {
+                            start_offset: edit.start.as_usize() as u64,
+                            end_offset: edit.end.as_usize() as u64,
+                            text: edit.text.clone(),
+                        })
+                        .collect();
+
+                    for &conn_id in conns {
+                        me.send_server_message(
+                            Some(conn_id),
+                            None,
+                            server_message::Message::BufferUpdated(BufferUpdatedPush {
+                                path: path.clone(),
+                                new_server_version: new_server_version.as_u64(),
+                                expected_client_version: expected_client_version.as_u64(),
+                                edits: proto_edits.clone(),
+                            }),
+                        );
+                    }
+                }
+                GlobalBufferModelEvent::FileSaved { file_id } => {
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::SaveBuffer,
+                    ) {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::SaveBufferResponse(SaveBufferResponse {
+                                result: Some(save_buffer_response::Result::Success(
+                                    SaveBufferSuccess {},
+                                )),
+                            }),
+                        );
+                    }
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::ResolveConflict,
+                    ) {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::ResolveConflictResponse(
+                                ResolveConflictResponse {
+                                    result: Some(
+                                        resolve_conflict_response::Result::Success(
+                                            ResolveConflictSuccess {},
+                                        ),
+                                    ),
+                                },
+                            ),
+                        );
+                    }
+                }
+                GlobalBufferModelEvent::FailedToSave { file_id, error } => {
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::SaveBuffer,
+                    ) {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::SaveBufferResponse(SaveBufferResponse {
+                                result: Some(save_buffer_response::Result::Error(
+                                    FileOperationError {
+                                        message: format!("{error}"),
+                                    },
+                                )),
+                            }),
+                        );
+                    }
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::ResolveConflict,
+                    ) {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::ResolveConflictResponse(
+                                ResolveConflictResponse {
+                                    result: Some(resolve_conflict_response::Result::Error(
+                                        FileOperationError {
+                                            message: format!("{error}"),
+                                        },
+                                    )),
+                                },
+                            ),
+                        );
+                    }
+                }
+                GlobalBufferModelEvent::FailedToLoad { file_id, error } => {
+                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                        file_id,
+                        PendingBufferRequestKind::OpenBuffer,
+                    ) {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id),
+                            server_message::Message::Error(ErrorResponse {
+                                code: ErrorCode::Internal.into(),
+                                message: format!("Failed to load buffer: {error}"),
+                            }),
+                        );
+                    }
+                }
+                GlobalBufferModelEvent::BufferUpdatedFromFileEvent { .. }
+                | GlobalBufferModelEvent::RemoteBufferConflict { .. } => {
+                    // Not relevant for server-local buffers.
+                }
+            });
+        }
         // Start the grace timer immediately so the daemon exits if no proxy
         // connects within GRACE_PERIOD. In practice the spawning proxy connects
         // within milliseconds, so the risk of premature shutdown is negligible;
@@ -339,6 +514,11 @@ impl ServerModel {
         if self.connection_senders.remove(&conn_id).is_none() {
             return;
         }
+
+        // Remove this connection from all buffer connection sets.
+        // Orphaned buffers (no connections left) are deallocated automatically.
+        self.buffers.remove_connection(conn_id, ctx);
+
         let remaining = self.connection_senders.len();
         log::info!("Daemon: connection {conn_id} deregistered — {remaining} active remaining");
         if remaining == 0 {
@@ -386,10 +566,14 @@ impl ServerModel {
 
         let outcome = match msg.message {
             Some(client_message::Message::Initialize(msg)) => {
-                self.handle_initialize(msg, &request_id)
+                self.handle_initialize(msg, &request_id, ctx)
             }
             Some(client_message::Message::Authenticate(msg)) => {
                 self.handle_authenticate(msg);
+                return;
+            }
+            Some(client_message::Message::UpdatePreferences(msg)) => {
+                self.handle_update_preferences(msg, ctx);
                 return;
             }
             Some(client_message::Message::SessionBootstrapped(msg)) => {
@@ -418,6 +602,23 @@ impl ServerModel {
             Some(client_message::Message::ReadFileContext(msg)) => {
                 self.handle_read_file_context(msg, &request_id, conn_id, ctx)
             }
+            Some(client_message::Message::OpenBuffer(msg)) => {
+                self.handle_open_buffer(msg, &request_id, conn_id, ctx)
+            }
+            Some(client_message::Message::BufferEdit(msg)) => {
+                self.handle_buffer_edit(msg, ctx);
+                return; // fire-and-forget notification
+            }
+            Some(client_message::Message::CloseBuffer(msg)) => {
+                self.handle_close_buffer(msg, conn_id, ctx);
+                return; // fire-and-forget notification
+            }
+            Some(client_message::Message::SaveBuffer(msg)) => {
+                self.handle_save_buffer(msg, &request_id, conn_id, ctx)
+            }
+            Some(client_message::Message::ResolveConflict(msg)) => {
+                self.handle_resolve_conflict(msg, &request_id, conn_id, ctx)
+            }
             None => {
                 log::warn!(
                     "Received ClientMessage with no message variant (request_id={request_id})"
@@ -430,6 +631,14 @@ impl ServerModel {
         };
 
         match outcome {
+            HandlerOutcome::Sync(server_message::Message::InitializeResponse(response)) => {
+                self.send_server_message(
+                    Some(conn_id),
+                    Some(&request_id),
+                    server_message::Message::InitializeResponse(response),
+                );
+                self.push_codebase_index_statuses_snapshot(conn_id);
+            }
             HandlerOutcome::Sync(message) => {
                 self.send_server_message(Some(conn_id), Some(&request_id), message);
             }
@@ -440,6 +649,30 @@ impl ServerModel {
                 // Async work tracked elsewhere (e.g. `pending_file_ops`);
                 // the response will be sent via an event subscription.
             }
+        }
+    }
+
+    fn push_codebase_index_statuses_snapshot(&self, conn_id: ConnectionId) {
+        let snapshot = self.codebase_index_statuses_snapshot();
+        let status_count = snapshot.statuses.len();
+        log::info!(
+            "Pushing codebase index statuses snapshot: conn_id={conn_id} \
+             status_count={status_count}"
+        );
+        self.send_server_message(
+            Some(conn_id),
+            None,
+            server_message::Message::CodebaseIndexStatusesSnapshot(snapshot),
+        );
+    }
+
+    fn codebase_index_statuses_snapshot(&self) -> CodebaseIndexStatusesSnapshot {
+        // PR1 has no canonical daemon-side codebase-indexing state yet, so
+        // the bootstrap snapshot is empty. Later PRs will populate this from
+        // the remote indexing manager rather than deriving status from
+        // navigation events.
+        CodebaseIndexStatusesSnapshot {
+            statuses: Vec::new(),
         }
     }
 
@@ -512,16 +745,28 @@ impl ServerModel {
 
     /// Handles `Initialize` by returning the server version and host id.
     ///
-    /// `server_version` is the release tag the daemon was built from
-    /// (`GIT_RELEASE_TAG`) or the empty string for `cargo run` / locally
-    /// deployed builds. The client treats an empty version as "unknown" and
-    /// skips strict version enforcement, which keeps the
-    /// `script/deploy_remote_server` developer workflow functional.
-    fn handle_initialize(&mut self, msg: Initialize, request_id: &RequestId) -> HandlerOutcome {
+    /// Also configures Sentry crash reporting based on the user's identity
+    /// and preferences supplied by the connecting client.
+    #[cfg_attr(not(feature = "crash_reporting"), allow(unused_variables))]
+    fn handle_initialize(
+        &mut self,
+        msg: Initialize,
+        request_id: &RequestId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
         log::info!("Handling Initialize (request_id={request_id})");
-        if !msg.auth_token.is_empty() {
-            self.auth_token = Some(msg.auth_token);
+        self.apply_initialize_auth(&msg);
+
+        // Update crash reporting based on client-supplied preferences.
+        #[cfg(feature = "crash_reporting")]
+        {
+            if msg.crash_reporting_enabled {
+                self.apply_sentry_user_id(ctx);
+            } else {
+                crate::crash_reporting::uninit_sentry();
+            }
         }
+
         let server_version = ChannelState::app_version().unwrap_or("").to_string();
         HandlerOutcome::Sync(server_message::Message::InitializeResponse(
             InitializeResponse {
@@ -531,18 +776,59 @@ impl ServerModel {
         ))
     }
 
+    /// Applies the auth token from an `Initialize` message.
+    /// Extracted so unit tests can call it without a `ModelContext`.
+    fn apply_initialize_auth(&mut self, msg: &Initialize) {
+        self.auth_state.apply_remote_server_auth_context(
+            msg.auth_token.clone(),
+            msg.user_id.clone(),
+            msg.user_email.clone(),
+        );
+    }
+
+    /// Sets the Sentry user identity from the stored `AuthState`.
+    /// Called both during `Initialize` and when re-enabling crash reporting
+    /// via `UpdatePreferences`.
+    #[cfg(feature = "crash_reporting")]
+    fn apply_sentry_user_id(&self, ctx: &mut warpui::AppContext) {
+        if let Some(user_id) = self.auth_state.user_id() {
+            crate::crash_reporting::set_user_id(user_id, self.auth_state.user_email(), ctx);
+        }
+    }
+
+    /// Handles `UpdatePreferences` by dynamically enabling or disabling
+    /// Sentry crash reporting. This is a notification — no response is sent.
+    fn handle_update_preferences(
+        &mut self,
+        msg: super::proto::UpdatePreferences,
+        #[allow(unused_variables)] ctx: &mut ModelContext<Self>,
+    ) {
+        log::info!(
+            "Handling UpdatePreferences: crash_reporting_enabled={}",
+            msg.crash_reporting_enabled
+        );
+        #[cfg(feature = "crash_reporting")]
+        {
+            if msg.crash_reporting_enabled {
+                if !crate::crash_reporting::is_initialized() {
+                    crate::crash_reporting::init(ctx);
+                    self.apply_sentry_user_id(ctx);
+                }
+            } else {
+                crate::crash_reporting::uninit_sentry();
+            }
+        }
+    }
+
     /// Handles `Authenticate` by replacing the daemon-wide credential.
     /// This is a notification — no response is sent.
     fn handle_authenticate(&mut self, msg: Authenticate) {
-        if msg.auth_token.is_empty() {
-            log::warn!("Received Authenticate notification with empty auth token; ignoring");
-            return;
-        }
-        self.auth_token = Some(msg.auth_token);
+        self.auth_state
+            .set_remote_server_bearer_token(msg.auth_token);
     }
 
-    pub fn auth_token(&self) -> Option<&str> {
-        self.auth_token.as_deref()
+    pub fn auth_token(&self) -> Option<String> {
+        self.auth_state.get_access_token_ignoring_validity()
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.
@@ -575,9 +861,9 @@ impl ServerModel {
         );
 
         let Some(shell_type) = ShellType::from_name(&msg.shell_type) else {
-            log::error!(
-                "Unknown shell_type {:?} in SessionBootstrapped for session {session_id:?}",
-                msg.shell_type,
+            safe_error!(
+                safe: ("Received unknown shell_type in SessionBootstrapped: shell_type={:?}", msg.shell_type),
+                full: ("Received unknown shell_type in SessionBootstrapped: shell_type={:?} session={session_id:?}", msg.shell_type)
             );
             return;
         };
@@ -628,7 +914,10 @@ impl ServerModel {
         };
 
         let Some(executor) = self.executors.get(&session_id).cloned() else {
-            log::error!("No executor for session {session_id:?}, session was never initialized");
+            safe_error!(
+                safe: ("No executor for RunCommand, session was never initialized"),
+                full: ("No executor for RunCommand, session was never initialized: session={session_id:?}")
+            );
             return HandlerOutcome::Sync(server_message::Message::RunCommandResponse(
                 RunCommandResponse {
                     result: Some(run_command_response::Result::Error(RunCommandError {
@@ -761,7 +1050,6 @@ impl ServerModel {
                         },
                     ),
                 );
-
                 // After responding, push a snapshot if metadata is available.
                 //
                 // For git repos this is an opportunistic push for the case
@@ -1059,6 +1347,196 @@ impl ServerModel {
         );
 
         HandlerOutcome::Async(Some(handle))
+    }
+
+    /// Handles `OpenBuffer` by opening the file via `GlobalBufferModel`.
+    /// The response is sent asynchronously when `BufferLoaded` fires.
+    fn handle_open_buffer(
+        &mut self,
+        msg: OpenBuffer,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        log::info!(
+            "Handling OpenBuffer path={} (request_id={request_id})",
+            msg.path
+        );
+
+        let path = PathBuf::from(&msg.path);
+        let gbm = GlobalBufferModel::handle(ctx);
+        let buffer_state = gbm.update(ctx, |gbm, ctx| gbm.open_server_local(path, ctx));
+        let file_id = buffer_state.file_id;
+
+        // Track path → FileId mapping and connection.
+        self.buffers.track_open_buffer(msg.path.clone(), file_id);
+        self.buffers.add_connection(file_id, conn_id);
+
+        // If already loaded, respond immediately.
+        if gbm.as_ref(ctx).buffer_loaded(file_id) {
+            let content = gbm
+                .as_ref(ctx)
+                .content_for_file(file_id, ctx)
+                .unwrap_or_default();
+            let server_version = gbm
+                .as_ref(ctx)
+                .sync_clock_for_server_local(file_id)
+                .map(|c| c.server_version.as_u64())
+                .unwrap_or(1);
+            return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
+                OpenBufferResponse {
+                    content,
+                    server_version,
+                },
+            ));
+        }
+
+        // Not yet loaded — stash request info so the GlobalBufferModelEvent
+        // subscription can send the response when content arrives.
+        self.buffers.insert_pending(
+            file_id,
+            request_id.clone(),
+            conn_id,
+            PendingBufferRequestKind::OpenBuffer,
+        );
+        HandlerOutcome::Async(None)
+    }
+
+    /// Handles `BufferEdit` notification (fire-and-forget).
+    /// Delegates to `GlobalBufferModel::apply_client_edit`. On rejection
+    /// (stale server version), the edit is silently dropped.
+    fn handle_buffer_edit(&mut self, msg: BufferEdit, ctx: &mut ModelContext<Self>) {
+        let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
+            log::warn!("BufferEdit for unknown buffer: {}", msg.path);
+            return;
+        };
+
+        let expected_sv = ContentVersion::from_raw(msg.expected_server_version as usize);
+        let new_cv = ContentVersion::from_raw(msg.new_client_version as usize);
+
+        // Per spec: if the edit is rejected (stale server version),
+        // the server silently drops it.
+        GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
+            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx);
+        });
+    }
+
+    /// Handles `SaveBuffer` by persisting the buffer to disk.
+    fn handle_save_buffer(
+        &mut self,
+        msg: SaveBuffer,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        log::info!(
+            "Handling SaveBuffer path={} (request_id={request_id})",
+            msg.path
+        );
+
+        let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
+            return HandlerOutcome::Sync(server_message::Message::SaveBufferResponse(
+                SaveBufferResponse {
+                    result: Some(save_buffer_response::Result::Error(FileOperationError {
+                        message: format!("Buffer not open: {}", msg.path),
+                    })),
+                },
+            ));
+        };
+
+        let result = GlobalBufferModel::handle(ctx)
+            .update(ctx, |gbm, ctx| gbm.save_server_local(file_id, ctx));
+
+        match result {
+            Ok(()) => {
+                // Response will come via the FileSaved event subscription.
+                // Track the file_id → (request_id, conn_id) so the event
+                // handler can correlate.
+                self.buffers.insert_pending(
+                    file_id,
+                    request_id.clone(),
+                    conn_id,
+                    PendingBufferRequestKind::SaveBuffer,
+                );
+                HandlerOutcome::Async(None)
+            }
+            Err(err) => HandlerOutcome::Sync(server_message::Message::SaveBufferResponse(
+                SaveBufferResponse {
+                    result: Some(save_buffer_response::Result::Error(FileOperationError {
+                        message: format!("Failed to save: {err}"),
+                    })),
+                },
+            )),
+        }
+    }
+
+    /// Handles `ResolveConflict` by replacing the server buffer with the
+    /// client's content and persisting to disk. Returns an async
+    /// `HandlerOutcome` — the response is sent when `FileSaved` or
+    /// `FailedToSave` fires.
+    fn handle_resolve_conflict(
+        &mut self,
+        msg: ResolveConflict,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        log::info!(
+            "Handling ResolveConflict path={} (request_id={request_id})",
+            msg.path
+        );
+
+        let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
+            return HandlerOutcome::Sync(server_message::Message::ResolveConflictResponse(
+                ResolveConflictResponse {
+                    result: Some(resolve_conflict_response::Result::Error(
+                        FileOperationError {
+                            message: format!("Buffer not open: {}", msg.path),
+                        },
+                    )),
+                },
+            ));
+        };
+
+        let ack_sv = ContentVersion::from_raw(msg.acknowledged_server_version as usize);
+        let current_cv = ContentVersion::from_raw(msg.current_client_version as usize);
+        let result = GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
+            gbm.resolve_conflict(file_id, ack_sv, current_cv, &msg.client_content, ctx)
+        });
+
+        match result {
+            Ok(()) => {
+                self.buffers.insert_pending(
+                    file_id,
+                    request_id.clone(),
+                    conn_id,
+                    PendingBufferRequestKind::ResolveConflict,
+                );
+                HandlerOutcome::Async(None)
+            }
+            Err(err) => HandlerOutcome::Sync(server_message::Message::ResolveConflictResponse(
+                ResolveConflictResponse {
+                    result: Some(resolve_conflict_response::Result::Error(
+                        FileOperationError {
+                            message: format!("Failed to resolve conflict: {err}"),
+                        },
+                    )),
+                },
+            )),
+        }
+    }
+
+    /// Handles `CloseBuffer` notification (fire-and-forget).
+    /// Removes the connection from the buffer's connection set.
+    /// Deallocates the buffer if no connections remain.
+    fn handle_close_buffer(
+        &mut self,
+        msg: CloseBuffer,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        log::info!("Handling CloseBuffer path={} conn={conn_id}", msg.path);
+        self.buffers.close_buffer(&msg.path, conn_id, ctx);
     }
 }
 

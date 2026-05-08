@@ -29,7 +29,10 @@ use crate::{
     drive::panel::{MAX_SIDEBAR_WIDTH_RATIO, MIN_SIDEBAR_WIDTH},
     terminal::resizable_data::{ModalType, ResizableData},
 };
-use crate::{code_review::diff_state::DiffStateModel, terminal::view::TerminalView};
+use crate::{
+    code::buffer_location::BufferLocation, code_review::diff_state::DiffStateModel,
+    terminal::view::TerminalView,
+};
 use dunce::canonicalize;
 use itertools::Itertools;
 use std::{
@@ -623,7 +626,7 @@ impl RightPanelView {
         if let Some(view) = existing_view {
             view.update(ctx, |view, ctx| {
                 view.set_terminal_view(terminal_view);
-                view.on_open(Some(repo_path.clone()), ctx);
+                view.on_open(ctx);
             });
             self.recompute_terminal_availability(ctx);
         } else if let Some(view) = self.create_code_review_view(
@@ -634,7 +637,7 @@ impl RightPanelView {
             ctx,
         ) {
             view.update(ctx, |view, ctx| {
-                view.on_open(Some(repo_path.clone()), ctx);
+                view.on_open(ctx);
             });
             self.recompute_terminal_availability(ctx);
         };
@@ -856,7 +859,7 @@ impl RightPanelView {
         let repo_path = crv.repo_path();
         let branch_name = crv
             .diff_state_model()
-            .read(app, |model, _| model.get_current_branch_name());
+            .read(app, |model, ctx| model.get_current_branch_name(ctx));
         let diff_stats = crv.loaded_diff_stats();
 
         let repo_path_element = repo_path.map(|repo_path| {
@@ -1440,7 +1443,10 @@ impl RightPanelView {
                 terminal_status.is_available(),
                 Self::format_optional_path(terminal_status.active_session_path.as_deref()),
                 Self::format_optional_path(terminal_status.current_repo_path.as_deref()),
-                terminal_status.active_cli_agent.as_deref().unwrap_or("<none>"),
+                terminal_status
+                    .active_cli_agent
+                    .as_deref()
+                    .unwrap_or("<none>"),
                 terminal_status.is_executing,
                 terminal_status.is_input_box_visible,
                 unavailable_reasons,
@@ -1585,14 +1591,16 @@ impl RightPanelView {
             if is_panel_open {
                 // on_open is idempotent (guards on is_open), so this is safe for
                 // already-open views and correctly re-opens cached-but-closed ones.
-                let repo_path = repo_path.to_path_buf();
                 view.update(ctx, |view, ctx| {
-                    view.on_open(Some(repo_path), ctx);
+                    view.on_open(ctx);
                 });
             }
         } else {
             let diff_state_model = self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(repo_path.to_path_buf(), ctx)
+                model.get_or_create_diff_state_model(
+                    BufferLocation::Local(repo_path.to_path_buf()),
+                    ctx,
+                )
             });
 
             let Some(diff_state_model) = diff_state_model else {
@@ -1620,9 +1628,8 @@ impl RightPanelView {
                         ctx,
                     ) {
                         if is_panel_open {
-                            let repo_path = repo_path.to_path_buf();
                             view.update(ctx, |view, ctx| {
-                                view.on_open(Some(repo_path), ctx);
+                                view.on_open(ctx);
                             });
                         }
                     }

@@ -16,6 +16,7 @@ use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::util::openable_file_type::{
     is_file_openable_in_warp, is_markdown_file, is_runnable_shell_script, starts_with_shebang,
 };
+use crate::workspace::util::PaneViewLocator;
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
 use crate::{drive::OpenWarpDriveObjectArgs, view_components::DismissibleToast};
@@ -80,6 +81,8 @@ pub enum UriHost {
     Codex,
     /// Actions triggered from Linear integrations (e.g. work on issue).
     Linear,
+    /// Focuses a specific terminal pane by its persistent session UUID.
+    Session,
 }
 
 impl FromStr for UriHost {
@@ -101,6 +104,7 @@ impl FromStr for UriHost {
             "mcp" => Ok(Self::Mcp),
             "codex" => Ok(Self::Codex),
             "linear" => Ok(Self::Linear),
+            "session" => Ok(Self::Session),
             _ => Err(anyhow!("Received url with unexpected host: {}", s)),
         }
     }
@@ -258,7 +262,7 @@ impl UriHost {
                 // For folder links, we expect an additional query parameter primary_object_id which refers to the id object
                 // that should be opened
                 // When the user is directed here via the request access flow, we expect an additional query parameter invitee_email
-                // If this paramter is present, we will open the sharing dialog with the email filled in.
+                // If this parameter is present, we will open the sharing dialog with the email filled in.
                 let object_type = url
                     .path_segments()
                     .into_iter()
@@ -452,6 +456,54 @@ impl UriHost {
                     log::warn!("{err}");
                 }
             },
+            UriHost::Session => {
+                let uuid_hex = url
+                    .path_segments()
+                    .into_iter()
+                    .flatten()
+                    .last()
+                    .unwrap_or("");
+
+                let Some(uuid_bytes) = decode_uuid_hex(uuid_hex) else {
+                    log::warn!(
+                        "session deep link received invalid UUID hex (safe: len={})",
+                        uuid_hex.len()
+                    );
+                    return;
+                };
+
+                let result = WorkspaceRegistry::as_ref(ctx)
+                    .all_workspaces(ctx)
+                    .iter()
+                    .find_map(|(win_id, workspace)| {
+                        workspace.as_ref(ctx).tab_views().find_map(|pane_group| {
+                            let pane_id = pane_group
+                                .as_ref(ctx)
+                                .find_terminal_pane_by_session_uuid(&uuid_bytes)?;
+                            Some((
+                                *win_id,
+                                PaneViewLocator {
+                                    pane_group_id: pane_group.id(),
+                                    pane_id,
+                                },
+                            ))
+                        })
+                    });
+
+                if let Some((window_id, locator)) = result {
+                    ctx.windows().show_window_and_focus_app(window_id);
+                    if let Some(root_view_id) = ctx.root_view_id(window_id) {
+                        ctx.dispatch_action_for_view(
+                            window_id,
+                            root_view_id,
+                            "root_view:handle_pane_navigation_event",
+                            &locator,
+                        );
+                    }
+                } else {
+                    log::warn!("session deep link could not find pane with given UUID");
+                }
+            }
         }
     }
 
@@ -474,6 +526,7 @@ impl UriHost {
             Self::Codex => W::default(),
             // Linear deeplink opens a new tab with agent view
             Self::Linear => W::default(),
+            Self::Session => W::Nothing,
         }
     }
 }
@@ -1341,7 +1394,8 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
         | UriHost::Settings
         | UriHost::Mcp
         | UriHost::Codex
-        | UriHost::Linear => true,
+        | UriHost::Linear
+        | UriHost::Session => true,
         // Auth and Home only allow the desktop redirect path
         UriHost::Auth | UriHost::Home => false,
     };
@@ -1377,6 +1431,21 @@ fn safe_url_log_fields(url: &Url) -> String {
     )
 }
 
+fn decode_uuid_hex(hex: &str) -> Option<Vec<u8>> {
+    let hex = hex.as_bytes();
+    if hex.len() != 32 {
+        return None;
+    }
+
+    hex.chunks_exact(2)
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16)?;
+            let low = (pair[1] as char).to_digit(16)?;
+            Some(((high << 4) | low) as u8)
+        })
+        .collect()
+}
+
 #[cfg(test)]
-#[path = "uri_test.rs"]
+#[path = "uri_tests.rs"]
 mod tests;

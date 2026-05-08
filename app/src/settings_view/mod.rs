@@ -469,6 +469,10 @@ pub mod flags {
     /// When set, ctrl-enter should accept a prompt suggestion rather than insert a newline.
     /// This flag is set by the terminal Input when there's a pending passive code diff.
     pub const CTRL_ENTER_ACCEPTS_PROMPT_SUGGESTION: &str = "CtrlEnterAcceptsPromptSuggestion";
+    /// When set, the terminal input owns Page Up / Page Down so the editor's fixed bindings
+    /// should not match.
+    pub const TERMINAL_INPUT_PAGE_KEYS_HANDLED_BY_INPUT: &str =
+        "TerminalInputPageKeysHandledByInput";
     pub const HAS_PENDING_PROMPT_SUGGESTION: &str = "HasPendingPromptSuggestion";
     pub const ACTIVE_AGENT_VIEW: &str = "ActiveAgentView";
     pub const ACTIVE_INLINE_AGENT_VIEW: &str = "ActiveInlineAgentView";
@@ -2663,5 +2667,5 @@ impl BackingView for SettingsView {
 }
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

@@ -30,6 +30,8 @@ use crate::ai::agent::{
     PassiveSuggestionTriggerType, RunningCommand,
 };
 use crate::ai::agent::{DocumentContentAttachmentSource, FileContext};
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent_sdk::ClaudeHarness;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::document::ai_document_model::{
     AIDocumentId, AIDocumentModel, AIDocumentUserEditStatus,
@@ -52,6 +54,8 @@ use crate::network::NetworkStatus;
 use crate::notebooks::editor::model::FileLinkResolutionContext;
 use crate::persistence::ModelEvent;
 use crate::server::server_api::AIApiError;
+#[cfg(not(target_family = "wasm"))]
+use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::block::{
     formatted_terminal_contents_for_input, BlockId, CURSOR_MARKER,
 };
@@ -71,12 +75,17 @@ use parking_lot::FairMutex;
 use pending_response_streams::PendingResponseStreams;
 use session_sharing_protocol::common::ParticipantId;
 use std::collections::{HashMap, HashSet};
+#[cfg(not(target_family = "wasm"))]
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use warp_core::assertions::safe_assert;
 use warp_multi_agent_api::{message, Task, ToolType};
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 
+use super::orchestration_event_streamer::{
+    OrchestrationEventStreamer, OrchestrationEventStreamerEvent,
+};
 use super::orchestration_events::{OrchestrationEventService, OrchestrationEventServiceEvent};
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
@@ -160,6 +169,10 @@ pub enum BlocklistAIControllerEvent {
     /// Emitted when the export-to-file slash command is executed.
     ExportConversationToFile {
         filename: Option<String>,
+    },
+
+    ExecuteLocalHarnessCommand {
+        command: String,
     },
 
     FreeTierLimitCheckTriggered,
@@ -312,6 +325,9 @@ pub struct BlocklistAIController {
     /// Pending auto-resume tasks that are waiting for network connectivity.
     /// These should be cancelled when a new request is sent for the same conversation.
     pending_auto_resume_handles: HashMap<AIConversationId, SpawnedFutureHandle>,
+    /// Pending dormant Claude wake preparations for success-idle child conversations.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    pending_local_claude_wakes: HashMap<AIConversationId, SpawnedFutureHandle>,
     /// Passive conversations explicitly requested to follow up after actions complete.
     pending_passive_follow_ups: HashSet<AIConversationId>,
     /// Passive suggestion results that should be included with the next request
@@ -350,6 +366,22 @@ enum WhichTask {
 enum FollowUpTrigger {
     Auto,
     UserRequested,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalClaudeWakeTrigger {
+    PendingEvents,
+    WakeOnlyStream,
+}
+
+impl LocalClaudeWakeTrigger {
+    #[cfg(not(target_family = "wasm"))]
+    fn requires_pending_events(self) -> bool {
+        match self {
+            Self::PendingEvents => true,
+            Self::WakeOnlyStream => false,
+        }
+    }
 }
 
 struct InputQuery {
@@ -498,11 +530,18 @@ impl BlocklistAIController {
             let AgentViewControllerEvent::ExitedAgentView {
                 conversation_id,
                 final_exchange_count,
+                is_exit_before_new_entrance,
                 ..
             } = event
             else {
                 return;
             };
+
+            // Skip if this exit is part of an in-place switch — cancelling here
+            // would kill an in-flight stream every time the user navigates.
+            if *is_exit_before_new_entrance {
+                return;
+            }
 
             // If we exited a brand-new empty conversation, there's nothing meaningful to cancel.
             if *final_exchange_count == 0 {
@@ -537,6 +576,14 @@ impl BlocklistAIController {
                 me.handle_pending_events_ready(*conversation_id, ctx);
             });
         }
+        if FeatureFlag::OrchestrationV2.is_enabled() {
+            let streamer = OrchestrationEventStreamer::handle(ctx);
+            ctx.subscribe_to_model(&streamer, move |me, event, ctx| {
+                let OrchestrationEventStreamerEvent::DormantClaudeWakeReady { conversation_id } =
+                    event;
+                me.handle_dormant_claude_wake_ready(*conversation_id, ctx);
+            });
+        }
         Self {
             input_model,
             context_model,
@@ -550,6 +597,7 @@ impl BlocklistAIController {
             ambient_agent_task_id: None,
             attachments_download_dir: None,
             pending_auto_resume_handles: HashMap::new(),
+            pending_local_claude_wakes: HashMap::new(),
             pending_passive_follow_ups: HashSet::new(),
             pending_passive_suggestion_results: HashMap::new(),
         }
@@ -598,8 +646,15 @@ impl BlocklistAIController {
             .remove(&conversation_id)
             .unwrap_or_default();
 
-        let cancellation_reason =
-            self.cancel_active_conversation_for_follow_up(conversation_id, ctx);
+        let ai_history_model = BlocklistAIHistoryModel::as_ref(ctx);
+        let active_conversation_id = ai_history_model.active_conversation_id(self.terminal_view_id);
+        let cancellation_reason = CancellationReason::FollowUpSubmitted {
+            is_for_same_conversation: active_conversation_id
+                .is_some_and(|id| id == conversation_id),
+        };
+        if let Some(active_conversation_id) = active_conversation_id {
+            self.cancel_conversation_progress(active_conversation_id, cancellation_reason, ctx);
+        }
 
         if let Some(slash_command_request) = SlashCommandRequest::from_query(query.as_str()) {
             slash_command_request.send_request(self, is_queued_prompt, ctx);
@@ -633,7 +688,6 @@ impl BlocklistAIController {
         let mut inputs = if should_prepend_finished_action_results {
             completed_action_results
                 .into_iter()
-                .filter(|result| !result.result.is_cancelled())
                 .map(|result| AIAgentInput::ActionResult {
                     result,
                     context: context.clone(),
@@ -689,7 +743,19 @@ impl BlocklistAIController {
         };
         inputs.push(ai_input);
 
-        if let Err(e) = self.send_request_input(
+        // Piggyback any pending orchestration config update for this conversation.
+        let taken_dirty_event = AIDocumentModel::handle(ctx).update(ctx, |model, _| {
+            model.take_dirty_orchestration_event(&conversation_id)
+        });
+        if let Some(ref dirty_event) = taken_dirty_event {
+            inputs.push(AIAgentInput::OrchestrationConfigUpdate {
+                plan_id: dirty_event.plan_id.clone(),
+                config: dirty_event.config.clone(),
+                status: dirty_event.status,
+            });
+        }
+
+        let send_result = self.send_request_input(
             RequestInput::for_task(
                 inputs,
                 task_id,
@@ -708,8 +774,17 @@ impl BlocklistAIController {
             /*can_attempt_resume_on_error*/ true,
             is_queued_prompt,
             ctx,
-        ) {
+        );
+
+        // If the request failed, re-insert the dirty event so it isn't
+        // silently lost.
+        if let Err(e) = &send_result {
             log::error!("Failed to send agent request: {e:?}");
+            if let Some(dirty_event) = taken_dirty_event {
+                AIDocumentModel::handle(ctx).update(ctx, |model, _| {
+                    model.set_dirty_orchestration_event(conversation_id, dirty_event);
+                });
+            }
         }
     }
 
@@ -1193,38 +1268,7 @@ impl BlocklistAIController {
         slash_command: SlashCommandRequest,
         ctx: &mut ModelContext<Self>,
     ) {
-        // Slash commands are a fresh user turn; mirror `send_query`'s
-        // cancel-and-resend so we don't trip `send_request_input`'s in-flight
-        // invariant.
-        if let Some(conversation_id) = slash_command.conversation_id(self, ctx) {
-            self.cancel_active_conversation_for_follow_up(conversation_id, ctx);
-        }
         slash_command.send_request(self, /*is_queued_prompt*/ false, ctx);
-    }
-
-    /// Cancel any in-flight progress on the active conversation in preparation
-    /// for sending a follow-up turn that will land on `target_conversation_id`.
-    /// Without this pre-cancel, [`Self::send_request_input`] would trip its
-    /// in-flight invariant when the new turn re-uses an existing conversation.
-    ///
-    /// Returns the [`CancellationReason::FollowUpSubmitted`] reason used so
-    /// callers can reuse it for downstream side effects (e.g. cancelling
-    /// pending actions on the target conversation).
-    fn cancel_active_conversation_for_follow_up(
-        &mut self,
-        target_conversation_id: AIConversationId,
-        ctx: &mut ModelContext<Self>,
-    ) -> CancellationReason {
-        let active_conversation_id =
-            BlocklistAIHistoryModel::as_ref(ctx).active_conversation_id(self.terminal_view_id);
-        let reason = CancellationReason::FollowUpSubmitted {
-            is_for_same_conversation: active_conversation_id
-                .is_some_and(|id| id == target_conversation_id),
-        };
-        if let Some(active_conversation_id) = active_conversation_id {
-            self.cancel_conversation_progress(active_conversation_id, reason, ctx);
-        }
-        reason
     }
 
     /// Same as [`Self::send_slash_command_request`] but marks the emitted `SentRequest`
@@ -1385,7 +1429,7 @@ impl BlocklistAIController {
         }
 
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
-            history.set_active_conversation_id(conversation_id, self.terminal_view_id, ctx);
+            history.mark_active_conversation_id(conversation_id, self.terminal_view_id, ctx);
         });
 
         if !FeatureFlag::AgentView.is_enabled() && trigger == FollowUpTrigger::Auto {
@@ -1484,32 +1528,199 @@ impl BlocklistAIController {
         self.pending_passive_follow_ups.remove(&conversation_id);
     }
 
-    /// Handles the EventsReady signal. Checks readiness, drains
-    /// pending events from the service, and injects them into the conversation.
-    fn handle_pending_events_ready(
+    fn conversation_ready_for_pending_events(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &ModelContext<Self>,
+    ) -> bool {
+        let owns = BlocklistAIHistoryModel::as_ref(ctx)
+            .all_live_conversations_for_terminal_view(self.terminal_view_id)
+            .any(|conversation| conversation.id() == conversation_id);
+        let has_active_stream = self
+            .in_flight_response_streams
+            .has_active_stream_for_conversation(conversation_id, ctx);
+        let Some(conversation) =
+            BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)
+        else {
+            log::info!(
+                "Pending events are not ready: conversation_id={conversation_id:?} reason=conversation_missing owns_conversation={owns} has_active_stream={has_active_stream}"
+            );
+            return false;
+        };
+        let is_success = matches!(conversation.status(), ConversationStatus::Success);
+        if !owns || has_active_stream || !is_success {
+            log::info!(
+                "Pending events are not ready: conversation_id={conversation_id:?} owns_conversation={owns} has_active_stream={has_active_stream} status={:?}",
+                conversation.status()
+            );
+            return false;
+        }
+
+        true
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn maybe_prepare_local_claude_wake(
+        &mut self,
+        _conversation_id: AIConversationId,
+        _trigger: LocalClaudeWakeTrigger,
+        _ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        false
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn maybe_prepare_local_claude_wake(
+        &mut self,
+        conversation_id: AIConversationId,
+        trigger: LocalClaudeWakeTrigger,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        if self
+            .pending_local_claude_wakes
+            .contains_key(&conversation_id)
+        {
+            log::info!("Dormant Claude wake already pending: conversation_id={conversation_id:?}");
+            return true;
+        }
+        if trigger.requires_pending_events() {
+            let has_pending_events = OrchestrationEventService::handle(ctx)
+                .update(ctx, |svc, _| svc.has_pending_events(conversation_id));
+            if !has_pending_events {
+                return false;
+            }
+        }
+
+        if !self.conversation_ready_for_pending_events(conversation_id, ctx) {
+            return false;
+        }
+
+        let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+        let Some(conversation) = history_model.conversation(&conversation_id).cloned() else {
+            log::info!(
+                "Skipping dormant Claude wake preparation: conversation_id={conversation_id:?} reason=conversation_missing"
+            );
+            return false;
+        };
+        let parent_conversation = conversation
+            .parent_conversation_id()
+            .and_then(|parent_conversation_id| history_model.conversation(&parent_conversation_id))
+            .cloned();
+        let working_dir = self
+            .active_session
+            .as_ref(ctx)
+            .current_working_directory()
+            .cloned()
+            .map(PathBuf::from);
+        let task_id = conversation.task_id();
+
+        let server_api = ServerApiProvider::as_ref(ctx).get();
+        let handle = ctx.spawn(
+            async move {
+                log::info!(
+                    "Preparing dormant Claude wake command: conversation_id={conversation_id:?} task_id={task_id:?}"
+                );
+                ClaudeHarness::wake_dormant_session(
+                    server_api.clone(),
+                    conversation,
+                    parent_conversation,
+                    working_dir,
+                )
+                .await
+            },
+            move |me, result, ctx| {
+                me.pending_local_claude_wakes.remove(&conversation_id);
+                match result {
+                    Ok(Some(command)) => {
+                        log::info!(
+                            "Executing dormant Claude wake command: conversation_id={conversation_id:?} task_id={task_id:?}"
+                        );
+                        BlocklistAIHistoryModel::handle(ctx).update(
+                            ctx,
+                            |history_model, ctx| {
+                                history_model.update_conversation_status(
+                                    me.terminal_view_id,
+                                    conversation_id,
+                                    ConversationStatus::InProgress,
+                                    ctx,
+                                );
+                            },
+                        );
+                        ctx.emit(BlocklistAIControllerEvent::ExecuteLocalHarnessCommand {
+                            command,
+                        });
+                    }
+                    Ok(None) => {
+                        match trigger {
+                            LocalClaudeWakeTrigger::PendingEvents => {
+                                log::info!(
+                                    "Falling back to generic pending-event injection after dormant Claude wake eligibility check: conversation_id={conversation_id:?} task_id={task_id:?}"
+                                );
+                                me.inject_pending_events_for_request(conversation_id, ctx);
+                            }
+                            LocalClaudeWakeTrigger::WakeOnlyStream => {
+                                log::info!(
+                                    "Retrying wake-only dormant Claude eligibility check: conversation_id={conversation_id:?} task_id={task_id:?}"
+                                );
+                                me.schedule_dormant_claude_wake_ready_retry(conversation_id, ctx);
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to prepare dormant Claude wake command for {conversation_id:?} task_id={task_id:?}: {err:#}"
+                        );
+                        match trigger {
+                            LocalClaudeWakeTrigger::PendingEvents => {
+                                me.schedule_pending_events_ready_retry(conversation_id, ctx);
+                            }
+                            LocalClaudeWakeTrigger::WakeOnlyStream => {
+                                me.schedule_dormant_claude_wake_ready_retry(conversation_id, ctx);
+                            }
+                        }
+                    }
+                }
+            },
+        );
+        self.pending_local_claude_wakes
+            .insert(conversation_id, handle);
+        true
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn schedule_pending_events_ready_retry(
         &mut self,
         conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
     ) {
-        let owns = BlocklistAIHistoryModel::as_ref(ctx)
-            .all_live_conversations_for_terminal_view(self.terminal_view_id)
-            .any(|c| c.id() == conversation_id);
-        if !owns {
-            return;
-        }
+        ctx.spawn(
+            async move { Timer::after(Duration::from_secs(2)).await },
+            move |me, _, ctx| {
+                me.handle_pending_events_ready(conversation_id, ctx);
+            },
+        );
+    }
 
-        if self
-            .in_flight_response_streams
-            .has_active_stream_for_conversation(conversation_id, ctx)
-        {
-            return;
-        }
+    #[cfg(not(target_family = "wasm"))]
+    fn schedule_dormant_claude_wake_ready_retry(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        ctx.spawn(
+            async move { Timer::after(Duration::from_secs(2)).await },
+            move |me, _, ctx| {
+                me.handle_dormant_claude_wake_ready(conversation_id, ctx);
+            },
+        );
+    }
 
-        // Only drain when the conversation is actually idle.
-        let is_success = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&conversation_id)
-            .is_some_and(|c| matches!(c.status(), ConversationStatus::Success));
-        if !is_success {
+    fn inject_pending_events_for_request(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self.conversation_ready_for_pending_events(conversation_id, ctx) {
             return;
         }
 
@@ -1543,6 +1754,44 @@ impl BlocklistAIController {
             OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
                 svc.requeue_awaiting_events(conversation_id, ctx);
             });
+        }
+    }
+
+    /// Handles the EventsReady signal. Checks readiness, drains
+    /// pending events from the service, and injects them into the conversation.
+    fn handle_pending_events_ready(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self.conversation_ready_for_pending_events(conversation_id, ctx) {
+            return;
+        }
+
+        if self.maybe_prepare_local_claude_wake(
+            conversation_id,
+            LocalClaudeWakeTrigger::PendingEvents,
+            ctx,
+        ) {
+            return;
+        }
+
+        self.inject_pending_events_for_request(conversation_id, ctx);
+    }
+
+    fn handle_dormant_claude_wake_ready(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self.maybe_prepare_local_claude_wake(
+            conversation_id,
+            LocalClaudeWakeTrigger::WakeOnlyStream,
+            ctx,
+        ) {
+            log::info!(
+                "Ignoring dormant Claude wake-ready signal: conversation_id={conversation_id:?}"
+            );
         }
     }
 
@@ -2090,8 +2339,8 @@ impl BlocklistAIController {
             stream_id: response_stream_id.clone(),
         });
         if !is_passive_request {
-            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                history_model.set_active_conversation_id(
+            history_model.update(ctx, |history_model, ctx| {
+                history_model.mark_active_conversation_id(
                     conversation_data.id,
                     self.terminal_view_id,
                     ctx,
@@ -2580,9 +2829,10 @@ impl BlocklistAIController {
             // persisting the conversation.
             history_model.update_conversation_cost_and_usage_for_request(
                 conversation_id,
-                finished_event
-                    .request_cost
-                    .map(|cost| RequestCost::new(cost.exact.into())),
+                finished_event.request_cost.map(|cost| {
+                    // Total credits charged for this request = inference (`exact`) + platform.
+                    RequestCost::new(f64::from(cost.exact) + f64::from(cost.platform_credits))
+                }),
                 finished_event.token_usage,
                 finished_event.conversation_usage_metadata.take(),
                 did_request_contain_user_query,

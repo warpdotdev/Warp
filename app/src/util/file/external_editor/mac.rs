@@ -19,7 +19,7 @@ extern "C" {
     fn get_default_app_bundle_for_file(file_path: id) -> id;
 }
 
-/// The exeutable we use to launch the editor.
+/// The executable we use to launch the editor.
 #[derive(Debug)]
 pub enum OpenFileInEditorMethod {
     // A custom binary (e.g. the code CLI tool for VSCode).
@@ -402,5 +402,5 @@ unsafe fn default_app_to_open_path(file_path: &Path) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "mac_test.rs"]
+#[path = "mac_tests.rs"]
 mod tests;

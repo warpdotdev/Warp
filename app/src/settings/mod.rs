@@ -214,6 +214,7 @@ pub enum CtrlTabBehavior {
     #[default]
     ActivatePrevNextTab,
     CycleMostRecentSession,
+    CycleMostRecentTab,
 }
 
 impl CtrlTabBehavior {
@@ -221,6 +222,7 @@ impl CtrlTabBehavior {
         match self {
             Self::ActivatePrevNextTab => "Activate previous/next tab",
             Self::CycleMostRecentSession => "Cycle most recent session",
+            Self::CycleMostRecentTab => "Cycle most recent tab",
         }
     }
 }
@@ -488,7 +490,7 @@ impl Settings {
             match res {
                 Ok(versions) => versions[&changelog_version].as_bool().unwrap_or(false),
                 Err(e) => {
-                    log::warn!("Error deserializing changlog user default {e}");
+                    log::warn!("Error deserializing changelog user default {e}");
                     false
                 }
             }

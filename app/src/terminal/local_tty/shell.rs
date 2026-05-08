@@ -530,7 +530,7 @@ impl WslShellStarter {
             &home_dir.to_typed_path(),
             &self.distribution,
         )
-        .inspect_err(|err| log::error!("error convertion WSL home dir for host: {err:#}"))
+        .inspect_err(|err| log::error!("error conversion WSL home dir for host: {err:#}"))
         .ok()
     }
 }

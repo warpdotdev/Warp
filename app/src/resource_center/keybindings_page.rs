@@ -54,7 +54,7 @@ struct MouseStateHandles {
 }
 
 pub struct KeybindingsView {
-    /// List of all keybidings.
+    /// List of all keybindings.
     bindings: Option<Vec<CommandBinding>>,
     /// List of keybindings based on search query.
     binding_results: Option<Vec<CommandBinding>>,

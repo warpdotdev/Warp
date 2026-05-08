@@ -481,7 +481,20 @@ impl TerminalView {
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
             history_model.restore_conversations(self.view_id, conversations, ctx);
             if let Some(active_conversation_id) = active_conversation_id {
-                history_model.set_active_conversation_id(active_conversation_id, self.view_id, ctx);
+                // Use `mark_active_conversation_id` (non-transferring) so we
+                // don't rip the conversation out of any other terminal view's
+                // live list. This matters for the orchestration pill bar's
+                // in-place navigation: the child agent's hidden pane must
+                // retain ownership so its `conversation_id_for_action`
+                // lookups for in-flight requested commands keep resolving.
+                // `restore_conversations` above just inserted the conversation
+                // into `self.view_id`'s live list, satisfying mark's
+                // precondition.
+                history_model.mark_active_conversation_id(
+                    active_conversation_id,
+                    self.view_id,
+                    ctx,
+                );
             }
         });
 
@@ -997,7 +1010,9 @@ impl TerminalView {
             artifacts_json: None,
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,
@@ -1063,10 +1078,10 @@ impl TerminalView {
                 params.ai_context_model,
                 params.find_model,
                 params.active_session,
-                self.ambient_agent_view_model.clone(),
                 &params.cli_subagent_controller,
                 &params.model_events_handle,
                 self.agent_view_controller.clone(),
+                self.ambient_agent_view_model.clone(),
                 self.view_handle.clone(),
                 params.terminal_view_id,
                 ctx,

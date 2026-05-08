@@ -117,13 +117,14 @@ You can use **any coding agent** to implement a contribution — for example, Wa
 
 If you'd rather have an **Oz cloud agent** implement a ready issue for you, mention **@oss-maintainers** on the issue to request it. Approved requests run **for free** on complimentary Oz credits — you don't need to set up your own Oz account or pay for compute.
 
-## Becoming a Collaborator
+## Code Review
 
-Contributors with several merged PRs may be invited to become collaborators. Collaborators receive expanded permissions including the ability to:
+All pull requests go through a two-stage review process:
 
-- Assign [Oz](https://warp.dev/oz) to work on issues by mentioning `@oz` in a comment on any issue that has a readiness label.
-- Use complimentary Oz credits for contributions to this repository.
-- Apply and manage issue labels.
+1. **Oz review** — When you open a PR, [Oz](https://warp.dev/oz) is automatically assigned and produces the first review. Oz checks for correctness, style, test coverage, and alignment with the linked issue and any associated specs.
+2. **Warp team review** — Only after Oz has **approved** the PR is it routed to a Warp team subject-matter expert for a final human review. PRs that have not yet been approved by Oz will not be assigned to a team member.
+
+You do not need to manually request reviewers at any stage. After pushing changes that address Oz's feedback, comment `/oz-review` on the PR to request a re-review — you can do this up to **three times** per PR. If something looks stuck or you need additional reviews, mention **@oss-maintainers** on the PR to escalate to the team.
 
 ## Development Setup
 
@@ -139,11 +140,17 @@ cargo run            # build and run Warp
 
 Tests are required for most code changes:
 
+### Manual Testing
+Manual testing is required for changes that can be manually tested, and almost all changes can be manually tested. If your change can be manually tested, please include screenshots or a screen recording that show it working end to end in the PR description.
+
+You can run the app locally using `./script/run` - see [WARP.md](WARP.md) for more details on how to get set up.
+
+### Automated Tests
 - **Bug fixes** should include a regression test that would have caught the bug.
 - **Algorithmic or non-trivial logic** needs unit tests.
 - **User-facing flows** should have end-to-end coverage under [`crates/integration/`](crates/integration/) whenever the behavior can be exercised that way. The bar is high-quality coverage of the changes you ship — with agent-driven development the expectation is more integration tests, not just coverage of P0 paths. If a flow is worth shipping, it's usually worth an integration test.
 
-Run unit tests with `cargo nextest run`. See [WARP.md](WARP.md) for more detail.
+Run unit tests with `cargo nextest run`.
 
 ## Code Style
 

@@ -100,6 +100,7 @@ impl FilterChipRenderer for QueryFilter {
             | QueryFilter::NaturalLanguage
             | QueryFilter::Actions
             | QueryFilter::Sessions
+            | QueryFilter::Tabs
             | QueryFilter::Drive
             | QueryFilter::LaunchConfigurations
             | QueryFilter::PromptHistory

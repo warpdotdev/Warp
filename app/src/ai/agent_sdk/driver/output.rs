@@ -42,7 +42,8 @@ pub mod text {
             | AIAgentInput::StartFromAmbientRunPrompt { .. }
             | AIAgentInput::MessagesReceivedFromAgents { .. }
             | AIAgentInput::PassiveSuggestionResult { .. }
-            | AIAgentInput::EventsFromAgents { .. } => {
+            | AIAgentInput::EventsFromAgents { .. }
+            | AIAgentInput::OrchestrationConfigUpdate { .. } => {
                 // Do not include the user query, since it's already provided as input to the agent.
                 Ok(())
             }
@@ -303,6 +304,8 @@ pub mod text {
                 // SendMessageToAgent is a client-side orchestration action, not used in SDK
                 AIAgentActionResultType::SendMessageToAgent(_) => Ok(()),
                 AIAgentActionResultType::AskUserQuestion(_) => Ok(()),
+                // RunAgents is a desktop-client-only action; not used in the SDK.
+                AIAgentActionResultType::RunAgents(_) => Ok(()),
             },
         }
     }
@@ -427,6 +430,8 @@ pub mod text {
                         )?;
                     }
                     AIAgentActionType::AskUserQuestion { .. } => (),
+                    // RunAgents is desktop-client-only; SDK driver renders nothing.
+                    AIAgentActionType::RunAgents(_) => (),
                 },
                 AIAgentOutputMessageType::TodoOperation(operation) => match operation {
                     TodoOperation::UpdateTodos { todos } => {
@@ -791,7 +796,8 @@ pub mod json {
                 | AIAgentInput::StartFromAmbientRunPrompt { .. }
                 | AIAgentInput::MessagesReceivedFromAgents { .. }
                 | AIAgentInput::EventsFromAgents { .. }
-                | AIAgentInput::PassiveSuggestionResult { .. } => None,
+                | AIAgentInput::PassiveSuggestionResult { .. }
+                | AIAgentInput::OrchestrationConfigUpdate { .. } => None,
                 // These input types should not occur in a SDK-run agent.
                 AIAgentInput::ResumeConversation { .. }
                 | AIAgentInput::TriggerPassiveSuggestion { .. } => None,
@@ -1108,6 +1114,9 @@ pub mod json {
                     | AIAgentActionType::SendMessageToAgent { .. }
                     | AIAgentActionType::TransferShellCommandControlToUser { .. } => None,
                     AIAgentActionType::AskUserQuestion { .. } => None,
+                    // RunAgents is desktop-client-only; SDK has no JSON
+                    // representation for it.
+                    AIAgentActionType::RunAgents(_) => None,
                 },
                 AIAgentOutputMessageType::TodoOperation(operation) => match operation {
                     TodoOperation::UpdateTodos { todos } => Some(JsonMessage::UpdateTodos {

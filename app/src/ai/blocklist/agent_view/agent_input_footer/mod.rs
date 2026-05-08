@@ -7,11 +7,13 @@ use crate::{
     ai::{
         blocklist::{
             history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel},
+            is_local_to_cloud_handoff_available,
             prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
             usage::icon_for_context_window_usage,
             BlocklistAIInputModel,
         },
         execution_profiles::profiles::AIExecutionProfilesModel,
+        harness_availability::HarnessAvailabilityModel,
         AIRequestUsageModel,
     },
     appearance::Appearance,
@@ -34,7 +36,7 @@ use crate::{
             listener::agent_supports_rich_status, CLIAgentInputState, CLIAgentSessionsModel,
             CLIAgentSessionsModelEvent,
         },
-        input::{models::InlineModelSelectorTab, MenuPositioningProvider},
+        input::{models::InlineModelSelectorTab, HandoffComposeState, MenuPositioningProvider},
         model_events::ModelEvent,
         profile_model_selector::{ProfileModelSelector, ProfileModelSelectorEvent},
         session_settings::{SessionSettings, SessionSettingsChangedEvent, ToolbarChipSelection},
@@ -105,10 +107,14 @@ use warpui::{
     ViewHandle,
 };
 
+#[cfg(feature = "local_fs")]
+pub(crate) use self::environment_selector::sort_environments_by_recency;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::Timer;
 
-pub(crate) use self::environment_selector::{EnvironmentSelector, EnvironmentSelectorEvent};
+pub(crate) use self::environment_selector::{
+    EnvironmentSelector, EnvironmentSelectorEvent, EnvironmentSelectorTarget,
+};
 #[cfg(not(target_family = "wasm"))]
 use crate::server::telemetry::PluginChipTelemetryAction;
 #[cfg(not(target_family = "wasm"))]
@@ -195,8 +201,10 @@ pub struct AgentInputFooter {
     model_selector: ViewHandle<ProfileModelSelector>,
     ftu_callout_close_button: ViewHandle<ActionButton>,
     environment_selector: Option<ViewHandle<EnvironmentSelector>>,
+    handoff_environment_selector: ViewHandle<EnvironmentSelector>,
     prompt_alert: ViewHandle<PromptAlertView>,
     ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
+    handoff_compose_state: ModelHandle<HandoffComposeState>,
     left_display_chips: Vec<ViewHandle<DisplayChip>>,
     right_display_chips: Vec<ViewHandle<DisplayChip>>,
     // Separate set of display chips for the CLI agent footer.
@@ -226,6 +234,11 @@ pub struct AgentInputFooter {
     // Fast-forward (auto-approve) toggle button shown in the agent view footer.
     fast_forward_button: ViewHandle<ActionButton>,
 
+    // "Hand off to cloud" chip. Visibility is gated on native/local handoff
+    // availability. Per-conversation eligibility is enforced by
+    // `Workspace::start_local_to_cloud_handoff`.
+    handoff_to_cloud_button: ViewHandle<ActionButton>,
+
     // CLI agent voice input state (self-contained, bypasses editor voice flow).
     #[cfg(feature = "voice_input")]
     cli_voice_input_state: CLIVoiceInputState,
@@ -242,6 +255,7 @@ impl AgentInputFooter {
         ai_input_model: ModelHandle<BlocklistAIInputModel>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
+        handoff_compose_state: ModelHandle<HandoffComposeState>,
         prompt: ModelHandle<PromptType>,
         display_chip_config: DisplayChipConfig,
         ctx: &mut ViewContext<Self>,
@@ -344,6 +358,20 @@ impl AgentInputFooter {
                 .with_tooltip_alignment(TooltipAlignment::Left)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(TerminalAction::ToggleAutoexecuteMode);
+                })
+        });
+
+        // "Hand off to cloud" chip. On click dispatches the workspace action that
+        // splits a new cloud-mode pane next to the local pane; that pane handles
+        // the rest of the handoff flow when native/local handoff is available.
+        let handoff_to_cloud_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("", AgentInputButtonTheme)
+                .with_icon(Icon::UploadCloud)
+                .with_tooltip("Hand off to cloud")
+                .with_size(button_size)
+                .with_tooltip_alignment(TooltipAlignment::Left)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(AgentInputFooterAction::OpenHandoffPane);
                 })
         });
 
@@ -548,7 +576,7 @@ impl AgentInputFooter {
         );
 
         let start_remote_control_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("/remote-control", AgentInputButtonTheme)
+            ActionButton::new("/remote-control", RemoteControlButtonTheme)
                 .with_icon(Icon::Phone01)
                 .with_tooltip(START_REMOTE_CONTROL_TOOLTIP)
                 .with_size(cli_button_size)
@@ -559,7 +587,7 @@ impl AgentInputFooter {
         });
 
         let stop_remote_control_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Stop sharing", AgentInputButtonTheme)
+            ActionButton::new("Stop sharing", RemoteControlButtonTheme)
                 .with_icon(Icon::StopFilled)
                 .with_icon_ansi_color(AnsiColorIdentifier::Red)
                 .with_tooltip("Stop sharing")
@@ -603,11 +631,19 @@ impl AgentInputFooter {
                     ctx.add_typed_action_view(|ctx| {
                         EnvironmentSelector::new(
                             menu_positioning_provider.clone(),
-                            ambient_agent_view_model.clone(),
+                            EnvironmentSelectorTarget::CloudPane(ambient_agent_view_model.clone()),
                             ctx,
                         )
                     })
                 });
+
+        let handoff_environment_selector = ctx.add_typed_action_view(|ctx| {
+            EnvironmentSelector::new(
+                menu_positioning_provider.clone(),
+                EnvironmentSelectorTarget::Handoff(handoff_compose_state.clone()),
+                ctx,
+            )
+        });
 
         if let Some(environment_selector) = environment_selector.as_ref() {
             ctx.subscribe_to_view(environment_selector, |_, _, event, ctx| match event {
@@ -623,11 +659,39 @@ impl AgentInputFooter {
             });
         }
 
+        ctx.subscribe_to_view(
+            &handoff_environment_selector,
+            |_, _, event, ctx| match event {
+                EnvironmentSelectorEvent::MenuVisibilityChanged { open } => {
+                    ctx.emit(AgentInputFooterEvent::ToggledChipMenu { open: *open });
+                    if !*open {
+                        ctx.emit(AgentInputFooterEvent::EnvironmentSelectorClosed);
+                    }
+                }
+                EnvironmentSelectorEvent::OpenEnvironmentManagementPane => {
+                    ctx.emit(AgentInputFooterEvent::OpenEnvironmentManagementPane);
+                }
+            },
+        );
+
         if let Some(ambient_agent_view_model) = ambient_agent_view_model.as_ref() {
             ctx.subscribe_to_model(ambient_agent_view_model, |_, _, _, ctx| {
                 ctx.notify();
             });
         }
+
+        ctx.subscribe_to_model(
+            &handoff_compose_state,
+            |me, handoff_compose_state, _, ctx| {
+                if !handoff_compose_state.as_ref(ctx).is_active() {
+                    me.handoff_environment_selector
+                        .update(ctx, |selector, ctx| {
+                            selector.set_menu_visibility(false, ctx)
+                        });
+                }
+                ctx.notify();
+            },
+        );
 
         let prompt_alert = ctx.add_typed_action_view(PromptAlertView::new);
         ctx.subscribe_to_view(&prompt_alert, |_, _, event, ctx| {
@@ -722,8 +786,14 @@ impl AgentInputFooter {
         });
 
         let v2_model_selector = if FeatureFlag::CloudModeInputV2.is_enabled() {
+            let ambient_agent_view_model_for_selector = ambient_agent_view_model.clone();
             let view = ctx.add_typed_action_view(|ctx| {
-                ModelSelector::new(menu_positioning_provider.clone(), terminal_view_id, ctx)
+                ModelSelector::new(
+                    menu_positioning_provider.clone(),
+                    terminal_view_id,
+                    ambient_agent_view_model_for_selector,
+                    ctx,
+                )
             });
             ctx.subscribe_to_view(&view, |_, _, event, ctx| match event {
                 ModelSelectorEvent::MenuVisibilityChanged { open } => {
@@ -760,14 +830,17 @@ impl AgentInputFooter {
             context_window_button,
             model_selector: profile_model_selector_full,
             environment_selector,
+            handoff_environment_selector,
             prompt_alert,
             terminal_model,
+            handoff_compose_state,
             render_ftu_callout: false,
             left_display_chips: vec![],
             right_display_chips: vec![],
             cli_display_chips: vec![],
             display_chip_config,
             fast_forward_button,
+            handoff_to_cloud_button,
             #[cfg(feature = "voice_input")]
             cli_voice_input_state: CLIVoiceInputState::default(),
             #[cfg(feature = "voice_input")]
@@ -839,6 +912,11 @@ impl AgentInputFooter {
     }
 
     fn render_cloud_mode_v2_footer(&self, app: &AppContext) -> Box<dyn Element> {
+        // `app` is only consumed under the `voice_input` cfg below; reference it here so the
+        // parameter doesn't trip the unused-variable lint when the feature is disabled.
+        #[cfg(not(feature = "voice_input"))]
+        let _ = app;
+
         let mut left = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -861,16 +939,20 @@ impl AgentInputFooter {
 
         right = right.with_child(ChildView::new(&self.file_button).finish());
 
-        // The V2 model selector is Oz-specific; hide it for other harnesses
-        // until they support model selection.
-        let is_oz_harness =
-            self.ambient_agent_view_model
+        if let Some(model_selector) = self.v2_model_selector.as_ref() {
+            // Only show the model selector when the active harness has available models.
+            // Some harnesses (e.g. Gemini) may not have any server-provided model options.
+            let show_selector = self
+                .ambient_agent_view_model
                 .as_ref()
-                .is_some_and(|ambient_agent_model| {
-                    ambient_agent_model.as_ref(app).selected_harness() == Harness::Oz
+                .map(|m| m.as_ref(app).selected_harness())
+                .is_none_or(|harness| match harness {
+                    Harness::Oz | Harness::Unknown => true,
+                    _ => HarnessAvailabilityModel::as_ref(app)
+                        .models_for(harness)
+                        .is_some_and(|models| !models.is_empty()),
                 });
-        if is_oz_harness {
-            if let Some(model_selector) = self.v2_model_selector.as_ref() {
+            if show_selector {
                 right = right.with_child(ChildView::new(model_selector).finish());
             }
         }
@@ -960,10 +1042,10 @@ impl AgentInputFooter {
         }
         #[cfg(not(target_family = "wasm"))]
         {
-            if self.plugin_operation_in_progress {
-                return None;
-            }
-            if !FeatureFlag::HOANotifications.is_enabled() {
+            if self.plugin_operation_in_progress
+                || self.terminal_model.lock().is_shared_ambient_agent_session()
+                || !FeatureFlag::HOANotifications.is_enabled()
+            {
                 return None;
             }
 
@@ -1363,7 +1445,8 @@ impl AgentInputFooter {
             AgentToolbarItemKind::ModelSelector
             | AgentToolbarItemKind::NLDToggle
             | AgentToolbarItemKind::ContextWindowUsage
-            | AgentToolbarItemKind::FastForwardToggle => None,
+            | AgentToolbarItemKind::FastForwardToggle
+            | AgentToolbarItemKind::HandoffToCloud => None,
         }
     }
 
@@ -1492,8 +1575,10 @@ impl AgentInputFooter {
             .environment_selector
             .as_ref()
             .is_some_and(|selector| selector.as_ref(app).is_menu_open());
+        let has_open_handoff_env_selector =
+            self.handoff_environment_selector.as_ref(app).is_menu_open();
 
-        has_open_display_chip || has_open_env_selector
+        has_open_display_chip || has_open_env_selector || has_open_handoff_env_selector
     }
 
     pub fn is_model_selector_open(&self, app: &AppContext) -> bool {
@@ -1891,6 +1976,13 @@ impl AgentInputFooter {
         {
             return None;
         }
+
+        if self.handoff_compose_state.as_ref(app).is_active()
+            && !item.is_available_during_handoff_compose()
+        {
+            return None;
+        }
+
         match item {
             AgentToolbarItemKind::ContextChip(chip_kind) => {
                 let chips = match SessionSettings::as_ref(app)
@@ -1948,6 +2040,17 @@ impl AgentInputFooter {
             AgentToolbarItemKind::FastForwardToggle => FeatureFlag::FastForwardAutoexecuteButton
                 .is_enabled()
                 .then(|| ChildView::new(&self.fast_forward_button).finish()),
+            AgentToolbarItemKind::HandoffToCloud => {
+                if !is_local_to_cloud_handoff_available() {
+                    return None;
+                }
+                // Render the chip when the native/local handoff surface is available.
+                // Per-conversation eligibility (synced server token, non-empty
+                // history) is enforced by `Workspace::start_local_to_cloud_handoff`,
+                // which surfaces an error toast and does not open a pane when
+                // the active conversation isn't handoff-able.
+                Some(ChildView::new(&self.handoff_to_cloud_button).finish())
+            }
             // Handled by the available_in() guard above; included for exhaustiveness.
             AgentToolbarItemKind::FileExplorer
             | AgentToolbarItemKind::RichInput
@@ -2025,6 +2128,9 @@ impl View for AgentInputFooter {
                 left_buttons =
                     left_buttons.with_child(ChildView::new(environment_selector).finish());
             }
+        } else if self.handoff_compose_state.as_ref(app).is_active() {
+            left_buttons = left_buttons
+                .with_child(ChildView::new(&self.handoff_environment_selector).finish());
         }
 
         let terminal_model = self.terminal_model.lock();
@@ -2211,6 +2317,9 @@ pub enum AgentInputFooterAction {
     StartRemoteControl,
     StopRemoteControl,
     OpenCodingAgentSettings,
+    /// Open the local-to-cloud handoff pane. Dispatched by the
+    /// "Hand off to cloud" footer chip.
+    OpenHandoffPane,
     ShowContextMenu {
         position: Vector2F,
     },
@@ -2407,6 +2516,11 @@ impl TypedActionView for AgentInputFooter {
                     widget_id: crate::settings_view::cli_agent_settings_widget_id(),
                 });
             }
+            AgentInputFooterAction::OpenHandoffPane => {
+                if is_local_to_cloud_handoff_available() {
+                    ctx.emit(AgentInputFooterEvent::OpenHandoffPane);
+                }
+            }
             AgentInputFooterAction::ShowContextMenu { position } => {
                 ctx.emit(AgentInputFooterEvent::ShowContextMenu {
                     position: *position,
@@ -2453,6 +2567,9 @@ pub enum AgentInputFooterEvent {
     PluginInstalled(CLIAgent),
     #[cfg(not(target_family = "wasm"))]
     OpenPluginInstructionsPane(CLIAgent, PluginModalKind),
+    /// Local-to-cloud handoff chip clicked. The terminal `Input` subscriber
+    /// activates `&` handoff-compose mode on the local input.
+    OpenHandoffPane,
 }
 
 impl Entity for AgentInputFooter {
@@ -2507,6 +2624,31 @@ impl ActionButtonTheme for AgentInputButtonTheme {
         } else {
             None
         }
+    }
+}
+
+struct RemoteControlButtonTheme;
+
+impl ActionButtonTheme for RemoteControlButtonTheme {
+    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {
+        AgentInputButtonTheme.background(hovered, appearance)
+    }
+
+    fn text_color(
+        &self,
+        hovered: bool,
+        background: Option<Fill>,
+        appearance: &Appearance,
+    ) -> ColorU {
+        AgentInputButtonTheme.text_color(hovered, background, appearance)
+    }
+
+    fn border(&self, appearance: &Appearance) -> Option<ColorU> {
+        AgentInputButtonTheme.border(appearance)
+    }
+
+    fn should_opt_out_of_contrast_adjustment(&self) -> bool {
+        AgentInputButtonTheme.should_opt_out_of_contrast_adjustment()
     }
 }
 

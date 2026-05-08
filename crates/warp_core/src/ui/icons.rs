@@ -310,12 +310,14 @@ pub enum Icon {
     SwitchHorizontal01,
     HeartHand,
     MessageChatSquare,
+    Pin,
 }
 
 impl From<Icon> for &'static str {
     fn from(icon: Icon) -> &'static str {
         match icon {
             Icon::Menu => "bundled/svg/layout-left.svg",
+            Icon::Pin => "bundled/svg/pin-01.svg",
             Icon::AtSign => "bundled/svg/at-sign.svg",
             Icon::Plus => "bundled/svg/plus.svg",
             Icon::Copy => "bundled/svg/copy.svg",
