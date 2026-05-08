@@ -14,13 +14,11 @@ fn main() -> anyhow::Result<()> {
             panic!(
                 r#"Failed to build command signatures JS: {e:?}.
 
-Most likely, this is fixed by:
-    1) Ensuring you have an up-to-date Node version; 18.14.1 (required for warp-server development) should suffice.
-    2) Running `corepack enable` (this can be done in any directory).
-    3) Removing a conflicting yarn installed by brew by running:
-        brew uninstall yarn
-
-If you continue to encounter issues, ensure you don't have conflicting Node installations, one of which might not be a sufficiently recent version.
+This usually means Node.js / yarn aren't set up for this checkout. See the
+"Node.js setup" section of WARP.md for the version requirement and the
+recommended install paths (nvm/fnm/volta/asdf/mise or your system package
+manager). Re-running `./script/bootstrap` will also fail fast with the same
+guidance.
 "#
             )
         } else {
