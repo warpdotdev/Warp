@@ -17,6 +17,7 @@ pub struct AuthSecretTypeInfo {
 pub fn auth_secret_types_for_harness(harness: Harness) -> &'static [AuthSecretTypeInfo] {
     match harness {
         Harness::Claude => &CLAUDE_AUTH_SECRET_TYPES,
+        Harness::Codex => &CODEX_AUTH_SECRET_TYPES,
         _ => &[],
     }
 }
@@ -60,12 +61,39 @@ pub fn build_managed_secret_value(
                 field_values[3].clone(),
             ))
         }
+        ManagedSecretType::OpenaiApiKey => {
+            let base_url = field_values
+                .get(1)
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty());
+            Ok(ManagedSecretValue::openai_api_key(
+                field_values[0].clone(),
+                base_url,
+            ))
+        }
         ManagedSecretType::RawValue | ManagedSecretType::Dotenvx => Err(anyhow!(
             "Auth secret type {:?} is not supported via the harness FTUX flow",
             info.secret_type
         )),
     }
 }
+
+static CODEX_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 1] = [
+    AuthSecretTypeInfo {
+        display_name: "OpenAI API Key",
+        secret_type: ManagedSecretType::OpenaiApiKey,
+        fields: &[
+            AuthSecretTypeField {
+                label: "OPENAI_API_KEY",
+                optional: false,
+            },
+            AuthSecretTypeField {
+                label: "BASE_URL (optional, e.g. https://us.api.openai.com/v1)",
+                optional: true,
+            },
+        ],
+    },
+];
 
 static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
     AuthSecretTypeInfo {
