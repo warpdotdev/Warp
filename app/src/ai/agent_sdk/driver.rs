@@ -17,13 +17,13 @@ use std::{
 use crate::ai::blocklist::task_status_sync_model::TaskStatusSyncModel;
 use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
 use crate::ai::llms::{LLMId, LLMPreferences};
-use crate::ai::mcp::MCPServerState;
+use crate::ai::mcp::{JSONMCPServer, MCPServerState};
 use crate::ai::skills::{SkillManager, SkillWatcher};
 use crate::ai::{
     agent::conversation::AIConversationId,
     agent_sdk::driver::harness::{
-        task_env_vars, HarnessCleanupDisposition, HarnessKind, HarnessRunner, ResumePayload,
-        SavePoint, ThirdPartyHarness,
+        harness_model_env_vars, task_env_vars, HarnessCleanupDisposition, HarnessKind,
+        HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness,
     },
 };
 use crate::terminal::cli_agent_sessions::plugin_manager::{
@@ -53,7 +53,7 @@ use crate::{
         execution_profiles::profiles::AIExecutionProfilesModel,
         mcp::{
             file_based_manager::{FileBasedMCPManager, FileBasedMCPManagerEvent},
-            parsing::{normalize_mcp_json, ParsedTemplatableMCPServerResult},
+            parsing::{normalize_mcp_json, resolve_json, ParsedTemplatableMCPServerResult},
             templatable_manager::TemplatableMCPServerManagerEvent,
             TemplatableMCPServerInstallation, TemplatableMCPServerManager,
         },
@@ -96,6 +96,7 @@ pub(crate) mod attachments;
 pub(crate) mod cloud_provider;
 pub(crate) mod environment;
 mod error_classification;
+pub(crate) mod git_credentials;
 pub(crate) mod harness;
 pub(super) mod output;
 mod snapshot;
@@ -236,6 +237,8 @@ pub struct AgentDriverOptions {
     pub environment: Option<AmbientAgentEnvironment>,
     /// Selected execution harness for this run.
     pub selected_harness: Harness,
+    /// Model ID for the selected harness. Only used for non-Oz harnesses.
+    pub third_party_harness_model_id: Option<String>,
     /// Whether to skip end-of-run snapshot upload.
     pub snapshot_disabled: Option<bool>,
     /// End-of-run snapshot upload timeout override.
@@ -257,9 +260,9 @@ pub struct AgentDriver {
     secrets: Arc<HashMap<String, ManagedSecretValue>>,
 
     /// Env vars passed to the terminal session, including resolved secrets, cloud
-    /// provider vars, task vars, and sandbox flags. Shared with
-    /// `prepare_environment_config` so harnesses can look up resolved secret
-    /// values without re-deriving precedence.
+    /// provider vars, task vars, and sandbox flags. Passed to
+    /// `build_runner` so harnesses can look up resolved secret values
+    /// without re-deriving precedence.
     resolved_env_vars: Arc<HashMap<OsString, OsString>>,
 
     output_format: OutputFormat,
@@ -305,6 +308,7 @@ pub struct AgentDriver {
     /// conversation's `parent_agent_id` field at register time so the
     /// streamer recognizes the child role in driver-hosted processes.
     parent_run_id: Option<String>,
+    third_party_harness_model_id: Option<String>,
 
     /// Async writer that records `file` declarations for paths the agent creates or edits
     /// via `RequestFileEdits`. `Some` only when `FeatureFlag::OzHandoff` is enabled, the run
@@ -501,6 +505,7 @@ impl AgentDriver {
             cloud_providers,
             environment,
             selected_harness,
+            third_party_harness_model_id,
             snapshot_disabled,
             snapshot_upload_timeout,
             snapshot_script_timeout,
@@ -552,6 +557,10 @@ impl AgentDriver {
             task_id.as_ref(),
             parent_run_id.as_deref(),
             selected_harness,
+        ));
+        env_vars.extend(harness_model_env_vars(
+            selected_harness,
+            third_party_harness_model_id.as_deref(),
         ));
 
         // Signal to third-party harnesses (e.g. Claude Code) that we're in a sandbox
@@ -624,6 +633,7 @@ impl AgentDriver {
                 .unwrap_or(snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT),
             run_conversation_id,
             parent_run_id: parent_run_id_for_self,
+            third_party_harness_model_id,
             snapshot_file_writer,
         })
     }
@@ -780,6 +790,44 @@ impl AgentDriver {
                 }),
             }
         }
+    }
+
+    /// Resolve MCP specs into a map of MCP name to `JSONMCPServer` for use in
+    /// third-party harnesses. Each spec is fully resolved (secrets applied, templates
+    /// rendered) so harnesses can serialize directly into their native config format.
+    fn resolve_mcp_specs_to_json(
+        specs: &[MCPSpec],
+        secrets: &HashMap<String, ManagedSecretValue>,
+        ctx: &ModelContext<Self>,
+    ) -> Result<HashMap<String, JSONMCPServer>, AgentDriverError> {
+        let (existing_uuids, mut ephemeral_installations) = Self::resolve_mcp_specs(specs)?;
+        let mut result = HashMap::new();
+
+        // Resolve UUID-referenced servers from the TemplatableMCPServerManager.
+        let manager = TemplatableMCPServerManager::as_ref(ctx);
+        for uuid in &existing_uuids {
+            let installation = manager
+                .get_installed_server(uuid)
+                .ok_or(AgentDriverError::MCPServerNotFound(*uuid))?
+                .clone();
+            let mut installation = installation;
+            installation.apply_secrets(secrets);
+            let resolved = resolve_json(&installation);
+            let servers: HashMap<String, JSONMCPServer> = serde_json::from_str(&resolved)
+                .map_err(|e| AgentDriverError::MCPJsonParseError(e.to_string()))?;
+            result.extend(servers);
+        }
+
+        // Resolve ephemeral (inline JSON) servers.
+        for installation in ephemeral_installations.iter_mut() {
+            installation.apply_secrets(secrets);
+            let resolved = resolve_json(installation);
+            let servers: HashMap<String, JSONMCPServer> = serde_json::from_str(&resolved)
+                .map_err(|e| AgentDriverError::MCPJsonParseError(e.to_string()))?;
+            result.extend(servers);
+        }
+
+        Ok(result)
     }
 
     /// Resolve MCP specs into UUIDs for existing servers and ephemeral installations for inline specs.
@@ -1392,17 +1440,44 @@ impl AgentDriver {
             }
         }
 
-        // Run the harness with a prompt
+        let (task_id_for_refresh, ai_client_for_refresh) = foreground
+            .spawn(|me, ctx| {
+                let task_id = if FeatureFlag::GitCredentialRefresh.is_enabled() {
+                    me.task_id.map(|id| id.to_string())
+                } else {
+                    None
+                };
+                let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client().clone();
+                (task_id, ai_client)
+            })
+            .await?;
+
+        // Run the harness with a prompt, racing it against an infinite git-credentials
+        // refresh loop. The refresh future never resolves on its own — it is dropped
+        // automatically when `select!` resolves on the harness result.
         match task.harness {
             HarnessKind::Oz => {
-                let conversation_status = foreground
+                let status_rx = foreground
                     .spawn(move |me, ctx| me.execute_run(task.prompt, ctx))
-                    .await?
-                    .await
-                    .map_err(|_| {
+                    .await?;
+
+                let conversation_status = if let Some(task_id) = task_id_for_refresh {
+                    let refresh =
+                        git_credentials::refresh_loop(task_id, ai_client_for_refresh).fuse();
+                    futures::pin_mut!(refresh);
+                    futures::select! {
+                        result = status_rx.fuse() => result.map_err(|_| {
+                            log::error!("Subscription dropped before agent finished");
+                            AgentDriverError::InvalidRuntimeState
+                        })?,
+                        _ = refresh => unreachable!("git credentials refresh loop resolved unexpectedly"),
+                    }
+                } else {
+                    status_rx.await.map_err(|_| {
                         log::error!("Subscription dropped before agent finished");
                         AgentDriverError::InvalidRuntimeState
-                    })?;
+                    })?
+                };
 
                 // Pause before returning to make sure that all conversation events are transmitted before the session is closed.
                 // TODO: This is a bit of a bandaid fix, and it would be better if we explicitly waited for the session to end before terminating.
@@ -1416,9 +1491,27 @@ impl AgentDriver {
             }
             HarnessKind::ThirdParty(harness) => {
                 let harness_exit_rx = Self::setup_harness(harness.as_ref(), &foreground).await?;
-                let runner =
-                    Self::prepare_harness(&task.prompt, harness.as_ref(), &foreground).await?;
-                Self::run_harness(runner, &foreground, harness_exit_rx).await
+                let runner = Self::prepare_harness(
+                    &task.prompt,
+                    &task.mcp_specs,
+                    harness.as_ref(),
+                    &foreground,
+                )
+                .await?;
+
+                if let Some(task_id) = task_id_for_refresh {
+                    let harness_fut =
+                        Self::run_harness(runner, &foreground, harness_exit_rx).fuse();
+                    let refresh =
+                        git_credentials::refresh_loop(task_id, ai_client_for_refresh).fuse();
+                    futures::pin_mut!(harness_fut, refresh);
+                    futures::select! {
+                        result = harness_fut => result,
+                        _ = refresh => unreachable!("git credentials refresh loop resolved unexpectedly"),
+                    }
+                } else {
+                    Self::run_harness(runner, &foreground, harness_exit_rx).await
+                }
             }
             HarnessKind::Unsupported(harness) => Err(AgentDriverError::HarnessSetupFailed {
                 harness: harness.to_string(),
@@ -1466,6 +1559,7 @@ impl AgentDriver {
     /// return a handle to the harness runner.
     async fn prepare_harness(
         prompt: &AgentRunPrompt,
+        mcp_specs: &[MCPSpec],
         harness: &dyn ThirdPartyHarness,
         foreground: &ModelSpawner<Self>,
     ) -> Result<Arc<dyn harness::HarnessRunner>, AgentDriverError> {
@@ -1489,12 +1583,13 @@ impl AgentDriver {
             .map_err(|_| AgentDriverError::InvalidRuntimeState)
             .flatten()?;
 
-        let (prompt_text, system_prompt, resumption_prompt): (
+        let (prompt_text, system_prompt, resumption_prompt, server_context): (
             Cow<'_, str>,
             Option<String>,
             Option<String>,
+            Option<String>,
         ) = match prompt {
-            AgentRunPrompt::Local(text) => (Cow::Borrowed(text), None, None),
+            AgentRunPrompt::Local(text) => (Cow::Borrowed(text), None, None, None),
             AgentRunPrompt::ServerSide {
                 skill,
                 attachments_dir,
@@ -1518,22 +1613,39 @@ impl AgentDriver {
                     Cow::Owned(resolved.prompt),
                     resolved.system_prompt,
                     resolved.resumption_prompt,
+                    resolved.context,
                 )
             }
         };
 
-        // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
-        // Pass the terminal env vars (which include the resolved secrets) so harnesses
-        // can look up auth keys without re-deriving precedence.
+        let (secrets, third_party_harness_model_id) = foreground
+            .spawn(|me, _| {
+                (
+                    Arc::clone(&me.secrets),
+                    me.third_party_harness_model_id.clone(),
+                )
+            })
+            .await
+            .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
+
+        // Resolve MCP specs into harness-native JSON format.
+        let mcp_specs = mcp_specs.to_vec();
+        let resolved_mcp_servers = foreground
+            .spawn(move |_, ctx| Self::resolve_mcp_specs_to_json(&mcp_specs, &secrets, ctx))
+            .await
+            .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
+        let resolved_mcp_servers = resolved_mcp_servers?;
+        if !resolved_mcp_servers.is_empty() {
+            log::info!(
+                "Resolved {} MCP server(s) for third-party harness",
+                resolved_mcp_servers.len()
+            );
+        }
+
         let resolved_env_vars = foreground
             .spawn(|me, _| Arc::clone(&me.resolved_env_vars))
             .await
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
-        harness.prepare_environment_config(
-            &working_dir,
-            system_prompt.as_deref(),
-            &resolved_env_vars,
-        )?;
         let resume = foreground
             .spawn(|me, _| me.resume_payload.take())
             .await
@@ -1544,11 +1656,15 @@ impl AgentDriver {
                 prompt_text.as_ref(),
                 system_prompt.as_deref(),
                 resumption_prompt.as_deref(),
+                server_context.as_deref(),
                 &working_dir,
                 task_id,
                 server_api,
                 terminal_driver,
                 resume,
+                &resolved_env_vars,
+                &resolved_mcp_servers,
+                third_party_harness_model_id.as_deref(),
             )?
             .into();
 

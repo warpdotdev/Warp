@@ -3,7 +3,7 @@ use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::Arc};
 use crate::ai::{
     agent_sdk::{
         driver::{
-            harness::{harness_kind, HarnessKind},
+            harness::{claude_code::prepare_claude_environment_config, harness_kind, HarnessKind},
             AgentDriverError,
         },
         task_env_vars, validate_cli_installed,
@@ -115,10 +115,8 @@ pub(super) async fn prepare_local_harness_child_launch(
             // auth/session state. We still prepare harness config files here,
             // but there are no Warp-managed secrets to materialize into the
             // hidden child pane.
-            let resolved_env_vars: HashMap<OsString, OsString> = HashMap::new();
-            third_party_harness
-                .prepare_environment_config(&working_dir, None, &resolved_env_vars)
-                .map_err(|error: AgentDriverError| error.to_string())?;
+            prepare_claude_environment_config(&working_dir, &HashMap::new())
+                .map_err(|error| error.to_string())?;
             if let Some(manager) = plugin_manager_for(third_party_harness.cli_agent()) {
                 if let Err(error) = manager.install().await {
                     log::warn!("Claude plugin installation failed for child harness: {error}");

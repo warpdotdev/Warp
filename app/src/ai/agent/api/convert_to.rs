@@ -808,6 +808,8 @@ fn convert_context(context: &[AIAgentContext]) -> api::InputContext {
                 api_context.git = Some(api::input_context::Git {
                     head,
                     branch: branch.unwrap_or_default(),
+                    repository: None,   // TODO: populate?
+                    pull_request: None, // TODO: populate?
                 });
             }
             AIAgentContext::Skills { skills } => {

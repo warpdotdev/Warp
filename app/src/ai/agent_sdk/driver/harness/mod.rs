@@ -14,6 +14,7 @@ use warpui::{ModelHandle, ModelSpawner, SingletonEntity};
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::mcp::JSONMCPServer;
 use crate::server::server_api::harness_support::{upload_to_target, HarnessSupportClient};
 use crate::server::server_api::ServerApi;
 use crate::terminal::cli_agent_sessions::{CLIAgentSessionStatus, CLIAgentSessionsModel};
@@ -33,7 +34,7 @@ use super::{
     OZ_MESSAGE_LISTENER_STATE_ROOT_ENV,
 };
 
-mod claude_code;
+pub(crate) mod claude_code;
 pub(crate) mod claude_transcript;
 mod codex;
 pub(crate) mod codex_transcript;
@@ -136,21 +137,6 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         validate_cli_installed(self.cli_agent().command_prefix(), self.install_docs_url())
     }
 
-    /// Prepare CLI-specific config files before launching the harness command.
-    ///
-    /// `resolved_env_vars` contains the already-resolved secret env vars produced by
-    /// `build_secret_env_vars`. Precedence (worker env > typed secrets > raw values)
-    /// has already been applied, so harnesses can look up values directly without
-    /// re-deriving which secret won.
-    fn prepare_environment_config(
-        &self,
-        _working_dir: &Path,
-        _system_prompt: Option<&str>,
-        _resolved_env_vars: &HashMap<OsString, OsString>,
-    ) -> Result<(), AgentDriverError> {
-        Ok(())
-    }
-
     /// Fetch the harness-specific resume payload for an existing conversation.
     ///
     /// The driver calls this when the user passes `--conversation <id>` and the harness
@@ -171,25 +157,30 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
 
     /// Build a runner for executing this harness with the given prompt.
     ///
-    /// If `resume` is `Some`, the harness matches on its own [`ResumePayload`] variant and
-    /// reuses the stored session/conversation ids instead of minting fresh ones. Variants
-    /// belonging to other harnesses are ignored.
+    /// Responsible for all harness-specific setup: writing config files (auth,
+    /// trust, system prompt, MCP, etc.) and constructing the runner that will
+    /// execute the CLI command.
     ///
-    /// `resumption_prompt`, when non-empty, is a short user-turn preamble the server emits
-    /// during a resumed session. Each harness decides exactly how to surface it (e.g. Claude
-    /// prepends it to the user-turn prompt that gets piped into the CLI). Harnesses that
-    /// don't yet support resumption can ignore it.
+    /// `resolved_env_vars` contains already-resolved secret env vars (worker
+    /// env > typed secrets > raw values precedence already applied).
+    ///
+    /// If `resume` is `Some`, the harness matches on its own [`ResumePayload`]
+    /// variant and reuses stored session/conversation ids.
     #[allow(clippy::too_many_arguments)]
     fn build_runner(
         &self,
         prompt: &str,
         system_prompt: Option<&str>,
         resumption_prompt: Option<&str>,
+        context: Option<&str>,
         working_dir: &Path,
         task_id: Option<AmbientAgentTaskId>,
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
+        resolved_env_vars: &HashMap<OsString, OsString>,
+        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+        third_party_harness_model_id: Option<&str>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError>;
 }
 
@@ -375,6 +366,31 @@ pub(crate) fn task_env_vars(
     task_env_vars_for_harness_name(task_id, parent_run_id, selected_harness)
 }
 
+/// Returns environment variables that configure the model for a third-party harness.
+/// Returns an empty map for Oz or when no model is specified.
+///
+/// We use the `ANTHROPIC_MODEL` env var rather than the `--model` CLI flag because
+/// the env var is the most reliable mechanism and avoids precedence conflicts with
+/// Claude Code's `settings.json`.
+pub(crate) fn harness_model_env_vars(
+    selected_harness: Harness,
+    third_party_harness_model_id: Option<&str>,
+) -> HashMap<OsString, OsString> {
+    let mut env_vars = HashMap::new();
+    let Some(model_id) = third_party_harness_model_id.filter(|id| !id.is_empty()) else {
+        return env_vars;
+    };
+
+    match selected_harness {
+        Harness::Claude => {
+            env_vars.insert(OsString::from("ANTHROPIC_MODEL"), OsString::from(model_id));
+        }
+        Harness::Oz | Harness::OpenCode | Harness::Gemini | Harness::Codex | Harness::Unknown => {}
+    }
+
+    env_vars
+}
+
 /// Indicates when the harness conversation is being saved.
 /// Implementations may use this to customize the saved data, such as
 /// recording additional metadata on completion.
@@ -483,10 +499,11 @@ pub(crate) async fn cli_agent_session_status(
 pub(super) fn write_temp_file(
     prefix: &str,
     content: &str,
+    suffix: &str,
 ) -> Result<NamedTempFile, AgentDriverError> {
     let mut file = tempfile::Builder::new()
         .prefix(prefix)
-        .suffix(".txt")
+        .suffix(suffix)
         .tempfile()
         .map_err(|e| {
             AgentDriverError::ConfigBuildFailed(anyhow::anyhow!(
@@ -547,5 +564,5 @@ pub(super) async fn upload_current_block_snapshot(
 }
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

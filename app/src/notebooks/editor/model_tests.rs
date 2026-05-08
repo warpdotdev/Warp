@@ -499,6 +499,86 @@ fn test_inline_markdown_double_leading_underscore_not_italic() {
 }
 
 #[test]
+fn test_find_matching_header_simple() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown("- [Goal](#goal)\n\n## Goal\nBody", &mut app, true);
+
+        editor.read(&app, |editor, ctx| {
+            let range = editor
+                .find_matching_header("#goal", ctx)
+                .expect("Fragment should match heading");
+            let heading = editor
+                .content
+                .as_ref(ctx)
+                .text_in_range(range.start + 1..range.end)
+                .into_string();
+
+            assert_eq!(heading, "Goal");
+        });
+    })
+}
+
+#[test]
+fn test_find_matching_header_case_insensitive() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown("## My Bold Goal\nBody", &mut app, true);
+
+        editor.read(&app, |editor, ctx| {
+            assert!(editor.find_matching_header("#my bold goal", ctx).is_some());
+            assert!(editor.find_matching_header("#MY BOLD GOAL", ctx).is_some());
+        });
+    })
+}
+
+#[test]
+fn test_find_matching_header_percent_decoded() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown("## Hello World\nBody", &mut app, true);
+
+        editor.read(&app, |editor, ctx| {
+            assert!(editor.find_matching_header("#Hello%20World", ctx).is_some());
+        });
+    })
+}
+
+#[test]
+fn test_find_matching_header_returns_first_match() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown("## Goal\nFirst\n\n## Goal\nSecond", &mut app, true);
+
+        editor.read(&app, |editor, ctx| {
+            let range = editor
+                .find_matching_header("#goal", ctx)
+                .expect("Should match first heading");
+            let heading_text = editor
+                .content
+                .as_ref(ctx)
+                .text_in_range(range.start + 1..range.end)
+                .into_string();
+            assert_eq!(heading_text, "Goal");
+        });
+    })
+}
+
+#[test]
+fn test_find_matching_header_missing_returns_none() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let editor = model_from_markdown("## Goal\nBody", &mut app, true);
+
+        editor.read(&app, |editor, ctx| {
+            assert!(editor.find_matching_header("#nonexistent", ctx).is_none());
+            assert!(editor.find_matching_header("#", ctx).is_none());
+            assert!(editor.find_matching_header("", ctx).is_none());
+        });
+    })
+}
+
+#[test]
 fn test_cursor_bias_editing() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);

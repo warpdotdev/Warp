@@ -13,7 +13,6 @@ use crate::{
         blocklist::agent_view::AgentViewEntryOrigin,
     },
     code::editor::comment_editor::DEFAULT_COMMENT_MAX_WIDTH,
-    code_review::diff_state::InvalidationSource,
     coding_panel_enablement_state::CodingPanelEnablementState,
 };
 
@@ -46,7 +45,7 @@ use crate::{
         diff_state::{
             DiffHunk, DiffLineType, DiffMode, DiffState, DiffStateModel, DiffStateModelEvent,
             DiffStats, FileDiff, FileDiffAndContent, FileStatusInfo, GitDiffWithBaseContent,
-            GitFileStatus, InvalidationBehavior,
+            GitFileStatus,
         },
         editor_state::CodeReviewEditorState,
         hidden_lines::calculate_hidden_lines,
@@ -95,6 +94,7 @@ use crate::terminal::cli_agent::{
 };
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
+use crate::util::git::get_all_branches;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::resolve_file_target_with_editor_choice;
 #[cfg(feature = "local_fs")]
@@ -114,7 +114,6 @@ use warp_core::{
     channel::{Channel, ChannelState},
     features::FeatureFlag,
     safe_error, safe_info,
-    sync_queue::SyncQueue,
     ui::theme::color::internal_colors,
 };
 use warpui::{
@@ -150,7 +149,6 @@ use warpui::{
 };
 use warpui::{
     fonts::{Properties, Weight},
-    r#async::SpawnedFutureHandle,
     ModelHandle, WeakViewHandle,
 };
 
@@ -182,7 +180,6 @@ use super::{
     comment_list_view::{CommentListDebugState, CommentListEvent, CommentListView},
     comments::{attach_pending_imported_comments, AttachedReviewComment, CommentOrigin},
     diff_size_limits::DiffSize,
-    file_invalidation_queue::FileInvalidationTask,
     git_dialog::{GitDialog, GitDialogEvent, GitDialogKind},
     GlobalCodeReviewEvent, GlobalCodeReviewModel,
 };
@@ -468,26 +465,6 @@ impl Default for UiStateHandles {
     }
 }
 
-struct PendingFileUpdate {
-    repo_path: PathBuf,
-    pending_file_edits: HashSet<PathBuf>,
-}
-
-impl PendingFileUpdate {
-    fn update_with_file_invalidation(
-        &mut self,
-        repo_path: PathBuf,
-        invalidated_files: Vec<PathBuf>,
-    ) {
-        if self.repo_path != repo_path {
-            self.repo_path = repo_path;
-            self.pending_file_edits = HashSet::from_iter(invalidated_files);
-        } else {
-            self.pending_file_edits.extend(invalidated_files);
-        }
-    }
-}
-
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
 struct GitSessionState {
     enablement: CodingPanelEnablementState,
@@ -603,42 +580,6 @@ struct PendingPreciseScroll {
     buffer: f32,
 }
 
-/// Tracks state for in-flight file invalidation tasks and full-reload coordination.
-struct FileInvalidationState {
-    /// Whether a full invalidation (`invalidate_all`) is in-flight.
-    /// When true, new `invalidate_files` requests are deferred to `pending_file_updates`.
-    invalidate_all_pending: bool,
-    /// Merge base commit for the current diff mode, computed eagerly during
-    /// full invalidation.
-    merge_base: Option<String>,
-    /// Handle for the in-flight merge base computation spawned during full
-    /// invalidation. Aborted when a new full invalidation starts.
-    merge_base_handle: Option<SpawnedFutureHandle>,
-    /// Queue for per-file invalidation tasks.
-    queue: SyncQueue<FileInvalidationTask>,
-}
-
-impl FileInvalidationState {
-    fn new(queue: SyncQueue<FileInvalidationTask>) -> Self {
-        Self {
-            invalidate_all_pending: false,
-            merge_base: None,
-            merge_base_handle: None,
-            queue,
-        }
-    }
-
-    /// Aborts all in-flight file invalidation tasks, cancels queued
-    /// tasks, and clears the merge base.
-    fn cancel_all(&mut self) {
-        self.queue.cancel_all();
-        self.merge_base = None;
-        if let Some(handle) = self.merge_base_handle.take() {
-            handle.abort();
-        }
-    }
-}
-
 /// Per-repository state container.
 struct RepositoryState {
     repo_path: PathBuf,
@@ -647,22 +588,15 @@ struct RepositoryState {
 
     /// Whether a file has been explicitly expanded (true) or collapsed (false).
     file_expanded: HashMap<PathBuf, bool>,
-    // TODO: Remove pending file invalidations — pause the queue instead.
-    /// Files that have been invalidated but not yet processed when diff is still loading.
-    pending_file_updates: Option<PendingFileUpdate>,
-    /// State for tracking in-flight file invalidation tasks.
-    file_invalidation: FileInvalidationState,
 }
 
 impl RepositoryState {
-    fn new(repo_path: PathBuf, queue: SyncQueue<FileInvalidationTask>) -> Self {
+    fn new(repo_path: PathBuf) -> Self {
         Self {
             repo_path,
             state: CodeReviewViewState::None,
             available_branches: Vec::new(),
             file_expanded: HashMap::new(),
-            pending_file_updates: None,
-            file_invalidation: FileInvalidationState::new(queue),
         }
     }
 
@@ -777,58 +711,15 @@ impl CodeReviewView {
         &self.diff_state_model
     }
 
-    pub fn update_current_repo(&mut self, repo_path: Option<PathBuf>, ctx: &mut ViewContext<Self>) {
-        safe_info!(
-            safe: ("Code Review: update_current_repo called. Branches cleared."),
-            full: ("Code Review: update_current_repo called with repo_path: {:?}", repo_path)
-        );
-        // Take the queue from the old state (after cancelling pending work) so
-        // we can reuse it in the new RepositoryState instead of dropping and
-        // recreating it.
-        let reused_queue = self.active_repo.take().map(|mut repo| {
-            repo.file_invalidation.cancel_all();
-            repo.file_invalidation.queue
-        });
-        let created_new_queue = reused_queue.is_none();
-        self.active_repo = repo_path.map(|p| {
-            let queue =
-                reused_queue.unwrap_or_else(|| SyncQueue::new_streaming(ctx.background_executor()));
-            RepositoryState::new(p, queue)
-        });
-        if created_new_queue {
-            self.start_streaming_listener(ctx);
-        }
-    }
-
-    /// Prepares for a full invalidation by aborting in-flight file invalidation
-    /// tasks and marking that a full reload is pending.
-    fn queue_full_invalidation(&mut self) {
-        if let Some(repo) = self.active_repo.as_mut() {
-            repo.file_invalidation.cancel_all();
-            repo.file_invalidation.invalidate_all_pending = true;
-        }
-    }
-
-    /// Cancels in-flight file invalidation tasks and triggers a full diff
-    /// reload for the active repository.
-    fn load_diffs_for_active_repo(&mut self, fetch_base: bool, ctx: &mut ViewContext<Self>) {
-        self.queue_full_invalidation();
-        self.diff_state_model.update(ctx, |model, ctx| {
-            model.load_diffs_for_current_repo(fetch_base, ctx);
-        });
-    }
-
     /// Called when the code review view is opened/attached to a pane group.
-    /// Subscribes to the diff state model and triggers diff loading.
-    pub fn on_open(&mut self, repo_path: Option<PathBuf>, ctx: &mut ViewContext<Self>) {
+    /// Subscribes to the diff state model and enables metadata refresh.
+    pub fn on_open(&mut self, ctx: &mut ViewContext<Self>) {
         if self.is_open {
             return;
         }
         self.is_open = true;
 
-        self.update_current_repo(repo_path, ctx);
         ctx.subscribe_to_model(&self.diff_state_model, Self::handle_diff_state_model_event);
-        self.load_diffs_for_active_repo(false, ctx);
         if self.repo_path().is_some() {
             self.fetch_branches_and_setup_dropdown(ctx);
         }
@@ -865,6 +756,7 @@ impl CodeReviewView {
 
         self.diff_state_model.update(ctx, |model, ctx| {
             model.set_code_review_metadata_refresh_enabled(true, ctx);
+            model.load_diffs_for_current_repo(false, ctx);
         });
     }
 
@@ -880,10 +772,6 @@ impl CodeReviewView {
         self.diff_state_model.update(ctx, |model, ctx| {
             model.set_code_review_metadata_refresh_enabled(false, ctx);
         });
-
-        if let Some(repo) = self.active_repo.as_mut() {
-            repo.file_invalidation.cancel_all();
-        }
     }
 
     /// Handles events from the global LSP footer in workspace mode.
@@ -1102,7 +990,7 @@ impl CodeReviewView {
         } = event
         {
             if self.all_editors_loaded() {
-                let diff_mode = self.diff_state_model.as_ref(ctx).diff_mode();
+                let diff_mode = self.diff_state_model.as_ref(ctx).diff_mode(ctx);
                 self.reposition_comments_in_file(&diff_mode, ctx);
             }
         }
@@ -1401,12 +1289,7 @@ impl CodeReviewView {
         });
 
         let has_repo = repo_path.is_some();
-        let active_repo = repo_path.map(|repo_path| {
-            RepositoryState::new(
-                repo_path.clone(),
-                SyncQueue::new_streaming(ctx.background_executor()),
-            )
-        });
+        let active_repo = repo_path.map(|repo_path| RepositoryState::new(repo_path.clone()));
 
         let mut view = Self {
             active_repo,
@@ -1454,7 +1337,6 @@ impl CodeReviewView {
         };
         view.set_active_repo_comment_model(comment_batch_model, ctx);
         if has_repo {
-            view.start_streaming_listener(ctx);
             view.fetch_branches_and_setup_dropdown(ctx);
             view.invalidate_all(None, ctx);
         }
@@ -1575,7 +1457,7 @@ impl CodeReviewView {
         let fetched_repo_path = repo_path.clone();
         ctx.spawn(
             async move {
-                DiffStateModel::get_all_branches(&repo_path, None, false /* include_remotes */)
+                get_all_branches(&repo_path, None, false /* include_remotes */)
                     .await
             },
             move |me, branches_result, ctx| {
@@ -1627,8 +1509,8 @@ impl CodeReviewView {
             return Vec::new();
         };
 
-        let (current_mode, current_branch_name) = self.diff_state_model.read(ctx, |model, _| {
-            (model.diff_mode(), model.get_current_branch_name())
+        let (current_mode, current_branch_name) = self.diff_state_model.read(ctx, |model, ctx| {
+            (model.diff_mode(ctx), model.get_current_branch_name(ctx))
         });
 
         let mut targets = Vec::new();
@@ -1721,7 +1603,7 @@ impl CodeReviewView {
     fn apply_diff_mode(&mut self, mode: DiffMode, ctx: &mut ViewContext<Self>) {
         if self
             .diff_state_model
-            .read(ctx, |model, _| model.diff_mode())
+            .read(ctx, |model, ctx| model.diff_mode(ctx))
             == mode
         {
             return;
@@ -1735,6 +1617,8 @@ impl CodeReviewView {
         self.diff_state_model.update(ctx, |model, ctx| {
             model.set_diff_mode(mode, false, ctx);
         });
+        self.update_diff_selector_selection(ctx);
+        self.invalidate_all(None, ctx);
     }
 
     fn handle_find_event(
@@ -2427,63 +2311,43 @@ impl CodeReviewView {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            DiffStateModelEvent::DiffMetadataChanged(InvalidationBehavior::All(source)) => {
-                // If the invalidation is an index lock change AND we don't have an already pending invalidation,
-                // don't eagerly reload all of the diffs.
-                if matches!(source, InvalidationSource::IndexLockChange) {
-                    if let Some(repo) = self.active_repo.as_mut() {
-                        if !repo.file_invalidation.invalidate_all_pending {
-                            return;
-                        }
-                    }
-                }
-                self.fetch_branches_and_setup_dropdown(ctx);
-                self.load_diffs_for_active_repo(false, ctx);
-                self.update_aggregate_stats(ctx);
-                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                    self.update_git_operations_ui(ctx);
-                }
-            }
-            DiffStateModelEvent::DiffMetadataChanged(InvalidationBehavior::AllLockedIndex) => {
-                // The git index is locked (e.g. during pull/merge). Cancel
-                // in-flight work and mark a full invalidation pending, but skip
-                // the diff reload — the data would be stale. When the lock
-                // clears, the watcher will fire a normal `All` event.
-                self.queue_full_invalidation();
-            }
-            DiffStateModelEvent::DiffMetadataChanged(InvalidationBehavior::Files(files)) => {
-                self.invalidate_files(files.clone(), ctx);
-                self.update_aggregate_stats(ctx);
-                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                    self.update_git_operations_ui(ctx);
-                }
-            }
-            DiffStateModelEvent::DiffMetadataChanged(InvalidationBehavior::PromptRefresh) => {
-                self.update_aggregate_stats(ctx);
-                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
-                    self.update_git_operations_ui(ctx);
-                }
-            }
             DiffStateModelEvent::CurrentBranchChanged => {
+                self.fetch_branches_and_setup_dropdown(ctx);
                 self.update_diff_selector_selection(ctx);
-            }
-            DiffStateModelEvent::DiffModeChanged { should_fetch_base } => {
-                // Update the dropdown selection to reflect the new mode
-                let should_fetch_base = *should_fetch_base;
-                self.update_diff_selector_selection(ctx);
-
-                self.load_diffs_for_active_repo(should_fetch_base, ctx);
-                self.invalidate_all(None, ctx);
-                ctx.notify();
             }
             DiffStateModelEvent::NewDiffsComputed(diffs) => {
-                self.invalidate_all(diffs.as_ref(), ctx);
-                // After the view state is refreshed with fresh diffs, re-evaluate
-                // the git operations button (Commit / Push / Create PR) so that
-                // e.g. committing shows "Push" instead of staying on "Commit".
+                self.invalidate_all(diffs.as_ref().map(|d| d.as_ref()), ctx);
                 if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
                     self.update_git_operations_ui(ctx);
                 }
+            }
+            DiffStateModelEvent::SingleFileUpdated { path, diff } => {
+                self.update_from_single_file_diff_result(path.clone(), diff.clone(), ctx);
+                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
+                    self.update_git_operations_ui(ctx);
+                }
+            }
+            DiffStateModelEvent::MetadataRefreshed(metadata) => {
+                let mode = self.diff_state_model.as_ref(ctx).diff_mode(ctx);
+                if let Some(CodeReviewViewState::Loaded(loaded_state)) = self.state_mut() {
+                    let stats = match mode {
+                        DiffMode::Head => Some(metadata.against_head.aggregate_stats),
+                        DiffMode::MainBranch => metadata
+                            .against_base_branch
+                            .as_ref()
+                            .map(|base| base.aggregate_stats),
+                        DiffMode::OtherBranch(_) => None,
+                    };
+                    if let Some(stats) = stats {
+                        loaded_state.total_additions = stats.total_additions;
+                        loaded_state.total_deletions = stats.total_deletions;
+                        loaded_state.files_changed = stats.files_changed;
+                    }
+                }
+                if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
+                    self.update_git_operations_ui(ctx);
+                }
+                ctx.notify();
             }
         }
     }
@@ -2495,221 +2359,82 @@ impl CodeReviewView {
         });
     }
 
-    fn invalidate_files(&mut self, files: Vec<PathBuf>, ctx: &mut ViewContext<Self>) {
-        let diff_mode = self.diff_state_model.as_ref(ctx).diff_mode();
-
-        // TODO: Remove pending file invalidations — pause the queue instead.
-        // Defer file invalidation if a full reload is in-flight or the diff is still loading.
-        {
-            let Some(repo) = self.active_repo.as_mut() else {
-                return;
-            };
-            if repo.file_invalidation.invalidate_all_pending
-                || matches!(repo.state, CodeReviewViewState::None)
-            {
-                match &mut repo.pending_file_updates {
-                    Some(pending_file_update) => {
-                        pending_file_update
-                            .update_with_file_invalidation(repo.repo_path.clone(), files);
-                    }
-                    None => {
-                        repo.pending_file_updates = Some(PendingFileUpdate {
-                            repo_path: repo.repo_path.clone(),
-                            pending_file_edits: HashSet::from_iter(files),
-                        });
-                    }
-                }
-                return;
-            }
-        }
-
-        let Some(repo) = self.active_repo.as_ref() else {
-            return;
-        };
-        let repo_path = repo.repo_path.clone();
-        let merge_base = repo.file_invalidation.merge_base.clone();
-        self.enqueue_file_invalidations(files, diff_mode, merge_base, repo_path);
-    }
-
-    /// Processes any pending file invalidations that occurred during a full refresh.
-    fn flush_pending_invalidations(&mut self, ctx: &mut ViewContext<Self>) {
-        let pending = self.active_repo.as_mut().and_then(|repo| {
-            repo.file_invalidation.invalidate_all_pending = false;
-            repo.pending_file_updates
-                .take()
-                .filter(|p| p.repo_path == repo.repo_path)
-        });
-        if let Some(pending) = pending {
-            self.invalidate_files(pending.pending_file_edits.into_iter().collect(), ctx);
-        }
-    }
-
-    /// Starts the streaming listener that receives broadcast results from the
-    /// file invalidation queue.
-    fn start_streaming_listener(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(repo) = self.active_repo.as_ref() else {
-            return;
-        };
-        let rx = repo.file_invalidation.queue.subscribe();
-
-        ctx.spawn_stream_local(
-            rx,
-            |me, broadcast_result, ctx| {
-                let queue_active = me
-                    .active_repo
-                    .as_ref()
-                    .is_some_and(|repo| !repo.file_invalidation.invalidate_all_pending);
-                if queue_active {
-                    let anyhow_result = match broadcast_result {
-                        Ok(arc_value) => Arc::try_unwrap(arc_value).map_err(|_| {
-                            anyhow::anyhow!("broadcast result has multiple owners, cannot unwrap")
-                        }),
-                        Err(arc_error) => Err(anyhow::anyhow!("{arc_error}")),
-                    };
-                    me.update_from_single_file_diff_result(anyhow_result, ctx);
-                }
-            },
-            |_, _| {},
-        );
-    }
-
-    /// Enqueues individual file invalidation tasks into the [`SyncQueue`],
-    /// skipping files that are already queued.
-    fn enqueue_file_invalidations(
-        &mut self,
-        files: Vec<PathBuf>,
-        mode: DiffMode,
-        merge_base: Option<String>,
-        repo_path: PathBuf,
-    ) {
-        let Some(repo) = self.active_repo.as_ref() else {
-            return;
-        };
-        let queue = repo.file_invalidation.queue.clone();
-        for file in files {
-            let task = FileInvalidationTask {
-                file,
-                repo_path: repo_path.clone(),
-                mode: mode.clone(),
-                merge_base: merge_base.clone(),
-            };
-
-            queue.enqueue(task, None, "file-invalidation");
-        }
-    }
-
     /// Updates the code review view with the diff result for a single updated
     /// file from the queue-based invalidation path.
     fn update_from_single_file_diff_result(
         &mut self,
-        result: anyhow::Result<(PathBuf, Option<FileDiffAndContent>)>,
+        file_path: PathBuf,
+        updated_diff: Option<Arc<FileDiffAndContent>>,
         ctx: &mut ViewContext<Self>,
     ) {
-        match result {
-            Ok((file_path, updated_diff)) => {
-                let mut diff_data = {
-                    let Some(repo) = self.active_repo.as_mut() else {
-                        return;
-                    };
-                    match repo.pop_loaded_state() {
-                        Some(data) => data,
-                        None => return,
-                    }
-                };
-
-                let existing_index = diff_data.file_states.get_index_of(&file_path);
-
-                match (existing_index, updated_diff) {
-                    (Some(index), Some(diff)) => {
-                        let status_changed = file_status_changed_deleted_state(
-                            &diff_data.file_states[index].file_diff.status,
-                            &diff.file_diff.status,
-                        );
-
-                        if status_changed {
-                            diff_data.file_states.shift_remove_index(index);
-                            self.viewported_list_state.remove(index);
-                            let new_states = self
-                                .build_view_state_for_file_diffs(std::slice::from_ref(&diff), ctx);
-                            diff_data.file_states.extend(
-                                new_states
-                                    .into_iter()
-                                    .map(|state| (state.file_diff.file_path.clone(), state)),
-                            );
-                        } else {
-                            let current = &mut diff_data.file_states[index];
-                            let should_apply = current
-                                .editor_state
-                                .as_ref()
-                                .map(|es| !es.has_unsaved_changes(ctx))
-                                .unwrap_or(true);
-                            if should_apply {
-                                current.file_diff = diff.file_diff;
-                            }
-                            self.viewported_list_state
-                                .invalidate_height_for_index(index);
-                        }
-                    }
-                    (Some(index), None) => {
-                        diff_data.file_states.shift_remove_index(index);
-                        self.viewported_list_state.remove(index);
-                    }
-                    (None, Some(diff)) => {
-                        let new_states =
-                            self.build_view_state_for_file_diffs(std::slice::from_ref(&diff), ctx);
-                        diff_data.file_states.extend(
-                            new_states
-                                .into_iter()
-                                .map(|state| (state.file_diff.file_path.clone(), state)),
-                        );
-                    }
-                    (None, None) => {}
-                }
-
-                if let Some(repo) = self.active_repo.as_mut() {
-                    repo.state = CodeReviewViewState::Loaded(diff_data);
-                }
-
-                self.update_editor_comment_markers(ctx);
-                GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
-                    model.remove_deallocated_buffers(ctx);
-                });
-                ctx.notify();
+        let mut diff_data = {
+            let Some(repo) = self.active_repo.as_mut() else {
+                return;
+            };
+            match repo.pop_loaded_state() {
+                Some(data) => data,
+                None => return,
             }
-            Err(e) => {
-                if ChannelState::enable_debug_features() {
-                    log::error!("Failed to retrieve diff state for single file: {e}. Retrying...");
-                }
+        };
 
-                send_telemetry_from_ctx!(
-                    CodeReviewTelemetryEvent::LoadDiffFailed {
-                        error: e.to_string(),
-                    },
-                    ctx
+        let existing_index = diff_data.file_states.get_index_of(&file_path);
+
+        match (existing_index, updated_diff) {
+            (Some(index), Some(diff)) => {
+                let diff = diff.as_ref();
+                let status_changed = file_status_changed_deleted_state(
+                    &diff_data.file_states[index].file_diff.status,
+                    &diff.file_diff.status,
                 );
 
-                self.load_diffs_for_active_repo(false, ctx);
+                if status_changed {
+                    diff_data.file_states.shift_remove_index(index);
+                    self.viewported_list_state.remove(index);
+                    let new_states =
+                        self.build_view_state_for_file_diffs(std::slice::from_ref(diff), ctx);
+                    diff_data.file_states.extend(
+                        new_states
+                            .into_iter()
+                            .map(|state| (state.file_diff.file_path.clone(), state)),
+                    );
+                } else {
+                    let current = &mut diff_data.file_states[index];
+                    let should_apply = current
+                        .editor_state
+                        .as_ref()
+                        .map(|es| !es.has_unsaved_changes(ctx))
+                        .unwrap_or(true);
+                    if should_apply {
+                        current.file_diff = diff.file_diff.clone();
+                    }
+                    self.viewported_list_state
+                        .invalidate_height_for_index(index);
+                }
             }
+            (Some(index), None) => {
+                diff_data.file_states.shift_remove_index(index);
+                self.viewported_list_state.remove(index);
+            }
+            (None, Some(diff)) => {
+                let new_states =
+                    self.build_view_state_for_file_diffs(std::slice::from_ref(diff.as_ref()), ctx);
+                diff_data.file_states.extend(
+                    new_states
+                        .into_iter()
+                        .map(|state| (state.file_diff.file_path.clone(), state)),
+                );
+            }
+            (None, None) => {}
         }
-    }
 
-    fn update_aggregate_stats(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(diff_stats) = self
-            .diff_state_model
-            .as_ref(ctx)
-            .get_stats_for_current_mode()
-        else {
-            return;
-        };
+        if let Some(repo) = self.active_repo.as_mut() {
+            repo.state = CodeReviewViewState::Loaded(diff_data);
+        }
 
-        let Some(CodeReviewViewState::Loaded(loaded_state)) = self.state_mut() else {
-            return;
-        };
-
-        loaded_state.total_additions = diff_stats.total_additions;
-        loaded_state.total_deletions = diff_stats.total_deletions;
-        loaded_state.files_changed = diff_stats.files_changed;
-
+        self.update_editor_comment_markers(ctx);
+        GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
+            model.remove_deallocated_buffers(ctx);
+        });
         ctx.notify();
     }
 
@@ -2755,7 +2480,7 @@ impl CodeReviewView {
                 ctx.notify();
                 return;
             }
-            DiffState::Loaded(_) => (),
+            DiffState::Loaded => (),
         };
 
         let Some(diff_data) = diff_data else {
@@ -2788,10 +2513,8 @@ impl CodeReviewView {
             });
         }
 
-        self.recompute_merge_base_and_flush(ctx);
-
         if self.all_editors_loaded() {
-            let diff_mode = self.diff_state_model.as_ref(ctx).diff_mode();
+            let diff_mode = self.diff_state_model.as_ref(ctx).diff_mode(ctx);
             self.reposition_comments_in_file(&diff_mode, ctx);
         }
 
@@ -2802,54 +2525,6 @@ impl CodeReviewView {
         }
 
         ctx.notify();
-    }
-
-    /// Recomputes the merge base commit for the current diff mode after a full
-    /// reload, then flushes any file invalidations that were deferred while the
-    /// reload was in-flight.
-    ///
-    /// We cache the merge base on [`FileInvalidationState`] so that individual
-    /// file invalidations (triggered by the file watcher) can diff against the
-    /// correct base without re-running `git merge-base` on every file change.
-    /// The cache is invalidated by [`FileInvalidationState::cancel_all`] at the
-    /// start of every full reload, so it is always fresh by the time
-    /// watcher-driven invalidations resume.
-    ///
-    /// For non-Head diff modes the computation is async (it shells out to git),
-    /// so we keep the `invalidate_all_pending` flag set until it completes.
-    /// This ensures watcher-driven file invalidations are deferred rather than
-    /// enqueued without a merge base.
-    fn recompute_merge_base_and_flush(&mut self, ctx: &mut ViewContext<Self>) {
-        let diff_mode = self.diff_state_model.as_ref(ctx).diff_mode();
-        if !matches!(diff_mode, DiffMode::Head) {
-            if let Some(repo) = self.active_repo.as_ref() {
-                let repo_path = repo.repo_path.clone();
-                let handle = ctx.spawn(
-                    async move { DiffStateModel::compute_merge_base(&repo_path, &diff_mode).await },
-                    |me, result, ctx| {
-                        if let Some(repo) = me.active_repo.as_mut() {
-                            repo.file_invalidation.merge_base_handle = None;
-                        }
-                        match &result {
-                            Ok(merge_base) => {
-                                if let Some(repo) = me.active_repo.as_mut() {
-                                    repo.file_invalidation.merge_base = Some(merge_base.clone());
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Failed to compute merge base: {e}");
-                            }
-                        }
-                        me.flush_pending_invalidations(ctx);
-                    },
-                );
-                if let Some(repo) = self.active_repo.as_mut() {
-                    repo.file_invalidation.merge_base_handle = Some(handle);
-                }
-            }
-        } else {
-            self.flush_pending_invalidations(ctx);
-        }
     }
 
     /// Builds view state for the given file diffs, returning the list of newly created file states.
@@ -3094,7 +2769,7 @@ impl CodeReviewView {
     }
 
     fn diff_state(&self, app: &AppContext) -> DiffState {
-        self.diff_state_model.read(app, |model, _| model.get())
+        self.diff_state_model.read(app, |model, ctx| model.get(ctx))
     }
 
     /// Get the state of the current repo. Returns None if no repo.
@@ -3625,7 +3300,7 @@ impl CodeReviewView {
         }
 
         if self.all_editors_loaded() {
-            let diff_mode = self.diff_state_model.as_ref(ctx).diff_mode();
+            let diff_mode = self.diff_state_model.as_ref(ctx).diff_mode(ctx);
             self.reposition_comments_in_file(&diff_mode, ctx);
         }
     }
@@ -5802,7 +5477,7 @@ impl CodeReviewView {
         .with_separator();
 
         // hide stash option entirely if there's no HEAD (git doesn't let you stash with no HEAD)
-        let can_stash = self.diff_state_model.as_ref(app).has_head();
+        let can_stash = self.diff_state_model.as_ref(app).has_head(app);
 
         if self
             .discard_dialog_state
@@ -5891,7 +5566,7 @@ impl CodeReviewView {
 
         let branch_name = match &self.discard_dialog_state.operation_type {
             DiscardOperationType::FileChangesAgainstBranch(None) => {
-                Some(self.diff_state_model.as_ref(ctx).get_main_branch_name())
+                Some(self.diff_state_model.as_ref(ctx).get_main_branch_name(ctx))
             }
             DiscardOperationType::FileChangesAgainstBranch(Some(branch)) => {
                 Some(Some(branch.clone()))
@@ -5917,7 +5592,7 @@ impl CodeReviewView {
 
         let branch_name = match &self.discard_dialog_state.operation_type {
             DiscardOperationType::AllChangesAgainstBranch(None) => {
-                Some(self.diff_state_model.as_ref(ctx).get_main_branch_name())
+                Some(self.diff_state_model.as_ref(ctx).get_main_branch_name(ctx))
             }
             DiscardOperationType::AllChangesAgainstBranch(Some(branch)) => {
                 Some(Some(branch.clone()))
@@ -6202,10 +5877,10 @@ impl CodeReviewView {
                 };
 
                 // Create attachment reference and key based on scope
-                let main_branch_name = self.diff_state_model.as_ref(ctx).get_main_branch_name();
+                let main_branch_name = self.diff_state_model.as_ref(ctx).get_main_branch_name(ctx);
                 let (attachment_reference, attachment_key) = create_attachment_reference_and_key(
                     &scope,
-                    &self.diff_state_model.as_ref(ctx).diff_mode(),
+                    &self.diff_state_model.as_ref(ctx).diff_mode(ctx),
                     main_branch_name.as_deref(),
                     repo_path,
                 );
@@ -6265,15 +5940,15 @@ impl CodeReviewView {
     fn get_current_head(&self, ctx: &ViewContext<Self>) -> Option<CurrentHead> {
         self.diff_state_model
             .as_ref(ctx)
-            .get_current_branch_name()
+            .get_current_branch_name(ctx)
             .map(CurrentHead::BranchName)
     }
 
     fn get_diff_base(&self, ctx: &ViewContext<Self>) -> anyhow::Result<DiffBase> {
-        match self.diff_state_model.as_ref(ctx).diff_mode() {
+        match self.diff_state_model.as_ref(ctx).diff_mode(ctx) {
             DiffMode::Head => Ok(DiffBase::UncommittedChanges),
             DiffMode::MainBranch => {
-                let main_branch_name = self.diff_state_model.as_ref(ctx).get_main_branch_name();
+                let main_branch_name = self.diff_state_model.as_ref(ctx).get_main_branch_name(ctx);
                 match main_branch_name {
                     Some(name) => Ok(DiffBase::BranchName(name)),
                     None => Err(anyhow::anyhow!("unable to determine main branch name")),
@@ -6299,7 +5974,9 @@ impl CodeReviewView {
     pub(crate) fn set_diff_base(&mut self, diff_mode: DiffMode, ctx: &mut ViewContext<Self>) {
         self.diff_state_model.update(ctx, |diff_state_model, ctx| {
             diff_state_model.set_diff_mode_and_fetch_base(diff_mode, ctx);
-        })
+        });
+        self.update_diff_selector_selection(ctx);
+        self.invalidate_all(None, ctx);
     }
 
     /// Insert diff hunk as an inline attachment in the terminal input
@@ -6409,13 +6086,13 @@ impl CodeReviewView {
                 // Determine the diff base from the current diff state
                 let diff_base = match self
                     .diff_state_model
-                    .read(ctx, |model, _| model.diff_mode())
+                    .read(ctx, |model, ctx| model.diff_mode(ctx))
                 {
                     DiffMode::Head => DiffBase::UncommittedChanges,
                     DiffMode::MainBranch => {
                         let main_branch_name = self
                             .diff_state_model
-                            .read(ctx, |model, _| model.get_main_branch_name());
+                            .read(ctx, |model, ctx| model.get_main_branch_name(ctx));
 
                         match main_branch_name {
                             Some(name) => DiffBase::BranchName(name),
@@ -6621,12 +6298,12 @@ impl CodeReviewView {
         }
     }
 
-    /// Refreshes diffs, metadata, and PR info after a git operation (commit, push, etc.).
+    /// Refreshes metadata and PR info after a git operation (commit, push, etc.).
+    /// Diff reloading is left to the file watcher (for commits) or skipped
+    /// entirely (for push/create-PR where the working directory is unchanged).
     fn refresh_after_git_operation(&mut self, ctx: &mut ViewContext<Self>) {
-        self.load_diffs_for_active_repo(false, ctx);
         self.diff_state_model.update(ctx, |model, ctx| {
-            model.refresh_diff_metadata_for_current_repo(InvalidationBehavior::PromptRefresh, ctx);
-            model.refresh_pr_info(ctx);
+            model.refresh_metadata_and_pr_info(ctx);
         });
         ctx.notify();
     }
@@ -6641,7 +6318,7 @@ impl CodeReviewView {
     fn has_uncommitted_changes(&self, app: &AppContext) -> bool {
         self.diff_state_model
             .as_ref(app)
-            .get_uncommitted_stats()
+            .get_uncommitted_stats(app)
             .is_some_and(|stats| !stats.has_no_changes())
     }
 
@@ -6667,7 +6344,7 @@ impl CodeReviewView {
         };
         let branch_name = self
             .diff_state_model
-            .read(ctx, |model, _| model.get_current_branch_name())
+            .read(ctx, |model, ctx| model.get_current_branch_name(ctx))
             .unwrap_or_default();
 
         let dialog = match kind {
@@ -6678,10 +6355,10 @@ impl CodeReviewView {
                 // `has_upstream` controls the label/icon on the push-chained
                 // intent (Commit and push vs Commit and publish).
                 let diff_state = self.diff_state_model.as_ref(ctx);
-                let allow_create_pr = diff_state.pr_info().is_none()
-                    && !diff_state.is_pr_info_refreshing()
-                    && !diff_state.is_on_main_branch();
-                let has_upstream = diff_state.upstream_ref().is_some();
+                let allow_create_pr = diff_state.pr_info(ctx).is_none()
+                    && !diff_state.is_pr_info_refreshing(ctx)
+                    && !diff_state.is_on_main_branch(ctx);
+                let has_upstream = diff_state.upstream_ref(ctx).is_some();
                 ctx.add_typed_action_view(|ctx| {
                     GitDialog::new_for_commit(
                         repo_path,
@@ -6695,7 +6372,7 @@ impl CodeReviewView {
             GitDialogKind::Push { publish } => {
                 let commits = self
                     .diff_state_model
-                    .read(ctx, |model, _| model.unpushed_commits().to_vec());
+                    .read(ctx, |model, ctx| model.unpushed_commits(ctx).to_vec());
                 ctx.add_typed_action_view(|ctx| {
                     GitDialog::new_for_push(repo_path, branch_name, publish, commits, ctx)
                 })
@@ -6703,7 +6380,7 @@ impl CodeReviewView {
             GitDialogKind::CreatePr => {
                 let base_branch_name = self
                     .diff_state_model
-                    .read(ctx, |model, _| model.get_main_branch_name());
+                    .read(ctx, |model, ctx| model.get_main_branch_name(ctx));
                 ctx.add_typed_action_view(|ctx| {
                     GitDialog::new_for_pr(repo_path, branch_name, base_branch_name, ctx)
                 })
@@ -6731,12 +6408,12 @@ impl CodeReviewView {
     fn primary_git_action_mode(&self, app: &AppContext) -> PrimaryGitActionMode {
         let diff_state = self.diff_state_model.as_ref(app);
         let has_uncommitted_changes = self.has_uncommitted_changes(app);
-        let has_upstream = diff_state.upstream_ref().is_some();
-        let has_local_commits = !diff_state.unpushed_commits().is_empty();
-        let is_pr_info_refreshing = diff_state.is_pr_info_refreshing();
+        let has_upstream = diff_state.upstream_ref(app).is_some();
+        let has_local_commits = !diff_state.unpushed_commits(app).is_empty();
+        let is_pr_info_refreshing = diff_state.is_pr_info_refreshing(app);
         // False when upstream == main (e.g. after `git checkout -b feature origin/master`),
         // which means the branch hasn't been pushed to its own remote ref yet.
-        let upstream_differs_from_main = diff_state.upstream_differs_from_main();
+        let upstream_differs_from_main = diff_state.upstream_differs_from_main(app);
 
         if has_uncommitted_changes {
             PrimaryGitActionMode::Commit
@@ -6744,11 +6421,11 @@ impl CodeReviewView {
             PrimaryGitActionMode::Publish
         } else if has_local_commits {
             PrimaryGitActionMode::Push
-        } else if diff_state.pr_info().is_some() {
+        } else if diff_state.pr_info(app).is_some() {
             PrimaryGitActionMode::ViewPr
         } else if !is_pr_info_refreshing
             && has_upstream
-            && !diff_state.is_on_main_branch()
+            && !diff_state.is_on_main_branch(app)
             && upstream_differs_from_main
         {
             PrimaryGitActionMode::CreatePr
@@ -6813,8 +6490,8 @@ impl CodeReviewView {
             }
             PrimaryGitActionMode::ViewPr => {
                 let diff_state = self.diff_state_model.as_ref(ctx);
-                let pr_info = diff_state.pr_info().cloned();
-                let is_pr_info_refreshing = diff_state.is_pr_info_refreshing();
+                let pr_info = diff_state.pr_info(ctx).cloned();
+                let is_pr_info_refreshing = diff_state.is_pr_info_refreshing(ctx);
                 if let Some(pr_info) = pr_info {
                     let url = pr_info.url.clone();
                     let number = pr_info.number;
@@ -6891,17 +6568,17 @@ impl CodeReviewView {
     /// (e.g. a worktree branch whose tracking was auto-set to origin/master).
     fn pr_menu_item(&self, app: &AppContext) -> MenuItem<CodeReviewAction> {
         let diff_state = self.diff_state_model.as_ref(app);
-        let is_pr_info_refreshing = diff_state.is_pr_info_refreshing();
-        if let Some(pr_info) = diff_state.pr_info().cloned() {
+        let is_pr_info_refreshing = diff_state.is_pr_info_refreshing(app);
+        if let Some(pr_info) = diff_state.pr_info(app).cloned() {
             MenuItemFields::new(format!("PR #{}", pr_info.number))
                 .with_icon(Icon::Github)
                 .with_on_select_action(CodeReviewAction::ViewPr(pr_info.url))
                 .with_disabled(is_pr_info_refreshing)
                 .into_item()
         } else {
-            let is_on_main = diff_state.is_on_main_branch();
-            let has_upstream = diff_state.upstream_ref().is_some();
-            let upstream_differs_from_main = diff_state.upstream_differs_from_main();
+            let is_on_main = diff_state.is_on_main_branch(app);
+            let has_upstream = diff_state.upstream_ref(app).is_some();
+            let upstream_differs_from_main = diff_state.upstream_differs_from_main(app);
             MenuItemFields::new("Create PR")
                 .with_icon(Icon::Github)
                 .with_on_select_action(CodeReviewAction::OpenCreatePrDialog)
@@ -6921,8 +6598,8 @@ impl CodeReviewView {
     /// which are enabled.
     fn git_operations_menu_items(&self, app: &AppContext) -> Vec<MenuItem<CodeReviewAction>> {
         let diff_state = self.diff_state_model.as_ref(app);
-        let has_local_commits = !diff_state.unpushed_commits().is_empty();
-        let has_upstream = diff_state.upstream_ref().is_some();
+        let has_local_commits = !diff_state.unpushed_commits(app).is_empty();
+        let has_upstream = diff_state.upstream_ref(app).is_some();
         match self.primary_git_action_mode(app) {
             PrimaryGitActionMode::Commit => vec![
                 Self::commit_menu_item(false),
@@ -7463,7 +7140,10 @@ impl TypedActionView for CodeReviewView {
                 self.save_files(unsaved_files.as_slice(), ctx);
             }
             CodeReviewAction::RefreshGitState => {
-                self.load_diffs_for_active_repo(false, ctx);
+                self.diff_state_model.update(ctx, |model, ctx| {
+                    model.load_diffs_for_current_repo(false, ctx);
+                    model.refresh_metadata_and_pr_info(ctx);
+                });
             }
             CodeReviewAction::UndoRevert => {
                 self.maybe_undo_revert(ctx);
@@ -7506,7 +7186,7 @@ impl TypedActionView for CodeReviewView {
             CodeReviewAction::ShowDiscardConfirmDialog(file_path) => {
                 self.discard_dialog_state.show_discard_confirm_dialog = true;
 
-                let current_diff_mode = self.diff_state_model.as_ref(ctx).diff_mode();
+                let current_diff_mode = self.diff_state_model.as_ref(ctx).diff_mode(ctx);
 
                 if let Some(path) = file_path {
                     // Single file remove

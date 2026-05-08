@@ -14,10 +14,11 @@ use futures::io::{AsyncRead, AsyncWrite};
 use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
-    client_message, server_message, Abort, Authenticate, ClientMessage, DeleteFile, ErrorCode,
-    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
-    NavigatedToDirectoryResponse, ReadFileContextRequest, ReadFileContextResponse,
-    RunCommandRequest, RunCommandResponse, ServerMessage, SessionBootstrapped, WriteFile,
+    client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
+    DeleteFile, ErrorCode, Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
+    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, ServerMessage,
+    SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
@@ -79,6 +80,13 @@ pub enum ClientEvent {
     CodebaseIndexStatusUpdated { status: RemoteCodebaseIndexStatus },
     /// A server message could not be decoded and had no parseable request_id.
     MessageDecodingError,
+    /// A buffer was updated on the server (file changed on disk).
+    BufferUpdated {
+        path: String,
+        new_server_version: u64,
+        expected_client_version: u64,
+        edits: Vec<crate::proto::TextEdit>,
+    },
 }
 /// Parameters for the `Initialize` handshake, sent to the daemon at
 /// connection time.
@@ -392,6 +400,52 @@ impl RemoteServerClient {
         }
     }
 
+    /// Opens a buffer on the remote host for bidirectional syncing.
+    pub async fn open_buffer(&self, path: String) -> Result<OpenBufferResponse, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::OpenBuffer(OpenBuffer { path })),
+        };
+        let response = self.send_request(request_id, msg).await?;
+        match response.message {
+            Some(server_message::Message::OpenBufferResponse(resp)) => Ok(resp),
+            other => {
+                log::error!("Unexpected response variant for OpenBuffer: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Sends a buffer edit notification (fire-and-forget) to the remote host.
+    pub fn send_buffer_edit(
+        &self,
+        path: String,
+        expected_server_version: u64,
+        new_client_version: u64,
+        edits: Vec<TextEdit>,
+    ) {
+        let msg = ClientMessage {
+            request_id: String::new(), // notification — no response expected
+            message: Some(client_message::Message::BufferEdit(BufferEdit {
+                path,
+                expected_server_version,
+                new_client_version,
+                edits,
+            })),
+        };
+        self.send_notification(msg);
+    }
+
+    /// Tells the remote host to close a buffer (stop watching).
+    pub fn close_buffer(&self, path: String) {
+        let msg = ClientMessage {
+            request_id: String::new(),
+            message: Some(client_message::Message::CloseBuffer(CloseBuffer { path })),
+        };
+        self.send_notification(msg);
+    }
+
     /// Deletes a file on the remote host.
     pub async fn delete_file(&self, path: String) -> Result<(), ClientError> {
         let request_id = RequestId::new();
@@ -437,6 +491,12 @@ impl RemoteServerClient {
                 let status = proto_to_codebase_index_status_updated(&update)?;
                 Some(ClientEvent::CodebaseIndexStatusUpdated { status })
             }
+            server_message::Message::BufferUpdated(push) => Some(ClientEvent::BufferUpdated {
+                path: push.path,
+                new_server_version: push.new_server_version,
+                expected_client_version: push.expected_client_version,
+                edits: push.edits,
+            }),
             other => {
                 safe_warn!(
                     safe: ("Unhandled push message variant"),

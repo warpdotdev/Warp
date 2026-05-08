@@ -788,17 +788,14 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                             ..
                         }) if FeatureFlag::RunAgentsTool.is_enabled() => {
                             // Embed the per-action `RunAgentsCardView`
-                            // via `ChildView`. The view itself handles
-                            // the streaming gate and in-flight dispatch
-                            // states (a card is mid-dispatch when its
-                            // `is_spawning()` getter returns true).
+                            // via `ChildView`. The view renders a
+                            // "Configuring agents..." placeholder while
+                            // streaming, then transitions to the full
+                            // confirmation card once complete.
                             should_render_footer = false;
                             should_render_suggestions = false;
                             if let Some(card_view) = props.run_agents_card_views.get(id) {
-                                let is_spawning = card_view.as_ref(app).is_spawning();
-                                if !status.is_streaming() || is_spawning {
-                                    output_items.add_child(ChildView::new(card_view).finish());
-                                }
+                                output_items.add_child(ChildView::new(card_view).finish());
                             }
                         }
                         AIAgentOutputMessageType::Action(AIAgentAction {
@@ -902,10 +899,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                         {
                             output_items.add_child(
                                 orchestration::render_messages_received_from_agents(
-                                    messages,
-                                    props,
-                                    &output_message.id,
-                                    app,
+                                    messages, props, app,
                                 ),
                             );
                         }

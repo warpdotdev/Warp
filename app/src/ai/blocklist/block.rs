@@ -781,6 +781,14 @@ impl CollapsibleElementState {
     }
 }
 
+const RECEIVED_MESSAGE_COLLAPSIBLE_ID_PREFIX: &str = "received-message:";
+
+pub(crate) fn received_message_collapsible_id(message_id: &str) -> MessageId {
+    MessageId::new(format!(
+        "{RECEIVED_MESSAGE_COLLAPSIBLE_ID_PREFIX}{message_id}"
+    ))
+}
+
 pub struct AIBlock {
     model: Rc<dyn AIBlockModel<View = AIBlock>>,
     terminal_model: Arc<FairMutex<TerminalModel>>,
@@ -1224,7 +1232,7 @@ impl AIBlock {
                 | AmbientAgentViewModelEvent::Failed { .. }
                 | AmbientAgentViewModelEvent::NeedsGithubAuth
                 | AmbientAgentViewModelEvent::Cancelled
-                | AmbientAgentViewModelEvent::HarnessCommandStarted => ctx.notify(),
+                | AmbientAgentViewModelEvent::HarnessCommandStarted { .. } => ctx.notify(),
                 _ => {}
             });
         }
@@ -2054,19 +2062,29 @@ impl AIBlock {
             }
 
             // Register collapsible state for orchestration action messages.
-            if FeatureFlag::Orchestration.is_enabled()
-                && matches!(
-                    &message.message,
+            if FeatureFlag::Orchestration.is_enabled() {
+                match &message.message {
                     AIAgentOutputMessageType::Action(AIAgentAction {
-                        action: AIAgentActionType::StartAgent { .. }
+                        action:
+                            AIAgentActionType::StartAgent { .. }
                             | AIAgentActionType::SendMessageToAgent { .. },
                         ..
-                    }) | AIAgentOutputMessageType::MessagesReceivedFromAgents { .. }
-                )
-            {
-                self.collapsible_block_states
-                    .entry(message.id.clone())
-                    .or_default();
+                    }) => {
+                        self.collapsible_block_states
+                            .entry(message.id.clone())
+                            .or_default();
+                    }
+                    AIAgentOutputMessageType::MessagesReceivedFromAgents { messages } => {
+                        for received_message in messages {
+                            self.collapsible_block_states
+                                .entry(received_message_collapsible_id(
+                                    &received_message.message_id,
+                                ))
+                                .or_default();
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
