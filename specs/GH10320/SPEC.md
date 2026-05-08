@@ -67,9 +67,13 @@ behaviors.
 The tree updates as the user types:
 
 - Folders containing matches auto-expand.
-- Non-matching siblings dim by default, OR are hidden when "Show all" is
-  toggled OFF (controlled by `file_tree.search.show_all_on_filter`; see
-  Settings).
+- The visibility of non-matching siblings is controlled by the boolean
+  setting `file_tree.search.dim_non_matches` (default `true`):
+  - When `true` (default): non-matching siblings remain visible but
+    **dimmed** (de-emphasized) so the user keeps spatial context.
+  - When `false`: non-matching siblings are **hidden** entirely; only
+    matching files plus their ancestor folders (auto-expanded) are
+    rendered.
 - A match count appears next to the search box (e.g. "12 matches").
 
 ### B4. Navigation
@@ -94,8 +98,10 @@ Closing the search box via `Esc` does the same.
 When the query yields no matches:
 
 - A "No matches" indicator appears next to the search box.
-- The tree is fully dimmed (default), or rendered empty when "Show all" is
-  OFF.
+- With `file_tree.search.dim_non_matches = true` (default): the tree is
+  fully dimmed.
+- With `file_tree.search.dim_non_matches = false`: the tree renders empty
+  (only the panel chrome remains visible).
 
 ### B7. Persistence
 
@@ -104,12 +110,15 @@ panel. Each panel-open starts with an empty search.
 
 ## Settings / API surface
 
-- `file_tree.search.show_all_on_filter` — `bool`, default `false`. When
-  `false`, non-matching siblings are dimmed but visible. When `true`,
-  non-matching siblings are hidden entirely.
+- `file_tree.search.dim_non_matches` — `bool`, default `true`. When
+  `true`, non-matching siblings are dimmed (visible but de-emphasized).
+  When `false`, non-matching siblings are hidden entirely (only matching
+  files and their ancestor folders are rendered).
 - Keybinding registration for `Cmd+F` (mac) / `Ctrl+F` (win/linux), scoped
-  to the new `KeyContext::FileTreeFocus` so it does not collide with editor
-  or terminal `Cmd+F`.
+  to a new keymap context flag `"FileTreeFocused"` (added via
+  `context.set.insert("FileTreeFocused")` in the file-tree view's
+  `keymap_context` impl) so it does not collide with editor or terminal
+  `Cmd+F`.
 
 ## Acceptance Criteria
 
@@ -117,8 +126,9 @@ panel. Each panel-open starts with an empty search.
 - A2. The magnifier button in the tree header opens the search box.
 - A3. Live-filter updates per keystroke within ≤16ms for a 5,000-node tree.
 - A4. Folders auto-expand to reveal matches as the user types.
-- A5. Setting `file_tree.search.show_all_on_filter` switches between dimming
-  and hiding non-matching siblings.
+- A5. Setting `file_tree.search.dim_non_matches` switches between dimming
+  (`true`, default — non-matches visible but dimmed) and hiding (`false`
+  — non-matches hidden entirely).
 - A6. `Enter` / `F3` cycles to the next match; `Shift+Enter` / `Shift+F3`
   cycles to the previous; wraps at the ends.
 - A7. `Esc` closes the search and restores prior focus and state.
@@ -127,16 +137,41 @@ panel. Each panel-open starts with an empty search.
 
 ## Implementation Pointers
 
-- New module `app/src/file_tree/search.rs` for the matching pipeline and
-  match-list state.
-- Update `app/src/file_tree/header.rs` to add the magnifier button.
-- Update `app/src/file_tree/tree_view.rs` for the filter + highlight render
-  pipeline and auto-expand on match.
-- Register the new keybinding in the existing keybinding system under a new
-  `KeyContext::FileTreeFocus` so it doesn't collide with editor / terminal
-  `Cmd+F`.
-- Snapshot prior expand state and selection when the search box opens;
-  restore on close / clear.
+> Paths verified against worktree at commit `86940541`. If reorganizing,
+> update tooling accordingly (no behavior change).
+
+- **New module** `app/src/code/file_tree/search.rs` for the matching
+  pipeline (substring match, NFC normalization, ancestor expansion
+  tracking) and match-list state.
+- **Update existing view** `app/src/code/file_tree/view.rs`
+  (`FileTreeView`, ~3,170 lines) for the filter + highlight render
+  pipeline, auto-expand on match, prior-state snapshot, and search-box
+  state hookup. The render path lives in
+  `app/src/code/file_tree/view/render.rs`.
+- **Magnifier button**: there is no separate `header.rs` today — header
+  rendering is inlined inside `app/src/code/file_tree/view.rs` (search for
+  the existing toolbar / header row; the magnifier button is added as a
+  new icon child of that row).
+- **Container view**: `app/src/workspace/view/left_panel.rs`
+  (`LeftPanelView`) hosts the `FileTreeView`; no changes there beyond
+  forwarding focus state if needed.
+- **Keymap context**: register the new context-set flag
+  `"FileTreeFocused"` via the `keymap_context` impl associated with
+  `FileTreeView` (pattern: `context.set.insert("FileTreeFocused")` —
+  consistent with existing flags like `"EditorFocused"` set in
+  `app/src/terminal/view.rs:26640`). Bind `Cmd+F` / `Ctrl+F` to the new
+  search action under predicate `id!("FileTreeFocused")` so it does not
+  collide with editor / terminal `Cmd+F`.
+- **Snapshot prior state**: snapshot expand/collapse state and selected
+  row when the search box opens; restore on `Esc` / clear (per B5). Reuse
+  the existing `FileTreeView` expansion-state container.
+- **Settings**: add `file_tree.search.dim_non_matches: bool` (default
+  `true`) to the file-tree settings group. Surface a toggle in
+  `app/src/settings_view/code_page.rs` under the file-tree section
+  (there is no separate `editor_page.rs`; `code_page.rs` houses
+  code/file-tree settings).
+- **No persistence migration** — the new setting is additive with a
+  default.
 
 ## Tests
 
@@ -146,8 +181,8 @@ panel. Each panel-open starts with an empty search.
 - T3. Auto-expand of all ancestor folders on a match.
 - T4. Next / previous navigation cycles, including wraparound.
 - T5. `Esc` restores prior focus and tree state.
-- T6. Setting `file_tree.search.show_all_on_filter` switches between dimming
-  and hiding behavior.
+- T6. Setting `file_tree.search.dim_non_matches` switches between dimming
+  (`true`) and hiding (`false`) behavior. Default value is `true`.
 - T7. Clearing the input restores the prior selection and expand state.
 - T8. Performance: live filter updates ≤16ms per keystroke on a
   5,000-node tree.
@@ -163,6 +198,22 @@ panel. Each panel-open starts with an empty search.
 
 ## Telemetry
 
-Extend the existing `file_tree.opened` event with an optional `search_used`
-boolean per tree-panel session (set `true` if the user opened the search box
-at any point during that session). No new event types are introduced.
+The actual existing telemetry event for file-tree open/close is
+`TelemetryEvent::FileTreeToggled` (label "File Tree Toggled" — see
+`app/src/server/telemetry/events.rs:5658`); there is no
+`file_tree.opened` event today.
+
+Two options, in order of preference:
+
+1. **Preferred — extend the existing `FileTreeToggled` variant** in
+   `app/src/server/telemetry/events.rs` with an optional
+   `search_used: bool` field that is `true` if the user opened the
+   search box at any point during the tree-panel session. No new event
+   type introduced.
+2. **Alternative — add a net-new event** `FileTreeSearchUsed` (label
+   `"FileTree.SearchUsed"`) emitted once per tree-panel session if the
+   user opened the search box. Use this only if extending
+   `FileTreeToggled` is awkward for the existing call sites.
+
+Pick option 1 unless implementation-time review shows the existing
+variant is consumed in a way that makes adding the field risky.
