@@ -1,4 +1,7 @@
-use super::{truncate_from_beginning, GitLineChanges};
+use super::{
+    format_change_directory_command, format_git_branch_command, shell_single_quote,
+    truncate_from_beginning, GitLineChanges,
+};
 use crate::context_chips::{github_pr_display_text_from_url, ContextChipKind};
 
 #[test]
@@ -289,4 +292,98 @@ fn test_truncate_from_beginning_preserves_char_boundaries() {
             result.chars().count() <= max_len || result.chars().count() == text.chars().count()
         );
     }
+}
+
+#[test]
+fn test_shell_single_quote_simple_input() {
+    assert_eq!(shell_single_quote("main"), "'main'");
+}
+
+#[test]
+fn test_shell_single_quote_escapes_embedded_single_quote() {
+    // POSIX idiom: close, escape, reopen.
+    assert_eq!(shell_single_quote("it's"), r"'it'\''s'");
+}
+
+#[test]
+fn test_shell_single_quote_preserves_special_chars_inside_quotes() {
+    // Inside single quotes, $, `, \, and other metacharacters are literal,
+    // so we don't need to escape them.
+    assert_eq!(shell_single_quote("$foo"), "'$foo'");
+    assert_eq!(shell_single_quote("a;b&c"), "'a;b&c'");
+    assert_eq!(shell_single_quote("`cmd`"), "'`cmd`'");
+}
+
+#[test]
+fn test_format_git_branch_command_quotes_plain_name() {
+    assert_eq!(
+        format_git_branch_command("main"),
+        "git checkout 'main'"
+    );
+}
+
+#[test]
+fn test_format_git_branch_command_neutralizes_dollar_expansion() {
+    // Branch names like `feat/$ticket-123` are valid in git; they must not be
+    // expanded as shell variables when the user picks them from the chip menu.
+    assert_eq!(
+        format_git_branch_command("feat/$ticket-123"),
+        "git checkout 'feat/$ticket-123'"
+    );
+}
+
+#[test]
+fn test_format_git_branch_command_neutralizes_command_separators() {
+    // Without quoting, `release;rm-x` would split into two commands.
+    assert_eq!(
+        format_git_branch_command("release;rm-x"),
+        "git checkout 'release;rm-x'"
+    );
+    assert_eq!(
+        format_git_branch_command("a&b"),
+        "git checkout 'a&b'"
+    );
+    assert_eq!(
+        format_git_branch_command("a|b"),
+        "git checkout 'a|b'"
+    );
+}
+
+#[test]
+fn test_format_git_branch_command_neutralizes_command_substitution() {
+    assert_eq!(
+        format_git_branch_command("$(whoami)"),
+        "git checkout '$(whoami)'"
+    );
+    assert_eq!(
+        format_git_branch_command("`whoami`"),
+        "git checkout '`whoami`'"
+    );
+}
+
+#[test]
+fn test_format_git_branch_command_escapes_embedded_single_quote() {
+    // Branch names allow `'`. The POSIX close/escape/reopen idiom keeps the
+    // result as one shell argument.
+    assert_eq!(
+        format_git_branch_command("it's-ok"),
+        r"git checkout 'it'\''s-ok'"
+    );
+}
+
+#[test]
+fn test_format_change_directory_command_still_quotes_correctly() {
+    // Behavior preserved after refactoring through shell_single_quote.
+    assert_eq!(
+        format_change_directory_command("/some/dir"),
+        "cd '/some/dir'"
+    );
+    assert_eq!(
+        format_change_directory_command("path with spaces"),
+        "cd 'path with spaces'"
+    );
+    assert_eq!(
+        format_change_directory_command("it's"),
+        r"cd 'it'\''s'"
+    );
 }

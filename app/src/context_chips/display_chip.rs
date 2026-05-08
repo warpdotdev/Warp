@@ -1774,12 +1774,25 @@ impl ActionButtonTheme for EnterAgentViewButton {
     }
 }
 
-fn format_change_directory_command(dir_name: &str) -> String {
-    format!("cd '{}'", dir_name.replace("'", "'\\'''"))
+/// Wraps `s` in POSIX single quotes, escaping any embedded single quotes via
+/// the standard `'\''` close/escape/reopen idiom. Safe to inline into a
+/// shell command line — the resulting fragment is one argument under any
+/// POSIX shell (bash, zsh, fish, dash, …).
+fn shell_single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+fn format_change_directory_command(dir_name: &str) -> String {
+    format!("cd {}", shell_single_quote(dir_name))
+}
+
+/// Builds the `git checkout <branch>` command emitted when a user picks a
+/// branch from the prompt's branch chip menu. The branch name must be
+/// shell-quoted: git permits names containing `$`, `&`, `;`, `(`, `)`, `<`,
+/// `>`, `|`, `` ` ``, `{`, `}`, and `!` — without quoting, the shell would
+/// expand or split on those characters and the wrong command would run.
 pub fn format_git_branch_command(branch_name: &str) -> String {
-    format!("git checkout {branch_name}")
+    format!("git checkout {}", shell_single_quote(branch_name))
 }
 
 pub(crate) fn chip_container(
