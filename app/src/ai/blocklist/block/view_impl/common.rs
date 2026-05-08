@@ -3229,7 +3229,7 @@ pub(crate) fn render_debug_footer<V: View>(
                     warpui::ui_components::button::ButtonVariant::Text,
                     props.submit_issue_button_handle,
                 )
-                .with_centered_text_label("Send Feedback".to_string())
+                .with_centered_text_label("Open Warper issue".to_string())
                 .with_style(submit_button_style)
                 .with_hovered_styles(submit_button_hover_style)
                 .with_clicked_styles(submit_button_hover_style)

@@ -91,6 +91,7 @@ use crate::ai::blocklist::metadata::AgentModeRewindEntrypoint;
 use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::terminal::view::{CodeDiffAction, TerminalAction};
 use crate::ui_components::icons::Icon;
+use crate::util::links;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{is_supported_image_file, FileTarget};
 use crate::view_components::action_button::ActionButton;
@@ -5361,7 +5362,7 @@ pub enum AIBlockAction {
     ToggleCodeReviewPane,
     /// Copy the debug ID to clipboard
     CopyDebugId(String),
-    /// Open Warp feedback documentation
+    /// Open a Warper issue link.
     OpenFeedbackDocs,
     /// Toggle the usage summary footer expansion state
     ToggleIsUsageFooterExpanded,
@@ -5479,7 +5480,7 @@ impl TypedActionView for AIBlock {
                     .write(ClipboardContent::plain_text(debug_id.clone()));
             }
             AIBlockAction::OpenFeedbackDocs => {
-                ctx.open_url("https://docs.warp.dev/support-and-community/troubleshooting-and-support/sending-us-feedback");
+                ctx.open_url(&links::feedback_form_url());
             }
             AIBlockAction::CancelRequestedAction { action_id } => {
                 self.cancel_action(action_id, ctx);

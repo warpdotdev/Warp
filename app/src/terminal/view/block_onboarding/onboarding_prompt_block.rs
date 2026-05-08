@@ -8,6 +8,7 @@ use crate::terminal::model::ObfuscateSecrets;
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::view::block_onboarding::util;
 use crate::terminal::SizeInfo;
+use crate::util::links;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use settings::Setting as _;
 use warpui::{
@@ -234,7 +235,6 @@ impl OnboardingPromptBlock {
         const NO_PS1_TEXT: &str = "No existing prompt.";
         const CORRECTION_TEXT: &str = "Look incorrect? ";
         const LINK_TEXT: &str = "Let us know.";
-        const LINK_DESTINATION: &str = "https://github.com/warpdotdev/Warp/issues/new?assignees=&labels=Bug&projects=&template=01_bug_report.yml";
 
         const HEADER_MARGIN_LEFT: f32 = 4.;
         const PS1_PADDING_VERTICAL: f32 = 12.;
@@ -295,7 +295,7 @@ impl OnboardingPromptBlock {
                                     .ui_builder()
                                     .link(
                                         LINK_TEXT.to_string(),
-                                        Some(LINK_DESTINATION.to_string()),
+                                        Some(links::feedback_form_url()),
                                         None,
                                         self.mouse_state_handle_look_incorrect.clone(),
                                     )

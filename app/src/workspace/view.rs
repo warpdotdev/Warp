@@ -4000,52 +4000,16 @@ impl Workspace {
         let _ = (event, ctx);
     }
 
-    fn join_slack(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.open_url(links::SLACK_URL);
+    fn view_privacy_policy(&mut self, ctx: &mut ViewContext<Self>) {
+        ctx.open_url(links::PRIVACY_POLICY_URL);
     }
 
     fn view_user_docs(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.open_url(links::USER_DOCS_URL);
     }
 
-    fn view_privacy_policy(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.open_url(links::PRIVACY_POLICY_URL);
-    }
-
     fn send_feedback(&mut self, ctx: &mut ViewContext<Self>) {
-        // When AI is available (enabled, with remaining requests) and the feedback skill is
-        // bundled on this channel, open a new agent pane and prime the input with `/feedback `
-        // so the user can describe their feedback in their own words before submitting. The
-        // skill is only invoked when they hit enter. Otherwise fall back to the form URL so
-        // logged-out, credit-exhausted, AI-disabled, and stable-channel users still have a
-        // way to send feedback.
-        if !crate::workspace::is_feedback_skill_available(ctx) {
-            ctx.open_url(&links::feedback_form_url());
-            return;
-        }
-
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            pane_group.add_terminal_pane_in_agent_mode(Some("/feedback "), None, ctx);
-            if let Some(terminal_view) = pane_group.focused_session_view(ctx) {
-                terminal_view.update(ctx, |terminal_view, terminal_view_ctx| {
-                    terminal_view
-                        .input()
-                        .update(terminal_view_ctx, |input, input_ctx| {
-                            input.editor().update(input_ctx, |editor, editor_ctx| {
-                                // Show a muted placeholder after the primed prefix so the user
-                                // knows they can describe their feedback before submitting. The
-                                // placeholder auto-hides as soon as they start typing and is
-                                // cleared on submit alongside any other placeholder text.
-                                editor.set_placeholder_text_with_prefix(
-                                    "/feedback ",
-                                    "Describe what's broken, confusing, or missing...",
-                                    editor_ctx,
-                                );
-                            });
-                        });
-                });
-            }
-        });
+        ctx.open_url(&links::feedback_form_url());
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -5585,24 +5549,15 @@ impl Workspace {
             MenuItemFields::new("Documentation")
                 .with_on_select_action(WorkspaceAction::ViewUserDocs)
                 .into_item(),
-            MenuItemFields::new("Feedback")
-                .with_on_select_action(WorkspaceAction::SendFeedback)
-                .into_item(),
         ];
 
         #[cfg(not(target_family = "wasm"))]
         items.push(
-            MenuItemFields::new("View Warp logs")
+            MenuItemFields::new("View Warper logs")
                 .with_on_select_action(WorkspaceAction::ViewLogs)
                 .into_item(),
         );
 
-        items.extend([
-            MenuItemFields::new("Slack")
-                .with_on_select_action(WorkspaceAction::JoinSlack)
-                .into_item(),
-            MenuItem::Separator,
-        ]);
         items
     }
 
@@ -14221,7 +14176,6 @@ impl TypedActionView for Workspace {
                 mode: palette_mode,
                 source,
             } => self.toggle_palette(*palette_mode, *source, ctx),
-            JoinSlack => self.join_slack(ctx),
             ViewUserDocs => self.view_user_docs(ctx),
             ViewPrivacyPolicy => self.view_privacy_policy(ctx),
             SendFeedback => self.send_feedback(ctx),

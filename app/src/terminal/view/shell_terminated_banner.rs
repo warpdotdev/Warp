@@ -13,9 +13,9 @@ use warpui::{
     Entity, SingletonEntity as _, TypedActionView, View, ViewContext,
 };
 
-use crate::ui_components;
+use crate::{ui_components, util::links};
 
-const FILE_ISSUE_TEXT: &str = "File issue";
+const FILE_ISSUE_TEXT: &str = "Open Warper issue";
 const MORE_INFO_TEXT: &str = "More info";
 
 /// A banner to display when the shell process terminates.
@@ -212,9 +212,7 @@ impl TerminationType {
                         .with_text_label(FILE_ISSUE_TEXT.to_string())
                         .build()
                         .on_click(|ctx, _, _| {
-                            ctx.dispatch_typed_action(Action::OpenUrl(
-                                "https://github.com/warpdotdev/Warp/issues/new/choose".to_string(),
-                            ));
+                            ctx.dispatch_typed_action(Action::OpenUrl(links::feedback_form_url()));
                         })
                         .finish(),
                     ui_builder
@@ -250,9 +248,7 @@ impl TerminationType {
                         .with_text_label(FILE_ISSUE_TEXT.to_string())
                         .build()
                         .on_click(|ctx, _, _| {
-                            ctx.dispatch_typed_action(Action::OpenUrl(
-                                "https://github.com/warpdotdev/Warp/issues/new/choose".to_string(),
-                            ));
+                            ctx.dispatch_typed_action(Action::OpenUrl(links::feedback_form_url()));
                         })
                         .finish(),
                     ui_builder

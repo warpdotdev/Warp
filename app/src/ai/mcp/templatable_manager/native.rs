@@ -167,6 +167,7 @@ impl TemplatableMCPServerManager {
             spawned_servers: Default::default(),
             server_credentials: Default::default(),
             file_based_server_credentials: Default::default(),
+            credentials_loaded_from_secure_storage: false,
             locally_installed_servers,
             server_error_messages: Default::default(),
             spawner: Some(ctx.spawner()),
@@ -174,20 +175,10 @@ impl TemplatableMCPServerManager {
             pending_oauth_csrf: Default::default(),
         };
 
-        // If we're not in a test, try to load credentials from secure storage.
-        if !cfg!(test) {
-            me.server_credentials = load_credentials_from_secure_storage::<PersistedCredentialsMap>(
-                ctx,
-                TEMPLATABLE_MCP_CREDENTIALS_KEY,
-            );
-
-            if FeatureFlag::FileBasedMcp.is_enabled() {
-                me.file_based_server_credentials = load_credentials_from_secure_storage::<
-                    FileBasedPersistedCredentialsMap,
-                >(
-                    ctx, FILE_BASED_MCP_CREDENTIALS_KEY
-                );
-            }
+        if AppExecutionMode::as_ref(ctx).can_autostart_mcp_servers()
+            && !running_server_uuids.is_empty()
+        {
+            me.load_credentials_from_secure_storage_if_needed(ctx);
         }
 
         if AppExecutionMode::as_ref(ctx).can_autostart_mcp_servers() {
@@ -198,6 +189,29 @@ impl TemplatableMCPServerManager {
 
         me
     }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn load_credentials_from_secure_storage_if_needed(&mut self, ctx: &mut ModelContext<Self>) {
+        if cfg!(test) || self.credentials_loaded_from_secure_storage {
+            return;
+        }
+
+        self.server_credentials = load_credentials_from_secure_storage::<PersistedCredentialsMap>(
+            ctx,
+            TEMPLATABLE_MCP_CREDENTIALS_KEY,
+        );
+
+        if FeatureFlag::FileBasedMcp.is_enabled() {
+            self.file_based_server_credentials = load_credentials_from_secure_storage::<
+                FileBasedPersistedCredentialsMap,
+            >(ctx, FILE_BASED_MCP_CREDENTIALS_KEY);
+        }
+
+        self.credentials_loaded_from_secure_storage = true;
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn load_credentials_from_secure_storage_if_needed(&mut self, _ctx: &mut ModelContext<Self>) {}
 
     pub fn change_server_state(
         &mut self,
@@ -378,6 +392,8 @@ impl TemplatableMCPServerManager {
         mode: SpawnMode,
         ctx: &mut ModelContext<Self>,
     ) {
+        self.load_credentials_from_secure_storage_if_needed(ctx);
+
         let installation_uuid = installation.uuid();
 
         let resolved_json = resolve_json(&installation);

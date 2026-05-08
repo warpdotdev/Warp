@@ -176,7 +176,6 @@ pub enum WorkspaceAction {
         mode: PaletteMode,
         source: PaletteSource,
     },
-    JoinSlack,
     ViewUserDocs,
     ViewPrivacyPolicy,
     SendFeedback,
@@ -618,7 +617,6 @@ impl WorkspaceAction {
             | ResetZoom
             | OpenPalette { .. }
             | TogglePalette { mode: _, source: _ }
-            | JoinSlack
             | ViewUserDocs
             | ViewPrivacyPolicy
             | SendFeedback

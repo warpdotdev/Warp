@@ -662,7 +662,7 @@ pub fn render_citation(
     let (icon, name) = match citation {
         AIAgentCitation::WarpDocumentation { .. } => {
             let icon = Icon::Warp.to_warpui_icon(theme.foreground()).finish();
-            let name = String::from("Warp Docs");
+            let name = String::from("Documentation");
             (Some(icon), name)
         }
         AIAgentCitation::WebPage { url } => {

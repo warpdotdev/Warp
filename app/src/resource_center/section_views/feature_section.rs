@@ -27,7 +27,6 @@ use super::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FeatureSection {
-    WhatsNew,
     GettingStarted,
     MaximizeWarp,
     AdvancedSetup,
@@ -36,9 +35,8 @@ pub enum FeatureSection {
 impl FeatureSection {
     pub fn section_name_string(&self) -> &'static str {
         match self {
-            FeatureSection::WhatsNew => "What's New?",
             FeatureSection::GettingStarted => "Getting Started",
-            FeatureSection::MaximizeWarp => "Maximize Warp",
+            FeatureSection::MaximizeWarp => "Maximize Warper",
             FeatureSection::AdvancedSetup => "Advanced Setup",
         }
     }

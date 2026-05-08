@@ -95,6 +95,7 @@ use crate::{
 use crate::ai::agent::AIAgentInput;
 use crate::ai::blocklist::block::TextLocation;
 use crate::util::link_detection::{detect_links, DetectedLinksState};
+use crate::util::links;
 
 use crate::ai::agent::icons::yellow_stop_icon;
 use crate::ai::blocklist::inline_action::inline_action_icons::icon_size;
@@ -1495,7 +1496,7 @@ impl TypedActionView for CLISubagentView {
                     .write(ClipboardContent::plain_text(debug_id.clone()));
             }
             CLISubagentAction::OpenFeedbackDocs => {
-                ctx.open_url("https://docs.warp.dev/support-and-billing/sending-us-feedback");
+                ctx.open_url(&links::feedback_form_url());
             }
         }
     }

@@ -528,9 +528,6 @@ impl Input {
             init if command.name == commands::INIT.name => {
                 ctx.dispatch_typed_action(&TerminalAction::InitProject);
             }
-            feedback if command.name == commands::FEEDBACK.name => {
-                ctx.dispatch_typed_action(&WorkspaceAction::SendFeedback);
-            }
             open_code_review if command.name == commands::OPEN_CODE_REVIEW.name => {
                 ctx.dispatch_typed_action(&TerminalAction::ToggleCodeReviewPane {
                     entrypoint: CodeReviewPaneEntrypoint::SlashCommand,
