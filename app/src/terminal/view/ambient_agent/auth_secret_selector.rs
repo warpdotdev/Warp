@@ -1,4 +1,3 @@
-
 use std::sync::Arc;
 
 use pathfinder_geometry::vector::vec2f;
@@ -198,9 +197,7 @@ impl AuthSecretSelector {
                 .ambient_agent_model
                 .as_ref(ctx)
                 .selected_harness_auth_secret_name()
-                .map(|name| {
-                    AuthSecretSelectorAction::SelectSecret(name.to_string())
-                })
+                .map(|name| AuthSecretSelectorAction::SelectSecret(name.to_string()))
                 .unwrap_or(AuthSecretSelectorAction::ClearSecret);
             self.menu.update(ctx, |menu, ctx| {
                 menu.set_selected_by_action(&selected_action, ctx);

@@ -2202,7 +2202,6 @@ impl Input {
             });
         }
 
-
         let prompt_selection_state_handle = SelectionHandle::default();
 
         let view_id = ctx.view_id();
@@ -2363,26 +2362,24 @@ impl Input {
                         ctx,
                     )
                 });
-                ctx.subscribe_to_view(&selector, |me, _, event, ctx| {
-                    match event {
-                        AuthSecretSelectorEvent::MenuVisibilityChanged { open: false } => {
-                            me.focus_input_box(ctx);
-                        }
-                        AuthSecretSelectorEvent::NewTypeSelected {
-                            harness,
-                            type_index,
-                        } => {
-                            if let Some(ftux_view) = me.auth_secret_ftux_view().cloned() {
-                                let harness = *harness;
-                                let type_index = *type_index;
-                                ftux_view.update(ctx, |view, ctx| {
-                                    view.enter_creation_state_public(harness, type_index, ctx);
-                                });
-                            }
-                            ctx.notify();
-                        }
-                        AuthSecretSelectorEvent::MenuVisibilityChanged { open: true } => {}
+                ctx.subscribe_to_view(&selector, |me, _, event, ctx| match event {
+                    AuthSecretSelectorEvent::MenuVisibilityChanged { open: false } => {
+                        me.focus_input_box(ctx);
                     }
+                    AuthSecretSelectorEvent::NewTypeSelected {
+                        harness,
+                        type_index,
+                    } => {
+                        if let Some(ftux_view) = me.auth_secret_ftux_view().cloned() {
+                            let harness = *harness;
+                            let type_index = *type_index;
+                            ftux_view.update(ctx, |view, ctx| {
+                                view.enter_creation_state_public(harness, type_index, ctx);
+                            });
+                        }
+                        ctx.notify();
+                    }
+                    AuthSecretSelectorEvent::MenuVisibilityChanged { open: true } => {}
                 });
                 let ftux_view = {
                     let view_model_for_ftux = state.view_model.clone();

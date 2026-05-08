@@ -1,4 +1,3 @@
-
 use warp_cli::agent::Harness;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
@@ -121,8 +120,8 @@ impl AuthSecretFtuxDropdown {
             MenuEvent::ItemSelected | MenuEvent::ItemHovered => {}
         });
 
-        ctx.subscribe_to_model(&ambient_agent_model, |me, _, event, ctx| match event {
-            AmbientAgentViewModelEvent::HarnessSelected => {
+        ctx.subscribe_to_model(&ambient_agent_model, |me, _, event, ctx| {
+            if let AmbientAgentViewModelEvent::HarnessSelected = event {
                 me.search_query.clear();
                 me.search_editor.update(ctx, |editor, ctx| {
                     editor.system_clear_buffer(true, ctx);
@@ -136,7 +135,6 @@ impl AuthSecretFtuxDropdown {
                 me.refresh_menu(ctx);
                 ctx.notify();
             }
-            _ => {}
         });
 
         ctx.subscribe_to_model(
@@ -285,7 +283,7 @@ impl AuthSecretFtuxDropdown {
     fn refresh_menu(&mut self, ctx: &mut ViewContext<Self>) {
         let appearance = Appearance::as_ref(ctx);
         let theme = appearance.theme();
-        let hover_background: Fill = internal_colors::fg_overlay_2(theme).into();
+        let hover_background: Fill = internal_colors::fg_overlay_2(theme);
         let disabled_text_color = theme.disabled_text_color(theme.surface_2()).into_solid();
         let border = Border::all(1.).with_border_color(internal_colors::neutral_4(theme));
 
