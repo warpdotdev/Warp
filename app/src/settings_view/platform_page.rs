@@ -42,13 +42,19 @@ const MODAL_HEIGHT: f32 = 320.;
 const API_KEY_DOCS_URL: &str = "https://docs.warp.dev/reference/cli/api-keys";
 const API_KEY_NAME_COLUMN_DEFAULT_WIDTH: f32 = 220.;
 const API_KEY_NAME_COLUMN_MIN_WIDTH: f32 = 120.;
-const API_KEY_KEY_COLUMN_WIDTH: f32 = 180.;
+const API_KEY_KEY_COLUMN_WIDTH: f32 = 120.;
 const API_KEY_METADATA_COLUMN_MIN_WIDTH: f32 = 80.;
 const API_KEY_ACTION_COLUMN_MIN_WIDTH: f32 = 48.;
 const API_KEY_TABLE_MIN_NON_RESIZABLE_COLUMNS_WIDTH: f32 = API_KEY_KEY_COLUMN_WIDTH
     + (API_KEY_METADATA_COLUMN_MIN_WIDTH * 3.)
     + API_KEY_ACTION_COLUMN_MIN_WIDTH;
 const API_KEY_TABLE_MIN_SCOPE_COLUMN_WIDTH: f32 = API_KEY_METADATA_COLUMN_MIN_WIDTH;
+const API_KEY_TABLE_LAYOUT_SAFETY_PADDING: f32 = 16.;
+const SETTINGS_SIDEBAR_WIDTH_DEFAULT: f32 = 200.;
+const SETTINGS_SIDEBAR_WIDTH_WITH_FOOTER: f32 = 248.;
+const SETTINGS_SECTION_BORDER_WIDTH: f32 = 1.;
+const SETTINGS_PAGE_HORIZONTAL_PADDING: f32 = 56.;
+const SETTINGS_PAGE_MAX_CONTENT_WIDTH: f32 = 800.;
 
 #[derive(Clone, Copy)]
 pub enum PlatformPageViewEvent {
@@ -494,6 +500,15 @@ impl PlatformPageWidget {
         appearance: &Appearance,
         view: &PlatformPageView,
     ) -> Box<dyn Element> {
+        let settings_sidebar_width = if FeatureFlag::SettingsFile.is_enabled() {
+            SETTINGS_SIDEBAR_WIDTH_WITH_FOOTER
+        } else {
+            SETTINGS_SIDEBAR_WIDTH_DEFAULT
+        };
+        let table_width_chrome = settings_sidebar_width
+            + SETTINGS_SECTION_BORDER_WIDTH
+            + SETTINGS_PAGE_HORIZONTAL_PADDING
+            + API_KEY_TABLE_LAYOUT_SAFETY_PADDING;
         let show_scope_column =
             FeatureFlag::TeamApiKeys.is_enabled() || FeatureFlag::NamedAgents.is_enabled();
         let min_non_resizable_columns_width = if show_scope_column {
@@ -510,6 +525,7 @@ impl PlatformPageWidget {
             view.api_key_table_column_widths.name.clone(),
             API_KEY_NAME_COLUMN_MIN_WIDTH,
             min_non_resizable_columns_width,
+            table_width_chrome,
         ));
         header_row.add_child(
             ConstrainedBox::new(self.render_header_cell(appearance, "Key"))
@@ -545,6 +561,7 @@ impl PlatformPageWidget {
         width_handle: ResizableStateHandle,
         min_width: f32,
         min_non_resizable_columns_width: f32,
+        table_width_chrome: f32,
     ) -> Box<dyn Element> {
         let width = width_handle
             .lock()
@@ -571,7 +588,11 @@ impl PlatformPageWidget {
         Resizable::new(width_handle, header_cell)
             .with_dragbar_side(DragBarSide::Right)
             .with_bounds_callback(Box::new(move |window_size| {
-                let max_width = (window_size.x() - min_non_resizable_columns_width).max(min_width);
+                let available_table_width = (window_size.x() - table_width_chrome)
+                    .max(0.)
+                    .min(SETTINGS_PAGE_MAX_CONTENT_WIDTH);
+                let max_width =
+                    (available_table_width - min_non_resizable_columns_width).max(min_width);
                 (min_width, max_width)
             }))
             .on_resize(|ctx, _| {
