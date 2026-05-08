@@ -94,6 +94,11 @@ pub struct ResolvedHarnessPrompt {
     /// system context. Empty when no resumption is in effect.
     #[serde(default)]
     pub resumption_prompt: Option<String>,
+    /// Optional server-retrieved context relevant to the task prompt. Each harness
+    /// decides how to inject this — typically by prepending it to the user-turn prompt
+    /// after any resumption preamble.
+    #[serde(default)]
+    pub context: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
