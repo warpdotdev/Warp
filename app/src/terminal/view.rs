@@ -726,16 +726,16 @@ impl NotificationsTrigger {
     pub fn discovery_banner_copy(&self) -> &'static str {
         match self {
             NotificationsTrigger::LongRunningCommand(..) => {
-                "Warp can notify you when long-running commands finish."
+                "Warper can notify you when long-running commands finish."
             }
             NotificationsTrigger::AgentTaskCompleted(..) => {
-                "Warp can notify you when an agent finishes responding."
+                "Warper can notify you when an agent finishes responding."
             }
             NotificationsTrigger::NeedsAttention => {
-                "Warp can notify you when a command or agent needs your attention."
+                "Warper can notify you when a command or agent needs your attention."
             }
             NotificationsTrigger::PasswordPrompt => {
-                "Warp can notify you when you're prompted to enter a password."
+                "Warper can notify you when you're prompted to enter a password."
             }
         }
     }
@@ -3246,7 +3246,7 @@ impl TerminalView {
         let incompatible_configuration_banner = ctx.add_typed_action_view(|_| {
             Banner::new(BannerTextContent::formatted_text(vec![
                 FormattedTextFragment::plain_text(
-                    "Your shell configuration is incompatible with Warp...  ",
+                    "Your shell configuration is incompatible with Warper...  ",
                 ),
                 FormattedTextFragment::hyperlink("More info", KNOWN_ISSUES_URL),
             ]))
@@ -7259,11 +7259,11 @@ impl TerminalView {
 
         let a11y_message = match &warpify_keybinding {
             Some(keystroke) => format!(
-                "You can press {} to Warpify this {} for more Warp features.",
+                "You can press {} to Warpify this {} for more Warper features.",
                 keystroke.displayed(),
                 lowercase_title
             ),
-            None => format!("You can Warpify this {lowercase_title} for more Warp features."),
+            None => format!("You can Warpify this {lowercase_title} for more Warper features."),
         };
 
         model
@@ -7411,7 +7411,7 @@ impl TerminalView {
 
         let a11y_content = AccessibilityContent::new(
             banner_title,
-            "Make sure you have enabled access for Warp notifications in System Preferences.",
+            "Make sure you have enabled access for Warper notifications in System Settings.",
             WarpA11yRole::TextRole,
         );
         ctx.emit_a11y_content(a11y_content);
@@ -12444,7 +12444,7 @@ impl TerminalView {
 
                             if is_markdown_file(&path) {
                                 items.push(
-                                    MenuItemFields::new("Open in Warp")
+                                    MenuItemFields::new("Open in Warper")
                                         .with_on_select_action(TerminalAction::OpenFileInWarp(path))
                                         .into_item(),
                                 );
@@ -17425,7 +17425,7 @@ impl TerminalView {
         let show_banner = if honor_ps1 {
             let banner_content = if shell_plugins.contains("p10k_unsupported") {
                 Some(BannerTextContent::formatted_text(vec![
-                    FormattedTextFragment::bold("Powerlevel10k now supports Warp!  "),
+                    FormattedTextFragment::bold("Powerlevel10k now supports Warper!  "),
                     FormattedTextFragment::plain_text(
                         "You seem to be running an older (unsupported) version, please follow ",
                     ),

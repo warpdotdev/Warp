@@ -153,7 +153,7 @@ impl OnboardingAgenticSuggestionsBlock {
         let matrix_save_directory = themes_dir()
             .into_os_string()
             .into_string()
-            .unwrap_or("the Warp themes directory.".to_string());
+            .unwrap_or("the Warper themes directory.".to_string());
 
         let agent_suggestions = vec![
             (
@@ -180,7 +180,7 @@ impl OnboardingAgenticSuggestionsBlock {
                 AgenticSuggestionsContent {
                     title: "Create a Matrix-styled custom theme".to_string(),
                     description: "Make your terminal look like you entered the Matrix".to_string(),
-                    prompt: format!("First check if {matrix_save_directory} exists, and create this path if it doesn't already exist. Then create a matrix theme for my Warp terminal without a background image field, following exact YAML structure on the warp website without any extra or missing fields. Call it matrix.yaml and save it in the directory we previously created. Once you've verified that the theme is correct and ready to be applied, let me know by only saying 'The matrix theme is now available at <path>.'."),
+                    prompt: format!("First check if {matrix_save_directory} exists, and create this path if it doesn't already exist. Then create a matrix theme for my Warper terminal without a background image field, following the exact YAML structure documented for Warper themes without any extra or missing fields. Call it matrix.yaml and save it in the directory we previously created. Once you've verified that the theme is correct and ready to be applied, let me know by only saying 'The matrix theme is now available at <path>.'."),
                     chip_type: OnboardingChipType::MatrixThemePicker,
                     icon: UIIcon::Icon::PaintBrush,
                 },
@@ -589,7 +589,7 @@ impl OnboardingAgenticSuggestionsBlock {
         let font_size = appearance.monospace_font_size();
         let font_color = current_theme.main_text_color(current_theme.background());
 
-        const WELCOME_TEXT_LINE_ONE: &str = "Welcome to Warp!";
+        const WELCOME_TEXT_LINE_ONE: &str = "Welcome to Warper!";
         const WELCOME_TEXT_LINE_TWO_PART_ONE: &str =
             "Here are a few examples of how to leverage the power of AI in your terminal using";
         const WELCOME_TEXT_LINE_TWO_PART_TWO: &str = " Agent Mode";

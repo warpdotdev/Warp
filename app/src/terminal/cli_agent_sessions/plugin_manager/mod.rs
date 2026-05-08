@@ -180,12 +180,12 @@ pub(crate) trait CliAgentPluginManager: Send + Sync {
 
     /// Toast message shown after a successful auto-install.
     fn install_success_message(&self) -> &'static str {
-        "Warp plugin installed. Please restart the session to activate."
+        "Warper plugin installed. Please restart the session to activate."
     }
 
     /// Toast message shown after a successful auto-update.
     fn update_success_message(&self) -> &'static str {
-        "Warp plugin updated. Please restart the session to activate."
+        "Warper plugin updated. Please restart the session to activate."
     }
 
     /// Manual installation instructions for the modal UI.

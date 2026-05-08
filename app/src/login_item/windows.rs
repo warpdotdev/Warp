@@ -46,7 +46,7 @@ pub(super) fn maybe_register_app_as_login_item(ctx: &mut AppContext) {
                     match register(&value_name, &exe) {
                         Ok(()) => true,
                         Err(err) => {
-                            log::warn!("Failed to register Warp as a login item: {err}");
+                            log::warn!("Failed to register Warper as a login item: {err}");
                             false
                         }
                     }
@@ -56,7 +56,7 @@ pub(super) fn maybe_register_app_as_login_item(ctx: &mut AppContext) {
                         Err(err) => {
                             // Don't flip app_added_as_login_item on failure — let a
                             // later retoggle try again.
-                            log::warn!("Failed to unregister Warp as a login item: {err}");
+                            log::warn!("Failed to unregister Warper as a login item: {err}");
                         }
                     }
                     false

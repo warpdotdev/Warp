@@ -705,7 +705,7 @@ if [[ "$ARTIFACT" = app ]]; then
       --volname "$WARP_APP_NAME"
       # For --no-internet-enable, see https://github.com/create-dmg/create-dmg/issues/179
       --no-internet-enable
-      --background app/assets/resources/mac/warp_install_image.png
+      --background app/assets/resources/mac/warper_install_image.png
       --icon-size 128
       --window-size 700 500
       --format UDZO

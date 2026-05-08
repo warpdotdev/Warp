@@ -52,7 +52,7 @@ embed_plist::embed_info_plist_bytes!(r#"
     <key>CFBundleURLTypes</key>
     <array><dict><key>CFBundleURLName</key><string>Custom App</string><key>CFBundleURLSchemes</key><array><string>warplocal</string></array></dict></array>
     <key>NSHumanReadableCopyright</key>
-    <string>© 2026, Denver Technologies, Inc</string>
+    <string>Copyleft 2026 Warper contributors</string>
     </dict>
     </plist>
 "#.as_bytes());

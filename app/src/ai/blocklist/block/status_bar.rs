@@ -9,7 +9,6 @@ use super::{
         WarpingIndicatorProps, WarpingProps, LOAD_OUTPUT_MESSAGE, WAITING_FOR_USER_INPUT_MESSAGE,
     },
 };
-use crate::{ai::agent_tips::AITipModel, terminal::input::buffer_model::InputBufferUpdateEvent};
 use crate::{
     ai::blocklist::agent_view::{
         agent_view_bg_fill, child_agent_status_card::ChildAgentStatusCard, AgentMessageBar,
@@ -19,6 +18,13 @@ use crate::{
         buffer_model::InputBufferModel, slash_command_model::SlashCommandModel,
         suggestions_mode_model::InputSuggestionsModeModel,
     },
+};
+use crate::{
+    ai::{
+        agent_tips::AITipModel,
+        loading::{warper_loader_icon, WARPER_LOADER_FRAME_COUNT},
+    },
+    terminal::input::buffer_model::InputBufferUpdateEvent,
 };
 use warp_multi_agent_api as api;
 
@@ -119,6 +125,8 @@ pub struct BlocklistAIStatusBar {
     /// Handle for the 1-second periodic timer that refreshes the "Last read …" suffix in
     /// the warping indicator while the active block has a recorded LRC snapshot.
     last_read_refresh_handle: Option<SpawnedFutureHandle>,
+    warper_loader_frame: usize,
+    warper_loader_refresh_handle: Option<SpawnedFutureHandle>,
 
     latest_response_stream_id: Option<ResponseStreamId>,
 
@@ -172,6 +180,7 @@ impl BlocklistAIStatusBar {
                 }
                 BlocklistAIHistoryEvent::ClearedConversationsInTerminalView { .. } => {
                     me.active_exchange_model = None;
+                    me.stop_warper_loader_timer();
                     ctx.notify();
                 }
                 BlocklistAIHistoryEvent::ClearedActiveConversation {
@@ -186,6 +195,7 @@ impl BlocklistAIStatusBar {
                             .is_some_and(|id| id == *conversation_id)
                     }) {
                         me.active_exchange_model = None;
+                        me.stop_warper_loader_timer();
                         ctx.notify();
                     }
                 }
@@ -353,6 +363,8 @@ impl BlocklistAIStatusBar {
             summarization_timer_handle: None,
             summarization_start_time: None,
             last_read_refresh_handle: None,
+            warper_loader_frame: 0,
+            warper_loader_refresh_handle: None,
             ambient_agent_view_model,
             current_tip: None,
             ephemeral_message_model,
@@ -424,6 +436,7 @@ impl BlocklistAIStatusBar {
         }) {
             let Some(conversation) = conversation else {
                 self.active_exchange_model = None;
+                self.stop_warper_loader_timer();
                 ctx.notify();
                 return;
             };
@@ -447,6 +460,11 @@ impl BlocklistAIStatusBar {
                 });
             self.is_summarization_cancel_dialog_open = false;
             self.stop_summarization_timer();
+            if self.should_animate_warper_loader(ctx) {
+                self.start_warper_loader_timer(ctx);
+            } else {
+                self.stop_warper_loader_timer();
+            }
 
             if FeatureFlag::AgentTips.is_enabled() {
                 self.update_agent_tip(ctx);
@@ -484,6 +502,12 @@ impl BlocklistAIStatusBar {
                 }
             }
             AIBlockOutputStatus::Pending | AIBlockOutputStatus::Failed { .. } => (),
+        }
+
+        if self.should_animate_warper_loader(ctx) {
+            self.start_warper_loader_timer(ctx);
+        } else {
+            self.stop_warper_loader_timer();
         }
 
         ctx.notify();
@@ -670,6 +694,40 @@ impl BlocklistAIStatusBar {
         }
     }
 
+    fn should_animate_warper_loader(&self, app: &AppContext) -> bool {
+        self.active_exchange_model.as_ref().is_some_and(|model| {
+            !model.request_type(app).is_passive() && model.status(app).is_streaming()
+        })
+    }
+
+    fn start_warper_loader_timer(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.warper_loader_refresh_handle.is_some() || !self.should_animate_warper_loader(ctx) {
+            return;
+        }
+
+        let handle = ctx.spawn(
+            async move {
+                Timer::after(Duration::from_millis(80)).await;
+            },
+            |me, _, ctx| {
+                me.warper_loader_refresh_handle = None;
+                if me.should_animate_warper_loader(ctx) {
+                    me.warper_loader_frame =
+                        (me.warper_loader_frame + 1) % WARPER_LOADER_FRAME_COUNT;
+                    ctx.notify();
+                    me.start_warper_loader_timer(ctx);
+                }
+            },
+        );
+        self.warper_loader_refresh_handle = Some(handle);
+    }
+
+    fn stop_warper_loader_timer(&mut self) {
+        if let Some(handle) = self.warper_loader_refresh_handle.take() {
+            handle.abort();
+        }
+    }
+
     fn update_agent_tip(&mut self, ctx: &mut ViewContext<Self>) {
         if FeatureFlag::AgentTips.is_enabled() && *InputSettings::as_ref(ctx).show_agent_tips {
             let current_working_directory = self
@@ -772,6 +830,7 @@ impl BlocklistAIStatusBar {
         } else {
             self.render_tip(app)
         };
+        let appearance = Appearance::as_ref(app);
 
         Some(render_warping_indicator(
             WarpingProps {
@@ -779,6 +838,7 @@ impl BlocklistAIStatusBar {
                 terminal_model: &terminal_model,
                 action_model: self.action_model.as_ref(app),
                 shimmering_text_handle: &self.shimmering_text_handle,
+                loading_icon: Some(warper_loader_icon(self.warper_loader_frame, appearance)),
                 summarization_start_time: self.summarization_start_time,
                 auto_execute_button: (!model.request_type(app).is_passive_code_diff()).then_some(
                     ButtonProps {

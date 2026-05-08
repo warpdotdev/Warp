@@ -5,7 +5,7 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>English</string>
   <key>CFBundleDisplayName</key>
-  <string>Warp CLI</string>
+  <string>Warper CLI</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundlePackageType</key>
@@ -19,6 +19,6 @@
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key>
-  <string>© 2025, Denver Technologies, Inc</string>
+  <string>Copyleft 2026 Warper contributors</string>
 </dict>
 </plist>

@@ -11,8 +11,8 @@ use warpui::prelude::Align;
 use warpui::{
     elements::{
         Border, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, Flex, FormattedTextElement, Hoverable, MainAxisAlignment, MainAxisSize,
-        MouseStateHandle, ParentElement, Radius,
+        CrossAxisAlignment, Flex, FormattedTextElement, Hoverable, Icon as AssetIcon,
+        MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
     },
     fonts::Weight,
     keymap::Keystroke,
@@ -73,14 +73,16 @@ impl IntentionSlide {
         let theme = appearance.theme();
 
         let logo_fill = internal_colors::fg_overlay_4(theme);
-        let logo = ConstrainedBox::new(Icon::WarpLogoLight.to_warpui_icon(logo_fill).finish())
-            .with_width(64.)
-            .with_height(64.)
-            .finish();
+        let logo = ConstrainedBox::new(
+            AssetIcon::new("bundled/svg/warper-logo-neutral.svg", logo_fill).finish(),
+        )
+        .with_width(64.)
+        .with_height(64.)
+        .finish();
 
         let title = appearance
             .ui_builder()
-            .paragraph("Welcome to Warp")
+            .paragraph("Welcome to Warper")
             .with_style(UiComponentStyles {
                 font_size: Some(36.),
                 font_weight: Some(Weight::Medium),
@@ -398,7 +400,7 @@ impl IntentionSlide {
 
         let new_settings_modes = FeatureFlag::OpenWarpNewSettingsModes.is_enabled();
         let next_text = if !new_settings_modes && selected_index == 1 {
-            "Get Warping"
+            "Get Started"
         } else {
             "Next"
         };

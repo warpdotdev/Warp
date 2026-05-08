@@ -2,14 +2,14 @@
 # Package Spec
 ###############################################################################
 
-Summary:     Warp command line interface.
+Summary:     Warper command line interface.
 Name:        warp-cli@@CHANNEL_SUFFIX@@
 Version:     @@VERSION@@
 Release:     @@RELEASE@@
-Vendor:      Denver Technologies, Inc.
-Url:         https://warp.dev
-Packager:    Warp Linux Maintainers <linux-maintainers@warp.dev>
-License:     https://warp.dev/terms-of-service
+Vendor:      Warper contributors
+Url:         https://github.com/ruslanvakhitov/warper
+Packager:    Warper contributors <warper@localhost>
+License:     Apache-2.0
 # The prefix specifies where the majority of the application files are,
 # allowing the package to be relocatable.
 prefix:      /opt
@@ -23,9 +23,9 @@ prefix:      /opt
 ###############################################################################
 
 %description
-The Warp CLI is a tool for launching and managing local Warp command line workflows.
+The Warper CLI is a tool for launching and managing local Warper command line workflows.
 Use the CLI to:
-* Open Warp from scripts
+* Open Warper from scripts
 * Start local agent workflows
 * Manage local command line integrations
 

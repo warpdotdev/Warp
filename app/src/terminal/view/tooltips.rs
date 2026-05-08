@@ -38,7 +38,7 @@ struct GridTooltipLink {
     mouse_state: MouseStateHandle,
 }
 
-/// If appropriate, returns a GridTooltipLink for opening the file in warp.
+/// If appropriate, returns a GridTooltipLink for opening the file in the built-in editor.
 /// Mutates `detail_for_default` leaving None in place if the GridTooltipLink returned is the default
 /// action on "Cmd+Click" and thus should use the detail_for_default.
 #[cfg(feature = "local_fs")]
@@ -66,7 +66,7 @@ fn open_in_warp_tooltip(
         None
     };
     Some(GridTooltipLink {
-        text: "Open in Warp".to_string(),
+        text: "Open in Warper".to_string(),
         action: TerminalAction::OpenCodeInWarp {
             path,
             layout: *EditorSettings::as_ref(app).open_file_layout.value(),

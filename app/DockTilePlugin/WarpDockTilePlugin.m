@@ -100,29 +100,41 @@
     NSString* cleanName = [[appIconName stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\""]] lowercaseString];
     
     NSDictionary* mapping = @{
-        @"aurora": @"aurora",
-        @"classic1": @"classic_1",
-        @"classic2": @"classic_2",
-        @"classic3": @"classic_3",
-        @"comets": @"comets",
-        @"glasssky": @"glass_sky",
-        @"glitch": @"glitch",
-        @"glow": @"glow",
-        @"holographic": @"holographic",
-        @"mono": @"mono",
-        @"neon": @"neon",
-        @"original": @"original",
-        @"starburst": @"starburst",
-        @"sticker": @"sticker",
-        @"warpone": @"blue",
-        @"cow": @"cow"
+        @"beaver": @"beaver",
+        @"classic": @"classic",
+        @"dark": @"dark",
+        @"grunge": @"grunge",
+        @"light": @"light",
+        @"space": @"space",
+        @"swiss": @"swiss",
+        @"vostok": @"vostok",
+        @"aurora": @"classic",
+        @"classic1": @"classic",
+        @"classic_1": @"classic",
+        @"classic2": @"classic",
+        @"classic_2": @"classic",
+        @"classic3": @"classic",
+        @"classic_3": @"classic",
+        @"comets": @"classic",
+        @"cow": @"classic",
+        @"glasssky": @"classic",
+        @"glass_sky": @"classic",
+        @"glitch": @"classic",
+        @"glow": @"classic",
+        @"holographic": @"classic",
+        @"mono": @"classic",
+        @"neon": @"classic",
+        @"original": @"classic",
+        @"starburst": @"classic",
+        @"sticker": @"classic",
+        @"warpone": @"classic",
+        @"warp_one": @"classic"
     };
     
     NSString* fileName = mapping[cleanName];
 
     // If the mapping doesn't exist, return the default icon 
-    // conditional on whether this is a local, dev, or preview build.
-    return fileName ?: isLocal ? @"local" : isDev ? @"dev" : isPreview ? @"preview" : @"warp_2";
+    return fileName ?: @"classic";
 }
 
 // Helper function to load named image from the plugin's resource bundle

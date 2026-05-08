@@ -233,7 +233,7 @@ impl View for SshErrorBlock {
 
         if self.should_show_report_to_warp_button() {
             let report_issue_text = build_description_row(FormattedText::new([FormattedTextLine::Line(vec![
-                    FormattedTextFragment::plain_text("We are actively working on improving the stability of SSH in Warp. Please consider "),
+                    FormattedTextFragment::plain_text("We are actively working on improving the stability of SSH in Warper. Please consider "),
                     FormattedTextFragment::hyperlink("filing an issue", get_ssh_github_issue_url(self.error_reason.error_title())),
                     FormattedTextFragment::plain_text(" on GitHub so we can better identify the problem."),
                 ])]),

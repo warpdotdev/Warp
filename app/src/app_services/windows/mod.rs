@@ -16,7 +16,7 @@ mod single_instance_manager;
 #[derive(Error, Debug)]
 #[cfg(feature = "release_bundle")]
 pub enum StartupArgsForwardingError {
-    #[error("there is no other instance of Warp")]
+    #[error("there is no other instance of Warper")]
     NoExistingInstance,
     #[error("failed to construct url")]
     CouldNotCreateUrl(#[from] url::ParseError),

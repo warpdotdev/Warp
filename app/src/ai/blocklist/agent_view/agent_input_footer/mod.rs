@@ -363,7 +363,7 @@ impl AgentInputFooter {
             ActionButton::new("Enable notifications", InstallPluginButtonTheme)
                 .with_icon(Icon::Download)
                 .with_tooltip(
-                    "Install the Warp plugin to enable rich agent notifications within Warp",
+                    "Install the Warper plugin to enable rich agent notifications within Warper",
                 )
                 .with_size(cli_button_size)
                 .with_tooltip_alignment(TooltipAlignment::Left)
@@ -376,7 +376,7 @@ impl AgentInputFooter {
         let plugin_instructions_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("Notifications setup instructions", InstallPluginButtonTheme)
                 .with_icon(Icon::Info)
-                .with_tooltip("View instructions to install the Warp plugin")
+                .with_tooltip("View instructions to install the Warper plugin")
                 .with_size(cli_button_size)
                 .with_tooltip_alignment(TooltipAlignment::Left)
                 .with_adjoined_side(AdjoinedSide::Right)
@@ -388,9 +388,9 @@ impl AgentInputFooter {
         });
 
         let update_plugin_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Update Warp plugin", InstallPluginButtonTheme)
+            ActionButton::new("Update Warper plugin", InstallPluginButtonTheme)
                 .with_icon(Icon::Download)
-                .with_tooltip("A new version of the Warp plugin is available")
+                .with_tooltip("A new version of the Warper plugin is available")
                 .with_size(cli_button_size)
                 .with_tooltip_alignment(TooltipAlignment::Left)
                 .with_adjoined_side(AdjoinedSide::Right)
@@ -402,7 +402,7 @@ impl AgentInputFooter {
         let update_instructions_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("Plugin update instructions", InstallPluginButtonTheme)
                 .with_icon(Icon::Info)
-                .with_tooltip("View instructions to update the Warp plugin")
+                .with_tooltip("View instructions to update the Warper plugin")
                 .with_size(cli_button_size)
                 .with_tooltip_alignment(TooltipAlignment::Left)
                 .with_adjoined_side(AdjoinedSide::Right)
@@ -1045,10 +1045,10 @@ impl AgentInputFooter {
             .cli_agent(ctx)
             .and_then(plugin_manager_for)
             .map(|m| m.install_success_message())
-            .unwrap_or("Warp plugin installed. Please restart the session to activate.");
+            .unwrap_or("Warper plugin installed. Please restart the session to activate.");
         self.handle_plugin_operation(
-            "Installing Warp plugin...",
-            "Failed to install Warp plugin",
+            "Installing Warper plugin...",
+            "Failed to install Warper plugin",
             success_msg,
             |manager| async move { manager.install().await },
             ctx,
@@ -1061,10 +1061,10 @@ impl AgentInputFooter {
             .cli_agent(ctx)
             .and_then(plugin_manager_for)
             .map(|m| m.update_success_message())
-            .unwrap_or("Warp plugin updated. Please restart the session to activate.");
+            .unwrap_or("Warper plugin updated. Please restart the session to activate.");
         self.handle_plugin_operation(
-            "Updating Warp plugin...",
-            "Failed to update Warp plugin",
+            "Updating Warper plugin...",
+            "Failed to update Warper plugin",
             success_msg,
             |manager| async move { manager.update().await },
             ctx,
@@ -2140,7 +2140,7 @@ impl ActionButtonTheme for ActiveMicButtonTheme {
     }
 }
 
-/// Green-accented theme for the "Install Warp plugin" chip.
+/// Green-accented theme for the "Install Warper plugin" chip.
 struct InstallPluginButtonTheme;
 
 impl ActionButtonTheme for InstallPluginButtonTheme {
@@ -2180,7 +2180,7 @@ async fn write_install_log(agent: CLIAgent, err: &PluginInstallError) -> Option<
     let log_path = env::temp_dir().join("warp-plugin-install.log");
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
     let contents = format!(
-        "Warp plugin installation — {agent:?}\n\
+        "Warper plugin installation — {agent:?}\n\
          {now}\n\
          \n\
          {log}",

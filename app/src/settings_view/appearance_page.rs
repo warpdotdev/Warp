@@ -1502,7 +1502,7 @@ impl AppearanceSettingsPageView {
 
     fn input_mode_dropdown_item_label(val: InputMode) -> &'static str {
         match val {
-            InputMode::PinnedToBottom => "Pin to the bottom (Warp mode)",
+            InputMode::PinnedToBottom => "Pin to the bottom (Warper mode)",
             InputMode::PinnedToTop => "Pin to the top (Reverse mode)",
             InputMode::Waterfall => "Start at the top (Classic mode)",
         }
@@ -1510,23 +1510,15 @@ impl AppearanceSettingsPageView {
 
     fn app_icon_dropdown_item_label(val: AppIcon) -> &'static str {
         match val {
-            AppIcon::Aurora => "Aurora",
             AppIcon::Default => "Default",
-            AppIcon::Classic1 => "Classic 1",
-            AppIcon::Classic2 => "Classic 2",
-            AppIcon::Classic3 => "Classic 3",
-            AppIcon::Comets => "Comets",
-            AppIcon::GlassSky => "Glass Sky",
-            AppIcon::Glitch => "Glitch",
-            AppIcon::Cow => "Cow",
-            AppIcon::Glow => "Glow",
-            AppIcon::Holographic => "Holographic",
-            AppIcon::Mono => "Mono",
-            AppIcon::Neon => "Neon",
-            AppIcon::Original => "Original",
-            AppIcon::Starburst => "Starburst",
-            AppIcon::Sticker => "Sticker",
-            AppIcon::WarpOne => "Warp 1",
+            AppIcon::Beaver => "Beaver",
+            AppIcon::Classic => "Classic",
+            AppIcon::Dark => "Dark",
+            AppIcon::Grunge => "Grunge",
+            AppIcon::Light => "Light",
+            AppIcon::Space => "Space",
+            AppIcon::Swiss => "Swiss",
+            AppIcon::Vostok => "Vostok",
         }
     }
 
@@ -2765,7 +2757,7 @@ impl SettingsWidget for CustomAppIconWidget {
                         appearance
                             .ui_builder()
                             .wrappable_text(
-                                "You may need to restart Warp for MacOS to apply the preferred icon style.",
+                                "You may need to restart Warper for macOS to apply the preferred icon style.",
                                 true,
                             )
                             .with_style(UiComponentStyles {
@@ -3342,7 +3334,7 @@ impl SettingsWidget for InputTypeWidget {
             .radio_buttons(
                 self.radio_buttons_states.clone(),
                 vec![
-                    RadioButtonItem::text("Warp"),
+                    RadioButtonItem::text("Warper"),
                     RadioButtonItem::text("Shell (PS1)"),
                 ],
                 view.input_type_radio_state.clone(),

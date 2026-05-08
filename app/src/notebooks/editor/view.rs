@@ -878,7 +878,7 @@ pub enum EditorViewAction {
     OpenEmbeddedObjectSearch,
     RemoveEmbeddingAt(CharOffset),
     MiddleClickPaste,
-    /// Open a file. If open_in_warp is true, open in Warp's code editor; otherwise use external editor.
+    /// Open a file. If open_in_warp is true, open in the built-in code editor; otherwise use external editor.
     OpenFile {
         path: PathBuf,
         line_and_column_num: Option<LineAndColumnArg>,
@@ -2440,7 +2440,7 @@ impl RichTextEditorView {
         if show_open_in_warp {
             let path_for_warp = path.clone();
             links.push(TooltipLink {
-                text: "Open in Warp".to_string(),
+                text: "Open in Warper".to_string(),
                 on_click: Box::new(move |ctx: &mut EventContext| {
                     ctx.dispatch_typed_action(EditorViewAction::OpenFile {
                         path: path_for_warp.clone(),
@@ -3298,7 +3298,7 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
         );
         let multiselect = modifiers.alt && FeatureFlag::RichTextMultiselect.is_enabled();
 
-        // The first mouse down to bring focus to a Warp window will not have a corresponding mouse up.
+        // The first mouse down to bring focus to a Warper window will not have a corresponding mouse up.
         // We ignore it, and they can click again.
         if is_first_mouse {
             return None;

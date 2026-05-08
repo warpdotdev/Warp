@@ -303,7 +303,7 @@ pub async fn make_authenticated_client(
 
     // Start the authorization process with our custom redirect URI
     oauth_state
-        .start_authorization(&[], &redirect_uri, Some("Warp"))
+        .start_authorization(&[], &redirect_uri, Some("Warper"))
         .await?;
 
     let OAuthState::Session(AuthorizationSession {
@@ -321,7 +321,7 @@ pub async fn make_authenticated_client(
     // For apps for which we have static client IDs (e.g. GitHub), we manually override scopes.
     let mut scopes: &[&str] = &[];
 
-    let config = match auth_manager.register_client("Warp", &redirect_uri).await {
+    let config = match auth_manager.register_client("Warper", &redirect_uri).await {
         Ok(config) => config,
         Err(err @ AuthError::RegistrationFailed(_)) => {
             // If we failed dynamic registration, check to see if this is an auth

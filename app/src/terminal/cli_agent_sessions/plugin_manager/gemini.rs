@@ -107,11 +107,11 @@ impl CliAgentPluginManager for GeminiPluginManager {
     }
 
     fn install_success_message(&self) -> &'static str {
-        "Warp plugin installed. Please restart Gemini CLI to activate."
+        "Warper plugin installed. Please restart Gemini CLI to activate."
     }
 
     fn update_success_message(&self) -> &'static str {
-        "Warp plugin updated. Please restart Gemini CLI to activate."
+        "Warper plugin updated. Please restart Gemini CLI to activate."
     }
 
     fn install_instructions(&self) -> &'static PluginInstructions {
@@ -124,10 +124,10 @@ impl CliAgentPluginManager for GeminiPluginManager {
 }
 
 static INSTALL_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| PluginInstructions {
-    title: "Install Warp Plugin for Gemini CLI",
+    title: "Install Warper Plugin for Gemini CLI",
     subtitle: "Run the following command, then restart Gemini CLI.",
     steps: &[PluginInstructionStep {
-        description: "Install the Warp extension",
+        description: "Install the Warper extension",
         command:
             "gemini extensions install https://github.com/warpdotdev/gemini-cli-warp --consent",
         executable: true,
@@ -137,10 +137,10 @@ static INSTALL_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| Plu
 });
 
 static UPDATE_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| PluginInstructions {
-    title: "Update Warp Plugin for Gemini CLI",
+    title: "Update Warper Plugin for Gemini CLI",
     subtitle: "Run the following command, then restart Gemini CLI.",
     steps: &[PluginInstructionStep {
-        description: "Update the Warp extension",
+        description: "Update the Warper extension",
         command: "gemini extensions update gemini-warp",
         executable: true,
         link: None,

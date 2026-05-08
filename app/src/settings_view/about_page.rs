@@ -8,8 +8,8 @@ use super::{
 use crate::{appearance::Appearance, channel::ChannelState, workspace::WorkspaceAction};
 use warpui::{
     elements::{
-        Align, Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment, MouseStateHandle,
-        ParentElement, Wrap,
+        Align, ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, Icon,
+        MainAxisAlignment, MouseStateHandle, ParentElement, Wrap,
     },
     ui_components::components::UiComponent,
     AppContext, Entity, View, ViewContext, ViewHandle,
@@ -50,7 +50,7 @@ impl SettingsWidget for AboutPageWidget {
     type View = AboutPageView;
 
     fn search_terms(&self) -> &str {
-        "about warp version"
+        "about warper version"
     }
 
     fn render(
@@ -93,6 +93,18 @@ impl SettingsWidget for AboutPageWidget {
         Align::new(
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(
+                    ConstrainedBox::new(
+                        Icon::new(
+                            "bundled/svg/warper-logo-neutral.svg",
+                            appearance.theme().foreground(),
+                        )
+                        .finish(),
+                    )
+                    .with_width(76.)
+                    .with_height(60.)
+                    .finish(),
+                )
                 .with_child(
                     ui_builder
                         .span(app_name)
