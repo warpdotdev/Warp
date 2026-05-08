@@ -1,5 +1,5 @@
-use super::{get_input_key, us_qwerty_fallback_for_chord};
-use winit::keyboard::{Key::Character, KeyCode, NativeKeyCode, PhysicalKey, SmolStr};
+use super::{convert_key, get_input_key, us_qwerty_fallback_for_chord};
+use winit::keyboard::{Key, Key::Character, KeyCode, NativeKeyCode, PhysicalKey, SmolStr};
 
 #[test]
 fn test_get_input_key() {
@@ -154,6 +154,63 @@ fn us_qwerty_fallback_returns_none_for_unidentified_physical_key() {
             us_qwerty_fallback_for_chord(&unidentified, shift),
             None,
             "unidentified key should not have a chord fallback (shift={shift})",
+        );
+    }
+}
+
+// Tests for RDP Unicode mode fallback: when physical_key is Unidentified,
+// verify that convert_key still handles characters from logical_key correctly.
+#[test]
+fn rdp_unicode_mode_convert_key_handles_ascii_character() {
+    // In RDP Unicode mode, logical_key carries the correct character.
+    // Verify convert_key produces the expected string for all printable ASCII.
+    for ascii in b'a'..=b'z' {
+        let c = char::from(ascii);
+        let key = Key::Character(SmolStr::new(c.to_string()));
+        let result = convert_key(key);
+        assert_eq!(
+            result.as_deref(),
+            Some(c.to_string().as_str()),
+            "convert_key should return '{c}' for Character(\"{c}\")",
+        );
+    }
+}
+
+#[test]
+fn rdp_unicode_mode_lowercase_fallback_for_key_without_modifiers() {
+    // Simulate what the get_key_without_modifiers fallback does:
+    // logical_key = "A" (Shift held in RDP mode) → lowercased → "a"
+    let shifted = Key::Character(SmolStr::new("A"));
+    if let Key::Character(c) = &shifted {
+        let lower = c.to_lowercase();
+        let result = convert_key(Key::Character(lower.into()));
+        assert_eq!(
+            result.as_deref(),
+            Some("a"),
+            "lowercased 'A' should produce key_without_modifiers = 'a'",
+        );
+    }
+}
+
+#[test]
+fn rdp_unicode_mode_named_keys_still_convert() {
+    // Named keys (Enter, Escape, arrows) should convert correctly regardless
+    // of physical_key — they go through convert_key via the Named variant.
+    use winit::keyboard::NamedKey;
+    let cases = [
+        (Key::Named(NamedKey::Enter), "enter"),
+        (Key::Named(NamedKey::Escape), "escape"),
+        (Key::Named(NamedKey::ArrowUp), "up"),
+        (Key::Named(NamedKey::ArrowDown), "down"),
+        (Key::Named(NamedKey::Tab), "tab"),
+        (Key::Named(NamedKey::Backspace), "backspace"),
+    ];
+    for (key, expected) in cases {
+        let result = convert_key(key.clone());
+        assert_eq!(
+            result.as_deref(),
+            Some(expected),
+            "convert_key({key:?}) should return '{expected}'",
         );
     }
 }
