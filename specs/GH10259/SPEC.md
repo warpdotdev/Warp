@@ -25,9 +25,13 @@ GFM convention used heavily in agent outputs and open-source READMEs.
 - Render `<details>` / `<summary>` as collapsible disclosure widgets across
   every markdown surface the renderer is used in.
 - Preserve the `open` attribute.
-- Support nested `<details>` to arbitrary depth.
+- Support nested `<details>` UP TO a hard cap of 32 levels (B5, B8.1). Levels
+  beyond the cap fall through to plain-text rendering deterministically.
 - Keep sanitization safe — no event handler attributes, no broader HTML
   whitelist expansion.
+- Treat the feature as untrusted-recursive-markup-safe: ALL resource limits
+  (depth, count, recursive guard) are deterministic hard caps, not soft
+  heuristics.
 - Provide accessible behavior matching native `<details>` semantics.
 
 ## Non-Goals
@@ -70,9 +74,17 @@ GFM convention used heavily in agent outputs and open-source READMEs.
 
 ### B5. Nested `<details>`
 
-- Supported to arbitrary depth.
-- Each level renders an independent disclosure with proper indentation.
+- Supported up to a HARD CAP of 32 nesting levels. Beyond the 32nd level,
+  additional `<details>` markup falls through to plain-text rendering per
+  B8.1 (the over-cap `<details>` and `<summary>` opening / closing tags
+  appear as visible literal text; the inner body content still renders
+  through the standard markdown pipeline). This is the SINGLE rule for
+  nesting depth — no "arbitrary depth" support is promised anywhere in the
+  spec; all references must agree with this 32-level cap.
+- Each level (within the cap) renders an independent disclosure with proper
+  indentation.
 - Toggling a parent does not alter the open/closed state of children.
+- The 32-level cap is a deterministic hard limit, not best-effort. See B8.1.
 
 ### B6. Inside `<summary>`
 
@@ -122,27 +134,60 @@ sanitizer's allowlist (B8) operates on a normalized tree.
 ### B8. Sanitization
 
 - Allowlist gains `<details>` and `<summary>` only.
-- Attribute allowlist:
-  - `details`: `[open]`
-  - `summary`: `[]`
-- All other attributes (notably any `on*` event handlers, `style`, `id`,
-  `class` originating from input) are dropped.
+- Attribute allowlist (DETERMINISTIC — sanitizer drops anything not on the
+  list, regardless of value):
+  - `details`: `[open]` only.
+  - `summary`: empty — NO attributes preserved.
+- All other attributes — `on*` event handlers (`onclick`, `onmouseover`,
+  `onfocus`, …), `style`, `id`, `class`, `aria-*` (any aria attribute
+  appearing in INPUT markdown), `data-*`, custom attributes — are
+  unconditionally stripped before the renderer sees the tree.
+- The sanitizer runs AFTER parse-time normalization (B7.1) and BEFORE the
+  renderer; the renderer therefore never inspects user-provided attributes.
 - Existing sanitizer behavior for other tags is unchanged.
 
-### B8.1. Resource limits (security)
+### B8.2. Renderer-generated ARIA identifiers
+
+The accessibility hookup for the custom-widget path (B10) requires
+`aria-controls` to point at a unique body region per `<details>`. To keep
+this safe under untrusted input:
+
+- The renderer GENERATES `id` and `aria-controls` values AFTER sanitization,
+  using a per-surface counter (e.g. `warp-details-1`, `warp-details-2`, …,
+  `warp-details-N`). These IDs are unique within a single rendered surface.
+- ANY `id` or `aria-*` attribute present in the INPUT markdown is stripped by
+  the sanitizer (B8) before the renderer runs. Input-side identifiers can
+  NEVER appear on the rendered DOM and therefore CANNOT be used to forge
+  cross-element references.
+- The renderer-generated `aria-controls` value is the ONLY way a `<summary>`
+  toggle is wired to a body region.
+- When the view layer renders native `<details>` / `<summary>` semantics,
+  identifier generation is skipped entirely (the browser/native widget owns
+  the relationship). The custom-widget path is the only path that emits
+  generated `aria-controls` IDs.
+
+### B8.1. Resource limits (security — deterministic hard caps)
 
 `<details>` is a recursive container. Untrusted markdown can therefore embed
 deeply nested or extremely high-cardinality `<details>` trees that could
-exhaust the stack or starve rendering. The renderer MUST defend against this.
+exhaust the stack or starve rendering. The renderer MUST defend against this
+with EXACT, deterministic limits — no soft caps, no best-effort approximations,
+no probabilistic backoff.
 
-- **Maximum nesting depth: 32 levels** of `<details>` per rendered surface.
-  Beyond that, additional nested `<details>` render as PLAIN TEXT — the
-  literal `<details>` and `<summary>` opening / closing tags become visible
-  text in the output, and any inner markdown body still renders normally
-  through the existing markdown pipeline (no content is silently dropped).
-- **Maximum `<details>` count per rendered surface: 1000** (soft cap).
+- **Maximum nesting depth: HARD CAP of 32 levels** of `<details>` per
+  rendered surface. The 33rd-level `<details>` (and every deeper level)
+  renders as PLAIN TEXT — the literal `<details>` and `<summary>` opening /
+  closing tags become visible text in the output, and any inner markdown
+  body still renders normally through the existing markdown pipeline (no
+  content is silently dropped). This bound is exact: the 32nd-level widget
+  renders, the 33rd does not. There is NO grace, NO heuristic, and NO
+  approximation — implementations MUST treat 32 as an exact threshold.
+- **Maximum `<details>` count per rendered surface: HARD CAP of 1000.**
   Beyond the 1000th `<details>`, additional `<details>` blocks render as
-  plain text, same fallback as the depth cap.
+  plain text, same fallback as the depth cap. Like the depth cap, this is
+  exact: the 1000th block renders as a widget, the 1001st renders as plain
+  text. Implementations MUST NOT defer the cutoff, sample, batch, or
+  otherwise shift the boundary.
 - **Implementation MUST be iterative or guarded recursion**. The depth/count
   bookkeeping must be enforced inside the parser/renderer; it MUST NOT rely
   on unbounded native recursion that risks a stack overflow on adversarial
@@ -156,6 +201,12 @@ exhaust the stack or starve rendering. The renderer MUST defend against this.
 - **Mutual / template-style recursion** (e.g. content that, after expansion,
   would re-introduce nested `<details>`): bounded by the same depth counter
   that wraps the recursive render call, so it cannot escape via indirection.
+- **Determinism contract**: ALL resource limits in this section are
+  deterministic hard caps. The terms "soft cap", "best-effort",
+  "approximate", "probabilistic", "sampled", "approximate threshold" are
+  EXPLICITLY DISALLOWED in any conformant implementation. Tests MUST verify
+  the exact boundary (the 32nd level renders; the 33rd does not. The 1000th
+  renders; the 1001st does not).
 
 ### B9. Open/close state persistence
 
@@ -202,10 +253,25 @@ The change is internal to the markdown rendering pipeline:
   `<details>` — renders inside the body.
 - A9. Sanitizer rejects `<script>`, event handler attributes (`onclick`,
   `onmouseover`, …), and any non-`open` attribute on `<details>` /
-  `<summary>`.
+  `<summary>`. Specifically: `id`, `class`, `style`, `aria-*`, `data-*` on
+  input markup are stripped before the renderer runs.
 - A10. Accessibility tree audit shows correct `aria-expanded` /
   `aria-controls` / accessible name (or native semantics when using
-  `<details>`/`<summary>` directly).
+  `<details>`/`<summary>` directly). On the custom-widget path,
+  `aria-controls` values are RENDERER-GENERATED (e.g. `warp-details-1`),
+  unique within the surface, and never derived from input markup.
+- A_hard_cap_32. The 32-level nesting depth cap is exact: rendering input
+  with 33 nested `<details>` produces 32 disclosure widgets and 1 plain-text
+  fallback at the over-cap level. The boundary is deterministic — the same
+  input always yields the same split.
+- A_hard_cap_1000. The 1000-element count cap is exact: rendering input
+  with 1001 sibling `<details>` blocks produces 1000 disclosure widgets and
+  1 plain-text fallback at the 1001st block. The boundary is deterministic;
+  there is no soft, best-effort, sampled, or probabilistic behavior.
+- A_resource_limits_deterministic. Identical input always produces an
+  identical split between widget-rendered and plain-text-fallback
+  `<details>` blocks across runs. Implementations MUST NOT shift the
+  boundary based on load, randomness, or backoff.
 
 ## Implementation Pointers
 
@@ -233,7 +299,10 @@ The change is internal to the markdown rendering pipeline:
 - Renderer / view-layer element (UI side of `FormattedText` — add a
   disclosure widget rendering for the new `Details` variant; this is where
   the click handler, focus ring, and `aria-expanded` / `aria-controls`
-  hookup live):
+  hookup live). The custom-widget path generates `aria-controls` / matching
+  `id` per B8.2 using a per-surface counter (`warp-details-1`,
+  `warp-details-2`, …). When the native `<details>` / `<summary>` semantics
+  path is taken, the renderer SKIPS identifier generation:
   `crates/warpui_core/src/elements/formatted_text_element.rs`.
 - Renderer call sites (no per-call changes expected; listed so reviewers can
   spot-check that the new variant is exercised everywhere `FormattedText` is
@@ -244,15 +313,21 @@ The change is internal to the markdown rendering pipeline:
   `app/src/changelog_model.rs`.
 - Sanitization / attribute allowlist (today's allowlist for HTML-in-markdown
   is implemented inside `html_parser.rs`; this is where `details: [open]`
-  and `summary: []` are wired and where `on*` / `style` / `id` / `class`
-  are dropped):
+  and `summary: []` are wired. The sanitizer here MUST drop `on*` event
+  handlers, `style`, `id`, `class`, ALL `aria-*` (any aria attribute
+  appearing on input), and `data-*` per B8 — only the `open` attribute on
+  `<details>` survives onto the renderer's tree):
   `crates/markdown_parser/src/html_parser.rs`.
 - `(new module)` Resource-limit guard for B8.1 — depth + count counters,
   single source of truth, used by both the parser block-handler and the
-  renderer fallback path. Suggested location:
-  `crates/markdown_parser/src/details_limits.rs`. The renderer's recursive
-  rendering of `Details` MUST consult this guard (or accept depth as a
-  parameter) and switch to the plain-text fallback once a cap is hit.
+  renderer fallback path. The caps are EXACT (32 nesting, 1000 count); the
+  guard exposes a single `should_fallback(depth, count) -> bool` that
+  returns the same result every call for the same inputs (deterministic).
+  Suggested location: `crates/markdown_parser/src/details_limits.rs`. The
+  renderer's recursive rendering of `Details` MUST consult this guard (or
+  accept depth as a parameter) and switch to the plain-text fallback once a
+  cap is hit. Implementations MUST NOT introduce randomness, sampling, or
+  load-aware behavior here.
 - Existing parser tests (extend with `<details>`/`<summary>` cases,
   including the malformed-input matrix from B7.1 and the resource-limit
   matrix from B8.1):
@@ -280,20 +355,44 @@ The change is internal to the markdown rendering pipeline:
 - T9. Sanitizer fuzz: payloads like `<details onclick=…>`,
   `<summary><script>…</script></summary>`,
   `<details style="display:none">` are stripped to safe output.
+- T_sanitizer_strips_id. Input `<details id="evil">…</details>` and
+  `<summary id="evil-sum">…</summary>` are sanitized so the rendered tree
+  carries NO input-side `id` attribute. Any renderer-generated `id` is the
+  only `id` present and follows the `warp-details-N` pattern.
+- T_sanitizer_strips_aria_input. Input `<details aria-controls="x"
+  aria-expanded="true">…</details>` and `<summary aria-label="…">…</summary>`
+  are sanitized: NO input-side `aria-*` attribute survives onto the rendered
+  DOM. Renderer-generated `aria-controls` / `aria-expanded` are the only
+  aria attributes present.
+- T_renderer_generates_aria_controls. The custom-widget path emits a unique
+  renderer-generated `aria-controls` / matching `id` per `<details>`
+  rendered, following `warp-details-N` (or equivalent unique pattern). 50
+  `<details>` blocks in one surface produce 50 distinct ID pairs, and
+  `aria-controls` on the summary always equals the `id` on the body region.
 - T10. Accessibility tree audit on rendered output asserts correct
   `aria-expanded` / `aria-controls` / accessible name (or native
   `<details>` / `<summary>` semantics).
 - T11. Markdown content outside any `<details>` block is unchanged versus
   baseline, ruling out renderer regressions.
-- T12. Depth cap (B8.1): a `<details>` tree nested 33 levels deep renders
-  the first 32 levels as proper disclosure widgets; the 33rd level renders
-  as plain text — its `<details>` and `<summary>` tags are visible literal
-  text in the output and the inner body still renders through the standard
-  markdown pipeline. The render call returns within bounded stack usage
-  (no overflow on adversarial input).
-- T13. Count cap (B8.1): a surface containing 1001 sibling `<details>`
-  blocks renders the first 1000 as widgets; the 1001st renders as plain
-  text per the same fallback as T12.
+- T12. Depth cap (B8.1) — exact boundary: a `<details>` tree nested 33
+  levels deep renders the first 32 levels as proper disclosure widgets;
+  the 33rd level renders as plain text — its `<details>` and `<summary>`
+  tags are visible literal text in the output and the inner body still
+  renders through the standard markdown pipeline. The render call returns
+  within bounded stack usage (no overflow on adversarial input). The test
+  asserts the EXACT split: 32 widgets, 1 plain-text fallback. Repeating the
+  test produces an identical split (no run-to-run variance).
+- T12.1. Depth cap edge: a tree nested EXACTLY 32 levels deep renders all
+  32 levels as widgets (no plain-text fallback). Asserts the cap is
+  inclusive on the widget side, exclusive on the fallback side.
+- T13. Count cap (B8.1) — exact boundary: a surface containing 1001 sibling
+  `<details>` blocks renders the first 1000 as widgets; the 1001st renders
+  as plain text per the same fallback as T12. Asserts the EXACT split:
+  1000 widgets, 1 plain-text fallback. Repeating the test produces an
+  identical split.
+- T13.1. Count cap edge: a surface containing EXACTLY 1000 `<details>`
+  blocks renders all 1000 as widgets (no fallback). Asserts the cap is
+  inclusive on the widget side.
 - T14. Mutual / template-style recursion (B8.1): an input crafted so that
   expansion would re-introduce nested `<details>` after depth-32 is
   bounded by the same depth counter; the run terminates and the over-cap
