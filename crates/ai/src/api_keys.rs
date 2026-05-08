@@ -12,6 +12,40 @@ pub enum ApiKeyManagerEvent {
     KeysUpdated,
 }
 
+/// Provider type for custom API endpoints.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProviderType {
+    OpenAI,
+    Anthropic,
+    Custom,
+}
+
+impl Default for ProviderType {
+    fn default() -> Self {
+        ProviderType::OpenAI
+    }
+}
+
+/// Configuration for a custom/third-party API endpoint.
+///
+/// This allows users to use self-hosted or third-party LLM endpoints
+/// that are compatible with OpenAI or Anthropic APIs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomApiEndpoint {
+    /// Unique identifier for this endpoint
+    pub id: String,
+    /// Display name for this endpoint
+    pub name: String,
+    /// API base URL (e.g., "https://api.example.com/v1")
+    pub url: String,
+    /// API key for authentication
+    pub api_key: Option<String>,
+    /// Provider type for API compatibility
+    pub provider_type: ProviderType,
+    /// List of available models from this endpoint
+    pub models: Vec<String>,
+}
+
 /// User-provided API keys for AI providers.
 ///
 /// These are used for "Bring Your Own API Key" functionality, allowing
@@ -22,6 +56,8 @@ pub struct ApiKeys {
     pub anthropic: Option<String>,
     pub openai: Option<String>,
     pub open_router: Option<String>,
+    #[serde(default)]
+    pub custom_endpoints: Vec<CustomApiEndpoint>,
 }
 
 impl ApiKeys {
@@ -30,6 +66,7 @@ impl ApiKeys {
             || self.anthropic.is_some()
             || self.google.is_some()
             || self.open_router.is_some()
+            || !self.custom_endpoints.is_empty()
     }
 }
 
@@ -93,6 +130,48 @@ impl ApiKeyManager {
         self.write_keys_to_secure_storage(ctx);
     }
 
+    /// Returns the list of custom API endpoints.
+    pub fn custom_endpoints(&self) -> &[CustomApiEndpoint] {
+        &self.keys.custom_endpoints
+    }
+
+    /// Adds a new custom API endpoint.
+    pub fn add_custom_endpoint(
+        &mut self,
+        endpoint: CustomApiEndpoint,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.keys.custom_endpoints.push(endpoint);
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    /// Updates an existing custom API endpoint by ID.
+    pub fn update_custom_endpoint(
+        &mut self,
+        id: &str,
+        endpoint: CustomApiEndpoint,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if let Some(idx) = self.keys.custom_endpoints.iter().position(|e| e.id == id) {
+            self.keys.custom_endpoints[idx] = endpoint;
+            ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+            self.write_keys_to_secure_storage(ctx);
+        }
+    }
+
+    /// Removes a custom API endpoint by ID.
+    pub fn remove_custom_endpoint(&mut self, id: &str, ctx: &mut ModelContext<Self>) {
+        self.keys.custom_endpoints.retain(|e| e.id != id);
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    /// Returns a custom endpoint by ID, if it exists.
+    pub fn get_custom_endpoint(&self, id: &str) -> Option<&CustomApiEndpoint> {
+        self.keys.custom_endpoints.iter().find(|e| e.id == id)
+    }
+
     pub fn set_aws_credentials_state(
         &mut self,
         state: AwsCredentialsState,
@@ -154,14 +233,20 @@ impl ApiKeyManager {
             })
             .flatten();
 
+        let has_custom_endpoints = include_byo_keys && !self.keys.custom_endpoints.is_empty();
+
         if anthropic.is_empty()
             && openai.is_empty()
             && google.is_empty()
             && open_router.is_empty()
             && aws_credentials.is_none()
+            && !has_custom_endpoints
         {
             None
         } else {
+            // TODO(CORE-2300): Once warp_multi_agent_api::request::settings::ApiKeys is updated
+            // to include a custom_endpoints field, include them here. Until then, custom endpoints
+            // are passed separately via RequestParams.custom_endpoints.
             Some(api::request::settings::ApiKeys {
                 anthropic,
                 openai,
@@ -171,6 +256,11 @@ impl ApiKeyManager {
                 aws_credentials,
             })
         }
+    }
+
+    /// Returns a snapshot of the custom endpoints for use in API requests.
+    pub fn custom_endpoints_for_request(&self) -> Vec<CustomApiEndpoint> {
+        self.keys.custom_endpoints.clone()
     }
 
     fn load_keys_from_secure_storage(ctx: &mut ModelContext<Self>) -> ApiKeys {
@@ -217,3 +307,7 @@ impl Entity for ApiKeyManager {
 }
 
 impl SingletonEntity for ApiKeyManager {}
+
+#[cfg(test)]
+#[path = "api_keys_tests.rs"]
+mod tests;

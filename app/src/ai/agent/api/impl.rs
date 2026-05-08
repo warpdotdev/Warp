@@ -56,6 +56,11 @@ pub async fn generate_multi_agent_output(
         api_keys.allow_use_of_warp_credits = params.allow_use_of_warp_credits_with_byok;
     }
 
+    // TODO(CORE-2300): Once warp_multi_agent_api adds support for custom endpoints
+    // in the request::Settings struct, pass params.custom_endpoints through.
+    // Until then, custom endpoints are stored in RequestParams but not yet forwarded
+    // to the multi-agent API server.
+
     let request = api::Request {
         task_context: Some(api::request::TaskContext {
             tasks: params.tasks,

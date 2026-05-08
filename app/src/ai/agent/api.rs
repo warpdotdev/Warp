@@ -4,7 +4,7 @@ mod convert_to;
 mod r#impl;
 
 pub use ai::agent::convert::ConvertToAPITypeError;
-use ai::api_keys::ApiKeyManager;
+use ai::api_keys::{ApiKeyManager, CustomApiEndpoint};
 pub use convert_from::{
     user_inputs_from_messages, ConversionParams, ConvertAPIMessageToClientOutputMessage,
     MaybeAIAgentOutputMessage, MessageToAIAgentOutputMessageError,
@@ -117,6 +117,9 @@ pub struct RequestParams {
 
     /// User-provided API keys for AI providers (BYO API Key).
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
+    /// Custom/third-party API endpoints configured by the user.
+    /// These are used when a model from a custom endpoint is selected.
+    pub custom_endpoints: Vec<CustomApiEndpoint>,
     pub allow_use_of_warp_credits_with_byok: bool,
     pub autonomy_level: warp_multi_agent_api::AutonomyLevel,
     pub isolation_level: warp_multi_agent_api::IsolationLevel,
@@ -239,6 +242,10 @@ impl RequestParams {
             user_workspaces.is_byo_api_key_enabled(),
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
+        // Get custom endpoints for custom endpoint support.
+        // TODO(CORE-2300): When warp_multi_agent_api adds support for custom endpoints
+        // in the ApiKeys struct, this should be included there instead.
+        let custom_endpoints = ApiKeyManager::as_ref(app).custom_endpoints_for_request();
         let allow_use_of_warp_credits_with_byok =
             *AISettings::as_ref(app).can_use_warp_credits_with_byok;
 
@@ -321,6 +328,7 @@ impl RequestParams {
             planning_enabled: true,
             should_redact_secrets,
             api_keys,
+            custom_endpoints,
             allow_use_of_warp_credits_with_byok,
             autonomy_level,
             isolation_level,
