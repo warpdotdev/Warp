@@ -279,6 +279,9 @@ pub struct LocalCodeEditorView {
     was_edited: bool,
     /// Content version of the base file state.
     base_content_version: Option<ContentVersion>,
+    /// Set to `true` when a `RemoteBufferConflict` event fires for this
+    /// editor's buffer. Cleared when the user discards or overwrites.
+    has_remote_conflict: bool,
     conflict_banner_mouse_states: ConflictResolutionBannerMouseStates,
     /// Default directory to use for save dialogs when creating new files
     default_directory: Option<PathBuf>,
@@ -483,6 +486,7 @@ impl LocalCodeEditorView {
             selection_as_context_tooltip: None,
             was_edited: false,
             base_content_version: None,
+            has_remote_conflict: false,
             conflict_banner_mouse_states: Default::default(),
             default_directory: None,
             lsp_server: None,
@@ -1542,7 +1546,13 @@ impl LocalCodeEditorView {
                 GlobalBufferModelEvent::BufferLoaded {
                     content_version, ..
                 } => {
+                    // For a reopen (discard), base_content_version is already
+                    // set from the initial load. Accept the new version and
+                    // clear any conflict flag.
+                    me.has_remote_conflict = false;
                     if me.base_content_version.is_some() {
+                        me.base_content_version = Some(*content_version);
+                        ctx.notify();
                         return;
                     }
                     me.base_content_version = Some(*content_version);
@@ -1570,6 +1580,7 @@ impl LocalCodeEditorView {
                     }
                 }
                 GlobalBufferModelEvent::FileSaved { .. } => {
+                    me.has_remote_conflict = false;
                     ctx.emit(LocalCodeEditorEvent::FileSaved);
                 }
                 GlobalBufferModelEvent::FailedToSave { error, .. } => {
@@ -1578,8 +1589,11 @@ impl LocalCodeEditorView {
                         error: error.clone(),
                     });
                 }
-                GlobalBufferModelEvent::RemoteBufferConflict { .. }
-                | GlobalBufferModelEvent::ServerLocalBufferUpdated { .. } => {
+                GlobalBufferModelEvent::RemoteBufferConflict { .. } => {
+                    me.has_remote_conflict = true;
+                    ctx.notify();
+                }
+                GlobalBufferModelEvent::ServerLocalBufferUpdated { .. } => {
                     // Not relevant for local code editors.
                 }
             }
@@ -1587,13 +1601,21 @@ impl LocalCodeEditorView {
     }
 
     pub fn has_version_conflicts(&self, app: &AppContext) -> bool {
+        // Remote buffers use SyncClock for conflict detection.
+        // The flag is set by the RemoteBufferConflict event handler.
+        if matches!(
+            self.file_location(),
+            Some(crate::code::buffer_location::FileLocation::Remote(_))
+        ) {
+            return self.has_remote_conflict;
+        }
         let Some(file_id) = self.file_id() else {
             return false;
         };
         self.has_unsaved_changes(app)
             && self.base_content_version != GlobalBufferModel::as_ref(app).base_version(file_id)
     }
-    /// Save the file to the local file system.
+    /// Save the file to the local file system (or remotely via the remote server).
     /// This will only return an error immediately if there is a failure in the sync part of the call.
     /// Other errors could be returned asynchronously via the FileModelEvent::FailedToSave event.
     pub fn save_local(&mut self, ctx: &mut ViewContext<Self>) -> Result<(), ImmediateSaveError> {
@@ -2277,6 +2299,17 @@ impl TypedActionView for LocalCodeEditorView {
                 if let Some(path) = self.file_path().map(Path::to_path_buf) {
                     self.base_content_version = Some(self.editor().as_ref(ctx).version(ctx));
                     ctx.emit(LocalCodeEditorEvent::DiscardUnsavedChanges { path });
+                } else if self.has_remote_conflict {
+                    // Remote file: re-open the buffer from the server to get
+                    // the latest on-disk content. The BufferLoaded event will
+                    // clear has_remote_conflict and update base_content_version.
+                    // If the re-open fails, has_remote_conflict stays true and
+                    // the banner remains visible so the user can retry.
+                    if let Some(file_id) = self.file_id() {
+                        GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
+                            model.reopen_remote_buffer(file_id, ctx);
+                        });
+                    }
                 }
             }
             LocalCodeEditorAction::NavigateToTarget(location) => {

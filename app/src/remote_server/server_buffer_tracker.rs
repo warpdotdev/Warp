@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use warp_editor::content::buffer::Buffer;
 use warp_util::file::FileId;
-use warpui::{ModelContext, SingletonEntity};
+use warpui::{ModelContext, ModelHandle, SingletonEntity};
 
 use super::server_model::{ConnectionId, ServerModel};
 use crate::code::global_buffer_model::GlobalBufferModel;
@@ -24,6 +25,11 @@ pub enum PendingBufferRequestKind {
 pub struct ServerBufferTracker {
     /// Maps wire path strings to `FileId` for open server-local buffers.
     open_buffers: HashMap<String, FileId>,
+    /// Strong references to buffer models, keyed by `FileId`.
+    /// Prevents the `Buffer` model from being deallocated while the
+    /// server is tracking it (the `GlobalBufferModel` only holds a
+    /// `WeakModelHandle`).
+    buffer_handles: HashMap<FileId, ModelHandle<Buffer>>,
     /// Tracks which connections have each buffer open.
     /// File-watcher pushes go to all connections in the set.
     buffer_connections: HashMap<FileId, HashSet<ConnectionId>>,
@@ -38,6 +44,7 @@ impl ServerBufferTracker {
     pub fn new() -> Self {
         Self {
             open_buffers: HashMap::new(),
+            buffer_handles: HashMap::new(),
             buffer_connections: HashMap::new(),
             pending_requests: HashMap::new(),
         }
@@ -45,9 +52,16 @@ impl ServerBufferTracker {
 
     // ── Path ↔ FileId mapping ─────────────────────────────────────
 
-    /// Register a wire path → FileId mapping.
-    pub fn track_open_buffer(&mut self, path: String, file_id: FileId) {
+    /// Register a wire path → FileId mapping and retain a strong handle
+    /// to the buffer model so it stays alive while tracked.
+    pub fn track_open_buffer(
+        &mut self,
+        path: String,
+        file_id: FileId,
+        buffer: ModelHandle<Buffer>,
+    ) {
         self.open_buffers.insert(path, file_id);
+        self.buffer_handles.insert(file_id, buffer);
     }
 
     /// Look up a FileId by its wire path.
@@ -104,6 +118,7 @@ impl ServerBufferTracker {
 
         for &file_id in &orphaned {
             self.buffer_connections.remove(&file_id);
+            self.buffer_handles.remove(&file_id);
             self.open_buffers.retain(|_, id| *id != file_id);
             GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| gbm.remove(file_id, ctx));
         }
@@ -132,6 +147,7 @@ impl ServerBufferTracker {
 
         // No connections remain — deallocate.
         self.buffer_connections.remove(&file_id);
+        self.buffer_handles.remove(&file_id);
         self.open_buffers.remove(path);
         GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| gbm.remove(file_id, ctx));
     }

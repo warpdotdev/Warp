@@ -468,8 +468,32 @@ impl ServerModel {
                         );
                     }
                 }
-                GlobalBufferModelEvent::BufferUpdatedFromFileEvent { .. }
-                | GlobalBufferModelEvent::RemoteBufferConflict { .. } => {
+                GlobalBufferModelEvent::BufferUpdatedFromFileEvent {
+                    file_id,
+                    success,
+                    ..
+                } => {
+                    // When a file-watcher update couldn't be applied because
+                    // the buffer has unsaved client edits, forward the conflict
+                    // to connected clients so they can show a resolution banner.
+                    if !success {
+                        if let Some(conns) = me.buffers.connections_for_buffer(file_id) {
+                            let path = me.buffers.path_for_file_id(*file_id).unwrap_or_default();
+                            for &conn_id in conns {
+                                me.send_server_message(
+                                    Some(conn_id),
+                                    None,
+                                    server_message::Message::BufferConflictDetected(
+                                        super::proto::BufferConflictDetected {
+                                            path: path.clone(),
+                                        },
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+                GlobalBufferModelEvent::RemoteBufferConflict { .. } => {
                     // Not relevant for server-local buffers.
                 }
             });
@@ -1374,7 +1398,10 @@ impl ServerModel {
         let file_id = buffer_state.file_id;
 
         // Track path → FileId mapping and connection.
-        self.buffers.track_open_buffer(msg.path.clone(), file_id);
+        // Retain the strong buffer handle so the model stays alive until
+        // all connections close the buffer.
+        self.buffers
+            .track_open_buffer(msg.path.clone(), file_id, buffer_state.buffer);
         self.buffers.add_connection(file_id, conn_id);
 
         // If already loaded, respond immediately.
@@ -1411,6 +1438,13 @@ impl ServerModel {
     /// Delegates to `GlobalBufferModel::apply_client_edit`. On rejection
     /// (stale server version), the edit is silently dropped.
     fn handle_buffer_edit(&mut self, msg: BufferEdit, ctx: &mut ModelContext<Self>) {
+        log::info!(
+            "Handling BufferEdit path={} expected_sv={} new_cv={} edit_count={}",
+            msg.path,
+            msg.expected_server_version,
+            msg.new_client_version,
+            msg.edits.len()
+        );
         let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
             log::warn!("BufferEdit for unknown buffer: {}", msg.path);
             return;
@@ -1421,9 +1455,10 @@ impl ServerModel {
 
         // Per spec: if the edit is rejected (stale server version),
         // the server silently drops it.
-        GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx);
+        let accepted = GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
+            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx)
         });
+        log::info!("BufferEdit result: path={} accepted={accepted}", msg.path);
     }
 
     /// Handles `SaveBuffer` by persisting the buffer to disk.

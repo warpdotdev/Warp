@@ -173,6 +173,7 @@ fn client_event_kind(event: &ClientEvent) -> &'static str {
         }
         ClientEvent::CodebaseIndexStatusUpdated { .. } => "codebase_index_status_updated",
         ClientEvent::BufferUpdated { .. } => "buffer_updated",
+        ClientEvent::BufferConflictDetected { .. } => "buffer_conflict_detected",
         ClientEvent::MessageDecodingError => "message_decoding_error",
     }
 }
@@ -363,6 +364,10 @@ pub enum RemoteServerManagerEvent {
         expected_client_version: u64,
         edits: Vec<crate::proto::TextEdit>,
     },
+    /// The file changed on disk while the client had unsaved edits.
+    /// The server did NOT apply the change; the client should show a
+    /// conflict resolution banner.
+    BufferConflictDetected { host_id: HostId, path: String },
 
     // --- Setup events ---
     /// Intermediate state change during the binary check/install flow.
@@ -443,7 +448,8 @@ impl RemoteServerManagerEvent {
             | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
             | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
             | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. }
-            | RemoteServerManagerEvent::BufferUpdated { .. } => None,
+            | RemoteServerManagerEvent::BufferUpdated { .. }
+            | RemoteServerManagerEvent::BufferConflictDetected { .. } => None,
         }
     }
 }
@@ -1376,12 +1382,15 @@ impl RemoteServerManager {
                 edits,
             } => {
                 ctx.emit(RemoteServerManagerEvent::BufferUpdated {
-                    host_id,
+                    host_id: host_id.clone(),
                     path,
                     new_server_version,
                     expected_client_version,
                     edits,
                 });
+            }
+            ClientEvent::BufferConflictDetected { path } => {
+                ctx.emit(RemoteServerManagerEvent::BufferConflictDetected { host_id, path });
             }
             ClientEvent::Disconnected => {
                 // Handled by the drain loop's completion callback.

@@ -67,7 +67,6 @@ use crate::{
 use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::{color::internal_colors, Fill};
 use warp_core::HostId;
-use warpui::ui_components::components::UiComponent;
 
 mod editing;
 mod render;
@@ -1978,7 +1977,6 @@ impl FileTreeView {
         let is_selected = self.selected_item.as_ref() == Some(id);
         let is_expanded = self.is_item_expanded(&id.root, item);
         let render_state = item.to_render_state(is_expanded, appearance);
-        let is_remote_file = root_dir.is_remote() && matches!(item, FileTreeItem::File { .. });
 
         let item_display_name = render_state.display_name.clone();
         let item_position_id = format!("file_tree_item:{item_display_name}");
@@ -1997,34 +1995,14 @@ impl FileTreeView {
         let id_for_context = id.clone();
         let id_for_drop = id.clone();
         let id_for_drag = id.clone();
-        let ui_builder = appearance.ui_builder();
         let hoverable = Hoverable::new(render_state.mouse_state.clone(), move |mouse_state| {
             let item_highlight_state = ItemHighlightState::new(is_selected, mouse_state);
-            let element = Self::render_item_with_hover(
+            Self::render_item_with_hover(
                 render_state,
                 appearance,
                 item_highlight_state,
                 editor_view,
-            );
-
-            if is_remote_file && mouse_state.is_hovered() {
-                let tooltip = ui_builder
-                    .tool_tip("Opening files is unavailable for remote sessions".to_string())
-                    .build()
-                    .finish();
-                let offset = OffsetPositioning::offset_from_parent(
-                    Vector2F::new(0., 4.),
-                    ParentOffsetBounds::WindowByPosition,
-                    ParentAnchor::BottomLeft,
-                    ChildAnchor::TopLeft,
-                );
-                Stack::new()
-                    .with_child(element)
-                    .with_positioned_overlay_child(tooltip, offset)
-                    .finish()
-            } else {
-                element
-            }
+            )
         })
         .on_click(
             move |event_ctx: &mut EventContext, _app_ctx: &AppContext, _position| {
@@ -2047,12 +2025,7 @@ impl FileTreeView {
                 });
             },
         )
-        // Remote files can't be opened in the editor, so use the default cursor.
-        .with_cursor(if is_remote_file {
-            Cursor::Arrow
-        } else {
-            Cursor::PointingHand
-        })
+        .with_cursor(Cursor::PointingHand)
         .finish();
 
         let draggable = Draggable::new(draggable_state, hoverable)

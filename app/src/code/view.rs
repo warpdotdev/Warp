@@ -501,6 +501,7 @@ impl CodeView {
             });
             ctx.subscribe_to_view(&code_editor, |me, _, event, ctx| match event {
                 LocalCodeEditorEvent::FileLoaded => {
+                    me.set_title_after_content_update(ctx);
                     me.pane_configuration.update(ctx, |pane_config, ctx| {
                         pane_config.refresh_pane_header_overflow_menu_items(ctx);
                     });
@@ -509,6 +510,15 @@ impl CodeView {
                 LocalCodeEditorEvent::FailedToLoad { error } => {
                     log::warn!("Failed to load remote file. {error:?}");
                     CodeView::display_load_failure(ctx.window_id(), ctx);
+                }
+                LocalCodeEditorEvent::FileSaved => {
+                    me.set_title_after_content_update(ctx);
+                    CodeView::display_save_success(ctx.window_id(), ctx);
+                    ctx.notify();
+                }
+                LocalCodeEditorEvent::FailedToSave { error } => {
+                    log::warn!("Failed to save remote file. {error:?}");
+                    CodeView::display_save_failure(ctx.window_id(), ctx);
                 }
                 _ => {}
             });
@@ -866,15 +876,21 @@ impl CodeView {
 
     /// Set the title of the pane, which is the file path.
     fn set_title(&self, _unsaved_changes: bool, ctx: &mut ViewContext<Self>) {
-        let file = self.local_path(ctx);
+        let file_location = self.tab_at(self.active_tab_index).and_then(|t| {
+            t.editor_view.as_ref(ctx).file_location().cloned()
+        });
         let is_new = self
             .tab_at(self.active_tab_index)
             .is_some_and(|t| t.editor_view.as_ref(ctx).is_new_file());
 
-        let title = if let Some(file) = file {
-            file.display().to_string()
-        } else {
-            "Untitled".to_string()
+        let title = match &file_location {
+            Some(crate::code::buffer_location::FileLocation::Local(path)) => {
+                path.display().to_string()
+            }
+            Some(crate::code::buffer_location::FileLocation::Remote(remote_path)) => {
+                remote_path.path.as_str().to_string()
+            }
+            None => "Untitled".to_string(),
         };
 
         self.pane_configuration.update(ctx, |pane_config, ctx| {
@@ -1913,9 +1929,21 @@ impl CodeView {
         let title = self
             .tab_group
             .first()
-            .and_then(|tab| tab.path.as_ref())
-            .and_then(|path| path.file_name())
-            .map(|name| name.to_string_lossy().to_string())
+            .and_then(|tab| {
+                // For remote files, tab.path is None — derive the name from
+                // the editor's FileLocation metadata instead.
+                tab.path
+                    .as_ref()
+                    .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()))
+                    .or_else(|| {
+                        let name = tab.editor_view
+                            .as_ref(app)
+                            .file_location()
+                            .map(|loc| loc.display_name().to_string())
+                            .filter(|n| !n.is_empty());
+                        name
+                    })
+            })
             .unwrap_or_else(|| "Untitled".to_string());
 
         let appearance = Appearance::as_ref(app);
