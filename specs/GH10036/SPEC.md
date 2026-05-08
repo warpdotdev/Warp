@@ -34,14 +34,36 @@ use by other code-editor settings in this surface, with the
 >
 > The key is in `snake_case` segments separated by `.`, matching the
 > convention already used for `code.editor.*` sibling keys in
-> `app/src/settings/code.rs`.
+> `app/src/terminal/general_settings.rs` (e.g., line 165's
+> `code.editor.auto_open_code_review_pane_on_first_agent_change`)
+> and `app/src/workspace/tab_settings.rs` (e.g., line 461's
+> `code.editor.show_code_review_button`).
+>
+> **PR description / commit messages also follow the canonical key.**
+> The PR opening this spec previously referenced
+> `editor.review_panel_open_maximized` in its description; the
+> author MUST edit the PR description and any associated commit
+> body to use the canonical
+> `code.editor.review_panel.open_maximized` before merge. Reviewers
+> grep the PR description and commit messages for the rejected
+> variants listed above and request changes if any survive.
 
 ## Behavior contract
 
 - B1. New setting `code.editor.review_panel.open_maximized: bool`,
-  default `false`, `SyncToCloud::Globally(RespectUserSyncSetting::Yes)`
-  (matches the convention for UI prefs in
-  `app/src/settings/code.rs:19/29/40/48`).
+  default `false`, `SyncToCloud::Globally(RespectUserSyncSetting::Yes)`,
+  appended to the `GeneralSettings`
+  `define_settings_group!` block in
+  `app/src/terminal/general_settings.rs` immediately after
+  `auto_open_code_review_pane_on_first_agent_change` (line 159).
+  Code-review siblings already live in this group (the related
+  tab-scoped flags `show_code_review_button` and
+  `show_code_review_diff_stats` live in `TabSettings` at
+  `app/src/workspace/tab_settings.rs:455/464`); the new field is
+  global, not per-tab, so it goes with
+  `auto_open_code_review_pane_on_first_agent_change`. There is
+  intentionally no `review_panel` anchor in
+  `app/src/settings/code.rs` and the V1 PR does not add one.
 - B2. When `true`, clicking the code-review button opens the
   panel in maximised state directly. The Esc / un-maximise
   affordance still works to shrink it.
@@ -110,11 +132,29 @@ use by other code-editor settings in this surface, with the
 
 ## Acceptance criteria
 
-- A1. With setting OFF (default), starting from no prior state:
+- A1. With setting OFF (default), starting from no prior state
+  (no `RightPanelSnapshot`, no in-memory `is_right_panel_maximized`):
   clicking code-review opens the side-panel; clicking the maximise
   control (or invoking the existing
   `workspace:toggle_maximize_code_review_panel` action) maximises
   it. Pixel-equivalent to today.
+
+  **OFF + previously maximised then closed (no tab restore in
+  between)**: with the setting OFF, the close-then-reopen sequence
+  reopens as a side-panel (per B5.4). The in-memory
+  `is_right_panel_maximized` flag does not survive an explicit
+  close because no `RightPanelSnapshot` was created — closing the
+  panel is not a tab/session boundary. This is by design: the
+  setting is the authoritative default for fresh opens, and a
+  fresh open after an explicit close is a fresh open. There is no
+  "remember last in-session maximise state across an explicit
+  close" behavior in V1; the only persistence channel is
+  `RightPanelSnapshot`, which only fires on tab/session restore.
+
+  Codifies the OFF interaction with the existing maximise/restore
+  state machine: setting + snapshot are orthogonal, snapshot
+  always wins on restore, setting always wins on fresh open
+  (including close-then-reopen).
 - A2. With setting ON, starting from no prior state: clicking
   code-review opens the panel already maximised in a single click.
   Invoking `workspace:toggle_maximize_code_review_panel` (Esc / the
@@ -137,28 +177,56 @@ use by other code-editor settings in this surface, with the
 
 ## Implementation sketch
 
-- Add the new setting in `app/src/settings/code.rs` by extending
-  the existing `define_settings_group!(CodeSettings, settings: [
-  ... ])` block. There is currently no `review_panel` anchor in
-  that file; the existing siblings are `code_as_default_editor`,
-  `codebase_context_enabled`, `auto_indexing_enabled`,
-  `dismissed_code_toolbelt_new_feature_popup`,
-  `show_project_explorer`, and `show_global_search`. Append the new
-  field at the end of the array, matching the cadence and field
-  shape of `show_project_explorer`:
+### Where the setting lives in code
 
-  ```rust
-  // app/src/settings/code.rs — appended to the CodeSettings group
-  review_panel_open_maximized: ReviewPanelOpenMaximized {
-      type: bool,
-      default: false,
-      supported_platforms: SupportedPlatforms::ALL,
-      sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-      private: false,
-      toml_path: "code.editor.review_panel.open_maximized",
-      description: "Whether the code review panel opens already maximised.",
-  },
-  ```
+Code-review settings in this repo are NOT consolidated into a
+single `define_settings_group!(CodeSettings, ...)` block in
+`app/src/settings/code.rs`. They are split across two existing
+groups, which the V1 PR adopts unchanged:
+
+- `TabSettings` in `app/src/workspace/tab_settings.rs` (line 445
+  onward) defines `show_code_review_button` (line 455) and
+  `show_code_review_diff_stats` (line 464), both keyed under
+  `code.editor.*`.
+- `GeneralSettings` in `app/src/terminal/general_settings.rs`
+  (line 159) defines
+  `auto_open_code_review_pane_on_first_agent_change`, also keyed
+  under `code.editor.*`.
+
+The new `review_panel_open_maximized` field is appended to the
+`GeneralSettings` group in `app/src/terminal/general_settings.rs`
+immediately after
+`auto_open_code_review_pane_on_first_agent_change`. That is the
+existing home for a non-tab-scoped code-review preference and
+matches the sync semantics required by B1
+(`SyncToCloud::Globally(RespectUserSyncSetting::Yes)`). It is the
+only group whose toml prefix is `code.editor.*` AND whose values
+are not per-tab. Tab-scoped placement (`TabSettings`) is rejected
+because the maximize default is global UX, not a per-tab
+preference.
+
+```rust
+// app/src/terminal/general_settings.rs — appended to the
+// GeneralSettings group, after
+// `auto_open_code_review_pane_on_first_agent_change` at line 159.
+review_panel_open_maximized: ReviewPanelOpenMaximized {
+    type: bool,
+    default: false,
+    supported_platforms: SupportedPlatforms::ALL,
+    sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+    private: false,
+    toml_path: "code.editor.review_panel.open_maximized",
+    description: "Whether the code review panel opens already maximised.",
+},
+```
+
+The earlier draft of this spec referenced an `app/src/settings/code.rs`
+location that does not host the code-review siblings. That path
+remains a no-op for this change; do not edit it. The grep test in
+T8 enforces this by failing if `review_panel_open_maximized`
+appears in any file other than
+`app/src/terminal/general_settings.rs` (definition) and
+`app/src/settings_view/code_page.rs` (widget).
 
 - The settings UI widget is added in
   `app/src/settings_view/code_page.rs`. Both `code_editor_review_widgets`
