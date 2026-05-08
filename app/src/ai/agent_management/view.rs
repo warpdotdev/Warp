@@ -108,7 +108,7 @@ const CARD_MARGIN_BOTTOM: f32 = 8.;
 
 const BUTTON_SIZE: f32 = 20.;
 /// Total size of the agent icon-with-status component rendered in each card's header row.
-const CARD_AGENT_ICON_SIZE: f32 = 20.;
+const CARD_AGENT_ICON_SIZE: f32 = 24.;
 const CREATOR_AVATAR_FONT_SIZE: f32 = 10.;
 
 const SESSION_EXPIRED_TEXT: &str = "Sessions expire after one week and cannot be opened.";
