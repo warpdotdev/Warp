@@ -114,11 +114,36 @@ Review header component. See Implementation Pointers for the exact module.
 Filter behavior:
 
 - Filters the changed-files set only; it never searches diff content.
+- **Match scope (authoritative).** The filter performs a case-insensitive
+  plain-text substring match against **the file's basename only** (the
+  final path segment, e.g. `bar.rs` for `app/src/foo/bar.rs`). It does
+  **NOT** match against:
+  - full relative paths,
+  - intermediate directory segments,
+  - folder row labels (including compact folder labels like
+    `app/src/foo/bar`),
+  - rename old paths or rename new paths beyond their own basenames.
+  For renamed files, the match is evaluated against the **basename of the
+  attribution path** — i.e. the new-path basename when
+  `group_renames_by_old_path = false` (default), and the old-path
+  basename when `group_renames_by_old_path = true`. The non-attributed
+  side (rendered as the subtitle) is **not** considered for matching.
 - In Tree mode, files whose names match the filter cause their parent
   folders to auto-expand. Non-matching siblings are **dimmed** by default
   (see B6c for the toggle that hides them entirely).
 - In Flat mode, non-matching files are **dimmed** by default. (Same toggle
   in B6c hides them when ON.)
+- **Filter-driven auto-expansion is transient.** Auto-expansion of folders
+  caused by the filter does **NOT** mutate the review's cached
+  expanded-state map (the per-`(repo, review)` expansion state described
+  in Implementation Pointers). When the filter is cleared or the user
+  blurs the filter input with an empty value, every folder reverts to its
+  pre-filter expanded state. Folders the user manually expands or
+  collapses **while the filter is active** DO update the cached state and
+  persist after the filter is cleared. Concretely: the renderer maintains
+  two layers — a base expanded-state map (mutated only by user clicks /
+  keyboard) and a transient filter-expansion overlay (cleared on filter
+  empty/blur). The visible expanded state is the union of the two.
 - The filter value is preserved when the user toggles Flat ↔ Tree.
 - The filter is window-local and cleared when the review session closes;
   it is not persisted across reviews or restarts.
@@ -264,17 +289,43 @@ header — see B6 for the authoritative layout):
 
 ## Implementation Pointers
 
-- New code under `app/src/code_review/file_list/` for the tree data model
-  and Tree-mode renderer; reuse the existing flat renderer.
-- Build a tree from the flat path list once per file-list update; cache
-  expanded-state by path for the active review.
-- Reuse existing diff-open routing on file-row activation.
-- Wire the filter input, Flat/Tree button group, and kebab/overflow menu
-  into the **file-list panel header** component (the panel that displays
-  the changed-file list, located under `app/src/code_review/file_list/`).
-  These controls do **not** live in `app/src/code_review/code_review_header/`
-  — that module remains the Code Review pane's top-level header (PR
-  selector, etc.) and is unmodified by this spec.
+**Where the existing sidebar lives today.** The current Code Review
+changed-files sidebar is rendered from `app/src/code_review/code_review_view.rs`
+(the existing flat-list renderer). This spec does **not** delete or
+replace that file; instead it carves the file-list rendering out into a
+new sibling module so the two modes can coexist. Implementers should
+expect to:
+
+1. Create the new module tree at `app/src/code_review/file_list/` (new
+   directory) containing:
+   - `mod.rs` — public surface for the file-list panel.
+   - `tree.rs` — tree data model (build, compact-folder collapse,
+     aggregate counts, expanded-state cache layered as base map +
+     transient filter overlay; see B6 filter-driven auto-expansion).
+   - `renderer.rs` — both Flat-mode and Tree-mode renderers, parameterized
+     on `code.review.file_list_mode`. The Flat-mode renderer is moved
+     from `code_review_view.rs` into this module verbatim (no behavior
+     change) so both modes share the same call site.
+   - `header.rs` — the file-list panel header that hosts the filter
+     input, Flat/Tree toggle, and kebab/overflow menu (see B6).
+2. Update `code_review_view.rs` to delegate sidebar rendering to
+   `file_list::render(...)` instead of inlining the flat list. After this
+   change, `code_review_view.rs` should contain no file-row rendering
+   code — only layout glue and the call into the new `file_list`
+   module.
+3. Build a tree from the flat path list once per file-list update; cache
+   expanded-state by path for the active review (in `tree.rs`). Two
+   layers: a persisted-shape base map mutated only by user clicks /
+   keyboard, and a transient filter-expansion overlay cleared on filter
+   empty/blur (see B6).
+4. Reuse existing diff-open routing on file-row activation — keep the
+   activation callback identical to today's flat list to satisfy A5 /
+   T3 (selection preservation across mode toggle).
+5. Wire the filter input, Flat/Tree button group, and kebab/overflow menu
+   into `file_list::header`. These controls do **not** live in
+   `app/src/code_review/code_review_header/` — that module remains the
+   Code Review pane's top-level header (PR selector, etc.) and is
+   unmodified by this spec.
 
 ## Tests
 
@@ -290,6 +341,32 @@ header — see B6 for the authoritative layout):
   (`file_list_mode`, `tree_compact_folders`,
   `hide_non_matches_when_filtering`, `group_renames_by_old_path`).
 - T9. Tree construction performance: ≤16ms for 1000 changed files.
+- T_filter_match_basename_only. Given files `app/src/foo/bar.rs`,
+  `app/src/foo/baz.txt`, `unrelated/foo.rs`: filter `"foo"` matches ONLY
+  `unrelated/foo.rs` (basename match). Filter `"src"` matches NOTHING
+  (no basename contains `src`). Filter `"bar"` matches ONLY `bar.rs`.
+- T_filter_no_match_on_folder_label. With a compact folder row labeled
+  `app/src/foo/bar`, filter `"src"` does NOT mark that folder row as
+  matched directly — the folder is only auto-expanded if a descendant
+  file's basename matches.
+- T_filter_match_rename_attribution_path. Renamed file
+  `a/old.rs → b/new.rs` with `group_renames_by_old_path = false`:
+  filter `"new"` MATCHES (basename of attribution path = `new.rs`);
+  filter `"old"` does NOT match. With
+  `group_renames_by_old_path = true`: filter `"old"` matches; filter
+  `"new"` does not.
+- T_filter_auto_expansion_transient. Tree mode, all folders collapsed.
+  Type filter `"bar"` → ancestor folders of `bar.rs` auto-expand. Clear
+  the filter → those folders revert to collapsed (cached base map
+  unchanged). Re-type filter `"bar"` → same folders auto-expand again.
+- T_filter_manual_expansion_persists. Tree mode, filter `"bar"` is
+  active and auto-expanded folder `app/src/foo/`. User then manually
+  expands a sibling folder `app/src/qux/` (no matching descendants).
+  Clear the filter. Auto-expanded `app/src/foo/` reverts to collapsed,
+  but manually-expanded `app/src/qux/` REMAINS expanded.
+- T_filelist_module_split. After implementation, `code_review_view.rs`
+  contains no file-row rendering code; the sidebar is rendered by a
+  call into `app/src/code_review/file_list/`.
 - T_hide_non_matches_default. Filter active,
   `hide_non_matches_when_filtering = false` → non-matches dimmed and
   visible in both Flat and Tree modes.
