@@ -116,7 +116,7 @@ Each run is bounded to the PRs returned by GitHub's open-PR list for the repo (c
 
 User-level (Settings → Code Review → "Duplicate PR alerts"):
 
-- `code.review.duplicate_alert.enabled` (bool, default `true`) — toggles both the in-product callout and signal emission for the current user.
+- `code.review.duplicate_alert.enabled` (bool, default `true`) — when `false`, suppresses the in-product "Possible duplicates" callout in the Code Review pane for **this user only**. This setting has **no effect** on team-level external signal emission (Slack/Linear); see the independence rules below for the authoritative scope of each layer.
 
 Team-level (admin-managed; surfaced under team settings UI):
 
@@ -125,20 +125,19 @@ Team-level (admin-managed; surfaced under team settings UI):
 
 ### Scope of toggles — user vs team
 
-The user-level toggle and team-level external-routing config govern **independent** layers. They do not chain.
+The user-level toggle and team-level external-routing config govern **independent** layers. They do not chain. The table below is the authoritative contract; any other prose in this spec that appears to contradict it is superseded by this section.
 
-| Setting | Scope | What it controls | Default |
-|---|---|---|---|
-| `code.review.duplicate_alert.enabled` | Per-user | Whether **this user** sees the in-product "Possible duplicates" callout in the Code Review pane. | `true` |
-| `team.duplicate_alert.signal.slack_webhook` | Per-team (admin) | Slack destination for the team-level external alert. | empty (off) |
-| `team.duplicate_alert.signal.linear_issue_template` | Per-team (admin) | Linear issue template for the team-level external alert. | empty (off) |
+| Setting | Scope | What it controls | What it does NOT control | Default |
+|---|---|---|---|---|
+| `code.review.duplicate_alert.enabled` | Per-user | Whether **this user** sees the in-product "Possible duplicates" callout in the Code Review pane. | Team-level external signal emission (Slack/Linear). External signals are governed solely by team-level destination config and the dedupe rules in B-Dedup. | `true` |
+| `team.duplicate_alert.signal.slack_webhook` | Per-team (admin) | Slack destination for the team-level external alert. | Per-user in-product callout rendering. | empty (off) |
+| `team.duplicate_alert.signal.linear_issue_template` | Per-team (admin) | Linear issue template for the team-level external alert. | Per-user in-product callout rendering. | empty (off) |
 
 **Independence rules.**
 
-- A user with `enabled = false` sees no callout in their UI. This affects that user only.
+- A user with `enabled = false` sees no callout in their UI. This affects that user only and has no effect on signal emission.
 - The team-level external signal (Slack/Linear) fires **once per dedupe-tuple** (see B-Dedup) regardless of any individual user's toggle. Maintainers receive the routed signal even if individual reviewers have callouts disabled.
 - Disabling the user-level toggle does **not** suppress team-level routing. Disabling team-level routing (admin clears the destinations) does not suppress per-user callouts.
-- The previous wording "If `code.review.duplicate_alert.enabled` is `false`, neither the callout nor the signal fires for that user" is **superseded** by this table: only the user-visible callout is affected by the user toggle.
 
 ### B-Dedup. Persistent dedupe / cooldown for external signals
 
