@@ -1374,6 +1374,30 @@ esac
   zstyle ':completion:warp_complete_via_compadd_override:*' list-separator ''
 
 
+  # Detect if fzf's ctrl-r history widget is bound. If so, register a wrapper
+  # widget that invokes fzf-history-widget and then reports the resulting buffer
+  # back to Warp via the InputBuffer hook so Warp can populate its input editor.
+  local warp_has_fzf_ctrl_r=""
+  if [[ "$(bindkey '^R' 2>/dev/null)" == *"fzf-history-widget"* ]]; then
+    warp_has_fzf_ctrl_r="1"
+
+    function warp_fzf_history_widget () {
+      # Invoke the real fzf history widget.
+      zle fzf-history-widget
+      local ret=$?
+
+      # Report the resulting buffer back to Warp so it can populate the input editor.
+      # Unlike warp_report_input, we do NOT clear the buffer here — the user wants
+      # the selected command to remain in the ZLE buffer for the prompt redraw.
+      local escaped_input="$(warp_escape_json "$BUFFER")"
+      warp_send_json_message "{ \"hook\": \"InputBuffer\", \"value\": { \"buffer\": \"$escaped_input\" } }"
+
+      return $ret
+    }
+    zle -N warp_fzf_history_widget
+    bindkey '^R' warp_fzf_history_widget
+  fi
+
   function warp_bootstrapped () {
     # Note that for now we don't support dynamically changing HISTFILE within a session.
     local escaped_histfile="$(warp_escape_json $HISTFILE)"
@@ -1391,7 +1415,11 @@ esac
     local escaped_shell_plugins="$(warp_escape_json "`builtin print -l -- ${shell_plugins}`")"
 
     # The list of options enabled for the current shell.
+    # If fzf's ctrl-r is detected, append our custom fzf_ctrl_r flag.
     local shell_options="$(warp_escape_json "`setopt`")"
+    if [[ -n "$warp_has_fzf_ctrl_r" ]]; then
+      shell_options="$shell_options fzf_ctrl_r"
+    fi
 
     local escaped_editor="$(warp_escape_json "$EDITOR")"
     local escaped_shell_path="$(warp_escape_json "${commands[zsh]}")"

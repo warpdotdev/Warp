@@ -143,6 +143,14 @@ impl Shell {
         self.shell_type.supports_native_shell_completions()
     }
 
+    /// Returns true if fzf's ctrl-r history widget is bound in the shell.
+    /// Detected during bootstrap by inspecting shell key bindings.
+    pub fn has_fzf_ctrl_r(&self) -> bool {
+        self.options
+            .as_ref()
+            .is_some_and(|opts| opts.contains("fzf_ctrl_r"))
+    }
+
     /// Whether the shell supports "autocd" (`cd`ing into a directory without specifying
     /// `cd`).
     pub fn supports_autocd(&self) -> bool {

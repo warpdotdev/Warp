@@ -20487,6 +20487,12 @@ impl TerminalView {
             InputEvent::CtrlD => {
                 ctx.emit(Event::CtrlD);
             }
+            InputEvent::FzfCtrlR => {
+                // Write the raw ctrl-r byte to the PTY so the shell's line editor
+                // invokes fzf's history widget. The wrapper widget in the bootstrap
+                // script will report the selected command back via InputBuffer.
+                self.write_to_pty(vec![0x12], ctx);
+            }
             InputEvent::CtrlC { cleared_buffer_len } => {
                 self.handle_ctrl_c_input_event(*cleared_buffer_len, ctx);
             }

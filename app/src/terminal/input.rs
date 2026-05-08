@@ -986,6 +986,10 @@ pub enum Event {
     SyncInput(SyncInputType),
     ShowCommandSearch(CommandSearchOptions),
     CtrlD,
+    /// Emitted when the user presses ctrl-r and fzf's history widget is available.
+    /// The terminal view should write the raw ctrl-r byte (\x12) to the PTY so the
+    /// shell's line editor invokes fzf.
+    FzfCtrlR,
     CtrlC {
         // The number of chars cleared from the buffer, if the ctrl-c triggered a buffer clear.
         cleared_buffer_len: usize,
@@ -10875,6 +10879,24 @@ impl Input {
         ctx.emit(Event::CtrlD);
     }
 
+    /// Check whether fzf ctrl-r is available and, if so, emit the FzfCtrlR
+    /// event so the terminal view writes the raw ctrl-r byte to the PTY.
+    /// Returns `true` when fzf was detected and the event was emitted;
+    /// `false` otherwise (caller should fall back to Warp's command search).
+    pub fn try_emit_fzf_ctrl_r(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        if self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {
+            return false;
+        }
+        let has_fzf = self
+            .active_session(ctx)
+            .map(|session| session.shell().has_fzf_ctrl_r())
+            .unwrap_or(false);
+        if has_fzf {
+            ctx.emit(Event::FzfCtrlR);
+        }
+        has_fzf
+    }
+
     fn ctrl_r(&mut self, ctx: &mut ViewContext<Self>) {
         if self.suggestions_mode_model.as_ref(ctx).is_history_up() {
             // Iterate through menu if we're already in history substring mode and
@@ -10883,7 +10905,7 @@ impl Input {
                 .update(ctx, |input_suggestions, ctx| {
                     input_suggestions.select_prev(ctx);
                 });
-        } else if !self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {
+        } else if !self.try_emit_fzf_ctrl_r(ctx) {
             self.fuzzy_history_search(ctx);
         }
     }

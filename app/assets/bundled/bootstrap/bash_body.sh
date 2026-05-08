@@ -1270,6 +1270,34 @@ esac
 
     shell_plugins=()
 
+    # Detect if fzf's ctrl-r history search is bound. If so, register a wrapper
+    # function that invokes __fzf_history__ and then reports READLINE_LINE back
+    # to Warp via the InputBuffer hook.
+    warp_has_fzf_ctrl_r=""
+    # Detect fzf's ctrl-r by checking if the __fzf_history__ function exists.
+    # We use `declare -f` instead of inspecting bind output because `bind -X`
+    # only works in the current interactive shell — pipes and subshells lose
+    # readline state, making bind-based detection unreliable.
+    if declare -f __fzf_history__ >/dev/null 2>&1; then
+        warp_has_fzf_ctrl_r="1"
+
+        if ((BASH_VERSINFO[0] >= 4)); then
+            # On bash >= 4, fzf uses `bind -x` so we can wrap the binding with
+            # a function that reports READLINE_LINE back to Warp.
+            __warp_fzf_history__() {
+                __fzf_history__
+                # Report the resulting READLINE_LINE back to Warp.
+                local escaped_input="$(warp_escape_json "$READLINE_LINE")"
+                warp_send_json_message "{ \"hook\": \"InputBuffer\", \"value\": { \"buffer\": \"$escaped_input\" } }"
+            }
+            bind -m emacs-standard -x '"\C-r": __warp_fzf_history__'
+            bind -m vi-command -x '"\C-r": __warp_fzf_history__'
+            bind -m vi-insert -x '"\C-r": __warp_fzf_history__'
+        fi
+        # On bash < 4, fzf uses macro-style bindings which we can't easily wrap,
+        # but we still flag it so Warp delegates ctrl-r to the shell.
+    fi
+
     function warp_bootstrapped () {
         local aliases="`alias`"
         local env_var_names="`compgen -e`"
@@ -1293,6 +1321,11 @@ esac
         # real bash options.
         if [[ -n $USER_HISTCONTROL ]]; then
             shell_options="$shell_options \n !histcontrol_$USER_HISTCONTROL"
+        fi
+
+        # If fzf's ctrl-r is detected, append our custom flag.
+        if [[ -n "$warp_has_fzf_ctrl_r" ]]; then
+            shell_options="$shell_options \n fzf_ctrl_r"
         fi
 
         # Check if Starship is active for Bash. Note that another prompt could still be overriding Starship, however,

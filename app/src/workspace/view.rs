@@ -14648,6 +14648,22 @@ impl Workspace {
             return;
         }
 
+        // When the search is triggered without an explicit filter (the ctrl-r
+        // keybinding path) and the active terminal has fzf's ctrl-r widget,
+        // delegate to the shell instead of opening the Command Search dialog.
+        if query_filter.is_none() {
+            if let Some(terminal_view_handle) = self.active_session_view(ctx) {
+                let has_fzf = terminal_view_handle.update(ctx, |tv, ctx| {
+                    tv.input().update(ctx, |input, ctx| {
+                        input.try_emit_fzf_ctrl_r(ctx)
+                    })
+                });
+                if has_fzf {
+                    return;
+                }
+            }
+        }
+
         // Close all overlays including chip menus before opening command search
         self.close_all_overlays(ctx);
 
