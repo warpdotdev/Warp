@@ -524,7 +524,10 @@ fn prompt_submit_clears_permission_scoped_state() {
     assert_eq!(session.session_context.tool_name, None);
     assert_eq!(session.session_context.tool_input_preview, None);
     assert_eq!(session.session_context.response, None);
-    assert_eq!(session.session_context.query.as_deref(), Some("next prompt"));
+    assert_eq!(
+        session.session_context.query.as_deref(),
+        Some("next prompt")
+    );
     assert!(matches!(session.status, CLIAgentSessionStatus::InProgress));
 }
 
