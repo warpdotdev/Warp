@@ -13117,18 +13117,22 @@ impl Workspace {
     }
 
     fn show_handoff_environment_creation_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        // Capture the initiating source view now, before async creation begins.
+        // If we waited until the Created callback, the user may have switched panes.
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        let source_view = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx);
+
         let modal = ctx.add_typed_action_view(HandoffEnvironmentCreationModal::new);
-        ctx.subscribe_to_view(&modal, |me, _, event, ctx| match event {
+        ctx.subscribe_to_view(&modal, move |me, _, event, ctx| match event {
             HandoffEnvironmentCreationModalEvent::Created { env_id } => {
                 let env_id = *env_id;
                 me.handoff_environment_creation_modal = None;
                 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
                 {
-                    if let Some(source_view) = me
-                        .active_tab_pane_group()
-                        .as_ref(ctx)
-                        .active_session_view(ctx)
-                    {
+                    if let Some(source_view) = source_view.as_ref() {
                         let launch = source_view.update(ctx, |view, ctx| {
                             let input = view.input().clone();
                             input.update(ctx, |input, ctx| {
