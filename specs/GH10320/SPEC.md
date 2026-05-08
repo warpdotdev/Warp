@@ -126,9 +126,25 @@ full relative path) are processed identically before substring matching:
    is **full case folding** — i.e., uses the Unicode case folding mappings
    with status `C` (common) PLUS status `F` (full). It is locale-
    independent.
-   - In Rust, the equivalent is `str::to_lowercase()` on a valid UTF-8
-     string, which performs full Unicode lowercasing per
-     `SpecialCasing.txt`. Implementations MAY use this directly.
+   - **Implementation contract — DO NOT use `str::to_lowercase()`.**
+     Lowercasing and case folding are different operations: case folding
+     applies the `CaseFolding.txt` C+F mappings (e.g. `ß` → `ss`,
+     `ﬃ` → `ffi`), while `str::to_lowercase()` applies the
+     `SpecialCasing.txt` lowercase mappings, which preserve `ß` as `ß`
+     and do not collapse final-sigma `ς` and middle sigma `σ` to a
+     single form. An earlier draft of this spec said `to_lowercase()`
+     was equivalent — that was wrong, and would break the `ß` and sigma
+     examples below.
+   - **Required implementation.** Use a Unicode case-folding crate that
+     implements C+F default folding (e.g. `caseless::default_caseless_match_str`
+     or `caseless::Caseless::default_case_fold`) on the NFC-normalized
+     strings. If the chosen crate already performs an internal
+     normalization step compatible with NFC, the explicit NFC pass MAY
+     be elided; otherwise it is required. The implementation MUST NOT
+     substitute `str::to_lowercase()` even as a fallback.
+   - **Test gate.** Implementations MUST pass T_unicode_german_ss and
+     T_unicode_greek_sigma; passing these tests is the authoritative
+     check that the right folding is being applied.
    - Special locale-specific case mappings (notably the Turkish dotted
      and dotless I, Azerbaijani, etc.) are **NOT** applied. The folding
      is locale-independent default folding only.
@@ -159,9 +175,22 @@ The tree updates as the user types:
   setting `file_tree.search.dim_non_matches` (default `true`):
   - When `true` (default): non-matching siblings remain visible but
     **dimmed** (de-emphasized) so the user keeps spatial context.
-  - When `false`: non-matching siblings are **hidden** entirely; only
-    matching files plus their ancestor folders (auto-expanded) are
-    rendered.
+  - When `false`: non-matching siblings are **hidden** entirely. The
+    set of rendered nodes in this mode is:
+    1. every node in the **union match set** (direct file/folder
+       matches + descendants of folder matches per B2a), AND
+    2. every **ancestor folder** of any node in (1), auto-expanded
+       so the matched rows are reachable.
+
+    Concretely: a folder match keeps **ALL** of its descendants
+    visible (because they are in the union match set per B2a), even
+    if those descendants' own names do not match the query. This is
+    NOT in conflict with the "only matching files plus ancestors
+    render" wording — the union match set INCLUDES folder-match
+    descendants, so they qualify as "matching" for B3's hide rule.
+    Earlier drafts that read "only filename matches plus their
+    ancestors" are superseded by this rule; B2a's union semantics is
+    the authoritative match set.
 - A match count appears next to the search box (e.g. "12 matches").
 
 ### B4. Navigation
