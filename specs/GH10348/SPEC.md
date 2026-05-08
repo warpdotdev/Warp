@@ -32,10 +32,20 @@ Every modern editor exposes a configurable word-separator set for exactly this r
 
 ### B1. Global setting and default
 
-A new setting `editor.word_delimiters` (string of characters) defines the global word-boundary set. Default value:
+A new setting `editor.word_delimiters` (string of characters) defines the global word-boundary set. The literal default character set is:
 
+`/`, `.`, `-`, `_`, `:`, `=`, space, tab (U+0009), newline (U+000A), carriage return (U+000D), vertical tab (U+000B), form feed (U+000C).
+
+Expressed as a valid TOML basic string (see B6.2 for the full escape rules — note that **`\xXX` is NOT a valid TOML escape**; vertical tab and form feed must be encoded with the Unicode `\u00XX` form):
+
+```toml
+editor.word_delimiters = "/.-_:= \t\n\r"
 ```
-"/.-_:= \t\n\r\x0b\x0c"
+
+A simplified equivalent that omits the rarely-hand-typed VT/FF characters (they remain in the runtime default via the whitespace floor in B5):
+
+```toml
+editor.word_delimiters = "/.-_:= \t\n\r"
 ```
 
 The default includes path/punct characters (`/`, `.`, `-`, `_`, `:`, `=`) plus all standard whitespace (space, tab, newline, carriage return, vertical tab, form feed). Whitespace is included for back-compat with current behavior.
@@ -71,7 +81,7 @@ In all cases, do not cross end-of-line.
 
 #### Worked example: `/var/www/example.com|` (cursor at end)
 
-Using the default `D` (`/.-_:= \t\n\r\x0b\x0c`):
+Using the default `D` (`/`, `.`, `-`, `_`, `:`, `=`, plus the whitespace floor — space, tab, newline, CR, vertical tab, form feed; see B1 for valid TOML encoding):
 
 | Step | Buffer state                        | Action                                                                                       | Result                              |
 | ---- | ----------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------- |
@@ -120,26 +130,34 @@ This subsection is the single source of truth for how the setting value string i
 
 #### B6.2. Escape sequences in TOML config
 
-The config file is TOML. The setting key is read as a TOML basic string, which honors the standard escape sequences:
+The config file is TOML. The setting key is read as a TOML basic string, which honors **only** the standard escape sequences listed in the [TOML spec](https://toml.io/en/v1.0.0#string):
 
-| Escape    | Meaning              |
-| --------- | -------------------- |
-| `\t`      | Tab (U+0009)         |
-| `\n`      | Newline (U+000A)     |
-| `\r`      | Carriage return (U+000D) |
-| `\\`      | Backslash            |
-| `\"`      | Double quote         |
-| `\uXXXX`  | Unicode codepoint    |
+| Escape          | Meaning                              |
+| --------------- | ------------------------------------ |
+| `\b`            | Backspace (U+0008)                   |
+| `\t`            | Tab (U+0009)                         |
+| `\n`            | Newline (U+000A)                     |
+| `\f`            | Form feed (U+000C)                   |
+| `\r`            | Carriage return (U+000D)             |
+| `\"`            | Double quote (U+0022)                |
+| `\\`            | Backslash (U+005C)                   |
+| `\uXXXX`        | Unicode codepoint, 4 hex digits      |
+| `\UXXXXXXXX`    | Unicode codepoint, 8 hex digits      |
+
+**Non-standard `\xXX` is NOT a valid TOML escape** and will fail TOML parsing if used. Earlier drafts of this spec referenced `\x0b` and `\x0c` for vertical tab and form feed; those references were incorrect. The valid encodings are:
+
+- Vertical tab (U+000B) — encode as ``. (TOML has no single-character escape for VT.)
+- Form feed (U+000C) — encode as `\f` (or ``).
 
 Whitespace can be entered literally inside the string OR via the corresponding escape. The two are equivalent.
 
-Example (TOML):
+Example (TOML), showing a valid encoding of the literal default:
 
 ```toml
-editor.word_delimiters = "/.\\-_:= \t\n"
+editor.word_delimiters = "/.-_:= \t\n\r"
 ```
 
-Note `\\-` produces a literal `\-`; in this default the backslash itself is not a delimiter. The actual default uses no backslash — it is shown only to demonstrate escaping mechanics.
+The hyphen in TOML basic strings is just a literal hyphen — no escape is needed.
 
 #### B6.3. Settings UI (single-line text field)
 
@@ -157,10 +175,20 @@ A "Reset to default" button restores the documented default string.
 
 #### B6.5. Missing / empty / whitespace-only / invalid fallback
 
+**Empty value behavior (single source of truth — no error on empty):**
+
+The "missing" and "empty string" cases are treated **identically** as "use the built-in default from B1". This applies whether the value is absent from the TOML config OR the user clears the Settings UI text field. Specifically:
+
+- The runtime resolves an empty/absent value to the B1 default — no warning, no error.
+- The Settings UI text field, when empty (because the user cleared it OR the key is absent), renders the **default value populated as a visible hint inside the field** with a **"Reset to default" indicator** present. The stored value remains empty/absent. A small subtitle reads "Empty = default delimiters".
+- There is **no inline error** for the empty case. Earlier drafts that suggested showing an error when the field is empty are superseded by this section.
+
+The only invalid cases that DO show inline errors are (a) whitespace-only values and (b) values containing disallowed control characters.
+
 | Stored value                              | Treated as                                           | Runtime fallback                  | Settings UI                              |
 | ----------------------------------------- | ---------------------------------------------------- | --------------------------------- | ---------------------------------------- |
-| Key absent / unset                        | Missing                                              | Built-in default from B1          | Field is empty; placeholder shows default |
-| `""` (empty string)                       | Equivalent to missing                                | Built-in default from B1          | Field is empty; placeholder shows default |
+| Key absent / unset                        | "Use default" — same as empty                        | Built-in default from B1; no warning | Field is empty; default rendered as visible hint; "Reset to default" indicator; subtitle "Empty = default delimiters". No error. |
+| `""` (empty string)                       | "Use default" — same as missing                      | Built-in default from B1; no warning | Same as above. No error.                 |
 | Whitespace-only (e.g., `" "`, `"\t\n"`)   | **Invalid** — effectively empty given the whitespace floor in B5 | Built-in default from B1; warning logged | Inline error: "Add at least one non-whitespace delimiter, or clear the field to use the default." |
 | Some non-whitespace + any standard whitespace | Valid                                                | Effective `D` = user set ∪ whitespace floor | Accepted                                  |
 | Contains disallowed control char          | **Invalid**                                          | Built-in default from B1; warning logged | Inline error; save disabled              |
@@ -185,11 +213,11 @@ The `//` run is consumed atomically as one delimiter run; it never produces an i
 
 | Key                        | Type     | Default                      | Notes                                                  |
 | -------------------------- | -------- | ---------------------------- | ------------------------------------------------------ |
-| `editor.word_delimiters`   | `string` | `"/.-_:= \t\n\r\x0b\x0c"`    | Global default. See B6 for value-string semantics, escape sequences, validation, and missing/empty/whitespace-only/invalid handling. Whitespace floor (B5) always applies. |
+| `editor.word_delimiters`   | `string` | `/`, `.`, `-`, `_`, `:`, `=`, space, `\t`, `\n`, `\r`, U+000B, U+000C — see B1 for the valid TOML encoding (`\xXX` is NOT a valid TOML escape) | Global default. See B6 for value-string semantics, escape sequences, validation, and missing/empty/whitespace-only/invalid handling. Whitespace floor (B5) always applies. |
 | `terminal.word_delimiters` | `string` | unset (falls back to editor) | Override for terminal input. Per B4 + B6.5, missing/empty/invalid falls through to `editor.word_delimiters` (NOT directly to the built-in default). |
 | `agent.word_delimiters`    | `string` | unset (falls back to editor) | Override for agent prompt input. Same fallthrough as terminal. |
 
-UI placement: **Settings → Editor → "Word Boundary Characters"**. Single-line text input with a "Reset to default" button and a "Show escapes" toggle (per B6.3). Validation per B6.4 — disallowed control characters trigger an inline error and disable save. Whitespace-only or empty inline error per B6.5. Below the input, a live preview line:
+UI placement: **Settings → Editor → "Word Boundary Characters"**. Single-line text input with a "Reset to default" button and a "Show escapes" toggle (per B6.3). Validation per B6.4 — disallowed control characters trigger an inline error and disable save. Whitespace-only values trigger an inline error per B6.5. **Empty values do NOT trigger an error** — they are treated as "use default" and the field renders the default as a hint with a "Reset to default" indicator and the subtitle "Empty = default delimiters" (per B6.5). Below the input, a live preview line:
 
 ```
 /var/www/example.com    ←| ←| ←| ←|
@@ -205,8 +233,27 @@ No new keybindings, command palette actions, or context flags are added.
 
 All criteria below match the canonical algorithm in B2.
 
-- **A1.** Delete Word Left on `/var/www/example.com|` (cursor at end) with the default `D` produces, on successive presses: `/var/www/example.|` → `/var/www/|` → `/var/|` → `/|` → `|`. (5 presses to fully clear; matches B2 worked example.)
-- **A2.** Delete Word Right is the mirror. On `|/var/www/example.com` (cursor at start) with the default `D`, successive presses produce: `|/var/www/example.com` (Rule 3 — char right=`/` ∈ D — consume `/` then `var`) → `|/www/example.com` → `|/example.com` → `|.com` → `|com` → `|`.
+- **A1.** Delete Word Left on `/var/www/example.com|` (cursor at end) with the default `D` produces, on successive presses, this canonical sequence of 6 buffer states (start state plus 5 deletions):
+  - State 0 (start): `/var/www/example.com|`
+  - After press 1: `/var/www/example.|` (Rule 3 — char left=`m` ∉ D — consume non-delim run `com`)
+  - After press 2: `/var/www/|` (Rule 2 — char left=`.` ∈ D — consume delim `.` then non-delim `example`)
+  - After press 3: `/var/|` (Rule 2 — consume delim `/` then non-delim `www`)
+  - After press 4: `/|` (Rule 2 — consume delim `/` then non-delim `var`)
+  - After press 5: `|` (Rule 2 — consume delim `/`; no preceding non-delim run)
+- **A2.** Delete Word Right mirrors A1 by the canonical algorithm:
+  - **Mid-non-delim case (cursor inside a non-delim run):** consume from the cursor to the END of the run, do NOT cross into the following delimiter run on this press.
+  - **Otherwise (cursor is at a boundary, i.e. char immediately right is in `D`, or the cursor is at start/end of a delimiter region):** consume the next delimiter run AND the next non-delimiter run.
+
+  Worked example for `|/var/www/example.com` (cursor at start of line, default `D`). Char immediately right = `/` (∈ D), so each press is the "otherwise" branch (consume delim run + non-delim run). Canonical 5-state sequence (start + 4 deletions, 4 presses to fully clear):
+  - State 0 (start): `|/var/www/example.com`
+  - After press 1: `|/www/example.com` (consume delim `/` then non-delim `var`)
+  - After press 2: `|/example.com` (consume delim `/` then non-delim `www`)
+  - After press 3: `|.com` (consume delim `/` then non-delim `example`)
+  - After press 4: `|` (consume delim `.` then non-delim `com`)
+
+  Worked example for `var/www|.com` (cursor mid-line, between `www` and `.`). Char immediately right = `.` (∈ D); cursor is at a boundary (not inside a non-delim run). One DWR press consumes delim `.` then non-delim `com`. Result: `var/www|`.
+
+  Worked example for `var/w|ww.com` (cursor mid-non-delim-run inside `www`). Char immediately right = `w` (∉ D); cursor IS inside a non-delim run. The "mid-non-delim" branch applies: consume from cursor to end of the run (`ww`). Result: `var/w|.com`. The following delimiter run `.` is NOT consumed on this press.
 - **A3.** With default set, on `/path/to/file|` the first Delete Word Left removes only `file`, leaving `/path/to/|`. (Rule 3: char left=`e` ∉ D, consume just the non-delimiter run `file`.)
 - **A4.** Per-context override applies only in that input context; other contexts use the editor default or their own override (per B4).
 - **A5.** Missing/empty setting value falls back to the built-in default from B1 (per B6.5).
@@ -233,17 +280,33 @@ All tests assume the canonical algorithm in B2.
 
 ### Delete Word Left
 
-- **T1.** Default behavior on `/var/www/example.com|`: 5 successive Delete Word Left presses produce `/var/www/example.|`, `/var/www/|`, `/var/|`, `/|`, `|` (matches A1).
+- **T1.** Default behavior on `/var/www/example.com|`: assert all 6 buffer states in the canonical sequence (state 0 is the start; each subsequent state is the result of one DWL press). The test MUST walk every intermediate state — none may be elided:
+  - State 0 (start): `/var/www/example.com|`
+  - State 1 (after press 1): `/var/www/example.|`
+  - State 2 (after press 2): `/var/www/|`
+  - State 3 (after press 3): `/var/|`
+  - State 4 (after press 4): `/|`
+  - State 5 (after press 5): `|`
+
+  This matches the A1 acceptance criterion and the B2 worked example. Press 6 is asserted as a no-op (cursor at start-of-line, B2 Rule 1).
 - **T2.** Custom delimiter set `D = {":"}` (whitespace floor still applies) on `key:value:other|`: presses produce `key:value:|`, `key:|`, `|`.
 - **T3.** Run collapse on `foo//bar|` with default set: press 1 → `foo//|`; press 2 → `|`. (Two presses total — `//` is a single delimiter run consumed atomically with the preceding non-delimiter run by Rule 2.)
 - **T4.** Cursor mid-non-delimiter run on `var|/www` with default set: Delete Word Left consumes only `var` from cursor leftward (Rule 3), result `|/www`.
 
 ### Delete Word Right
 
-- **T8a.** Default set, `|/var/www/example.com`: 6 successive Delete Word Right presses produce `|/www/example.com`, `|/example.com`, `|.com`, `|com`, `|`. (Mirror of A1; matches A2.)
+- **T8a.** Default set, `|/var/www/example.com`: assert all 5 buffer states in the canonical sequence. The test MUST walk every intermediate state:
+  - State 0 (start): `|/var/www/example.com`
+  - State 1 (after press 1): `|/www/example.com` (consume delim `/` then non-delim `var`)
+  - State 2 (after press 2): `|/example.com` (consume delim `/` then non-delim `www`)
+  - State 3 (after press 3): `|.com` (consume delim `/` then non-delim `example`)
+  - State 4 (after press 4): `|` (consume delim `.` then non-delim `com`)
+
+  Matches A2.
 - **T8b.** Custom delimiter set `D = {"/"}` (whitespace floor still applies) on `|/foo/bar/baz`: presses produce `|/bar/baz`, `|/baz`, `|`.
 - **T8c.** Delete Word Right at end-of-line on `foo|` is a no-op.
-- **T8d.** Cursor mid-non-delimiter run on `foo|bar/baz` with default set: Delete Word Right consumes only `bar` (Rule 2 in DWR — char right=`b` ∉ D), result `foo|/baz`.
+- **T8d.** Cursor mid-non-delimiter run on `foo|bar/baz` with default set: char right=`b` ∉ D and cursor is INSIDE the non-delim run `foobar`. The "mid-non-delim" branch applies: consume from cursor to end of run (`bar`). Result: `foo|/baz`. The following delim run `/` is NOT consumed.
+- **T8e.** Cursor at boundary mid-line on `var/www|.com` with default set: char right=`.` ∈ D; cursor is at a boundary (not inside a non-delim run). One DWR press consumes delim `.` then non-delim `com`. Result: `var/www|`. Matches the second worked example in A2.
 
 ### Move Cursor Word Left / Right
 
@@ -253,10 +316,10 @@ All tests assume the canonical algorithm in B2.
 ### Settings resolution
 
 - **T9a.** Context override precedence: set `editor.word_delimiters = "/"` and `terminal.word_delimiters = "."`. Assert terminal uses `.` ∪ whitespace; agent uses `/` ∪ whitespace (falls back to editor); editor uses `/` ∪ whitespace.
-- **T9b.** Missing key fallback: leave `editor.word_delimiters` unset; assert default `"/.-_:= \t\n\r\x0b\x0c"` applies (per B6.5).
-- **T9c.** Empty string fallback: set `editor.word_delimiters = ""`; assert default applies; no error logged.
+- **T9b.** Missing key fallback: leave `editor.word_delimiters` unset; assert the B1 literal default applies (set `{ '/', '.', '-', '_', ':', '=' }` ∪ whitespace floor including U+000B and U+000C). Per B6.5, no warning, no error.
+- **T9c.** Empty string fallback: set `editor.word_delimiters = ""`; assert default applies; **no warning logged, no UI inline error shown**. Settings UI renders the default as a hint with the "Reset to default" indicator and subtitle "Empty = default delimiters" (per B6.5). Behavior is identical to T9b.
 - **T9d.** Whitespace-only invalid: set `editor.word_delimiters = "  \t"`; assert default applies; warning logged; Settings UI shows inline error (per B6.5).
-- **T9e.** Disallowed control char invalid: set `editor.word_delimiters = "/\x07"`; assert default applies; warning logged; Settings UI shows inline error.
+- **T9e.** Disallowed control char invalid: set `editor.word_delimiters = "/"` (BEL, encoded with valid TOML `\u00XX`); assert default applies; warning logged; Settings UI shows inline error.
 - **T9f.** Whitespace floor enforced: set `editor.word_delimiters = "/"` (no whitespace). Assert Delete Word Left still stops at spaces and newlines (per A7 / B5).
 - **T9g.** Per-context override invalid → falls through to editor (not directly to default): set `editor.word_delimiters = "/"`, `terminal.word_delimiters = "  "`. Assert terminal uses editor's `/`, NOT the built-in default.
 
