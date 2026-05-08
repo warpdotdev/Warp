@@ -1527,9 +1527,11 @@ impl Block {
             Lines::zero()
         } else {
             self.block_banner_height()
-                + self.padding_top()
-                + self.prompt_and_command_height()
-                + self.padding_middle()
+                + if self.should_hide_command_grid {
+                    Lines::zero()
+                } else {
+                    self.padding_top() + self.prompt_and_command_height() + self.padding_middle()
+                }
                 + if self.should_hide_output_grid {
                     Lines::zero()
                 } else {
