@@ -178,6 +178,15 @@ pub async fn run_ssh_script(
         .map_err(SshCommandError::IoError)
 }
 
+impl From<SshCommandError> for crate::transport::Error {
+    fn from(err: SshCommandError) -> Self {
+        match err {
+            SshCommandError::TimedOut { .. } => Self::TimedOut,
+            other => Self::Other(other.into()),
+        }
+    }
+}
+
 /// Upload a local file to the remote host via `scp`, reusing the
 /// ControlMaster socket for authentication. Returns `Ok(())` on success
 /// or an error describing the failure.

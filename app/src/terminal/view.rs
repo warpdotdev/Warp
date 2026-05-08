@@ -4339,7 +4339,6 @@ impl TerminalView {
                         me.show_ssh_remote_server_failed_banner(
                             *session_id,
                             remote_server::transport::UserFacingError {
-                                title: "Could not establish connection to host",
                                 body: "Failed to start SSH extension".into(),
                                 detail: if error.is_empty() {
                                     None
@@ -4396,6 +4395,7 @@ impl TerminalView {
                             ctx
                         );
                         if let Err(error) = result {
+                            log::warn!("Remote server install failed: {error:#}");
                             me.show_ssh_remote_server_failed_banner(
                                 *session_id,
                                 error.user_facing_error(
@@ -4431,6 +4431,7 @@ impl TerminalView {
                             ctx
                         );
                         if let Err(error) = result {
+                            log::warn!("Remote server binary check failed: {error:#}");
                             me.show_ssh_remote_server_failed_banner(
                                 *session_id,
                                 error.user_facing_error(

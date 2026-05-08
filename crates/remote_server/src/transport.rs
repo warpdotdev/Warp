@@ -23,15 +23,14 @@ use crate::manager::RemoteServerExitStatus;
 use crate::setup::{PreinstallCheckResult, RemotePlatform};
 
 /// Structured error for user-facing display in the SSH remote-server
-/// failed banner. Separates the always-visible title and body from the
-/// optional technical detail.
+/// failed banner. Separates the always-visible body from an optional set of
+/// details.
 #[derive(Clone, Debug)]
 pub struct UserFacingError {
-    /// Short headline, e.g. "Could not establish connection to host".
-    pub title: &'static str,
-    /// Always-visible explanation of what went wrong.
+    /// Always-visible explanation of what went wrong,
+    /// e.g. "Failed to install SSH extension".
     pub body: String,
-    /// Optional technical detail shown in the red error box (stderr,
+    /// Optional technical detail shown to the user (stderr,
     /// timeout duration, unsupported OS/arch). `None` when the
     /// underlying error doesn't carry anything useful for the user.
     pub detail: Option<String>,
@@ -60,14 +59,6 @@ impl SetupStage {
     }
 }
 
-/// Unified error type for all [`RemoteTransport`] setup methods
-/// (detect_platform, run_preinstall_check, check_binary, install_binary).
-///
-/// Each variant captures enough structured information for both
-/// logging/telemetry (`Display` impl) and user-facing banners
-/// ([`user_facing_error`]).
-///
-/// [`user_facing_error`]: Error::user_facing_error
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The operation timed out.
@@ -87,17 +78,16 @@ pub enum Error {
     Other(anyhow::Error),
 }
 
-/// Maximum number of stderr bytes to include in the user-facing detail
-/// for `ScriptFailed` errors. Keeps the banner reasonable even when a
-/// remote script dumps a large amount of output.
-const MAX_STDERR_DISPLAY_LEN: usize = 512;
+/// Maximum number of stderr characters to include in the user-facing
+/// detail for `ScriptFailed` errors. Keeps the banner reasonable even
+/// when a remote script dumps a large amount of output.
+const MAX_STDERR_DISPLAY_CHARS: usize = 512;
 
 impl Error {
     /// Converts this error into a [`UserFacingError`] suitable for the
     /// SSH remote-server failed banner, using `stage` to provide
     /// context-appropriate copy.
     pub fn user_facing_error(&self, stage: SetupStage) -> UserFacingError {
-        let title = "Could not establish connection to host";
         let body = format!("Failed to {}", stage.action_description());
         let detail = match self {
             Self::TimedOut => {
@@ -106,37 +96,21 @@ impl Error {
             Self::UnsupportedOs { os } => Some(format!("Unsupported OS: {os}")),
             Self::UnsupportedArch { arch } => Some(format!("Unsupported architecture: {arch}")),
             Self::ScriptFailed { exit_code, stderr } => {
-                let truncated = if stderr.len() > MAX_STDERR_DISPLAY_LEN {
-                    let boundary = stderr.floor_char_boundary(MAX_STDERR_DISPLAY_LEN);
-                    format!("{}…", &stderr[..boundary])
+                let truncated = if stderr.chars().count() > MAX_STDERR_DISPLAY_CHARS {
+                    let end: usize = stderr
+                        .char_indices()
+                        .nth(MAX_STDERR_DISPLAY_CHARS)
+                        .map(|(i, _)| i)
+                        .unwrap_or(stderr.len());
+                    format!("{}…", &stderr[..end])
                 } else {
                     stderr.clone()
                 };
                 Some(format!("Script exited with code {exit_code}: {truncated}"))
             }
-            Self::Other(e) => {
-                let msg = format!("{e:#}");
-                if msg.is_empty() {
-                    None
-                } else {
-                    Some(msg)
-                }
-            }
+            Self::Other(_) => None,
         };
-        UserFacingError {
-            title,
-            body,
-            detail,
-        }
-    }
-}
-
-impl From<crate::ssh::SshCommandError> for Error {
-    fn from(err: crate::ssh::SshCommandError) -> Self {
-        match err {
-            crate::ssh::SshCommandError::TimedOut { .. } => Self::TimedOut,
-            other => Self::Other(other.into()),
-        }
+        UserFacingError { body, detail }
     }
 }
 

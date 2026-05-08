@@ -15,6 +15,8 @@ use warpui::{
 
 use crate::{terminal::model::session::SessionId, ui_components::icons::Icon, Appearance};
 
+const BANNER_TITLE: &str = "Could not establish connection to host";
+
 const BANNER_BODY: &str =
     "While advanced features like file browsing and code review are currently \
     disabled, the rest of your Warpified experience is fully available.";
@@ -77,7 +79,7 @@ impl View for SshRemoteServerFailedBanner {
         .finish();
 
         let title = Text::new(
-            self.error.title.to_string(),
+            BANNER_TITLE.to_string(),
             appearance.ui_font_family(),
             font_size,
         )
@@ -98,13 +100,14 @@ impl View for SshRemoteServerFailedBanner {
             let error_bg = theme.ansi_overlay_1(ansi_red);
             let error_text_color = theme.ansi_fg_red();
 
-            let red_box_text = if let Some(detail) = &self.error.detail {
+            let error_description = if let Some(detail) = &self.error.detail {
                 format!("{}. {}", self.error.body, detail)
             } else {
                 format!("{}.", self.error.body)
             };
 
-            let error_text = Text::new(red_box_text, appearance.ui_font_family(), small_font_size)
+            let error_text =
+                Text::new(error_description, appearance.ui_font_family(), small_font_size)
                 .soft_wrap(true)
                 .with_color(error_text_color)
                 .finish();
