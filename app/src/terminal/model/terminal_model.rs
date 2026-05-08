@@ -1887,17 +1887,21 @@ impl TerminalModel {
         self.colors = colors;
     }
 
-    /// Updates stored color scheme classification and returns whether to emit a theme notification.
-    pub fn set_color_scheme(&mut self, color_scheme: ColorScheme) -> bool {
-        let classification_changed = self.color_scheme != color_scheme;
-        self.color_scheme = color_scheme;
-
+    fn should_notify_color_scheme_change(&self, classification_changed: bool) -> bool {
         classification_changed
             && self.is_term_mode_set(TermMode::DARK_LIGHT_NOTIFICATIONS)
             && self
                 .block_list()
                 .active_block()
                 .is_active_and_long_running()
+    }
+
+    /// Updates stored color scheme classification and returns whether to emit a theme notification.
+    pub fn set_color_scheme(&mut self, color_scheme: ColorScheme) -> bool {
+        let classification_changed = self.color_scheme != color_scheme;
+        self.color_scheme = color_scheme;
+
+        self.should_notify_color_scheme_change(classification_changed)
     }
 
     /// Returns `true` when the current stored theme is dark mode.
