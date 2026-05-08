@@ -111,7 +111,7 @@ impl TerminalView {
             AmbientAgentViewModelEvent::Failed { .. }
                 | AmbientAgentViewModelEvent::NeedsGithubAuth
                 | AmbientAgentViewModelEvent::Cancelled
-                | AmbientAgentViewModelEvent::HarnessCommandStarted
+                | AmbientAgentViewModelEvent::HarnessCommandStarted { .. }
         ) {
             self.remove_pending_user_query_block(ctx);
         }
@@ -297,11 +297,14 @@ impl TerminalView {
             }
             AmbientAgentViewModelEvent::HostSelected => {}
             AmbientAgentViewModelEvent::HarnessModelSelected => {}
-            AmbientAgentViewModelEvent::HarnessCommandStarted => {
-                // Stop classifying new blocks as environment setup commands, mirroring the
-                // Oz path in the `AppendedExchange` handler. Flipping this flag to `false`
-                // also un-hides and un-marks the active block so it renders like a normal
-                // CLI-agent session.
+            AmbientAgentViewModelEvent::HarnessCommandStarted { block_id } => {
+                // Stop classifying the harness block as an environment setup command, mirroring
+                // the Oz path in the `AppendedExchange` handler.
+                let conversation_id = self
+                    .agent_view_controller
+                    .as_ref(ctx)
+                    .agent_view_state()
+                    .active_conversation_id();
                 {
                     let mut model = self.model.lock();
                     if model
@@ -310,7 +313,10 @@ impl TerminalView {
                     {
                         model
                             .block_list_mut()
-                            .set_is_executing_oz_environment_startup_commands(false);
+                            .finish_oz_environment_startup_commands_at_block(
+                                block_id,
+                                conversation_id,
+                            );
                     }
                 }
                 // Collapse the setup-commands summary, matching the oz first-exchange behavior.
@@ -368,10 +374,10 @@ impl TerminalView {
         if ambient_agent_view_model
             .as_ref(ctx)
             .is_third_party_harness()
-            && self.active_block_matches_run_harness(ctx)
+            && self.block_matches_run_harness(block_id, ctx)
         {
             ambient_agent_view_model.update(ctx, |model, ctx| {
-                model.mark_harness_command_started(ctx);
+                model.mark_harness_command_started(block_id.clone(), ctx);
             });
             return;
         }
@@ -511,19 +517,20 @@ impl TerminalView {
         }
     }
 
-    /// Returns `true` when the active block's command is the CLI for the run's configured
+    /// Returns `true` when the block's command is the CLI for the run's configured
     /// non-oz harness (e.g. `claude …` for [`Harness::Claude`]).
     /// Used to detect the harness-start transition at `AfterBlockStarted` time. Unlike
     /// `detect_cli_agent_from_model`, this does NOT gate on `is_active_and_long_running` —
     /// we want to classify the block as the harness session as soon as it starts, before the
     /// long-running timer would otherwise elapse.
-    fn active_block_matches_run_harness(&self, ctx: &AppContext) -> bool {
-        let command = self
-            .model
-            .lock()
-            .block_list()
-            .active_block()
-            .command_with_secrets_obfuscated(false);
+    fn block_matches_run_harness(&self, block_id: &BlockId, ctx: &AppContext) -> bool {
+        let command = {
+            let model = self.model.lock();
+            let Some(block) = model.block_list().block_with_id(block_id) else {
+                return false;
+            };
+            block.command_with_secrets_obfuscated(false)
+        };
         let Some(cli_agent) = CLIAgent::detect(&command, None, None, ctx) else {
             return false;
         };

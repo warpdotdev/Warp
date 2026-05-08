@@ -116,7 +116,7 @@ pub fn create_cloud_mode_view(
                 | AmbientAgentViewModelEvent::HarnessSelected
                 | AmbientAgentViewModelEvent::HostSelected
                 | AmbientAgentViewModelEvent::HarnessModelSelected
-                | AmbientAgentViewModelEvent::HarnessCommandStarted
+                | AmbientAgentViewModelEvent::HarnessCommandStarted { .. }
                 | AmbientAgentViewModelEvent::PendingHandoffChanged
                 | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
                 | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => {}

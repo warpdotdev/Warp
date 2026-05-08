@@ -5,6 +5,7 @@ use session_sharing_protocol::common::SessionId;
 use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
+use warp_terminal::model::BlockId;
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
@@ -550,7 +551,11 @@ impl AmbientAgentViewModel {
 
     /// Marks the harness CLI as started and emits `HarnessCommandStarted`.
     /// Idempotent: subsequent calls after the first are no-ops and do not re-emit.
-    pub(super) fn mark_harness_command_started(&mut self, ctx: &mut ModelContext<Self>) {
+    pub(super) fn mark_harness_command_started(
+        &mut self,
+        block_id: BlockId,
+        ctx: &mut ModelContext<Self>,
+    ) {
         debug_assert!(
             self.harness != Harness::Oz,
             "harness_command_started is only meaningful for non-oz runs"
@@ -559,7 +564,7 @@ impl AmbientAgentViewModel {
             return;
         }
         self.harness_command_started = true;
-        ctx.emit(AmbientAgentViewModelEvent::HarnessCommandStarted);
+        ctx.emit(AmbientAgentViewModelEvent::HarnessCommandStarted { block_id });
     }
 
     /// Sets the selected environment ID.
@@ -1413,7 +1418,9 @@ pub enum AmbientAgentViewModelEvent {
     /// The harness CLI (for non-oz runs) has started executing in the shared session.
     /// Fires once per run and signals the transition out of the pre-first-exchange phase
     /// for claude / gemini / other third-party harnesses.
-    HarnessCommandStarted,
+    HarnessCommandStarted {
+        block_id: BlockId,
+    },
     /// The pane's `pending_handoff` was updated.
     PendingHandoffChanged,
     /// The async handoff snapshot upload failed. The input layer subscribes to
