@@ -17,6 +17,25 @@ The TOML key uses the existing `code.editor.*` namespace already in
 use by other code-editor settings in this surface, with the
 `review_panel` sub-namespace grouping panel-specific preferences.
 
+### Canonical setting key
+
+> **The single canonical TOML key is `code.editor.review_panel.open_maximized`.**
+>
+> This is the only spelling that appears anywhere in the
+> implementation, the user-facing settings UI label, the
+> documentation, the test fixtures, the migration code, the
+> telemetry event payloads, or the changelog entry. Variants such as
+> `editor.review_panel_open_maximized`,
+> `code.editor.reviewPanel.openMaximized`,
+> `code_editor.review_panel.open_maximized`, or any other casing /
+> separator combination MUST NOT appear in any artifact shipped under
+> this spec. Reviewers should grep the diff for those variants and
+> reject any occurrence.
+>
+> The key is in `snake_case` segments separated by `.`, matching the
+> convention already used for `code.editor.*` sibling keys in
+> `app/src/settings/code.rs`.
+
 ## Behavior contract
 
 - B1. New setting `code.editor.review_panel.open_maximized: bool`,
