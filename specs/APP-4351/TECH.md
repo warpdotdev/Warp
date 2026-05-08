@@ -43,7 +43,7 @@ Add to `crates/remote_server/proto/remote_server.proto`.
 - `DiffStateSnapshot` (push) — full state for a (repo, mode). Includes metadata + full `GitDiffData`. Pushed on structural changes (`NewDiffsComputed`).
 - `DiffStateMetadataUpdate` (push) — metadata-only update for `MetadataRefreshed` events. Avoids re-serializing the entire diff payload on every 5-second throttled refresh.
 - `DiffStateFileDelta` (push) — single-file diff update for `SingleFileUpdated` events. Carries one `FileDiff` + file path + updated metadata. Debounced at 2s on the server.
-- `DiscardFilesResponse` — `oneof result { DiscardFilesSuccess, FileOperationError }`. Returned after processing a `DiscardFilesRequest`.
+- `DiscardFilesResponse` — `oneof result { DiscardFilesSuccess, DiscardFilesError }`. Returned after processing a `DiscardFilesRequest`.
 
 Wire into `ClientMessage.oneof` (field numbers 18–20) and `ServerMessage.oneof` (field numbers 18–22). Client: `get_diff_state = 18`, `unsubscribe_diff_state = 19`, `discard_files = 20`. Server: `get_diff_state_response = 18`, `diff_state_snapshot = 19`, `diff_state_metadata_update = 20`, `diff_state_file_delta = 21`, `discard_files_response = 22`. Current max field numbers: `ClientMessage` = 17 (`ResolveConflict`), `ServerMessage` = 17 (`ResolveConflictResponse`).
 
@@ -55,7 +55,7 @@ Conversion lives in a new `diff_state_proto.rs`, following the `repo_metadata_pr
 
 **No `RefreshDiffMetadata` message** — the server pushes metadata changes automatically via its watcher, matching the `RepoMetadata` pattern.
 
-**No `ChangeDiffMode` message** — mode is immutable per model. Mode changes mean the client unsubscribes old + subscribes new (see §5).
+**No `ChangeDiffMode` message** — mode changes are handled client-side: `RemoteDiffStateModel.set_diff_mode()` sends `UnsubscribeDiffState` for the old mode, resets internal state, then sends `GetDiffState` for the new mode (see §5). The server's per-model mode remains immutable (shared across connections), but the client model manages the transition internally.
 
 **Rust wire types** (in a new shared module, e.g. `diff_state_wire.rs` — both client and server need these types):
 
@@ -86,23 +86,28 @@ New file: `app/src/remote_server/diff_state_server.rs`.
 ```rust path=null start=null
 #[derive(Hash, Eq, PartialEq, Clone)]
 struct ServerDiffStateKey {
-    repo_id: RepositoryIdentifier,
+    repo_path: StandardizedPath,
     mode: DiffMode,
 }
 
 pub struct GlobalDiffStateModel {
     states: HashMap<ServerDiffStateKey, ModelHandle<LocalDiffStateModel>>,
-    per_connection_keys: HashMap<ConnectionId, HashSet<ServerDiffStateKey>>,
+    /// connection → keys: used to clean up all subscriptions on connection drop.
+    keys_by_connection: HashMap<ConnectionId, HashSet<ServerDiffStateKey>>,
+    /// key → connections: used to fan out repo events to subscribers.
+    connections_by_key: HashMap<ServerDiffStateKey, HashSet<ConnectionId>>,
 }
 ```
 
-**Per-(repo, mode) models with immutable mode.** The server keys models on `(repo_path, mode)`. Each model is pinned to one mode at construction. This is required because the server-side model is shared across connections — mutable mode would let one client's mode switch corrupt another's subscription. Metadata duplication across models for the same repo is acceptable: the git commands are <50ms each, old-mode models are dropped promptly on `UnsubscribeDiffState`, and the `Repository` handle + fs watcher are shared via `DetectedRepositories`.
+`ServerDiffStateKey` uses `StandardizedPath` (not `RepositoryIdentifier`) because the server daemon only manages local-to-the-remote-host repositories — the `Remote` variant of `RepositoryIdentifier` is never used on the server side. This matches the existing `ServerModel` convention where per-connection state is keyed on `StandardizedPath` (e.g. `snapshot_sent_roots_by_connection`).
+
+**Per-(repo, mode) models with immutable mode.** The server keys models on `(repo_path, mode)`.
 
 **Lifecycle:**
 1. `GetDiffState` arrives as a request. `GlobalDiffStateModel` looks up or creates a `LocalDiffStateModel` for the key. If already loaded, responds immediately. If loading, uses `ctx.spawn` to respond once `NewDiffsComputed` fires. Reuses `Repository` handles from `DetectedRepositories` (already detected by prior `NavigatedToDirectory`). If no repository has been detected yet (e.g. `GetDiffState` arrives before `NavigatedToDirectory`), responds with `DiffStateError` — the client retries after `NavigatedToDirectory` completes.
-2. After responding, subsequent model events are pushed to subscribed connections only via `send_to_diff_state_subscribers(key, msg)`, which scans `per_connection_keys`. Targeted sends avoid broadcasting large diff payloads (~500KB–2MB).
-3. `UnsubscribeDiffState` removes the key from the connection's set. If no connection subscribes to the key, the model is dropped.
-4. `deregister_connection(conn_id)` removes the connection's entry and drops orphaned models.
+2. After responding, subsequent model events are pushed to subscribed connections only via `send_to_diff_state_subscribers(key, msg)`, which looks up `connections_by_key[key]`. Targeted sends avoid broadcasting large diff payloads (~500KB–2MB).
+3. `UnsubscribeDiffState` removes the key from both maps. If no connection subscribes to the key, the model is dropped.
+4. `deregister_connection(conn_id)` removes the connection from `keys_by_connection` and from every corresponding entry in `connections_by_key`, dropping orphaned models.
 
 **Event → push mapping:**
 - `NewDiffsComputed` → full `DiffStateSnapshot`
@@ -113,10 +118,13 @@ pub struct GlobalDiffStateModel {
 ### 4. RemoteDiffStateModel implementation
 
 Fill in the no-op stub in `diff_state/remote.rs` (created in §1) to:
-- Hold `repo_id: RepositoryIdentifier` (always `Remote` variant), `mode: DiffMode` (immutable), `state: DiffState`, `metadata: Option<DiffMetadata>`.
+- Hold `repo_id: RepositoryIdentifier` (always `Remote` variant), `mode: DiffMode` (mutable), `state: DiffState`, `metadata: Option<DiffMetadata>`.
 - Apply incoming `DiffStateSnapshotData`, `DiffStateMetadataUpdate`, and `DiffStateFileDeltaData` from server pushes.
 - Reconstruct `FileDiffAndContent { file_diff, content_at_head }` from wire `FileDiff` (extracting `content_at_base` → `content_at_head`) and wrap `GitDiffData` → `Arc<GitDiffWithBaseContent>` before emitting events.
 - Emit `DiffStateModelEvent` variants matching the server push mapping (§3).
+- Own the subscribe/unsubscribe lifecycle for mode changes via `set_diff_mode()` (see §5).
+
+`DiffMode` is mutable on the client-side `RemoteDiffStateModel`, matching `LocalDiffStateModel`'s existing pattern where `set_diff_mode` mutates the mode field in place and triggers a reload. The server-side model remains immutable (keyed on `(repo_path, mode)` and shared across connections), but that constraint doesn't apply to the per-client remote model. This keeps the wrapper's delegation symmetric between `Local` and `Remote` backends, and avoids the need to destroy/recreate the model handle on mode changes (which would require re-wiring event subscriptions and introduces subscribe-before-request race conditions).
 
 **Required read API surface** (defined in the wrapper's delegation interface):
 - Core: `get()`, `diff_mode()`, `get_current_branch_name()`, `get_main_branch_name()`, `get_stats_for_current_mode()`, `get_uncommitted_stats()`, `has_head()`
@@ -127,13 +135,15 @@ For v1, mutation methods that are local-only (`load_diffs_for_current_repo`, `re
 
 ### 5. Mode changes and unsubscribe
 
-Since `RemoteDiffStateModel` has immutable mode, mode changes require swapping:
-1. Wrapper sends `UnsubscribeDiffState { repo_path, mode: old }`.
-2. Creates new `RemoteDiffStateModel` for `(repo_id, new_mode)` in `Loading` state.
-3. Wrapper subscribes to the new sub-model's events *before* sending the request (a fast server response could race the subscription otherwise).
-4. Sends `GetDiffState { repo_path, mode: new_mode }`.
-5. Emits `NewDiffsComputed(None)` so the view shows a loading spinner.
-6. Server responds → model transitions to `Loaded`, emits `NewDiffsComputed(Some(...))`.
+`RemoteDiffStateModel.set_diff_mode()` handles mode transitions internally, mirroring how `LocalDiffStateModel.set_diff_mode()` mutates mode and triggers a reload:
+1. Sends `UnsubscribeDiffState { repo_path, mode: old_mode }` to the server.
+2. Updates `self.mode` to the new mode.
+3. Resets internal state: `self.state = DiffState::Loading`, clears `self.diffs` and `self.metadata`.
+4. Emits `NewDiffsComputed(None)` so the view shows a loading spinner.
+5. Sends `GetDiffState { repo_path, mode: new_mode }` to the server.
+6. Server responds → model applies the snapshot, transitions to `Loaded`, emits `NewDiffsComputed(Some(...))`.
+
+Since the `ModelHandle` never changes, the wrapper's event subscription (set up once at construction) remains valid across mode changes — no re-wiring needed.
 
 **Unsubscribe cases:** code review pane close, mode change, repo change (cycling), connection drop, `drop_unused_diff_state_models` (tab close).
 
