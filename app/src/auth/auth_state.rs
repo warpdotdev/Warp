@@ -22,6 +22,7 @@ use super::{
     credentials::Credentials,
     user::{
         AnonymousUserType, FirebaseAuthTokens, PersonalObjectLimits, PrincipalType, User,
+        #[cfg(any(not(target_family = "wasm"), test))]
         UserMetadata,
     },
     UserUid, API_KEY_PREFIX,
