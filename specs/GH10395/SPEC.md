@@ -56,6 +56,46 @@ If both are configured, both fire. If neither is configured, no external signal 
 
 The callout exposes a "Mark as not duplicate" button per candidate. Clicking it records a dismissal as a structured PR comment with marker `<!-- warp-dup-dismiss pr=<candidate_pr_number> -->`. On subsequent opens, the dismissed candidate is filtered out for that (PR, candidate) pair only. Dismissals are bidirectional — dismissing on PR A also hides PR A from PR B's candidate list.
 
+#### B4a. Dismissal trust model
+
+The `<!-- warp-dup-dismiss pr=N -->` marker is **only respected when the comment author has WRITE access (or higher) to the repository**. This prevents external contributors from forging suppression markers to hide duplicate alerts from maintainers.
+
+Server-side verification: the GitHub API exposes the comment author's permissions via the `author_association` field on each comment. Suppression is only applied when:
+
+```
+author_association ∈ { OWNER, MEMBER, COLLABORATOR }
+```
+
+Comments by external contributors (`author_association ∈ { CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, NONE, MANNEQUIN }`) carrying the same marker text are **IGNORED** — the candidate continues to surface in the callout as if the marker were absent. The detector logs a sanitized debug entry (no comment body, just `pr_number` + `author_association`) when a non-trusted marker is encountered.
+
+The "Mark as not duplicate" UI button is only enabled for users whose GitHub identity has write access to the repo; non-write users see the button disabled with tooltip "Requires repo write access".
+
+### B-Secret. Slack webhook secret-material handling
+
+The Slack incoming-webhook URL is treated as **secret material** and follows team-secret-grade controls.
+
+**Storage.**
+- The webhook URL is stored in the team-level encrypted secret store, never in plain TOML, never in user-readable config files, never inline in this repo's settings tree.
+- If Warp already has a `team_secrets`-style schema, the webhook is persisted there. If no such schema exists yet, this spec marks it as `(new) team-level encrypted secret store` infrastructure that must be in place before the feature ships.
+- Encrypted at rest using the team's existing key material (envelope encryption against the team key); never written to disk in cleartext.
+
+**Access control.**
+- Only users with **team admin** role can READ or WRITE the webhook value.
+- Non-admin team members see a redacted display only: `"•••••• (configured)"` if a webhook is set, `"(not configured)"` otherwise. The actual URL is never returned by the API to non-admin clients.
+- Admin reads of the webhook (e.g., to copy it for rotation) are themselves an audited event in telemetry: `team.duplicate_alert.webhook_revealed { admin_user_id }`.
+
+**Transmission.**
+- The webhook is invoked over **TLS only**. Plain HTTP webhook URLs are rejected at save time with a validation error.
+- The webhook URL is **never** included in logs, telemetry payloads, error messages, panic traces, or crash reports — emit error metadata stripped of URL components. A dedicated sanitizer wraps every log/error path that could touch the URL: it replaces the URL with `[redacted-slack-webhook]`.
+
+**Rotation.**
+- Admins may replace the webhook value at any time via team settings. The previous value is overwritten in place — there is no history kept and no way for the API to return prior values.
+- Rotation takes effect immediately for the next signal emission; in-flight emissions complete against whichever value they captured at request time.
+- Setting the value to empty string disables external Slack signaling entirely (the in-product callout still renders).
+
+**Linear template handling.**
+- The Linear issue template is **not** treated as secret material (it is a body template with placeholders, not a credential). However, it is admin-write / team-read so non-admins cannot inject content into outgoing Linear issues.
+
 ### B5. Detection cadence
 
 Detection runs:
@@ -77,7 +117,32 @@ Team-level (admin-managed; surfaced under team settings UI):
 - `team.duplicate_alert.signal.slack_webhook` (string, default empty) — Slack incoming-webhook URL.
 - `team.duplicate_alert.signal.linear_issue_template` (string, default empty) — Linear issue body template; supports `{pr_number}`, `{candidates}`, `{signals}` placeholders.
 
-If `code.review.duplicate_alert.enabled` is `false`, neither the callout nor the signal fires for that user.
+### Scope of toggles — user vs team
+
+The user-level toggle and team-level external-routing config govern **independent** layers. They do not chain.
+
+| Setting | Scope | What it controls | Default |
+|---|---|---|---|
+| `code.review.duplicate_alert.enabled` | Per-user | Whether **this user** sees the in-product "Possible duplicates" callout in the Code Review pane. | `true` |
+| `team.duplicate_alert.signal.slack_webhook` | Per-team (admin) | Slack destination for the team-level external alert. | empty (off) |
+| `team.duplicate_alert.signal.linear_issue_template` | Per-team (admin) | Linear issue template for the team-level external alert. | empty (off) |
+
+**Independence rules.**
+
+- A user with `enabled = false` sees no callout in their UI. This affects that user only.
+- The team-level external signal (Slack/Linear) fires **once per dedupe-tuple** (see B-Dedup) regardless of any individual user's toggle. Maintainers receive the routed signal even if individual reviewers have callouts disabled.
+- Disabling the user-level toggle does **not** suppress team-level routing. Disabling team-level routing (admin clears the destinations) does not suppress per-user callouts.
+- The previous wording "If `code.review.duplicate_alert.enabled` is `false`, neither the callout nor the signal fires for that user" is **superseded** by this table: only the user-visible callout is affected by the user toggle.
+
+### B-Dedup. Persistent dedupe / cooldown for external signals
+
+External signals (Slack/Linear) are deduped by the tuple `(source_pr, candidate_pr, signal_type)` where `signal_type ∈ { same_issue_ref, file_overlap, small_pr_match, rapid_fire_same_author }`.
+
+- Dedupe state is persisted in a **server-side store** (e.g., the team-settings DB or a per-team Redis namespace), not in process memory and not in client-side storage. This survives client app restarts, different reviewers opening the same PR, and Warp version upgrades.
+- TTL: **7 days**. Within the TTL window, the same tuple does **not** re-fire — even across review sessions, app restarts, or different reviewers opening either PR in the pair.
+- When the TTL expires, the next detection event re-fires the external signal **once**, and the TTL clock resets. This handles long-lived PRs where the duplicate situation persists and needs another nudge.
+- The in-product callout is **not** subject to dedupe — it always renders the current candidate set on every pane open. Dedupe only governs the team-level external signal.
+- Dismissal (B4) is a stronger suppression than dedupe: a dismissed `(source_pr, candidate_pr)` pair never re-fires the external signal regardless of TTL, until both sides delete their dismissal markers.
 
 ## Acceptance Criteria
 
@@ -85,9 +150,13 @@ If `code.review.duplicate_alert.enabled` is `false`, neither the callout nor the
 - A2. Two PRs touching ≥3 files with ≥50% Jaccard path-set overlap each show the other in their callout with signal label "X% file overlap".
 - A3. A 1–2 file PR matches another only when path sets are identical AND title cosine ≥ 0.70.
 - A4. A dismissed candidate stays hidden for that (PR, candidate) pair on subsequent opens, in both directions.
-- A5. The `MaintainerAlert.DuplicatePr` signal fires at most once per (PR, candidate) pair per session; subsequent detections of the same pair do not re-fire.
-- A6. With `code.review.duplicate_alert.enabled = false`, no callout renders and no external signal fires.
+- A5. The `MaintainerAlert.DuplicatePr` external signal is deduped by `(source_pr, candidate_pr, signal_type)` with a 7-day TTL on a **server-side persistent** store; it does not re-fire within TTL across sessions, app restarts, or different reviewers.
+- A5a. After the 7-day TTL elapses, the next detection of the same tuple re-fires the external signal exactly once and resets the TTL.
+- A6. With `code.review.duplicate_alert.enabled = false`, the **in-product callout** does not render for that user. Team-level external signals continue to fire (deduped per A5) regardless of any individual user's toggle.
 - A7. Clicking a candidate row opens that candidate PR in a new Code Review pane without replacing the current one.
+- A8. A `<!-- warp-dup-dismiss pr=N -->` marker on a comment whose `author_association ∈ {OWNER, MEMBER, COLLABORATOR}` is honored; the candidate is suppressed.
+- A9. The same marker text on a comment from an external contributor (`author_association ∈ {CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, NONE, MANNEQUIN}`) is **ignored** and the candidate continues to surface.
+- A10. The Slack webhook URL is never returned by any API to a non-admin caller, never appears in logs/telemetry/error messages, and is rejected at save time if the URL scheme is not HTTPS.
 
 ## Implementation Pointers
 
@@ -111,10 +180,17 @@ New modules:
 - T2. File-set Jaccard ≥ 0.50 over ≥3 files produces a match; below 0.50 does not.
 - T3. Small-PR (1–2 files) path requires identical path set AND title cosine ≥ 0.70.
 - T4. Dismissal persists via PR-comment marker and is bidirectional.
-- T5. Signal emits at most once per (PR, candidate) pair per session.
-- T6. Setting OFF mutes both the callout and the signal.
+- T5. External signal does not re-fire for the same `(source_pr, candidate_pr, signal_type)` within the 7-day TTL.
+- T_dedup_ttl. After exactly 7 days have elapsed since the previous emission, the next detection of the same tuple re-fires once and resets the TTL.
+- T_dedup_across_sessions. Dedupe state survives client restart, multiple reviewers opening either PR, and is read from the server-side store (not from in-process memory).
+- T6. User toggle OFF mutes the per-user in-product callout but does **not** suppress team-level external signals.
 - T7. Background re-detection picks up newly opened PRs without requiring pane refresh.
 - T8. Click navigation opens the candidate in a new pane.
+- T_dismissal_trust_collaborator_respected. A `warp-dup-dismiss` marker on a comment by an OWNER/MEMBER/COLLABORATOR suppresses the candidate.
+- T_dismissal_trust_external_ignored. The same marker text on a comment from a CONTRIBUTOR/FIRST_TIME_CONTRIBUTOR/NONE author is ignored; the candidate still surfaces.
+- T_webhook_secret_redacted. Logs, telemetry payloads, error messages, and panic traces produced during a Slack emission do not contain the webhook URL — only the literal `[redacted-slack-webhook]`.
+- T_webhook_admin_only. A non-admin team member's read of the webhook value returns the redacted display only; the API never returns the cleartext URL to non-admins.
+- T_webhook_https_only. Saving a webhook with `http://` scheme is rejected at validation time.
 
 ## Open Questions
 
