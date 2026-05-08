@@ -115,10 +115,11 @@ pub fn should_use_smart_mouse_handling(
 }
 
 /// Determines if a no-Shift right-click should use Warp's smart tmux routing. Right-clicks do not
-/// have a pending press that must wait for a later drag/click classification, so they can safely
-/// use the smart link-vs-passthrough decision in tmux alt-screen contexts even when the terminal
-/// model has not observed SGR mouse mode yet. This preserves Shift as the force-Warp context-menu
-/// path and keeps the behavior behind the rollout gate.
+/// have a pending press that must wait for a later drag/click classification, but they must still
+/// require observed SGR mouse tracking before replaying mouse escape bytes to the PTY. This
+/// preserves ordinary alt-screen right-click context menus when the TUI has not opted into mouse
+/// reporting, preserves Shift as the force-Warp context-menu path, and keeps the behavior behind
+/// the rollout gate.
 pub fn should_use_smart_right_mouse_handling(
     model: &TerminalModel,
     shift: bool,
@@ -129,7 +130,7 @@ pub fn should_use_smart_right_mouse_handling(
         && !model.shared_session_status().is_reader()
         && model.is_alt_screen_active()
         && is_tmux_context(model, ctx)
-        && mouse_reporting_enabled(ctx)
+        && is_sgr_mouse_reporting_enabled(model, ctx)
 }
 
 /// Determines if an in-flight smart SGR mouse gesture should stay on the smart path. This

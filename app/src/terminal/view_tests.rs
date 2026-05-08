@@ -52,12 +52,16 @@ use crate::terminal::cli_agent_sessions::{
 
 use crate::terminal::model::ansi::{self, InitShellValue};
 use crate::terminal::model::ansi::{BootstrappedValue, PreexecValue};
+#[cfg(feature = "local_fs")]
+use crate::terminal::model::block::BlockMetadata;
 use crate::terminal::model::blocks::{insert_block, TotalIndex};
 use crate::terminal::model::escape_sequences::ToEscapeSequence;
 use crate::terminal::model::grid::grid_handler::Link;
 use crate::terminal::model::grid::Dimensions as _;
 use crate::terminal::model::index::{Point, VisibleRow};
 use crate::terminal::model::mouse::{MouseAction, MouseButton, MouseState};
+#[cfg(feature = "local_fs")]
+use crate::terminal::model::session::SessionInfo;
 use crate::terminal::model::terminal_model::WithinBlock;
 use crate::terminal::session_settings::AgentToolbarChipSelection;
 use crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent;
@@ -2168,7 +2172,7 @@ fn test_alt_screen_smart_mouse_right_click_routing_with_sgr_mouse() {
 }
 
 #[test]
-fn test_alt_screen_smart_mouse_right_click_passthrough_before_sgr_mouse_observed() {
+fn test_alt_screen_smart_mouse_right_click_uses_warp_menu_before_sgr_mouse_observed() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let _smart_mouse = FeatureFlag::SmartAltScreenMouseHandling.override_enabled(true);
@@ -2196,19 +2200,11 @@ fn test_alt_screen_smart_mouse_right_click_passthrough_before_sgr_mouse_observed
             let size_info = enter_tmux_alt_screen_and_fill_grid(view);
             let model = view.model.lock();
             assert!(!should_use_smart_mouse_handling(&model, false, ctx));
-            assert!(should_use_smart_right_mouse_handling(&model, false, ctx));
+            assert!(!should_use_smart_right_mouse_handling(&model, false, ctx));
             assert!(!should_use_smart_right_mouse_handling(&model, true, ctx));
             size_info
         });
         let (start_position, _) = alt_screen_selection_test_positions(size_info);
-        let click_point = Point::new(1, 2);
-        let expected_passthrough = terminal.read(&app, |view, _ctx| {
-            let model = view.model.lock();
-            MouseState::new(MouseButton::Right, MouseAction::Pressed, Default::default())
-                .set_point(click_point)
-                .to_escape_sequence(&*model)
-                .unwrap()
-        });
 
         macro_rules! rerender {
             ($app:ident, $presenter:expr, $invalidation:expr, $size_info:expr) => {
@@ -2237,27 +2233,9 @@ fn test_alt_screen_smart_mouse_right_click_passthrough_before_sgr_mouse_observed
                 presenter.clone(),
             );
         }));
-        assert_eq!(*pty_writes.borrow(), vec![expected_passthrough]);
-        terminal.read(&app, |view, _ctx| assert!(!view.is_context_menu_open()));
-
-        pty_writes.borrow_mut().clear();
-        rerender!(app, presenter, invalidation, size_info);
-        app.update(enclose!((presenter) move |ctx| {
-            ctx.simulate_window_event(
-                warpui::Event::RightMouseDown {
-                    position: start_position,
-                    cmd: false,
-                    shift: true,
-                    click_count: 1,
-                },
-                window_id,
-                presenter.clone(),
-            );
-        }));
-
         assert!(
             pty_writes.borrow().is_empty(),
-            "Shift right-click should remain a Warp context menu"
+            "right-click before observed SGR mouse tracking should keep Warp's context menu"
         );
         terminal.read(&app, |view, _ctx| assert!(view.is_context_menu_open()));
     })
@@ -2377,6 +2355,13 @@ fn test_alt_screen_smart_mouse_direct_path_detection() {
             let size_update = SizeUpdateBuilder::after_layout(*view.size_info, vec2f(4000., 10.5))
                 .build(view, ctx);
             view.resize_internal(size_update, ctx);
+            let session_info = SessionInfo::new_for_test();
+            let session_id = session_info.session_id;
+            view.sessions_model().update(ctx, |sessions, _| {
+                sessions.register_session_for_test(session_info);
+            });
+            view.active_block_metadata =
+                Some(BlockMetadata::new(Some(session_id), Some("/".to_owned())));
             enter_tmux_sgr_alt_screen_with_text(view, &path_text);
             assert!(view.ensure_highlighted_link_at_position(
                 &WithinModel::AltScreen(Point::new(0, 0)),
@@ -2386,6 +2371,39 @@ fn test_alt_screen_smart_mouse_direct_path_detection() {
                 view.highlighted_link.as_ref(),
                 Some(GridHighlightedLink::File(_))
             ));
+        });
+
+        let _ = std::fs::remove_file(path);
+    })
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn test_alt_screen_smart_mouse_absolute_path_requires_known_local_session() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+        let path = std::env::temp_dir().join(format!(
+            "warp-alt-screen-unknown-locality-path-{}-{}.md",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::write(&path, "# test").expect("write path target");
+        let path_text = path.to_string_lossy().to_string();
+
+        terminal.update(&mut app, |view, ctx| {
+            let size_update = SizeUpdateBuilder::after_layout(*view.size_info, vec2f(4000., 10.5))
+                .build(view, ctx);
+            view.resize_internal(size_update, ctx);
+            enter_tmux_sgr_alt_screen_with_text(view, &path_text);
+            assert!(!view.ensure_highlighted_link_at_position(
+                &WithinModel::AltScreen(Point::new(0, 0)),
+                ctx
+            ));
+            assert!(view.highlighted_link.as_ref().is_none());
         });
 
         let _ = std::fs::remove_file(path);

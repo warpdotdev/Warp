@@ -519,11 +519,13 @@ impl super::TerminalView {
         // For BlockList we scan for relative path with the pwd of the hovered block.
         match position {
             WithinModel::AltScreen(_) => self.pwd_if_local(ctx).or_else(|| {
-                // Absolute local paths do not need a cwd. Keep remote sessions suppressed, but
-                // only use "/" as a synthetic cwd when the text under the pointer already looks
-                // absolute. Otherwise relative text like "etc/hosts" would validate as
-                // "/etc/hosts" and incorrectly consume tmux clicks.
-                (self.active_session_is_local(ctx) != Some(false)
+                // Absolute local paths do not need a cwd, but they still require a known-local
+                // session before we synthesize "/" as the cwd. Unknown locality fails closed so
+                // untrusted remote/muxed output cannot trigger actions for local filesystem paths.
+                // Also require the text under the pointer to already look absolute; otherwise
+                // relative text like "etc/hosts" would validate as "/etc/hosts" and incorrectly
+                // consume tmux clicks.
+                (self.active_session_is_local(ctx) == Some(true)
                     && self.possible_file_path_at_position_can_be_valid_without_pwd(position))
                 .then(|| "/".to_owned())
             }),
