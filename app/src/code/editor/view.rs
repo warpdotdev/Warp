@@ -2368,7 +2368,7 @@ impl View for CodeEditorView {
                 VimMode::Visual(_) => {
                     context.set.insert("VimVisualMode");
                 }
-                _ => {}
+                VimMode::Insert | VimMode::Replace => {}
             }
         }
         if self.find_bar.is_some() {
