@@ -3,11 +3,11 @@ use crate::model::OnboardingStateModel;
 use super::OnboardingSlide;
 use pathfinder_color::ColorU;
 use ui_components::{button, Component as _, Options as _};
-use warp_core::ui::{appearance::Appearance, theme::color::internal_colors, Icon};
+use warp_core::ui::{appearance::Appearance, theme::color::internal_colors};
 use warpui::{
     elements::{
         shimmering_text::{ShimmerConfig, ShimmeringTextElement, ShimmeringTextStateHandle},
-        Align, ConstrainedBox, Container, CrossAxisAlignment, Flex, FormattedTextElement,
+        Align, ConstrainedBox, Container, CrossAxisAlignment, Flex, FormattedTextElement, Icon,
         MainAxisAlignment, MainAxisSize, ParentElement,
     },
     keymap::Keystroke,
@@ -77,15 +77,16 @@ impl IntroSlide {
         let theme = appearance.theme();
 
         let logo_fill = internal_colors::fg_overlay_4(theme);
-        let logo = ConstrainedBox::new(Icon::WarpLogoLight.to_warpui_icon(logo_fill).finish())
-            .with_width(64.)
-            .with_height(64.)
-            .finish();
+        let logo =
+            ConstrainedBox::new(Icon::new("bundled/svg/warp-logo-neutral.svg", logo_fill).finish())
+                .with_width(64.)
+                .with_height(64.)
+                .finish();
 
         let base_color: ColorU = internal_colors::fg_overlay_4(theme).into();
         let shimmer_color: ColorU = theme.foreground().into();
         let title = ShimmeringTextElement::new(
-            "Welcome to Warp",
+            "Welcome to Warper",
             appearance.ui_font_family(),
             32.,
             base_color,

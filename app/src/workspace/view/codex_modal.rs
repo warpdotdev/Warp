@@ -109,7 +109,7 @@ impl CodexModal {
 
         // Title
         let title = FormattedTextElement::from_str(
-            "Use Codex models in Warp",
+            "Use Codex models in Warper",
             appearance.ui_font_family(),
             24.,
         )
@@ -134,7 +134,7 @@ impl CodexModal {
 
         // Description - second paragraph
         let description_2 = FormattedTextElement::from_str(
-            "Use Codex directly in Warp and leverage \
+            "Use Codex directly in Warper and leverage \
             features like in-app code review, agent session sharing and file editing.",
             appearance.ui_font_family(),
             14.,
