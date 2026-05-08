@@ -171,14 +171,14 @@ pub trait HarnessSupportClient: 'static + Send + Sync {
     /// artifacts already reported via `report_artifact`.
     async fn finish_task(&self, success: bool, summary: &str) -> Result<()>;
 
-    /// Report that the agent process is shutting down.
-    ///
-    /// For a clean shutdown, pass `None` for both category/message.
-    /// For an abnormal shutdown, pass the error category and message.
-    async fn report_shutdown(
+    /// Report a clean shutdown of the agent process.
+    async fn report_clean_shutdown(&self) -> Result<()>;
+
+    /// Report an error shutdown of the agent process.
+    async fn report_error_shutdown(
         &self,
-        error_category: Option<String>,
-        error_message: Option<String>,
+        error_category: String,
+        error_message: String,
     ) -> Result<()>;
 
     /// Get presigned upload targets for a workspace state snapshot.
@@ -393,20 +393,24 @@ impl HarnessSupportClient for ServerApi {
         .await
     }
 
-    async fn report_shutdown(
+    async fn report_clean_shutdown(&self) -> Result<()> {
+        self.post_public_api_unit(
+            "harness-support/report-shutdown",
+            &ReportShutdownRequest::clean(),
+        )
+        .await
+    }
+
+    async fn report_error_shutdown(
         &self,
-        error_category: Option<String>,
-        error_message: Option<String>,
+        error_category: String,
+        error_message: String,
     ) -> Result<()> {
-        let request = match (error_category, error_message) {
-            (Some(category), Some(message)) => ReportShutdownRequest::abnormal(category, message),
-            (None, None) => ReportShutdownRequest::clean(),
-            (Some(_), None) | (None, Some(_)) => {
-                anyhow::bail!("error-category and error-message must be provided together");
-            }
-        };
-        self.post_public_api_unit("harness-support/report-shutdown", &request)
-            .await
+        self.post_public_api_unit(
+            "harness-support/report-shutdown",
+            &ReportShutdownRequest::abnormal(error_category, error_message),
+        )
+        .await
     }
 
     async fn get_snapshot_upload_targets(

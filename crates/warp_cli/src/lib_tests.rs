@@ -1896,13 +1896,13 @@ fn finish_task_rejects_missing_status() {
 }
 
 #[test]
-fn report_shutdown_clean_parses() {
+fn report_clean_shutdown_parses() {
     let args = Args::try_parse_from([
         "warp",
         "harness-support",
         "--run-id",
         "run-1",
-        "report-shutdown",
+        "report-clean-shutdown",
     ])
     .unwrap();
 
@@ -1912,22 +1912,20 @@ fn report_shutdown_clean_parses() {
     let CliCommand::HarnessSupport(hs_args) = boxed_cmd.as_ref() else {
         panic!("Expected harness-support command");
     };
-    let HarnessSupportCommand::ReportShutdown(shutdown_args) = &hs_args.command else {
-        panic!("Expected report-shutdown subcommand");
-    };
-
-    assert!(shutdown_args.error_category.is_none());
-    assert!(shutdown_args.error_message.is_none());
+    assert!(matches!(
+        hs_args.command,
+        HarnessSupportCommand::ReportCleanShutdown
+    ));
 }
 
 #[test]
-fn report_shutdown_abnormal_parses() {
+fn report_error_shutdown_parses() {
     let args = Args::try_parse_from([
         "warp",
         "harness-support",
         "--run-id",
         "run-1",
-        "report-shutdown",
+        "report-error-shutdown",
         "--error-category",
         "oom",
         "--error-message",
@@ -1941,13 +1939,22 @@ fn report_shutdown_abnormal_parses() {
     let CliCommand::HarnessSupport(hs_args) = boxed_cmd.as_ref() else {
         panic!("Expected harness-support command");
     };
-    let HarnessSupportCommand::ReportShutdown(shutdown_args) = &hs_args.command else {
-        panic!("Expected report-shutdown subcommand");
+    let HarnessSupportCommand::ReportErrorShutdown(shutdown_args) = &hs_args.command else {
+        panic!("Expected report-error-shutdown subcommand");
     };
 
-    assert_eq!(shutdown_args.error_category.as_deref(), Some("oom"));
-    assert_eq!(
-        shutdown_args.error_message.as_deref(),
-        Some("out of memory")
-    );
+    assert_eq!(shutdown_args.error_category, "oom");
+    assert_eq!(shutdown_args.error_message, "out of memory");
+}
+
+#[test]
+fn report_error_shutdown_rejects_missing_fields() {
+    let result = Args::try_parse_from([
+        "warp",
+        "harness-support",
+        "--run-id",
+        "run-1",
+        "report-error-shutdown",
+    ]);
+    assert!(result.is_err());
 }

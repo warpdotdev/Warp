@@ -112,8 +112,10 @@ pub(super) enum CliTelemetryEvent {
     HarnessSupportNotifyUser,
     /// Executing `warp harness-support finish-task`
     HarnessSupportFinishTask { success: bool },
-    /// Executing `warp harness-support report-shutdown`
-    HarnessSupportReportShutdown,
+    /// Executing `warp harness-support report-clean-shutdown`
+    HarnessSupportReportCleanShutdown,
+    /// Executing `warp harness-support report-error-shutdown`
+    HarnessSupportReportErrorShutdown,
 }
 
 impl TelemetryEvent for CliTelemetryEvent {
@@ -190,7 +192,8 @@ impl TelemetryEvent for CliTelemetryEvent {
             CliTelemetryEvent::HarnessSupportFinishTask { success } => {
                 Some(json!({ "success": success }))
             }
-            CliTelemetryEvent::HarnessSupportReportShutdown => None,
+            CliTelemetryEvent::HarnessSupportReportCleanShutdown => None,
+            CliTelemetryEvent::HarnessSupportReportErrorShutdown => None,
         }
     }
 
@@ -277,8 +280,11 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::HarnessSupportFinishTask => {
                 "CLI.Execute.HarnessSupport.FinishTask"
             }
-            CliTelemetryEventDiscriminants::HarnessSupportReportShutdown => {
-                "CLI.Execute.HarnessSupport.ReportShutdown"
+            CliTelemetryEventDiscriminants::HarnessSupportReportCleanShutdown => {
+                "CLI.Execute.HarnessSupport.ReportCleanShutdown"
+            }
+            CliTelemetryEventDiscriminants::HarnessSupportReportErrorShutdown => {
+                "CLI.Execute.HarnessSupport.ReportErrorShutdown"
             }
         }
     }
@@ -402,8 +408,11 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::HarnessSupportFinishTask => {
                 "Reported task completion via harness-support from the Warp CLI"
             }
-            CliTelemetryEventDiscriminants::HarnessSupportReportShutdown => {
-                "Reported agent shutdown via harness-support from the Warp CLI"
+            CliTelemetryEventDiscriminants::HarnessSupportReportCleanShutdown => {
+                "Reported clean agent shutdown via harness-support from the Warp CLI"
+            }
+            CliTelemetryEventDiscriminants::HarnessSupportReportErrorShutdown => {
+                "Reported error agent shutdown via harness-support from the Warp CLI"
             }
         }
     }
@@ -416,10 +425,7 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             Self::HarnessSupportPing
             | Self::HarnessSupportReportArtifact
             | Self::HarnessSupportNotifyUser
-            | Self::HarnessSupportFinishTask
-            | Self::HarnessSupportReportShutdown => {
-                EnablementState::Flag(FeatureFlag::AgentHarness)
-            }
+            | Self::HarnessSupportFinishTask => EnablementState::Flag(FeatureFlag::AgentHarness),
             Self::ArtifactUpload | Self::ArtifactGet | Self::ArtifactDownload => {
                 EnablementState::Flag(FeatureFlag::ArtifactCommand)
             }

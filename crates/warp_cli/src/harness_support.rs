@@ -29,8 +29,11 @@ pub enum HarnessSupportCommand {
     /// Report task completion or failure, as well as a summary of the task.
     FinishTask(FinishTaskArgs),
 
-    /// Report that the agent process is shutting down.
-    ReportShutdown(ReportShutdownArgs),
+    /// Report a clean shutdown of the agent process.
+    ReportCleanShutdown,
+
+    /// Report an error shutdown of the agent process.
+    ReportErrorShutdown(ReportErrorShutdownArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -81,14 +84,12 @@ pub struct FinishTaskArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-pub struct ReportShutdownArgs {
-    /// Error category for abnormal shutdown (e.g. "oom", "timeout").
-    /// Omit for clean shutdown.
+pub struct ReportErrorShutdownArgs {
+    /// Error category for the abnormal shutdown (e.g. "oom", "timeout").
     #[arg(long)]
-    pub error_category: Option<String>,
+    pub error_category: String,
 
-    /// Human-readable error message for abnormal shutdown.
-    /// Omit for clean shutdown.
+    /// Human-readable error message for the abnormal shutdown.
     #[arg(long)]
-    pub error_message: Option<String>,
+    pub error_message: String,
 }
