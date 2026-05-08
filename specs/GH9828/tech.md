@@ -1,39 +1,4 @@
-# Spec: Horizontal scrolling per terminal pane (GH-9828)
-
-> **Spec discoverability note.** The repository's GitHub-issue
-> spec convention uses `specs/GH<N>/product.md` plus
-> `specs/GH<N>/tech.md` (verified — sibling specs such as
-> `specs/GH1066/`, `specs/GH849/`, `specs/GH703/`, `specs/GH478/`
-> all follow the two-file form). This spec ships as a single
-> `specs/GH9828/SPEC.md` because the change is small enough that
-> separating it into product + tech is more overhead than signal.
-> **Implementation TODO before merging implementation:** before
-> the implementation PR lands, this file MUST be split into
-> `specs/GH9828/product.md` (Problem, Goal, Acceptance criteria,
-> Out of scope sections) and `specs/GH9828/tech.md` (Behavior
-> contract, Implementation pointers, Test plan sections) so that
-> downstream spec-discovery tooling and the
-> `spec-driven-implementation` workflow find it under the
-> standard names. Until that split lands, the
-> `spec-driven-implementation` skill should be invoked with
-> `--spec specs/GH9828/SPEC.md` explicitly. This note exists so
-> a future implementer does not skip the rename.
-
-## Problem
-
-Wide diff hunks, long log lines, and `tree` output regularly
-exceed the visible width of a narrow pane. Today, lines wrap (or
-truncate, depending on settings), preventing a quick lateral
-glance at content beyond the viewport. Users want trackpad-swipe
-horizontal scroll to peek at long lines without resizing the pane
-or switching focus.
-
-## Goal
-
-Add per-pane horizontal scrolling for the terminal output grid
-when the longest line in the visible buffer range exceeds pane
-width AND the user has line-wrap disabled. Trackpad horizontal
-deltas, Shift-wheel, and a horizontal scrollbar all drive it.
+# Tech Spec: Horizontal scrolling per terminal pane (GH-9828)
 
 ## Behavior contract
 
@@ -46,29 +11,32 @@ deltas, Shift-wheel, and a horizontal scrollbar all drive it.
   `max(visible_longest_line_columns - visible_pane_columns, 0)`.
   Recompute that maximum whenever the visible buffer range changes,
   the pane resizes, line-wrap toggles, or rendered line contents
-  change.
-  - If the maximum becomes 0 (no row exceeds pane width — i.e.
-    no valid horizontal offset exists), hide the horizontal
-    scrollbar AND **clamp** `h_offset` to 0. This is the
-    "max-cleared clamp" case and is the same operation as the
-    general clamp in the third bullet below applied to the
-    boundary value 0; it is **not** an unconditional "reset to
-    0" of arbitrary user state. When `max_observed_columns -
-    viewport_columns` later becomes positive again, the offset
-    is recomputed by the preserve-and-restore rule for wrap
-    toggles (see below) or remains at the current clamped
-    value otherwise. **Reset triggers are listed exhaustively
-    in "Reset to 0 ONLY on explicit triggers" below and that
-    list is the canonical set; the max-cleared clamp is a
-    boundary clamp (range collapses to `{0}`), not an
-    additional reset trigger.**
-  - If line-wrap is toggled ON, **preserve `h_offset` internally**
-    without applying it to rendering (the offset is internal state
-    while wrap is on). The horizontal scrollbar is hidden. See
+  change. The general clamp rule is:
+  ```
+  h_offset := clamp(h_offset, 0,
+                    max(max_observed_columns - viewport_columns, 0))
+  ```
+  - **Boundary case (max-cleared clamp).** When
+    `max(max_observed_columns - viewport_columns, 0) == 0`, the
+    valid range collapses to `{0}` and the general clamp above
+    forces `h_offset` to 0. The horizontal scrollbar is hidden.
+    This is **not a separate "reset" rule** — it is the general
+    clamp applied to its boundary value. The list of reset
+    triggers in "Reset to 0 ONLY on explicit triggers" below is
+    the canonical, exhaustive set; the max-cleared clamp does
+    NOT appear there because it is a clamp, not a reset. When
+    `max_observed_columns - viewport_columns` later becomes
+    positive again, the offset is recomputed by the
+    preserve-and-restore rule for wrap toggles, or remains at
+    the current clamped value otherwise.
+  - **Wrap-on suspension.** If line-wrap is toggled ON,
+    **preserve `h_offset` internally** without applying it to
+    rendering (the offset is internal state while wrap is on).
+    The horizontal scrollbar is hidden. See
     "Line-wrap toggle: preserve-and-restore" below.
-  - If the maximum shrinks but remains positive, clamp `h_offset`
-    down to the new maximum so blank shifted columns are never
-    rendered.
+  - **Shrink clamp.** If the maximum shrinks but remains
+    positive, clamp `h_offset` down to the new maximum so blank
+    shifted columns are never rendered.
 - B2. Horizontal scroll inputs:
   - Trackpad two-finger horizontal swipe (native macOS, Windows,
     and Linux). On Linux, two-finger horizontal swipe is sourced
@@ -151,16 +119,16 @@ Per-pane horizontal scroll state is `(h_offset, max_observed_columns)`
 where `max_observed_columns` is the longest visible row's grid-column
 length within the current visible buffer range. Clamping rules:
 
-- On pane resize: re-clamp to
-  `h_offset = clamp(h_offset, 0, max_observed_columns - viewport_columns)`.
-  If `max_observed_columns - viewport_columns` is negative
-  (longest line now fits), clamp to 0 and hide the scrollbar.
+- On pane resize: re-clamp via the general clamp rule in B1a.
+  The boundary case (no row exceeds pane width) hides the
+  scrollbar and forces `h_offset = 0` per the B1a max-cleared
+  clamp.
 - On vertical scroll: do NOT auto-reset `h_offset` to 0. Recompute
   `max_observed_columns` against the new visible window's longest
-  line; if shorter than `h_offset + viewport_columns`, clamp
-  `h_offset` down to `max(max_observed_columns - viewport_columns, 0)`.
-  Auto-reset to 0 happens only when explicitly required by the snap
-  setting (B6) — never silently on vertical scroll.
+  line, then apply the B1a general clamp. Auto-reset to 0 happens
+  only when explicitly required by the snap setting (B6) — never
+  silently on vertical scroll.
+
 ### Line-wrap toggle: preserve-and-restore (uniform invariant)
 
 - **Wrap ON.** When line-wrap is toggled ON, the horizontal
@@ -170,7 +138,8 @@ length within the current visible buffer range. Clamping rules:
   pane's per-pane horizontal scroll state.
 - **Wrap OFF.** When line-wrap is toggled OFF again, the
   preserved `h_offset` is **restored** and re-clamped against
-  the current `max_observed_columns`:
+  the current `max_observed_columns` using the same general
+  clamp rule from B1a:
   ```
   h_offset := clamp(preserved_h_offset, 0,
                     max(max_observed_columns - viewport_columns, 0))
@@ -178,7 +147,8 @@ length within the current visible buffer range. Clamping rules:
   If the current `max_observed_columns` is smaller than the
   preserved offset's required range, the offset clamps down (it
   is never silently snapped to 0 unless the clamp resolves to
-  0 because nothing exceeds the viewport).
+  0 because nothing exceeds the viewport — i.e. the B1a
+  max-cleared boundary clamp).
 - **Reset to 0 ONLY on explicit triggers.** `h_offset` is reset
   to 0 only when one of the following fires:
   1. The user explicitly scrolls to the leftmost column (manual
@@ -187,19 +157,10 @@ length within the current visible buffer range. Clamping rules:
      pinned to live bottom, primary screen, snap setting on).
   3. The pane is closed (state discarded with the pane).
   Toggling line-wrap is NOT one of these triggers — wrap-toggle
-  uses preserve-and-restore semantics, never a reset.
-  **Note on the max-cleared clamp from B1a.** When
-  `max_observed_columns - viewport_columns` collapses to 0
-  (longest visible line now fits the viewport), the boundary
-  clamp from B1a forces `h_offset` to 0 because that is the
-  only value in the valid range — there is no user-meaningful
-  positive offset when nothing exceeds the viewport. This is a
-  **clamp**, not a reset; it does not invalidate later
-  preserve-and-restore behavior if the visible buffer later
-  exposes a longer line. The list above remains the canonical
-  set of explicit reset triggers; the max-cleared clamp is the
-  boundary case of the general B1a clamp, not an additional
-  reset trigger.
+  uses preserve-and-restore semantics, never a reset. The B1a
+  max-cleared clamp is also NOT a reset trigger — it is the
+  general clamp applied at its boundary. This list is the
+  canonical, exhaustive set of reset triggers.
 - **Rationale.** A user who scrolled horizontally to inspect
   long output, then toggled wrap on for a moment to re-read
   with wrapping, expects to land back where they were when
@@ -207,57 +168,8 @@ length within the current visible buffer range. Clamping rules:
   loses that position and is a regression of intent.
 - On long-line set changes (rows appended, edited in place, or
   evicted from scrollback): recompute `max_observed_columns` against
-  the current visible buffer range and clamp `h_offset` per the rules
-  above. Never render blank shifted columns: if clamping cannot keep
-  `h_offset` valid against any non-empty viewport, snap to 0.
-
-## Acceptance criteria
-
-- A1. With line-wrap off and a long line visible, a two-finger
-  horizontal swipe scrolls the line; the rest of the pane scrolls
-  in lockstep so columns stay aligned.
-- A2. Selection across a horizontally-scrolled region copies the
-  underlying logical text, not the visible-only fragment.
-- A3. With line-wrap on (today's default), no horizontal scroll
-  affordance appears.
-- A4. While pinned to the live bottom, a completed new shell output
-  row snaps back to offset 0 when
-  `terminal.horizontal_scroll.snap_on_new_output = true`.
-- A5. Horizontal scrollbar appears only when content exceeds pane
-  width.
-- A6. With `terminal.horizontal_scroll.snap_on_new_output = false`,
-  completed new shell output preserves the current horizontal offset.
-- A7. Resizing the pane or vertically scrolling to shorter
-  visible content **clamps** `h_offset` according to B1a and the
-  Offset clamping & reset rules section, with no blank shifted
-  columns. Toggling line-wrap follows the preserve-and-restore
-  invariant (A_WRAP_TOGGLE), not a reset.
-- A_WRAP_TOGGLE_PRESERVE. Turning line-wrap ON while
-  `h_offset > 0` preserves the offset internally: the
-  scrollbar disappears, content rewraps inside the viewport,
-  and the preserved offset is held in pane state.
-- A_WRAP_TOGGLE_RESTORE. Turning line-wrap OFF restores the
-  preserved `h_offset`, clamped to the current
-  `max_observed_columns`. If `max_observed_columns` has not
-  shrunk below the preserved value's required range, the
-  offset is restored exactly.
-- A_WRAP_TOGGLE_NO_RESET. Toggling line-wrap is NEVER a reset
-  trigger. `h_offset` is reset to 0 only when (1) the user
-  explicitly scrolls to the leftmost column, (2) snap-on-new-
-  output fires per B6, or (3) the pane closes.
-- A8. In alternate-screen / TUI mode (vim, htop, less), no snap
-  occurs regardless of the setting; the alternate screen owns its
-  own column layout and h_offset is preserved as-is for the
-  duration of the alt-screen session.
-- A9. Wide glyphs (CJK, emoji), combining marks, and tabs scroll
-  consistently — selection at the visible-leftmost cell of an
-  h-scrolled row resolves to the same logical column as the
-  rendered cell, including correct handling of half-clipped wide
-  glyphs at the left edge.
-- A10. On Linux with libinput two-finger horizontal swipe events
-  available, the gesture scrolls horizontally; on Linux platforms
-  without horizontal-axis events, Shift+wheel and scrollbar drag
-  are the documented inputs and tests cover those paths.
+  the current visible buffer range and apply the B1a clamp.
+  Never render blank shifted columns.
 
 ## Implementation pointers
 
@@ -291,10 +203,10 @@ length within the current visible buffer range. Clamping rules:
   line-wrap ON: scrollbar hides; rendering rewraps inside
   viewport; pane state still records the preserved offset of
   120. Toggle line-wrap OFF again. The post-toggle value of
-  `h_offset` is asserted with **exact equality**, not
-  inequality (the previous draft used `>=` which is too
-  permissive — it would pass even if the implementation
-  silently snapped to a smaller value):
+  `h_offset` is asserted with **exact equality (`==`), never
+  inequality (`>=`)** — `>=` would be too permissive and would
+  pass even if the implementation silently snapped to a smaller
+  value:
   - **Case A — `max_valid >= 120`** (where
     `max_valid = max(max_observed_columns - viewport_columns,
     0)`): assert `h_offset == 120` exactly. The preserved
@@ -308,16 +220,17 @@ length within the current visible buffer range. Clamping rules:
     max-cleared clamp from B1a, not a reset trigger; the
     preserved value is held in pane state in case the longest
     line later regrows under wrap toggles or new output.
-  In every case the assertion uses `==`, never `>=`. The
-  scrollbar's visibility follows from `max_valid > 0`.
+  Every assertion uses `==`, never `>=`. The scrollbar's
+  visibility follows from `max_valid > 0`.
 - T_line_wrap_toggle_clamps_on_shrink. Set `h_offset = 200`
   with `max_observed_columns - viewport_columns = 220`. While
   wrap is ON, content evicts such that
   `max_observed_columns - viewport_columns = 80`. Toggle wrap
   OFF: `h_offset` is restored and clamped to 80, not 200.
+  Assertion uses `==`, not `>=`.
 - T_wrap_toggle_no_reset. Set `h_offset = 50`. Toggle wrap on
-  then off five times. After every cycle, `h_offset` is back
-  at 50 (clamped to current max). The toggle is never a reset.
+  then off five times. After every cycle, assert `h_offset == 50`
+  (clamped to current max). The toggle is never a reset.
 - T8. Partial-row writes, prompt redraws (CR-then-rewrite), in-place
   line edits via `\x1b[K`, alternate-screen updates, and output
   received while viewing scrollback all preserve h_offset.
@@ -334,11 +247,3 @@ length within the current visible buffer range. Clamping rules:
   available, two-finger swipe scrolls; with horizontal events
   absent, Shift+wheel and scrollbar drag scroll and the gesture
   is silently ignored (no errors).
-
-## Out of scope
-
-- Horizontal scroll inside notebook cells (different code path,
-  follow-up).
-- Auto-detect long lines and offer a toast suggesting line-wrap
-  toggle.
-- Horizontal scrollbar styling customization.
