@@ -6,7 +6,7 @@
 //! is marked as no_run only  because it's currently not possible
 //! to reference `#[cfg(test)]` symbols from doctests.
 
-use std::{io::sink, sync::Arc};
+use std::{collections::HashMap, io::sink, sync::Arc};
 
 use pathfinder_geometry::vector::Vector2F;
 use warp_core::command::ExitCode;
@@ -24,7 +24,12 @@ use super::{
     block::{Block, BlockId, BlockSize},
     blocks::BlockList,
     bootstrap::BootstrapStage,
+    image_map::StoredImageMetadata,
     iterm_image::{ITermImage, ITermImageDimensionUnit, ITermImageMetadata},
+    kitty::{
+        KittyAction, KittyImage, KittyImageMetadata, KittyPixelDataFormat, KittyPlacementData,
+        KittyTransmissionMedium, StoreAndDisplay,
+    },
     terminal_model::BlockIndex,
     ObfuscateSecrets, TerminalModel,
 };
@@ -51,6 +56,37 @@ pub fn test_iterm_image(image_id: u32) -> ITermImage {
         },
         data: vec![0],
     }
+}
+
+fn test_kitty_image_metadata() -> KittyImageMetadata {
+    KittyImageMetadata {
+        pixel_data_format: KittyPixelDataFormat::Rgba32Bit,
+        transmission_medium: KittyTransmissionMedium::Direct,
+        image_size: Vector2F::new(10.0, 10.0),
+    }
+}
+
+pub fn test_kitty_image_metadata_map(image_id: u32) -> HashMap<u32, StoredImageMetadata> {
+    HashMap::from([(
+        image_id,
+        StoredImageMetadata::Kitty(test_kitty_image_metadata()),
+    )])
+}
+
+pub fn test_kitty_store_and_display_action(image_id: u32, placement_id: u32) -> KittyAction {
+    KittyAction::StoreAndDisplay(StoreAndDisplay {
+        image: KittyImage {
+            metadata: test_kitty_image_metadata(),
+            data: vec![0],
+        },
+        placement_data: KittyPlacementData {
+            cols: Some(1),
+            rows: Some(1),
+            ..Default::default()
+        },
+        image_id,
+        placement_id,
+    })
 }
 
 fn block_padding() -> BlockPadding {

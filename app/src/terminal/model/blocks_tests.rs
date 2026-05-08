@@ -180,6 +180,32 @@ fn test_iterm_image_starts_script_execution_block() {
 }
 
 #[test]
+fn test_kitty_image_starts_script_execution_block() {
+    let _kitty_images = FeatureFlag::KittyImages.override_enabled(true);
+    let mut block_list = TestBlockListBuilder::new().build();
+    let mut metadata = test_utils::test_kitty_image_metadata_map(1);
+    advance_to_script_execution(&mut block_list);
+
+    assert_eq!(block_list.bootstrap_stage, BootstrapStage::ScriptExecution);
+    assert!(!block_list.active_block().started());
+
+    block_list
+        .handle_completed_kitty_action(
+            test_utils::test_kitty_store_and_display_action(1, 1),
+            &mut metadata,
+        )
+        .expect("kitty action should be handled")
+        .expect("kitty action should render");
+    block_list.on_finish_byte_processing(&ansi::ProcessorInput::new(&[]));
+
+    assert!(block_list.active_block().started());
+    assert!(!block_list.active_block().output_grid().is_empty());
+    assert!(block_list
+        .active_block()
+        .is_visible(&AgentViewState::Inactive));
+}
+
+#[test]
 fn test_iterm_image_early_output_routes_to_background_block() {
     let _iterm_images = FeatureFlag::ITermImages.override_enabled(true);
     let mut block_list =
@@ -189,6 +215,31 @@ fn test_iterm_image_early_output_routes_to_background_block() {
     assert!(block_list.is_early_output());
 
     block_list.handle_completed_iterm_image(test_utils::test_iterm_image(2));
+
+    assert_eq!(block_list.blocks.len(), blocks_before + 1);
+    let background_block = &block_list.blocks[block_list.blocks.len() - 2];
+    assert!(background_block.is_background());
+    assert!(!background_block.output_grid().is_empty());
+    assert!(!block_list.active_block().started());
+}
+
+#[test]
+fn test_kitty_image_early_output_routes_to_background_block() {
+    let _kitty_images = FeatureFlag::KittyImages.override_enabled(true);
+    let mut block_list =
+        new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
+    let mut metadata = test_utils::test_kitty_image_metadata_map(2);
+    let blocks_before = block_list.blocks.len();
+
+    assert!(block_list.is_early_output());
+
+    block_list
+        .handle_completed_kitty_action(
+            test_utils::test_kitty_store_and_display_action(2, 1),
+            &mut metadata,
+        )
+        .expect("kitty action should be handled")
+        .expect("kitty action should render");
 
     assert_eq!(block_list.blocks.len(), blocks_before + 1);
     let background_block = &block_list.blocks[block_list.blocks.len() - 2];
