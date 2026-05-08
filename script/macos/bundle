@@ -307,6 +307,13 @@ elif [[ $RELEASE_CHANNEL = "oss" ]]; then
     FEATURES="release_bundle,extern_plist"
 fi
 
+ENTITLEMENTS_FILE="script/Entitlements.plist"
+DEBUG_ENTITLEMENTS_FILE="script/Debug-Entitlements.plist"
+if [[ $RELEASE_CHANNEL = "oss" ]]; then
+  ENTITLEMENTS_FILE="script/Warper-Entitlements.plist"
+  DEBUG_ENTITLEMENTS_FILE="script/Warper-Debug-Entitlements.plist"
+fi
+
 OUT_DIR="target/$TARGET_PROFILE_DIR/bundle/osx"
 DOCK_TILE_PLUGIN_DIR="target/$TARGET_PROFILE_DIR/WarpDockTilePlugin.docktileplugin"
 
@@ -653,19 +660,19 @@ if [[ $SELFSIGN = true ]]; then
   fi
   if [[ "$ARTIFACT" == app ]]; then
     echo "Self-signing $BUNDLE_DIR/$WARP_APP_NAME.app with ${SIGNING_CERT}..."
-    codesign --force --deep --options runtime --sign "$SIGNING_CERT" "$BUNDLE_DIR/$WARP_APP_NAME.app" --entitlements script/Debug-Entitlements.plist
+    codesign --force --deep --options runtime --sign "$SIGNING_CERT" "$BUNDLE_DIR/$WARP_APP_NAME.app" --entitlements "$DEBUG_ENTITLEMENTS_FILE"
   elif [[ "$ARTIFACT" == cli ]]; then
     echo "Self-signing $OUT_DIR/$WARP_BIN with ${SIGNING_CERT}..."
-    codesign --force --options runtime --sign "$SIGNING_CERT" "$OUT_DIR/$WARP_BIN" --entitlements script/Debug-Entitlements.plist
+    codesign --force --options runtime --sign "$SIGNING_CERT" "$OUT_DIR/$WARP_BIN" --entitlements "$DEBUG_ENTITLEMENTS_FILE"
   fi
 elif [[ $CODESIGN = true ]]; then
   if [[ "$ARTIFACT" == app ]]; then
     echo "Codesigning $BUNDLE_DIR/$WARP_APP_NAME.app..."
     # Use --deep so we sign bundled frameworks as well
-    codesign --deep -f -o runtime --timestamp -s "$APPLE_TEAM_ID" "$BUNDLE_DIR/$WARP_APP_NAME.app" --entitlements script/Entitlements.plist
+    codesign --deep -f -o runtime --timestamp -s "$APPLE_TEAM_ID" "$BUNDLE_DIR/$WARP_APP_NAME.app" --entitlements "$ENTITLEMENTS_FILE"
   elif [[ "$ARTIFACT" == cli ]]; then
     echo "Codesigning $OUT_DIR/$WARP_BIN..."
-    codesign -f -o runtime --timestamp -s "$APPLE_TEAM_ID" "$OUT_DIR/$WARP_BIN" --entitlements script/Entitlements.plist
+    codesign -f -o runtime --timestamp -s "$APPLE_TEAM_ID" "$OUT_DIR/$WARP_BIN" --entitlements "$ENTITLEMENTS_FILE"
 
     # Create the .zip for notarization in a separate location - otherwise, Apple's codesigning
     # tools decide that it's a sealed resource that belongs to the binary and needs to also be signed.

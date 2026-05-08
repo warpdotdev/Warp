@@ -50,6 +50,8 @@ pub struct TemplatableMCPServerManager {
     /// Cached credentials for file-based servers, keyed by installation hash.
     #[cfg(not(target_family = "wasm"))]
     file_based_server_credentials: oauth::FileBasedPersistedCredentialsMap,
+    #[cfg(not(target_family = "wasm"))]
+    credentials_loaded_from_secure_storage: bool,
     /// Error messages for failed servers, keyed by installation UUID.
     server_error_messages: HashMap<Uuid, String>,
     /// Spawner for running tasks in the context of this manager.

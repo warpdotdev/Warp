@@ -32,6 +32,10 @@ impl ApiKeys {
             || self.google.is_some()
             || self.open_router.is_some()
     }
+
+    fn has_any_configured_value(&self) -> bool {
+        self.has_any_key() || self.open_router_model.is_some()
+    }
 }
 
 /// Controls how AWS credentials are refreshed by [`ApiKeyManager`].
@@ -52,15 +56,22 @@ pub enum AwsCredentialsRefreshStrategy {
 /// A structure that manages API keys for AI providers.
 pub struct ApiKeyManager {
     keys: ApiKeys,
+    keys_loaded_from_secure_storage: bool,
     pub(crate) aws_credentials_state: AwsCredentialsState,
     aws_credentials_refresh_strategy: AwsCredentialsRefreshStrategy,
 }
 
 impl ApiKeyManager {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        let keys = Self::load_keys_from_secure_storage(ctx);
+        let should_load_secure_storage = Self::secure_storage_presence_marker_exists();
+        let keys = if should_load_secure_storage {
+            Self::load_keys_from_secure_storage(ctx)
+        } else {
+            Self::load_keys_from_environment(ApiKeys::default())
+        };
         Self {
             keys,
+            keys_loaded_from_secure_storage: should_load_secure_storage,
             aws_credentials_state: AwsCredentialsState::Missing,
             aws_credentials_refresh_strategy: AwsCredentialsRefreshStrategy::default(),
         }
@@ -68,6 +79,16 @@ impl ApiKeyManager {
 
     pub fn keys(&self) -> &ApiKeys {
         &self.keys
+    }
+
+    pub fn load_keys_from_secure_storage_if_needed(&mut self, ctx: &mut ModelContext<Self>) {
+        if self.keys_loaded_from_secure_storage || !Self::secure_storage_presence_marker_exists() {
+            return;
+        }
+
+        self.keys = Self::load_keys_from_secure_storage(ctx);
+        self.keys_loaded_from_secure_storage = true;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
     }
 
     pub fn set_google_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
@@ -181,7 +202,7 @@ impl ApiKeyManager {
     }
 
     fn load_keys_from_secure_storage(ctx: &mut ModelContext<Self>) -> ApiKeys {
-        let mut keys = match ctx.secure_storage().read_value(SECURE_STORAGE_KEY) {
+        let keys = match ctx.secure_storage().read_value(SECURE_STORAGE_KEY) {
             Ok(json) => match serde_json::from_str(&json) {
                 Ok(keys) => keys,
                 Err(e) => {
@@ -197,6 +218,10 @@ impl ApiKeyManager {
             }
         };
 
+        Self::load_keys_from_environment(keys)
+    }
+
+    fn load_keys_from_environment(mut keys: ApiKeys) -> ApiKeys {
         if keys.open_router.is_none() {
             keys.open_router = std::env::var("OPENROUTER_API_KEY")
                 .or_else(|_| std::env::var("OPEN_ROUTER_API_KEY"))
@@ -227,8 +252,50 @@ impl ApiKeyManager {
 
         if let Err(e) = ctx.secure_storage().write_value(SECURE_STORAGE_KEY, &json) {
             log::error!("Failed to write API keys to secure storage: {e:#}");
+            return;
+        }
+
+        self.keys_loaded_from_secure_storage = true;
+        Self::write_secure_storage_presence_marker(self.keys.has_any_configured_value());
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn secure_storage_presence_marker_path() -> std::path::PathBuf {
+        warp_core::paths::state_dir().join("ai-api-keys-present")
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn secure_storage_presence_marker_exists() -> bool {
+        Self::secure_storage_presence_marker_path().is_file()
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn secure_storage_presence_marker_exists() -> bool {
+        true
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn write_secure_storage_presence_marker(has_configured_value: bool) {
+        let path = Self::secure_storage_presence_marker_path();
+        if has_configured_value {
+            if let Some(parent) = path.parent() {
+                if let Err(error) = std::fs::create_dir_all(parent) {
+                    log::error!("Failed to create API key marker directory: {error:#}");
+                    return;
+                }
+            }
+            if let Err(error) = std::fs::write(&path, b"1") {
+                log::error!("Failed to write API key marker: {error:#}");
+            }
+        } else if let Err(error) = std::fs::remove_file(&path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                log::error!("Failed to remove API key marker: {error:#}");
+            }
         }
     }
+
+    #[cfg(target_family = "wasm")]
+    fn write_secure_storage_presence_marker(_has_configured_value: bool) {}
 }
 
 impl Entity for ApiKeyManager {

@@ -1,6 +1,6 @@
 use crate::{
     channel::ChannelState, features::FeatureFlag,
-    resource_center::skip_tips_and_write_to_user_defaults, settings::Settings,
+    resource_center::skip_tips_and_write_to_user_defaults,
 };
 use warpui::{
     elements::{
@@ -101,33 +101,10 @@ impl ResourceCenterMainView {
                 Section::Feature(data) => {
                     let is_tips_completed = tips_completed.as_ref(ctx).skipped_or_completed;
                     let is_expanded = match data.section_name {
-                        // Always show What's New section
-                        FeatureSection::WhatsNew => true,
-                        FeatureSection::GettingStarted => match ChannelState::app_version() {
-                            Some(version) => {
-                                match Settings::has_changelog_been_shown(version, ctx) {
-                                    true => !is_tips_completed && !is_onboarded,
-                                    false => false,
-                                }
-                            }
-                            None => !is_tips_completed && !is_onboarded,
-                        },
-                        // Expand Maximize Warp section once user has completed welcome tips,
-                        // and keep open after users have completed/skipped all tips
-                        FeatureSection::MaximizeWarp => match ChannelState::app_version() {
-                            Some(version) => {
-                                match Settings::has_changelog_been_shown(version, ctx) {
-                                    true => is_tips_completed || is_onboarded,
-                                    false => false,
-                                }
-                            }
-                            None => is_tips_completed || is_onboarded,
-                        },
+                        FeatureSection::GettingStarted => !is_tips_completed && !is_onboarded,
+                        FeatureSection::MaximizeWarp => is_tips_completed || is_onboarded,
                         _ => false,
                     };
-
-                    // Show tips progress for every section except changelog
-                    let show_tips_progress = !matches!(data.section_name, FeatureSection::WhatsNew);
 
                     Some(SectionViewHandle::Feature(
                         Self::build_feature_section_view(
@@ -135,7 +112,7 @@ impl ResourceCenterMainView {
                             action_target.clone(),
                             ctx,
                             tips_completed.clone(),
-                            show_tips_progress,
+                            true,
                             is_expanded,
                         ),
                     ))

@@ -5,15 +5,11 @@ use super::{
     },
     SettingsSection,
 };
-use crate::{
-    appearance::Appearance, channel::ChannelState, themes::theme::ColorScheme,
-    workspace::WorkspaceAction,
-};
+use crate::{appearance::Appearance, channel::ChannelState, workspace::WorkspaceAction};
 use warpui::{
-    assets::asset_cache::AssetSource,
     elements::{
-        Align, CacheOption, ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, Image,
-        MainAxisAlignment, MouseStateHandle, ParentElement, Wrap,
+        Align, Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment, MouseStateHandle,
+        ParentElement, Wrap,
     },
     ui_components::components::UiComponent,
     AppContext, Entity, View, ViewContext, ViewHandle,
@@ -63,16 +59,10 @@ impl SettingsWidget for AboutPageWidget {
         appearance: &Appearance,
         _app: &AppContext,
     ) -> Box<dyn Element> {
-        let theme = appearance.theme();
         let ui_builder = appearance.ui_builder();
 
-        let image_path = if theme.inferred_color_scheme() == ColorScheme::LightOnDark {
-            "bundled/svg/warp-logo-with-light-title.svg"
-        } else {
-            "bundled/svg/warp-logo-with-dark-title.svg"
-        };
-
         let version = ChannelState::app_version().unwrap_or("v#.##.###");
+        let app_name = ChannelState::app_id().application_name().to_owned();
 
         let version_text = ui_builder
             .span(version.to_string())
@@ -104,21 +94,16 @@ impl SettingsWidget for AboutPageWidget {
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(
-                    ConstrainedBox::new(
-                        Image::new(
-                            AssetSource::Bundled { path: image_path },
-                            CacheOption::BySize,
-                        )
+                    ui_builder
+                        .span(app_name)
+                        .build()
+                        .with_margin_top(16.)
                         .finish(),
-                    )
-                    .with_max_height(100.)
-                    .with_max_width(350.)
-                    .finish(),
                 )
                 .with_child(version_row.finish())
                 .with_child(
                     ui_builder
-                        .span("Copyright 2026 Warp")
+                        .span("Copyleft 2026 Warper contributors")
                         .build()
                         .with_margin_top(16.)
                         .finish(),

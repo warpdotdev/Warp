@@ -157,10 +157,12 @@ pub fn state_dir() -> PathBuf {
 ///
 /// Prefer this over [`state_dir`] where possible.
 ///
-/// On macOS, this will use the App Group container directory if available.
+/// On macOS, release channels with an App Group entitlement use the App Group
+/// container directory if available. Warper/OSS deliberately does not use the
+/// upstream Warp App Group container.
 pub fn secure_state_dir() -> Option<PathBuf> {
     // Do not use the secure state directory in integration tests, which have a temporary home directory instead.
-    if ChannelState::channel() == Channel::Integration {
+    if matches!(ChannelState::channel(), Channel::Integration | Channel::Oss) {
         return None;
     }
 

@@ -95,6 +95,10 @@ struct OpenRouterSettingsWidget {
 
 impl OpenRouterSettingsWidget {
     fn new(ctx: &mut ViewContext<MainSettingsPageView>) -> Self {
+        ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.load_keys_from_secure_storage_if_needed(ctx);
+        });
+
         let ApiKeys {
             open_router,
             open_router_model,

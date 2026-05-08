@@ -204,13 +204,6 @@ impl SlashCommandDataSource {
                 .filter(|(_, command)| {
                     command.name != commands::ORCHESTRATE_NAME || is_orchestration_enabled
                 })
-                // The static `/feedback` command is an AI-off fallback for the richer bundled
-                // `feedback` skill. Hide it whenever the bundled skill will actually take over,
-                // matching the precedence used by `Workspace::send_feedback`.
-                .filter(|(_, command)| {
-                    command.name != commands::FEEDBACK.name
-                        || !crate::workspace::is_feedback_skill_available(ctx)
-                })
                 // When CLI agent input is open, restrict to the explicit allowlist.
                 .filter(|(_, command)| {
                     !is_cli_agent_input

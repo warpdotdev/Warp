@@ -1043,7 +1043,8 @@ fn initialize_app(
     {
         let imported_config_model = ctx.add_singleton_model(ImportedConfigModel::new);
 
-        if FeatureFlag::SettingsImport.is_enabled()
+        if ChannelState::channel() != warp_core::channel::Channel::Oss
+            && FeatureFlag::SettingsImport.is_enabled()
             && ChannelState::channel() != warp_core::channel::Channel::Integration
         {
             imported_config_model.update(ctx, |model, ctx| {

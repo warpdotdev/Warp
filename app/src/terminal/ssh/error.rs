@@ -5,10 +5,10 @@ use crate::terminal::warpify::render::apply_spacing_styles;
 use crate::terminal::warpify::render::build_description_row;
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::ui_components::icons::Icon as UiIcon;
+use crate::util::links;
 use markdown_parser::FormattedText;
 use markdown_parser::FormattedTextFragment;
 use markdown_parser::FormattedTextLine;
-use warp_core::channel::ChannelState;
 use warp_core::ui::theme::WarpTheme;
 use warpui::elements::HighlightedHyperlink;
 use warpui::elements::Hoverable;
@@ -41,18 +41,14 @@ const UNSUPPORTED_SHELL_ERROR: &str =
 const TMUX_INSTALL_FAILED_ERROR: &str =
     "The tmux install hit an unexpected error. Please install tmux manually and try again.";
 
-const SSH_GITHUB_ISSUE_URL: &str = "https://github.com/warpdotdev/Warp/issues/new?assignees=&labels=Bugs,SSH-tmux&projects=&template=03_ssh_tmux.yml";
-
 fn get_ssh_github_issue_url(title: &str) -> String {
-    let url = if let Some(version) = ChannelState::app_version() {
-        format!("{SSH_GITHUB_ISSUE_URL}&warp-version={version}")
-    } else {
-        SSH_GITHUB_ISSUE_URL.to_string()
-    };
+    let mut url = links::feedback_form_url();
     // prepend the title with "SSH tmux bug report: " and uri encode it
     let title = format!("SSH tmux bug report: {title:?}");
     let title = urlencoding::encode(&title);
-    format!("{url}&title={title}")
+    url.push_str("&title=");
+    url.push_str(&title);
+    url
 }
 
 impl WarpificationUnavailableReason {

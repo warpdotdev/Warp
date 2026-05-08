@@ -184,7 +184,7 @@ impl Display for SettingsSection {
             SettingsSection::Account => write!(f, "OpenRouter"),
             SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
             SettingsSection::MCPServers => write!(f, "MCP Servers"),
-            SettingsSection::WarpAgent => write!(f, "Warp Agent"),
+            SettingsSection::WarpAgent => write!(f, "Warper Agent"),
             SettingsSection::AgentProfiles => write!(f, "Profiles"),
             SettingsSection::AgentMCPServers => write!(f, "MCP servers"),
             SettingsSection::Knowledge => write!(f, "Knowledge"),
