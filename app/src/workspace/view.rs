@@ -250,10 +250,7 @@ use crate::drive::{
     CloudObjectTypeAndId, DriveObjectType, DrivePanel, DrivePanelEvent, OpenWarpDriveObjectSettings,
 };
 use crate::experiments::{BlockOnboarding, Experiment};
-use crate::menu::{
-    Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuSelectionSource,
-    DEFAULT_WIDTH as MENU_DEFAULT_WIDTH,
-};
+use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuSelectionSource};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::network::{NetworkStatus, NetworkStatusEvent};
 use crate::notebooks::manager::{NotebookManager, NotebookSource};
@@ -6243,18 +6240,16 @@ impl Workspace {
     fn open_tab_configs_menu(
         &mut self,
         position: Vector2F,
-        is_vertical_tabs: bool,
+        _is_vertical_tabs: bool,
         open_source: TabConfigsMenuOpenSource,
         ctx: &mut ViewContext<Self>,
     ) {
         let menu_items = self.unified_new_session_menu_items(ctx);
         ctx.update_view(&self.new_session_dropdown_menu, |context_menu, view_ctx| {
-            if is_vertical_tabs {
-                // Match the Figma mock width (OptionMenuItem component is 268px).
-                context_menu.set_width(268.);
-            } else {
-                context_menu.set_width(MENU_DEFAULT_WIDTH);
-            }
+            // Match the Figma mock width (OptionMenuItem component is 268px).
+            // Both the chevron and vertical-tab `+` variants share the same items,
+            // and the default 186px is too narrow for "New worktree config".
+            context_menu.set_width(268.);
             context_menu.set_items(menu_items, view_ctx);
             match open_source {
                 TabConfigsMenuOpenSource::KeyboardShortcut => {
