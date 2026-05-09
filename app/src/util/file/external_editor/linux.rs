@@ -115,8 +115,16 @@ impl EditorMetadata {
             field_code_processor(self, &mut processed_exec, next_char);
         }
 
-        let mut command = Command::new("sh");
-        command.args(["-c", &processed_exec]);
+        // Split into argv using shell-word splitting instead of passing to
+        // `sh -c`, which would allow shell metacharacter injection from
+        // malicious .desktop files.
+        let argv = shell_words::split(&processed_exec)
+            .map_err(|_| DesktopExecError::MalformedFieldCode)?;
+        let (program, args) = argv
+            .split_first()
+            .ok_or(DesktopExecError::MalformedFieldCode)?;
+        let mut command = Command::new(program);
+        command.args(args);
 
         Ok(command)
     }

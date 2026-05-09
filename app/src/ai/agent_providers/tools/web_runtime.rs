@@ -23,6 +23,7 @@ use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, CONTENT_LENGTH, CONTENT_TYPE, USE
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
 use super::exa;
@@ -102,11 +103,70 @@ pub struct FetchOutput {
     pub attachments: Vec<FetchAttachment>,
 }
 
+/// Returns `true` if the IP address is private, loopback, link-local, or
+/// otherwise should not be reachable from a webfetch tool (SSRF protection).
+fn is_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()          // 127.0.0.0/8
+                || v4.is_private()    // 10/8, 172.16/12, 192.168/16
+                || v4.is_link_local() // 169.254.0.0/16
+                || v4.is_unspecified() // 0.0.0.0
+                || v4.is_broadcast()  // 255.255.255.255
+                || Ipv4Addr::new(100, 64, 0, 0) <= v4 && v4 <= Ipv4Addr::new(100, 127, 255, 255)
+            // CGNAT 100.64/10
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()          // ::1
+                || v6.is_unspecified() // ::
+                || is_ipv6_unique_local(v6) // fc00::/7
+                || is_ipv6_link_local(v6) // fe80::/10
+        }
+    }
+}
+
+fn is_ipv6_unique_local(v6: Ipv6Addr) -> bool {
+    (v6.segments()[0] & 0xfe00) == 0xfc00
+}
+
+fn is_ipv6_link_local(v6: Ipv6Addr) -> bool {
+    (v6.segments()[0] & 0xffc0) == 0xfe80
+}
+
+/// Validate a URL for SSRF safety: reject private/internal IP ranges after DNS
+/// resolution.
+fn validate_url_not_internal(url_str: &str) -> Result<()> {
+    let parsed = url::Url::parse(url_str).context("invalid URL")?;
+    let host = parsed.host_str().context("URL has no host")?;
+
+    // If the host is already an IP literal, check directly.
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_blocked_ip(ip) {
+            bail!("URL targets a blocked IP address range");
+        }
+    }
+
+    // Also try resolving the hostname to catch DNS rebinding to internal IPs.
+    // Use std::net (blocking) — this runs in an async context but the resolution
+    // is fast for legitimate hosts and the alternative (tokio::net) would add a
+    // dependency.  We resolve with port 0 since we only need the address.
+    if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&(host, 0)) {
+        for addr in addrs {
+            if is_blocked_ip(addr.ip()) {
+                bail!("URL resolves to a blocked IP address range");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// 入口:执行一次 webfetch,返回结构化 output(由 caller `serde_json::to_value` 喂给上游 LLM)。
 pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<FetchOutput> {
     if !args.url.starts_with("http://") && !args.url.starts_with("https://") {
         bail!("URL must start with http:// or https://");
     }
+    validate_url_not_internal(&args.url)?;
     let format = args.format.clone().unwrap_or_default();
     let timeout_secs = args
         .timeout
