@@ -4653,8 +4653,8 @@ impl PaneGroup {
         if is_in_tree && self.panes.visible_pane_count() <= 1 {
             // PaneData cannot represent an empty root. For a lone split-off
             // child tab, ask the workspace to remove the tab instead; the pane
-            // group is about to be dropped and the conversation has already
-            // been removed by the caller.
+            // group is about to be dropped, and the caller will remove the
+            // conversation after this pane teardown returns.
             ctx.emit(Event::Exited {
                 add_to_undo_stack: false,
             });

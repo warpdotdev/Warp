@@ -617,18 +617,6 @@ impl OrchestrationEventStreamer {
             }
         }
 
-        // Prune the removed conversation's run_id from every other
-        // tracked conversation's watched set, then re-evaluate eligibility
-        // for the affected parents.
-        if let Some(run_id) = removed_run_id.as_deref() {
-            if self.killed_run_ids.contains(run_id) {
-                log::info!(
-                    "Keeping killed run_id {run_id} in parent watcher sets so future events can be dropped"
-                );
-                return;
-            }
-        }
-
         if let Some(run_id) = removed_run_id.as_deref() {
             let mut affected = Vec::new();
             for (other_id, stream) in self.streams.iter_mut() {

@@ -1000,6 +1000,54 @@ fn on_conversation_removed_prunes_stale_child_run_id_from_parent() {
 }
 
 #[test]
+fn on_conversation_removed_prunes_killed_child_run_id_from_parent_but_keeps_tombstone() {
+    use crate::ai::agent::conversation::AIConversation;
+    use crate::server::server_api::ai::MockAIClient;
+    use crate::server::server_api::ServerApiProvider;
+    use std::sync::Arc;
+    use warpui::App;
+
+    App::test((), |mut app| async move {
+        let _v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+        app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let parent_id = AIConversation::new(false).id();
+        let child_id = AIConversation::new(false).id();
+        let child_run_id = "550e8400-e29b-41d4-a716-446655440601".to_string();
+
+        let mock = MockAIClient::new();
+        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
+        let server_api = ServerApiProvider::new_for_test().get();
+
+        let poller = app.add_singleton_model(|ctx| {
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        poller.update(&mut app, |me, ctx| {
+            me.streams
+                .entry(parent_id)
+                .or_default()
+                .watched_run_ids
+                .insert(child_run_id.clone());
+            me.remember_killed_run_id(child_run_id.clone());
+
+            me.on_conversation_removed(child_id, Some(child_run_id.clone()), ctx);
+        });
+
+        poller.read(&app, |me, _| {
+            assert!(me.killed_run_ids.contains(&child_run_id));
+            assert!(
+                me.streams
+                    .get(&parent_id)
+                    .is_some_and(|s| !s.watched_run_ids.contains(&child_run_id)),
+                "killed child run_id should be pruned from parent watchers"
+            );
+        });
+    });
+}
+
+#[test]
 fn finish_restore_fetch_reconnects_sse_when_children_added_to_open_connection() {
     // When a status transition races with the restore fetch and opens SSE
     // before children are known, finish_restore_fetch must reconnect SSE
