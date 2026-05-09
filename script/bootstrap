@@ -61,7 +61,9 @@ for arg in "$@"; do
       ;;
     -y|--yes)
       export WARP_SKIP_SUDO_PROMPT=1
-      PLATFORM_ARGS+=("${arg}")
+      if [[ ! "$OS_TYPE" =~ ^(MINGW64_NT|MSYS_NT) ]]; then
+        PLATFORM_ARGS+=("${arg}")
+      fi
       ;;
     --install-common-skills)
       INSTALL_COMMON_SKILLS=1
@@ -86,7 +88,7 @@ elif [[ "$OS_TYPE" = "Linux" ]]; then
   print_bootstrap_preview "Linux"
   ./script/linux/bootstrap "${PLATFORM_ARGS[@]}"
   maybe_install_common_skills
-elif [[ "$OS_TYPE" =~ ^[MINGW64_NT|MSYS_NT] ]]; then
+elif [[ "$OS_TYPE" =~ ^(MINGW64_NT|MSYS_NT) ]]; then
   if [[ "${INSTALL_COMMON_SKILLS}" -eq 1 ]]; then
     ./script/windows/bootstrap.ps1 "${PLATFORM_ARGS[@]}" -InstallCommonSkills
   else

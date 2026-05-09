@@ -5,6 +5,7 @@ set -eo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
 LOCK_FILE="${REPO_ROOT}/skills-lock.json"
 STAMP_RELATIVE_PATH="warp/common-skills-lock.hash"
+SKILLS_CLI_VERSION="1.5.6"
 
 IF_NEEDED=0
 FORCE=0
@@ -68,7 +69,7 @@ stamp_hash() {
 install_from_lock() {
   (
     cd "${REPO_ROOT}"
-    npx --yes skills@latest experimental_install
+    npx --yes "skills@${SKILLS_CLI_VERSION}" experimental_install
   )
 }
 
@@ -123,5 +124,4 @@ fi
 echo "Installing common agent skills from skills-lock.json."
 install_from_lock
 mkdir -p "$(dirname "${STAMP_FILE}")"
-printf "%s
-" "${LOCK_HASH}" > "${STAMP_FILE}"
+printf "%s\n" "${LOCK_HASH}" > "${STAMP_FILE}"

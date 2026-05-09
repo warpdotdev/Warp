@@ -43,7 +43,7 @@ Environment variables:
 - `./script/install_cargo_build_deps` - Install Cargo build dependencies
 - `./script/install_cargo_test_deps` - Install Cargo test dependencies
 
-`skills-lock.json` is the standard project lock file managed by `npx skills`. `script/run` checks this lock before building and restores the checked-in project skills with `npx skills experimental_install` when the local install stamp is stale. To update the locked common skills, run `npx --yes skills@latest update -p -y` and commit the resulting `skills-lock.json` and `.agents/skills` changes.
+`skills-lock.json` is the standard project lock file managed by `npx skills`. `script/run` checks this lock before building and restores the checked-in project skills with the pinned `skills@1.5.6` CLI when the local install stamp is stale. To update the locked common skills, run `npx --yes skills@1.5.6 update -p -y` and commit the resulting `skills-lock.json` and `.agents/skills` changes.
 
 ## Architecture Overview
 

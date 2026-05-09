@@ -3,7 +3,7 @@
 ## Context
 This PR replaces the custom `.agents/common-skills.lock` flow with the standard project lock managed by `npx skills`. The checked-in `skills-lock.json` records each common skill from `warpdotdev/common-skills`, including its source, skill path, and content hash (`skills-lock.json:1`). The repository also checks in the restored `.agents/skills/*` copies so local and cloud agents can discover skills directly from the checkout.
 
-The main install entrypoint is `script/install_common_skills`. It points at `skills-lock.json` (`script/install_common_skills:6`) and stores a local, untracked stamp under `.git/warp/common-skills-lock.hash` (`script/install_common_skills:7`). The script hashes the lock (`script/install_common_skills:38`) and skips work when that hash matches the stamp (`script/install_common_skills:118`). When the stamp is missing or stale, it restores from the lock by running `npx --yes skills@latest experimental_install` (`script/install_common_skills:71`) and writes the new stamp (`script/install_common_skills:126`).
+The main install entrypoint is `script/install_common_skills`. It points at `skills-lock.json` (`script/install_common_skills:6`) and stores a local, untracked stamp under `.git/warp/common-skills-lock.hash` (`script/install_common_skills:7`). The script hashes the lock (`script/install_common_skills:39`) and skips work when that hash matches the stamp (`script/install_common_skills:119`). When the stamp is missing or stale, it restores from the lock by running `npx --yes "skills@${SKILLS_CLI_VERSION}" experimental_install` (`script/install_common_skills:72`) and writes the new stamp (`script/install_common_skills:127`).
 
 `script/run` now checks common skills before launching a local build. It enables the check by default (`script/run:22`) and calls `script/install_common_skills --if-needed --non-interactive --quiet` unless the user explicitly passes `--install-common-skills`, which forces a restore (`script/run:68`, `script/run:96`). Bootstrap remains opt-in through `./script/bootstrap --install-common-skills` and delegates to the same installer (`script/bootstrap:21`, `script/bootstrap:77`). `WARP.md` documents the standard update command and the files reviewers should expect to change (`WARP.md:41`).
 
@@ -22,14 +22,14 @@ flowchart TD
   G -->|Yes| H["Skip restore"]
   H --> I["Continue local build/run"]
 
-  G -->|No| J["npx --yes skills@latest experimental_install"]
+  G -->|No| J["npx --yes skills@1.5.6 experimental_install"]
   J --> K["Read skills-lock.json"]
   K --> L["Fetch locked skills from warpdotdev/common-skills"]
   L --> M["Restore .agents/skills/*"]
   M --> N["Write .git/warp/common-skills-lock.hash"]
   N --> I
 
-  O["Developer updates common skills"] --> P["npx --yes skills@latest update -p -y"]
+  O["Developer updates common skills"] --> P["npx --yes skills@1.5.6 update -p -y"]
   P --> Q["Update skills-lock.json hashes"]
   P --> R["Update changed .agents/skills/* files"]
   Q --> S["Commit lock + skill changes"]
@@ -49,7 +49,7 @@ flowchart TD
   F --> G{"Does cloud-local stamp match?"}
 
   G -->|Yes| H["Skip restore"]
-  G -->|No or first setup| I["npx --yes skills@latest experimental_install"]
+  G -->|No or first setup| I["npx --yes skills@1.5.6 experimental_install"]
   I --> J["Read skills-lock.json"]
   J --> K["Fetch locked skills from warpdotdev/common-skills"]
   K --> L["Restore .agents/skills/*"]
@@ -65,7 +65,7 @@ flowchart TD
 ## Proposed changes
 The implementation should keep `skills-lock.json` as the single source of truth for common skills installed from `warpdotdev/common-skills`. The repo should not maintain a second custom lock format or a separate GitHub workflow for scheduled common-skill updates.
 
-`script/install_common_skills` owns restoration from the lock. It should remain small and deterministic: compute a hash for `skills-lock.json`, compare it with a checkout-local stamp, run `npx --yes skills@latest experimental_install` only when needed, and update the stamp after a successful restore. The stamp belongs under `.git` so running the script does not create or modify tracked files unless the lock itself has been updated intentionally.
+`script/install_common_skills` owns restoration from the lock. It should remain small and deterministic: compute a hash for `skills-lock.json`, compare it with a checkout-local stamp, run `npx --yes skills@1.5.6 experimental_install` only when needed, and update the stamp after a successful restore. The stamp belongs under `.git` so running the script does not create or modify tracked files unless the lock itself has been updated intentionally.
 
 `script/run` should call the installer before building so local developer runs pick up lock changes automatically. This makes `script/run` the dependency-update check point requested during review: when a branch changes `skills-lock.json`, the next run restores the matching skill contents without requiring a separate workflow. `--install-common-skills` is retained as a force-install escape hatch.
 
@@ -73,15 +73,15 @@ The implementation should keep `skills-lock.json` as the single source of truth 
 
 For Oz cloud runs, this PR provides the repository-side installer that environment setup should call after cloning or syncing the repository and before starting the Claude agent. A fresh environment will have no `.git/warp/common-skills-lock.hash`, so `./script/install_common_skills --if-needed` restores from `skills-lock.json` once. A reused environment skips the restore when the stamp matches the checked-out lock. After this step, the Claude agent can discover repo-local checked-in skills, and Oz can still pass an explicit skill spec such as `warpdotdev/warp:create-pr` when the run should start from a specific skill. The Oz environment hook itself lives outside this repo; the implementation boundary here is making the repo checkout self-sufficient and idempotent when that hook invokes the script.
 
-Updates to common skills should be explicit developer actions: run `npx --yes skills@latest update -p -y`, review the generated `skills-lock.json` and `.agents/skills/*` changes, and commit them together. This preserves dependency-review semantics without adding repository-specific scheduled automation.
+Updates to common skills should be explicit developer actions: run `npx --yes skills@1.5.6 update -p -y`, review the generated `skills-lock.json` and `.agents/skills/*` changes, and commit them together. This preserves dependency-review semantics without adding repository-specific scheduled automation.
 
 ## Testing and validation
 Validate the shell changes with `bash -n script/install_common_skills script/run script/bootstrap`.
 
 Validate the Windows bootstrap script parses with PowerShell: `pwsh -NoProfile -Command '$null = [scriptblock]::Create((Get-Content -Raw "script/windows/bootstrap.ps1"))'`.
 
-Validate the restore path by running `./script/install_common_skills --if-needed --quiet` from a checkout without a matching local stamp. It should run `npx skills experimental_install`, restore the locked `.agents/skills/*` contents, and write `.git/warp/common-skills-lock.hash`.
+Validate the restore path by running `./script/install_common_skills --if-needed --quiet` from a checkout without a matching local stamp. It should run the pinned `skills@1.5.6` restore command, restore the locked `.agents/skills/*` contents, and write `.git/warp/common-skills-lock.hash`.
 
 Validate the skip path by running `./script/install_common_skills --if-needed --quiet` again. It should exit successfully without output and without changing the worktree.
 
-Validate update behavior by running `npx --yes skills@latest update -p -y` in a test checkout or intentional update branch. If upstream common skills changed, the diff should be limited to `skills-lock.json` and the affected `.agents/skills/*` files.
+Validate update behavior by running `npx --yes skills@1.5.6 update -p -y` in a test checkout or intentional update branch. If upstream common skills changed, the diff should be limited to `skills-lock.json` and the affected `.agents/skills/*` files.
