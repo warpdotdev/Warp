@@ -129,7 +129,8 @@ impl SnapshotUploadStatus {
 pub(crate) struct PendingHandoff {
     /// Forked conversation id minted by `POST /agent/conversations/{conversation_id}/fork`.
     /// Sent under `conversation_id` on the subsequent `POST /agent/runs` request.
-    pub(crate) forked_conversation_id: String,
+    /// `None` for fresh cloud launches that have no source conversation to fork.
+    pub(crate) forked_conversation_id: Option<String>,
     /// Title override for the cloud run (e.g. "<title> (Moved to cloud)").
     pub(crate) title: Option<String>,
     /// `None` until `derive_touched_workspace` completes.
@@ -592,7 +593,7 @@ impl AmbientAgentViewModel {
         &self,
         prompt: String,
         attachments: Vec<AttachmentInput>,
-        forked_conversation_id: String,
+        forked_conversation_id: Option<String>,
         initial_snapshot_token: Option<InitialSnapshotToken>,
         ctx: &AppContext,
     ) -> SpawnAgentRequest {
@@ -610,7 +611,7 @@ impl AmbientAgentViewModel {
             parent_run_id: None,
             runtime_skills: vec![],
             referenced_attachments: vec![],
-            conversation_id: Some(forked_conversation_id),
+            conversation_id: forked_conversation_id,
             initial_snapshot_token,
             agent_identity_uid: None,
         }
