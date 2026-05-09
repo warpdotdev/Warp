@@ -204,6 +204,9 @@ impl OrchestrationEventService {
             else {
                 return SendEventResult::Error("Child conversation not found".to_string());
             };
+            if !child_conversation.status().is_in_progress() {
+                return SendEventResult::LifecycleDropped;
+            }
             let Some(source_agent_id) = child_conversation.orchestration_agent_id() else {
                 return SendEventResult::Error(
                     "Child conversation has no agent identifier".to_string(),

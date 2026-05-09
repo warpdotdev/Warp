@@ -7405,8 +7405,7 @@ impl TerminalView {
                 );
             });
         }
-
-        had_active_stream || should_interrupt_active_command
+        true
     }
 
     fn user_write_ctrl_c_to_pty(&mut self, ctx: &mut ViewContext<Self>) {

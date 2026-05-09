@@ -460,6 +460,90 @@ fn test_emit_child_killed_enqueues_cancelled_event_for_parent() {
 }
 
 #[test]
+fn test_emit_child_killed_drops_when_no_parent() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+        let terminal_view_id = EntityId::new();
+        let child_run_id = uuid::Uuid::new_v4().to_string();
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let service = app.add_model(|_| OrchestrationEventService::new_without_subscriptions());
+
+        // Create a standalone conversation (no parent) with a run_id.
+        let orphan_conversation_id = history_model.update(&mut app, |history_model, ctx| {
+            let id = history_model.start_new_conversation(terminal_view_id, false, false, ctx);
+            history_model.assign_run_id_for_conversation(
+                id,
+                child_run_id,
+                None,
+                terminal_view_id,
+                ctx,
+            );
+            id
+        });
+
+        service.update(&mut app, |service, ctx| {
+            assert!(matches!(
+                service.emit_child_killed(orphan_conversation_id, ctx),
+                SendEventResult::LifecycleDropped
+            ));
+        });
+    });
+}
+
+#[test]
+fn test_emit_child_killed_drops_when_child_already_terminal() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+        let terminal_view_id = EntityId::new();
+        let parent_run_id = uuid::Uuid::new_v4().to_string();
+        let child_run_id = uuid::Uuid::new_v4().to_string();
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let service = app.add_model(|_| OrchestrationEventService::new_without_subscriptions());
+
+        let (parent_conversation_id, child_conversation_id) =
+            history_model.update(&mut app, |history_model, ctx| {
+                let parent_conversation_id =
+                    history_model.start_new_conversation(terminal_view_id, false, false, ctx);
+                history_model.assign_run_id_for_conversation(
+                    parent_conversation_id,
+                    parent_run_id,
+                    None,
+                    terminal_view_id,
+                    ctx,
+                );
+                let child_conversation_id = history_model.start_new_child_conversation(
+                    terminal_view_id,
+                    "child".to_string(),
+                    parent_conversation_id,
+                    ctx,
+                );
+                history_model.assign_run_id_for_conversation(
+                    child_conversation_id,
+                    child_run_id,
+                    None,
+                    terminal_view_id,
+                    ctx,
+                );
+                history_model.update_conversation_status(
+                    terminal_view_id,
+                    child_conversation_id,
+                    ConversationStatus::Success,
+                    ctx,
+                );
+                (parent_conversation_id, child_conversation_id)
+            });
+
+        service.update(&mut app, |service, ctx| {
+            assert!(matches!(
+                service.emit_child_killed(child_conversation_id, ctx),
+                SendEventResult::LifecycleDropped
+            ));
+            assert!(!service.has_pending_events(parent_conversation_id));
+        });
+    });
+}
+
+#[test]
 fn test_restored_v1_child_reregisters_lifecycle_subscription() {
     App::test((), |mut app| async move {
         let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(false);

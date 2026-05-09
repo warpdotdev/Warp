@@ -684,13 +684,20 @@ fn stop_local_agent_conversation(
 fn cancel_cloud_agent_task(
     task_id: Option<AmbientAgentTaskId>,
     conversation_id: AIConversationId,
+    show_toast: bool,
     ctx: &mut ViewContext<PaneGroup>,
 ) -> bool {
     let Some(task_id) = task_id else {
-        log::warn!("StopAgentConversation: cloud conversation {conversation_id:?} has no task id");
+        log::warn!(
+            "cancel_cloud_agent_task: cloud conversation {conversation_id:?} has no task id"
+        );
         return false;
     };
-    crate::ai::ambient_agents::cancel_task_with_toast(task_id, ctx);
+    if show_toast {
+        crate::ai::ambient_agents::cancel_task_with_toast(task_id, ctx);
+    } else {
+        crate::ai::ambient_agents::cancel_task_silently(task_id, ctx);
+    }
     true
 }
 
@@ -707,7 +714,7 @@ fn stop_agent_conversation(
         return;
     }
     if state.is_cloud_cancel_candidate {
-        cancel_cloud_agent_task(state.task_id, conversation_id, ctx);
+        cancel_cloud_agent_task(state.task_id, conversation_id, true, ctx);
     } else if !stop_local_agent_conversation(
         group,
         state.owner_terminal_view_id,
@@ -725,6 +732,26 @@ fn stop_agent_conversation(
     }
 }
 
+fn pane_group_hosting_split_off_child(
+    conversation_id: AIConversationId,
+    ctx: &AppContext,
+) -> Option<ViewHandle<PaneGroup>> {
+    WorkspaceRegistry::as_ref(ctx)
+        .all_workspaces(ctx)
+        .into_iter()
+        .find_map(|(_, workspace)| {
+            workspace.as_ref(ctx).tab_views().find_map(|pane_group| {
+                let group = pane_group.as_ref(ctx);
+                let hosts_split_off_child = group
+                    .child_agent_origin()
+                    .is_some_and(|origin| origin.conversation_id == conversation_id)
+                    || group
+                        .find_visible_terminal_pane_for_conversation(conversation_id, ctx)
+                        .is_some();
+                hosts_split_off_child.then(|| pane_group.clone())
+            })
+        })
+}
 fn discard_child_agent_pane_for_conversation(
     group: &mut PaneGroup,
     owner_terminal_view_id: Option<EntityId>,
@@ -733,6 +760,15 @@ fn discard_child_agent_pane_for_conversation(
 ) -> bool {
     if group.discard_child_agent_pane_for_conversation(conversation_id, ctx) {
         return true;
+    }
+    if let Some(split_off_pane_group) = pane_group_hosting_split_off_child(conversation_id, ctx) {
+        if split_off_pane_group.id() != ctx.view_id()
+            && split_off_pane_group.update(ctx, |pane_group, ctx| {
+                pane_group.discard_child_agent_pane_for_conversation(conversation_id, ctx)
+            })
+        {
+            return true;
+        }
     }
 
     let Some(owner_terminal_view_id) = owner_terminal_view_id else {
@@ -759,22 +795,24 @@ fn kill_agent_conversation(
     ctx: &mut ViewContext<PaneGroup>,
 ) {
     let state = agent_conversation_action_state(conversation_id, ctx);
-    OrchestrationEventService::handle(ctx).update(ctx, |service, ctx| {
-        match service.emit_child_killed(conversation_id, ctx) {
-            SendEventResult::LifecycleSent => {}
-            SendEventResult::LifecycleDropped => {
-                log::info!(
-                    "KillAgentConversation: no parent lifecycle target for {conversation_id:?}"
-                );
-            }
-            SendEventResult::Error(error) => {
-                log::warn!(
-                    "KillAgentConversation: failed to emit killed lifecycle event for {conversation_id:?}: {error}"
-                );
-            }
-        }
-    });
     if FeatureFlag::OrchestrationV2.is_enabled() {
+        if state.is_some_and(|state| state.is_in_progress) {
+            OrchestrationEventService::handle(ctx).update(ctx, |service, ctx| {
+                match service.emit_child_killed(conversation_id, ctx) {
+                    SendEventResult::LifecycleSent => {}
+                    SendEventResult::LifecycleDropped => {
+                        log::info!(
+                            "KillAgentConversation: no parent lifecycle target for {conversation_id:?}"
+                        );
+                    }
+                    SendEventResult::Error(error) => {
+                        log::warn!(
+                            "KillAgentConversation: failed to emit killed lifecycle event for {conversation_id:?}: {error}"
+                        );
+                    }
+                }
+            });
+        }
         OrchestrationEventStreamer::handle(ctx).update(ctx, |streamer, ctx| {
             streamer.mark_conversation_killed(conversation_id, ctx);
         });
@@ -783,7 +821,7 @@ fn kill_agent_conversation(
     if let Some(state) = state {
         if state.is_in_progress {
             if state.is_cloud_cancel_candidate {
-                cancel_cloud_agent_task(state.task_id, conversation_id, ctx);
+                cancel_cloud_agent_task(state.task_id, conversation_id, false, ctx);
             } else {
                 stop_local_agent_conversation(
                     group,
@@ -815,6 +853,7 @@ fn kill_agent_conversation(
     };
     conversation_utils::remove_conversation(conversation_id, terminal_view_id, false, ctx);
 }
+
 /// Attaches a terminal view to the pane group by subscribing to its events
 /// and setting the file tree code model.
 fn attach_terminal_view(
