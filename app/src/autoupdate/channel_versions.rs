@@ -26,6 +26,14 @@ pub async fn fetch_channel_versions(
             .context("Failed to parse channel versions JSON");
     }
 
+    if should_fetch_channel_versions_from_manifest_directly() {
+        log::info!(
+            "Bypassing Warp server for channel versions on channel {}; fetching manifest directly",
+            ChannelState::channel()
+        );
+        return fetch_channel_versions_from_json_storage(server_api.http_client(), nonce).await;
+    }
+
     let channel_versions = server_api
         .fetch_channel_versions(include_changelogs, is_daily)
         .await
@@ -77,5 +85,61 @@ fn channel_versions_manifest_url(nonce: &str) -> String {
             "{}/channel_versions.json?r={nonce}",
             ChannelState::releases_base_url()
         )
+    }
+}
+
+/// Returns whether the current channel should skip Warp's `/client_version` API entirely.
+fn should_fetch_channel_versions_from_manifest_directly() -> bool {
+    ChannelState::channel_versions_url().is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use serial_test::serial;
+
+    use super::should_fetch_channel_versions_from_manifest_directly;
+    use crate::channel::{Channel, ChannelState};
+    use warp_core::{
+        channel::{AutoupdateConfig, ChannelConfig, OzConfig, WarpServerConfig},
+        AppId,
+    };
+
+    /// Configures a temporary OSS channel state with or without a direct manifest URL.
+    fn set_test_channel_state(channel_versions_url: Option<&str>) {
+        ChannelState::set(ChannelState::new(
+            Channel::Oss,
+            ChannelConfig {
+                app_id: AppId::new("dev", "warp", "WarpOss"),
+                logfile_name: "warp-oss.log".into(),
+                server_config: WarpServerConfig::production(),
+                oz_config: OzConfig::production(),
+                telemetry_config: None,
+                crash_reporting_config: None,
+                autoupdate_config: Some(AutoupdateConfig {
+                    releases_base_url: "https://github.com/example/warp/releases".into(),
+                    channel_versions_url: channel_versions_url.map(|url| url.to_string().into()),
+                    show_autoupdate_menu_items: true,
+                }),
+                mcp_static_config: None,
+            },
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn direct_manifest_fetch_is_enabled_when_channel_versions_url_exists() {
+        set_test_channel_state(Some(
+            "https://github.com/example/warp/releases/latest/download/channel_versions.json",
+        ));
+
+        assert!(should_fetch_channel_versions_from_manifest_directly());
+    }
+
+    #[test]
+    #[serial]
+    fn direct_manifest_fetch_is_disabled_without_channel_versions_url() {
+        set_test_channel_state(None);
+
+        assert!(!should_fetch_channel_versions_from_manifest_directly());
     }
 }

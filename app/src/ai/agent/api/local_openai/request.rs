@@ -965,9 +965,7 @@ fn has_version_suffix(base_url: &str) -> bool {
         .rsplit('/')
         .next()
         .and_then(|segment| segment.strip_prefix('v'))
-        .is_some_and(|version| {
-            !version.is_empty() && version.chars().all(|ch| ch.is_ascii_digit())
-        })
+        .is_some_and(|version| !version.is_empty() && version.chars().all(|ch| ch.is_ascii_digit()))
 }
 
 /// Normalizes the user-provided base URL into the exact versioned `/responses` endpoint.
