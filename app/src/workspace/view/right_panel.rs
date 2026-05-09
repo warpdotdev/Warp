@@ -29,7 +29,10 @@ use crate::{
     drive::panel::{MAX_SIDEBAR_WIDTH_RATIO, MIN_SIDEBAR_WIDTH},
     terminal::resizable_data::{ModalType, ResizableData},
 };
-use crate::{code_review::diff_state::DiffStateModel, terminal::view::TerminalView};
+use crate::{
+    code::buffer_location::BufferLocation, code_review::diff_state::DiffStateModel,
+    terminal::view::TerminalView,
+};
 use dunce::canonicalize;
 use itertools::Itertools;
 use std::{
@@ -856,7 +859,7 @@ impl RightPanelView {
         let repo_path = crv.repo_path();
         let branch_name = crv
             .diff_state_model()
-            .read(app, |model, _| model.get_current_branch_name());
+            .read(app, |model, ctx| model.get_current_branch_name(ctx));
         let diff_stats = crv.loaded_diff_stats();
 
         let repo_path_element = repo_path.map(|repo_path| {
@@ -1594,7 +1597,10 @@ impl RightPanelView {
             }
         } else {
             let diff_state_model = self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(repo_path.to_path_buf(), ctx)
+                model.get_or_create_diff_state_model(
+                    BufferLocation::Local(repo_path.to_path_buf()),
+                    ctx,
+                )
             });
 
             let Some(diff_state_model) = diff_state_model else {

@@ -28,7 +28,7 @@ use warpui::{
 
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversation;
-use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
+use crate::ai::agent::conversation::{AIConversationId, ConversationStatus, StatusColorStyle};
 use crate::ai::agent_conversations_model::{AgentConversationEntry, AgentRunDisplayStatus};
 use crate::ai::agent_management::details_action_buttons::{
     ActionButtonsConfig, AgentDetailsButtonEvent, ConversationActionButtonsRow,
@@ -1036,7 +1036,7 @@ impl ConversationDetailsPanel {
             }
             PanelMode::Conversation { status, .. } => {
                 let status = status.as_ref()?;
-                let (icon, color) = status.status_icon_and_color(theme);
+                let (icon, color) = status.status_icon_and_color(theme, StatusColorStyle::Standard);
                 (icon, color, status.to_string())
             }
         };

@@ -1,6 +1,6 @@
 pub mod telemetry;
 
-use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent::conversation::{ConversationStatus, StatusColorStyle};
 use crate::ai::agent_management::AgentNotificationsModel;
 use crate::ai::conversation_status_ui::render_status_element;
 use crate::code::editor::{add_color, remove_color};
@@ -5488,7 +5488,7 @@ fn render_detail_status_pill(
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
-    let (icon, color) = status.status_icon_and_color(theme);
+    let (icon, color) = status.status_icon_and_color(theme, StatusColorStyle::Standard);
     Container::new(
         Flex::row()
             .with_main_axis_size(MainAxisSize::Min)

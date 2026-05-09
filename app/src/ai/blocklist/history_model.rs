@@ -6,6 +6,7 @@ use chrono::{DateTime, Local, NaiveDateTime};
 use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
 use warp_multi_agent_api::response_event::stream_finished::ConversationUsageMetadata;
 use warp_multi_agent_api::{
@@ -47,7 +48,7 @@ use crate::{
 };
 
 #[cfg(feature = "local_fs")]
-use crate::persistence::{database_file_path, establish_ro_connection};
+use crate::persistence::{database_file_path_for_scope, establish_ro_connection, PersistenceScope};
 
 use super::controller::response_stream::ResponseStreamId;
 use super::persistence::{PersistedAIInput, PersistedAIInputType};
@@ -259,11 +260,13 @@ impl BlocklistAIHistoryModel {
         multi_agent_conversations: &[AgentConversation],
     ) -> Self {
         #[cfg(feature = "local_fs")]
-        let db_connection = database_file_path().to_str().and_then(|db_url| {
-            establish_ro_connection(db_url)
-                .ok()
-                .map(|conn| Arc::new(Mutex::new(conn)))
-        });
+        let db_connection = database_file_path_for_scope(&PersistenceScope::App)
+            .to_str()
+            .and_then(|db_url| {
+                establish_ro_connection(db_url)
+                    .ok()
+                    .map(|conn| Arc::new(Mutex::new(conn)))
+            });
 
         let mut model = Self {
             persisted_queries,
@@ -397,6 +400,7 @@ impl BlocklistAIHistoryModel {
         terminal_view_id: EntityId,
         name: String,
         parent_conversation_id: AIConversationId,
+        orchestration_harness: Option<Harness>,
         ctx: &mut ModelContext<Self>,
     ) -> AIConversationId {
         let parent_agent_id = self
@@ -420,6 +424,9 @@ impl BlocklistAIHistoryModel {
                 conversation.set_parent_agent_id(id);
             }
             conversation.set_agent_name(name);
+            if let Some(harness) = orchestration_harness {
+                conversation.set_orchestration_harness(harness);
+            }
         }
         self.set_parent_for_conversation(conversation_id, parent_conversation_id);
         conversation_id
@@ -1152,6 +1159,7 @@ impl BlocklistAIHistoryModel {
             // Forked conversation loses its parentage
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
@@ -1307,6 +1315,7 @@ impl BlocklistAIHistoryModel {
             // Forked conversation loses its parentage.
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,

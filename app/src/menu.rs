@@ -16,6 +16,7 @@ use warpui::elements::{
     ParentAnchor, ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds,
     ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Stack,
 };
+use warpui::text_layout::ClipConfig;
 use warpui::WindowId;
 use warpui::{
     accessibility::{AccessibilityContent, ActionAccessibilityContent, WarpA11yRole},
@@ -262,18 +263,20 @@ impl MenuItemLabel {
         menu_width: f32,
         is_selected: bool,
         is_hovered: bool,
+        clip_config: Option<ClipConfig>,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
         match self {
-            Self::Text(label) => Shrinkable::new(
-                4.,
-                Text::new_inline(label.clone(), font_family, font_size)
+            Self::Text(label) => {
+                let mut text = Text::new_inline(label.clone(), font_family, font_size)
                     .with_color(primary_color.into())
-                    .autosize_text(MINIMUM_MENU_ITEM_FONT_SIZE)
-                    .finish(),
-            )
-            .finish(),
+                    .autosize_text(MINIMUM_MENU_ITEM_FONT_SIZE);
+                if let Some(config) = clip_config {
+                    text = text.with_clip(config).soft_wrap(false);
+                }
+                Shrinkable::new(4., text.finish()).finish()
+            }
             Self::MultilineText { label, max_lines } => {
                 let max_height_for_n_lines =
                     *max_lines as f32 * font_size * appearance.line_height_ratio();
@@ -420,6 +423,11 @@ pub struct MenuItemFields<A: Action + Clone> {
     /// Optional override for the leading icon size in logical pixels. When
     /// `None`, the icon is sized to `appearance.ui_font_size()`.
     icon_size_override: Option<f32>,
+    /// Optional clip config controlling how the label text is clipped when it
+    /// would overflow the available width. Only applied to plain
+    /// [`MenuItemLabel::Text`] labels — multiline/stacked/labeled/icon/custom
+    /// variants ignore this field.
+    clip_config: Option<ClipConfig>,
 }
 
 impl<A: Action + Clone> std::fmt::Debug for MenuItemFields<A> {
@@ -459,6 +467,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             right_side_label: None,
             override_hover_background_color: None,
             icon_size_override: None,
+            clip_config: None,
         }
     }
 
@@ -487,6 +496,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             right_side_label: None,
             override_hover_background_color: None,
             icon_size_override: None,
+            clip_config: None,
         }
     }
 
@@ -518,6 +528,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             right_side_label: None,
             override_hover_background_color: None,
             icon_size_override: None,
+            clip_config: None,
         }
     }
 
@@ -552,6 +563,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             right_side_label: None,
             override_hover_background_color: None,
             icon_size_override: None,
+            clip_config: None,
         }
     }
 
@@ -584,6 +596,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             right_side_label: None,
             override_hover_background_color: None,
             icon_size_override: None,
+            clip_config: None,
         }
     }
 
@@ -615,6 +628,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             right_side_label: None,
             override_hover_background_color: None,
             icon_size_override: None,
+            clip_config: None,
         }
     }
 
@@ -643,6 +657,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             right_side_label: None,
             override_hover_background_color: None,
             icon_size_override: None,
+            clip_config: None,
         }
     }
 
@@ -687,6 +702,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             right_side_label: self.right_side_label,
             override_hover_background_color: self.override_hover_background_color,
             icon_size_override: self.icon_size_override,
+            clip_config: self.clip_config,
         }
     }
 
@@ -789,6 +805,14 @@ impl<A: Action + Clone> MenuItemFields<A> {
     /// Set a tooltip to display when hovering over this menu item.
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = Some(tooltip.into());
+        self
+    }
+
+    /// Set a [`ClipConfig`] that controls how the label text is clipped when
+    /// it would overflow the available width. Only applied to plain
+    /// [`MenuItemLabel::Text`] labels.
+    pub fn with_clip_config(mut self, config: ClipConfig) -> Self {
+        self.clip_config = Some(config);
         self
     }
 
@@ -1085,6 +1109,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
                 menu_width,
                 is_selected,
                 state.is_hovered(),
+                self.clip_config,
                 appearance,
                 app,
             );

@@ -141,6 +141,7 @@ fn ai_conversation_new_restored_preserves_last_event_sequence() {
         artifacts_json: None,
         parent_agent_id: None,
         agent_name: None,
+        orchestration_harness_type: None,
         parent_conversation_id: None,
         is_remote_child: false,
         run_id: None,

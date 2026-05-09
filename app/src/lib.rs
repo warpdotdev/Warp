@@ -1144,7 +1144,18 @@ pub(crate) fn initialize_app(
 
     // If any part of sqlite initialization fails, we just don't do session restoration (i.e.
     // feature degradation).
-    let (sqlite_data, writer_handles) = persistence::initialize(ctx);
+    let persistence_scope = match launch_mode {
+        LaunchMode::RemoteServerDaemon { identity_key } => {
+            persistence::PersistenceScope::RemoteServerDaemon {
+                identity_key: identity_key.clone(),
+            }
+        }
+        LaunchMode::App { .. }
+        | LaunchMode::CommandLine { .. }
+        | LaunchMode::RemoteServerProxy
+        | LaunchMode::Test { .. } => persistence::PersistenceScope::App,
+    };
+    let (sqlite_data, writer_handles) = persistence::initialize(ctx, persistence_scope);
     timer.mark_interval_end("SQLITE_INITIALIZED");
 
     let persistence_writer = PersistenceWriter::new(writer_handles);
@@ -1464,8 +1475,13 @@ pub(crate) fn initialize_app(
             });
         }
 
+        let emit_incremental_updates = matches!(launch_mode, LaunchMode::RemoteServerDaemon { .. });
         ctx.add_singleton_model(|ctx| {
-            let model = RepoMetadataModel::new(ctx);
+            let model = if emit_incremental_updates {
+                RepoMetadataModel::new_with_incremental_updates(ctx)
+            } else {
+                RepoMetadataModel::new(ctx)
+            };
 
             // Subscribe to RemoteServerManager push events so that remote repo
             // metadata snapshots and incremental updates populate the remote
