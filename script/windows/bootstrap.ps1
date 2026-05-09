@@ -1,6 +1,51 @@
 #!/usr/bin/env powershell
+param(
+    [switch]$Help,
+    [switch]$InstallCommonSkills
+)
 
 $ErrorActionPreference = 'Stop'
+
+function Show-Usage {
+    Write-Output 'Usage: .\script\windows\bootstrap.ps1 [-Help] [-InstallCommonSkills]'
+    Write-Output ''
+    Write-Output 'Prepare this checkout for Warp development on Windows.'
+    Write-Output ''
+    Write-Output 'Options:'
+    Write-Output '  -Help                 Show this help message.'
+    Write-Output '  -InstallCommonSkills  Install or update common agent skills from skills-lock.json.'
+    Write-Output ''
+    Write-Output 'Environment:'
+    Write-Output '  WARP_SKIP_COMMON_SKILLS_INSTALL=1'
+    Write-Output '      Skip installing common agent skills.'
+}
+
+function Show-BootstrapPreview {
+    Write-Output 'Warp bootstrap is starting for Windows.'
+    Write-Output 'It will:'
+    Write-Output '  - Check for Git for Windows.'
+    Write-Output '  - Install Rust if cargo is unavailable.'
+    Write-Output '  - Install Visual Studio Build Tools, jq, CMake, InnoSetup, and gcloud as needed.'
+    Write-Output '  - Install Cargo test dependencies.'
+
+    if (-not $InstallCommonSkills) {
+        Write-Output '  - Skip common agent skills unless -InstallCommonSkills is provided.'
+    } elseif ($env:WARP_SKIP_COMMON_SKILLS_INSTALL -eq '1') {
+        Write-Output '  - Skip common agent skills because WARP_SKIP_COMMON_SKILLS_INSTALL=1.'
+    } else {
+        Write-Output '  - Install or update common agent skills from skills-lock.json if needed.'
+    }
+
+    Write-Output 'Run .\script\windows\bootstrap.ps1 -Help to see options and environment overrides.'
+    Write-Output ''
+}
+
+if ($Help) {
+    Show-Usage
+    exit 0
+}
+
+Show-BootstrapPreview
 
 # Git for Windows can be installed system-wide (Program Files) or per-user (LOCALAPPDATA\Programs\Git).
 $gitBinCandidates = @(
@@ -12,6 +57,11 @@ if (-not $gitBinDir) {
     Write-Error 'Git for Windows is required. Please install it at:'
     Write-Error 'https://gitforwindows.org/'
     exit 1
+}
+$env:PATH = "$gitBinDir;$env:PATH"
+
+function Install-CommonSkill {
+    & "$gitBinDir\bash.exe" "$PWD\script\install_common_skills" --if-needed
 }
 
 if (-not (Get-Command -Name cargo -Type Application -ErrorAction SilentlyContinue)) {
@@ -68,4 +118,8 @@ if ($identityToken.Trim().Length -eq 0) {
     Write-Output 'gcloud CLI authentication missing.  Press enter to continue...'
     Read-Host
     gcloud auth login
+}
+
+if ($InstallCommonSkills) {
+    Install-CommonSkill
 }
