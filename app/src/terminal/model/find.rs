@@ -339,6 +339,12 @@ impl RegexDFAs {
 /// Including a \b in a regex causes compilation of the regex to fail with a haystack containing
 /// unicode. Therefore, we replace it with the ASCII-only version as the docs suggest.
 ///
+/// This rewrite is intentionally syntax-aware. Custom secret regexes can contain literal escaped
+/// backslashes (for example `\\b`) or byte escapes inside character classes (`[\b]`), neither of
+/// which should be treated as word-boundary assertions. We only rewrite unescaped `\b` and `\B`
+/// outside character classes so those patterns keep their original meaning while still avoiding
+/// Unicode word-boundary DFA failures.
+///
 /// Note: One alternative could be use enable this option:
 /// https://docs.rs/regex-automata/0.4.6/regex_automata/hybrid/dfa/struct.Config.html#method.unicode_word_boundary
 /// However, "this only works when the search input is ASCII only." This assumption is
@@ -386,39 +392,5 @@ fn count_preceding_backslashes(pattern: &str, index: usize) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::replace_unicode_word_boundaries;
-
-    #[test]
-    fn replaces_word_boundary_assertions() {
-        assert_eq!(
-            replace_unicode_word_boundaries(r"\bTOKEN\b"),
-            r"(?-u:\b)TOKEN(?-u:\b)"
-        );
-
-        assert_eq!(
-            replace_unicode_word_boundaries(r"\B_TOKEN\B"),
-            r"(?-u:\B)_TOKEN(?-u:\B)"
-        );
-    }
-
-    #[test]
-    fn preserves_escaped_literal_backslash_b() {
-        assert_eq!(replace_unicode_word_boundaries(r"\\bTOKEN"), r"\\bTOKEN");
-        assert_eq!(replace_unicode_word_boundaries(r"\\BTOKEN"), r"\\BTOKEN");
-    }
-
-    #[test]
-    fn preserves_backslash_b_in_character_classes() {
-        assert_eq!(replace_unicode_word_boundaries(r"[\b]TOKEN"), r"[\b]TOKEN");
-        assert_eq!(replace_unicode_word_boundaries(r"[\B]TOKEN"), r"[\B]TOKEN");
-    }
-
-    #[test]
-    fn replaces_boundary_after_escaped_literal_backslash() {
-        assert_eq!(
-            replace_unicode_word_boundaries(r"\\\bTOKEN"),
-            r"\\(?-u:\b)TOKEN"
-        );
-    }
-}
+#[path = "find_tests.rs"]
+mod tests;
