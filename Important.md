@@ -28,6 +28,8 @@
 
 CI 的 Windows release 实际是两段式调用同一个脚本：先 `-SkipBuildInstaller` 编二进制，再 `-SkipBuildBinary` 组装 installer；但本地如果只是想拿到可安装的 `WarpOssSetup.exe`，单次运行 `bundle.ps1` 就够了。是否签名不是这条 OSS 本地构建的重点，默认不签名也和当前 OSS release workflow 保持一致。
 
+OSS 渠道对外展示名现在定为 `Warp Refined`，但内部兼容标识仍保留 `WarpOss`。后续如果再改安装包、快捷方式、`.desktop`、macOS bundle 显示名，优先只动展示名字段；`dev.warp.WarpOss`、`warposs://`、`warp-oss`、Windows 的 `AppUserModelID`/installer 内部名这些兼容路径不要跟着一起改。
+
 # Local OpenAI Responses API 约定
 
 本地 `local_openai` 后端要显示 Warp 里的 thinking / `Thought for N seconds`，关键不是“拿到最终 answer”就够了，而是要主动请求并解析 reasoning 流。请求侧对 reasoning 模型补 `reasoning.summary = "auto"`，流式侧同时接 `response.reasoning_summary_text.*`、兼容 `response.reasoning_text.*`，并把完成时长落到 Warp 的 `AgentReasoning`，这样 UI 才能稳定显示思考过程和耗时。
