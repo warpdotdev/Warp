@@ -200,7 +200,7 @@ pub(crate) struct ProratedRequestLimitsInfo {
 
 pub struct BillingAndUsagePageView {
     page: PageType<Self>,
-    auth_state: Arc<AuthState>,
+    pub(super) auth_state: Arc<AuthState>,
     overage_limit_modal_state: ModalViewState<Modal<SpendingLimitModal>>,
     addon_credit_modal_state: ModalViewState<Modal<SpendingLimitModal>>,
     // Since UBP can take a second to enable due to needing to contact Stripe,
@@ -214,7 +214,7 @@ pub struct BillingAndUsagePageView {
     current_sort_key: Option<SortKey>,
     current_sort_order: SortOrder,
     // Which view tab is currently selected
-    selected_tab: BillingUsageTab,
+    pub(super) selected_tab: BillingUsageTab,
     // Model for Usage History tab data
     usage_history_model: ModelHandle<UsageHistoryModel>,
     // Track which usage history entries have been expanded
@@ -225,10 +225,10 @@ pub struct BillingAndUsagePageView {
     usage_entries_tooltip_mouse_states: RefCell<HashMap<String, MouseStateHandle>>,
     // Action button for loading more usage history entries
     load_more_button: ViewHandle<ActionButton>,
-    selected_addon_denomination: usize,
-    addon_credits_options: Vec<AddonCreditsOption>,
-    addon_credit_denomination_buttons: Vec<ViewHandle<ActionButton>>,
-    purchase_addon_credits_loading: bool,
+    pub(super) selected_addon_denomination: usize,
+    pub(super) addon_credits_options: Vec<AddonCreditsOption>,
+    pub(super) addon_credit_denomination_buttons: Vec<ViewHandle<ActionButton>>,
+    pub(super) purchase_addon_credits_loading: bool,
     prorated_request_limits_info_mouse_states: Vec<MouseStateHandle>,
 }
 
@@ -1084,7 +1084,7 @@ impl From<&BillingAndUsagePageAction> for LoginGatedFeature {
 }
 
 #[derive(Default)]
-struct UsageWidget {
+pub(super) struct UsageWidget {
     requests_highlight_index: HighlightedHyperlink,
     ubp_switch_state: SwitchStateHandle,
     ubp_info_icon_mouse_state: MouseStateHandle,
@@ -1094,8 +1094,8 @@ struct UsageWidget {
     exceed_limit_link_mouse_state: MouseStateHandle,
     refresh_icon_mouse_state: MouseStateHandle,
     sort_icon_mouse_state: MouseStateHandle,
-    overview_tab_mouse_state: MouseStateHandle,
-    usage_history_tab_mouse_state: MouseStateHandle,
+    pub(super) overview_tab_mouse_state: MouseStateHandle,
+    pub(super) usage_history_tab_mouse_state: MouseStateHandle,
     addon_info_icon_mouse_state: MouseStateHandle,
     edit_monthly_limit: MouseStateHandle,
     auto_reload_switch: SwitchStateHandle,
@@ -2469,6 +2469,12 @@ impl SettingsWidget for UsageWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        if FeatureFlag::BillingAndUsagePageV2.is_enabled() {
+            return super::billing_and_usage_page_v2::render_usage_widget_v2(
+                self, view, appearance, app,
+            );
+        }
+
         let ai_request_usage_model = AIRequestUsageModel::as_ref(app);
         let next_refresh_time = ai_request_usage_model.next_refresh_time();
         let local_next_refresh_time = next_refresh_time.with_timezone(&Local);
@@ -2527,7 +2533,7 @@ impl SettingsWidget for UsageWidget {
 }
 
 impl UsageWidget {
-    fn render_usage_history_content(
+    pub(super) fn render_usage_history_content(
         &self,
         view: &BillingAndUsagePageView,
         appearance: &Appearance,
@@ -3364,7 +3370,7 @@ struct PlanWidgetStateHandles {
 }
 
 #[derive(Default)]
-struct PlanWidget {
+pub(super) struct PlanWidget {
     ui_state_handles: PlanWidgetStateHandles,
 }
 
@@ -3674,6 +3680,12 @@ impl SettingsWidget for PlanWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        if FeatureFlag::BillingAndUsagePageV2.is_enabled() {
+            return super::billing_and_usage_page_v2::render_plan_widget_v2(
+                self, view, appearance, app,
+            );
+        }
+
         let account_info = if view.auth_state.is_anonymous_or_logged_out() {
             self.render_anonymous_account_info(view.auth_state.as_ref(), appearance)
         } else {

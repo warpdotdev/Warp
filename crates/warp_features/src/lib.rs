@@ -864,6 +864,9 @@ pub enum FeatureFlag {
     /// (`~/.git-credentials`, `~/.config/gh/hosts.yaml`) and runs the
     /// background refresh loop that keeps them fresh during a task run.
     GitCredentialRefresh,
+
+    /// Gates the v2 billing and usage page redesign.
+    BillingAndUsagePageV2,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -946,6 +949,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::HandoffLocalCloud,
     FeatureFlag::DragTabsToWindows,
     FeatureFlag::GitCredentialRefresh,
+    FeatureFlag::BillingAndUsagePageV2,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

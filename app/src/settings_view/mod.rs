@@ -80,6 +80,7 @@ mod ai_page;
 mod appearance_page;
 mod billing_and_usage;
 mod billing_and_usage_page;
+mod billing_and_usage_page_v2;
 mod code_page;
 mod delete_environment_confirmation_dialog;
 mod directory_color_add_picker;
