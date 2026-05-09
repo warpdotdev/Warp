@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use warpui::{
     AppContext, Element, SizeConstraint,
     elements::{Align, CacheOption, CornerRadius, Image, Radius, Text},
@@ -13,6 +15,7 @@ use crate::{
 };
 
 use super::{CursorDisplayType, RenderContext, RenderableBlock};
+const MERMAID_RENDER_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct RenderableMermaidDiagram {
     viewport_item: ViewportItem,
@@ -42,13 +45,38 @@ impl RenderableBlock for RenderableMermaidDiagram {
         );
 
         let code_text = model.styles().code_text;
+        let placeholder_color = model.styles().placeholder_color;
         let placeholder = Align::new(
             Text::new(
                 "Rendering Mermaid diagram…",
                 code_text.font_family,
                 code_text.font_size,
             )
-            .with_color(model.styles().placeholder_color)
+            .with_color(placeholder_color)
+            .with_line_height_ratio(code_text.line_height_ratio)
+            .soft_wrap(false)
+            .finish(),
+        )
+        .finish();
+        let failure_notice = Align::new(
+            Text::new(
+                "Failed to render Mermaid diagram",
+                code_text.font_family,
+                code_text.font_size,
+            )
+            .with_color(placeholder_color)
+            .with_line_height_ratio(code_text.line_height_ratio)
+            .soft_wrap(false)
+            .finish(),
+        )
+        .finish();
+        let timeout_notice = Align::new(
+            Text::new(
+                "Failed to render Mermaid diagram",
+                code_text.font_family,
+                code_text.font_size,
+            )
+            .with_color(placeholder_color)
             .with_line_height_ratio(code_text.line_height_ratio)
             .soft_wrap(false)
             .finish(),
@@ -58,7 +86,9 @@ impl RenderableBlock for RenderableMermaidDiagram {
         let size = vec2f(config.width.as_f32(), config.height.as_f32());
         let mut image = Image::new(asset_source, CacheOption::BySize)
             .contain()
-            .before_load(placeholder);
+            .before_load(placeholder)
+            .on_load_failure(failure_notice)
+            .on_load_timeout(MERMAID_RENDER_TIMEOUT, timeout_notice);
         image.layout(SizeConstraint::strict(size), ctx, app);
 
         self.image_element = Some(Box::new(image));
