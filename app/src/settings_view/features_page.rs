@@ -645,7 +645,7 @@ pub enum FeaturesPageAction {
     ToggleShowTerminalInputMessageLine,
     ToggleAgentInAppNotifications,
     MakeWarpDefaultTerminal,
-    UnsetWarpDefaultTerminal,
+    RestoreMacOSTerminalAsDefault,
 }
 
 lazy_static! {
@@ -1139,8 +1139,8 @@ impl FeaturesPageAction {
                 action: "MakeWarpDefaultTerminal".to_string(),
                 value: to_string(DefaultTerminal::as_ref(ctx).is_warp_default()),
             },
-            Self::UnsetWarpDefaultTerminal => TelemetryEvent::FeaturesPageAction {
-                action: "UnsetWarpDefaultTerminal".to_string(),
+            Self::RestoreMacOSTerminalAsDefault => TelemetryEvent::FeaturesPageAction {
+                action: "RestoreMacOSTerminalAsDefault".to_string(),
                 value: to_string(DefaultTerminal::as_ref(ctx).is_warp_default()),
             },
             Self::ToggleAutoOpenCodeReviewPane => TelemetryEvent::FeaturesPageAction {
@@ -1915,9 +1915,9 @@ impl TypedActionView for FeaturesPageView {
                     default_terminal.make_warp_default(ctx);
                 });
             }
-            UnsetWarpDefaultTerminal => {
+            RestoreMacOSTerminalAsDefault => {
                 DefaultTerminal::handle(ctx).update(ctx, |default_terminal, ctx| {
-                    default_terminal.unset_warp_default(ctx);
+                    default_terminal.restore_macos_terminal_as_default(ctx);
                 });
             }
         }
@@ -4807,7 +4807,7 @@ impl SettingsWidget for DefaultTerminalWidget {
                     "Restore macOS Terminal as the default terminal".to_string(),
                     None,
                     Some(Box::new(|ctx| {
-                        ctx.dispatch_typed_action(FeaturesPageAction::UnsetWarpDefaultTerminal);
+                        ctx.dispatch_typed_action(FeaturesPageAction::RestoreMacOSTerminalAsDefault);
                     })),
                     self.link_state.clone(),
                 )
@@ -7271,5 +7271,8 @@ impl SettingsWidget for GraphicsBackendWidget {
             );
         }
         col.finish()
+    }
+}
+nish()
     }
 }

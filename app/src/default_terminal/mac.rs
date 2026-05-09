@@ -71,8 +71,8 @@ pub fn set_warp_as_default_terminal() -> Result<(), String> {
     set_default_terminal(&bundle_id)
 }
 
-pub fn unset_warp_as_default_terminal() -> Result<(), String> {
-    log::debug!("Unsetting Warp as default terminal (reverting to Terminal.app)");
+pub fn restore_macos_terminal_as_default() -> Result<(), String> {
+    log::debug!("Restoring macOS terminal as default (reverting from Warp)");
 
     set_default_terminal("com.apple.Terminal")
 }

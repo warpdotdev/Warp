@@ -212,7 +212,7 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         move |ctx| {
             DefaultTerminal::handle(ctx).update(ctx, |default_terminal, ctx| {
                 if default_terminal.is_warp_default() {
-                    default_terminal.unset_warp_default(ctx)
+                    default_terminal.restore_macos_terminal_as_default(ctx)
                 } else {
                     default_terminal.make_warp_default(ctx)
                 }

@@ -25,8 +25,8 @@ mod non_mac {
         Err("Not implemented".to_string())
     }
 
-    /// Unsets Warp as the default terminal
-    pub fn unset_warp_as_default_terminal() -> Result<(), String> {
+    /// Restores macOS terminal as the default terminal
+    pub fn restore_macos_terminal_as_default() -> Result<(), String> {
         Err("Not implemented".to_string())
     }
 }
@@ -104,9 +104,9 @@ impl DefaultTerminal {
         }
     }
 
-    pub fn unset_warp_default(&mut self, ctx: &mut ModelContext<Self>) {
-        if let Err(e) = unset_warp_as_default_terminal() {
-            log::error!("Error unsetting Warp as default terminal: {e:#}");
+    pub fn restore_macos_terminal_as_default(&mut self, ctx: &mut ModelContext<Self>) {
+        if let Err(e) = restore_macos_terminal_as_default() {
+            log::error!("Error restoring macOS terminal as default: {e:#}");
         } else {
             self.set_is_warp_default(false, ctx);
         }
