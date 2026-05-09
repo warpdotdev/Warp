@@ -27,10 +27,12 @@ use super::proto::{
     client_message, delete_file_response, discard_files_response, get_diff_state_response,
     resolve_conflict_response, run_command_response, save_buffer_response, server_message,
     write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush, ClientMessage,
-    CloseBuffer, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
-    DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess, ErrorCode, ErrorResponse,
-    FailedFileRead, FileContextProto, FileOperationError, GetDiffStateResponse, Initialize,
-    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
+    CloseBuffer, CodebaseIndexStatus, CodebaseIndexStatusState, CodebaseIndexStatusUpdated,
+    CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
+    DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess, DropCodebaseIndex, ErrorCode,
+    ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, GetDiffStateResponse,
+    IndexCodebase, Initialize, InitializeResponse, ListCodebaseIndexStatuses, NavigatedToDirectory,
+    NavigatedToDirectoryResponse, OpenBuffer,
     OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
     ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
     RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
@@ -686,6 +688,15 @@ impl ServerModel {
             Some(client_message::Message::DiscardFiles(msg)) => {
                 self.handle_discard_files(msg, &request_id, ctx)
             }
+            Some(client_message::Message::ListCodebaseIndexStatuses(
+                ListCodebaseIndexStatuses {},
+            )) => self.handle_list_codebase_index_statuses(&request_id, conn_id),
+            Some(client_message::Message::IndexCodebase(msg)) => {
+                self.handle_index_codebase(msg, &request_id, conn_id)
+            }
+            Some(client_message::Message::DropCodebaseIndex(msg)) => {
+                self.handle_drop_codebase_index(msg, &request_id, conn_id)
+            }
             None => {
                 log::warn!(
                     "Received ClientMessage with no message variant (request_id={request_id})"
@@ -723,8 +734,8 @@ impl ServerModel {
         let snapshot = self.codebase_index_statuses_snapshot();
         let status_count = snapshot.statuses.len();
         log::info!(
-            "Pushing codebase index statuses snapshot: conn_id={conn_id} \
-             status_count={status_count}"
+            "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: \
+             conn_id={conn_id} bootstrap_status_count={status_count} source=placeholder_no_status_store"
         );
         self.send_server_message(
             Some(conn_id),
@@ -734,13 +745,62 @@ impl ServerModel {
     }
 
     fn codebase_index_statuses_snapshot(&self) -> CodebaseIndexStatusesSnapshot {
-        // PR1 has no canonical daemon-side codebase-indexing state yet, so
-        // the bootstrap snapshot is empty. Later PRs will populate this from
-        // the remote indexing manager rather than deriving status from
-        // navigation events.
+        // The daemon has identity-scoped SQLite available on startup, but this
+        // PR does not add remote-codebase-index status/cache tables or a
+        // daemon indexing manager consumer yet. The bootstrap snapshot is
+        // therefore empty until a later PR loads real status state from SQLite.
         CodebaseIndexStatusesSnapshot {
             statuses: Vec::new(),
         }
+    }
+
+    fn handle_list_codebase_index_statuses(
+        &self,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+    ) -> HandlerOutcome {
+        let snapshot = self.codebase_index_statuses_snapshot();
+        let status_count = snapshot.statuses.len();
+        log::info!(
+            "[Remote codebase indexing] Daemon handling ListCodebaseIndexStatuses: \
+             request_id={request_id} conn_id={conn_id} status_count={status_count}"
+        );
+        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusesSnapshot(
+            snapshot,
+        ))
+    }
+
+    fn handle_index_codebase(
+        &self,
+        msg: IndexCodebase,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+    ) -> HandlerOutcome {
+        log::info!(
+            "[Remote codebase indexing] Daemon handling IndexCodebase placeholder: \
+             request_id={request_id} conn_id={conn_id} repo_path={} state={:?}",
+            msg.repo_path,
+            CodebaseIndexStatusState::Unavailable
+        );
+        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+            unavailable_codebase_index_status_update(msg.repo_path),
+        ))
+    }
+    fn handle_drop_codebase_index(
+        &self,
+        msg: DropCodebaseIndex,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+    ) -> HandlerOutcome {
+        log::info!(
+            "[Remote codebase indexing] Daemon handling DropCodebaseIndex placeholder: \
+             request_id={request_id} conn_id={conn_id} repo_path={} state={:?}",
+            msg.repo_path,
+            CodebaseIndexStatusState::Unavailable
+        );
+        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+            unavailable_codebase_index_status_update(msg.repo_path),
+        ))
     }
 
     /// Routes a server message to its destination.
@@ -1970,6 +2030,21 @@ impl ServerModel {
     }
 }
 
+fn unavailable_codebase_index_status_update(repo_path: String) -> CodebaseIndexStatusUpdated {
+    CodebaseIndexStatusUpdated {
+        status: Some(CodebaseIndexStatus {
+            repo_path,
+            state: CodebaseIndexStatusState::Unavailable.into(),
+            last_updated_epoch_millis: None,
+            progress_completed: None,
+            progress_total: None,
+            failure_message: None,
+            root_hash: None,
+            embedding_model: None,
+            embedding_dimensions: None,
+        }),
+    }
+}
 /// Converts a [`ReadFileContextResult`] into its protobuf equivalent.
 fn file_context_result_to_proto(result: ReadFileContextResult) -> ReadFileContextResponse {
     use crate::ai::agent::AnyFileContent;
