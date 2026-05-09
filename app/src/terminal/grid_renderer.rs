@@ -2338,7 +2338,7 @@ fn calculate_cell_decorations(
     } else if cell.flags.intersects(Flags::CURLY_UNDERLINE) {
         Some((
             thickness * 3.,
-            cell_size.y() - thickness * 3.,
+            cell_size.y(),
             underline_color,
             DecorationKind::Curly { thickness },
         ))
