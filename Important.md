@@ -28,7 +28,7 @@
 
 CI 的 Windows release 实际是两段式调用同一个脚本：先 `-SkipBuildInstaller` 编二进制，再 `-SkipBuildBinary` 组装 installer；但本地如果只是想拿到可安装的 `WarpOssSetup.exe`，单次运行 `bundle.ps1` 就够了。是否签名不是这条 OSS 本地构建的重点，默认不签名也和当前 OSS release workflow 保持一致。
 
-OSS 渠道对外展示名现在定为 `Warp Refined`，但内部兼容标识仍保留 `WarpOss`。后续如果再改安装包、快捷方式、`.desktop`、macOS bundle 显示名，优先只动展示名字段；`dev.warp.WarpOss`、`warposs://`、`warp-oss`、Windows 的 `AppUserModelID`/installer 内部名这些兼容路径不要跟着一起改。
+OSS 渠道当前采用保守改名：Linux `.desktop`、Windows 快捷方式/启动项、以及 macOS plist 显示名可以显示 `Warp Refined`，但 macOS 的 bundle 文件名、DMG 文件名和其他内部兼容标识仍保留 `WarpOss`。后续如果再处理这类改名，先区分“显示名”和“产物/内部名”，不要一次性全改。
 
 # Local OpenAI Responses API 约定
 
