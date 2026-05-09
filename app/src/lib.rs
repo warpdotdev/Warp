@@ -1144,7 +1144,18 @@ pub(crate) fn initialize_app(
 
     // If any part of sqlite initialization fails, we just don't do session restoration (i.e.
     // feature degradation).
-    let (sqlite_data, writer_handles) = persistence::initialize(ctx);
+    let persistence_scope = match launch_mode {
+        LaunchMode::RemoteServerDaemon { identity_key } => {
+            persistence::PersistenceScope::RemoteServerDaemon {
+                identity_key: identity_key.clone(),
+            }
+        }
+        LaunchMode::App { .. }
+        | LaunchMode::CommandLine { .. }
+        | LaunchMode::RemoteServerProxy
+        | LaunchMode::Test { .. } => persistence::PersistenceScope::App,
+    };
+    let (sqlite_data, writer_handles) = persistence::initialize(ctx, persistence_scope);
     timer.mark_interval_end("SQLITE_INITIALIZED");
 
     let persistence_writer = PersistenceWriter::new(writer_handles);
@@ -1464,8 +1475,13 @@ pub(crate) fn initialize_app(
             });
         }
 
+        let emit_incremental_updates = matches!(launch_mode, LaunchMode::RemoteServerDaemon { .. });
         ctx.add_singleton_model(|ctx| {
-            let model = RepoMetadataModel::new(ctx);
+            let model = if emit_incremental_updates {
+                RepoMetadataModel::new_with_incremental_updates(ctx)
+            } else {
+                RepoMetadataModel::new(ctx)
+            };
 
             // Subscribe to RemoteServerManager push events so that remote repo
             // metadata snapshots and incremental updates populate the remote
@@ -1665,7 +1681,11 @@ pub(crate) fn initialize_app(
         );
     }
 
-    ctx.add_singleton_model(RepoOutlines::new);
+    if launch_mode.supports_indexing() {
+        ctx.add_singleton_model(RepoOutlines::new);
+    } else {
+        ctx.add_singleton_model(|ctx| RepoOutlines::new_with_indexing_enabled(false, ctx));
+    }
     ctx.add_singleton_model(|ctx| {
         warp_core::sync_queue::SyncQueue::<SyncTask>::new_with_rate_limit(
             &ctx.background_executor(),
@@ -1838,6 +1858,7 @@ pub(crate) fn initialize_app(
             codebase_limits.max_files_per_repo,
             codebase_limits.embedding_generation_batch_size,
             server_api_provider.as_ref(ctx).get(),
+            launch_mode.supports_indexing(),
             ctx,
         )
     });
@@ -2896,6 +2917,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ConfigurableContextWindow,
         #[cfg(feature = "handoff_cloud_cloud")]
         FeatureFlag::HandoffCloudCloud,
+        #[cfg(feature = "git_credential_refresh")]
+        FeatureFlag::GitCredentialRefresh,
     ]);
 
     flags

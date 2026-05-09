@@ -465,9 +465,9 @@ pub enum TerminalAction {
     },
     /// Toggle PTY recording for this session.
     ToggleSessionRecording,
-    /// Open the rich input editor for composing a prompt to send to a CLI agent.
+    /// Toggle the rich input editor for composing a prompt to send to a CLI agent.
     /// Triggered by Ctrl-G when a CLI agent is detected, or from the footer button.
-    OpenCLIAgentRichInput,
+    ToggleCLIAgentRichInput,
 }
 
 // Manually implementing Debug to avoid leaking sensitive information in logs
@@ -746,7 +746,7 @@ impl fmt::Debug for TerminalAction {
             StopAgentConversation { .. } => write!(f, "StopAgentConversation"),
             KillAgentConversation { .. } => write!(f, "KillAgentConversation"),
             ToggleSessionRecording => write!(f, "ToggleSessionRecording"),
-            OpenCLIAgentRichInput => write!(f, "OpenCLIAgentRichInput"),
+            ToggleCLIAgentRichInput => write!(f, "ToggleCLIAgentRichInput"),
         }
     }
 }

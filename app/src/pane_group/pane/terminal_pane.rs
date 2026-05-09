@@ -30,7 +30,7 @@ use crate::{
     app_state::{AmbientAgentPaneSnapshot, LeafContents, TerminalPaneSnapshot},
     pane_group::child_agent::{
         create_error_child_agent_conversation, create_hidden_child_agent_conversation,
-        HiddenChildAgentConversation,
+        HiddenChildAgentConversation, HiddenChildAgentConversationRequest,
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
@@ -451,6 +451,14 @@ impl PaneContent for TerminalPane {
                 active_profile_id: None,
                 conversation_ids_to_restore: vec![],
                 active_conversation_id: None,
+            })
+        } else if let Some(task_id) = view
+            .ambient_agent_view_model()
+            .and_then(|ambient_model| ambient_model.as_ref(app).task_id())
+        {
+            LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
+                uuid: self.uuid.clone(),
+                task_id: Some(task_id),
             })
         } else if view.model.lock().is_conversation_transcript_viewer() {
             // Conversation transcript viewers (opened from the conversation list)
@@ -1123,69 +1131,29 @@ fn handle_terminal_view_event(
                 ctx.emit(pane_group::Event::FreeTierLimitCheckTriggered);
             }
             Event::RevealChildAgent { conversation_id } => {
-                // Prefer a visible pane that already hosts the
-                // conversation over revealing the hidden child pane.
-                // Once the user has opened the child in a sibling pane
-                // (via "Open in new pane" / "Open in new tab"), the
-                // hidden pane that was originally created at agent
-                // start is empty — its terminal model never accumulated
-                // rendered AI blocks for the conversation — so revealing
-                // it would surface a blank pane next to the real one.
-                // The entry in `child_agent_panes` is never cleaned up
-                // when the child is split off, so we cannot rely on its
-                // presence as a signal that no visible pane exists.
-                if let Some(visible_pane_id) =
-                    group.find_visible_terminal_pane_for_conversation(*conversation_id, ctx)
-                {
-                    group.focus_pane(visible_pane_id.into(), true, ctx);
-                } else if let Some(&child_pane_id) = group.child_agent_panes.get(conversation_id) {
-                    // No visible pane has the conversation yet — reveal
-                    // the hidden child pane that was registered when the
-                    // child agent was first started.
-                    group.panes.show_pane_for_child_agent(child_pane_id);
-                    group.handle_pane_count_change(ctx);
-                    group.focus_pane(child_pane_id, true, ctx);
-                } else {
-                    log::warn!("No pane found for child conversation {conversation_id:?}");
-                }
+                // Routed through the swap mechanism to land all reveal cases in one path.
+                group.swap_active_pane_to_conversation(pane_id, *conversation_id, ctx);
+            }
+            Event::SwapPaneToConversation { conversation_id } => {
+                // Swap visibility instead of cloning so in-flight state in the
+                // target pane is preserved.
+                group.swap_active_pane_to_conversation(pane_id, *conversation_id, ctx);
             }
             Event::OpenChildAgentInNewTab { conversation_id } => {
-                // The pane group can't add a new tab — only the workspace
-                // can. Forward the request upward so `WorkspaceView` can
-                // create a fresh tab and switch its agent view to this
-                // child conversation.
+                // Pane group can't add tabs; forward to the workspace.
                 ctx.emit(pane_group::Event::OpenChildAgentInNewTab {
                     conversation_id: *conversation_id,
                 });
             }
             Event::OpenChildAgentInNewPane { conversation_id } => {
-                // Split a fresh terminal pane to the right and load the
-                // child conversation into it via
-                // `enter_agent_view_for_conversation`. We deliberately do
-                // *not* reveal the orchestrator's hidden child pane here:
-                // its terminal model never accumulated rendered AI blocks
-                // for the conversation (those go into whichever pane was
-                // last hosting the in-place agent view via
-                // `SwitchAgentViewToConversation`), so revealing it would
-                // show an empty transcript. Going through a fresh terminal
-                // view forces the cloud load+restore path, which mirrors
-                // what "Open in new tab" already does.
-                let new_pane_id =
-                    group.add_terminal_pane(Direction::Right, None /* chosen_shell */, ctx);
-                if let Some(new_terminal_view) = group.terminal_view_from_pane_id(new_pane_id, ctx)
+                // Reuse the existing hidden child pane to preserve in-flight
+                // state and the live transcript instead of creating a new view.
+                if group
+                    .unhide_child_agent_pane_for_split_off(*conversation_id, ctx)
+                    .is_none()
                 {
-                    let conversation_id = *conversation_id;
-                    new_terminal_view.update(ctx, |terminal_view, ctx| {
-                        terminal_view.enter_agent_view_for_conversation(
-                            None,
-                            AgentViewEntryOrigin::OrchestrationPillBar,
-                            conversation_id,
-                            ctx,
-                        );
-                    });
-                } else {
                     log::warn!(
-                        "OpenChildAgentInNewPane: failed to resolve terminal view for newly created pane (conversation {conversation_id:?})"
+                        "OpenChildAgentInNewPane: no hidden child pane registered for conversation {conversation_id:?}"
                     );
                 }
             }
@@ -1245,6 +1213,7 @@ fn dispatch_start_agent_conversation(
                 parent_pane_id,
                 request.name,
                 request.parent_conversation_id,
+                None,
                 "Local harness child agents are not supported in WASM builds.".to_string(),
                 ctx,
             );
@@ -1296,11 +1265,14 @@ fn launch_local_no_harness_child(
         ..
     } = create_hidden_child_agent_conversation(
         group,
-        parent_pane_id,
-        request.name,
-        request.parent_conversation_id,
-        HashMap::new(),
-        None,
+        HiddenChildAgentConversationRequest {
+            parent_pane_id,
+            name: request.name,
+            parent_conversation_id: request.parent_conversation_id,
+            orchestration_harness: Some(Harness::Oz),
+            env_vars: HashMap::new(),
+            task_context: None,
+        },
         ctx,
     )?;
 
@@ -1356,15 +1328,19 @@ fn launch_local_harness_child(
     let parent_run_id = request.parent_run_id.clone();
     let prompt = request.prompt.clone();
     let lifecycle_subscription = request.lifecycle_subscription.clone();
+    let orchestration_harness =
+        Harness::parse_orchestration_harness(&harness_type).unwrap_or(Harness::Unknown);
     let shell_type = group
         .terminal_view_from_pane_id(parent_pane_id, ctx)
         .and_then(|terminal_view| terminal_view.as_ref(ctx).active_session_shell_type(ctx));
 
+    let model_id_for_harness_env = model_id.clone();
     let _ = ctx.spawn(
         async move {
             prepare_local_harness_child_launch(
                 prompt,
                 harness_type,
+                model_id_for_harness_env,
                 parent_run_id,
                 shell_type,
                 startup_directory,
@@ -1387,11 +1363,14 @@ fn launch_local_harness_child(
                     ..
                 }) = create_hidden_child_agent_conversation(
                     group,
-                    parent_pane_id,
-                    request_name.clone(),
-                    parent_conversation_id,
-                    env_vars,
-                    None,
+                    HiddenChildAgentConversationRequest {
+                        parent_pane_id,
+                        name: request_name.clone(),
+                        parent_conversation_id,
+                        orchestration_harness: Some(orchestration_harness),
+                        env_vars,
+                        task_context: None,
+                    },
                     ctx,
                 ) {
                     apply_child_model_id_override(terminal_view_id, model_id.as_deref(), ctx);
@@ -1436,6 +1415,7 @@ fn launch_local_harness_child(
                         parent_pane_id,
                         request_name,
                         parent_conversation_id,
+                        Some(orchestration_harness),
                         "Failed to create a hidden pane for the local child harness.".to_string(),
                         ctx,
                     );
@@ -1447,6 +1427,7 @@ fn launch_local_harness_child(
                     parent_pane_id,
                     request_name,
                     parent_conversation_id,
+                    Some(orchestration_harness),
                     error_message,
                     ctx,
                 );
@@ -1498,6 +1479,11 @@ fn launch_remote_child(
     } = fields;
 
     let request_id = request.id;
+    let orchestration_harness = if harness_type.trim().is_empty() {
+        Harness::Oz
+    } else {
+        Harness::parse_orchestration_harness(&harness_type).unwrap_or(Harness::Unknown)
+    };
     let Some(parent_run_id) = request.parent_run_id.clone() else {
         log::error!(
             "Remote StartAgent request missing parent_run_id for {:?}",
@@ -1520,6 +1506,7 @@ fn launch_remote_child(
             terminal_view_id,
             request.name,
             request.parent_conversation_id,
+            Some(orchestration_harness),
             ctx,
         );
         // Mark as remote so the parent's TaskStatusSyncModel skips status
@@ -1604,6 +1591,7 @@ fn launch_remote_child(
         referenced_attachments: vec![],
         conversation_id: None,
         initial_snapshot_token: None,
+        agent_identity_uid: None,
     };
 
     new_terminal_view.update(ctx, |terminal_view, ctx| {

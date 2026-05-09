@@ -10,6 +10,7 @@ use session_sharing_protocol::common::SessionId;
 use super::AmbientAgentTaskId;
 use super::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::{
+    server::retry_strategies::with_bounded_retry,
     server::server_api::ai::{AIClient, RunFollowupRequest, SpawnAgentRequest, TaskStatusMessage},
     terminal::shared_session,
 };
@@ -19,7 +20,7 @@ use crate::{
 pub const TASK_STATUS_POLLING_DURATION: Duration = Duration::from_secs(80);
 
 #[cfg(not(test))]
-const TASK_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const TASK_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(3);
 #[cfg(test)]
 const TASK_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
@@ -177,7 +178,21 @@ fn poll_run_until_joinable_session(
                     return;
                 }
                 _ = poll_timer => {
-                    match ai_client.get_ambient_agent_task(&run_id).await {
+                    // Wrap the status poll in with_bounded_retry so transient
+                    // HTTP errors (429, 5xx) are retried with exponential
+                    // backoff instead of immediately killing the CLI.
+                    let poll_result = {
+                        let client = ai_client.clone();
+                        with_bounded_retry(
+                            &format!("poll agent {run_id}"),
+                            || {
+                                let client = client.clone();
+                                async move { client.get_ambient_agent_task(&run_id).await }
+                            },
+                        )
+                        .await
+                    };
+                    match poll_result {
                         Ok(task) => {
                             if last_state.as_ref() != Some(&task.state) {
                                 last_state = Some(task.state.clone());

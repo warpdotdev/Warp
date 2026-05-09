@@ -2512,129 +2512,136 @@ impl BlockListElement {
             Self::draw_border_between_blocks(border_origin, block_grid_params, ctx);
         }
 
-        let prompt_height_offset = cell_size_height * block.padding_top().as_f64() as f32;
-
-        *grid_origin += vec2f(0., prompt_height_offset);
-
-        let prompt_origin = snackbar_header
-            .and_then(|header| header.header_rect())
-            .map_or(*grid_origin, |r| {
-                let y = r.origin().y() + prompt_height_offset + block_banner_height;
-                vec2f(grid_origin.x(), y)
-            });
-
         let cursor_visible = block.is_mode_set(TermMode::SHOW_CURSOR);
-        // Draw prompt
-        if let Some(label_element) = label_element {
-            label_element.paint(prompt_origin, ctx, app);
-        } else {
-            let size_info = &block_grid_params.grid_render_params.size_info;
-            if block.should_display_rprompt(size_info) {
-                let rprompt_origin = prompt_origin + block.rprompt_render_offset(size_info);
-                block.rprompt_grid().draw(
-                    rprompt_origin,
-                    element_origin,
-                    glyphs,
-                    COMMAND_ALPHA,
-                    None,
-                    None,
-                    hovered_secret,
-                    None::<std::iter::Empty<&RangeInclusive<IndexPoint>>>,
-                    None,
-                    Properties::default(),
-                    block_grid_params,
-                    None,
-                    image_metadata,
+        let command_origin = if !block.should_hide_command_grid() {
+            let prompt_height_offset = cell_size_height * block.padding_top().as_f64() as f32;
+
+            *grid_origin += vec2f(0., prompt_height_offset);
+
+            let prompt_origin = snackbar_header
+                .and_then(|header| header.header_rect())
+                .map_or(*grid_origin, |r| {
+                    let y = r.origin().y() + prompt_height_offset + block_banner_height;
+                    vec2f(grid_origin.x(), y)
+                });
+
+            // Draw prompt
+            if let Some(label_element) = label_element {
+                label_element.paint(prompt_origin, ctx, app);
+            } else {
+                let size_info = &block_grid_params.grid_render_params.size_info;
+                if block.should_display_rprompt(size_info) {
+                    let rprompt_origin = prompt_origin + block.rprompt_render_offset(size_info);
+                    block.rprompt_grid().draw(
+                        rprompt_origin,
+                        element_origin,
+                        glyphs,
+                        COMMAND_ALPHA,
+                        None,
+                        None,
+                        hovered_secret,
+                        None::<std::iter::Empty<&RangeInclusive<IndexPoint>>>,
+                        None,
+                        Properties::default(),
+                        block_grid_params,
+                        None,
+                        image_metadata,
+                        ctx,
+                        app,
+                    );
+                }
+            }
+
+            // If Warp prompt (non-PS1) is being used, the command is drawn below the prompt,
+            // hence we account for the prompt's vertical offset.
+            let prompt_vertical_offset_px = if !block.honor_ps1() {
+                cell_size_height
+                    * (block.command_padding_top() + block.prompt_height()).as_f64() as f32
+            } else {
+                // Otherwise, the prompt/command are drawn together, in a single grid. Hence, we haven't
+                // drawn the prompt above and we do not account for the offset.
+                0.0
+            };
+
+            *grid_origin += vec2f(0.0, prompt_vertical_offset_px);
+
+            // Determine command_origin based on snackbar_header.
+            let command_origin = if snackbar_header.is_some() {
+                prompt_origin + vec2f(0.0, prompt_vertical_offset_px)
+            } else {
+                *grid_origin
+            };
+
+            // Update grid_origin and draw command.
+            let command_grid_properties = Properties::default();
+            block.prompt_and_command_grid().draw(
+                command_origin,
+                element_origin,
+                glyphs,
+                COMMAND_ALPHA,
+                highlighted_url
+                    .filter(|url| url.is_in_command_content() && url.block_index == block_index)
+                    .map(|url| &url.inner),
+                link_tool_tip
+                    .filter(|url| url.is_in_command_content() && url.block_index == block_index)
+                    .map(|url| &url.inner),
+                hovered_secret,
+                block_list_find_run
+                    .map(|run| run.matches_for_block_grid(block_index, GridType::PromptAndCommand)),
+                block_list_find_run
+                    .and_then(|run| run.focused_match())
+                    .and_then(|focused_match| match focused_match {
+                        BlockListMatch::CommandBlock(m)
+                            if m.block_index == block_index
+                                && m.grid_type == GridType::PromptAndCommand =>
+                        {
+                            Some(&m.range)
+                        }
+                        _ => None,
+                    }),
+                command_grid_properties,
+                block_grid_params,
+                cursor_visible.then(|| block.prompt_and_command_grid().cursor_style().shape),
+                image_metadata,
+                ctx,
+                app,
+            );
+
+            // Only render the cursor in the command grid if the command grid is active and if it's
+            // long running. This is to avoid jitter where a cursor just flickers while the pty is
+            // initializing.
+            if block.is_active_and_long_running()
+                && block.is_command_grid_active()
+                // Check if the "hide cursor" escape sequence is present.
+                && block.is_mode_set(TermMode::SHOW_CURSOR)
+            {
+                block.prompt_and_command_grid().draw_cursor(
+                    command_origin,
+                    &block_grid_params.grid_render_params,
                     ctx,
+                    terminal_view_id,
+                    None,
+                    block_grid_params
+                        .grid_render_params
+                        .warp_theme
+                        .cursor()
+                        .into(),
                     app,
                 );
             }
-        }
 
-        // If Warp prompt (non-PS1) is being used, the command is drawn below the prompt,
-        // hence we account for the prompt's vertical offset.
-        let prompt_vertical_offset_px = if !block.honor_ps1() {
-            cell_size_height * (block.command_padding_top() + block.prompt_height()).as_f64() as f32
-        } else {
-            // Otherwise, the prompt/command are drawn together, in a single grid. Hence, we haven't
-            // drawn the prompt above and we do not account for the offset.
-            0.0
-        };
+            // Update grid_origin & draw output
+            *grid_origin += vec2f(
+                0.,
+                cell_size_height
+                    * (block.padding_middle() + block.prompt_and_command_grid().len().into_lines())
+                        .as_f64() as f32,
+            );
 
-        *grid_origin += vec2f(0.0, prompt_vertical_offset_px);
-
-        // Determine command_origin based on snackbar_header.
-        let command_origin = if snackbar_header.is_some() {
-            prompt_origin + vec2f(0.0, prompt_vertical_offset_px)
+            command_origin
         } else {
             *grid_origin
         };
-
-        // Update grid_origin and draw command.
-        let command_grid_properties = Properties::default();
-        block.prompt_and_command_grid().draw(
-            command_origin,
-            element_origin,
-            glyphs,
-            COMMAND_ALPHA,
-            highlighted_url
-                .filter(|url| url.is_in_command_content() && url.block_index == block_index)
-                .map(|url| &url.inner),
-            link_tool_tip
-                .filter(|url| url.is_in_command_content() && url.block_index == block_index)
-                .map(|url| &url.inner),
-            hovered_secret,
-            block_list_find_run
-                .map(|run| run.matches_for_block_grid(block_index, GridType::PromptAndCommand)),
-            block_list_find_run
-                .and_then(|run| run.focused_match())
-                .and_then(|focused_match| match focused_match {
-                    BlockListMatch::CommandBlock(m)
-                        if m.block_index == block_index
-                            && m.grid_type == GridType::PromptAndCommand =>
-                    {
-                        Some(&m.range)
-                    }
-                    _ => None,
-                }),
-            command_grid_properties,
-            block_grid_params,
-            cursor_visible.then(|| block.prompt_and_command_grid().cursor_style().shape),
-            image_metadata,
-            ctx,
-            app,
-        );
-
-        // Only render the cursor in the command grid if the command grid is active and if it's
-        // long running. This is to avoid jitter where a cursor just flickers while the pty is
-        // initializing.
-        if block.is_active_and_long_running()
-            && block.is_command_grid_active()
-            // Check if the "hide cursor" escape sequence is present.
-            && block.is_mode_set(TermMode::SHOW_CURSOR)
-        {
-            block.prompt_and_command_grid().draw_cursor(
-                command_origin,
-                &block_grid_params.grid_render_params,
-                ctx,
-                terminal_view_id,
-                None,
-                block_grid_params
-                    .grid_render_params
-                    .warp_theme
-                    .cursor()
-                    .into(),
-                app,
-            );
-        }
-
-        // Update grid_origin & draw output
-        *grid_origin += vec2f(
-            0.,
-            cell_size_height
-                * (block.padding_middle() + block.prompt_and_command_grid().len().into_lines())
-                    .as_f64() as f32,
-        );
 
         let block_middle_lines =
             block.padding_middle() + block.prompt_and_command_number_of_rows().into_lines();
@@ -4346,7 +4353,11 @@ impl Element for BlockListElement {
                         }
                     }
 
-                    draw_border_above_block = true;
+                    // Don't draw a border below session headers (i.e. above the next block).
+                    draw_border_above_block = !matches!(
+                        self.rich_content_metadata.get(view_id),
+                        Some(RichContentMetadata::HarnessSessionHeader)
+                    );
 
                     grid_origin += vec2f(0., *height_px);
                 }

@@ -1979,3 +1979,72 @@ fn test_create_then_edit_then_create_version_tracking() {
         "Created doc B should have default version (v1), independent of doc A"
     );
 }
+
+/// Verify that a `SystemQuery::HandoffRehydration` message does not produce
+/// a displayed input when restoring a conversation. It must be treated as
+/// hidden, so the exchange should have zero user-visible inputs.
+#[test]
+fn test_handoff_rehydration_system_query_is_hidden() {
+    let messages = vec![
+        // HandoffRehydration system query – should be hidden
+        api::Message {
+            id: "msg_handoff".to_string(),
+            task_id: "task1".to_string(),
+            server_message_data: "".to_string(),
+            citations: vec![],
+            message: Some(api::message::Message::SystemQuery(
+                api::message::SystemQuery {
+                    r#type: Some(api::message::system_query::Type::HandoffRehydration(
+                        api::message::HandoffRehydration {
+                            instructions: "restore handoff state".to_string(),
+                        },
+                    )),
+                    context: None,
+                },
+            )),
+            request_id: "req1".to_string(),
+            timestamp: None,
+        },
+        // Agent output that follows the hidden system query
+        api::Message {
+            id: "msg_output".to_string(),
+            task_id: "task1".to_string(),
+            server_message_data: "".to_string(),
+            citations: vec![],
+            message: Some(api::message::Message::AgentOutput(
+                api::message::AgentOutput {
+                    text: "I have restored the handoff state.".to_string(),
+                },
+            )),
+            request_id: "req1".to_string(),
+            timestamp: None,
+        },
+    ];
+
+    let task = api::Task {
+        id: "task1".to_string(),
+        messages,
+        dependencies: None,
+        description: "".to_string(),
+        summary: "".to_string(),
+        server_data: "".to_string(),
+    };
+
+    let exchanges = task.into_exchanges();
+    assert_eq!(exchanges.len(), 1, "Should produce exactly one exchange");
+
+    let exchange = &exchanges[0];
+    // The HandoffRehydration should NOT appear as input
+    assert!(
+        exchange.input.is_empty(),
+        "HandoffRehydration must not produce a displayed input, got: {:?}",
+        exchange.input
+    );
+
+    // The agent output should still be present
+    let output = exchange.output_status.output().expect("should have output");
+    assert!(
+        !output.get().messages.is_empty(),
+        "Agent output should still be rendered"
+    );
+}

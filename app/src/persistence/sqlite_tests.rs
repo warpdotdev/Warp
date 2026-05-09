@@ -11,7 +11,7 @@ use crate::{
     cloud_object::{CloudObjectPermissions, Owner},
     code::editor_management::CodeSource,
     notebooks::{CloudNotebook, CloudNotebookModel},
-    persistence::{model::ObjectPermissions, BlockCompleted, ModelEvent},
+    persistence::{model::ObjectPermissions, BlockCompleted, ModelEvent, PersistenceScope},
     server::ids::ClientId,
     tab::SelectedTabColor,
     terminal::model::block::SerializedBlock,
@@ -19,9 +19,45 @@ use crate::{
 };
 
 use super::{
-    decode_path, deduplicate_events, encode_path, read_sqlite_data, save_app_state, setup_database,
+    app_database_file_path, database_file_path_for_scope, decode_path, deduplicate_events,
+    encode_path, read_sqlite_data, save_app_state, setup_database,
 };
 
+#[test]
+fn app_scope_database_path_matches_app_database_path() {
+    assert_eq!(
+        database_file_path_for_scope(&PersistenceScope::App),
+        app_database_file_path()
+    );
+}
+
+#[test]
+fn remote_server_daemon_scope_database_path_uses_identity_data_dir() {
+    let path = database_file_path_for_scope(&PersistenceScope::RemoteServerDaemon {
+        identity_key: "user@example.com/ssh host".to_string(),
+    });
+    let expected_data_dir =
+        remote_server::setup::remote_server_daemon_data_dir("user@example.com/ssh host");
+
+    assert!(path.is_absolute());
+    assert_eq!(
+        path,
+        PathBuf::from(shellexpand::tilde(&expected_data_dir).into_owned()).join("warp.sqlite")
+    );
+}
+
+#[test]
+fn remote_server_daemon_scope_database_path_handles_empty_identity_key() {
+    let path = database_file_path_for_scope(&PersistenceScope::RemoteServerDaemon {
+        identity_key: String::new(),
+    });
+    let expected_data_dir = remote_server::setup::remote_server_daemon_data_dir("");
+
+    assert_eq!(
+        path,
+        PathBuf::from(shellexpand::tilde(&expected_data_dir).into_owned()).join("warp.sqlite")
+    );
+}
 #[test]
 fn test_deduplicate_snapshots() {
     let local_notebook = CloudNotebook::new_local(

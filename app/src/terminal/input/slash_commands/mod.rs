@@ -18,7 +18,7 @@ use warp_core::ui::theme::AnsiColorIdentifier;
 #[cfg(feature = "local_fs")]
 use warp_util::path::{CleanPathResult, LineAndColumnArg};
 use warpui::clipboard::ClipboardContent;
-use warpui::{SingletonEntity, ViewContext};
+use warpui::{AppContext, SingletonEntity, ViewContext};
 
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::agent::conversation::AIConversationId;
@@ -29,6 +29,8 @@ use crate::ai::agent_management::telemetry::AgentManagementTelemetryEvent;
 use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::PendingCloudLaunch;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
@@ -58,8 +60,6 @@ use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceActio
 use crate::TelemetryEvent;
 #[cfg(not(target_family = "wasm"))]
 use warp_cli::agent::Harness;
-#[cfg(not(target_family = "wasm"))]
-use warpui::AppContext;
 
 #[derive(Debug, Clone)]
 pub enum AcceptSlashCommandOrSavedPrompt {
@@ -144,12 +144,30 @@ fn open_file_command_path(
 }
 
 impl Input {
+    fn is_slash_command_available(&self, command: &StaticCommand, ctx: &AppContext) -> bool {
+        let slash_command_data_source = if self.is_cloud_mode_input_v2_composing(ctx) {
+            let Some(data_source) = self.cloud_mode_composer_slash_command_data_source.as_ref()
+            else {
+                return false;
+            };
+            data_source
+        } else {
+            &self.slash_command_data_source
+        };
+        slash_command_data_source
+            .as_ref(ctx)
+            .command_is_active(command, ctx)
+    }
+
     pub(super) fn select_slash_command(
         &mut self,
         command: &StaticCommand,
         trigger: SlashCommandTrigger,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !self.is_slash_command_available(command, ctx) {
+            return;
+        }
         if command.argument.as_ref().is_none() {
             self.execute_slash_command(
                 command, None, trigger, /*is_queued_prompt*/ false, ctx,
@@ -883,13 +901,28 @@ impl Input {
                 {
                     return false;
                 }
-                // The workspace handler falls through to splitting a fresh cloud-mode
-                // pane when there's nothing to hand off, so we don't need to gate on
-                // `selected_conversation_id` here — the slash command always opens
-                // the new pane.
-                ctx.dispatch_typed_action(&WorkspaceAction::OpenLocalToCloudHandoffPane {
-                    initial_prompt: argument.cloned().filter(|s| !s.is_empty()),
-                });
+                let prompt = argument
+                    .map(|argument| argument.trim())
+                    .filter(|argument| !argument.is_empty())
+                    .map(str::to_owned);
+                if let Some(prompt) = prompt {
+                    // `/handoff query` auto-submits, same as `& query`.
+                    let attachments = self.collect_cloud_launch_attachments(ctx);
+                    let launch = PendingCloudLaunch {
+                        prompt,
+                        attachments,
+                    };
+                    ctx.dispatch_typed_action_deferred(
+                        WorkspaceAction::OpenLocalToCloudHandoffPane {
+                            launch: Some(launch),
+                            explicit_environment_id: None,
+                        },
+                    );
+                } else {
+                    // `/handoff` with no query enters `&` compose mode,
+                    // same as the footer chip.
+                    self.activate_cloud_handoff_compose(ctx);
+                }
             }
             fork if command.name == commands::FORK.name => {
                 let Some(conversation_id) = self
@@ -1134,6 +1167,9 @@ impl Input {
             SlashCommandEntryState::SlashCommand(detected_command) => {
                 let command = detected_command.command.clone();
                 let argument = detected_command.argument.clone();
+                if !self.is_slash_command_available(&command, ctx) {
+                    return false;
+                }
                 self.execute_slash_command(
                     &command,
                     argument.as_ref(),
@@ -1232,6 +1268,9 @@ impl Input {
             SlashCommandEntryState::SlashCommand(detected_command) => {
                 let command = detected_command.command.clone();
                 let argument = detected_command.argument.clone();
+                if !self.is_slash_command_available(&command, ctx) {
+                    return false;
+                }
                 self.execute_slash_command(
                     &command,
                     argument.as_ref(),
@@ -1255,68 +1294,6 @@ impl Input {
             SlashCommandEntryState::None
             | SlashCommandEntryState::Composing { .. }
             | SlashCommandEntryState::DisabledUntilEmptyBuffer => false,
-        }
-    }
-}
-
-#[cfg(all(test, feature = "local_fs", windows))]
-mod tests {
-    use super::*;
-    use std::sync::Arc;
-
-    use crate::terminal::model::session::command_executor::testing::TestCommandExecutor;
-    use crate::terminal::model::session::SessionInfo;
-    use crate::terminal::shell::ShellType;
-    use crate::terminal::ShellLaunchData;
-
-    fn wsl_session() -> Session {
-        Session::new(
-            SessionInfo::new_for_test().with_shell_type(ShellType::Bash),
-            Arc::new(TestCommandExecutor::default()),
-        )
-        .with_shell_launch_data(ShellLaunchData::WSL {
-            distro: "Ubuntu".to_owned(),
-        })
-    }
-
-    #[test]
-    fn open_file_command_converts_wsl_paths_to_host_paths() {
-        let session = wsl_session();
-        let cases = [
-            (
-                "/home/ubuntu",
-                "subdir/test.txt",
-                r"\\WSL$\Ubuntu\home\ubuntu\subdir\test.txt",
-                None,
-            ),
-            (
-                "/home/ubuntu/project",
-                "../test.txt",
-                r"\\WSL$\Ubuntu\home\ubuntu\test.txt",
-                None,
-            ),
-            (
-                "/home/ubuntu",
-                "subdir/file\\ name.txt",
-                r"\\WSL$\Ubuntu\home\ubuntu\subdir\file name.txt",
-                None,
-            ),
-            (
-                "/home/ubuntu",
-                "subdir/test.txt:4:2",
-                r"\\WSL$\Ubuntu\home\ubuntu\subdir\test.txt",
-                Some(LineAndColumnArg {
-                    line_num: 4,
-                    column_num: Some(2),
-                }),
-            ),
-        ];
-
-        for (current_dir, raw_arg, expected_path, expected_line_col) in cases {
-            let (path, line_col) = open_file_command_path(&session, current_dir, raw_arg);
-
-            assert_eq!(path, PathBuf::from(expected_path));
-            assert_eq!(line_col, expected_line_col);
         }
     }
 }
@@ -1353,3 +1330,7 @@ fn conversation_is_cloud_oz_for_slash_command(
         None => true,
     }
 }
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;
