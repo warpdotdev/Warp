@@ -7273,6 +7273,3 @@ impl SettingsWidget for GraphicsBackendWidget {
         col.finish()
     }
 }
-nish()
-    }
-}
