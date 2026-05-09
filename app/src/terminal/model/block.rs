@@ -2923,10 +2923,18 @@ macro_rules! delegate_image_completion {
             },
             _ if $self.bootstrap_stage == BootstrapStage::WarpInput => Default::default(),
             _ => {
-                if !$self.output_grid.started() {
-                    $self.output_grid.start();
+                let had_visible_content = $self.output_grid.has_visible_content();
+                let retval = $self.output_grid.$method($( $arg ),*);
+                if !had_visible_content && $self.output_grid.has_visible_content() {
+                    if !$self.output_grid.started() {
+                        $self.output_grid.start();
+                    }
+                    if $self.bootstrap_stage == BootstrapStage::ScriptExecution && !$self.started()
+                    {
+                        $self.start();
+                    }
                 }
-                $self.output_grid.$method($( $arg ),*)
+                retval
             }
         }
     };

@@ -327,7 +327,7 @@ impl BlockGrid {
         }
     }
 
-    fn has_visible_content(&self) -> bool {
+    pub(super) fn has_visible_content(&self) -> bool {
         self.has_visible_chars() || self.grid_handler().has_visible_images()
     }
 

@@ -28,7 +28,7 @@ use super::{
     iterm_image::{ITermImage, ITermImageDimensionUnit, ITermImageMetadata},
     kitty::{
         KittyAction, KittyImage, KittyImageMetadata, KittyPixelDataFormat, KittyPlacementData,
-        KittyTransmissionMedium, StoreAndDisplay,
+        KittyTransmissionMedium, StoreAndDisplay, StoreOnly,
     },
     terminal_model::BlockIndex,
     ObfuscateSecrets, TerminalModel,
@@ -86,6 +86,16 @@ pub fn test_kitty_store_and_display_action(image_id: u32, placement_id: u32) -> 
         },
         image_id,
         placement_id,
+    })
+}
+
+pub fn test_kitty_store_only_action(image_id: u32) -> KittyAction {
+    KittyAction::StoreOnly(StoreOnly {
+        image: KittyImage {
+            metadata: test_kitty_image_metadata(),
+            data: vec![0],
+        },
+        image_id,
     })
 }
 

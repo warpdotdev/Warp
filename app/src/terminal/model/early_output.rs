@@ -678,10 +678,12 @@ impl ansi::Handler for EarlyOutputHandler<'_> {
     fn handle_completed_iterm_image(&mut self, image: ITermImage) {
         let session_id = self.block_list.active_block().session_id();
         self.with_background_output(|block| {
-            if !block.started() {
+            let had_visible_content = block.output_grid().has_visible_content();
+            block.handle_completed_iterm_image(image);
+            if !had_visible_content && block.output_grid().has_visible_content() && !block.started()
+            {
                 block.start_background(session_id);
             }
-            block.handle_completed_iterm_image(image);
         });
     }
 
@@ -692,10 +694,13 @@ impl ansi::Handler for EarlyOutputHandler<'_> {
     ) -> Option<KittyResponse> {
         let session_id = self.block_list.active_block().session_id();
         self.with_background_output(|block| {
-            if !block.started() {
+            let had_visible_content = block.output_grid().has_visible_content();
+            let retval = block.handle_completed_kitty_action(action, metadata);
+            if !had_visible_content && block.output_grid().has_visible_content() && !block.started()
+            {
                 block.start_background(session_id);
             }
-            block.handle_completed_kitty_action(action, metadata)
+            retval
         })
     }
 }
