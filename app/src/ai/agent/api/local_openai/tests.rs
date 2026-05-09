@@ -128,6 +128,15 @@ fn normalize_responses_endpoint_preserves_v1() {
     );
 }
 
+/// Verifies that an existing `/vN` suffix is preserved when building the endpoint.
+#[test]
+fn normalize_responses_endpoint_preserves_existing_version_suffix() {
+    assert_eq!(
+        normalize_responses_endpoint("https://example.com/v4/"),
+        "https://example.com/v4/responses"
+    );
+}
+
 /// Verifies that Warp-style GPT-5.4 reasoning variants are converted to Responses model plus effort.
 #[test]
 fn normalize_openai_model_and_reasoning_extracts_effort() {

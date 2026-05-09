@@ -959,10 +959,21 @@ pub(super) fn parse_mcp_function_name(name: &str) -> Option<(Option<String>, Str
     Some(((!server_id.is_empty()).then_some(server_id), tool_name))
 }
 
-/// Normalizes the user-provided base URL into the exact `/v1/responses` endpoint.
+/// Returns true when the base URL already ends with a version segment like `/v1`.
+fn has_version_suffix(base_url: &str) -> bool {
+    base_url
+        .rsplit('/')
+        .next()
+        .and_then(|segment| segment.strip_prefix('v'))
+        .is_some_and(|version| {
+            !version.is_empty() && version.chars().all(|ch| ch.is_ascii_digit())
+        })
+}
+
+/// Normalizes the user-provided base URL into the exact versioned `/responses` endpoint.
 pub(super) fn normalize_responses_endpoint(base_url: &str) -> String {
     let trimmed = base_url.trim_end_matches('/');
-    if trimmed.ends_with("/v1") {
+    if has_version_suffix(trimmed) {
         format!("{trimmed}/responses")
     } else {
         format!("{trimmed}/v1/responses")
