@@ -43,6 +43,12 @@ fn not_enabled_codebase_status(repo_path: &str) -> CodebaseIndexStatus {
         repo_path: repo_path.to_string(),
         state: CodebaseIndexStatusState::NotEnabled.into(),
         last_updated_epoch_millis: Some(123),
+        progress_completed: None,
+        progress_total: None,
+        failure_message: None,
+        root_hash: None,
+        embedding_model: None,
+        embedding_dimensions: None,
     }
 }
 
