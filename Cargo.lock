@@ -608,6 +608,7 @@ dependencies = [
  "arborium-html",
  "arborium-java",
  "arborium-javascript",
+ "arborium-jq",
  "arborium-json",
  "arborium-kotlin",
  "arborium-lua",
@@ -772,6 +773,17 @@ name = "arborium-javascript"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3b04390f79e704f411fec9f11acd1ee7e6bc3c4e1941ca6af41d31efad78582"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "arborium-jq"
+version = "2.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efdce2ce4dabcff7626fb09fcb2a6915ce4714d2f6a190dc8c54dac1bd2072da"
 dependencies = [
  "arborium-sysroot",
  "cc",
