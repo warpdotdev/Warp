@@ -32,6 +32,8 @@ use serde::{de::Deserializer, Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+use super::LocalModelSettings;
+
 pub enum FocusedTerminalInfoEvent {
     TerminalInfoUpdated,
 }
@@ -1469,6 +1471,12 @@ impl AISettings {
         CompiledCommandsForCodingAgentToolbar::register(app);
 
         app.update_model(&Self::handle(app), |_me, ctx| {
+            ctx.subscribe_to_model(&LocalModelSettings::handle(ctx), |_me, _event, ctx| {
+                ctx.emit(AISettingsChangedEvent::IsAnyAIEnabled {
+                    change_event_reason: ChangeEventReason::LocalChange,
+                });
+            });
+
             ctx.subscribe_to_model(&FocusedTerminalInfo::handle(ctx), |_me, event, ctx| {
                 if matches!(event, FocusedTerminalInfoEvent::TerminalInfoUpdated) {
                     // Pipe the event so that any view that listens for settings changes will be notified.
@@ -1497,13 +1505,15 @@ impl AISettings {
     }
 
     pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
-        // Disable AI for anonymous and logged-out users.
+        // Cloud-backed AI requires a signed-in or anonymous Warp user. A configured local
+        // provider can run entirely on this machine, so keep AI surfaces available for it.
         let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
             .get()
             .is_anonymous_or_logged_out();
+        let has_local_model = LocalModelSettings::as_ref(app).is_enabled_and_configured();
 
         *self.is_any_ai_enabled
-            && !is_anonymous_or_logged_out
+            && (!is_anonymous_or_logged_out || has_local_model)
             && !self.is_ai_disabled_due_to_remote_session_org_policy(app)
     }
 

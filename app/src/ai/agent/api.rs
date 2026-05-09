@@ -33,9 +33,10 @@ use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerInfo;
 use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::settings::AISettings;
+use crate::settings::{AISettings, LocalModelSettings};
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::workspaces::user_workspaces::UserWorkspaces;
+use settings::Setting;
 use warp_core::user_preferences::GetUserPreferences;
 use warpui::{AppContext, EntityId, SingletonEntity as _};
 
@@ -126,10 +127,18 @@ pub struct RequestParams {
     pub research_agent_enabled: bool,
     pub orchestration_enabled: bool,
     pub supported_tools_override: Option<Vec<warp_multi_agent_api::ToolType>>,
+    pub local_model: Option<LocalModelRequestConfig>,
     /// The conversation ID of the parent agent that spawned this child agent, if any.
     pub parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     pub agent_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalModelRequestConfig {
+    pub provider: ::ai::local_models::LocalModelProvider,
+    pub base_url: String,
+    pub model: String,
 }
 
 pub type Event = Result<warp_multi_agent_api::ResponseEvent, Arc<AIApiError>>;
@@ -280,6 +289,23 @@ impl RequestParams {
                 .session_type()
                 .as_ref()
                 .is_none_or(|t| matches!(t, crate::terminal::model::session::SessionType::Local));
+        let local_model = {
+            let settings = LocalModelSettings::as_ref(app);
+            let provider = settings.selected_provider();
+            if settings.is_enabled_and_configured() {
+                settings.selected_model_name().and_then(|model| {
+                    settings
+                        .selected_base_url()
+                        .map(|base_url| LocalModelRequestConfig {
+                            provider,
+                            base_url,
+                            model,
+                        })
+                })
+            } else {
+                None
+            }
+        };
 
         // Reconcile the persisted override against the active base model's
         // current `LLMContextWindow` instead of trusting whatever was stored
@@ -330,6 +356,7 @@ impl RequestParams {
             research_agent_enabled,
             orchestration_enabled,
             supported_tools_override: request_input.supported_tools_override.clone(),
+            local_model,
             parent_agent_id: None,
             agent_name: None,
         }

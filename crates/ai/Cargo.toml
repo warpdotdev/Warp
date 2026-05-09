@@ -74,6 +74,7 @@ syntax_tree.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 watcher.workspace = true
 notify-debouncer-full.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 filetime = "0.2.25"

@@ -1,9 +1,10 @@
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::{ActionPermission, WriteToPtyPermission};
+use crate::ai::onboarding::parse_local_onboarding_model_id;
 use crate::drive::settings::WarpDriveSettings;
 use crate::report_if_error;
 use crate::settings::ai::DefaultSessionMode;
-use crate::settings::{AISettings, CodeSettings};
+use crate::settings::{AISettings, CodeSettings, LocalModelSettings};
 use crate::workspace::tab_settings::TabSettings;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use onboarding::slides::{AgentAutonomy, AgentDevelopmentSettings};
@@ -107,6 +108,23 @@ fn apply_ui_customization_settings(
 }
 
 fn apply_agent_settings(agent_settings: &AgentDevelopmentSettings, app: &mut AppContext) {
+    let local_model_selection = parse_local_onboarding_model_id(&agent_settings.selected_model_id);
+
+    LocalModelSettings::handle(app).update(app, |settings, ctx| {
+        match &local_model_selection {
+            Some((provider, model_name)) => {
+                report_if_error!(settings.enabled.set_value(true, ctx));
+                report_if_error!(settings
+                    .provider
+                    .set_value(LocalModelSettings::provider_storage_value(*provider), ctx));
+                report_if_error!(settings.selected_model.set_value(model_name.clone(), ctx));
+            }
+            None => {
+                report_if_error!(settings.enabled.set_value(false, ctx));
+            }
+        }
+    });
+
     // Apply session default mode.
     let default_mode = match agent_settings.session_default {
         SessionDefault::Agent => DefaultSessionMode::Agent,
@@ -151,11 +169,13 @@ fn apply_agent_settings(agent_settings: &AgentDevelopmentSettings, app: &mut App
             return;
         }
 
-        profiles.set_base_model(
-            default_profile_id,
-            Some(agent_settings.selected_model_id.clone()),
-            ctx,
-        );
+        if local_model_selection.is_none() {
+            profiles.set_base_model(
+                default_profile_id,
+                Some(agent_settings.selected_model_id.clone()),
+                ctx,
+            );
+        }
 
         // If autonomy is None, the workspace enforces autonomy settings, so skip setting them.
         let Some(autonomy) = agent_settings.autonomy else {

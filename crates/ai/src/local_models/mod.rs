@@ -14,7 +14,7 @@ pub mod ollama;
 pub mod provider;
 
 pub use api_client::{LocalModelClient, ModelInfo};
-pub use config::{LocalModelConfig, LocalModelProvider, OllamaConfig, LMStudioConfig, ModelParams};
+pub use config::{LMStudioConfig, LocalModelConfig, LocalModelProvider, ModelParams, OllamaConfig};
 pub use provider::ProviderFactory;
 
 use thiserror::Error;
@@ -22,6 +22,8 @@ use thiserror::Error;
 /// Errors that can occur when working with local models
 #[derive(Error, Debug)]
 pub enum LocalModelError {
+    #[error("Unsupported platform: {0}")]
+    UnsupportedPlatform(String),
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
 

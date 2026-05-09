@@ -2,6 +2,7 @@ pub mod agent;
 pub mod api_keys;
 pub mod aws_credentials;
 pub mod llm_id;
+pub mod local_models;
 
 pub use llm_id::LLMId;
 pub mod diff_validation;

@@ -14,6 +14,7 @@ use super::{
     environments_page::EnvironmentsPageView,
     features_page::FeaturesPageView,
     keybindings::KeybindingsView,
+    local_models_page::LocalModelsSettingsPageView,
     main_page::MainSettingsPageView,
     mcp_servers_page::MCPServersSettingsPageView,
     privacy_page::PrivacyPageView,
@@ -121,6 +122,7 @@ pub enum SettingsPageViewHandle {
     CloudEnvironments(ViewHandle<EnvironmentsPageView>),
     BillingAndUsage(ViewHandle<BillingAndUsagePageView>),
     MCPServers(ViewHandle<MCPServersSettingsPageView>),
+    LocalModels(ViewHandle<LocalModelsSettingsPageView>),
     WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
 }
 
@@ -144,6 +146,7 @@ impl SettingsPageViewHandle {
             CloudEnvironments(view_handle) => ChildView::new(view_handle).finish(),
             BillingAndUsage(view_handle) => ChildView::new(view_handle).finish(),
             MCPServers(view_handle) => ChildView::new(view_handle).finish(),
+            LocalModels(view_handle) => ChildView::new(view_handle).finish(),
             WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
         }
     }

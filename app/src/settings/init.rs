@@ -37,7 +37,7 @@ use super::{
     native_preference::NativePreferenceSettings, AISettings, AccessibilitySettings,
     AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, ChangelogSettings,
     CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent,
-    GPUSettings, InputBoxType, InputModeSettings, InputSettings, PaneSettings,
+    GPUSettings, InputBoxType, InputModeSettings, InputSettings, LocalModelSettings, PaneSettings,
     SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings, ThemeSettings,
     VimBannerSettings, WarpDrivePrivacySettings,
 };
@@ -73,6 +73,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     GPUSettings::register(ctx);
     ChangelogSettings::register(ctx);
     GeneralSettings::register(ctx);
+    LocalModelSettings::register(ctx);
     AISettings::register_and_subscribe_to_events(ctx);
     CloudAgentSettings::register(ctx);
     ScrollSettings::register(ctx);

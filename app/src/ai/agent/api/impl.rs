@@ -1,19 +1,29 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{ai::agent::redaction, terminal::model::session::SessionType};
+use ::ai::local_models::{LocalModelClient, LocalModelProvider, ProviderFactory};
+use anyhow::anyhow;
 use futures_util::StreamExt;
+use uuid::Uuid;
 use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
 
-use crate::server::server_api::ServerApi;
+use crate::server::server_api::{AIApiError, ServerApi};
 
-use super::{convert_to::convert_input, ConvertToAPITypeError, RequestParams, ResponseStream};
+use super::{
+    convert_to::convert_input, ConvertToAPITypeError, LocalModelRequestConfig, RequestParams,
+    ResponseStream,
+};
 
 pub async fn generate_multi_agent_output(
     server_api: Arc<ServerApi>,
     mut params: RequestParams,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
 ) -> Result<ResponseStream, ConvertToAPITypeError> {
+    if let Some(local_model) = params.local_model.take() {
+        return generate_local_model_output(local_model, params, cancellation_rx).await;
+    }
+
     let supported_tools = params
         .supported_tools_override
         .take()
@@ -147,6 +157,137 @@ pub async fn generate_multi_agent_output(
             let _ = tx.send(Err(e)).await;
             Ok(Box::pin(rx))
         }
+    }
+}
+
+async fn generate_local_model_output(
+    local_model: LocalModelRequestConfig,
+    mut params: RequestParams,
+    cancellation_rx: futures::channel::oneshot::Receiver<()>,
+) -> Result<ResponseStream, ConvertToAPITypeError> {
+    if params.should_redact_secrets {
+        redaction::redact_inputs(&mut params.input);
+    }
+
+    let (tx, rx) = async_channel::unbounded();
+    let result = generate_local_model_events(local_model, params).await;
+    match result {
+        Ok(events) => {
+            for event in events {
+                let _ = tx.send(Ok(event)).await;
+            }
+        }
+        Err(err) => {
+            let _ = tx.send(Err(Arc::new(AIApiError::Other(err)))).await;
+        }
+    }
+
+    Ok(Box::pin(rx.take_until(cancellation_rx)))
+}
+
+async fn generate_local_model_events(
+    local_model: LocalModelRequestConfig,
+    params: RequestParams,
+) -> Result<Vec<api::ResponseEvent>, anyhow::Error> {
+    let prompt = local_prompt_from_inputs(&params.input)?;
+    let client: Box<dyn LocalModelClient> = match local_model.provider {
+        LocalModelProvider::None => {
+            return Err(anyhow!("No local model provider configured"));
+        }
+        LocalModelProvider::Ollama => Box::new(
+            ProviderFactory::create_ollama_client(&local_model.base_url, None)
+                .map_err(|e| anyhow!(e.to_string()))?,
+        ),
+        LocalModelProvider::LMStudio => Box::new(
+            ProviderFactory::create_lmstudio_client(&local_model.base_url, None)
+                .map_err(|e| anyhow!(e.to_string()))?,
+        ),
+    };
+
+    let completion = client
+        .generate_completion(&prompt, &local_model.model)
+        .await
+        .map_err(|e| anyhow!(e.to_string()))?;
+
+    let request_id = format!("local-request-{}", Uuid::new_v4());
+    let conversation_id = params
+        .conversation_token
+        .as_ref()
+        .map(|token| token.as_str().to_string())
+        .unwrap_or_else(|| format!("local-conversation-{}", Uuid::new_v4()));
+    let task_id = params
+        .tasks
+        .first()
+        .map(|task| task.id.clone())
+        .unwrap_or_else(|| "root-task".to_string());
+
+    Ok(vec![
+        api::ResponseEvent {
+            r#type: Some(api::response_event::Type::Init(
+                api::response_event::StreamInit {
+                    request_id: request_id.clone(),
+                    conversation_id,
+                    run_id: String::new(),
+                },
+            )),
+        },
+        api::ResponseEvent {
+            r#type: Some(api::response_event::Type::ClientActions(
+                api::response_event::ClientActions {
+                    actions: vec![api::ClientAction {
+                        action: Some(api::client_action::Action::AddMessagesToTask(
+                            api::client_action::AddMessagesToTask {
+                                task_id: task_id.clone(),
+                                messages: vec![api::Message {
+                                    id: format!("local-message-{}", Uuid::new_v4()),
+                                    task_id,
+                                    request_id,
+                                    timestamp: None,
+                                    server_message_data: String::new(),
+                                    citations: vec![],
+                                    message: Some(api::message::Message::AgentOutput(
+                                        api::message::AgentOutput { text: completion },
+                                    )),
+                                }],
+                            },
+                        )),
+                    }],
+                },
+            )),
+        },
+        api::ResponseEvent {
+            r#type: Some(api::response_event::Type::Finished(
+                api::response_event::StreamFinished {
+                    token_usage: vec![],
+                    should_refresh_model_config: false,
+                    request_cost: None,
+                    conversation_usage_metadata: None,
+                    reason: Some(api::response_event::stream_finished::Reason::Done(
+                        api::response_event::stream_finished::Done {},
+                    )),
+                },
+            )),
+        },
+    ])
+}
+
+fn local_prompt_from_inputs(
+    inputs: &[crate::ai::agent::AIAgentInput],
+) -> Result<String, anyhow::Error> {
+    let prompt = inputs
+        .iter()
+        .filter_map(crate::ai::agent::AIAgentInput::user_query)
+        .map(|query| query.trim().to_string())
+        .filter(|query| !query.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    if prompt.is_empty() {
+        Err(anyhow!(
+            "Local models currently support user prompts only. This request has no prompt text."
+        ))
+    } else {
+        Ok(prompt)
     }
 }
 

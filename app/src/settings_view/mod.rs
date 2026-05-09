@@ -34,6 +34,7 @@ use environments_page::EnvironmentsPageView;
 use features_page::{FeaturesPageView, FeaturesSettingsPageEvent};
 use itertools::Itertools as _;
 use keybindings::KeybindingsView;
+use local_models_page::LocalModelsSettingsPageView;
 use main_page::{MainPageAction, MainSettingsPageEvent, MainSettingsPageView};
 use mcp_servers_page::MCPServersSettingsPageView;
 use nav::{SettingsNavItem, SettingsUmbrella};
@@ -88,6 +89,7 @@ mod execution_profile_view;
 mod features;
 mod features_page;
 pub mod keybindings;
+mod local_models_page;
 mod main_page;
 pub mod mcp_servers;
 pub mod mcp_servers_page;
@@ -189,6 +191,7 @@ pub enum SettingsSection {
     About,
     #[default]
     Account,
+    LocalModels,
     MCPServers,
     BillingAndUsage,
     Appearance,
@@ -234,6 +237,7 @@ impl Display for SettingsSection {
             SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
             SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
             SettingsSection::MCPServers => write!(f, "MCP Servers"),
+            SettingsSection::LocalModels => write!(f, "Local models"),
             SettingsSection::WarpDrive => write!(f, "Warp Drive"),
             SettingsSection::WarpAgent => write!(f, "Warp Agent"),
             SettingsSection::AgentProfiles => write!(f, "Profiles"),
@@ -322,6 +326,7 @@ impl FromStr for SettingsSection {
         match s {
             "About" => Ok(Self::About),
             "Account" => Ok(Self::Account),
+            "Local models" | "LocalModels" => Ok(Self::LocalModels),
             "AI" => Ok(Self::AI),
             "MCP Servers" => Ok(Self::MCPServers),
             "Billing and usage" => Ok(Self::BillingAndUsage),
@@ -973,6 +978,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::Code(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::BillingAndUsage(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::LocalModels(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
         }
     };
@@ -1133,6 +1139,9 @@ impl SettingsView {
             me.handle_mcp_servers_page_event(event, ctx);
         });
 
+        // Local models page
+        let local_models_page_handle = ctx.add_typed_action_view(LocalModelsSettingsPageView::new);
+
         let font_family = Appearance::as_ref(ctx).ui_font_family();
         let search_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
@@ -1164,6 +1173,7 @@ impl SettingsView {
         let mut settings_pages = vec![
             SettingsPage::new(main_page_handle),
             SettingsPage::new(ai_page_handle),
+            SettingsPage::new(local_models_page_handle),
             SettingsPage::new(billing_and_usage_page_handle),
             SettingsPage::new(code_page_handle),
             SettingsPage::new(teams_page_handle),
@@ -1192,6 +1202,7 @@ impl SettingsView {
                 "Agents",
                 SettingsSection::ai_subpages().to_vec(),
             )),
+            SettingsNavItem::Page(SettingsSection::LocalModels),
             SettingsNavItem::Page(SettingsSection::BillingAndUsage),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Code",
@@ -1964,6 +1975,7 @@ impl SettingsView {
             SettingsPageViewHandle::AI(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::CloudEnvironments(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::LocalModels(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
         }

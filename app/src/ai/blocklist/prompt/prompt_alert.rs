@@ -13,7 +13,7 @@ use crate::{
     auth::AuthStateProvider,
     network::NetworkStatus,
     server::ids::ServerId,
-    settings::PrivacySettings,
+    settings::{LocalModelSettings, PrivacySettings},
     settings_view::SettingsSection,
     ui_components::icons::Icon,
     workspace::WorkspaceAction,
@@ -97,6 +97,7 @@ impl PromptAlertView {
         let user_workspaces = UserWorkspaces::handle(ctx);
         let network_status = NetworkStatus::handle(ctx);
         let privacy_settings = PrivacySettings::handle(ctx);
+        let local_model_settings = LocalModelSettings::handle(ctx);
         let api_key_manager = ApiKeyManager::handle(ctx);
 
         ctx.subscribe_to_model(&request_usage_model, |me, _, _, ctx| {
@@ -119,6 +120,11 @@ impl PromptAlertView {
             ctx.notify();
         });
 
+        ctx.subscribe_to_model(&local_model_settings, |me, _, _, ctx| {
+            me.state = Self::determine_state(ctx);
+            ctx.notify();
+        });
+
         ctx.subscribe_to_model(&api_key_manager, |me, _, _, ctx| {
             me.state = Self::determine_state(ctx);
             ctx.notify();
@@ -131,6 +137,10 @@ impl PromptAlertView {
     }
 
     pub fn determine_state(app: &AppContext) -> PromptAlertState {
+        if LocalModelSettings::as_ref(app).is_enabled_and_configured() {
+            return PromptAlertState::NoAlert;
+        }
+
         // First, if the user is offline, no AI features will work.
         if !NetworkStatus::as_ref(app).is_online() {
             return PromptAlertState::NoConnection;

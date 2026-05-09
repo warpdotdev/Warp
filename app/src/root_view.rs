@@ -24,7 +24,7 @@ use crate::settings::apply_onboarding_settings;
 use crate::settings::cloud_preferences_syncer::{
     CloudPreferencesSyncer, CloudPreferencesSyncerEvent,
 };
-use crate::settings::AISettings;
+use crate::settings::{AISettings, LocalModelSettings};
 use crate::workspace::tab_settings::TabSettings;
 use onboarding::{
     AgentOnboardingEvent, AgentOnboardingView, OnboardingIntention, SelectedSettings,
@@ -102,7 +102,9 @@ use warpui::windowing::WindowManager;
 use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::ai::onboarding::{
     apply_free_tier_default_model_override, build_onboarding_models, current_onboarding_auth_state,
+    local_onboarding_model_info, parse_local_onboarding_model_id,
 };
+use ai::local_models::{LocalModelClient, LocalModelProvider, ProviderFactory};
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use warp_graphql::billing::StripeSubscriptionPlan;
 
@@ -1906,6 +1908,90 @@ impl RootView {
             .map(|p| p.yearly_plan_price_per_month_usd_cents)
     }
 
+    fn build_onboarding_models_with_local(
+        llm_preferences: &LLMPreferences,
+        local_models: &[onboarding::slides::OnboardingModelInfo],
+        ctx: &mut AppContext,
+    ) -> (Vec<onboarding::slides::OnboardingModelInfo>, ai::LLMId) {
+        let (mut models, default_model_id) = build_onboarding_models(llm_preferences);
+        let mut default_model_id =
+            apply_free_tier_default_model_override(&mut models, default_model_id, ctx);
+
+        if local_models.is_empty() {
+            return (models, default_model_id);
+        }
+
+        let prefer_local_default = AuthStateProvider::as_ref(ctx)
+            .get()
+            .is_anonymous_or_logged_out();
+        let mut local_models = local_models.to_vec();
+        if prefer_local_default {
+            for model in &mut models {
+                model.is_default = false;
+            }
+            if let Some(first_local_model) = local_models.first_mut() {
+                first_local_model.is_default = true;
+                default_model_id = first_local_model.id.clone();
+            }
+        }
+
+        models.extend(local_models);
+        (models, default_model_id)
+    }
+
+    async fn discover_local_onboarding_models(
+        ollama_base_url: String,
+        lmstudio_base_url: String,
+    ) -> Vec<onboarding::slides::OnboardingModelInfo> {
+        let (ollama_models, lmstudio_models) = futures::future::join(
+            Self::discover_local_provider_models(LocalModelProvider::Ollama, ollama_base_url),
+            Self::discover_local_provider_models(LocalModelProvider::LMStudio, lmstudio_base_url),
+        )
+        .await;
+
+        ollama_models.into_iter().chain(lmstudio_models).collect()
+    }
+
+    async fn discover_local_provider_models(
+        provider: LocalModelProvider,
+        base_url: String,
+    ) -> Vec<onboarding::slides::OnboardingModelInfo> {
+        let client: Box<dyn LocalModelClient> = match provider {
+            LocalModelProvider::None => return Vec::new(),
+            LocalModelProvider::Ollama => match ProviderFactory::create_ollama_client(&base_url, None)
+            {
+                Ok(client) => Box::new(client),
+                Err(err) => {
+                    log::debug!("Unable to create Ollama onboarding client: {err}");
+                    return Vec::new();
+                }
+            },
+            LocalModelProvider::LMStudio => {
+                match ProviderFactory::create_lmstudio_client(&base_url, None) {
+                    Ok(client) => Box::new(client),
+                    Err(err) => {
+                        log::debug!("Unable to create LM Studio onboarding client: {err}");
+                        return Vec::new();
+                    }
+                }
+            }
+        };
+
+        match client.list_models().await {
+            Ok(models) => models
+                .into_iter()
+                .map(|model| local_onboarding_model_info(provider, model.name))
+                .collect(),
+            Err(err) => {
+                log::debug!(
+                    "Unable to discover {} onboarding models: {err}",
+                    provider.display_name()
+                );
+                Vec::new()
+            }
+        }
+    }
+
     fn create_agent_onboarding_view(
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<AgentOnboardingView> {
@@ -1914,11 +2000,13 @@ impl RootView {
         });
 
         let themes = onboarding_theme_picker_themes();
+        let discovered_local_models = Arc::new(Mutex::new(Vec::new()));
         let onboarding_view = ctx.add_typed_action_view(move |ctx| {
-            let (mut models, default_model_id) =
-                build_onboarding_models(LLMPreferences::as_ref(ctx));
-            let default_model_id =
-                apply_free_tier_default_model_override(&mut models, default_model_id, ctx);
+            let (models, default_model_id) = Self::build_onboarding_models_with_local(
+                LLMPreferences::as_ref(ctx),
+                &discovered_local_models.lock(),
+                ctx,
+            );
 
             let workspace_enforces_autonomy = UserWorkspaces::as_ref(ctx)
                 .ai_autonomy_settings()
@@ -1942,6 +2030,30 @@ impl RootView {
             )
         });
 
+        let local_models_for_task = discovered_local_models.clone();
+        let onboarding_view_for_local_models = onboarding_view.clone();
+        let local_model_settings = LocalModelSettings::as_ref(ctx);
+        let ollama_base_url = local_model_settings.ollama_base_url.value().clone();
+        let lmstudio_base_url = local_model_settings.lmstudio_base_url.value().clone();
+        let _ = ctx.spawn(
+            Self::discover_local_onboarding_models(ollama_base_url, lmstudio_base_url),
+            move |_me, models, ctx| {
+                if models.is_empty() {
+                    return;
+                }
+
+                *local_models_for_task.lock() = models;
+                let (models, default_model_id) = Self::build_onboarding_models_with_local(
+                    LLMPreferences::as_ref(ctx),
+                    &local_models_for_task.lock(),
+                    ctx,
+                );
+                onboarding_view_for_local_models.update(ctx, |onboarding_view, ctx| {
+                    onboarding_view.set_onboarding_models(models, default_model_id, ctx);
+                });
+            },
+        );
+
         // Subscribe to pricing updates so the badge stays current.
         let onboarding_view_for_pricing = onboarding_view.clone();
         ctx.subscribe_to_model(
@@ -1957,14 +2069,16 @@ impl RootView {
         );
 
         let onboarding_view_clone = onboarding_view.clone();
+        let local_models_for_llm_update = discovered_local_models.clone();
         ctx.subscribe_to_model(
             &LLMPreferences::handle(ctx),
             move |_, llm_preferences, event, ctx| match event {
                 LLMPreferencesEvent::UpdatedAvailableLLMs => {
-                    let (mut models, default_model_id) =
-                        build_onboarding_models(llm_preferences.as_ref(ctx));
-                    let default_model_id =
-                        apply_free_tier_default_model_override(&mut models, default_model_id, ctx);
+                    let (models, default_model_id) = Self::build_onboarding_models_with_local(
+                        llm_preferences.as_ref(ctx),
+                        &local_models_for_llm_update.lock(),
+                        ctx,
+                    );
                     onboarding_view_clone.update(ctx, |onboarding_view, ctx| {
                         onboarding_view.set_onboarding_models(models, default_model_id, ctx);
                     })

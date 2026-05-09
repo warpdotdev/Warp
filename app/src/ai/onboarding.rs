@@ -1,6 +1,7 @@
 //! Onboarding-specific AI types and conversions.
 
 use ai::LLMId;
+use ai::local_models::LocalModelProvider;
 use onboarding::slides::OnboardingModelInfo;
 use onboarding::OnboardingAuthState;
 use warp_core::ui::icons::Icon;
@@ -15,6 +16,7 @@ use super::llms::{DisableReason, LLMInfo, LLMPreferences};
 /// mirrors server-side model ids
 const AUTO_OPEN_LLM_ID: &str = "auto-open";
 const AUTO_COST_EFFICIENT_LLM_ID: &str = "auto-efficient";
+const LOCAL_ONBOARDING_MODEL_PREFIX: &str = "local";
 
 impl From<&LLMInfo> for OnboardingModelInfo {
     fn from(llm: &LLMInfo) -> Self {
@@ -39,6 +41,44 @@ pub fn build_onboarding_models(prefs: &LLMPreferences) -> (Vec<OnboardingModelIn
         })
         .collect();
     (models, default_id)
+}
+
+pub fn local_onboarding_model_id(provider: LocalModelProvider, model_name: &str) -> LLMId {
+    LLMId::from(format!(
+        "{LOCAL_ONBOARDING_MODEL_PREFIX}:{}:{model_name}",
+        provider.as_storage_value()
+    ))
+}
+
+pub fn parse_local_onboarding_model_id(
+    id: &LLMId,
+) -> Option<(LocalModelProvider, String)> {
+    let mut parts = id.as_str().splitn(3, ':');
+    let prefix = parts.next()?;
+    if prefix != LOCAL_ONBOARDING_MODEL_PREFIX {
+        return None;
+    }
+
+    let provider = LocalModelProvider::from_storage_value(parts.next()?);
+    let model_name = parts.next()?.trim();
+    if provider == LocalModelProvider::None || model_name.is_empty() {
+        return None;
+    }
+
+    Some((provider, model_name.to_string()))
+}
+
+pub fn local_onboarding_model_info(
+    provider: LocalModelProvider,
+    model_name: String,
+) -> OnboardingModelInfo {
+    OnboardingModelInfo {
+        id: local_onboarding_model_id(provider, &model_name),
+        title: format!("{}: {model_name}", provider.display_name()),
+        icon: Icon::Laptop,
+        requires_upgrade: false,
+        is_default: false,
+    }
 }
 
 pub fn apply_free_tier_default_model_override(

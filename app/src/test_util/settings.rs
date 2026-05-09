@@ -22,9 +22,9 @@ pub fn initialize_settings_for_tests_with_mode(
             manager::SettingsManager, AISettings, AccessibilitySettings, AliasExpansionSettings,
             AppEditorSettings, BlockVisibilitySettings, ChangelogSettings,
             CloudPreferencesSettings, CodeSettings, DebugSettings, EmacsBindingsSettings,
-            FontSettings, GPUSettings, InputModeSettings, InputSettings, NativePreferenceSettings,
-            PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings,
-            SshSettings, ThemeSettings, VimBannerSettings,
+            FontSettings, GPUSettings, InputModeSettings, InputSettings, LocalModelSettings,
+            NativePreferenceSettings, PaneSettings, SameLinePromptBlockSettings, ScrollSettings,
+            SelectionSettings, SshSettings, ThemeSettings, VimBannerSettings,
         },
         terminal::{
             general_settings::GeneralSettings, keys_settings::KeysSettings,
@@ -46,6 +46,7 @@ pub fn initialize_settings_for_tests_with_mode(
     app.add_singleton_model(WarpConfig::mock);
 
     AccessibilitySettings::register(app);
+    LocalModelSettings::register(app);
     app.update(AISettings::register_and_subscribe_to_events);
     AliasExpansionSettings::register(app);
     CloudAgentSettings::register(app);

@@ -640,6 +640,7 @@ fn realistic_nav_items() -> Vec<SettingsNavItem> {
             "Agents",
             SettingsSection::ai_subpages().to_vec(),
         )),
+        SettingsNavItem::Page(SettingsSection::LocalModels),
         SettingsNavItem::Page(SettingsSection::BillingAndUsage),
         SettingsNavItem::Umbrella(SettingsUmbrella::new(
             "Code",
@@ -667,10 +668,9 @@ fn collapsed_umbrella_is_a_single_nav_stop() {
     let nav_items = realistic_nav_items();
     // All umbrellas default to collapsed.
     let stops = build_nav_stops(&nav_items, |_| true);
-
-    // Expect: Account, <Agents umbrella>, BillingAndUsage, <Code umbrella>,
-    // <Cloud platform umbrella>, Teams.
-    assert_eq!(stops.len(), 6);
+    // Expect: Account, <Agents umbrella>, LocalModels, BillingAndUsage,
+    // <Code umbrella>, <Cloud platform umbrella>, Teams.
+    assert_eq!(stops.len(), 7);
     assert!(matches!(
         stops[0],
         NavStop::Section(SettingsSection::Account)
@@ -685,25 +685,29 @@ fn collapsed_umbrella_is_a_single_nav_stop() {
     ));
     assert!(matches!(
         stops[2],
-        NavStop::Section(SettingsSection::BillingAndUsage)
+        NavStop::Section(SettingsSection::LocalModels)
     ));
     assert!(matches!(
         stops[3],
-        NavStop::CollapsedUmbrella {
-            nav_index: 3,
-            first_subpage: SettingsSection::CodeIndexing,
-            last_subpage: SettingsSection::EditorAndCodeReview,
-        }
+        NavStop::Section(SettingsSection::BillingAndUsage)
     ));
     assert!(matches!(
         stops[4],
         NavStop::CollapsedUmbrella {
             nav_index: 4,
+            first_subpage: SettingsSection::CodeIndexing,
+            last_subpage: SettingsSection::EditorAndCodeReview,
+        }
+    ));
+    assert!(matches!(
+        stops[5],
+        NavStop::CollapsedUmbrella {
+            nav_index: 5,
             first_subpage: SettingsSection::CloudEnvironments,
             last_subpage: SettingsSection::OzCloudAPIKeys,
         }
     ));
-    assert!(matches!(stops[5], NavStop::Section(SettingsSection::Teams)));
+    assert!(matches!(stops[6], NavStop::Section(SettingsSection::Teams)));
 }
 
 #[test]
@@ -715,7 +719,7 @@ fn expanded_umbrella_produces_section_stop_per_subpage() {
     let stops = build_nav_stops(&nav_items, |_| true);
 
     // Expect: Account, WarpAgent, AgentProfiles, AgentMCPServers, Knowledge,
-    // ThirdPartyCLIAgents, BillingAndUsage, <Code umbrella>,
+    // ThirdPartyCLIAgents, LocalModels, BillingAndUsage, <Code umbrella>,
     // <Cloud platform umbrella>, Teams.
     let sections: Vec<_> = stops
         .iter()
@@ -733,9 +737,10 @@ fn expanded_umbrella_produces_section_stop_per_subpage() {
             "AgentMCPServers",
             "Knowledge",
             "ThirdPartyCLIAgents",
+            "LocalModels",
             "BillingAndUsage",
-            "Umbrella@3",
             "Umbrella@4",
+            "Umbrella@5",
             "Teams",
         ]
     );
@@ -795,10 +800,10 @@ fn umbrella_with_no_visible_subpages_is_skipped_entirely() {
     // The still-visible Code / Cloud platform umbrellas remain as stops.
     assert!(stops
         .iter()
-        .any(|s| matches!(s, NavStop::CollapsedUmbrella { nav_index: 3, .. })));
+        .any(|s| matches!(s, NavStop::CollapsedUmbrella { nav_index: 4, .. })));
     assert!(stops
         .iter()
-        .any(|s| matches!(s, NavStop::CollapsedUmbrella { nav_index: 4, .. })));
+        .any(|s| matches!(s, NavStop::CollapsedUmbrella { nav_index: 5, .. })));
 }
 
 #[test]
@@ -827,7 +832,7 @@ fn current_stop_index_matches_section_stop() {
     let stops = build_nav_stops(&nav_items, |_| true);
 
     let idx = current_stop_index(&stops, &nav_items, SettingsSection::BillingAndUsage);
-    assert_eq!(idx, Some(2));
+    assert_eq!(idx, Some(3));
 }
 
 #[test]
@@ -923,18 +928,18 @@ fn arrow_down_from_account_with_collapsed_agents_lands_on_first_subpage() {
 }
 
 #[test]
-fn arrow_up_from_billing_and_usage_with_collapsed_agents_lands_on_last_subpage() {
+fn arrow_up_from_local_models_with_collapsed_agents_lands_on_last_subpage() {
     let nav_items = realistic_nav_items();
     let stops = build_nav_stops(&nav_items, |_| true);
 
-    // Pressing Up from BillingAndUsage should land on the collapsed Agents
+    // Pressing Up from LocalModels should land on the collapsed Agents
     // umbrella, which resolves to ThirdPartyCLIAgents (last visible subpage)
     // so the user continues moving in natural reading order rather than being
     // jumped back to the top of the umbrella.
     let next = simulate_cycle(
         &nav_items,
         &stops,
-        SettingsSection::BillingAndUsage,
+        SettingsSection::LocalModels,
         CycleDirection::Up,
     );
     assert_eq!(next, SettingsSection::ThirdPartyCLIAgents);
@@ -953,13 +958,13 @@ fn arrow_up_into_collapsed_umbrella_respects_search_filter_for_last_subpage() {
     };
     let stops = build_nav_stops(&nav_items, is_visible);
 
-    // From BillingAndUsage, Up should land on the last *visible* AI subpage
+    // From LocalModels, Up should land on the last *visible* AI subpage
     // (AgentMCPServers), not on the filtered-out Knowledge/ThirdPartyCLIAgents
     // or on the first subpage WarpAgent.
     let next = simulate_cycle(
         &nav_items,
         &stops,
-        SettingsSection::BillingAndUsage,
+        SettingsSection::LocalModels,
         CycleDirection::Up,
     );
     assert_eq!(next, SettingsSection::AgentMCPServers);
@@ -972,14 +977,14 @@ fn arrow_down_from_expanded_last_subpage_leaves_umbrella() {
     let stops = build_nav_stops(&nav_items, |_| true);
 
     // ThirdPartyCLIAgents is the last Agents subpage; Down should move to
-    // BillingAndUsage (the next top-level page in the nav order).
+    // LocalModels (the next top-level page in the nav order).
     let next = simulate_cycle(
         &nav_items,
         &stops,
         SettingsSection::ThirdPartyCLIAgents,
         CycleDirection::Down,
     );
-    assert_eq!(next, SettingsSection::BillingAndUsage);
+    assert_eq!(next, SettingsSection::LocalModels);
 }
 
 #[test]
