@@ -1,7 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{ai::agent::redaction, terminal::model::session::SessionType};
-use ::ai::local_models::{LocalModelClient, LocalModelProvider, ProviderFactory};
+use ::ai::local_models::{LocalModelClient, LocalModelProvider};
+use ::ai::local_models::provider::ProviderFactory;
 use anyhow::anyhow;
 use futures_util::StreamExt;
 use uuid::Uuid;
@@ -128,8 +129,6 @@ pub async fn generate_multi_agent_output(
                 .map(|id| id.to_string())
                 .unwrap_or_default(),
             forked_from_conversation_id: if params.conversation_token.is_none() {
-                // We only include this param on our initial request to the server
-                // (when the forked conversation has not been assigned a new id yet).
                 params
                     .forked_from_conversation_token
                     .map(|token| token.as_str().to_string())
@@ -196,18 +195,21 @@ async fn generate_local_model_events(
         }
         LocalModelProvider::Ollama => Box::new(
             ProviderFactory::create_ollama_client(&local_model.base_url, None)
-                .map_err(|e| anyhow!(e.to_string()))?,
+                .map_err(|e: Box<dyn std::error::Error>| anyhow!(e.to_string()))?,
         ),
         LocalModelProvider::LMStudio => Box::new(
             ProviderFactory::create_lmstudio_client(&local_model.base_url, None)
-                .map_err(|e| anyhow!(e.to_string()))?,
+                .map_err(|e: Box<dyn std::error::Error>| anyhow!(e.to_string()))?,
         ),
+        LocalModelProvider::CustomOpenAICompatible => {
+            return Err(anyhow!("CustomOpenAICompatible provider is not yet supported"));
+        }
     };
 
     let completion = client
         .generate_completion(&prompt, &local_model.model)
         .await
-        .map_err(|e| anyhow!(e.to_string()))?;
+        .map_err(|e: Box<dyn std::error::Error>| anyhow!(e.to_string()))?;
 
     let request_id = format!("local-request-{}", Uuid::new_v4());
     let conversation_id = params
@@ -328,11 +330,6 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
             }
         }
         Some(SessionType::WarpifiedRemote { host_id: Some(_) }) => {
-            // Remote session with a known host — enable tools that route
-            // through RemoteServerClient. The host_id is only populated
-            // after a successful connection handshake, so its presence is a
-            // sufficient proxy for client availability.
-            // SearchCodebase remains disabled (follow-up work).
             supported_tools.extend(&[api::ToolType::ReadFiles, api::ToolType::ApplyFileDiffs]);
         }
         Some(SessionType::WarpifiedRemote { host_id: None }) => {
@@ -354,9 +351,6 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
     }
 
     if params.orchestration_enabled {
-        // Always advertise the legacy start-agent tool so the server
-        // can fall back to it when its own orchestrate flag is off.
-        // When RunAgents is also enabled, advertise it alongside.
         supported_tools.push(if FeatureFlag::OrchestrationV2.is_enabled() {
             api::ToolType::StartAgentV2
         } else {

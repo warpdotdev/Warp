@@ -65,6 +65,7 @@ impl LocalModelSettings {
             LocalModelProvider::None => None,
             LocalModelProvider::Ollama => Some(self.ollama_base_url.value().clone()),
             LocalModelProvider::LMStudio => Some(self.lmstudio_base_url.value().clone()),
+            LocalModelProvider::CustomOpenAICompatible => None,
         }
     }
 

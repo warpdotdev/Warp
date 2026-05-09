@@ -1,4 +1,5 @@
-use ::ai::local_models::{LocalModelClient, LocalModelProvider, ModelInfo, ProviderFactory};
+use ::ai::local_models::{LocalModelClient, LocalModelProvider, ModelInfo};
+use ::ai::local_models::provider::ProviderFactory;
 use settings::Setting;
 use warpui::{
     elements::{ChildView, Container, CrossAxisAlignment, Flex, ParentElement, Shrinkable, Text},
@@ -322,19 +323,28 @@ impl LocalModelsSettingsPageView {
                     }
                     LocalModelProvider::Ollama => Box::new(
                         ProviderFactory::create_ollama_client(&ollama_url, None)
-                            .map_err(|e| e.to_string())?,
+                            .map_err(|e: Box<dyn std::error::Error + Send + Sync>| e.to_string())?,
                     ),
                     LocalModelProvider::LMStudio => Box::new(
                         ProviderFactory::create_lmstudio_client(&lmstudio_url, None)
-                            .map_err(|e| e.to_string())?,
+                            .map_err(|e: Box<dyn std::error::Error + Send + Sync>| e.to_string())?,
                     ),
+                    LocalModelProvider::CustomOpenAICompatible => {
+                        return Err("CustomOpenAICompatible provider is not yet supported".to_string());
+                    }
                 };
 
                 if refresh_models {
-                    let models = client.list_models().await.map_err(|e| e.to_string())?;
+                    let models = client
+                        .list_models()
+                        .await
+                        .map_err(|e: Box<dyn std::error::Error + Send + Sync>| e.to_string())?;
                     Ok(LocalModelsRequestResult::Models(models))
                 } else {
-                    client.check_connection().await.map_err(|e| e.to_string())?;
+                    client
+                        .check_connection()
+                        .await
+                        .map_err(|e: Box<dyn std::error::Error + Send + Sync>| e.to_string())?;
                     Ok(LocalModelsRequestResult::Connected)
                 }
             },
