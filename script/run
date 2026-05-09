@@ -19,7 +19,8 @@ cd "${REPO_ROOT}"
 OS_TYPE="$(uname -s)"
 
 FEATURES="gui"
-INSTALL_COMMON_SKILLS=0
+INSTALL_COMMON_SKILLS=1
+FORCE_COMMON_SKILLS=0
 
 ./script/install_channel_config || echo "Skipping internal channel config installation (no repo access)."
 
@@ -65,7 +66,7 @@ while (( "$#" )); do
       fi
       ;;
     --install-common-skills)
-      INSTALL_COMMON_SKILLS=1
+      FORCE_COMMON_SKILLS=1
       shift
       ;;
     --release)
@@ -93,8 +94,11 @@ while (( "$#" )); do
 done
 
 if [[ "$INSTALL_COMMON_SKILLS" -eq 1 ]]; then
-  echo "Checking common agent skills version..."
-  ./script/install_common_skills --if-needed --non-interactive --quiet || echo "Skipping common-skills update."
+  if [[ "$FORCE_COMMON_SKILLS" -eq 1 ]]; then
+    ./script/install_common_skills --force --non-interactive || echo "Skipping common-skills update."
+  else
+    ./script/install_common_skills --if-needed --non-interactive --quiet || echo "Skipping common-skills update."
+  fi
 fi
 
 # These cargo features were removed and replaced by environment variables read
