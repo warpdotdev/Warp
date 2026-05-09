@@ -2,7 +2,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{ai::agent::redaction, terminal::model::session::SessionType};
 use ::ai::local_models::{LocalModelClient, LocalModelProvider};
-use ::ai::local_models::provider::ProviderFactory;
+use ::ai::local_models::config::{ConfiguredModel, LocalModelConfig, ModelParams};
+use ::ai::local_models::provider::ModelRouter;
 use anyhow::anyhow;
 use futures_util::StreamExt;
 use uuid::Uuid;
@@ -184,29 +185,80 @@ async fn generate_local_model_output(
     Ok(Box::pin(rx.take_until(cancellation_rx)))
 }
 
+/// Build a minimal `LocalModelConfig` with a single `ConfiguredModel` from
+/// the legacy per-request config, then use `ModelRouter` to get a client.
+fn build_client_from_request(
+    provider: LocalModelProvider,
+    base_url: &str,
+    model_id: &str,
+) -> Result<Box<dyn LocalModelClient>, anyhow::Error> {
+    use ::ai::local_models::config::{
+        ConfiguredModel, LocalModelConfig, ModelParams, ModelSelectionMode,
+    };
+
+    if provider == LocalModelProvider::None {
+        return Err(anyhow!("No local model provider configured"));
+    }
+
+    let configured_model = ConfiguredModel {
+        id: model_id.to_string(),
+        display_name: model_id.to_string(),
+        provider,
+        base_url: base_url.to_string(),
+        params: ModelParams::default(),
+        max_context_tokens: None,
+        tags: vec![],
+    };
+
+    let config = LocalModelConfig {
+        active_model_id: Some(model_id.to_string()),
+        configured_models: vec![configured_model],
+        ..Default::default()
+    };
+
+    let router = ModelRouter::new(config);
+    let model = router
+        .get_available_models()
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow!("No configured model found"))?;
+
+    // Re-build config to call build_client (private), so we use create_client shim:
+    use ::ai::local_models::provider::ProviderFactory;
+    #[allow(deprecated)]
+    ProviderFactory::create_client(&LocalModelConfig {
+        active_model_id: Some(model.id.clone()),
+        configured_models: vec![ConfiguredModel {
+            id: model.id,
+            display_name: model_id.to_string(),
+            provider,
+            base_url: base_url.to_string(),
+            params: ModelParams::default(),
+            max_context_tokens: None,
+            tags: vec![],
+        }],
+        ..Default::default()
+    })
+    .map_err(|e| anyhow!(e.to_string()))
+}
+
 async fn generate_local_model_events(
     local_model: LocalModelRequestConfig,
     params: RequestParams,
 ) -> Result<Vec<api::ResponseEvent>, anyhow::Error> {
     let prompt = local_prompt_from_inputs(&params.input)?;
-    let client: Box<dyn LocalModelClient> = match local_model.provider {
-        LocalModelProvider::None => {
-            return Err(anyhow!("No local model provider configured"));
-        }
-        LocalModelProvider::Ollama => Box::new(
-            ProviderFactory::create_ollama_client(&local_model.base_url, None)
-                .map_err(|e: Box<dyn std::error::Error>| anyhow!(e.to_string()))?,
-        ),
-        LocalModelProvider::LMStudio => Box::new(
-            ProviderFactory::create_lmstudio_client(&local_model.base_url, None)
-                .map_err(|e: Box<dyn std::error::Error>| anyhow!(e.to_string()))?,
-        ),
-        LocalModelProvider::CustomOpenAICompatible => {
-            return Err(anyhow!("CustomOpenAICompatible provider is not yet supported"));
-        }
-    };
 
-    let completion = client
+    if local_model.provider == LocalModelProvider::None {
+        return Err(anyhow!("No local model provider configured"));
+    }
+    if matches!(local_model.provider, LocalModelProvider::CustomOpenAICompatible) {
+        return Err(anyhow!("CustomOpenAICompatible provider is not yet supported"));
+    }
+
+    let client: Box<dyn LocalModelClient> =
+        build_client_from_request(local_model.provider, &local_model.base_url, &local_model.model)?;
+
+    let completion: String = client
         .generate_completion(&prompt, &local_model.model)
         .await
         .map_err(|e: Box<dyn std::error::Error>| anyhow!(e.to_string()))?;

@@ -1,4 +1,5 @@
 use ::ai::local_models::{LocalModelClient, LocalModelProvider, ModelInfo};
+use ::ai::local_models::config::{ConfiguredModel, LocalModelConfig, ModelParams};
 use ::ai::local_models::provider::ProviderFactory;
 use settings::Setting;
 use warpui::{
@@ -317,25 +318,32 @@ impl LocalModelsSettingsPageView {
 
         ctx.spawn(
             async move {
-                let client: Box<dyn LocalModelClient> = match provider {
-                    LocalModelProvider::None => {
-                        return Err("No provider selected".to_string());
-                    }
-                    LocalModelProvider::Ollama => Box::new(
-                        ProviderFactory::create_ollama_client(&ollama_url, None)
-                            .map_err(|e: Box<dyn std::error::Error + Send + Sync>| e.to_string())?,
-                    ),
-                    LocalModelProvider::LMStudio => Box::new(
-                        ProviderFactory::create_lmstudio_client(&lmstudio_url, None)
-                            .map_err(|e: Box<dyn std::error::Error + Send + Sync>| e.to_string())?,
-                    ),
-                    LocalModelProvider::CustomOpenAICompatible => {
-                        return Err("CustomOpenAICompatible provider is not yet supported".to_string());
-                    }
+                let base_url = match provider {
+                    LocalModelProvider::Ollama => &ollama_url,
+                    LocalModelProvider::LMStudio => &lmstudio_url,
+                    _ => return Err("Unsupported or unconfigured provider".to_string()),
                 };
 
+                let config = LocalModelConfig {
+                    active_model_id: Some("_probe".to_string()),
+                    configured_models: vec![ConfiguredModel {
+                        id: "_probe".to_string(),
+                        display_name: "probe".to_string(),
+                        provider,
+                        base_url: base_url.clone(),
+                        params: ModelParams::default(),
+                        max_context_tokens: None,
+                        tags: vec![],
+                    }],
+                    ..Default::default()
+                };
+
+                #[allow(deprecated)]
+                let client: Box<dyn LocalModelClient> = ProviderFactory::create_client(&config)
+                    .map_err(|e: Box<dyn std::error::Error + Send + Sync>| e.to_string())?;
+
                 if refresh_models {
-                    let models = client
+                    let models: Vec<ModelInfo> = client
                         .list_models()
                         .await
                         .map_err(|e: Box<dyn std::error::Error + Send + Sync>| e.to_string())?;
