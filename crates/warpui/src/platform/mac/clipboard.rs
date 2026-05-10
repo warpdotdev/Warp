@@ -7,7 +7,7 @@ use cocoa::{
 };
 use objc::{class, msg_send, sel, sel_impl};
 use std::ffi::CStr;
-use std::os::raw::{c_uchar, c_void};
+use std::os::raw::c_void;
 use std::slice;
 
 use super::make_nsstring;
@@ -104,11 +104,8 @@ impl crate::Clipboard for Clipboard {
                     (0..available_paths)
                         .map(|i| {
                             let directory = file_paths.objectAtIndex(i);
-                            let slice = slice::from_raw_parts(
-                                directory.UTF8String() as *const c_uchar,
-                                directory.len(),
-                            );
-                            std::str::from_utf8_unchecked(slice).to_string()
+                            let cstr = std::ffi::CStr::from_ptr(directory.UTF8String());
+                            cstr.to_string_lossy().to_string()
                         })
                         .collect::<Vec<String>>(),
                 );

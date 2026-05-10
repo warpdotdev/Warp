@@ -46,9 +46,8 @@ use instant::Instant;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{cell::Cell, os::raw::c_uchar, panic, path::Path, ptr};
+use std::{cell::Cell, panic, path::Path, ptr};
 use std::{cell::RefCell, ffi::c_void, rc::Rc};
-use std::{slice, str};
 
 extern "C" {
     fn screenFrame() -> NSRect;
@@ -1681,8 +1680,71 @@ fn transform_origin_from_rect_coord_to_frame_coord(origin: Vector2F, size: Vecto
     Vector2F::new(origin.x(), -(origin.y() + size.y()))
 }
 
-/// Converts an Objective-C `Object` into a `String`
+/// Converts an Objective-C `Object` (NSString) into a Rust `String`.
+///
+/// Uses `CStr::from_ptr` to read the null-terminated UTF-8 output of
+/// `-[NSString UTF8String]`, because `-[NSString length]` returns the
+/// number of UTF-16 code units, not the number of UTF-8 bytes.
 unsafe fn to_string(value: *mut Object) -> String {
-    let slice = slice::from_raw_parts(value.UTF8String() as *const c_uchar, value.len());
-    str::from_utf8_unchecked(slice).to_string()
+    let cstr = std::ffi::CStr::from_ptr(value.UTF8String());
+    cstr.to_string_lossy().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::to_string;
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::{NSAutoreleasePool, NSString};
+
+    unsafe fn nsstring(s: &str) -> id {
+        NSString::alloc(nil).init_str(s).autorelease()
+    }
+
+    #[test]
+    fn to_string_ascii() {
+        unsafe {
+            let pool = NSAutoreleasePool::new(nil);
+            assert_eq!(to_string(nsstring("hello world")), "hello world");
+            pool.drain();
+        }
+    }
+
+    #[test]
+    fn to_string_chinese() {
+        unsafe {
+            let pool = NSAutoreleasePool::new(nil);
+            assert_eq!(to_string(nsstring("中文")), "中文");
+            pool.drain();
+        }
+    }
+
+    #[test]
+    fn to_string_japanese() {
+        unsafe {
+            let pool = NSAutoreleasePool::new(nil);
+            assert_eq!(to_string(nsstring("日本語")), "日本語");
+            pool.drain();
+        }
+    }
+
+    #[test]
+    fn to_string_emoji() {
+        unsafe {
+            let pool = NSAutoreleasePool::new(nil);
+            assert_eq!(to_string(nsstring("🎉")), "🎉");
+            pool.drain();
+        }
+    }
+
+    #[test]
+    fn to_string_mixed_cjk() {
+        unsafe {
+            let pool = NSAutoreleasePool::new(nil);
+            assert_eq!(
+                to_string(nsstring("hello 中文 world 日本語 test")),
+                "hello 中文 world 日本語 test"
+            );
+            pool.drain();
+        }
+    }
 }

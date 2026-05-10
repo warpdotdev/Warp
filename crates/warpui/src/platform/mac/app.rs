@@ -595,11 +595,8 @@ pub(crate) extern "C-unwind" fn warp_open_panel_file_selected(urls: id, callback
             .map(|i| {
                 let file_url = urls.objectAtIndex(i);
                 let file_path: id = msg_send![file_url, path];
-                let slice = std::slice::from_raw_parts(
-                    file_path.UTF8String() as *const std::ffi::c_uchar,
-                    file_path.len(),
-                );
-                std::str::from_utf8_unchecked(slice).to_string()
+                let cstr = std::ffi::CStr::from_ptr(file_path.UTF8String());
+                cstr.to_string_lossy().to_string()
             })
             .collect::<Vec<_>>()
     };
@@ -624,11 +621,8 @@ pub(crate) extern "C-unwind" fn warp_save_panel_file_selected(url: id, callback:
     } else {
         unsafe {
             let file_path: id = msg_send![url, path];
-            let slice = std::slice::from_raw_parts(
-                file_path.UTF8String() as *const std::ffi::c_uchar,
-                file_path.len(),
-            );
-            Some(std::str::from_utf8_unchecked(slice).to_string())
+            let cstr = std::ffi::CStr::from_ptr(file_path.UTF8String());
+            Some(cstr.to_string_lossy().to_string())
         }
     };
 
