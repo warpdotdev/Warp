@@ -3,9 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::anyhow;
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use prost::Message as _;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 use warp_multi_agent_api as api;
 
@@ -24,7 +24,7 @@ use super::types::{
     ResponsesRequestBody,
 };
 use super::{
-    build_local_openai_system_prompt, conversation_state_store, ProviderError, RequestParams,
+    ProviderError, RequestParams, build_local_openai_system_prompt, conversation_state_store,
 };
 use crate::ai::agent::api::r#impl::get_supported_tools;
 
@@ -346,6 +346,33 @@ fn render_user_query_with_context(
     rendered
 }
 
+/// Maximum number of characters preserved for a single rendered context text field.
+const MAX_CONTEXT_TEXT_CHARS: usize = 20_000;
+
+/// Marker appended when a rendered context text field had to be truncated.
+const TRUNCATED_CONTEXT_TEXT_SUFFIX: &str =
+    "\n[truncated: shell block output exceeded 20000 characters]";
+
+/// Caps oversized context text without splitting UTF-8 characters and appends a truncation marker.
+fn truncate_context_text(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+
+    let suffix_len = TRUNCATED_CONTEXT_TEXT_SUFFIX.chars().count();
+    if max_chars <= suffix_len {
+        return TRUNCATED_CONTEXT_TEXT_SUFFIX
+            .chars()
+            .take(max_chars)
+            .collect();
+    }
+
+    let preserved_chars = max_chars - suffix_len;
+    let mut truncated_text: String = text.chars().take(preserved_chars).collect();
+    truncated_text.push_str(TRUNCATED_CONTEXT_TEXT_SUFFIX);
+    truncated_text
+}
+
 /// Serializes a compact text representation of the Warp context available to the request.
 fn render_context_block(
     context: &[AIAgentContext],
@@ -420,7 +447,10 @@ fn render_context_block(
             AIAgentContext::Block(block) => {
                 lines.push(format!("Shell block command: {}", block.command));
                 if !block.output.is_empty() {
-                    lines.push(format!("Shell block output:\n{}", block.output));
+                    lines.push(format!(
+                        "Shell block output:\n{}",
+                        truncate_context_text(&block.output, MAX_CONTEXT_TEXT_CHARS)
+                    ));
                 }
             }
             AIAgentContext::Image(image) => {

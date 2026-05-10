@@ -28,13 +28,14 @@ use super::types::{
     StreamingTextMessageState,
 };
 use super::*;
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::task::TaskId;
 use crate::ai::agent::AIAgentActionResult;
 use crate::ai::agent::AIAgentContext;
 use crate::ai::agent::AIAgentInput;
 use crate::ai::agent::MCPContext;
 use crate::ai::agent::MCPServer;
+use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent::task::TaskId;
+use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::SessionContext;
 use crate::ai::llms::{LLMId, LLMProvider};
 
@@ -259,6 +260,89 @@ fn normalize_openai_model_and_reasoning_preserves_base_variant() {
     );
 }
 
+/// Verifies that truncated shell block output stays within the cap and ends with a truncation marker.
+#[test]
+fn render_context_block_truncates_shell_block_output() {
+    let block_output = "你".repeat(20_001);
+    let rendered_items = convert_inputs_to_response_items(&[AIAgentInput::UserQuery {
+        query: "Summarize this block".to_string(),
+        context: Arc::from([AIAgentContext::Block(Box::new(BlockContext {
+            id: BlockId::new(),
+            index: 0.into(),
+            command: "pwd".to_string(),
+            output: block_output,
+            exit_code: ExitCode::from(0),
+            is_auto_attached: false,
+            started_ts: None,
+            finished_ts: None,
+            pwd: None,
+            shell: None,
+            username: None,
+            hostname: None,
+            git_branch: None,
+            os: None,
+            session_id: None,
+        }))]),
+        static_query_type: None,
+        referenced_attachments: Default::default(),
+        user_query_mode: Default::default(),
+        running_command: None,
+        intended_agent: None,
+    }])
+    .expect("user query should serialize into response items");
+    let rendered_output = rendered_items[0]["content"][0]["text"]
+        .as_str()
+        .expect("serialized user message should contain text")
+        .split_once("Shell block output:\n")
+        .expect("rendered context should include block output")
+        .1;
+
+    assert_eq!(rendered_output.chars().count(), 20_000);
+    assert!(
+        rendered_output.ends_with("\n[truncated: shell block output exceeded 20000 characters]")
+    );
+}
+
+/// Verifies that shell block output below the limit is preserved without a truncation marker.
+#[test]
+fn render_context_block_preserves_short_shell_block_output_without_marker() {
+    let block_output = "short output".to_string();
+    let rendered_items = convert_inputs_to_response_items(&[AIAgentInput::UserQuery {
+        query: "Summarize this block".to_string(),
+        context: Arc::from([AIAgentContext::Block(Box::new(BlockContext {
+            id: BlockId::new(),
+            index: 0.into(),
+            command: "pwd".to_string(),
+            output: block_output.clone(),
+            exit_code: ExitCode::from(0),
+            is_auto_attached: false,
+            started_ts: None,
+            finished_ts: None,
+            pwd: None,
+            shell: None,
+            username: None,
+            hostname: None,
+            git_branch: None,
+            os: None,
+            session_id: None,
+        }))]),
+        static_query_type: None,
+        referenced_attachments: Default::default(),
+        user_query_mode: Default::default(),
+        running_command: None,
+        intended_agent: None,
+    }])
+    .expect("user query should serialize into response items");
+    let rendered_output = rendered_items[0]["content"][0]["text"]
+        .as_str()
+        .expect("serialized user message should contain text")
+        .split_once("Shell block output:\n")
+        .expect("rendered context should include block output")
+        .1;
+
+    assert_eq!(rendered_output, block_output);
+}
+
 /// Verifies that base GPT-5.5 variants opt into reasoning summaries without inventing an effort.
 #[test]
 fn normalize_openai_model_and_reasoning_preserves_gpt_5_5_base_variant() {
@@ -422,7 +506,10 @@ fn prepare_local_responses_request_configures_parallel_tool_calls_and_store_poli
     let request_body = serde_json::to_value(&prepared_request.request_body)
         .expect("request body should serialize");
 
-    assert_eq!(request_body["parallel_tool_calls"], serde_json::json!(false));
+    assert_eq!(
+        request_body["parallel_tool_calls"],
+        serde_json::json!(false)
+    );
     assert_eq!(request_body["tool_choice"], serde_json::json!("auto"));
     assert_eq!(request_body["store"], serde_json::json!(false));
     assert_eq!(
@@ -562,9 +649,11 @@ fn prepare_local_responses_request_includes_web_search_tool_when_enabled() {
         .as_array()
         .expect("tools should serialize as an array");
 
-    assert!(tools
-        .iter()
-        .any(|tool| tool["type"] == serde_json::json!("web_search")));
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool["type"] == serde_json::json!("web_search"))
+    );
     assert_eq!(
         request_body["include"],
         serde_json::json!([
