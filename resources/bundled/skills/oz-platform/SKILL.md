@@ -167,8 +167,6 @@ All cloud agents run in an environment. The environment defines:
 * The Git repositories to check out before the agent starts
 * Setup commands to run, such as `npm install` or `cargo fetch`
 
-When an environment setup command installs Warp common skills in a `warpdotdev/warp` checkout, skip the interactive install-location prompt by selecting the project target explicitly. Use `common-skills/scripts/install_common_skills --repo-root <warp-checkout> --project --if-needed --non-interactive` from a checked-out `warpdotdev/common-skills` repo, or set `WARP_COMMON_SKILLS_INSTALL_TARGET=project` before invoking setup scripts that install common skills. Cloud environments should install into the checked-out repository's `.agents/skills`, not into `~/.agents/skills`.
-
 You should almost always run cloud agents in an environment. Otherwise, they may not have the necessary code or tools available.
 
 Cloud agents run in a sandbox, so they _can_ install additional programs into their environment. They also have Git credentials to create PRs and push branches.
