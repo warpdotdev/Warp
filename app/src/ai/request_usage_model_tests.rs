@@ -584,7 +584,7 @@ fn test_byo_api_key_disabled_for_logged_out_user() {
         app.read(|ctx| {
             assert!(
                 !UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled(ctx),
-                "expected is_byo_api_key_enabled to be false for anonymous users even with SoloUserByok enabled",
+                "expected is_byo_api_key_enabled to be false for logged-out users even with SoloUserByok enabled",
             );
         });
 
@@ -594,7 +594,7 @@ fn test_byo_api_key_disabled_for_logged_out_user() {
 
             assert!(
                 !model.has_any_ai_remaining(ctx),
-                "expected has_any_ai_remaining to be false for anonymous user even with BYO key and SoloUserByok enabled",
+                "expected has_any_ai_remaining to be false for logged-out user even with BYO key and SoloUserByok enabled",
             );
         });
     });
