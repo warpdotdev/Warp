@@ -129,7 +129,10 @@ impl SnapshotUploadStatus {
 pub(crate) struct PendingHandoff {
     /// Forked conversation id minted by `POST /agent/conversations/{conversation_id}/fork`.
     /// Sent under `conversation_id` on the subsequent `POST /agent/runs` request.
-    pub(crate) forked_conversation_id: String,
+    /// `None` for 3P handoffs where no server-side conversation exists pre-handoff.
+    pub(crate) forked_conversation_id: Option<String>,
+    /// Source harness for the handoff. The handoff pane locks to this harness.
+    pub(crate) handoff_harness: Harness,
     /// `None` until `derive_touched_workspace` completes.
     pub(crate) touched_workspace: Option<TouchedWorkspace>,
     /// Outcome of the async snapshot upload.
@@ -403,19 +406,17 @@ impl AmbientAgentViewModel {
     }
 
     pub fn selected_harness(&self) -> Harness {
-        if self.is_local_to_cloud_handoff() {
-            Harness::Oz
-        } else {
-            self.harness
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        if let Some(handoff) = &self.pending_handoff {
+            return handoff.handoff_harness;
         }
+        self.harness
     }
 
     pub fn set_harness(&mut self, harness: Harness, ctx: &mut ModelContext<Self>) {
-        // for local to cloud handoff, oz is the only option
-        // (we'll need to update this to lock to the correct 3p harness if/when
-        // we implement local -> cloud handoff for non-oz conversations).
+        // For handoff, lock to the source harness.
         let harness = if self.is_local_to_cloud_handoff() {
-            Harness::Oz
+            return;
         } else {
             harness
         };
@@ -590,7 +591,7 @@ impl AmbientAgentViewModel {
         &self,
         prompt: String,
         attachments: Vec<AttachmentInput>,
-        forked_conversation_id: String,
+        forked_conversation_id: Option<String>,
         initial_snapshot_token: Option<InitialSnapshotToken>,
         ctx: &AppContext,
     ) -> SpawnAgentRequest {
@@ -608,7 +609,7 @@ impl AmbientAgentViewModel {
             parent_run_id: None,
             runtime_skills: vec![],
             referenced_attachments: vec![],
-            conversation_id: Some(forked_conversation_id),
+            conversation_id: forked_conversation_id,
             initial_snapshot_token,
             agent_identity_uid: None,
         }

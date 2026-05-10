@@ -341,6 +341,8 @@ use crate::workspace::cli_install;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{report_if_error, AgentNotificationsModel};
 use ::settings::{Setting, ToggleableSetting};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
 
 use crate::search::{self, QueryFilter};
@@ -13313,7 +13315,8 @@ impl Workspace {
 
         // Keep handoff state on the cloud model until snapshot prep and submit finish.
         let pending = PendingHandoff {
-            forked_conversation_id: forked_conversation_id.clone(),
+            forked_conversation_id: Some(forked_conversation_id.clone()),
+            handoff_harness: Harness::Oz,
             touched_workspace: None,
             snapshot_upload: SnapshotUploadStatus::Pending,
             submission_state: HandoffSubmissionState::Idle,
@@ -13344,6 +13347,7 @@ impl Workspace {
                 let upload_result = upload_snapshot_for_handoff(
                     repo_paths,
                     workspace.orphan_files.clone(),
+                    None,
                     ai_client,
                     http.as_ref(),
                 )
