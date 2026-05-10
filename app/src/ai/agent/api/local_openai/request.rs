@@ -84,7 +84,7 @@ pub(super) fn prepare_local_responses_request(
             input: state.items,
             tools,
             tool_choice: "auto",
-            parallel_tool_calls: true,
+            parallel_tool_calls: false,
             store: false,
             stream: true,
         }

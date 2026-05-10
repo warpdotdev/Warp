@@ -410,7 +410,7 @@ fn run_shell_command_schema_includes_execution_mode_fields() {
     assert!(run_shell_schema["parameters"]["properties"]["wait_params"].is_object());
 }
 
-/// Verifies that local Responses requests opt into parallel tool calls without storing provider-side state.
+/// Verifies that local Responses requests disable provider-side parallel tool calls while remaining stateless.
 #[test]
 fn prepare_local_responses_request_configures_parallel_tool_calls_and_store_policy() {
     let mut params = request_params_for_local_backend_tests();
@@ -422,7 +422,7 @@ fn prepare_local_responses_request_configures_parallel_tool_calls_and_store_poli
     let request_body = serde_json::to_value(&prepared_request.request_body)
         .expect("request body should serialize");
 
-    assert_eq!(request_body["parallel_tool_calls"], serde_json::json!(true));
+    assert_eq!(request_body["parallel_tool_calls"], serde_json::json!(false));
     assert_eq!(request_body["tool_choice"], serde_json::json!("auto"));
     assert_eq!(request_body["store"], serde_json::json!(false));
     assert_eq!(
