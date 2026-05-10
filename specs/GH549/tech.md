@@ -16,7 +16,7 @@ Relevant files:
 - `crates/editor/src/render/element/mermaid.rs` — `RenderableMermaidDiagram` shows the loading placeholder, SVG, or error state and paints the footer in rendered mode.
 - `app/src/notebooks/editor/model.rs (148-161, 337-343)` — `render_mermaid_diagrams_in_state` and the interaction-state handler that sets the global flag.
 - `app/src/notebooks/editor/notebook_command.rs (582-686)` — `render_block_footer` renders the language dropdown, copy button, and run button; Mermaid blocks get no special UI today.
-- `app/src/notebooks/editor/view.rs` — `EditorViewAction` enum, `RichTextEditorView::handle_action`, and `watch_visible_layout_affecting_asset_loads`, which rebuilds layout after visible Mermaid assets finish loading.
+- `app/src/notebooks/editor/view.rs` — `EditorViewAction` enum, `RichTextEditorView::handle_action`, and `watch_layout_affecting_asset_loads`, which eagerly watches layout-affecting Mermaid assets and rebuilds layout after they finish loading.
 - `app/src/view_components/markdown_toggle_view.rs` — `MarkdownToggleView` wraps `SegmentedControl<MarkdownDisplayMode>` and emits `MarkdownToggleEvent::ModeSelected`; already used by `FileNotebookView`.
 - `app/src/notebooks/file/mod.rs (78-81)` — `MarkdownDisplayMode` enum (`Rendered` / `Raw`).
 
@@ -89,7 +89,7 @@ In `crates/editor/src/render/element/mermaid.rs`, extend `RenderableMermaidDiagr
 - `AssetState::Loading` → existing "Rendering Mermaid diagram…" `before_load` placeholder.
 - `AssetState::Loaded` → existing `Image` element (SVG render).
 - `AssetState::FailedToLoad` → create a text element with "Error rendering Mermaid diagram. Please check syntax." using `code_text` styles and `placeholder_color`, wrapped in `Align::finish()`, stored in `self.image_element` to reuse the same paint path.
-Do not draw a text cursor in `RenderableMermaidDiagram::paint`. A rendered diagram represents the whole Mermaid source block visually; a flashing insertion caret over the diagram is misleading and makes it look like the rendered frame itself is text-editable.
+Draw the block cursor at the right edge of the rendered diagram when the selection head is on the Mermaid block, matching the existing horizontal rule and image affordance. Do not draw a text cursor over the diagram contents; the rendered frame itself is not text-editable.
 
 ### 6. Add `mermaid_display_mode` to `NotebookCommand`
 
@@ -220,7 +220,7 @@ let height = loaded_svg_height_for_full_width
     .unwrap_or((layout.rich_text_styles().base_line_height().as_f32() * 10.0).into_pixels());
 ```
 
-In `app/src/notebooks/editor/view.rs`, keep watching visible `BlockItem::MermaidDiagram` asset loads and rebuild layout when they complete in `Selectable`, `Editable`, or `EditableWithInvalidSelection`. Rendered Mermaid blocks can now appear while the notebook is in editing mode, so restricting this rebuild to `Selectable` leaves the frame stuck at fallback dimensions until another unrelated layout event.
+In `app/src/notebooks/editor/view.rs`, keep eagerly watching layout-affecting `BlockItem::MermaidDiagram` asset loads and rebuild layout when they complete in `Selectable`, `Editable`, or `EditableWithInvalidSelection`. Rendered Mermaid blocks can now appear while the notebook is in editing mode, so restricting this rebuild to `Selectable` leaves the frame stuck at fallback dimensions until another unrelated layout event.
 
 ### 12. Keep markdown storage and classification unchanged
 
@@ -258,7 +258,7 @@ Mitigation: `NotebooksEditorModel::set_mermaid_render_mode` recomputes the full 
 Mitigation: The `MermaidCodeFallback` path for Raw mode already watches pending assets. For Rendered-mode blocks with a failed asset, the block is in `MermaidDiagram` state. When the user edits the source, the buffer changes, `rebuild_layout` is called, and `from_styled_block` re-checks `AssetCache` for the new source hash. No special watcher is needed.
 
 **Risk: Loading rendered blocks keep fallback dimensions after the SVG finishes**
-Mitigation: Keep `BlockItem::MermaidDiagram` in `layout_affecting_asset_load` and rebuild layout when a visible asset load resolves in all notebook states where rendered Mermaid can be visible (`Selectable`, `Editable`, and `EditableWithInvalidSelection`).
+Mitigation: Keep `BlockItem::MermaidDiagram` in `layout_affecting_asset_load` and rebuild layout when a watched asset load resolves in all notebook states where rendered Mermaid can be visible (`Selectable`, `Editable`, and `EditableWithInvalidSelection`).
 
 **Risk: Cost of calling `mermaid_diagram_layout` for Loading/Failed blocks in Rendered mode**
 Mitigation: `mermaid_diagram_layout` calls `mermaid_diagram_size` which only checks `AssetCache` state — it does not trigger a new render. If the asset is not loaded, it falls back to the stable placeholder height. There is no extra work.
@@ -283,7 +283,7 @@ Manual verification per `specs/GH549/PRODUCT.md`:
 - Add a code block, set language to Mermaid → block shows as code block with Raw/Rendered toggle defaulting to Raw.
 - In Raw mode, place the cursor inside the Mermaid source and press Backspace/Delete → only the adjacent character is removed; the Mermaid block remains in place.
 - Select Rendered → full-width diagram frame appears (loading, then SVG, or error if source is invalid). **Toggle must remain visible inside the diagram frame.** The loaded SVG should use the full available block width and derive height from that full-width render.
-- While in Rendered mode, click inside the diagram frame → no flashing text cursor appears over the diagram.
+- While in Rendered mode, click inside the diagram frame → the cursor appears at the right edge of the rendered block, not over the diagram contents.
 - Click Raw from the diagram view → code block view restored with toggle visible.
 - Edit in Raw mode, then select Rendered again → new source is rendered.
 - Save and reopen notebook → toggle resets to Raw.

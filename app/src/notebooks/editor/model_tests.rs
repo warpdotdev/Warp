@@ -2771,7 +2771,7 @@ fn test_default_mermaid_display_mode_renders_initial_mermaid_blocks() {
 
         let model_handle = model_from_markdown(markdown, &mut app, true);
         model_handle.update(&mut app, |model, ctx| {
-            model.set_default_mermaid_display_mode(MarkdownDisplayMode::Rendered);
+            model.set_default_mermaid_display_mode(MarkdownDisplayMode::Rendered, ctx);
             model.set_interaction_state(InteractionState::Selectable, ctx);
         });
         layout_model(&mut app, &model_handle).await;

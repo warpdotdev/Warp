@@ -124,33 +124,28 @@ struct CodeHighlightResult {
     colors: Vec<(Range<ByteOffset>, AnsiColorIdentifier)>,
 }
 
-/// Returns a bundled image path for code block types that have full-color language logos.
-/// Uses the same `file_type/` SVGs rendered elsewhere in the app via `Image::new()`.
-fn code_block_image_icon_path(code_block_type: &CodeBlockType) -> Option<&'static str> {
-    match code_block_type {
-        CodeBlockType::Mermaid => Some("bundled/svg/file_type/mermaid.svg"),
-        CodeBlockType::Code { lang } => match lang.as_str() {
-            "Go" => Some("bundled/svg/file_type/go.svg"),
-            "C++" => Some("bundled/svg/file_type/cpp.svg"),
-            "JavaScript" => Some("bundled/svg/file_type/javascript.svg"),
-            "Python" => Some("bundled/svg/file_type/python.svg"),
-            "Rust" => Some("bundled/svg/file_type/rust.svg"),
-            "SQL" => Some("bundled/svg/file_type/sql.svg"),
-            "JSON" => Some("bundled/svg/file_type/json.svg"),
-            "PHP" => Some("bundled/svg/file_type/php.svg"),
-            "Kotlin" => Some("bundled/svg/file_type/kotlin.svg"),
-            _ => None,
-        },
-        CodeBlockType::Shell => None,
-    }
+enum CodeBlockDropdownIcon {
+    Image(Icon),
+    Tinted(Icon),
 }
 
-/// Returns a tintable icon for code block types that don't have branded image logos.
-fn code_block_tinted_icon(code_block_type: &CodeBlockType) -> Icon {
+fn code_block_dropdown_icon(code_block_type: &CodeBlockType) -> CodeBlockDropdownIcon {
     match code_block_type {
-        CodeBlockType::Shell => Icon::Terminal,
-        CodeBlockType::Code { lang } if lang == "PowerShell" => Icon::Powershell,
-        _ => Icon::Code1,
+        CodeBlockType::Mermaid => CodeBlockDropdownIcon::Image(Icon::MermaidLang),
+        CodeBlockType::Code { lang } => match lang.as_str() {
+            "Go" => CodeBlockDropdownIcon::Image(Icon::GoLang),
+            "C++" => CodeBlockDropdownIcon::Image(Icon::CppLang),
+            "JavaScript" => CodeBlockDropdownIcon::Image(Icon::JavaScriptLang),
+            "Python" => CodeBlockDropdownIcon::Image(Icon::PythonLang),
+            "Rust" => CodeBlockDropdownIcon::Image(Icon::RustLang),
+            "SQL" => CodeBlockDropdownIcon::Image(Icon::SqlLang),
+            "JSON" => CodeBlockDropdownIcon::Image(Icon::JsonLang),
+            "PHP" => CodeBlockDropdownIcon::Image(Icon::PhpLang),
+            "Kotlin" => CodeBlockDropdownIcon::Image(Icon::KotlinLang),
+            "PowerShell" => CodeBlockDropdownIcon::Tinted(Icon::Powershell),
+            _ => CodeBlockDropdownIcon::Tinted(Icon::Code1),
+        },
+        CodeBlockType::Shell => CodeBlockDropdownIcon::Tinted(Icon::Terminal),
     }
 }
 
@@ -212,11 +207,10 @@ impl NotebookCommand {
                                 start_anchor: start.clone(),
                             },
                         ));
-                    if let Some(path) = code_block_image_icon_path(&code_block_type) {
-                        item = item.with_image_icon(path);
-                    } else {
-                        item = item.with_icon(code_block_tinted_icon(&code_block_type));
-                    }
+                    item = match code_block_dropdown_icon(&code_block_type) {
+                        CodeBlockDropdownIcon::Image(icon) => item.with_image_icon(icon.into()),
+                        CodeBlockDropdownIcon::Tinted(icon) => item.with_icon(icon),
+                    };
                     item.into_item()
                 }),
                 ctx,

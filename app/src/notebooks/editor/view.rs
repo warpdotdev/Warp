@@ -1144,7 +1144,7 @@ impl RichTextEditorView {
 
         // Ensure that we re-render when the rendering model changes.
         ctx.observe(&model.as_ref(ctx).render_state().clone(), |me, _, ctx| {
-            me.watch_visible_layout_affecting_asset_loads(ctx);
+            me.watch_layout_affecting_asset_loads(ctx);
             ctx.notify();
         });
 
@@ -1386,7 +1386,7 @@ impl RichTextEditorView {
         }
     }
 
-    fn watch_visible_layout_affecting_asset_loads(&mut self, ctx: &mut ViewContext<Self>) {
+    fn watch_layout_affecting_asset_loads(&mut self, ctx: &mut ViewContext<Self>) {
         let loads = self.layout_affecting_asset_loads(ctx);
         if loads.loaded_needs_relayout {
             self.model.update(ctx, |model, ctx| {

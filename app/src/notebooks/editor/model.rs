@@ -285,8 +285,31 @@ impl NotebooksEditorModel {
         self.file_link_resolution_context = file_link_resolution_context;
     }
 
-    pub fn set_default_mermaid_display_mode(&mut self, mode: MarkdownDisplayMode) {
+    pub fn set_default_mermaid_display_mode(
+        &mut self,
+        mode: MarkdownDisplayMode,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.default_mermaid_display_mode == mode {
+            return;
+        }
         self.default_mermaid_display_mode = mode;
+
+        for command in self
+            .child_models
+            .model_handles::<NotebookCommand>()
+            .collect_vec()
+        {
+            command.update(ctx, |command, _| {
+                command.mermaid_display_mode = mode;
+            });
+        }
+
+        if self.sync_mermaid_render_offsets(ctx) {
+            self.rebuild_layout(ctx);
+        } else {
+            ctx.notify();
+        }
     }
 
     /// Create a new model for searching the editor.

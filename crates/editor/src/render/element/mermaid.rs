@@ -11,7 +11,8 @@ use crate::{
     extract_block,
     render::{
         BLOCK_FOOTER_HEIGHT,
-        model::{BlockItem, RenderState, viewport::ViewportItem},
+        element::paint::{CursorData, CursorDisplayType},
+        model::{BlockItem, RenderState, bounds, viewport::ViewportItem},
     },
 };
 
@@ -141,6 +142,24 @@ impl RenderableBlock for RenderableMermaidDiagram {
                 .scene
                 .draw_rect_with_hit_recording(content_rect)
                 .with_background(model.styles().selection_fill);
+        }
+        if model.is_selection_head(start_offset) {
+            let content_position = bounds::content_origin(
+                self.viewport_item.content_offset,
+                &self.viewport_item.spacing,
+            );
+            let end_of_line_position =
+                content_position + vec2f(self.viewport_item.content_size.x(), 0.);
+            ctx.draw_and_save_cursor(
+                CursorDisplayType::Bar,
+                end_of_line_position,
+                vec2f(
+                    model.styles().cursor_width,
+                    self.viewport_item.content_size.y(),
+                ),
+                CursorData::default(),
+                model.styles(),
+            );
         }
         ctx.paint.scene.start_layer(warpui::ClipBounds::ActiveLayer);
         let button_origin = content_rect.lower_right()
