@@ -335,7 +335,7 @@ dependencies = [
  "sentry",
  "serde",
  "serde_json",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "sha2 0.10.9",
  "shellexpand",
  "streaming-iterator",
@@ -3729,7 +3729,7 @@ dependencies = [
 [[package]]
 name = "dagre_rust"
 version = "0.0.5"
-source = "git+https://github.com/warpdotdev/mermaid-to-svg.git?rev=4761588218f747c07d72fd324efcd2032d873aaf#4761588218f747c07d72fd324efcd2032d873aaf"
+source = "git+https://github.com/warpdotdev/mermaid-to-svg.git?rev=81551775746cd86bdeec29cb96ba278fd08c9074#81551775746cd86bdeec29cb96ba278fd08c9074"
 dependencies = [
  "graphlib_rust",
  "ordered_hashmap",
@@ -7201,7 +7201,7 @@ dependencies = [
  "lazy_static",
  "rust-embed 8.7.2",
  "serde",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "warp_editor",
 ]
 
@@ -7679,7 +7679,7 @@ dependencies = [
  "itertools 0.14.0",
  "markup5ever_rcdom",
  "nom 7.1.3",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "thiserror 2.0.17",
 ]
 
@@ -7823,13 +7823,13 @@ dependencies = [
 [[package]]
 name = "mermaid_to_svg"
 version = "0.1.0"
-source = "git+https://github.com/warpdotdev/mermaid-to-svg.git?rev=4761588218f747c07d72fd324efcd2032d873aaf#4761588218f747c07d72fd324efcd2032d873aaf"
+source = "git+https://github.com/warpdotdev/mermaid-to-svg.git?rev=81551775746cd86bdeec29cb96ba278fd08c9074#81551775746cd86bdeec29cb96ba278fd08c9074"
 dependencies = [
  "dagre_rust",
  "graphlib_rust",
  "petgraph",
  "regex",
- "serde_yaml",
+ "serde_yaml 0.9.34+deprecated",
  "thiserror 1.0.63",
  "unicode-segmentation",
 ]
@@ -11799,6 +11799,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.12.0",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "serial_test"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13854,6 +13867,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
 name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14383,7 +14402,7 @@ dependencies = [
  "serde_regex",
  "serde_urlencoded",
  "serde_with",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "serial_test",
  "session-sharing-protocol",
  "settings",
@@ -14510,7 +14529,7 @@ dependencies = [
  "anyhow",
  "convert_case 0.4.0",
  "memmap",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "uneval",
  "walkdir",
  "warp-workflows-types",
@@ -14622,7 +14641,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "settings",
  "settings_value",
  "shellexpand",
@@ -14678,7 +14697,7 @@ dependencies = [
  "regex-syntax",
  "rust-embed 8.7.2",
  "serde",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "string-offset",
  "sum_tree",
  "thiserror 2.0.17",
