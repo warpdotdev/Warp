@@ -10487,6 +10487,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rc_input"
+version = "0.1.0"
+dependencies = [
+ "async-compat",
+ "futures",
+ "interprocess",
+ "log",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+]
+
+[[package]]
 name = "read-fonts"
 version = "0.22.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

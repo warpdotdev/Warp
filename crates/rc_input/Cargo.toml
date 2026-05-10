@@ -1,0 +1,24 @@
+[package]
+name = "rc_input"
+authors = ["Warp Team <dev@warp.dev>"]
+version = "0.1.0"
+edition = "2021"
+description = "Programmatic input channel for Warp Remote Control via local socket / named pipe"
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+async-compat.workspace = true
+futures.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync", "io-util", "rt", "macros"] }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+interprocess = { version = "1.2.1", features = ["tokio_support"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util", "rt-multi-thread", "macros", "sync", "io-util", "time"] }
