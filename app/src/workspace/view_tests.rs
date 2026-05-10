@@ -3091,6 +3091,24 @@ fn next_zoom_step_up_above_max_stays_at_max() {
 }
 
 #[test]
+fn next_zoom_step_up_below_min_starts_at_min() {
+    // current_percent below all VALUES: the first upward step is the min entry.
+    assert_eq!(
+        next_zoom_step(10, true),
+        *ZoomLevel::VALUES.first().unwrap()
+    );
+}
+
+#[test]
+fn next_zoom_step_down_above_max_starts_at_max() {
+    // current_percent above all VALUES: the first downward step is the max entry.
+    assert_eq!(
+        next_zoom_step(500, false),
+        *ZoomLevel::VALUES.last().unwrap()
+    );
+}
+
+#[test]
 fn next_zoom_step_down_below_min_stays_at_min() {
     // current_percent below all VALUES: no entry < current → stays at min.
     assert_eq!(

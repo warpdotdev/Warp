@@ -1087,17 +1087,18 @@ fn next_zoom_step(current_percent: u16, increase: bool) -> u16 {
     let values = ZoomLevel::VALUES;
 
     if increase {
-        let current_or_previous_index = values
-            .iter()
-            .rposition(|&value| value <= current_percent)
-            .unwrap_or(0);
+        let Some(current_or_previous_index) =
+            values.iter().rposition(|&value| value <= current_percent)
+        else {
+            return values[0];
+        };
         let next_index = (current_or_previous_index + 1).min(values.len() - 1);
         values[next_index]
     } else {
-        let current_or_next_index = values
-            .iter()
-            .position(|&value| value >= current_percent)
-            .unwrap_or(values.len() - 1);
+        let Some(current_or_next_index) = values.iter().position(|&value| value >= current_percent)
+        else {
+            return values[values.len() - 1];
+        };
         let next_index = current_or_next_index.saturating_sub(1);
         values[next_index]
     }
