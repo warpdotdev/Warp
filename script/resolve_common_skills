@@ -23,6 +23,8 @@ Resolution order:
 Environment:
   WARP_COMMON_SKILLS_SCRIPTS_DIR=/path/to/common-skills/scripts
       Override where common-skills management scripts are loaded from.
+  WARP_COMMON_SKILLS_FORCE_REMOTE=1
+      Skip local script lookup and execute the raw remote script.
   WARP_COMMON_SKILLS_REF=<git-ref>
       Override the remote common-skills ref used for raw script fallback.
   WARP_COMMON_SKILLS_RAW_BASE_URL=https://...
@@ -114,12 +116,14 @@ if [[ "${1:-}" = "--" ]]; then
   shift
 fi
 
-if [[ -n "${WARP_COMMON_SKILLS_SCRIPTS_DIR:-}" ]] && execute_from_dir "${WARP_COMMON_SKILLS_SCRIPTS_DIR}" "$@"; then
-  exit 0
-fi
+if [[ "${WARP_COMMON_SKILLS_FORCE_REMOTE:-}" != "1" ]]; then
+  if [[ -n "${WARP_COMMON_SKILLS_SCRIPTS_DIR:-}" ]] && execute_from_dir "${WARP_COMMON_SKILLS_SCRIPTS_DIR}" "$@"; then
+    exit 0
+  fi
 
-if execute_from_sibling_checkout "$@"; then
-  exit 0
+  if execute_from_sibling_checkout "$@"; then
+    exit 0
+  fi
 fi
 
 execute_from_remote "$@"
