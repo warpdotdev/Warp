@@ -319,10 +319,21 @@ impl UpdateModalBody {
 
         // The icon and label sit on the accent-button background, so colors
         // must be picked for contrast against that background rather than the
-        // surrounding surface — see issue #10517.
-        let accent_label_color = appearance
-            .theme()
-            .main_text_color(appearance.theme().accent_button_color());
+        // surrounding surface — see issue #10517. The Update button is also
+        // disabled when no rows are selected; in that state the button surface
+        // becomes `surface_3` (see `default_button_styles` /
+        // `disabled_button_styles` in `warp_core::ui::builder`), so the custom
+        // label colors have to follow the disabled palette as well.
+        let has_selection = self.selected_updates.iter().any(|&x| x);
+        let accent_label_color = if has_selection {
+            appearance
+                .theme()
+                .main_text_color(appearance.theme().accent_button_color())
+        } else {
+            appearance
+                .theme()
+                .disabled_text_color(appearance.theme().surface_3())
+        };
 
         let corner_down_left_icon = Container::new(
             ConstrainedBox::new(
@@ -370,9 +381,8 @@ impl UpdateModalBody {
                 ..Default::default()
             });
 
-        // Disable the update button if no updates are selected
-        let has_selection = self.selected_updates.iter().any(|&x| x);
-
+        // Disable the update button if no updates are selected (matches the
+        // `accent_label_color` branch chosen above).
         if !has_selection {
             update_button_builder = update_button_builder.disabled();
         }
