@@ -8,7 +8,7 @@ Common skills are consumed by agents across Warp development workflows. If they 
 2. Developers should explicitly choose project-local or global installation through a flag, environment variable, or interactive prompt.
 3. Developers should be able to test the same behavior with a local common-skills checkout, a common-skills worktree, or the remote `warpdotdev/common-skills` repo.
 4. Installing common skills must not duplicate the same common skills in both project and global locations.
-5. Normal setup should follow the Warp checkout's lock file; adopting newer upstream common skills is an explicit update to that lock, not an unreviewed floating dependency update during every run.
+5. Normal setup should follow the Warp checkout's lock file; adopting newer upstream common skills is an explicit developer-approved update to that lock, not an unreviewed floating dependency update during every run.
 ## Behavior
 1. `./script/bootstrap` includes common-skills setup as part of the normal local platform bootstrap flow. A developer who runs bootstrap without opting out should end the setup with common skills installed in exactly one supported target and matching the Warp checkout's common-skills lock.
 
@@ -54,43 +54,51 @@ Common skills are consumed by agents across Warp development workflows. If they 
 
 22. If the Warp checkout already has a common-skills lock, install flows treat that lock as the manifest for the selected target: the lock determines which common skills should exist and what their file contents should be. Restoring from the lock means the selected project-local target is brought back to that manifest, or the selected global target is installed or verified when it is empty or already matches the same lock. If the global target is already pinned to a different common-skills lock, the flow fails with a version-mismatch error instead of overwriting it. Normal bootstrap and run flows do not silently float to newer common-skills contents that were pushed upstream after the lock was written.
 
-23. When new common-skill versions are pushed to `warpdotdev/common-skills`, a developer can adopt them by updating the Warp checkout's common-skills lock. After the lock changes, the next successful `script/run`, `script/bootstrap`, or direct installer invocation updates project-local common skills or an unpinned/matching global install to match the new lock.
+23. In an interactive normal install flow where the Warp checkout already has a common-skills lock, the installer checks whether `warpdotdev/common-skills` would produce a different lock before asking the developer to choose project-local vs. global installation. If the upstream common-skills version differs, the installer tells the developer that common skills have been updated and asks whether to update the checkout's `skills-lock.json` and reinstall common skills from the updated lock.
 
-24. If the common-skills lock changes on a branch, `script/run` detects that the locally installed common skills no longer match the checkout's expected versions before launching Warp. For a project-local install, or for a global install that is not pinned to a conflicting version, run restores the selected target automatically. For a global install pinned to a different version, run fails with the same actionable version-mismatch error used by setup.
+24. If the developer accepts the interactive upstream update prompt, the installer updates the checkout's `skills-lock.json`, then continues to the explicit project/global target choice when no target was already provided. After the target is selected, it reinstalls common skills from the updated lock. The resulting lock diff is a tracked source change that the developer can review and commit intentionally.
 
-25. If the common-skills lock has not changed and installed common skills already match it, `script/run` and `script/bootstrap` skip reinstalling. Skipping should be fast, quiet in normal run flows, and must not modify tracked files.
+25. If the developer declines the interactive upstream update prompt, the installer leaves `skills-lock.json` unchanged and continues normal setup from the existing lock. It may still prompt for the project/global target and restore missing or stale local skill contents to match the existing lock.
 
-26. The installer supports a direct remove flow for developers who intentionally want to clear common skills from one target. Removing project-local common skills removes only the locked common skills from the project target. Removing global common skills removes only the locked common skills from the global target.
+26. Non-interactive flows never prompt to update `skills-lock.json` from upstream. `script/run`, CI, cloud setup, and direct installer invocations with `--non-interactive` use the current checkout lock as the source of truth and fail rather than hanging if required choices were not provided.
 
-27. `remove_common_skills --clear-lock` is destructive by design: in addition to removing locked common skills from the selected target, it removes the checkout's common-skills lock. After this, `--verify-only` should fail until the lock is restored or a normal install flow recreates it.
+27. When new common-skill versions are pushed to `warpdotdev/common-skills`, a developer can also adopt them by manually updating the Warp checkout's common-skills lock. After the lock changes, the next successful `script/run`, `script/bootstrap`, or direct installer invocation updates project-local common skills or an unpinned/matching global install to match the new lock.
 
-28. If common skills are removed from the selected target but the lock remains, the next normal install flow restores the missing common skills from the lock. If both skills and lock are removed, the next normal install flow treats the checkout as missing a lock and creates a new one from `warpdotdev/common-skills`.
+28. If the common-skills lock changes on a branch, `script/run` detects that the locally installed common skills no longer match the checkout's expected versions before launching Warp. For a project-local install, or for a global install that is not pinned to a conflicting version, run restores the selected target automatically. For a global install pinned to a different version, run fails with the same actionable version-mismatch error used by setup.
 
-29. The default script source for common-skills installation is the remote `warpdotdev/common-skills` repository. Bootstrap and run must not silently discover or execute scripts from local sibling checkouts or worktrees.
+29. If the common-skills lock has not changed and installed common skills already match it, `script/run` and `script/bootstrap` skip reinstalling. Skipping should be fast, quiet in normal run flows, and must not modify tracked files.
 
-30. `WARP_COMMON_SKILLS_SCRIPTS_DIR` lets a developer explicitly test scripts from a local common-skills checkout or worktree. Local script execution is allowed only through this explicit override; it should never happen merely because a checkout or worktree exists nearby.
+30. The installer supports a direct remove flow for developers who intentionally want to clear common skills from one target. Removing project-local common skills removes only the locked common skills from the project target. Removing global common skills removes only the locked common skills from the global target.
 
-31. When no explicit local scripts directory is set, bootstrap and run fetch and execute the remote common-skills script. A developer on a machine that has only the Warp checkout should be able to bootstrap or run without first cloning `warpdotdev/common-skills`, and a developer who does have a local common-skills checkout should still get the remote default unless they opt into local script execution.
+31. `remove_common_skills --clear-lock` is destructive by design: in addition to removing locked common skills from the selected target, it removes the checkout's common-skills lock. After this, `--verify-only` should fail until the lock is restored or a normal install flow recreates it.
 
-32. `WARP_COMMON_SKILLS_REF=<git-ref>` selects which remote common-skills branch, tag, or commit is used for the remote script path. This lets developers test an unpublished or not-yet-main common-skills script branch against a local Warp checkout without relying on a local common-skills checkout.
+32. If common skills are removed from the selected target but the lock remains, the next normal install flow restores the missing common skills from the lock. If both skills and lock are removed, the next normal install flow treats the checkout as missing a lock and creates a new one from `warpdotdev/common-skills`.
 
-33. Local and remote script sources should produce the same install behavior for a given script version. Differences in behavior should be attributable to the selected script version, not to whether the script came from a local path or a remote URL.
+33. The default script source for common-skills installation is the remote `warpdotdev/common-skills` repository. Bootstrap and run must not silently discover or execute scripts from local sibling checkouts or worktrees.
 
-34. If remote script fetching fails because the network is unavailable, the branch does not exist, the script is missing, or the remote host returns an error, the command reports the remote fetch failure. Bootstrap and run both treat that as common-skills setup failure when common-skills installation is enabled.
+34. `WARP_COMMON_SKILLS_SCRIPTS_DIR` lets a developer explicitly test scripts from a local common-skills checkout or worktree. Local script execution is allowed only through this explicit override; it should never happen merely because a checkout or worktree exists nearby.
 
-35. Global common-skills installs are shared per user and may be used by multiple client repositories. If multiple client repos depend on the same locked common-skills version and all select global installation, each repo's setup flow should verify the existing global install and succeed without duplicating or unnecessarily reinstalling the same skills.
+35. When no explicit local scripts directory is set, bootstrap and run fetch and execute the remote common-skills script. A developer on a machine that has only the Warp checkout should be able to bootstrap or run without first cloning `warpdotdev/common-skills`, and a developer who does have a local common-skills checkout should still get the remote default unless they opt into local script execution.
 
-36. If a client repo selects global installation but the existing global common skills match a different common-skills lock than that repo expects, setup should fail with an actionable version-mismatch error rather than silently replacing the global install. The error should explain that another checkout may be pinned to a different common-skills version and that the developer must explicitly reconcile, update, or remove/reinstall the global common skills.
+36. `WARP_COMMON_SKILLS_REF=<git-ref>` selects which remote common-skills branch, tag, or commit is used for the remote script path. This lets developers test an unpublished or not-yet-main common-skills script branch against a local Warp checkout without relying on a local common-skills checkout.
 
-37. User-facing output should make state transitions understandable without being noisy. Installs, updates, target prompts, duplicate errors, and verification errors should be visible. No-op checks during normal `script/run` should be quiet when everything is already correct.
+37. Local and remote script sources should produce the same install behavior for a given script version. Differences in behavior should be attributable to the selected script version, not to whether the script came from a local path or a remote URL.
 
-38. Common-skills setup should be safe to rerun. Repeating bootstrap, run, forced install, verify-only, or remove commands should either converge to the requested state or report a clear error; repeated commands should not accumulate duplicate skill copies.
+38. If remote script fetching fails because the network is unavailable, the branch does not exist, the script is missing, or the remote host returns an error, the command reports the remote fetch failure. Bootstrap and run both treat that as common-skills setup failure when common-skills installation is enabled.
 
-39. A developer can recover from most bad local states with a small set of understandable actions:
+39. Global common-skills installs are shared per user and may be used by multiple client repositories. If multiple client repos depend on the same locked common-skills version and all select global installation, each repo's setup flow should verify the existing global install and succeed without duplicating or unnecessarily reinstalling the same skills.
+
+40. If a client repo selects global installation but the existing global common skills match a different common-skills lock than that repo expects, setup should fail with an actionable version-mismatch error rather than silently replacing the global install. The error should explain that another checkout may be pinned to a different common-skills version and that the developer must explicitly reconcile, update, or remove/reinstall the global common skills. When the current interactive flow has just asked the developer to adopt an upstream common-skills update and the developer accepted, reinstalling the selected global target from the newly updated lock is an explicit reconciliation and may proceed.
+
+41. User-facing output should make state transitions understandable without being noisy. Installs, updates, target prompts, duplicate errors, and verification errors should be visible. No-op checks during normal `script/run` should be quiet when everything is already correct.
+
+42. Common-skills setup should be safe to rerun. Repeating bootstrap, run, forced install, verify-only, or remove commands should either converge to the requested state or report a clear error; repeated commands should not accumulate duplicate skill copies.
+
+43. A developer can recover from most bad local states with a small set of understandable actions:
    - Run normal install to restore missing skills from an existing lock.
    - Force install to repair damaged skill contents.
    - Remove one target when duplicate project/global common skills are reported.
    - Reconcile, update, or remove/reinstall global common skills when multiple checkouts are pinned to different common-skills versions.
    - Restore or recreate the lock when `--clear-lock` or manual file deletion removed it.
 
-40. The checked-in common-skills lock is the source of truth for code review. When common skills are intentionally updated, reviewers should be able to see the lock change in the branch rather than having local bootstrap/run flows silently adopt unreviewed upstream content.
+44. The checked-in common-skills lock is the source of truth for code review. When common skills are intentionally updated, reviewers should be able to see the lock change in the branch rather than having local bootstrap/run flows silently adopt unreviewed upstream content.
