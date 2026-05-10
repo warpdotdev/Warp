@@ -332,7 +332,7 @@ impl ShellType {
         }
     }
 
-    /// Returns RC file paths for shell snippets using separators that match the target OS.
+    /// Returns RC file paths for shell snippets using stable forward-slash separators.
     pub fn rc_file_paths(&self, os: TargetOS) -> Vec<String> {
         let home_dir = match os {
             TargetOS::Windows => "$HOME",

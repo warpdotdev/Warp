@@ -165,7 +165,7 @@ fn test_from_markdown_language_spec() {
 }
 
 #[test]
-fn test_rc_file_paths_use_target_os_separators_for_display() {
+fn test_rc_file_paths_use_forward_slashes_for_shell_snippets() {
     assert_eq!(
         ShellType::Bash.rc_file_paths(TargetOS::Linux),
         vec!["~/.bashrc".to_string()]
