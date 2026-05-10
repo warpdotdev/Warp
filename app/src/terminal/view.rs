@@ -7351,7 +7351,7 @@ impl TerminalView {
         &mut self,
         conversation_id: AIConversationId,
         ctx: &mut ViewContext<Self>,
-    ) -> bool {
+    ) {
         let had_active_stream = self
             .ai_controller
             .as_ref(ctx)
@@ -7405,7 +7405,6 @@ impl TerminalView {
                 );
             });
         }
-        true
     }
 
     fn user_write_ctrl_c_to_pty(&mut self, ctx: &mut ViewContext<Self>) {

@@ -478,6 +478,12 @@ fn test_emit_child_killed_drops_when_no_parent() {
                 terminal_view_id,
                 ctx,
             );
+            history_model.update_conversation_status(
+                terminal_view_id,
+                id,
+                ConversationStatus::InProgress,
+                ctx,
+            );
             id
         });
 

@@ -165,22 +165,6 @@ pub enum OrchestrationPillBarAction {
     /// child agent's transcript instead of splitting/opening a new one.
     FocusOpenedConversation(AIConversationId),
 }
-fn overflow_menu_item(
-    label: &'static str,
-    icon: Icon,
-    action: OrchestrationPillBarAction,
-    hover_background: Fill,
-    icon_color: Option<Fill>,
-) -> MenuItem<OrchestrationPillBarAction> {
-    let mut fields = MenuItemFields::new(label)
-        .with_icon(icon)
-        .with_override_hover_background_color(hover_background)
-        .with_on_select_action(action);
-    if let Some(color) = icon_color {
-        fields = fields.with_override_icon_color(color);
-    }
-    MenuItem::Item(fields)
-}
 
 /// Renders the pill bar above the agent view: one pill for the orchestrator
 /// and one per child agent. Clicking a non-active pill switches to its pane.
@@ -204,6 +188,23 @@ impl Entity for OrchestrationPillBar {
 }
 
 impl OrchestrationPillBar {
+    fn overflow_menu_item(
+        label: &'static str,
+        icon: Icon,
+        action: OrchestrationPillBarAction,
+        hover_background: Fill,
+        icon_color: Option<Fill>,
+    ) -> MenuItem<OrchestrationPillBarAction> {
+        let mut fields = MenuItemFields::new(label)
+            .with_icon(icon)
+            .with_override_hover_background_color(hover_background)
+            .with_on_select_action(action);
+        if let Some(color) = icon_color {
+            fields = fields.with_override_icon_color(color);
+        }
+        MenuItem::Item(fields)
+    }
+
     pub fn new(
         agent_view_controller: ModelHandle<AgentViewController>,
         ctx: &mut ViewContext<Self>,
@@ -281,11 +282,12 @@ impl OrchestrationPillBar {
         let appearance = Appearance::as_ref(ctx);
         let theme = appearance.theme();
         let hover_background: Fill = internal_colors::neutral_4(theme).into();
-        let item =
-            |label, icon, action| overflow_menu_item(label, icon, action, hover_background, None);
+        let item = |label, icon, action| {
+            Self::overflow_menu_item(label, icon, action, hover_background, None)
+        };
         let destructive_color: Fill = theme.ansi_fg_red().into();
         let destructive_item = |label, icon, action| {
-            overflow_menu_item(
+            Self::overflow_menu_item(
                 label,
                 icon,
                 action,

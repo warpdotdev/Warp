@@ -677,8 +677,9 @@ fn stop_local_agent_conversation(
     };
 
     terminal_view.update(ctx, |terminal_view, ctx| {
-        terminal_view.stop_local_agent_conversation(conversation_id, ctx)
-    })
+        terminal_view.stop_local_agent_conversation(conversation_id, ctx);
+    });
+    true
 }
 
 fn cancel_cloud_agent_task(
@@ -721,6 +722,9 @@ fn stop_agent_conversation(
         conversation_id,
         ctx,
     ) {
+        // The terminal view normally handles both stream cancellation and
+        // fallback status updates. If the owning view is gone, still mark the
+        // conversation cancelled in history so Stop has a visible effect.
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
             history_model.update_conversation_status(
                 state.owner_terminal_view_id,
@@ -742,16 +746,14 @@ fn pane_group_hosting_split_off_child(
         .find_map(|(_, workspace)| {
             workspace.as_ref(ctx).tab_views().find_map(|pane_group| {
                 let group = pane_group.as_ref(ctx);
-                let hosts_split_off_child = group
+                group
                     .child_agent_origin()
                     .is_some_and(|origin| origin.conversation_id == conversation_id)
-                    || group
-                        .find_visible_terminal_pane_for_conversation(conversation_id, ctx)
-                        .is_some();
-                hosts_split_off_child.then(|| pane_group.clone())
+                    .then(|| pane_group.clone())
             })
         })
 }
+
 fn discard_child_agent_pane_for_conversation(
     group: &mut PaneGroup,
     owner_terminal_view_id: Option<EntityId>,
@@ -796,23 +798,24 @@ fn kill_agent_conversation(
 ) {
     let state = agent_conversation_action_state(conversation_id, ctx);
     if FeatureFlag::OrchestrationV2.is_enabled() {
-        if state.is_some_and(|state| state.is_in_progress) {
-            OrchestrationEventService::handle(ctx).update(ctx, |service, ctx| {
-                match service.emit_child_killed(conversation_id, ctx) {
-                    SendEventResult::LifecycleSent => {}
-                    SendEventResult::LifecycleDropped => {
-                        log::info!(
-                            "KillAgentConversation: no parent lifecycle target for {conversation_id:?}"
-                        );
-                    }
-                    SendEventResult::Error(error) => {
-                        log::warn!(
-                            "KillAgentConversation: failed to emit killed lifecycle event for {conversation_id:?}: {error}"
-                        );
-                    }
+        OrchestrationEventService::handle(ctx).update(ctx, |service, ctx| {
+            match service.emit_child_killed(conversation_id, ctx) {
+                SendEventResult::LifecycleSent => {}
+                SendEventResult::LifecycleDropped => {
+                    log::info!(
+                        "KillAgentConversation: killed lifecycle event not emitted for {conversation_id:?}"
+                    );
                 }
-            });
-        }
+                SendEventResult::Error(error) => {
+                    log::warn!(
+                        "KillAgentConversation: failed to emit killed lifecycle event for {conversation_id:?}: {error}"
+                    );
+                }
+            }
+        });
+        // Tombstone every local Kill, even if the child already appears
+        // terminal locally: the parent SSE channel can still have buffered or
+        // late server events that should be dropped after local deletion.
         OrchestrationEventStreamer::handle(ctx).update(ctx, |streamer, ctx| {
             streamer.mark_conversation_killed(conversation_id, ctx);
         });

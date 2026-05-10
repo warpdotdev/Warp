@@ -39,6 +39,8 @@ const RESTORE_FETCH_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
 const RESTORE_FETCH_PERMANENT_BACKOFF_STEPS: &[u64] = &[30];
 /// How often (milliseconds) the drain timer checks for SSE events.
 const SSE_DRAIN_INTERVAL_MS: u64 = 500;
+/// Cap killed-run tombstones to a per-session amount comfortably above normal
+/// usage while keeping the late-event drop set bounded.
 const MAX_KILLED_RUN_IDS: usize = 1024;
 
 /// Per-event item delivered from the SSE background task to the entity.
@@ -192,6 +194,8 @@ pub struct OrchestrationEventStreamer {
     /// Run IDs explicitly killed by the local user. We keep these after the
     /// conversation is removed so parent SSE streams can observe and discard
     /// late server events instead of re-delivering or resurrecting the child.
+    /// Keep this set and `killed_run_id_order` in sync through
+    /// `remember_killed_run_id`.
     killed_run_ids: HashSet<String>,
     killed_run_id_order: VecDeque<String>,
 }
