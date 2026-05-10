@@ -41,49 +41,6 @@ MAC_ARGS=()
 CARGO_PARAMS=()
 WARP_ARGS=()
 
-normalize_common_skills_target() {
-  local target
-  target="$(printf "%s" "$1" | tr '[:upper:]' '[:lower:]')"
-
-  case "${target}" in
-    ""|p|project|1)
-      echo "project"
-      ;;
-    g|global|2)
-      echo "global"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-select_common_skills_target() {
-  local reply=""
-  local target=""
-
-  if [[ -n "${COMMON_SKILLS_TARGET}" ]]; then
-    normalize_common_skills_target "${COMMON_SKILLS_TARGET}"
-    return
-  fi
-
-  if [[ -t 0 && -t 1 ]]; then
-    echo "Where should common agent skills be installed?" >&2
-    echo "  1) Project checkout .agents/skills (default)" >&2
-    echo "  2) Global user skills ~/.agents/skills" >&2
-    printf "Install common skills to [project/global] (default: project): " >&2
-    read -r reply
-    if target="$(normalize_common_skills_target "${reply}")"; then
-      echo "${target}"
-    else
-      echo "Unrecognized install target '${reply}', defaulting to project." >&2
-      echo "project"
-    fi
-  else
-    echo "project"
-  fi
-}
-
 while (( "$#" )); do
   case "$1" in
     --)
@@ -138,20 +95,14 @@ while (( "$#" )); do
 done
 
 if [[ "$INSTALL_COMMON_SKILLS" -eq 1 ]]; then
-  if [[ "${WARP_SKIP_COMMON_SKILLS_INSTALL:-}" != "1" ]]; then
-    SELECTED_COMMON_SKILLS_TARGET=""
-    if ! SELECTED_COMMON_SKILLS_TARGET="$(select_common_skills_target)"; then
-      echo "Invalid common skills install target: ${COMMON_SKILLS_TARGET}" >&2
-      exit 1
-    fi
-    COMMON_SKILLS_TARGET="${SELECTED_COMMON_SKILLS_TARGET}"
-  else
-    COMMON_SKILLS_TARGET="${COMMON_SKILLS_TARGET:-project}"
+  COMMON_SKILLS_ARGS=()
+  if [[ "${COMMON_SKILLS_TARGET}" = "project" || "${COMMON_SKILLS_TARGET}" = "global" ]]; then
+    COMMON_SKILLS_ARGS=("--${COMMON_SKILLS_TARGET}")
   fi
   if [[ "$FORCE_COMMON_SKILLS" -eq 1 ]]; then
-    ./script/install_common_skills "--${COMMON_SKILLS_TARGET}" --force --non-interactive || echo "Skipping common-skills update."
+    ./script/install_common_skills "${COMMON_SKILLS_ARGS[@]}" --force --non-interactive || echo "Skipping common-skills update."
   else
-    ./script/install_common_skills "--${COMMON_SKILLS_TARGET}" --if-needed --non-interactive --quiet || echo "Skipping common-skills update."
+    ./script/install_common_skills "${COMMON_SKILLS_ARGS[@]}" --if-needed --non-interactive --quiet || echo "Skipping common-skills update."
   fi
 fi
 

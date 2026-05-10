@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+LOCK_FILE="${REPO_ROOT}/skills-lock.json"
+STAMP_RELATIVE_PATH="warp/common-skills-lock.hash"
+CLEAR_LOCK=0
+
+TARGET="${WARP_COMMON_SKILLS_INSTALL_TARGET:-project}"
+
+usage() {
+  cat <<EOF
+Usage: ./script/remove_common_skills [options]
+
+Remove common agent skills listed in the standard project skills-lock.json.
+
+Options:
+  --project            Remove from this checkout's .agents/skills directory (default).
+  --global             Remove from ~/.agents/skills for the current user.
+  --clear-lock         Also remove skills-lock.json after removing locked skills.
+  -h, --help           Show this help message.
+
+Environment:
+  WARP_COMMON_SKILLS_INSTALL_TARGET=project|global
+      Choose the removal target when no explicit --project/--global flag is provided.
+EOF
+}
+
+project_stamp_file() {
+  local git_path=""
+
+  if git_path="$(git -C "${REPO_ROOT}" rev-parse --git-path "${STAMP_RELATIVE_PATH}" 2>/dev/null)"; then
+    case "${git_path}" in
+      /*)
+        echo "${git_path}"
+        ;;
+      *)
+        echo "${REPO_ROOT}/${git_path}"
+        ;;
+    esac
+    return
+  fi
+
+  echo "${REPO_ROOT}/.agents/skills/.common-skills-lock.hash"
+}
+
+global_stamp_file() {
+  echo "${HOME}/.agents/warp/common-skills-lock.hash"
+}
+
+stamp_file() {
+  if [[ "${TARGET}" = "global" ]]; then
+    global_stamp_file
+  else
+    project_stamp_file
+  fi
+}
+
+locked_skill_names() {
+  node -e '
+const fs = require("fs");
+const lock = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+for (const name of Object.keys(lock.skills || {})) {
+  console.log(name);
+}
+' "${LOCK_FILE}"
+}
+
+locked_skill_paths() {
+  node -e '
+const fs = require("fs");
+const lock = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+for (const skill of Object.values(lock.skills || {})) {
+  console.log(skill.skillPath);
+}
+' "${LOCK_FILE}"
+}
+
+remove_project_from_lock() {
+  local path=""
+  local skill_dir=""
+
+  while IFS= read -r path; do
+    if [[ -z "${path}" ]]; then
+      continue
+    fi
+
+    case "${path}" in
+      .agents/skills/*/SKILL.md)
+        skill_dir="$(dirname "${REPO_ROOT}/${path}")"
+        ;;
+      *)
+        echo "error: refusing to remove unexpected skill path from lock file: ${path}" >&2
+        exit 1
+        ;;
+    esac
+
+    case "${skill_dir}" in
+      "${REPO_ROOT}/.agents/skills/"*)
+        rm -rf -- "${skill_dir}"
+        ;;
+      *)
+        echo "error: refusing to remove path outside .agents/skills: ${skill_dir}" >&2
+        exit 1
+        ;;
+    esac
+  done < <(locked_skill_paths)
+}
+
+remove_global_from_lock() {
+  local name=""
+  local skill_dir=""
+
+  while IFS= read -r name; do
+    if [[ -z "${name}" ]]; then
+      continue
+    fi
+
+    case "${name}" in
+      */*|.|..)
+        echo "error: refusing to remove unexpected skill name from lock file: ${name}" >&2
+        exit 1
+        ;;
+    esac
+
+    skill_dir="${HOME}/.agents/skills/${name}"
+    rm -rf -- "${skill_dir}"
+  done < <(locked_skill_names)
+}
+
+remove_from_lock() {
+  if [[ "${TARGET}" = "global" ]]; then
+    remove_global_from_lock
+  else
+    remove_project_from_lock
+  fi
+
+  rm -f -- "$(stamp_file)"
+}
+
+target_description() {
+  if [[ "${TARGET}" = "global" ]]; then
+    echo "~/.agents/skills"
+  else
+    echo ".agents/skills"
+  fi
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project)
+      TARGET="project"
+      shift
+      ;;
+    --global)
+      TARGET="global"
+      shift
+      ;;
+    --clear-lock)
+      CLEAR_LOCK=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "${TARGET}" != "project" && "${TARGET}" != "global" ]]; then
+  echo "error: invalid common skills removal target: ${TARGET} (expected project or global)" >&2
+  usage >&2
+  exit 1
+fi
+
+if [[ ! -f "${LOCK_FILE}" ]]; then
+  if [[ "${CLEAR_LOCK}" -eq 1 ]]; then
+    echo "Skills lock file is already absent: ${LOCK_FILE}"
+    exit 0
+  fi
+  echo "error: missing skills lock file: ${LOCK_FILE}" >&2
+  exit 1
+fi
+
+echo "Removing common agent skills listed in skills-lock.json from $(target_description)."
+remove_from_lock
+if [[ "${CLEAR_LOCK}" -eq 1 ]]; then
+  rm -f -- "${LOCK_FILE}"
+fi

@@ -8,23 +8,40 @@ STAMP_RELATIVE_PATH="warp/common-skills-lock.hash"
 SKILLS_CLI_VERSION="1.5.6"
 COMMON_SKILLS_SOURCE="warpdotdev/common-skills"
 GLOBAL_AGENT="warp"
+COMMON_SKILL_NAMES=(
+  create-pr
+  diagnose-ci-failures
+  fix-errors
+  implement-specs
+  resolve-merge-conflicts
+  review-pr
+  spec-driven-implementation
+  update-skill
+  write-product-spec
+  write-tech-spec
+)
 
 IF_NEEDED=0
 FORCE=0
 QUIET=0
-TARGET="${WARP_COMMON_SKILLS_INSTALL_TARGET:-project}"
+PROMPT_FOR_TARGET=0
+NON_INTERACTIVE=0
+TARGET="${WARP_COMMON_SKILLS_INSTALL_TARGET:-}"
+RESOLVED_TARGET=""
 
 usage() {
   cat <<EOF
 Usage: ./script/install_common_skills [options]
 
 Install or update common agent skills from the standard project skills-lock.json.
+If skills-lock.json is missing, create it from warpdotdev/common-skills first.
 
 Options:
-  --project            Install into this checkout's .agents/skills directory (default).
+  --project            Install into this checkout's .agents/skills directory.
   --global             Install into ~/.agents/skills for the current user.
   --if-needed          Skip installation when the local stamp matches skills-lock.json.
-  --non-interactive    Accepted for compatibility; installation is non-interactive.
+  --prompt-for-target  Prompt for project/global before installing or updating when no target is explicit.
+  --non-interactive    Do not prompt; use the detected or default install target.
   --force              Install even if the local stamp is already up to date.
   --quiet              Suppress "already up to date" informational output.
   -h, --help           Show this help message.
@@ -34,7 +51,176 @@ Environment:
       Skip installing common agent skills.
   WARP_COMMON_SKILLS_INSTALL_TARGET=project|global
       Choose the install target when no explicit --project/--global flag is provided.
+      If omitted, reuse an existing common-skills install target when exactly one
+      exists, and prompt with global as the recommended default when neither target exists.
 EOF
+}
+
+common_skills_present_in_project() {
+  local path=""
+
+  while IFS= read -r path; do
+    if [[ -f "${REPO_ROOT}/${path}" ]]; then
+      return 0
+    fi
+  done < <(common_skill_paths)
+
+  return 1
+}
+
+common_skills_present_in_global() {
+  local name=""
+
+  while IFS= read -r name; do
+    if [[ -f "${HOME}/.agents/skills/${name}/SKILL.md" ]]; then
+      return 0
+    fi
+  done < <(common_skill_names)
+
+  return 1
+}
+
+prompt_common_skills_target() {
+  local default_target="${1:-global}"
+  local reply=""
+  local target=""
+  if [[ "${NON_INTERACTIVE}" -eq 1 ]]; then
+    echo "${default_target}"
+  elif [[ -r /dev/tty && -w /dev/tty ]]; then
+    echo "Where should common agent skills be installed?" > /dev/tty
+    if [[ "${default_target}" = "global" ]]; then
+      echo "  1) Project checkout .agents/skills" > /dev/tty
+      echo "  2) Global user skills ~/.agents/skills (recommended for local installs, default)" > /dev/tty
+      printf "Install common skills to [project/global] (default: global): " > /dev/tty
+    else
+      echo "  1) Project checkout .agents/skills (default)" > /dev/tty
+      echo "  2) Global user skills ~/.agents/skills" > /dev/tty
+      printf "Install common skills to [project/global] (default: project): " > /dev/tty
+    fi
+    read -r reply < /dev/tty
+    if [[ -z "${reply}" ]]; then
+      echo "${default_target}"
+      return
+    fi
+    if target="$(normalize_common_skills_target "${reply}")"; then
+      echo "${target}"
+    else
+      echo "Unrecognized install target '${reply}', defaulting to ${default_target}." > /dev/tty
+      echo "${default_target}"
+    fi
+  else
+    echo "${default_target}"
+  fi
+}
+
+target_is_current() {
+  local target="$1"
+  local original_target="${TARGET}"
+  local target_stamp_file=""
+  local target_stamp_hash=""
+  local current_lock_hash=""
+
+  TARGET="${target}"
+  target_stamp_file="$(stamp_file)"
+  target_stamp_hash="$(stamp_hash "${target_stamp_file}")"
+  current_lock_hash="$(lock_hash)"
+
+  if [[ "${target_stamp_hash}" = "${current_lock_hash}" ]] && locked_skills_installed; then
+    TARGET="${original_target}"
+    return 0
+  fi
+
+  TARGET="${original_target}"
+  return 1
+}
+
+resolve_common_skills_target() {
+  local project_present=0
+  local global_present=0
+  local target=""
+
+  if common_skills_present_in_project; then
+    project_present=1
+  fi
+
+  if common_skills_present_in_global; then
+    global_present=1
+  fi
+
+  if [[ "${project_present}" -eq 1 && "${global_present}" -eq 1 ]]; then
+    echo "Common agent skills are installed in both this checkout's .agents/skills and ~/.agents/skills." >&2
+    echo "Remove one copy with ./script/remove_common_skills or ./script/remove_common_skills --global, then rerun." >&2
+    return 1
+  fi
+
+  if [[ -n "${TARGET}" ]]; then
+    if ! target="$(normalize_common_skills_target "${TARGET}")"; then
+      return 1
+    fi
+
+    if [[ "${target}" = "project" && "${global_present}" -eq 1 ]]; then
+      echo "Common agent skills are already installed globally in ~/.agents/skills." >&2
+      echo "Remove the global copy before installing them in this checkout's .agents/skills." >&2
+      return 1
+    fi
+
+    if [[ "${target}" = "global" && "${project_present}" -eq 1 ]]; then
+      echo "Common agent skills are already installed in this checkout's .agents/skills." >&2
+      echo "Remove the project copy before installing them globally in ~/.agents/skills." >&2
+      return 1
+    fi
+
+    echo "${target}"
+    return
+  fi
+  if [[ "${PROMPT_FOR_TARGET}" -eq 1 ]]; then
+    if [[ "${IF_NEEDED}" -eq 1 && -f "${LOCK_FILE}" ]]; then
+      if [[ "${project_present}" -eq 1 && "${global_present}" -eq 0 ]] && target_is_current "project"; then
+        echo "project"
+        return
+      fi
+
+      if [[ "${global_present}" -eq 1 && "${project_present}" -eq 0 ]] && target_is_current "global"; then
+        echo "global"
+        return
+      fi
+    fi
+
+    if [[ "${global_present}" -eq 1 ]]; then
+      target="$(prompt_common_skills_target "global")"
+    elif [[ "${project_present}" -eq 1 ]]; then
+      target="$(prompt_common_skills_target "project")"
+    else
+      target="$(prompt_common_skills_target "global")"
+    fi
+
+    if [[ "${target}" = "project" && "${global_present}" -eq 1 ]]; then
+      echo "Common agent skills are already installed globally in ~/.agents/skills." >&2
+      echo "Remove the global copy before installing them in this checkout's .agents/skills." >&2
+      return 1
+    fi
+
+    if [[ "${target}" = "global" && "${project_present}" -eq 1 ]]; then
+      echo "Common agent skills are already installed in this checkout's .agents/skills." >&2
+      echo "Remove the project copy before installing them globally in ~/.agents/skills." >&2
+      return 1
+    fi
+
+    echo "${target}"
+    return
+  fi
+
+  if [[ "${project_present}" -eq 1 ]]; then
+    echo "project"
+    return
+  fi
+
+  if [[ "${global_present}" -eq 1 ]]; then
+    echo "global"
+    return
+  fi
+
+  prompt_common_skills_target
 }
 
 log() {
@@ -85,6 +271,23 @@ stamp_hash() {
   fi
 }
 
+normalize_common_skills_target() {
+  local target
+  target="$(printf "%s" "$1" | tr '[:upper:]' '[:lower:]')"
+
+  case "${target}" in
+    ""|p|project|1)
+      echo "project"
+      ;;
+    g|global|2)
+      echo "global"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 locked_skill_names() {
   node -e '
 const fs = require("fs");
@@ -105,6 +308,28 @@ for (const skill of Object.values(lock.skills || {})) {
 ' "${LOCK_FILE}"
 }
 
+common_skill_names() {
+  if [[ -f "${LOCK_FILE}" ]]; then
+    locked_skill_names
+    return
+  fi
+
+  printf "%s\n" "${COMMON_SKILL_NAMES[@]}"
+}
+
+common_skill_paths() {
+  local name=""
+
+  if [[ -f "${LOCK_FILE}" ]]; then
+    locked_skill_paths
+    return
+  fi
+
+  for name in "${COMMON_SKILL_NAMES[@]}"; do
+    echo ".agents/skills/${name}/SKILL.md"
+  done
+}
+
 locked_skills_installed() {
   local name=""
   local path=""
@@ -122,6 +347,13 @@ locked_skills_installed() {
       fi
     done < <(locked_skill_paths)
   fi
+}
+
+install_project_from_source() {
+  (
+    cd "${REPO_ROOT}"
+    npx --yes "skills@${SKILLS_CLI_VERSION}" add "${COMMON_SKILLS_SOURCE}" -a "${GLOBAL_AGENT}" -s "${COMMON_SKILL_NAMES[@]}" -y --copy
+  )
 }
 
 install_project_from_lock() {
@@ -148,6 +380,37 @@ install_global_from_lock() {
     cd "${REPO_ROOT}"
     npx --yes "skills@${SKILLS_CLI_VERSION}" add "${COMMON_SKILLS_SOURCE}" -g -a "${GLOBAL_AGENT}" -s "${skill_names[@]}" -y --copy
   )
+}
+
+remove_project_skills_from_lock() {
+  local path=""
+  local skill_dir=""
+
+  while IFS= read -r path; do
+    if [[ -z "${path}" ]]; then
+      continue
+    fi
+
+    case "${path}" in
+      .agents/skills/*/SKILL.md)
+        skill_dir="$(dirname "${REPO_ROOT}/${path}")"
+        ;;
+      *)
+        echo "error: refusing to remove unexpected skill path from lock file: ${path}" >&2
+        exit 1
+        ;;
+    esac
+
+    case "${skill_dir}" in
+      "${REPO_ROOT}/.agents/skills/"*)
+        rm -rf -- "${skill_dir}"
+        ;;
+      *)
+        echo "error: refusing to remove path outside .agents/skills: ${skill_dir}" >&2
+        exit 1
+        ;;
+    esac
+  done < <(locked_skill_paths)
 }
 
 install_from_lock() {
@@ -180,7 +443,12 @@ while [[ $# -gt 0 ]]; do
       IF_NEEDED=1
       shift
       ;;
+    --prompt-for-target)
+      PROMPT_FOR_TARGET=1
+      shift
+      ;;
     --non-interactive)
+      NON_INTERACTIVE=1
       shift
       ;;
     --force)
@@ -206,16 +474,30 @@ if [[ "${WARP_SKIP_COMMON_SKILLS_INSTALL:-}" = "1" ]]; then
   log "Skipping common-skills install because WARP_SKIP_COMMON_SKILLS_INSTALL=1."
   exit 0
 fi
-
-if [[ "${TARGET}" != "project" && "${TARGET}" != "global" ]]; then
-  echo "error: invalid common skills install target: ${TARGET} (expected project or global)" >&2
+if ! RESOLVED_TARGET="$(resolve_common_skills_target)"; then
+  echo "error: could not resolve common skills install target" >&2
   usage >&2
   exit 1
 fi
-
+TARGET="${RESOLVED_TARGET}"
 if [[ ! -f "${LOCK_FILE}" ]]; then
-  echo "error: missing skills lock file: ${LOCK_FILE}" >&2
-  exit 1
+  echo "Creating skills-lock.json from ${COMMON_SKILLS_SOURCE}."
+  install_project_from_source
+  if [[ ! -f "${LOCK_FILE}" ]]; then
+    echo "error: expected ${LOCK_FILE} to be created by skills add" >&2
+    exit 1
+  fi
+
+  if [[ "${TARGET}" = "global" ]]; then
+    install_global_from_lock
+    remove_project_skills_from_lock
+  fi
+
+  LOCK_HASH="$(lock_hash)"
+  STAMP_FILE="$(stamp_file)"
+  mkdir -p "$(dirname "${STAMP_FILE}")"
+  printf "%s\n" "${LOCK_HASH}" > "${STAMP_FILE}"
+  exit 0
 fi
 
 LOCK_HASH="$(lock_hash)"

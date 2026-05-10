@@ -22,6 +22,7 @@ function Show-Usage {
     Write-Output '      Skip installing common agent skills.'
     Write-Output '  WARP_COMMON_SKILLS_INSTALL_TARGET=project|global'
     Write-Output '      Choose the install target when -CommonSkillsTarget is omitted.'
+    Write-Output '      Target detection, prompting, and duplicate checks are delegated to script/install_common_skills.'
 }
 
 function Normalize-CommonSkillsTarget {
@@ -34,27 +35,6 @@ function Normalize-CommonSkillsTarget {
     }
 }
 
-function Resolve-CommonSkillsTarget {
-    if ($CommonSkillsTarget) {
-        return Normalize-CommonSkillsTarget $CommonSkillsTarget
-    }
-
-    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
-        return 'project'
-    }
-
-    Write-Host 'Where should common agent skills be installed?'
-    Write-Host '  1) Project checkout .agents/skills (default)'
-    Write-Host '  2) Global user skills ~/.agents/skills'
-    $reply = Read-Host 'Install common skills to [project/global] (default: project)'
-
-    try {
-        return Normalize-CommonSkillsTarget $reply
-    } catch {
-        Write-Host "Unrecognized install target '$reply', defaulting to project."
-        return 'project'
-    }
-}
 
 function Show-BootstrapPreview {
     Write-Output 'Warp bootstrap is starting for Windows.'
@@ -70,8 +50,10 @@ function Show-BootstrapPreview {
         Write-Output '  - Skip common agent skills because WARP_SKIP_COMMON_SKILLS_INSTALL=1.'
     } elseif ($script:ResolvedCommonSkillsTarget -eq 'global') {
         Write-Output '  - Install or update common agent skills in ~/.agents/skills if needed.'
-    } else {
+    } elseif ($script:ResolvedCommonSkillsTarget -eq 'project') {
         Write-Output '  - Install or update common agent skills in this checkout''s .agents/skills if needed.'
+    } else {
+        Write-Output '  - Install or update common agent skills, reusing an existing target or prompting if needed.'
     }
 
     Write-Output 'Run .\script\windows\bootstrap.ps1 -Help to see options and environment overrides.'
@@ -82,9 +64,9 @@ if ($Help) {
     Show-Usage
     exit 0
 }
-$script:ResolvedCommonSkillsTarget = 'project'
-if ($InstallCommonSkills -and $env:WARP_SKIP_COMMON_SKILLS_INSTALL -ne '1') {
-    $script:ResolvedCommonSkillsTarget = Resolve-CommonSkillsTarget
+$script:ResolvedCommonSkillsTarget = ''
+if ($InstallCommonSkills -and $CommonSkillsTarget) {
+    $script:ResolvedCommonSkillsTarget = Normalize-CommonSkillsTarget $CommonSkillsTarget
 }
 
 Show-BootstrapPreview
@@ -103,7 +85,11 @@ if (-not $gitBinDir) {
 $env:PATH = "$gitBinDir;$env:PATH"
 
 function Install-CommonSkill {
-    & "$gitBinDir\bash.exe" "$PWD\script\install_common_skills" "--$script:ResolvedCommonSkillsTarget" --if-needed
+    if ($script:ResolvedCommonSkillsTarget) {
+        & "$gitBinDir\bash.exe" "$PWD\script\install_common_skills" "--$script:ResolvedCommonSkillsTarget" --if-needed
+    } else {
+        & "$gitBinDir\bash.exe" "$PWD\script\install_common_skills" --if-needed --prompt-for-target
+    }
 }
 
 if (-not (Get-Command -Name cargo -Type Application -ErrorAction SilentlyContinue)) {

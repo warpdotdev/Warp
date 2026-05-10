@@ -37,14 +37,21 @@ Environment variables:
 - `find . -name "*.wgsl" -exec wgslfmt --check {} +` - Check WGSL shader formatting
 
 ### Platform Setup
-- `./script/bootstrap` - Platform-specific setup (calls platform-specific bootstrap scripts)
-- `./script/bootstrap --install-common-skills` - Platform setup plus common agent skill installation from `skills-lock.json`; prompts for project (`.agents/skills`) or global (`~/.agents/skills`) install target.
-- `./script/install_common_skills --project --if-needed` - Install or refresh shared agent skills in this checkout's `.agents/skills` from the standard `npx skills` project lock. `--project` is the default.
+- `./script/bootstrap` - Platform-specific setup plus common agent skill installation from `skills-lock.json`; prompts for project/global when an install or update is needed unless a target flag or environment override is provided.
+- `./script/bootstrap --skip-common-skills` - Platform setup without installing or updating common agent skills.
+- `./script/bootstrap --install-common-skills` - Explicitly install common agent skills from `skills-lock.json`; this is the default behavior.
+- `./script/bootstrap --install-common-skills-in-repo` - Platform setup plus common agent skill installation in this checkout's `.agents/skills`.
+- `./script/bootstrap --install-common-skills-globally` - Platform setup plus common agent skill installation in `~/.agents/skills`.
+- `./script/install_common_skills --if-needed` - Install or refresh shared agent skills from the standard `npx skills` project lock, creating `skills-lock.json` from `warpdotdev/common-skills` first if it is missing. Reuses an existing project/global install, prompts with global as the recommended default when neither exists, and errors if common skills exist in both locations.
+- `./script/install_common_skills --project --if-needed` - Install or refresh shared agent skills in this checkout's `.agents/skills`.
 - `./script/install_common_skills --global --if-needed` - Install or refresh shared agent skills in `~/.agents/skills`.
+- `./script/remove_common_skills` - Remove shared agent skills listed in `skills-lock.json` from this checkout's `.agents/skills`.
+- `./script/remove_common_skills --global` - Remove shared agent skills listed in `skills-lock.json` from `~/.agents/skills`.
+- `./script/remove_common_skills --clear-lock` - Remove shared agent skills from this checkout and delete `skills-lock.json`.
 - `./script/install_cargo_build_deps` - Install Cargo build dependencies
 - `./script/install_cargo_test_deps` - Install Cargo test dependencies
 
-`skills-lock.json` is the standard project lock file managed by `npx skills`. `script/run` checks this lock before building and prompts for whether to install the shared skills in the project checkout or globally. Cloud setup should use `./script/install_common_skills --project --if-needed --non-interactive` or set `WARP_COMMON_SKILLS_INSTALL_TARGET=project` to avoid the prompt. To update the locked common skills, run `npx --yes skills@1.5.6 update -p -y` and commit the resulting `skills-lock.json` changes.
+`skills-lock.json` is the standard project lock file managed by `npx skills`. `script/install_common_skills` resolves the install target before restoring: it reuses an existing project/global install by default, can prompt before installing or updating when requested by bootstrap, creates `skills-lock.json` from `warpdotdev/common-skills` if it is missing, uses global as the recommended default for local installs when no target exists yet, and errors if common skills are present in both locations. `script/run` and `script/bootstrap` delegate to this installer. Cloud setup should use `./script/install_common_skills --project --if-needed --non-interactive` or set `WARP_COMMON_SKILLS_INSTALL_TARGET=project` to avoid the prompt. To update the locked common skills, run `npx --yes skills@1.5.6 update -p -y` and commit the resulting `skills-lock.json` changes.
 
 ## Architecture Overview
 
