@@ -596,7 +596,13 @@ pub(crate) extern "C-unwind" fn warp_open_panel_file_selected(urls: id, callback
                 let file_url = urls.objectAtIndex(i);
                 let file_path: id = msg_send![file_url, path];
                 let cstr = std::ffi::CStr::from_ptr(file_path.UTF8String());
-                cstr.to_string_lossy().to_string()
+                match cstr.to_str() {
+                    Ok(s) => s.to_string(),
+                    Err(e) => {
+                        log::error!("invalid UTF-8 in file path: {e}");
+                        String::new()
+                    }
+                }
             })
             .collect::<Vec<_>>()
     };
@@ -622,7 +628,7 @@ pub(crate) extern "C-unwind" fn warp_save_panel_file_selected(url: id, callback:
         unsafe {
             let file_path: id = msg_send![url, path];
             let cstr = std::ffi::CStr::from_ptr(file_path.UTF8String());
-            Some(cstr.to_string_lossy().to_string())
+            cstr.to_str().ok().map(|s| s.to_string())
         }
     };
 

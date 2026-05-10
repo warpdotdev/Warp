@@ -105,7 +105,10 @@ impl crate::Clipboard for Clipboard {
                         .map(|i| {
                             let directory = file_paths.objectAtIndex(i);
                             let cstr = std::ffi::CStr::from_ptr(directory.UTF8String());
-                            cstr.to_string_lossy().to_string()
+                            cstr.to_str().map(|s| s.to_string()).unwrap_or_else(|e| {
+                                log::error!("invalid UTF-8 in clipboard path: {e}");
+                                String::new()
+                            })
                         })
                         .collect::<Vec<String>>(),
                 );
