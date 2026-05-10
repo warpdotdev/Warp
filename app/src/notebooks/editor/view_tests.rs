@@ -231,6 +231,26 @@ fn test_loaded_mermaid_diagram_with_placeholder_height_needs_relayout() {
         });
     })
 }
+
+#[test]
+fn layout_affecting_asset_loads_rebuild_selectable_and_editable_layouts() {
+    assert!(
+        RichTextEditorView::should_rebuild_layout_after_layout_affecting_asset_load(
+            InteractionState::Selectable,
+        )
+    );
+    assert!(
+        RichTextEditorView::should_rebuild_layout_after_layout_affecting_asset_load(
+            InteractionState::Editable,
+        )
+    );
+    assert!(
+        RichTextEditorView::should_rebuild_layout_after_layout_affecting_asset_load(
+            InteractionState::EditableWithInvalidSelection,
+        )
+    );
+}
+
 #[test]
 fn test_focus() {
     App::test((), |mut app| async move {

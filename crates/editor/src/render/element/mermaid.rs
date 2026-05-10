@@ -1,9 +1,9 @@
+use std::time::Duration;
+
 use warpui::{
-    AppContext, Element, SingletonEntity, SizeConstraint,
-    assets::asset_cache::{AssetCache, AssetState},
+    AppContext, Element, SizeConstraint,
     elements::{Align, CacheOption, CornerRadius, Empty, Image, Radius, Text},
     geometry::vector::vec2f,
-    image_cache::ImageType,
 };
 
 use crate::{
@@ -17,6 +17,7 @@ use crate::{
 };
 
 use super::{RenderContext, RenderableBlock};
+const MERMAID_RENDER_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct RenderableMermaidDiagram {
     viewport_item: ViewportItem,
@@ -66,49 +67,53 @@ impl RenderableBlock for RenderableMermaidDiagram {
         );
 
         let code_text = model.styles().code_text;
+        let placeholder_color = model.styles().placeholder_color;
+        let placeholder = Align::new(
+            Text::new(
+                "Rendering Mermaid diagram…",
+                code_text.font_family,
+                code_text.font_size,
+            )
+            .with_color(placeholder_color)
+            .with_line_height_ratio(code_text.line_height_ratio)
+            .soft_wrap(false)
+            .finish(),
+        )
+        .finish();
+        let failure_notice = Align::new(
+            Text::new(
+                "Error rendering Mermaid diagram. Please check syntax.",
+                code_text.font_family,
+                code_text.font_size,
+            )
+            .with_color(placeholder_color)
+            .with_line_height_ratio(code_text.line_height_ratio)
+            .soft_wrap(true)
+            .finish(),
+        )
+        .finish();
+        let timeout_notice = Align::new(
+            Text::new(
+                "Failed to render Mermaid diagram",
+                code_text.font_family,
+                code_text.font_size,
+            )
+            .with_color(placeholder_color)
+            .with_line_height_ratio(code_text.line_height_ratio)
+            .soft_wrap(false)
+            .finish(),
+        )
+        .finish();
+
         let size = vec2f(config.width.as_f32(), config.height.as_f32());
+        let mut image = Image::new(asset_source, CacheOption::BySize)
+            .contain()
+            .before_load(placeholder)
+            .on_load_failure(failure_notice)
+            .on_load_timeout(MERMAID_RENDER_TIMEOUT, timeout_notice);
+        image.layout(SizeConstraint::strict(size), ctx, app);
 
-        let asset_cache = AssetCache::as_ref(app);
-        let element: Box<dyn Element> =
-            match asset_cache.load_asset::<ImageType>(asset_source.clone()) {
-                AssetState::FailedToLoad(_) => {
-                    let mut error_elem = Align::new(
-                        Text::new(
-                            "Error rendering Mermaid diagram. Please check syntax.",
-                            code_text.font_family,
-                            code_text.font_size,
-                        )
-                        .with_color(model.styles().placeholder_color)
-                        .with_line_height_ratio(code_text.line_height_ratio)
-                        .soft_wrap(true)
-                        .finish(),
-                    )
-                    .finish();
-                    error_elem.layout(SizeConstraint::strict(size), ctx, app);
-                    error_elem
-                }
-                _ => {
-                    let placeholder = Align::new(
-                        Text::new(
-                            "Rendering Mermaid diagram…",
-                            code_text.font_family,
-                            code_text.font_size,
-                        )
-                        .with_color(model.styles().placeholder_color)
-                        .with_line_height_ratio(code_text.line_height_ratio)
-                        .soft_wrap(false)
-                        .finish(),
-                    )
-                    .finish();
-                    let mut image = Image::new(asset_source, CacheOption::BySize)
-                        .contain()
-                        .before_load(placeholder);
-                    image.layout(SizeConstraint::strict(size), ctx, app);
-                    Box::new(image)
-                }
-            };
-
-        self.image_element = Some(element);
+        self.image_element = Some(Box::new(image));
     }
 
     fn paint(&mut self, model: &RenderState, ctx: &mut RenderContext, app: &AppContext) {
