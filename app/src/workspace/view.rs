@@ -6114,10 +6114,16 @@ impl Workspace {
         });
     }
 
-    /// Builds the unified new-session menu items
-    /// tab bar chevron and the vertical tab bar `+` button.
-    ///
-    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
+    fn cloud_agent_new_session_label() -> &'static str {
+        if FeatureFlag::AgentHarness.is_enabled() {
+            "Cloud Agent"
+        } else {
+            "Cloud Oz"
+        }
+    }
+
+    /// Builds the unified new-session menu items used by the tab bar chevron
+    /// and the vertical tab bar `+` button.
     fn unified_new_session_menu_items(
         &self,
         ctx: &mut ViewContext<Self>,
@@ -6199,12 +6205,12 @@ impl Workspace {
             }
         }
 
-        // 3. Cloud Oz (if flags enabled)
+        // 3. Cloud agent entry (if flags enabled)
         if is_any_ai_enabled
             && FeatureFlag::AgentView.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
         {
-            let mut cloud_item = MenuItemFields::new("Cloud Oz")
+            let mut cloud_item = MenuItemFields::new(Self::cloud_agent_new_session_label())
                 .with_on_select_action(WorkspaceAction::AddAmbientAgentTab)
                 .with_icon(icons::Icon::LayoutAlt01);
             if effective_default == DefaultSessionMode::CloudAgent {

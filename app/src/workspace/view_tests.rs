@@ -697,6 +697,25 @@ fn reopen_closed_session_menu_item(
     }
 }
 
+fn cloud_agent_new_session_menu_item(
+    menu_items: &[MenuItem<WorkspaceAction>],
+) -> &MenuItemFields<WorkspaceAction> {
+    menu_items
+        .iter()
+        .find_map(|item| {
+            if let MenuItem::Item(fields) = item {
+                if matches!(
+                    fields.on_select_action(),
+                    Some(WorkspaceAction::AddAmbientAgentTab)
+                ) {
+                    return Some(fields);
+                }
+            }
+            None
+        })
+        .expect("expected a cloud agent menu item")
+}
+
 #[test]
 fn test_reward_modal_no_overlap() {
     App::test((), |mut app| async move {
@@ -2698,6 +2717,45 @@ fn test_unified_new_session_menu_uses_new_worktree_config_label_and_order() {
     });
 }
 
+#[test]
+fn test_unified_new_session_menu_uses_cloud_agent_label_when_agent_harness_enabled() {
+    let _agent_view_guard = FeatureFlag::AgentView.override_enabled(true);
+    let _cloud_mode_guard = FeatureFlag::CloudMode.override_enabled(true);
+    let _agent_harness_guard = FeatureFlag::AgentHarness.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            let menu_items = workspace.unified_new_session_menu_items(ctx);
+            let cloud_item = cloud_agent_new_session_menu_item(&menu_items);
+
+            assert_eq!(cloud_item.label(), "Cloud Agent");
+        });
+    });
+}
+
+#[test]
+fn test_unified_new_session_menu_uses_cloud_oz_label_when_agent_harness_disabled() {
+    let _agent_view_guard = FeatureFlag::AgentView.override_enabled(true);
+    let _cloud_mode_guard = FeatureFlag::CloudMode.override_enabled(true);
+    let _agent_harness_guard = FeatureFlag::AgentHarness.override_enabled(false);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            let menu_items = workspace.unified_new_session_menu_items(ctx);
+            let cloud_item = cloud_agent_new_session_menu_item(&menu_items);
+
+            assert_eq!(cloud_item.label(), "Cloud Oz");
+        });
+    });
+}
 #[test]
 fn test_unified_new_session_menu_includes_reopen_closed_session() {
     App::test((), |mut app| async move {
