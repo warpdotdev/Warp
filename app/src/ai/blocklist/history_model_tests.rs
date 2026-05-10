@@ -1640,13 +1640,7 @@ fn test_fork_conversation_title_override_replaces_prefix() {
                 .expect("source must be in memory")
                 .clone();
             let forked = model
-                .fork_conversation(
-                    &source,
-                    "[Fork] ",
-                    false,
-                    Some("Custom title"),
-                    ctx,
-                )
+                .fork_conversation(&source, "[Fork] ", false, Some("Custom title"), ctx)
                 .expect("fork must succeed");
 
             let forked_root = forked

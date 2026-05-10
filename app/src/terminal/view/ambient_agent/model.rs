@@ -130,6 +130,8 @@ pub(crate) struct PendingHandoff {
     /// Forked conversation id minted by `POST /agent/conversations/{conversation_id}/fork`.
     /// Sent under `conversation_id` on the subsequent `POST /agent/runs` request.
     pub(crate) forked_conversation_id: String,
+    /// Title override for the cloud run (e.g. "<title> (Moved to cloud)").
+    pub(crate) title: Option<String>,
     /// `None` until `derive_touched_workspace` completes.
     pub(crate) touched_workspace: Option<TouchedWorkspace>,
     /// Outcome of the async snapshot upload.
@@ -600,7 +602,7 @@ impl AmbientAgentViewModel {
             prompt,
             mode,
             config,
-            title: None,
+            title: self.pending_handoff.as_ref().and_then(|h| h.title.clone()),
             team: None,
             skill: None,
             attachments,
