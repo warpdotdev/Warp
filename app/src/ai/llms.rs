@@ -29,7 +29,7 @@ pub use ai::LLMId;
 /// Returns `true` if BYO API key is enabled and a key exists for the provider.
 pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -> bool {
     let api_keys = UserWorkspaces::as_ref(app)
-        .is_byo_api_key_enabled()
+        .is_byo_api_key_enabled(app)
         .then(|| ApiKeyManager::as_ref(app).keys().clone());
 
     match provider {

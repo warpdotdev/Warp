@@ -6320,7 +6320,7 @@ impl ApiKeysWidget {
         let ai_settings = AISettings::as_ref(ctx);
         let workspace_handle = UserWorkspaces::handle(ctx);
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(ctx);
-        let is_byo_enabled = workspace_handle.as_ref(ctx).is_byo_api_key_enabled();
+        let is_byo_enabled = workspace_handle.as_ref(ctx).is_byo_api_key_enabled(ctx);
 
         let ApiKeys {
             openai: openai_key,
@@ -6375,7 +6375,7 @@ impl ApiKeysWidget {
                     if let UserWorkspacesEvent::TeamsChanged = event {
                         let is_any_ai_enabled =
                             AISettings::handle(ctx).as_ref(ctx).is_any_ai_enabled(ctx);
-                        let is_byo_enabled = workspace.as_ref(ctx).is_byo_api_key_enabled();
+                        let is_byo_enabled = workspace.as_ref(ctx).is_byo_api_key_enabled(ctx);
                         let is_enabled = is_any_ai_enabled && is_byo_enabled;
                         let has_key = !editor_clone.as_ref(ctx).is_empty(ctx);
 
@@ -6614,7 +6614,7 @@ impl SettingsWidget for ApiKeysWidget {
     ) -> Box<dyn Element> {
         let ai_settings = AISettings::as_ref(app);
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
-        let is_byo_enabled = UserWorkspaces::as_ref(app).is_byo_api_key_enabled();
+        let is_byo_enabled = UserWorkspaces::as_ref(app).is_byo_api_key_enabled(app);
 
         let mut column = Flex::column()
             .with_child(render_separator(appearance))

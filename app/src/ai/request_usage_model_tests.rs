@@ -3,6 +3,7 @@ use std::sync::Arc;
 use chrono::Duration;
 use warpui::{App, ModelHandle};
 
+use crate::auth::AuthStateProvider;
 use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::server::server_api::ServerApiProvider;
@@ -543,6 +544,7 @@ fn test_has_any_ai_remaining_true_with_byo_key_and_no_workspace() {
 
         // No workspace — user is not on a team.
         app.add_singleton_model(UserWorkspaces::default_mock);
+        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
         let request_usage_model = add_request_usage_model(&mut app);
 
         ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
@@ -557,6 +559,38 @@ fn test_has_any_ai_remaining_true_with_byo_key_and_no_workspace() {
             assert!(
                 model.has_any_ai_remaining(ctx),
                 "expected has_any_ai_remaining to be true when user has a BYO key but no workspace",
+            );
+        });
+    });
+}
+
+#[test]
+fn test_byo_api_key_disabled_for_anonymous_user() {
+    App::test((), |mut app| async move {
+        let _guard = FeatureFlag::SoloUserByok.override_enabled(true);
+
+        app.add_singleton_model(UserWorkspaces::default_mock);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        let request_usage_model = add_request_usage_model(&mut app);
+
+        ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
+            manager.set_openai_key(Some("test-key".to_string()), ctx);
+        });
+
+        app.read(|ctx| {
+            assert!(
+                !UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled(ctx),
+                "expected is_byo_api_key_enabled to be false for anonymous users even with SoloUserByok enabled",
+            );
+        });
+
+        request_usage_model.update(&mut app, |model, ctx| {
+            model.request_limit_info = RequestLimitInfo::new_for_test(10, 10);
+            model.bonus_grants.clear();
+
+            assert!(
+                !model.has_any_ai_remaining(ctx),
+                "expected has_any_ai_remaining to be false for anonymous user even with BYO key and SoloUserByok enabled",
             );
         });
     });
