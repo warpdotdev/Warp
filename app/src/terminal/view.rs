@@ -15901,6 +15901,26 @@ impl TerminalView {
                 | BlockListMenuSource::RichContentTextRightClick { .. }
                 | BlockListMenuSource::OutsideBlockRightClick { .. }
         ) {
+            // Surface "Clear" in the right-click menu so it's discoverable
+            // without the keyboard shortcut. We skip text-selection contexts
+            // (`Regular*TextRightClick` / `RichContentTextRightClick`) because
+            // those menus are scoped to actions on the selected text.
+            let include_clear = matches!(
+                menu_source,
+                BlockListMenuSource::RegularBlockRightClick { .. }
+                    | BlockListMenuSource::RichContentBlockRightClick { .. }
+                    | BlockListMenuSource::OutsideBlockRightClick { .. }
+            );
+            let clear_menu_item = include_clear
+                .then(|| self.clear_buffer_menu_item(&model, ctx))
+                .flatten();
+            if let Some(clear_menu_item) = clear_menu_item {
+                if !items.is_empty() {
+                    items.push(MenuItem::Separator);
+                }
+                items.push(clear_menu_item);
+            }
+
             let current_shell = model.shell_launch_state().available_shell();
             let pane_context_menu_items = self.pane_context_menu_items(current_shell, ctx);
             // Only add the separator if there's something before and after it.
@@ -15913,6 +15933,29 @@ impl TerminalView {
         }
 
         items
+    }
+
+    /// Builds the "Clear" entry for the terminal right-click context menu.
+    /// Returns `None` when there are no blocks to clear, mirroring the
+    /// `TerminalView_NonEmptyBlockList` predicate that gates the
+    /// `terminal:clear_blocks` keybinding.
+    fn clear_buffer_menu_item(
+        &self,
+        model: &TerminalModel,
+        ctx: &AppContext,
+    ) -> Option<MenuItem<TerminalAction>> {
+        if model.is_block_list_empty() {
+            return None;
+        }
+        Some(
+            MenuItemFields::new("Clear")
+                .with_on_select_action(TerminalAction::ClearBuffer)
+                .with_key_shortcut_label(keybinding_name_to_display_string(
+                    "terminal:clear_blocks",
+                    ctx,
+                ))
+                .into_item(),
+        )
     }
 
     fn copy_prompt_menu_items(
