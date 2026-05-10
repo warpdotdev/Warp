@@ -25,6 +25,44 @@ COMMON_SKILLS_TARGET="${WARP_COMMON_SKILLS_INSTALL_TARGET:-}"
 
 ./script/install_channel_config || echo "Skipping internal channel config installation (no repo access)."
 
+resolve_common_skills_script() {
+  local script_name="$1"
+  local candidate_dir=""
+  local common_skills_repo="${REPO_ROOT}/../common-skills"
+  local line=""
+
+  if [[ -n "${WARP_COMMON_SKILLS_SCRIPTS_DIR:-}" ]]; then
+    candidate_dir="${WARP_COMMON_SKILLS_SCRIPTS_DIR}"
+    if [[ -x "${candidate_dir}/${script_name}" ]]; then
+      echo "${candidate_dir}/${script_name}"
+      return 0
+    fi
+  fi
+
+  candidate_dir="${common_skills_repo}/scripts"
+  if [[ -x "${candidate_dir}/${script_name}" ]]; then
+    echo "${candidate_dir}/${script_name}"
+    return 0
+  fi
+
+  if [[ -d "${common_skills_repo}/.git" || -f "${common_skills_repo}/.git" ]]; then
+    while IFS= read -r line; do
+      case "${line}" in
+        worktree\ *)
+          candidate_dir="${line#worktree }/scripts"
+          if [[ -x "${candidate_dir}/${script_name}" ]]; then
+            echo "${candidate_dir}/${script_name}"
+            return 0
+          fi
+          ;;
+      esac
+    done < <(git -C "${common_skills_repo}" worktree list --porcelain 2>/dev/null)
+  fi
+
+  echo "Could not find ${script_name}. Clone warpdotdev/common-skills next to this checkout or set WARP_COMMON_SKILLS_SCRIPTS_DIR." >&2
+  return 1
+}
+
 # If warp_channel_config is on PATH, build the Local channel binary; otherwise build the OSS channel.
 if command -v warp-channel-config &>/dev/null; then
     WARP_BIN_NAME="warp"
@@ -96,13 +134,18 @@ done
 
 if [[ "$INSTALL_COMMON_SKILLS" -eq 1 ]]; then
   COMMON_SKILLS_ARGS=()
+  COMMON_SKILLS_INSTALL_SCRIPT=""
   if [[ "${COMMON_SKILLS_TARGET}" = "project" || "${COMMON_SKILLS_TARGET}" = "global" ]]; then
     COMMON_SKILLS_ARGS=("--${COMMON_SKILLS_TARGET}")
   fi
-  if [[ "$FORCE_COMMON_SKILLS" -eq 1 ]]; then
-    ./script/install_common_skills "${COMMON_SKILLS_ARGS[@]}" --force --non-interactive || echo "Skipping common-skills update."
+  if COMMON_SKILLS_INSTALL_SCRIPT="$(resolve_common_skills_script install_common_skills)"; then
+    if [[ "$FORCE_COMMON_SKILLS" -eq 1 ]]; then
+      "${COMMON_SKILLS_INSTALL_SCRIPT}" --repo-root "${REPO_ROOT}" "${COMMON_SKILLS_ARGS[@]}" --force --non-interactive || echo "Skipping common-skills update."
+    else
+      "${COMMON_SKILLS_INSTALL_SCRIPT}" --repo-root "${REPO_ROOT}" "${COMMON_SKILLS_ARGS[@]}" --if-needed --non-interactive --quiet || echo "Skipping common-skills update."
+    fi
   else
-    ./script/install_common_skills "${COMMON_SKILLS_ARGS[@]}" --if-needed --non-interactive --quiet || echo "Skipping common-skills update."
+    echo "Skipping common-skills update."
   fi
 fi
 

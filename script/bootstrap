@@ -7,9 +7,12 @@ set -eo pipefail
 # the prompts in unattended environments.
 
 OS_TYPE="$(uname -s)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
 INSTALL_COMMON_SKILLS=1
 COMMON_SKILLS_TARGET="${WARP_COMMON_SKILLS_INSTALL_TARGET:-}"
 PLATFORM_ARGS=()
+
+cd "${REPO_ROOT}"
 
 usage() {
   cat <<EOF
@@ -32,7 +35,9 @@ Environment:
   WARP_COMMON_SKILLS_INSTALL_TARGET=project|global
       Choose the install target when no explicit prompt answer is provided.
       Target detection, prompting, and duplicate checks are delegated to
-      ./script/install_common_skills.
+      warpdotdev/common-skills/scripts/install_common_skills.
+  WARP_COMMON_SKILLS_SCRIPTS_DIR=/path/to/common-skills/scripts
+      Override where common-skills management scripts are loaded from.
 EOF
 }
 
@@ -67,6 +72,43 @@ print_bootstrap_preview() {
   echo
 }
 
+resolve_common_skills_script() {
+  local script_name="$1"
+  local candidate_dir=""
+  local common_skills_repo="${REPO_ROOT}/../common-skills"
+  local line=""
+
+  if [[ -n "${WARP_COMMON_SKILLS_SCRIPTS_DIR:-}" ]]; then
+    candidate_dir="${WARP_COMMON_SKILLS_SCRIPTS_DIR}"
+    if [[ -x "${candidate_dir}/${script_name}" ]]; then
+      echo "${candidate_dir}/${script_name}"
+      return 0
+    fi
+  fi
+
+  candidate_dir="${common_skills_repo}/scripts"
+  if [[ -x "${candidate_dir}/${script_name}" ]]; then
+    echo "${candidate_dir}/${script_name}"
+    return 0
+  fi
+
+  if [[ -d "${common_skills_repo}/.git" || -f "${common_skills_repo}/.git" ]]; then
+    while IFS= read -r line; do
+      case "${line}" in
+        worktree\ *)
+          candidate_dir="${line#worktree }/scripts"
+          if [[ -x "${candidate_dir}/${script_name}" ]]; then
+            echo "${candidate_dir}/${script_name}"
+            return 0
+          fi
+          ;;
+      esac
+    done < <(git -C "${common_skills_repo}" worktree list --porcelain 2>/dev/null)
+  fi
+
+  echo "error: could not find ${script_name}. Clone warpdotdev/common-skills next to this checkout or set WARP_COMMON_SKILLS_SCRIPTS_DIR." >&2
+  return 1
+}
 
 for arg in "$@"; do
   case "${arg}" in
@@ -102,10 +144,13 @@ done
 
 maybe_install_common_skills() {
   if [[ "${INSTALL_COMMON_SKILLS}" -eq 1 ]]; then
+    local install_script=""
+
+    install_script="$(resolve_common_skills_script install_common_skills)"
     if [[ "${COMMON_SKILLS_TARGET}" = "project" || "${COMMON_SKILLS_TARGET}" = "global" ]]; then
-      ./script/install_common_skills "--${COMMON_SKILLS_TARGET}" --if-needed
+      "${install_script}" --repo-root "${REPO_ROOT}" "--${COMMON_SKILLS_TARGET}" --if-needed
     else
-      ./script/install_common_skills --if-needed --prompt-for-target
+      "${install_script}" --repo-root "${REPO_ROOT}" --if-needed --prompt-for-target
     fi
   fi
 }

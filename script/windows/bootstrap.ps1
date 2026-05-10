@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 
 function Show-Usage {
     Write-Output 'Usage: .\script\windows\bootstrap.ps1 [-Help] [-InstallCommonSkills] [-CommonSkillsTarget <project|global>]'
@@ -22,7 +23,9 @@ function Show-Usage {
     Write-Output '      Skip installing common agent skills.'
     Write-Output '  WARP_COMMON_SKILLS_INSTALL_TARGET=project|global'
     Write-Output '      Choose the install target when -CommonSkillsTarget is omitted.'
-    Write-Output '      Target detection, prompting, and duplicate checks are delegated to script/install_common_skills.'
+    Write-Output '      Target detection, prompting, and duplicate checks are delegated to warpdotdev/common-skills/scripts/install_common_skills.'
+    Write-Output '  WARP_COMMON_SKILLS_SCRIPTS_DIR=/path/to/common-skills/scripts'
+    Write-Output '      Override where common-skills management scripts are loaded from.'
 }
 
 function Normalize-CommonSkillsTarget {
@@ -83,12 +86,38 @@ if (-not $gitBinDir) {
     exit 1
 }
 $env:PATH = "$gitBinDir;$env:PATH"
+function Resolve-CommonSkillsScript {
+    param([string]$ScriptName)
+
+    if ($env:WARP_COMMON_SKILLS_SCRIPTS_DIR) {
+        $scriptPath = Join-Path $env:WARP_COMMON_SKILLS_SCRIPTS_DIR $ScriptName
+        if (Test-Path -PathType Leaf $scriptPath) { return $scriptPath }
+    }
+
+    $commonSkillsRepo = Join-Path $RepoRoot '..\common-skills'
+    $scriptPath = Join-Path (Join-Path $commonSkillsRepo 'scripts') $ScriptName
+    if (Test-Path -PathType Leaf $scriptPath) { return $scriptPath }
+
+    if (Test-Path $commonSkillsRepo) {
+        $worktreeLines = & "$gitBinDir\git.exe" -C $commonSkillsRepo worktree list --porcelain 2>$null
+        foreach ($line in $worktreeLines) {
+            if ($line.StartsWith('worktree ')) {
+                $worktreePath = $line.Substring('worktree '.Length)
+                $scriptPath = Join-Path (Join-Path $worktreePath 'scripts') $ScriptName
+                if (Test-Path -PathType Leaf $scriptPath) { return $scriptPath }
+            }
+        }
+    }
+
+    throw "Could not find $ScriptName. Clone warpdotdev/common-skills next to this checkout or set WARP_COMMON_SKILLS_SCRIPTS_DIR."
+}
 
 function Install-CommonSkill {
+    $installScript = Resolve-CommonSkillsScript 'install_common_skills'
     if ($script:ResolvedCommonSkillsTarget) {
-        & "$gitBinDir\bash.exe" "$PWD\script\install_common_skills" "--$script:ResolvedCommonSkillsTarget" --if-needed
+        & "$gitBinDir\bash.exe" "$installScript" --repo-root "$RepoRoot" "--$script:ResolvedCommonSkillsTarget" --if-needed
     } else {
-        & "$gitBinDir\bash.exe" "$PWD\script\install_common_skills" --if-needed --prompt-for-target
+        & "$gitBinDir\bash.exe" "$installScript" --repo-root "$RepoRoot" --if-needed --prompt-for-target
     }
 }
 
