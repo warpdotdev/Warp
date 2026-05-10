@@ -6541,6 +6541,16 @@ impl ApiKeysWidget {
                         )]
                     }
                 }
+            } else if FeatureFlag::SoloUserByok.is_enabled()
+                && auth_state.is_anonymous_or_logged_out()
+            {
+                vec![
+                    FormattedTextFragment::hyperlink_action(
+                        "Create an account",
+                        AISettingsPageAction::SignupAnonymousUser,
+                    ),
+                    FormattedTextFragment::plain_text(" to use your own API keys."),
+                ]
             } else {
                 let user_id = auth_state.user_id().unwrap_or_default();
                 let upgrade_url = UserWorkspaces::upgrade_link(user_id);
@@ -6559,8 +6569,19 @@ impl ApiKeysWidget {
                 self.upgrade_highlight_index.clone(),
             )
             .with_hyperlink_font_color(appearance.theme().accent().into_solid())
-            .register_default_click_handlers(|url, ctx, _| {
-                ctx.dispatch_typed_action(AISettingsPageAction::HyperlinkClick(url));
+            .register_default_click_handlers_with_action_support(|hyperlink_lens, event, ctx| {
+                match hyperlink_lens {
+                    HyperlinkLens::Url(url) => {
+                        ctx.open_url(url);
+                    }
+                    HyperlinkLens::Action(action_ref) => {
+                        if let Some(action) =
+                            action_ref.as_any().downcast_ref::<AISettingsPageAction>()
+                        {
+                            event.dispatch_typed_action(action.clone());
+                        }
+                    }
+                }
             });
 
             column.add_child(Container::new(upgrade_text_element.finish()).finish());
