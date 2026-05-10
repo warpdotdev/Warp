@@ -47,6 +47,9 @@ use crate::server::server_api::ai::{
     AIClient, InitialSnapshotToken, SnapshotUploadFileInfo as AiSnapshotUploadFileInfo,
     UploadLocalHandoffSnapshotRequest,
 };
+
+use super::harness::claude_transcript::ClaudeTranscriptEnvelope;
+use super::harness::codex_transcript::CodexTranscriptEnvelope;
 use crate::server::server_api::harness_support::{
     upload_to_target, HarnessSupportClient, SnapshotFileInfo, SnapshotUploadRequest, UploadTarget,
 };
@@ -670,11 +673,19 @@ struct FileManifestEntry {
     error: Option<String>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct TranscriptManifestEntry {
+    pub(crate) file: String,
+    pub(crate) format: String,
+}
+
 #[derive(serde::Serialize)]
 struct SnapshotManifest {
     version: u32,
     repos: Vec<RepoManifestEntry>,
     files: Vec<FileManifestEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transcript: Option<TranscriptManifestEntry>,
 }
 
 // --- Upload helpers ---
@@ -741,13 +752,40 @@ async fn upload_snapshot_from_declarations_file(
 ///   it at an incomplete prefix. Manifest-upload failures are also routed through
 ///   `report_error!` so on-call alerting catches the silent regression.
 /// - `Err(_)` only for hard failures of `upload_local_handoff_snapshot` itself (auth, etc.).
+/// Transcript payload for local-to-cloud handoff of 3P harness sessions.
+pub(crate) enum HandoffTranscript {
+    Claude(ClaudeTranscriptEnvelope),
+    Codex(CodexTranscriptEnvelope),
+}
+
+impl HandoffTranscript {
+    fn format_string(&self) -> &'static str {
+        match self {
+            Self::Claude(_) => "claude_code_cli",
+            Self::Codex(_) => "codex_cli",
+        }
+    }
+
+    fn to_json_bytes(&self) -> Result<Vec<u8>> {
+        match self {
+            Self::Claude(envelope) => {
+                serde_json::to_vec(envelope).context("serialize claude transcript")
+            }
+            Self::Codex(envelope) => {
+                serde_json::to_vec(envelope).context("serialize codex transcript")
+            }
+        }
+    }
+}
+
 pub(crate) async fn upload_snapshot_for_handoff(
     repo_paths: Vec<PathBuf>,
     orphan_file_paths: Vec<PathBuf>,
+    transcript: Option<HandoffTranscript>,
     client: Arc<dyn AIClient>,
     http: &http_client::Client,
 ) -> Result<Option<InitialSnapshotToken>> {
-    if repo_paths.is_empty() && orphan_file_paths.is_empty() {
+    if repo_paths.is_empty() && orphan_file_paths.is_empty() && transcript.is_none() {
         log::info!("Handoff snapshot has no declarations; skipping upload");
         return Ok(None);
     }
@@ -770,7 +808,25 @@ pub(crate) async fn upload_snapshot_for_handoff(
         mut repos,
         mut files,
         mut pre_upload_entries,
+        mut used_filenames,
     } = gather_snapshot_entries(declarations).await;
+
+    // Serialize and include transcript if present.
+    let transcript_manifest = if let Some(ref transcript) = transcript {
+        let transcript_bytes = transcript.to_json_bytes()?;
+        let transcript_filename = unique_filename("transcript.json", &mut used_filenames);
+        upload_files.push(SnapshotUploadFile {
+            filename: transcript_filename.clone(),
+            content: transcript_bytes,
+            mime_type: "application/json".to_string(),
+        });
+        Some(TranscriptManifestEntry {
+            file: transcript_filename,
+            format: transcript.format_string().to_string(),
+        })
+    } else {
+        None
+    };
 
     apply_per_run_cap(
         &mut upload_files,
@@ -836,6 +892,7 @@ pub(crate) async fn upload_snapshot_for_handoff(
         files,
         pre_upload_entries,
         target_map,
+        transcript_manifest,
     )
     .await
     else {
@@ -876,6 +933,7 @@ async fn run_pipeline(
         repos,
         files,
         pre_upload_entries,
+        used_filenames: _,
     } = gather_snapshot_entries(declarations).await;
 
     upload_gathered_snapshot(
@@ -895,6 +953,7 @@ struct GatheredSnapshot {
     repos: Vec<RepoManifestEntry>,
     files: Vec<FileManifestEntry>,
     pre_upload_entries: Vec<EntryResult>,
+    used_filenames: HashSet<String>,
 }
 
 async fn gather_snapshot_entries(declarations: Vec<DeclarationEntry>) -> GatheredSnapshot {
@@ -942,6 +1001,7 @@ async fn gather_snapshot_entries(declarations: Vec<DeclarationEntry>) -> Gathere
         repos,
         files,
         pre_upload_entries,
+        used_filenames,
     }
 }
 
@@ -1017,6 +1077,7 @@ async fn upload_gathered_snapshot(
         files,
         pre_upload_entries,
         target_map,
+        None,
     )
     .await
 }
@@ -1029,6 +1090,7 @@ async fn upload_prepared_snapshot_files(
     mut files: Vec<FileManifestEntry>,
     pre_upload_entries: Vec<EntryResult>,
     target_map: HashMap<String, UploadTarget>,
+    transcript: Option<TranscriptManifestEntry>,
 ) -> Option<SnapshotOutcome> {
     // Upload non-manifest blobs concurrently, each with bounded retries on transient errors.
     let upload_futures = upload_files
@@ -1042,6 +1104,7 @@ async fn upload_prepared_snapshot_files(
         version: 1,
         repos,
         files,
+        transcript,
     };
     let manifest_bytes = match serde_json::to_vec_pretty(&manifest) {
         Ok(b) => b,
