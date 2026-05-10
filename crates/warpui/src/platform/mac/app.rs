@@ -598,6 +598,7 @@ pub(crate) extern "C-unwind" fn warp_open_panel_file_selected(urls: id, callback
                 let file_path: id = msg_send![file_url, path];
                 let ptr = file_path.UTF8String();
                 if ptr.is_null() {
+                    log::error!("null UTF8String from open panel path {i}/{url_count}");
                     return None;
                 }
                 let cstr = std::ffi::CStr::from_ptr(ptr);

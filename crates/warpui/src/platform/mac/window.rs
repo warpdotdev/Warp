@@ -1694,7 +1694,7 @@ unsafe fn to_string(value: *mut Object) -> String {
         return String::new();
     }
     let cstr = std::ffi::CStr::from_ptr(ptr);
-    cstr.to_string_lossy().to_string()
+    cstr.to_string_lossy().into_owned()
 }
 
 #[cfg(test)]
