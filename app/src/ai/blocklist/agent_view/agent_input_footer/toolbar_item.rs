@@ -83,8 +83,8 @@ impl AgentToolbarItemKind {
             Self::ModelSelector
             | Self::NLDToggle
             | Self::ContextWindowUsage
-            | Self::FastForwardToggle
-            | Self::HandoffToCloud => ToolbarAvailability::AgentViewOnly,
+            | Self::FastForwardToggle => ToolbarAvailability::AgentViewOnly,
+            Self::HandoffToCloud => ToolbarAvailability::Both,
             Self::FileExplorer | Self::RichInput | Self::Settings => {
                 ToolbarAvailability::CLIAgentOnly
             }
@@ -261,11 +261,15 @@ impl AgentToolbarItemKind {
 
     /// Default right-side items for the CLI agent footer.
     pub fn cli_default_right() -> Vec<Self> {
-        vec![
+        let mut items = vec![
             Self::ContextChip(ContextChipKind::WorkingDirectory),
             Self::ContextChip(ContextChipKind::ShellGitBranch),
             Self::Settings,
-        ]
+        ];
+        if is_local_to_cloud_handoff_available() {
+            items.push(Self::HandoffToCloud);
+        }
+        items
     }
 
     /// All items available for the CLI agent footer configurator.
@@ -285,6 +289,9 @@ impl AgentToolbarItemKind {
             && FeatureFlag::HOARemoteControl.is_enabled()
         {
             items.push(Self::ShareSession);
+        }
+        if is_local_to_cloud_handoff_available() {
+            items.push(Self::HandoffToCloud);
         }
         items
     }

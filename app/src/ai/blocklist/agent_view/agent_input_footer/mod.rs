@@ -1441,12 +1441,17 @@ impl AgentInputFooter {
                 Some(ChildView::new(button).finish())
             }
             AgentToolbarItemKind::Settings => Some(ChildView::new(&self.settings_button).finish()),
+            AgentToolbarItemKind::HandoffToCloud => {
+                if !is_local_to_cloud_handoff_available() {
+                    return None;
+                }
+                Some(ChildView::new(&self.handoff_to_cloud_button).finish())
+            }
             // Handled by the available_in() guard above; included for exhaustiveness.
             AgentToolbarItemKind::ModelSelector
             | AgentToolbarItemKind::NLDToggle
             | AgentToolbarItemKind::ContextWindowUsage
-            | AgentToolbarItemKind::FastForwardToggle
-            | AgentToolbarItemKind::HandoffToCloud => None,
+            | AgentToolbarItemKind::FastForwardToggle => None,
         }
     }
 
