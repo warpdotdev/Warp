@@ -13155,6 +13155,131 @@ impl Workspace {
         }
     }
 
+    /// 3P handoff: opens a cloud pane for a third-party CLI agent session.
+    /// Skips conversation fork (no server conversation), reads transcript from
+    /// disk, derives workspace from CLI session cwd, uploads snapshot with
+    /// transcript included.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn start_third_party_handoff(
+        &mut self,
+        source_view: ViewHandle<TerminalView>,
+        cli_session: crate::terminal::cli_agent_sessions::CLIAgentSession,
+        handoff_harness: Harness,
+        launch: Option<PendingCloudLaunch>,
+        explicit_environment_id: Option<SyncId>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        use crate::ai::agent_sdk::driver::harness::claude_transcript;
+        use crate::ai::agent_sdk::driver::HandoffTranscript;
+
+        let Some((_new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
+            view.start_local_to_cloud_handoff_pane(view_ctx)
+        }) else {
+            log::warn!("start_third_party_handoff: failed to push cloud-mode pane");
+            Self::restore_source_handoff_draft(&source_view, launch, explicit_environment_id, ctx);
+            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            return;
+        };
+
+        if let Some(env_id) = explicit_environment_id {
+            model_handle.update(ctx, |model, ctx| {
+                model.set_environment_id(Some(env_id), ctx);
+            });
+        }
+
+        let pending = PendingHandoff {
+            forked_conversation_id: None,
+            handoff_harness,
+            touched_workspace: None,
+            snapshot_upload: SnapshotUploadStatus::Pending,
+            submission_state: HandoffSubmissionState::Idle,
+            auto_submit: launch,
+            explicit_environment_id: None,
+        };
+        model_handle.update(ctx, |model, model_ctx| {
+            model.set_pending_handoff(Some(pending), model_ctx);
+        });
+
+        Self::show_handoff_success_toast(ctx);
+        model_handle.update(ctx, |model, ctx| {
+            model.queue_handoff_auto_submit(ctx);
+        });
+
+        // Derive cwd from session context.
+        let cwd = cli_session
+            .session_context
+            .cwd
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+        // Read transcript from disk (Claude only for now).
+        let session_uuid = cli_session
+            .session_context
+            .session_id
+            .as_deref()
+            .and_then(|s| uuid::Uuid::parse_str(s).ok());
+        let transcript = match (handoff_harness, session_uuid) {
+            (Harness::Claude, Some(uuid)) => {
+                let config_root = claude_transcript::claude_config_dir();
+                config_root
+                    .and_then(|root| claude_transcript::read_envelope(uuid, &cwd, &root))
+                    .map(HandoffTranscript::Claude)
+                    .ok()
+            }
+            _ => None,
+        };
+
+        let server_api_provider = ServerApiProvider::as_ref(ctx);
+        let ai_client = server_api_provider.get_ai_client();
+        let http = server_api_provider.get_http_client();
+        let async_model_handle = model_handle.clone();
+
+        ctx.spawn(
+            async move {
+                let workspace = derive_touched_workspace(vec![cwd]).await;
+                let repo_paths: Vec<_> =
+                    workspace.repos.iter().map(|r| r.git_root.clone()).collect();
+                let upload_result = upload_snapshot_for_handoff(
+                    repo_paths,
+                    workspace.orphan_files.clone(),
+                    transcript,
+                    ai_client,
+                    http.as_ref(),
+                )
+                .await;
+                (workspace, upload_result)
+            },
+            move |_workspace, (derived_workspace, upload_result), ctx| {
+                async_model_handle.update(ctx, |model, model_ctx| {
+                    if !model.is_local_to_cloud_handoff() {
+                        return;
+                    }
+                    model.set_pending_handoff_workspace(derived_workspace, model_ctx);
+                    match upload_result {
+                        Ok(Some(token)) => {
+                            model.set_pending_handoff_snapshot_upload(
+                                SnapshotUploadStatus::Uploaded(token),
+                                model_ctx,
+                            );
+                        }
+                        Ok(None) => {
+                            model.set_pending_handoff_snapshot_upload(
+                                SnapshotUploadStatus::SkippedEmptyWorkspace,
+                                model_ctx,
+                            );
+                        }
+                        Err(err) => {
+                            log::warn!("3P handoff snapshot upload failed: {err:#}");
+                            model
+                                .record_handoff_snapshot_upload_failed(format!("{err}"), model_ctx);
+                        }
+                    }
+                });
+                Self::maybe_auto_submit_handoff(&source_view, &async_model_handle, ctx);
+            },
+        );
+    }
+
     /// Opens a local-to-cloud handoff pane in place over the active local pane.
     /// Triggered by `/move-to-cloud`, `&` compose mode, and the handoff footer chip.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
@@ -13178,6 +13303,34 @@ impl Workspace {
         };
 
         let terminal_view_id = source_view.id();
+
+        // 3P handoff: when a CLI agent session is active, skip the Oz
+        // conversation-fork path and hand off the transcript + cwd instead.
+        let cli_session = CLIAgentSessionsModel::as_ref(ctx)
+            .session(terminal_view_id)
+            .cloned();
+        if let Some(cli_session) = cli_session {
+            let handoff_harness = match cli_session.agent {
+                crate::terminal::CLIAgent::Claude => Harness::Claude,
+                crate::terminal::CLIAgent::Codex => Harness::Codex,
+                crate::terminal::CLIAgent::Gemini => Harness::Gemini,
+                _ => {
+                    log::warn!("Handoff not supported for {:?}", cli_session.agent);
+                    Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+                    return;
+                }
+            };
+            self.start_third_party_handoff(
+                source_view,
+                cli_session,
+                handoff_harness,
+                launch,
+                explicit_environment_id,
+                ctx,
+            );
+            return;
+        }
+
         let source_conversation = BlocklistAIHistoryModel::handle(ctx)
             .as_ref(ctx)
             .active_conversation(terminal_view_id)
