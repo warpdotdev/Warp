@@ -26,7 +26,7 @@ Common skills are consumed by agents across Warp development workflows. If they 
 
 8. If a developer explicitly selects project installation with `./script/bootstrap --install-common-skills-in-repo`, `WARP_COMMON_SKILLS_INSTALL_TARGET=project`, or the installer `--project` option, common skills are installed into the Warp checkout's project-local skill directory as local developer state.
 
-9. Project-local common-skill installs are gitignored and must not be checked into source control. A developer who installs common skills into the project directory should not see the installed common-skill directories as untracked or modified files in normal `git status`, and should not need to manually avoid committing them.
+9. Project-local common-skill installs are ignored by Git and must not be checked into source control. The ignore behavior applies only to the locked common-skill paths installed from `warpdotdev/common-skills`; unrelated project-local skills in `.agents/skills` must remain visible in normal `git status`. A developer who installs common skills into the project directory should not see the installed common-skill directories as untracked or modified files and should not need to manually avoid committing them.
 
 10. If a developer explicitly selects global installation with `./script/bootstrap --install-common-skills-globally`, `WARP_COMMON_SKILLS_INSTALL_TARGET=global`, or the installer `--global` option, common skills are installed into the user's global agent skills directory.
 

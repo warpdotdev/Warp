@@ -16,17 +16,13 @@ Execute a script from warpdotdev/common-skills/scripts.
 
 Resolution order:
   1. WARP_COMMON_SKILLS_SCRIPTS_DIR
-  2. A sibling ../common-skills checkout
-  3. Any worktree belonging to that sibling checkout
-  4. The raw script from ${COMMON_SKILLS_REPO}
+  2. The raw script from ${COMMON_SKILLS_REPO}
 
 Environment:
   WARP_COMMON_SKILLS_SCRIPTS_DIR=/path/to/common-skills/scripts
       Override where common-skills management scripts are loaded from.
-  WARP_COMMON_SKILLS_FORCE_REMOTE=1
-      Skip local script lookup and execute the raw remote script.
   WARP_COMMON_SKILLS_REF=<git-ref>
-      Override the remote common-skills ref used for raw script fallback.
+      Override the remote common-skills ref used for the raw script.
   WARP_COMMON_SKILLS_RAW_BASE_URL=https://...
       Override the remote base URL used for raw script fallback.
 EOF
@@ -48,31 +44,6 @@ execute_from_dir() {
   return 1
 }
 
-execute_from_sibling_checkout() {
-  local candidate_dir=""
-  local common_skills_checkout="${REPO_ROOT}/../common-skills"
-  local line=""
-
-  candidate_dir="${common_skills_checkout}/scripts"
-  if execute_from_dir "${candidate_dir}" "$@"; then
-    return 0
-  fi
-
-  if [[ -d "${common_skills_checkout}/.git" || -f "${common_skills_checkout}/.git" ]]; then
-    while IFS= read -r line; do
-      case "${line}" in
-        worktree\ *)
-          candidate_dir="${line#worktree }/scripts"
-          if execute_from_dir "${candidate_dir}" "$@"; then
-            return 0
-          fi
-          ;;
-      esac
-    done < <(git -C "${common_skills_checkout}" worktree list --porcelain 2>/dev/null)
-  fi
-
-  return 1
-}
 
 execute_from_remote() {
   local raw_url="${RAW_BASE_URL%/}/${SCRIPT_NAME}"
@@ -116,14 +87,13 @@ if [[ "${1:-}" = "--" ]]; then
   shift
 fi
 
-if [[ "${WARP_COMMON_SKILLS_FORCE_REMOTE:-}" != "1" ]]; then
-  if [[ -n "${WARP_COMMON_SKILLS_SCRIPTS_DIR:-}" ]] && execute_from_dir "${WARP_COMMON_SKILLS_SCRIPTS_DIR}" "$@"; then
+if [[ -n "${WARP_COMMON_SKILLS_SCRIPTS_DIR:-}" ]]; then
+  if execute_from_dir "${WARP_COMMON_SKILLS_SCRIPTS_DIR}" "$@"; then
     exit 0
   fi
 
-  if execute_from_sibling_checkout "$@"; then
-    exit 0
-  fi
+  echo "error: could not execute ${SCRIPT_NAME} from WARP_COMMON_SKILLS_SCRIPTS_DIR=${WARP_COMMON_SKILLS_SCRIPTS_DIR}" >&2
+  exit 1
 fi
 
 execute_from_remote "$@"
