@@ -97,6 +97,7 @@ fn test_find_matching_tab_config() {
     let configs = vec![
         make_mock_tab_config("my tab", Some("/tab_configs/my_tab.toml")),
         make_mock_tab_config("Deploy", Some("/tab_configs/Deploy.yaml")),
+        make_mock_tab_config("dotted", Some("/tab_configs/foo.bar.toml")),
         make_mock_tab_config("orphan", None),
     ];
 
@@ -116,6 +117,16 @@ fn test_find_matching_tab_config() {
     assert_eq!(
         find_matching_tab_config("deploy", configs.clone()).map(|c| c.name),
         Some(String::from("Deploy")),
+    );
+
+    // Dotted stem resolves both with and without `.toml`.
+    assert_eq!(
+        find_matching_tab_config("foo.bar", configs.clone()).map(|c| c.name),
+        Some(String::from("dotted")),
+    );
+    assert_eq!(
+        find_matching_tab_config("foo.bar.toml", configs.clone()).map(|c| c.name),
+        Some(String::from("dotted")),
     );
 
     // Miss returns None.
