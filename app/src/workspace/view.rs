@@ -253,10 +253,7 @@ use crate::drive::{
     CloudObjectTypeAndId, DriveObjectType, DrivePanel, DrivePanelEvent, OpenWarpDriveObjectSettings,
 };
 use crate::experiments::{BlockOnboarding, Experiment};
-use crate::menu::{
-    Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuSelectionSource,
-    DEFAULT_WIDTH as MENU_DEFAULT_WIDTH,
-};
+use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuSelectionSource};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::network::{NetworkStatus, NetworkStatusEvent};
 use crate::notebooks::manager::{NotebookManager, NotebookSource};
@@ -6316,7 +6313,10 @@ impl Workspace {
                 // Match the Figma mock width (OptionMenuItem component is 268px).
                 context_menu.set_width(268.);
             } else {
-                context_menu.set_width(MENU_DEFAULT_WIDTH);
+                // Horizontal variant renders the same items, so it needs the
+                // same 268px to avoid clipping "New worktree config" — the
+                // global MENU_DEFAULT_WIDTH (186px) was too narrow. See #10269.
+                context_menu.set_width(268.);
             }
             context_menu.set_items(menu_items, view_ctx);
             match open_source {
