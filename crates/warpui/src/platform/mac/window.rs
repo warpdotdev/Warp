@@ -1685,8 +1685,15 @@ fn transform_origin_from_rect_coord_to_frame_coord(origin: Vector2F, size: Vecto
 /// Uses `CStr::from_ptr` to read the null-terminated UTF-8 output of
 /// `-[NSString UTF8String]`, because `-[NSString length]` returns the
 /// number of UTF-16 code units, not the number of UTF-8 bytes.
+///
+/// Returns an empty string if `UTF8String` is null (e.g., if the
+/// receiver is not actually an NSString).
 unsafe fn to_string(value: *mut Object) -> String {
-    let cstr = std::ffi::CStr::from_ptr(value.UTF8String());
+    let ptr = value.UTF8String();
+    if ptr.is_null() {
+        return String::new();
+    }
+    let cstr = std::ffi::CStr::from_ptr(ptr);
     cstr.to_string_lossy().to_string()
 }
 

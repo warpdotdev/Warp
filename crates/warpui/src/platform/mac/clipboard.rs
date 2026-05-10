@@ -102,13 +102,14 @@ impl crate::Clipboard for Clipboard {
             if available_paths > 0 {
                 content.paths = Some(
                     (0..available_paths)
-                        .map(|i| {
+                        .filter_map(|i| {
                             let directory = file_paths.objectAtIndex(i);
-                            let cstr = std::ffi::CStr::from_ptr(directory.UTF8String());
-                            cstr.to_str().map(|s| s.to_string()).unwrap_or_else(|e| {
-                                log::error!("invalid UTF-8 in clipboard path: {e}");
-                                String::new()
-                            })
+                            let ptr = directory.UTF8String();
+                            if ptr.is_null() {
+                                return None;
+                            }
+                            let cstr = std::ffi::CStr::from_ptr(ptr);
+                            cstr.to_str().ok().map(|s| s.to_string())
                         })
                         .collect::<Vec<String>>(),
                 );

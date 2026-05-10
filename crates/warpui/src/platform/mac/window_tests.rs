@@ -2,7 +2,7 @@ use super::super::make_nsstring;
 use super::super::AutoreleasePoolGuard;
 use super::to_string;
 
-unsafe fn nsstring(s: &str) -> cocoa::base::id {
+fn nsstring(s: &str) -> cocoa::base::id {
     make_nsstring(s)
 }
 

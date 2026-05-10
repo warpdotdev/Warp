@@ -592,15 +592,19 @@ pub(crate) extern "C-unwind" fn warp_open_panel_file_selected(urls: id, callback
 
     let paths = unsafe {
         (0..urls.count())
-            .map(|i| {
+            .filter_map(|i| {
                 let file_url = urls.objectAtIndex(i);
                 let file_path: id = msg_send![file_url, path];
-                let cstr = std::ffi::CStr::from_ptr(file_path.UTF8String());
+                let ptr = file_path.UTF8String();
+                if ptr.is_null() {
+                    return None;
+                }
+                let cstr = std::ffi::CStr::from_ptr(ptr);
                 match cstr.to_str() {
-                    Ok(s) => s.to_string(),
+                    Ok(s) => Some(s.to_string()),
                     Err(e) => {
                         log::error!("invalid UTF-8 in file path: {e}");
-                        String::new()
+                        None
                     }
                 }
             })
@@ -627,13 +631,21 @@ pub(crate) extern "C-unwind" fn warp_save_panel_file_selected(url: id, callback:
     } else {
         unsafe {
             let file_path: id = msg_send![url, path];
-            let cstr = std::ffi::CStr::from_ptr(file_path.UTF8String());
-            cstr.to_str().ok().map(|s| s.to_string())
+            let ptr = file_path.UTF8String();
+            if ptr.is_null() {
+                log::error!("null UTF8String from save panel path");
+                None
+            } else {
+                let cstr = std::ffi::CStr::from_ptr(ptr);
+                cstr.to_str().ok().map(|s| s.to_string())
+            }
         }
     };
 
     if path.is_none() {
         log::info!("Save dialog was cancelled.");
+    } else if path.as_ref().is_none_or(|p| p.is_empty()) {
+        log::error!("Save dialog returned an empty or invalid path.");
     }
 
     let app = unsafe { get_app(&mut *get_warp_app()) };
