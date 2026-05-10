@@ -2528,6 +2528,23 @@ impl Input {
                     ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
                 }
                 AgentInputFooterEvent::OpenHandoffPane => {
+                    // In CLI agent mode the editor is hidden (input goes to the PTY),
+                    // so skip the `&` compose step and dispatch the handoff directly.
+                    #[cfg(not(target_family = "wasm"))]
+                    if CLIAgentSessionsModel::as_ref(ctx)
+                        .session(me.terminal_view_id)
+                        .is_some()
+                    {
+                        ctx.dispatch_typed_action_deferred(
+                            WorkspaceAction::OpenLocalToCloudHandoffPane {
+                                launch: None,
+                                explicit_environment_id: None,
+                            },
+                        );
+                    } else {
+                        me.activate_cloud_handoff_compose(ctx);
+                    }
+                    #[cfg(target_family = "wasm")]
                     me.activate_cloud_handoff_compose(ctx);
                 }
             }
