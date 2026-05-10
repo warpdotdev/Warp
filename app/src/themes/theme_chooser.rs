@@ -241,6 +241,7 @@ impl ThemeChooser {
                         ctx.notify();
                     }
                 }
+                StateEvent::WindowZoomFactorChanged { .. } => {}
             }
         });
 

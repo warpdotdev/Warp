@@ -1185,15 +1185,9 @@ impl AppContext {
     /// All views in every window are invalidated when this is invoked.
     ///
     /// ## Validation
-    /// The zoom factor is clamped to the range [0.5, 3.5], matching
-    /// `WindowSettings::ZoomLevel::VALUES` (50%–350%). This range is shared
-    /// with [`AppContext::set_window_zoom_factor`] so that
-    /// `Workspace::adjust_zoom`'s discrete-step lookup can always find the
-    /// effective zoom in the VALUES table; values outside the range would
-    /// dead-end the keyboard shortcut until `reset_window_zoom_factor` is
-    /// called.
+    /// The zoom factor is clamped to the range [0.5, 4.0].
     pub fn set_zoom_factor(&mut self, zoom_factor: f32) {
-        let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 3.5));
+        let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 4.0));
         self.zoom_factor = zoom_factor;
         self.invalidate_all_views();
     }
@@ -1224,25 +1218,39 @@ impl AppContext {
     /// `window_id`; other windows are unaffected.
     ///
     /// ## Validation
-    /// The zoom factor is clamped to the range [0.5, 3.5], aligning with the
-    /// discrete percentages exposed by `WindowSettings::ZoomLevel::VALUES`
-    /// (50%–350%). Values outside this range are not reachable through the
-    /// keyboard shortcut, and would leave `adjust_zoom`'s position lookup
-    /// unable to step until `reset_window_zoom_factor` clears the override.
+    /// The zoom factor is clamped to the range [0.5, 4.0].
     pub fn set_window_zoom_factor(&mut self, window_id: WindowId, zoom_factor: f32) {
-        let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 3.5));
-        if let Some(window) = self.windows.get_mut(&window_id) {
+        let zoom_factor = ZoomFactor::new(zoom_factor.clamp(0.5, 4.0));
+        let did_update = if let Some(window) = self.windows.get_mut(&window_id) {
             window.zoom_factor_override = Some(zoom_factor);
+            true
+        } else {
+            false
+        };
+
+        if did_update {
             self.invalidate_all_views_for_window(window_id);
+            WindowManager::handle(self).update(self, |windowing_state, ctx| {
+                windowing_state.emit_window_zoom_factor_changed(window_id, ctx);
+            });
         }
     }
 
     /// Clears the per-window zoom factor override. The window will follow the
     /// app-wide default returned by [`AppContext::zoom_factor`].
     pub fn reset_window_zoom_factor(&mut self, window_id: WindowId) {
-        if let Some(window) = self.windows.get_mut(&window_id) {
+        let did_update = if let Some(window) = self.windows.get_mut(&window_id) {
             window.zoom_factor_override = None;
+            true
+        } else {
+            false
+        };
+
+        if did_update {
             self.invalidate_all_views_for_window(window_id);
+            WindowManager::handle(self).update(self, |windowing_state, ctx| {
+                windowing_state.emit_window_zoom_factor_changed(window_id, ctx);
+            });
         }
     }
 

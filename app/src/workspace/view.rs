@@ -1079,32 +1079,27 @@ pub struct Workspace {
 }
 
 /// Returns the next zoom percentage from `ZoomLevel::VALUES` relative to
-/// `current_percent`, snapping to the nearest VALUES entry in the chosen
+/// `current_percent`, stepping from the nearest VALUES entry in the chosen
 /// direction even when `current_percent` itself is not a VALUES entry.
 /// Stays at the boundary if there is no further step in that direction.
 fn next_zoom_step(current_percent: u16, increase: bool) -> u16 {
     use crate::window_settings::ZoomLevel;
+    let values = ZoomLevel::VALUES;
+
     if increase {
-        ZoomLevel::VALUES
+        let current_or_previous_index = values
             .iter()
-            .find(|&&v| v > current_percent)
-            .copied()
-            .unwrap_or_else(|| {
-                *ZoomLevel::VALUES
-                    .last()
-                    .expect("ZoomLevel::VALUES is non-empty")
-            })
+            .rposition(|&value| value <= current_percent)
+            .unwrap_or(0);
+        let next_index = (current_or_previous_index + 1).min(values.len() - 1);
+        values[next_index]
     } else {
-        ZoomLevel::VALUES
+        let current_or_next_index = values
             .iter()
-            .rev()
-            .find(|&&v| v < current_percent)
-            .copied()
-            .unwrap_or_else(|| {
-                *ZoomLevel::VALUES
-                    .first()
-                    .expect("ZoomLevel::VALUES is non-empty")
-            })
+            .position(|&value| value >= current_percent)
+            .unwrap_or(values.len() - 1);
+        let next_index = current_or_next_index.saturating_sub(1);
+        values[next_index]
     }
 }
 
@@ -3694,7 +3689,6 @@ impl Workspace {
                     if *WindowSettings::as_ref(ctx).zoom_per_window {
                         let window_id = self.window_id;
                         ctx.set_window_zoom_factor(window_id, zoom_override);
-                        self.update_titlebar_height(ctx);
                     }
                 }
 
@@ -15583,7 +15577,6 @@ impl Workspace {
                 if !*WindowSettings::as_ref(ctx).zoom_per_window {
                     let window_id = ctx.window_id();
                     ctx.reset_window_zoom_factor(window_id);
-                    self.update_titlebar_height(ctx);
                 }
             }
             _ => {}
@@ -16176,20 +16169,9 @@ impl Workspace {
     }
 
     fn reset_zoom(&mut self, ctx: &mut ViewContext<Self>) {
-        // Cmd+0: behaviour depends on `zoom_per_window`.
-        //
-        // - When false (default), the shortcut reverts to the legacy app-wide
-        //   path: reset `WindowSettings::zoom_level` to its default; the
-        //   `WindowSettingsChangedEvent::ZoomLevel` subscriber relays into
-        //   `ctx.set_zoom_factor`, invalidating every window.
-        // - When true, the shortcut clears the focused window's per-window
-        //   override so it follows the app-wide default again. The native
-        //   macOS titlebar height is recomputed explicitly because we no
-        //   longer route through `WindowSettingsChangedEvent::ZoomLevel`.
         if *WindowSettings::as_ref(ctx).zoom_per_window {
             let window_id = ctx.window_id();
             ctx.reset_window_zoom_factor(window_id);
-            self.update_titlebar_height(ctx);
         } else {
             WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
                 report_if_error!(window_settings
@@ -16200,34 +16182,15 @@ impl Workspace {
     }
 
     fn adjust_zoom(&mut self, increase: bool, ctx: &mut ViewContext<Self>) {
-        // Cmd++ / Cmd+-: behaviour depends on `zoom_per_window`.
-        //
-        // - When false (default), step `WindowSettings::zoom_level` within
-        //   the discrete `ZoomLevel::VALUES` percentages; the settings
-        //   subscriber relays the value into `ctx.set_zoom_factor` and every
-        //   window updates together (legacy app-wide behaviour preserved for
-        //   existing users).
-        // - When true, step the focused window's per-window override; other
-        //   windows are unaffected. The native macOS titlebar height is
-        //   recomputed explicitly because the per-window path does not fire
-        //   `WindowSettingsChangedEvent::ZoomLevel`.
-        //
-        // In both modes the current effective zoom is not guaranteed to be
-        // one of the discrete `ZoomLevel::VALUES` entries (a caller could
-        // set the app-wide default to a non-VALUES factor), so we snap to
-        // the nearest VALUES entry in the chosen direction via
-        // `next_zoom_step` rather than indexing into VALUES directly.
+        let window_id = ctx.window_id();
+        let current_factor = ctx.window_zoom_factor(window_id);
+        let current_percent = (current_factor.as_f32() * 100.0).round() as u16;
+        let next_percent = next_zoom_step(current_percent, increase);
+
         if *WindowSettings::as_ref(ctx).zoom_per_window {
-            let window_id = ctx.window_id();
-            let current_factor = ctx.window_zoom_factor(window_id);
-            let current_percent = (current_factor.as_f32() * 100.0).round() as u16;
-            let next_percent = next_zoom_step(current_percent, increase);
             let next_factor = next_percent as f32 / 100.0;
             ctx.set_window_zoom_factor(window_id, next_factor);
-            self.update_titlebar_height(ctx);
         } else {
-            let current_percent = *WindowSettings::as_ref(ctx).zoom_level.value();
-            let next_percent = next_zoom_step(current_percent, increase);
             WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
                 report_if_error!(window_settings.zoom_level.set_value(next_percent, ctx));
             });
@@ -16401,6 +16364,11 @@ impl Workspace {
                     // Re-render if the app's focus state has changed (Active/Inactive)
                     // This ensures dimming updates properly when the app gains/loses focus
                     ctx.notify();
+                }
+            }
+            StateEvent::WindowZoomFactorChanged { window_id } => {
+                if *window_id == self.window_id {
+                    self.update_titlebar_height(ctx);
                 }
             }
         };

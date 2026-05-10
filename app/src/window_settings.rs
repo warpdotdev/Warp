@@ -86,7 +86,7 @@ define_settings_group!(WindowSettings, settings: [
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
         private: false,
         toml_path: "appearance.window.zoom_per_window",
-        description: "Whether the zoom keyboard shortcuts (Cmd+=, Cmd+-, Cmd+0) scope to the focused OS window only. When false (the default), the shortcuts change the app-wide zoom level. When true, each OS window keeps its own zoom and the shortcuts only affect the focused window; the value of `zoom_level` is then used as the default zoom for windows without an explicit per-window override.",
+        description: "Whether the Zoom commands (Zoom In, Zoom Out, Reset Zoom) are scoped to the active window only. When false (the default), these commands change the zoom level across all windows. When true, each window keeps its own zoom and the commands only affect the current active window.",
     },
 ]);
 

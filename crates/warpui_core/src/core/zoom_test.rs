@@ -78,7 +78,7 @@ fn test_per_window_zoom_factor_invariants() {
 }
 
 #[test]
-fn test_set_window_zoom_factor_clamps_to_values_range() {
+fn test_set_window_zoom_factor_clamps_to_supported_range() {
     App::test((), |mut app| async move {
         let app = &mut app;
 
@@ -91,10 +91,10 @@ fn test_set_window_zoom_factor_clamps_to_values_range() {
             assert_eq!(ctx.window_zoom_factor(window_id).as_f32(), 0.5);
         });
 
-        // Above the maximum: clamped down to 3.5 (matches ZoomLevel::VALUES).
+        // Above the maximum: clamped down to 4.0.
         app.update(|ctx| ctx.set_window_zoom_factor(window_id, 5.0));
         app.read(|ctx| {
-            assert_eq!(ctx.window_zoom_factor(window_id).as_f32(), 3.5);
+            assert_eq!(ctx.window_zoom_factor(window_id).as_f32(), 4.0);
         });
     });
 }
