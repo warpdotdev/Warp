@@ -1686,8 +1686,8 @@ fn transform_origin_from_rect_coord_to_frame_coord(origin: Vector2F, size: Vecto
 /// `-[NSString UTF8String]`, because `-[NSString length]` returns the
 /// number of UTF-16 code units, not the number of UTF-8 bytes.
 ///
-/// Returns an empty string if `UTF8String` is null (e.g., if the
-/// receiver is not actually an NSString).
+/// Returns an empty string if `UTF8String` returns null, which may occur
+/// when the receiver is `nil`.
 unsafe fn to_string(value: *mut Object) -> String {
     let ptr = value.UTF8String();
     if ptr.is_null() {

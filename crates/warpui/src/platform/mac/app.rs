@@ -590,8 +590,9 @@ pub(crate) extern "C-unwind" fn warp_open_panel_file_selected(urls: id, callback
     // avoid the memory leak that would occur if we left it in raw pointer form.
     let callback = unsafe { Box::from_raw(callback as *mut FilePickerCallback) };
 
+    let url_count = unsafe { urls.count() };
     let paths = unsafe {
-        (0..urls.count())
+        (0..url_count)
             .filter_map(|i| {
                 let file_url = urls.objectAtIndex(i);
                 let file_path: id = msg_send![file_url, path];
@@ -611,8 +612,10 @@ pub(crate) extern "C-unwind" fn warp_open_panel_file_selected(urls: id, callback
             .collect::<Vec<_>>()
     };
 
-    if paths.is_empty() {
-        log::info!("No file was selected. Dialog was cancelled.")
+    if url_count == 0 {
+        log::info!("No file was selected. Dialog was cancelled.");
+    } else if paths.is_empty() {
+        log::error!("Files were selected ({url_count}) but all path conversions failed.");
     }
 
     let app = unsafe { get_app(&mut *get_warp_app()) };
@@ -637,15 +640,23 @@ pub(crate) extern "C-unwind" fn warp_save_panel_file_selected(url: id, callback:
                 None
             } else {
                 let cstr = std::ffi::CStr::from_ptr(ptr);
-                cstr.to_str().ok().map(|s| s.to_string())
+                match cstr.to_str() {
+                    Ok(s) => Some(s.to_string()),
+                    Err(e) => {
+                        log::error!("invalid UTF-8 in save path: {e}");
+                        None
+                    }
+                }
             }
         }
     };
 
-    if path.is_none() {
+    if url.is_null() {
         log::info!("Save dialog was cancelled.");
+    } else if path.is_none() {
+        log::error!("Save dialog returned a path that could not be converted.");
     } else if path.as_ref().is_none_or(|p| p.is_empty()) {
-        log::error!("Save dialog returned an empty or invalid path.");
+        log::error!("Save dialog returned an empty path.");
     }
 
     let app = unsafe { get_app(&mut *get_warp_app()) };
