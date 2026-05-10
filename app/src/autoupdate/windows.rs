@@ -289,13 +289,14 @@ fn app_name_prefix(channel: Channel) -> &'static str {
         Channel::Local => "warp",
         Channel::Integration => "integration",
         Channel::Dev => "WarpDev",
-        Channel::Oss => "warp-oss",
+        Channel::Oss => "WarpOss",
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_forcekill_exit_code;
+    use super::{app_name_prefix, parse_forcekill_exit_code};
+    use warp_core::channel::Channel;
 
     fn log(line: &str) -> Vec<u8> {
         line.to_ascii_lowercase().into_bytes()
@@ -343,5 +344,10 @@ mod tests {
     #[test]
     fn returns_none_for_empty_log() {
         assert_eq!(parse_forcekill_exit_code(b""), None);
+    }
+
+    #[test]
+    fn oss_installer_prefix_matches_bundle_output_name() {
+        assert_eq!(app_name_prefix(Channel::Oss), "WarpOss");
     }
 }

@@ -737,7 +737,7 @@ fn app_name_prefix(channel: Channel) -> &'static str {
         Channel::Local => "warp",
         Channel::Integration => "integration",
         Channel::Dev => "WarpDev",
-        Channel::Oss => "warp-oss",
+        Channel::Oss => "WarpOss",
     }
 }
 
@@ -757,5 +757,16 @@ fn executable_path(channel: Channel) -> String {
         format!("Contents/MacOS/{}", executable_name(channel))
     } else {
         executable_name(channel).to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::app_name_prefix;
+    use warp_core::channel::Channel;
+
+    #[test]
+    fn oss_dmg_prefix_matches_bundle_output_name() {
+        assert_eq!(app_name_prefix(Channel::Oss), "WarpOss");
     }
 }
