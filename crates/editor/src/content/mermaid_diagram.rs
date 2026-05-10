@@ -106,7 +106,7 @@ fn mermaid_diagram_size(
     if intrinsic_width <= 0. || intrinsic_height <= 0. {
         return None;
     }
-    let width = Pixels::new(max_width.as_f32().min(intrinsic_width));
+    let width = max_width;
     let height = Pixels::new(width.as_f32() * intrinsic_height / intrinsic_width);
     Some((width, height))
 }
