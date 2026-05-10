@@ -21,7 +21,7 @@ on:
         description: Build Linux x86_64 artifacts.
         required: true
         type: boolean
-        default: false
+        default: true
       build_linux_arm:
         description: Build Linux ARM artifacts.
         required: true
@@ -41,7 +41,7 @@ on:
         description: Build macOS artifacts.
         required: true
         type: boolean
-        default: false
+        default: true
       build_macos_x86:
         description: Build macOS x86_64 artifacts in addition to arm64.
         required: true
