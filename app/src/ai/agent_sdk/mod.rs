@@ -1075,6 +1075,10 @@ impl AgentDriverRunner {
             }
         };
 
+        // Track whether the handoff snapshot carries a 3P transcript that needs
+        // to be materialized into a server-side conversation.
+        let mut handoff_transcript_conversation_id: Option<String> = None;
+
         match handoff_snapshot_result {
             Ok(Some(dir)) => {
                 // Ensure attachments_dir is set so it's passed to the server even when
@@ -1084,6 +1088,92 @@ impl AgentDriverRunner {
             Ok(None) => {}
             Err(e) => {
                 log::warn!("Failed to fetch handoff snapshot attachments: {e:#}");
+            }
+        }
+
+        // 3P handoff transcript materialization (spec §7).
+        // If the downloaded handoff snapshot contains a transcript entry, create
+        // an external conversation on the server, upload the transcript, and
+        // update the task so the resume flow picks it up.
+        if let Some(ref att_dir) = attachments_dir {
+            let manifest_path = std::path::PathBuf::from(att_dir)
+                .join("handoff")
+                .join("snapshot_state.json");
+            if let Ok(manifest_bytes) = tokio::fs::read(&manifest_path).await {
+                #[derive(serde::Deserialize)]
+                struct ManifestStub {
+                    transcript: Option<driver::TranscriptManifestEntry>,
+                }
+                if let Ok(manifest) = serde_json::from_slice::<ManifestStub>(&manifest_bytes) {
+                    if let Some(transcript_entry) = manifest.transcript {
+                        let transcript_file_path = std::path::PathBuf::from(att_dir)
+                            .join("handoff")
+                            .join(&transcript_entry.file);
+                        match tokio::fs::read(&transcript_file_path).await {
+                            Ok(transcript_bytes) => {
+                                use crate::server::server_api::harness_support::{
+                                    upload_to_target, HarnessSupportClient as _,
+                                };
+                                let harness_client: &dyn crate::server::server_api::harness_support::HarnessSupportClient = server_api.as_ref();
+                                let format = transcript_entry.format.clone();
+                                match harness_client.create_external_conversation(&format).await {
+                                    Ok(conv_id) => {
+                                        log::info!(
+                                            "Created external conversation {conv_id} for 3P handoff transcript"
+                                        );
+                                        // Upload transcript to conversation.
+                                        match harness_client
+                                            .get_transcript_upload_target(&conv_id)
+                                            .await
+                                        {
+                                            Ok(target) => {
+                                                if let Err(e) = upload_to_target(
+                                                    harness_client.http_client(),
+                                                    &target,
+                                                    transcript_bytes,
+                                                )
+                                                .await
+                                                {
+                                                    log::warn!("Failed to upload 3P handoff transcript: {e:#}");
+                                                }
+                                            }
+                                            Err(e) => {
+                                                log::warn!(
+                                                    "Failed to get transcript upload target: {e:#}"
+                                                );
+                                            }
+                                        }
+                                        if let Some(task_id) = parsed_task_id {
+                                            if let Err(e) = ai_client
+                                                .update_agent_task(
+                                                    task_id,
+                                                    None,
+                                                    None,
+                                                    Some(conv_id.to_string()),
+                                                    None,
+                                                )
+                                                .await
+                                            {
+                                                log::warn!("Failed to update task with 3P handoff conversation_id: {e:#}");
+                                            }
+                                        }
+                                        handoff_transcript_conversation_id =
+                                            Some(conv_id.to_string());
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to create external conversation for 3P handoff: {e:#}");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to read 3P handoff transcript file '{}': {e}",
+                                    transcript_entry.file
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1191,7 +1281,10 @@ impl AgentDriverRunner {
             *dir = attachments_dir;
         }
 
-        Ok(task_conversation_id)
+        // If we materialized a conversation from a 3P handoff transcript, use
+        // that as the conversation to resume (overrides the task metadata's
+        // conversation_id which is None for 3P handoffs).
+        Ok(handoff_transcript_conversation_id.or(task_conversation_id))
     }
 
     /// If we are starting this agent run from an existing conversation, load the conversation
