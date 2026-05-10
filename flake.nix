@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    crane.url = "github:ipetkov/crane";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -21,6 +22,7 @@
     {
       self,
       nixpkgs,
+      crane,
       rust-overlay,
       warpProtoApis,
       warpWorkflows,
@@ -47,45 +49,57 @@
             cargo = rustToolchain;
             rustc = rustToolchain;
           };
+          craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           appCargoToml = builtins.fromTOML (builtins.readFile ./app/Cargo.toml);
           version = "${appCargoToml.package.version}+${self.shortRev or "dirty"}";
-          cargoDeps = pkgs.runCommand "warp-terminal-experimental-${version}-vendor" { } ''
-            cp -R ${
-              rustPlatform.fetchCargoVendor {
-                src = self;
-                name = "warp-terminal-experimental-${version}";
-                hash = "sha256-TzYSC82HVRhCxBHLmHw8BIZ4hJKCZfp+s/mfbeAjdQ4=";
-              }
-            }/. "$out"
-            chmod -R u+w "$out"
+          src = self;
+          cargoLock = ./Cargo.lock;
+          # Match Zed's approach: derive the main app vendor directory from
+          # Cargo.lock instead of maintaining a top-level cargoVendorHash.
+          cargoVendorDir =
+            let
+              craneVendorDir = craneLib.vendorCargoDeps {
+                inherit src cargoLock;
+                overrideVendorGitCheckout =
+                  crates: drv:
+                  let
+                    hasCrate = crateName: builtins.any (crate: crate.name == crateName) crates;
+                  in
+                  drv.overrideAttrs (old: {
+                    postPatch = (old.postPatch or "") + ''
+                      find . -name 'Cargo.toml.orig' -delete
 
-            # warp_multi_agent_api expects sibling .proto files from a full
-            # checkout, so point it at the pinned source tree fetched by Nix.
-            protoCrate="$(dirname "$(find "$out" -path '*/warp_multi_agent_api-0.0.0/Cargo.toml' -print -quit)")"
-            if [ -z "$protoCrate" ] || [ "$protoCrate" = "." ]; then
-              echo "could not find vendored warp_multi_agent_api crate" >&2
-              exit 1
-            fi
-            substituteInPlace "$protoCrate/build.rs" \
-              --replace-fail \
-                'let proto_path = manifest_dir.parent().unwrap().parent().unwrap();' \
-                'let proto_path = std::path::PathBuf::from("${warpProtoApis}/apis/multi_agent/v1");'
+                      ${lib.optionalString (hasCrate "warp_multi_agent_api") ''
+                        substituteInPlace apis/multi_agent/v1/gen/rust/build.rs \
+                          --replace-fail \
+                            'let proto_path = manifest_dir.parent().unwrap().parent().unwrap();' \
+                            'let proto_path = std::path::PathBuf::from("${warpProtoApis}/apis/multi_agent/v1");'
+                      ''}
 
-            # warp-workflows expects ../specs from a full checkout, so point it
-            # at the pinned source tree fetched by Nix.
-            workflowCrate="$(dirname "$(find "$out" -path '*/warp-workflows-0.1.0/Cargo.toml' -print -quit)")"
-            if [ -z "$workflowCrate" ] || [ "$workflowCrate" = "." ]; then
-              echo "could not find vendored warp-workflows crate" >&2
-              exit 1
-            fi
-            substituteInPlace "$workflowCrate/build.rs" \
-              --replace-fail \
-                'println!("cargo:rerun-if-changed=../specs");' \
-                'println!("cargo:rerun-if-changed=${warpWorkflows}/specs");' \
-              --replace-fail \
-                'for entry in WalkDir::new("../specs") {' \
-                'for entry in WalkDir::new("${warpWorkflows}/specs") {'
-          '';
+                      ${lib.optionalString (hasCrate "warp-workflows") ''
+                        substituteInPlace workflows/build.rs \
+                          --replace-fail \
+                            'println!("cargo:rerun-if-changed=../specs");' \
+                            'println!("cargo:rerun-if-changed=${warpWorkflows}/specs");' \
+                          --replace-fail \
+                            'for entry in WalkDir::new("../specs") {' \
+                            'for entry in WalkDir::new("${warpWorkflows}/specs") {'
+                      ''}
+                    '';
+                  });
+              };
+            in
+            # crane writes a root config.toml; buildRustPackage expects the
+            # cargoDeps layout to include .cargo/config.toml and Cargo.lock.
+            pkgs.runCommand "warp-terminal-experimental-${version}-cargo-vendor" { } ''
+              cp -R ${craneVendorDir}/. "$out"
+              chmod u+w "$out"
+              mkdir -p "$out/.cargo"
+              sed 's|${craneVendorDir}|@vendor@|g' \
+                "$out/config.toml" > "$out/.cargo/config.toml"
+              rm "$out/config.toml"
+              cp ${cargoLock} "$out/Cargo.lock"
+            '';
 
           linuxRuntimeLibraries = with pkgs; [
             alsa-lib
@@ -124,8 +138,8 @@
             pname = "warp-terminal-experimental";
             inherit version;
 
-            src = self;
-            inherit cargoDeps;
+            inherit src;
+            cargoDeps = cargoVendorDir;
 
             nativeBuildInputs = with pkgs; [
               brotli
