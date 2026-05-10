@@ -459,10 +459,17 @@ impl InstallationModalBody {
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(InstallationModalBodyAction::Cancel))
             .finish();
 
+        // The icon and label sit on the accent-button background, so colors
+        // must be picked for contrast against that background rather than the
+        // surrounding surface — see issue #10517.
+        let accent_label_color = appearance
+            .theme()
+            .main_text_color(appearance.theme().accent_button_color());
+
         let corner_down_left_icon = Container::new(
             ConstrainedBox::new(
                 Icon::CornerDownLeft
-                    .to_warpui_icon(appearance.theme().active_ui_text_color())
+                    .to_warpui_icon(accent_label_color)
                     .finish(),
             )
             .with_width(appearance.monospace_font_size())
@@ -471,7 +478,7 @@ impl InstallationModalBody {
         )
         .with_uniform_padding(2.)
         .with_border(Border::all(1.).with_border_fill(coloru_with_opacity(
-            appearance.theme().active_ui_text_color().into(),
+            accent_label_color.into(),
             60,
         )))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
@@ -485,7 +492,7 @@ impl InstallationModalBody {
                     appearance.ui_font_family(),
                     appearance.ui_font_size(),
                 )
-                .with_color(appearance.theme().active_ui_text_color().into())
+                .with_color(accent_label_color.into())
                 .with_style(Properties::default().weight(Weight::Bold))
                 .finish(),
             )
