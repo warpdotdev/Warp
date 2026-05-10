@@ -419,6 +419,7 @@ fn test_emit_child_killed_enqueues_cancelled_event_for_parent() {
                     terminal_view_id,
                     "child".to_string(),
                     parent_conversation_id,
+                    None,
                     ctx,
                 );
                 history_model.assign_run_id_for_conversation(
@@ -521,6 +522,7 @@ fn test_emit_child_killed_drops_when_child_already_terminal() {
                     terminal_view_id,
                     "child".to_string(),
                     parent_conversation_id,
+                    None,
                     ctx,
                 );
                 history_model.assign_run_id_for_conversation(
