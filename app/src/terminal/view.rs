@@ -25196,15 +25196,15 @@ impl TypedActionView for TerminalView {
             }
             ToggleMaximizePane => ctx.emit(Event::Pane(PaneEvent::ToggleMaximized)),
             RenamePane(pane_id) => {
-                ctx.dispatch_typed_action(&WorkspaceAction::RenamePaneById(*pane_id));
+                ctx.dispatch_typed_action_deferred(WorkspaceAction::RenamePaneById(*pane_id));
             }
             RenameActiveTabWithFallbackTitle(fallback_title) => {
-                ctx.dispatch_typed_action(&WorkspaceAction::RenameActiveTabWithFallbackTitle(
-                    fallback_title.clone(),
-                ));
+                ctx.dispatch_typed_action_deferred(
+                    WorkspaceAction::RenameActiveTabWithFallbackTitle(fallback_title.clone()),
+                );
             }
             SetActiveTabColor(color) => {
-                ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabColor(*color));
+                ctx.dispatch_typed_action_deferred(WorkspaceAction::SetActiveTabColor(*color));
             }
             PromptContextMenu {
                 position_offset_from_prompt,
