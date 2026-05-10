@@ -4597,9 +4597,7 @@ impl PaneGroup {
         }
     }
 
-    /// Permanently discards the pane backing a child agent conversation. Unlike
-    /// `close_pane`, this does not preserve child panes off-tree for later
-    /// reveals; it is used by the Kill action.
+    /// Permanently discards the pane backing a child agent conversation.
     pub fn discard_child_agent_pane_for_conversation(
         &mut self,
         conversation_id: AIConversationId,
@@ -4623,8 +4621,7 @@ impl PaneGroup {
             .as_ref()
             .is_some_and(|origin| origin.conversation_id == conversation_id)
         {
-            // A killed split-off tab must not be re-adopted by the source tab
-            // when the workspace removes it.
+            // Killed split-off tabs should not be re-adopted.
             self.child_agent_origin = None;
         }
 
@@ -4643,18 +4640,13 @@ impl PaneGroup {
                 self.focus_pane(original_pane_id, true, ctx);
             }
         } else {
-            // If the killed child was the original side of an active swap, keep
-            // the replacement visible and drop the hidden original entry so a
-            // later revert cannot resurrect the killed pane.
+            // Drop any hidden entry that could restore the killed pane.
             self.panes.remove_hidden_pane(child_pane_id);
         }
 
         let is_in_tree = self.panes.is_pane_in_tree(child_pane_id);
         if is_in_tree && self.panes.visible_pane_count() <= 1 {
-            // PaneData cannot represent an empty root. For a lone split-off
-            // child tab, ask the workspace to remove the tab instead; the pane
-            // group is about to be dropped, and the caller will remove the
-            // conversation after this pane teardown returns.
+            // A lone split-off child closes by removing its tab.
             ctx.emit(Event::Exited {
                 add_to_undo_stack: false,
             });

@@ -39,8 +39,7 @@ const RESTORE_FETCH_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
 const RESTORE_FETCH_PERMANENT_BACKOFF_STEPS: &[u64] = &[30];
 /// How often (milliseconds) the drain timer checks for SSE events.
 const SSE_DRAIN_INTERVAL_MS: u64 = 500;
-/// Cap killed-run tombstones to a per-session amount comfortably above normal
-/// usage while keeping the late-event drop set bounded.
+/// Cap killed-run tombstones while keeping normal sessions well below the limit.
 const MAX_KILLED_RUN_IDS: usize = 1024;
 
 /// Per-event item delivered from the SSE background task to the entity.
@@ -191,11 +190,7 @@ pub struct OrchestrationEventStreamer {
     /// Monotonic counter for wake-only listener generations. Ensures stale
     /// callbacks from replaced listeners are discarded.
     next_wake_generation: u64,
-    /// Run IDs explicitly killed by the local user. We keep these after the
-    /// conversation is removed so parent SSE streams can observe and discard
-    /// late server events instead of re-delivering or resurrecting the child.
-    /// Keep this set and `killed_run_id_order` in sync through
-    /// `remember_killed_run_id`.
+    /// Run IDs killed locally; kept briefly to drop late server events.
     killed_run_ids: HashSet<String>,
     killed_run_id_order: VecDeque<String>,
 }
@@ -256,8 +251,7 @@ impl OrchestrationEventStreamer {
 
     // ---- Public consumer registry API ---------------------------------
 
-    /// Tombstone a killed run so late SSE events for that run are dropped by
-    /// any still-open parent stream before they can resurrect the child.
+    /// Tombstone a killed run so late SSE events cannot resurrect it.
     pub fn mark_conversation_killed(
         &mut self,
         conversation_id: AIConversationId,
@@ -1284,9 +1278,8 @@ impl OrchestrationEventStreamer {
             .or_default()
             .event_cursor = max_seq;
 
-        // Persist the cursor before killed-run filtering so locally dropped
-        // late events are not replayed after restart and cannot resurrect
-        // children the user already killed.
+        // Advance the cursor before filtering so dropped killed-run events
+        // are not replayed later.
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
             model.update_event_sequence(conversation_id, max_seq, ctx);
         });

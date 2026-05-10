@@ -722,9 +722,7 @@ fn stop_agent_conversation(
         conversation_id,
         ctx,
     ) {
-        // The terminal view normally handles both stream cancellation and
-        // fallback status updates. If the owning view is gone, still mark the
-        // conversation cancelled in history so Stop has a visible effect.
+        // If the owner view is gone, still make Stop visible in history.
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
             history_model.update_conversation_status(
                 state.owner_terminal_view_id,
@@ -813,9 +811,7 @@ fn kill_agent_conversation(
                 }
             }
         });
-        // Tombstone every local Kill, even if the child already appears
-        // terminal locally: the parent SSE channel can still have buffered or
-        // late server events that should be dropped after local deletion.
+        // Tombstone every Kill so late events cannot restore a removed child.
         OrchestrationEventStreamer::handle(ctx).update(ctx, |streamer, ctx| {
             streamer.mark_conversation_killed(conversation_id, ctx);
         });
