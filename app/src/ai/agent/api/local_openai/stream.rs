@@ -12,7 +12,7 @@ use crate::ai::agent::task::TaskId;
 
 use super::request::{
     assistant_output_item, assistant_output_item_with_annotations, function_call_history_item,
-    reasoning_history_item, web_search_call_history_item,
+    reasoning_history_item, reasoning_history_server_message_data, web_search_call_history_item,
 };
 use super::tool_calls::parse_tool_call;
 use super::types::{
@@ -148,13 +148,22 @@ pub(super) fn handle_responses_stream_message(
             let done_event: ResponsesOutputItemDoneEvent = serde_json::from_value(payload)?;
             if done_event.item.item_type == "reasoning" {
                 record_reasoning_history_item(accumulator, &done_event.item);
+                let mut events = build_reasoning_history_message_updates(
+                    task_id,
+                    request_id,
+                    accumulator,
+                    &done_event.item,
+                );
                 let reasoning_messages = reasoning_messages_from_output_item(
                     task_id,
                     request_id,
                     accumulator,
                     &done_event.item,
                 );
-                if reasoning_messages.is_empty() {
+                if !reasoning_messages.is_empty() {
+                    events.insert(0, Ok(add_messages_event(task_id, reasoning_messages)));
+                }
+                if events.is_empty() {
                     return Ok(StreamMessageResult::default());
                 }
                 for reasoning_text in reasoning_output_texts(&done_event.item) {
@@ -170,7 +179,7 @@ pub(super) fn handle_responses_stream_message(
                 }
 
                 return Ok(StreamMessageResult {
-                    events: vec![Ok(add_messages_event(task_id, reasoning_messages))],
+                    events,
                     is_terminal: false,
                 });
             }
@@ -1411,6 +1420,7 @@ fn reasoning_messages_from_output_item(
     item: &ResponsesOutputItem,
 ) -> Vec<api::Message> {
     let fallback_duration = Some(accumulator.stream_started_at.elapsed());
+    let server_message_data = reasoning_history_server_message_data(item).unwrap_or_default();
     reasoning_output_texts(item)
         .into_iter()
         .filter_map(|reasoning_text| {
@@ -1426,13 +1436,45 @@ fn reasoning_messages_from_output_item(
                 return None;
             }
 
-            Some(reasoning_message_with_id(
+            Some(reasoning_message_with_server_data(
                 Uuid::new_v4().to_string(),
                 task_id,
                 request_id,
                 reasoning_text.text,
                 fallback_duration,
+                server_message_data.clone(),
             ))
+        })
+        .collect()
+}
+
+/// Builds update events that attach replayable reasoning history onto streamed reasoning messages.
+fn build_reasoning_history_message_updates(
+    task_id: &TaskId,
+    request_id: &str,
+    accumulator: &StreamingResponsesAccumulator,
+    item: &ResponsesOutputItem,
+) -> Vec<Event> {
+    let Some(server_message_data) = reasoning_history_server_message_data(item) else {
+        return Vec::new();
+    };
+
+    reasoning_output_texts(item)
+        .into_iter()
+        .filter_map(|reasoning_text| {
+            let reasoning_key = backfill_reasoning_key(
+                item.id.as_deref(),
+                reasoning_text.key_kind,
+                reasoning_text.index,
+            )?;
+            let message_state = accumulator.reasoning_messages_by_key.get(&reasoning_key)?;
+            Some(Ok(update_reasoning_server_message_data_event(
+                task_id,
+                request_id,
+                &message_state.message_id,
+                message_state.text.clone(),
+                server_message_data.clone(),
+            )))
         })
         .collect()
 }
@@ -1743,10 +1785,29 @@ fn reasoning_message_with_id(
     text: String,
     finished_duration: Option<Duration>,
 ) -> api::Message {
+    reasoning_message_with_server_data(
+        message_id,
+        task_id,
+        request_id,
+        text,
+        finished_duration,
+        String::new(),
+    )
+}
+
+/// Converts reasoning text plus persisted replay metadata into a Warp reasoning task message.
+fn reasoning_message_with_server_data(
+    message_id: String,
+    task_id: &TaskId,
+    request_id: &str,
+    text: String,
+    finished_duration: Option<Duration>,
+    server_message_data: String,
+) -> api::Message {
     api::Message {
         id: message_id,
         task_id: task_id.to_string(),
-        server_message_data: String::new(),
+        server_message_data,
         citations: vec![],
         message: Some(api::message::Message::AgentReasoning(
             api::message::AgentReasoning {
@@ -1756,6 +1817,40 @@ fn reasoning_message_with_id(
         )),
         request_id: request_id.to_string(),
         timestamp: None,
+    }
+}
+
+/// Builds an update client action that persists replayable reasoning metadata onto an existing message.
+fn update_reasoning_server_message_data_event(
+    task_id: &TaskId,
+    request_id: &str,
+    message_id: &str,
+    full_text: String,
+    server_message_data: String,
+) -> api::ResponseEvent {
+    api::ResponseEvent {
+        r#type: Some(api::response_event::Type::ClientActions(
+            api::response_event::ClientActions {
+                actions: vec![api::ClientAction {
+                    action: Some(api::client_action::Action::UpdateTaskMessage(
+                        api::client_action::UpdateTaskMessage {
+                            task_id: task_id.to_string(),
+                            message: Some(reasoning_message_with_server_data(
+                                message_id.to_string(),
+                                task_id,
+                                request_id,
+                                full_text,
+                                None,
+                                server_message_data,
+                            )),
+                            mask: Some(prost_types::FieldMask {
+                                paths: vec!["server_message_data".to_string()],
+                            }),
+                        },
+                    )),
+                }],
+            },
+        )),
     }
 }
 

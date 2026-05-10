@@ -785,6 +785,91 @@ fn streamed_reasoning_events_update_reasoning_text_and_duration() {
     assert!(reasoning.finished_duration.is_some());
 }
 
+/// Verifies that completed reasoning output items persist replay metadata onto streamed messages.
+#[test]
+fn reasoning_output_item_done_updates_streamed_message_server_data() {
+    let params = request_params_for_local_backend_tests();
+    let task_id = TaskId::new("task-id".to_string());
+    let mut accumulator = StreamingResponsesAccumulator::default();
+
+    let delta_result = handle_responses_stream_message(
+        &params,
+        &task_id,
+        "request-id",
+        "response.reasoning_summary_text.delta",
+        r#"{"item_id":"rs_1","summary_index":0,"delta":"First pass"}"#,
+        &mut accumulator,
+    )
+    .expect("reasoning delta should parse");
+    let delta_event = delta_result.events[0]
+        .as_ref()
+        .expect("delta event should be ok");
+    let Some(api::response_event::Type::ClientActions(delta_actions)) = &delta_event.r#type else {
+        panic!("expected client actions");
+    };
+    let Some(api::client_action::Action::AddMessagesToTask(delta_add)) =
+        delta_actions.actions[0].action.as_ref()
+    else {
+        panic!("expected add-messages action");
+    };
+    let initial_message = delta_add.messages[0].clone();
+
+    let result = handle_responses_stream_message(
+        &params,
+        &task_id,
+        "request-id",
+        "response.output_item.done",
+        r#"{"item":{"id":"rs_1","type":"reasoning","content":[],"summary":[{"type":"summary_text","text":"First pass"}],"encrypted_content":"enc_reasoning_payload"}}"#,
+        &mut accumulator,
+    )
+    .expect("reasoning output_item.done should parse");
+    assert_eq!(result.events.len(), 1);
+
+    let update_event = result.events[0]
+        .as_ref()
+        .expect("update event should be ok");
+    let Some(api::response_event::Type::ClientActions(actions)) = &update_event.r#type else {
+        panic!("expected client actions");
+    };
+    let Some(api::client_action::Action::UpdateTaskMessage(update)) =
+        actions.actions[0].action.as_ref()
+    else {
+        panic!("expected update action");
+    };
+    assert_eq!(
+        update
+            .mask
+            .as_ref()
+            .expect("update mask should exist")
+            .paths,
+        vec!["server_message_data".to_string()]
+    );
+
+    let merged = field_mask::FieldMaskOperation::update(
+        &api::MESSAGE_DESCRIPTOR,
+        &initial_message,
+        update
+            .message
+            .as_ref()
+            .expect("update message should exist"),
+        update.mask.clone().expect("update mask should exist"),
+    )
+    .apply()
+    .expect("server message data update should succeed");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&merged.server_message_data)
+            .expect("server message data should be valid json"),
+        serde_json::json!({
+            "type": "reasoning",
+            "encrypted_content": "enc_reasoning_payload",
+            "summary": [{
+                "type": "summary_text",
+                "text": "First pass"
+            }]
+        })
+    );
+}
+
 /// Verifies that completed reasoning output items are backfilled into task messages.
 #[test]
 fn finalize_stream_state_backfills_reasoning_messages_from_completed_output() {
@@ -851,15 +936,29 @@ fn finalize_stream_state_backfills_reasoning_messages_from_completed_output() {
         .messages
         .iter()
         .find_map(|message| match &message.message {
-            Some(api::message::Message::AgentReasoning(reasoning)) => Some(reasoning),
+            Some(api::message::Message::AgentReasoning(reasoning)) => {
+                Some((message, reasoning))
+            }
             _ => None,
         })
         .expect("expected a backfilled reasoning message");
     assert_eq!(
-        reasoning_message.reasoning,
+        reasoning_message.1.reasoning,
         "Checked the repository wiring first."
     );
-    assert!(reasoning_message.finished_duration.is_some());
+    assert!(reasoning_message.1.finished_duration.is_some());
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&reasoning_message.0.server_message_data)
+            .expect("server message data should be valid json"),
+        serde_json::json!({
+            "type": "reasoning",
+            "encrypted_content": "enc_reasoning_payload",
+            "summary": [{
+                "type": "summary_text",
+                "text": "Checked the repository wiring first."
+            }]
+        })
+    );
     let stored_items = conversation_state_store()
         .lock()
         .get(&params.conversation_id)
@@ -2198,6 +2297,28 @@ fn task_history_response_items_restore_prior_messages() {
                     }),
                 })),
             },
+            api::Message {
+                id: "message-reasoning".to_string(),
+                task_id: "task-id".to_string(),
+                server_message_data: serde_json::json!({
+                    "type": "reasoning",
+                    "encrypted_content": "enc_prior_reasoning",
+                    "summary": [{
+                        "type": "summary_text",
+                        "text": "Need to preserve this across fork."
+                    }]
+                })
+                .to_string(),
+                citations: vec![],
+                request_id: "request-1".to_string(),
+                timestamp: None,
+                message: Some(api::message::Message::AgentReasoning(
+                    api::message::AgentReasoning {
+                        reasoning: "Need to preserve this across fork.".to_string(),
+                        finished_duration: None,
+                    },
+                )),
+            },
         ],
         dependencies: None,
         description: String::new(),
@@ -2206,7 +2327,7 @@ fn task_history_response_items_restore_prior_messages() {
     }];
 
     let items = task_history_response_items(&params).expect("task history should convert");
-    assert_eq!(items.len(), 5);
+    assert_eq!(items.len(), 6);
     assert_eq!(items[0]["role"], "user");
     assert_eq!(items[1]["type"], "function_call");
     assert_eq!(items[1]["name"], "read_files");
@@ -2224,6 +2345,12 @@ fn task_history_response_items_restore_prior_messages() {
     assert_eq!(
         items[4]["action"]["sources"][0]["url"],
         "https://example.com/prior-answer"
+    );
+    assert_eq!(items[5]["type"], "reasoning");
+    assert_eq!(items[5]["encrypted_content"], "enc_prior_reasoning");
+    assert_eq!(
+        items[5]["summary"][0]["text"],
+        "Need to preserve this across fork."
     );
 }
 

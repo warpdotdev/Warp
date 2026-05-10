@@ -597,6 +597,11 @@ pub(super) fn reasoning_history_item(item: &ResponsesOutputItem) -> Option<Value
     Some(Value::Object(history_item))
 }
 
+/// Serializes a replayable reasoning history item for storage on persisted task messages.
+pub(super) fn reasoning_history_server_message_data(item: &ResponsesOutputItem) -> Option<String> {
+    reasoning_history_item(item).map(|history_item| history_item.to_string())
+}
+
 /// Converts a completed tool result into a Responses `function_call_output` item.
 fn function_call_output_item(call_id: String, output: String) -> Value {
     json!({
@@ -1117,6 +1122,7 @@ pub(super) fn task_history_response_items(params: &RequestParams) -> anyhow::Res
 
     let mut items = Vec::new();
     let mut replayable_tool_call_ids = HashSet::new();
+    let mut replayable_reasoning_payloads = HashSet::new();
     for message in &task.messages {
         let Some(inner) = &message.message else {
             continue;
@@ -1132,6 +1138,16 @@ pub(super) fn task_history_response_items(params: &RequestParams) -> anyhow::Res
                         &output.text,
                         output_text_annotations_from_api_citations(&message.citations),
                     ));
+                }
+            }
+            api::message::Message::AgentReasoning(_) => {
+                if message.server_message_data.is_empty()
+                    || !replayable_reasoning_payloads.insert(message.server_message_data.clone())
+                {
+                    continue;
+                }
+                if let Some(history_item) = persisted_reasoning_history_item(message) {
+                    items.push(history_item);
                 }
             }
             api::message::Message::ToolCall(tool_call) => {
@@ -1157,6 +1173,25 @@ pub(super) fn task_history_response_items(params: &RequestParams) -> anyhow::Res
     }
 
     Ok(items)
+}
+
+/// Parses a replayable reasoning history item previously stored on a persisted task message.
+fn persisted_reasoning_history_item(message: &api::Message) -> Option<Value> {
+    if message.server_message_data.is_empty() {
+        return None;
+    }
+
+    match serde_json::from_str::<Value>(&message.server_message_data) {
+        Ok(history_item) if history_item["type"] == "reasoning" => Some(history_item),
+        Ok(_) => None,
+        Err(error) => {
+            log::warn!(
+                "Failed to parse persisted local OpenAI reasoning history from message {}: {error:#}",
+                message.id
+            );
+            None
+        }
+    }
 }
 
 /// Returns the task whose messages should seed the local conversation history.
