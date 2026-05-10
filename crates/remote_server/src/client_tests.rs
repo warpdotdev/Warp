@@ -2,7 +2,8 @@ use futures::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::proto::{
-    client_message, run_command_response, server_message, ClientMessage, ErrorCode,
+    client_message, run_command_response, server_message, ClientMessage, CodebaseIndexStatus,
+    CodebaseIndexStatusState, CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, ErrorCode,
     InitializeResponse, RunCommandResponse, RunCommandSuccess, ServerMessage,
 };
 use crate::protocol;
@@ -34,6 +35,69 @@ async fn mock_server_with<F>(
             Err(protocol::ProtocolError::UnexpectedEof) => break,
             Err(e) => panic!("mock server error: {e}"),
         }
+    }
+}
+
+fn not_enabled_codebase_status(repo_path: &str) -> CodebaseIndexStatus {
+    CodebaseIndexStatus {
+        repo_path: repo_path.to_string(),
+        state: CodebaseIndexStatusState::NotEnabled.into(),
+        last_updated_epoch_millis: Some(123),
+    }
+}
+
+#[tokio::test]
+async fn codebase_index_push_messages_become_client_events() {
+    let (client_stream, server_stream) = tokio::io::duplex(4096);
+    let (server_read, server_write) = tokio::io::split(server_stream);
+    let (client_read, client_write) = tokio::io::split(client_stream);
+    drop(server_read);
+
+    let executor = executor::Background::default();
+    let (_client, event_rx) =
+        RemoteServerClient::new(client_read.compat(), client_write.compat_write(), &executor);
+    let mut writer = server_write.compat_write();
+
+    protocol::write_server_message(
+        &mut writer,
+        &ServerMessage {
+            request_id: String::new(),
+            message: Some(server_message::Message::CodebaseIndexStatusesSnapshot(
+                CodebaseIndexStatusesSnapshot {
+                    statuses: vec![not_enabled_codebase_status("/repo")],
+                },
+            )),
+        },
+    )
+    .await
+    .unwrap();
+    protocol::write_server_message(
+        &mut writer,
+        &ServerMessage {
+            request_id: String::new(),
+            message: Some(server_message::Message::CodebaseIndexStatusUpdated(
+                CodebaseIndexStatusUpdated {
+                    status: Some(not_enabled_codebase_status("/repo")),
+                },
+            )),
+        },
+    )
+    .await
+    .unwrap();
+    writer.flush().await.unwrap();
+
+    match event_rx.recv().await.unwrap() {
+        ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses } => {
+            assert_eq!(statuses.len(), 1);
+            assert_eq!(statuses[0].repo_path, "/repo");
+        }
+        other => panic!("Expected CodebaseIndexStatusesSnapshotReceived, got {other:?}"),
+    }
+    match event_rx.recv().await.unwrap() {
+        ClientEvent::CodebaseIndexStatusUpdated { status } => {
+            assert_eq!(status.repo_path, "/repo");
+        }
+        other => panic!("Expected CodebaseIndexStatusUpdated, got {other:?}"),
     }
 }
 
@@ -75,7 +139,17 @@ async fn initialize_round_trip() {
         })
     });
 
-    let resp = client.initialize(None).await.unwrap();
+    let resp = client
+        .initialize(
+            None,
+            InitializeParams {
+                user_id: String::new(),
+                user_email: String::new(),
+                crash_reporting_enabled: true,
+            },
+        )
+        .await
+        .unwrap();
     assert_eq!(resp.server_version, "test-0.1.0");
     assert_eq!(resp.host_id, "test-host-id");
 }
@@ -95,7 +169,17 @@ async fn initialize_sends_empty_auth_token_when_none() {
         })
     });
 
-    client.initialize(None).await.unwrap();
+    client
+        .initialize(
+            None,
+            InitializeParams {
+                user_id: String::new(),
+                user_email: String::new(),
+                crash_reporting_enabled: true,
+            },
+        )
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -113,7 +197,17 @@ async fn initialize_sends_auth_token_when_provided() {
         })
     });
 
-    client.initialize(Some("secret-token")).await.unwrap();
+    client
+        .initialize(
+            Some("secret-token"),
+            InitializeParams {
+                user_id: String::new(),
+                user_email: String::new(),
+                crash_reporting_enabled: true,
+            },
+        )
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -150,7 +244,16 @@ async fn disconnected_on_closed_stream() {
         RemoteServerClient::new(client_read.compat(), client_write.compat_write(), &executor);
 
     // An initialize call on a dead stream must complete with an error rather than hang.
-    let result = client.initialize(None).await;
+    let result = client
+        .initialize(
+            None,
+            InitializeParams {
+                user_id: String::new(),
+                user_email: String::new(),
+                crash_reporting_enabled: true,
+            },
+        )
+        .await;
     assert!(result.is_err());
 
     // The reader task should detect EOF and emit a Disconnected event.
@@ -206,9 +309,16 @@ async fn concurrent_in_flight_requests() {
     for _ in 0..10 {
         let c = std::sync::Arc::clone(&client);
         handles.push(tokio::spawn(async move {
-            c.initialize(None)
-                .await
-                .expect("concurrent initialize failed")
+            c.initialize(
+                None,
+                InitializeParams {
+                    user_id: String::new(),
+                    user_email: String::new(),
+                    crash_reporting_enabled: true,
+                },
+            )
+            .await
+            .expect("concurrent initialize failed")
         }));
     }
 

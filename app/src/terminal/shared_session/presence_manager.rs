@@ -781,5 +781,5 @@ impl Entity for PresenceManager {
 }
 
 #[cfg(test)]
-#[path = "presence_manager_test.rs"]
+#[path = "presence_manager_tests.rs"]
 mod tests;

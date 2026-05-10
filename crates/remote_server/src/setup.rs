@@ -4,7 +4,7 @@ pub use glibc::{GlibcVersion, RemoteLibc};
 
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::anyhow;
 use warp_core::channel::{Channel, ChannelState};
 
 /// State machine for the remote server install → launch → initialize flow.
@@ -240,31 +240,43 @@ impl RemoteArch {
 ///
 /// The expected format is `<os> <arch>`, e.g. `Linux x86_64` or `Darwin arm64`.
 /// Takes the last line to skip any shell initialization output.
-pub fn parse_uname_output(output: &str) -> Result<RemotePlatform> {
+pub fn parse_uname_output(
+    output: &str,
+) -> std::result::Result<RemotePlatform, crate::transport::Error> {
+    use crate::transport::Error;
+
     let line = output
         .lines()
         .last()
-        .ok_or_else(|| anyhow!("empty uname output"))?
-        .trim();
+        .ok_or_else(|| Error::Other(anyhow!("empty uname output")))
+        .map(str::trim)?;
 
     let mut parts = line.split_whitespace();
     let os_str = parts
         .next()
-        .ok_or_else(|| anyhow!("missing OS in uname output: {line}"))?;
+        .ok_or_else(|| Error::Other(anyhow!("missing OS in uname output: {line}")))?;
     let arch_str = parts
         .next()
-        .ok_or_else(|| anyhow!("missing arch in uname output: {line}"))?;
+        .ok_or_else(|| Error::Other(anyhow!("missing arch in uname output: {line}")))?;
 
     let os = match os_str {
         "Linux" => RemoteOs::Linux,
         "Darwin" => RemoteOs::MacOs,
-        other => return Err(anyhow!("unsupported OS: {other}")),
+        other => {
+            return Err(Error::UnsupportedOs {
+                os: other.to_string(),
+            })
+        }
     };
 
     let arch = match arch_str {
         "x86_64" => RemoteArch::X86_64,
         "aarch64" | "arm64" | "armv8l" => RemoteArch::Aarch64,
-        other => return Err(anyhow!("unsupported arch: {other}")),
+        other => {
+            return Err(Error::UnsupportedArch {
+                arch: other.to_string(),
+            })
+        }
     };
 
     Ok(RemotePlatform { os, arch })
@@ -323,6 +335,12 @@ pub fn remote_server_daemon_dir(identity_key: &str) -> String {
         remote_server_dir(),
         remote_server_identity_dir_name(identity_key)
     )
+}
+
+/// Returns the identity-scoped remote directory used for daemon-owned
+/// per-user data files.
+pub fn remote_server_daemon_data_dir(identity_key: &str) -> String {
+    format!("{}/data", remote_server_daemon_dir(identity_key))
 }
 
 /// Returns the binary name, keyed by channel.
@@ -396,8 +414,8 @@ const INSTALL_SCRIPT_TEMPLATE: &str = include_str!("install_remote_server.sh");
 /// the unversioned path used by `script/deploy_remote_server`); pinned to
 /// `&version={v}` / `-{v}` on every other channel, where `v` falls back
 /// to `CARGO_PKG_VERSION` when no release tag is baked in.
-pub fn install_script() -> String {
-    let (version_query, version_suffix) = match ChannelState::channel() {
+pub fn install_script(staging_tarball_path: Option<&str>) -> String {
+    let (vq, version_suffix) = match ChannelState::channel() {
         Channel::Local | Channel::Oss => (String::new(), String::new()),
         Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
             let v = pinned_version();
@@ -409,8 +427,13 @@ pub fn install_script() -> String {
         .replace("{channel}", download_channel())
         .replace("{install_dir}", &remote_server_dir())
         .replace("{binary_name}", binary_name())
-        .replace("{version_query}", &version_query)
+        .replace("{version_query}", &vq)
         .replace("{version_suffix}", &version_suffix)
+        .replace(
+            "{no_http_client_exit_code}",
+            &NO_HTTP_CLIENT_EXIT_CODE.to_string(),
+        )
+        .replace("{staging_tarball_path}", staging_tarball_path.unwrap_or(""))
 }
 
 /// Construct the download URL from the server root URL.
@@ -440,11 +463,47 @@ fn download_channel() -> &'static str {
     }
 }
 
+/// Returns the version query string for the download URL (e.g.
+/// `"&version=v0.2026.01.01"` on release channels, empty on Local/Oss).
+fn version_query() -> String {
+    match ChannelState::channel() {
+        Channel::Local | Channel::Oss => String::new(),
+        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
+            format!("&version={}", pinned_version())
+        }
+    }
+}
+
+/// Returns the full download URL for the remote server tarball,
+/// parameterized by the remote platform. Used by the SCP upload
+/// fallback to download the same artifact the shell script would fetch.
+pub fn download_tarball_url(platform: &RemotePlatform) -> String {
+    format!(
+        "{}?package=tar&os={}&arch={}&channel={}{}",
+        download_url(),
+        platform.os.as_str(),
+        platform.arch.as_str(),
+        download_channel(),
+        version_query(),
+    )
+}
+
+/// Exit code the install script uses when neither curl nor wget is
+/// available on the remote host. The Rust side matches on this to
+/// trigger the SCP upload fallback.
+pub const NO_HTTP_CLIENT_EXIT_CODE: i32 = 3;
+
 /// Timeout for the binary existence check.
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Timeout for the install script.
+/// Timeout for the install script (curl/wget path).
 pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Timeout for the SCP upload fallback path (local download + SCP +
+/// extraction). Longer than [`INSTALL_TIMEOUT`] because SCP transfers
+/// the tarball over the user's SSH link, which is typically slower than
+/// the remote host's direct internet connection.
+pub const SCP_INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[cfg(test)]
 #[path = "setup_tests.rs"]

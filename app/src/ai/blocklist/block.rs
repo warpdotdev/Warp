@@ -46,6 +46,7 @@ use crate::code_review::comment_rendering::{CommentViewCard, HeaderClickHandler}
 use crate::terminal::model::BlockId;
 use crate::terminal::model_events::ModelEvent;
 use crate::terminal::model_events::ModelEventDispatcher;
+use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
 use crate::terminal::TerminalModel;
 use crate::view_components::action_button::{
     ActionButtonTheme, NakedTheme, PrimaryTheme, SecondaryTheme,
@@ -429,11 +430,13 @@ pub(super) struct AIBlockStateHandles {
     /// Mouse state handle for AI document created block
     ai_document_handle: MouseStateHandle,
 
-    /// Mouse state handles for 'open skill' buttons from ReadSkill action banners.
-    open_skill_button_handles: HashMap<AIAgentActionId, MouseStateHandle>,
+    /// Mouse state handle for 'open skill' button
+    /// from an OpenSkill action banner
+    open_skill_button_handle: MouseStateHandle,
 
-    /// Mouse state handles for 'open skill' buttons from ReadFiles-style action banners.
-    read_from_skill_button_handles: HashMap<AIAgentActionId, MouseStateHandle>,
+    /// Mouse state handle for 'open skill' button
+    /// from a ReadFiles action banner
+    read_from_skill_button_handle: MouseStateHandle,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -778,6 +781,14 @@ impl CollapsibleElementState {
     }
 }
 
+const RECEIVED_MESSAGE_COLLAPSIBLE_ID_PREFIX: &str = "received-message:";
+
+pub(crate) fn received_message_collapsible_id(message_id: &str) -> MessageId {
+    MessageId::new(format!(
+        "{RECEIVED_MESSAGE_COLLAPSIBLE_ID_PREFIX}{message_id}"
+    ))
+}
+
 pub struct AIBlock {
     model: Rc<dyn AIBlockModel<View = AIBlock>>,
     terminal_model: Arc<FairMutex<TerminalModel>>,
@@ -929,6 +940,7 @@ pub struct AIBlock {
     ///
     /// Only used when `FeatureFlag::AgentView` is enabled.
     agent_view_controller: ModelHandle<AgentViewController>,
+    ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
 
     /// View for AWS Bedrock credentials error, created lazily when the error occurs.
     aws_bedrock_credentials_error_view: Option<ViewHandle<AwsBedrockCredentialsErrorView>>,
@@ -978,6 +990,7 @@ impl AIBlock {
         cli_subagent_controller: &ModelHandle<CLISubagentController>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
         agent_view_controller: ModelHandle<AgentViewController>,
+        ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
         terminal_view_handle: WeakViewHandle<TerminalView>,
         terminal_view_id: EntityId,
         ctx: &mut ViewContext<Self>,
@@ -1207,6 +1220,23 @@ impl AIBlock {
             ctx.subscribe_to_model(&agent_view_controller, |_, _, _, ctx| ctx.notify());
         }
 
+        // Handoff prep emits ambient-agent events before submit, while still composing.
+        // Only the run lifecycle events can change `is_cloud_agent_pre_first_exchange`
+        // for this block's footer.
+        if let Some(ambient_agent_view_model) = ambient_agent_view_model.as_ref() {
+            ctx.subscribe_to_model(ambient_agent_view_model, |_, _, event, ctx| match event {
+                AmbientAgentViewModelEvent::DispatchedAgent
+                | AmbientAgentViewModelEvent::FollowupDispatched
+                | AmbientAgentViewModelEvent::SessionReady { .. }
+                | AmbientAgentViewModelEvent::FollowupSessionReady { .. }
+                | AmbientAgentViewModelEvent::Failed { .. }
+                | AmbientAgentViewModelEvent::NeedsGithubAuth
+                | AmbientAgentViewModelEvent::Cancelled
+                | AmbientAgentViewModelEvent::HarnessCommandStarted { .. } => ctx.notify(),
+                _ => {}
+            });
+        }
+
         ctx.subscribe_to_model(&context_model, |_, _, event, ctx| {
             if let BlocklistAIContextEvent::UpdatedPendingContext { .. } = event {
                 ctx.notify();
@@ -1351,6 +1381,7 @@ impl AIBlock {
             last_right_clicked_command: None,
             is_usage_footer_expanded: false,
             agent_view_controller,
+            ambient_agent_view_model,
             aws_bedrock_credentials_error_view: None,
             imported_comments: Default::default(),
             has_imported_comments: false,
@@ -1850,23 +1881,6 @@ impl AIBlock {
                     .or_default();
             }
 
-            if matches!(&action.action, AIAgentActionType::ReadSkill(_)) {
-                self.state_handles
-                    .open_skill_button_handles
-                    .entry(action.id.clone())
-                    .or_default();
-            }
-
-            if matches!(
-                &action.action,
-                AIAgentActionType::ReadFiles(_) | AIAgentActionType::SearchCodebase(..)
-            ) {
-                self.state_handles
-                    .read_from_skill_button_handles
-                    .entry(action.id.clone())
-                    .or_default();
-            }
-
             if let AIAgentActionType::RunAgents(req) = &action.action {
                 self.ensure_run_agents_card_view(&action.id, req, ctx);
             }
@@ -2048,19 +2062,29 @@ impl AIBlock {
             }
 
             // Register collapsible state for orchestration action messages.
-            if FeatureFlag::Orchestration.is_enabled()
-                && matches!(
-                    &message.message,
+            if FeatureFlag::Orchestration.is_enabled() {
+                match &message.message {
                     AIAgentOutputMessageType::Action(AIAgentAction {
-                        action: AIAgentActionType::StartAgent { .. }
+                        action:
+                            AIAgentActionType::StartAgent { .. }
                             | AIAgentActionType::SendMessageToAgent { .. },
                         ..
-                    }) | AIAgentOutputMessageType::MessagesReceivedFromAgents { .. }
-                )
-            {
-                self.collapsible_block_states
-                    .entry(message.id.clone())
-                    .or_default();
+                    }) => {
+                        self.collapsible_block_states
+                            .entry(message.id.clone())
+                            .or_default();
+                    }
+                    AIAgentOutputMessageType::MessagesReceivedFromAgents { messages } => {
+                        for received_message in messages {
+                            self.collapsible_block_states
+                                .entry(received_message_collapsible_id(
+                                    &received_message.message_id,
+                                ))
+                                .or_default();
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -2327,6 +2351,15 @@ impl AIBlock {
                 }
                 _ => (),
             }
+        }
+
+        // Now that streaming is complete and all RunAgents requests are
+        // fully populated, re-evaluate auto-launch for any card that
+        // was created during streaming with an empty agent_run_configs.
+        for view in self.run_agents_card_views.values() {
+            view.update(ctx, |card, ctx| {
+                card.try_auto_launch_on_stream_complete(ctx);
+            });
         }
 
         // Collect UI state handles for code snippets, tables, and image
@@ -6245,12 +6278,10 @@ impl TypedActionView for AIBlock {
             } => {
                 // Resets the interaction states of ReadSkill and ReadFiles tool call banners before opening a new code pane
                 // Avoids an immediate re-hover (and stuck tooltip) while the new code pane is being created
-                for handle in self
-                    .state_handles
-                    .open_skill_button_handles
-                    .values()
-                    .chain(self.state_handles.read_from_skill_button_handles.values())
-                {
+                for handle in [
+                    &self.state_handles.open_skill_button_handle,
+                    &self.state_handles.read_from_skill_button_handle,
+                ] {
                     if let Ok(mut state) = handle.lock() {
                         state.reset_interaction_state();
                     }
@@ -6460,6 +6491,20 @@ impl AIBlock {
             });
             return;
         }
+
+        // Read the active orchestration config for auto-launch /
+        // denied decisions from the conversation (not the singleton).
+        let active_config = {
+            let history = crate::BlocklistAIHistoryModel::as_ref(ctx);
+            let conv = history.conversation(&self.client_ids.conversation_id);
+            let result = conv.and_then(|conv| {
+                conv.orchestration_config()
+                    .cloned()
+                    .map(|config| (config, conv.orchestration_status()))
+            });
+            result
+        };
+
         let action_id_clone = action_id.clone();
         let request_clone = request.clone();
         let action_model = self.action_model.clone();
@@ -6469,6 +6514,7 @@ impl AIBlock {
             RunAgentsCardView::new(
                 action_id_clone,
                 &request_clone,
+                active_config,
                 action_model,
                 run_agents_executor,
                 block_model,

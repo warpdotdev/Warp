@@ -208,6 +208,12 @@ pub(crate) struct Props<'a> {
     pub(super) thinking_display_mode: crate::settings::ThinkingDisplayMode,
     pub(super) conversation_has_imported_comments: bool,
     pub(super) ask_user_question_view: Option<&'a ViewHandle<AskUserQuestionView>>,
+    /// `true` when this block belongs to a cloud agent pane that is still in its setup
+    /// phase (running environment startup commands before the first agent turn). Used to
+    /// hide the response footer (thumbs up/down, credit usage, fork) until the agent has
+    /// produced real output — otherwise the footer renders awkwardly above the still-
+    /// pending optimistic user prompt.
+    pub(super) is_cloud_agent_pre_first_exchange: bool,
 }
 
 pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
@@ -252,6 +258,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                         && !is_output_for_static_prompt_suggestions
                         && !is_conversation_in_progress
                         && request_type.is_active()
+                        && !props.is_cloud_agent_pre_first_exchange
                         && !status
                             .error()
                             .map(|e| e.is_invalid_api_key())
@@ -781,17 +788,14 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                             ..
                         }) if FeatureFlag::RunAgentsTool.is_enabled() => {
                             // Embed the per-action `RunAgentsCardView`
-                            // via `ChildView`. The view itself handles
-                            // the streaming gate and in-flight dispatch
-                            // states (a card is mid-dispatch when its
-                            // `is_spawning()` getter returns true).
+                            // via `ChildView`. The view renders a
+                            // "Configuring agents..." placeholder while
+                            // streaming, then transitions to the full
+                            // confirmation card once complete.
                             should_render_footer = false;
                             should_render_suggestions = false;
                             if let Some(card_view) = props.run_agents_card_views.get(id) {
-                                let is_spawning = card_view.as_ref(app).is_spawning();
-                                if !status.is_streaming() || is_spawning {
-                                    output_items.add_child(ChildView::new(card_view).finish());
-                                }
+                                output_items.add_child(ChildView::new(card_view).finish());
                             }
                         }
                         AIAgentOutputMessageType::Action(AIAgentAction {
@@ -895,10 +899,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                         {
                             output_items.add_child(
                                 orchestration::render_messages_received_from_agents(
-                                    messages,
-                                    props,
-                                    &output_message.id,
-                                    app,
+                                    messages, props, app,
                                 ),
                             );
                         }
@@ -1725,12 +1726,7 @@ fn render_read_skill(
             let skill_icon_override = icon_override_for_skill_name(&skill.name);
             let open_button = render_skill_button(
                 "Open skill",
-                props
-                    .state_handles
-                    .open_skill_button_handles
-                    .get(id)
-                    .expect("Button state must exist for each ReadSkill action.")
-                    .clone(),
+                props.state_handles.open_skill_button_handle.clone(),
                 appearance,
                 skill.provider,
                 skill_icon_override,
@@ -1834,12 +1830,7 @@ fn render_read_files(
         let skill_icon_override = icon_override_for_skill_name(&skill.name);
         let open_button = render_skill_button(
             &format!("/{}", skill.name),
-            props
-                .state_handles
-                .read_from_skill_button_handles
-                .get(id)
-                .expect("Button state must exist for each ReadFiles-style action.")
-                .clone(),
+            props.state_handles.read_from_skill_button_handle.clone(),
             appearance,
             skill.provider,
             skill_icon_override,

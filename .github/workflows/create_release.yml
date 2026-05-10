@@ -1654,7 +1654,7 @@ jobs:
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
       - name: Generate changelog
-        uses: warpdotdev/generate-changelog@main
+        uses: warpdotdev/generate-changelog@70f534c1e030dafb45046ae57e4aa4d43a2f5c84 # main
         id: generate_changelog
         with:
           channel: ${{ inputs.channel }}

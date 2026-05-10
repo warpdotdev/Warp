@@ -53,10 +53,11 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
             | AIAgentInput::StartFromAmbientRunPrompt { context, .. } => {
                 redact_context(Arc::make_mut(context));
             }
-            AIAgentInput::SummarizeConversation { prompt } => {
+            AIAgentInput::SummarizeConversation { prompt, context } => {
                 if let Some(p) = prompt {
                     redact_secrets(p);
                 }
+                redact_context(Arc::make_mut(context));
             }
             AIAgentInput::CreateEnvironment { context, .. } => {
                 redact_context(Arc::make_mut(context));
@@ -105,7 +106,8 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
             }
             // No user-provided text to redact in inter-agent relay inputs.
             AIAgentInput::MessagesReceivedFromAgents { .. }
-            | AIAgentInput::EventsFromAgents { .. } => {}
+            | AIAgentInput::EventsFromAgents { .. }
+            | AIAgentInput::OrchestrationConfigUpdate { .. } => {}
             AIAgentInput::ActionResult { result, context } => {
                 redact_context(Arc::make_mut(context));
                 match &mut result.result {

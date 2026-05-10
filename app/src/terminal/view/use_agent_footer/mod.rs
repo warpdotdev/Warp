@@ -145,6 +145,7 @@ fn rich_input_submit_strategy(agent: CLIAgent) -> RichInputSubmitStrategy {
         | CLIAgent::Droid
         | CLIAgent::Pi
         | CLIAgent::Goose
+        | CLIAgent::Hermes
         | CLIAgent::Vibe
         | CLIAgent::Unknown => RichInputSubmitStrategy::Inline,
     }
@@ -1527,5 +1528,5 @@ impl ActionButtonTheme for AgentFooterButtonTheme {
 }
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

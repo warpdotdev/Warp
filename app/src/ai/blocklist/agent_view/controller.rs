@@ -387,6 +387,11 @@ impl AgentViewController {
         self.pane_group_id
     }
 
+    /// Returns the [`EntityId`] of the [`TerminalView`] that owns this controller.
+    pub fn terminal_view_id(&self) -> EntityId {
+        self.terminal_view_id
+    }
+
     pub fn set_pane_group_id(&mut self, pane_group_id: EntityId) {
         self.pane_group_id = Some(pane_group_id);
     }
@@ -771,8 +776,11 @@ impl AgentViewController {
             });
             (id, 0)
         };
+        // Non-transferring: don't rip the conversation out of another terminal
+        // view's live list (e.g. a child agent's hidden pane). Explicit
+        // cross-view ownership transfer is handled by callers elsewhere.
         history_model.update(ctx, |history_model, ctx| {
-            history_model.set_active_conversation_id(conversation_id, self.terminal_view_id, ctx)
+            history_model.mark_active_conversation_id(conversation_id, self.terminal_view_id, ctx)
         });
 
         self.agent_view_state = AgentViewState::Active {
