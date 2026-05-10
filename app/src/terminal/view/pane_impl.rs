@@ -25,7 +25,6 @@ use crate::settings::app_installation_detection::{
     UserAppInstallDetectionSettings, UserAppInstallStatus,
 };
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
-use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
 use crate::terminal::shared_session::participant_avatar_view::render_participants_and_role_elements;
 use crate::terminal::shared_session::render_util::shared_session_indicator_color;
 use crate::terminal::shared_session::SharedSessionActionSource;
@@ -297,14 +296,9 @@ impl TerminalView {
             ClipConfig::start()
         };
 
-        let should_render_ambient_agent_indicator = {
-            let model = self.model.lock();
-            model.is_shared_ambient_agent_session()
-                || matches!(
-                    model.conversation_transcript_viewer_status(),
-                    Some(ConversationTranscriptViewerStatus::ViewingAmbientConversation(_))
-                )
-        };
+        let should_render_ambient_agent_indicator =
+            self.ambient_agent_task_id_for_details_panel(app).is_some()
+                || self.model.lock().is_shared_ambient_agent_session();
         let theme = appearance.theme();
         let render_agent_circle = |variant| {
             render_icon_with_status(

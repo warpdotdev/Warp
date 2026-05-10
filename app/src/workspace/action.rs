@@ -491,9 +491,11 @@ pub enum WorkspaceAction {
     /// conversation isn't handoff-able (no synced server token, empty, or no
     /// active conversation at all).
     OpenLocalToCloudHandoffPane {
-        /// Pre-fill the new pane's prompt input (slash command captures the
-        /// trailing argument; the chip leaves this `None`).
-        initial_prompt: Option<String>,
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        launch: Option<crate::ai::blocklist::handoff::PendingCloudLaunch>,
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        launch: Option<()>,
+        explicit_environment_id: Option<crate::server::ids::SyncId>,
     },
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {
