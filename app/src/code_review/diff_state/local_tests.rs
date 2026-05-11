@@ -1,6 +1,40 @@
 use super::*;
 use crate::util::git::{parse_range, parse_unified_diff_header, sort_branches_main_first};
 
+// === Helpers for the integration-style tests below ====================================
+
+#[cfg(feature = "local_fs")]
+async fn run_git(repo: &std::path::Path, args: &[&str]) {
+    use command::r#async::Command;
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .await
+        .expect("failed to run git");
+    if !output.status.success() {
+        panic!(
+            "git {args:?} failed in {repo:?}: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[cfg(feature = "local_fs")]
+async fn init_repo_with_initial_commit(file: &str, contents: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("failed to create temp dir");
+    let repo = dir.path();
+    run_git(repo, &["init", "-b", "main", "--quiet"]).await;
+    run_git(repo, &["config", "user.email", "test@test.com"]).await;
+    run_git(repo, &["config", "user.name", "Test"]).await;
+    run_git(repo, &["config", "commit.gpgsign", "false"]).await;
+    std::fs::write(repo.join(file), contents).expect("write initial file");
+    run_git(repo, &["add", file]).await;
+    run_git(repo, &["commit", "-m", "initial", "--quiet"]).await;
+    dir
+}
+
 #[test]
 fn test_parse_range_with_comma() {
     let (start, count) =
@@ -236,4 +270,114 @@ fn test_parse_git_status_file_without_spaces_still_works() {
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].0, std::path::PathBuf::from("simple.txt"));
     assert_eq!(result[0].1, GitFileStatus::Modified);
+}
+
+// ===== Staged-then-reverted regression coverage (#10512) ==============================
+
+#[test]
+fn should_retry_with_staged_skips_new_untracked_and_renamed() {
+    // Untracked/new files don't exist in the index in a comparable way, so
+    // there is nothing to surface via `--cached`. Renames have their own
+    // diff path. Everything else (Modified/Deleted/Conflicted/Copied) is
+    // eligible for the staged fallback.
+    assert!(!LocalDiffStateModel::should_retry_with_staged(
+        &GitFileStatus::Untracked
+    ));
+    assert!(!LocalDiffStateModel::should_retry_with_staged(
+        &GitFileStatus::New
+    ));
+    assert!(!LocalDiffStateModel::should_retry_with_staged(
+        &GitFileStatus::Renamed {
+            old_path: "x".into()
+        }
+    ));
+    assert!(LocalDiffStateModel::should_retry_with_staged(
+        &GitFileStatus::Modified
+    ));
+    assert!(LocalDiffStateModel::should_retry_with_staged(
+        &GitFileStatus::Deleted
+    ));
+    assert!(LocalDiffStateModel::should_retry_with_staged(
+        &GitFileStatus::Conflicted
+    ));
+}
+
+#[test]
+fn staged_diff_args_targets_index_against_head_for_given_file() {
+    let args = LocalDiffStateModel::staged_diff_args("path/to/foo.txt", &GitFileStatus::Modified);
+    // `--cached` (synonym for `--staged`) compares the index to HEAD, which
+    // is exactly the patch the staged-then-reverted fallback wants.
+    assert!(args.contains(&"--cached"));
+    // The file path must be the last positional after `--`, and we must
+    // disable external diff drivers / colors / context-collapse the same
+    // way the primary command does to keep the parser happy.
+    assert_eq!(args.last(), Some(&"path/to/foo.txt"));
+    assert!(args.contains(&"--no-ext-diff"));
+    assert!(args.contains(&"--no-color"));
+    let dash_dash_pos = args.iter().position(|a| *a == "--").unwrap();
+    assert_eq!(args[dash_dash_pos + 1], "path/to/foo.txt");
+}
+
+#[cfg(feature = "local_fs")]
+#[tokio::test]
+async fn diff_state_against_head_surfaces_staged_then_reverted_file() {
+    // Regression for #10512: after `edit; git add; revert`, `git status`
+    // still lists the file (XY = MM) but `git diff HEAD -- file` is empty
+    // because the worktree matches HEAD. Without the staged fallback the
+    // Code Review panel listed the file with no hunks.
+    let dir = init_repo_with_initial_commit("foo.txt", "v1\n").await;
+    let repo = dir.path();
+
+    // Stage v2, then revert the worktree back to v1.
+    std::fs::write(repo.join("foo.txt"), "v2\n").expect("write v2");
+    run_git(repo, &["add", "foo.txt"]).await;
+    std::fs::write(repo.join("foo.txt"), "v1\n").expect("revert worktree");
+
+    // Sanity: status reports the file, worktree-vs-HEAD is empty.
+    let worktree_diff = command::r#async::Command::new("git")
+        .args(["diff", "HEAD", "--", "foo.txt"])
+        .current_dir(repo)
+        .output()
+        .await
+        .expect("git diff");
+    assert!(
+        String::from_utf8_lossy(&worktree_diff.stdout).is_empty(),
+        "test scaffolding precondition: worktree-vs-HEAD must be empty"
+    );
+
+    let diffs = LocalDiffStateModel::diff_state_against_head(repo)
+        .await
+        .expect("diff_state_against_head");
+
+    assert_eq!(
+        diffs.files_changed, 1,
+        "expected the staged-then-reverted file to be reported"
+    );
+    let file = &diffs.files[0].file_diff;
+    assert_eq!(file.file_path, std::path::PathBuf::from("foo.txt"));
+    assert!(
+        !file.hunks.is_empty(),
+        "expected staged fallback to surface hunks; got status={:?} hunks={:?}",
+        file.status,
+        file.hunks,
+    );
+}
+
+#[cfg(feature = "local_fs")]
+#[tokio::test]
+async fn diff_state_against_head_unchanged_for_plain_unstaged_edit() {
+    // Control case: a plain working-tree edit (no `git add`) must continue
+    // to surface its hunks through the primary `git diff HEAD` path. The
+    // staged fallback should be a no-op here.
+    let dir = init_repo_with_initial_commit("foo.txt", "v1\n").await;
+    let repo = dir.path();
+
+    std::fs::write(repo.join("foo.txt"), "v2\n").expect("write v2");
+
+    let diffs = LocalDiffStateModel::diff_state_against_head(repo)
+        .await
+        .expect("diff_state_against_head");
+
+    assert_eq!(diffs.files_changed, 1);
+    assert!(!diffs.files[0].file_diff.hunks.is_empty());
 }

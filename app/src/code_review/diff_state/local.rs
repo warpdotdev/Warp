@@ -2417,7 +2417,7 @@ impl LocalDiffStateModel {
             "[GIT OPERATION] local.rs get_file_diff git {}",
             diff_args.join(" ")
         );
-        let diff_output = match run_git_command(repo_path, &diff_args).await {
+        let mut diff_output = match run_git_command(repo_path, &diff_args).await {
             Ok(output) => output,
             Err(error) => {
                 log::info!(
@@ -2456,8 +2456,32 @@ impl LocalDiffStateModel {
             });
         }
 
-        // Parse the diff output for text files
-        let parsed_hunks = Self::parse_diff_hunks(&diff_output)?;
+        // Parse the diff output for text files. We may re-parse below if the
+        // staged-then-reverted fallback kicks in.
+        let mut parsed_hunks = Self::parse_diff_hunks(&diff_output)?;
+
+        // Staged-then-reverted fallback (see #10512): when comparing against
+        // HEAD without a fixed commit, `git diff HEAD -- file` compares the
+        // working tree to HEAD and produces no hunks for files where the
+        // worktree matches HEAD but the index does not (e.g. `edit;
+        // git add; revert`). `git status --porcelain` still surfaces such
+        // files, so the panel would list them with empty hunks. Retry
+        // against the staged content so the user sees what's actually
+        // different from HEAD.
+        if commit.is_none() && parsed_hunks.is_empty() && Self::should_retry_with_staged(status) {
+            let staged_args = Self::staged_diff_args(file_path_str, status);
+            log::debug!(
+                "[GIT OPERATION] local.rs get_file_diff (staged fallback) git {}",
+                staged_args.join(" ")
+            );
+            if let Ok(staged_output) = run_git_command(repo_path, &staged_args).await {
+                let staged_hunks = Self::parse_diff_hunks(&staged_output)?;
+                if !staged_hunks.is_empty() {
+                    diff_output = staged_output;
+                    parsed_hunks = staged_hunks;
+                }
+            }
+        }
         for hunk in &parsed_hunks {
             for line in &hunk.lines {
                 if let Some(line_num) = line.old_line_number {
@@ -2485,6 +2509,33 @@ impl LocalDiffStateModel {
             has_hidden_bidi_chars,
             size,
         })
+    }
+
+    /// Returns true if a file whose worktree diff vs HEAD is empty should be
+    /// retried against the index (`--cached`). Untracked/new files don't
+    /// exist in the index in a comparable way, and rename detection has its
+    /// own path; for everything else the index may still differ from HEAD
+    /// (staged-then-reverted), and that's what we want to surface.
+    fn should_retry_with_staged(status: &GitFileStatus) -> bool {
+        !matches!(
+            status,
+            GitFileStatus::Untracked | GitFileStatus::New | GitFileStatus::Renamed { .. }
+        )
+    }
+
+    /// Args for `git diff --cached -- <file>` (index vs HEAD), used as the
+    /// staged-then-reverted fallback inside [`get_file_diff`].
+    fn staged_diff_args<'a>(file_path_str: &'a str, _status: &GitFileStatus) -> Vec<&'a str> {
+        vec![
+            "diff",
+            "--no-ext-diff",
+            "--patch-with-raw",
+            "-z",
+            "--no-color",
+            "--cached",
+            "--",
+            file_path_str,
+        ]
     }
 
     /// Parses diff hunks from git diff output
