@@ -378,10 +378,15 @@ pub fn remote_server_binary() -> String {
     }
 }
 
-/// Returns the shell command to check if the remote server binary exists and
-/// is executable.
+/// Returns the shell command to verify the remote server binary is
+/// installed and functional by running it with `--version`.
+///
+/// Exits 0 when the binary is present, executable, and can parse its
+/// own arguments. A missing binary produces exit 127 (command not
+/// found) or 126 (not executable), and a corrupted binary will fail
+/// with a non-zero exit of its own.
 pub fn binary_check_command() -> String {
-    format!("test -x {}", remote_server_binary())
+    format!("{} --version", remote_server_binary())
 }
 
 /// Returns the version string used to pin remote-server installs on
