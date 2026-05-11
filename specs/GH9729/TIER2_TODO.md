@@ -112,7 +112,7 @@ Hard rules:
 | t2-8 | status footer (dimensions only) | `d9cc0c3` | [x] | [x] | [x] |
 | t2-9 | EXIF orientation (ICC deferred to t2-9-icc) | `3e694be` | [x] | [x] | [x] |
 | t2-FINAL | presubmit | `611ec2b` | [x] | — | — |
-| t2-10 | sync-`FailedToLoad` rewrite | (see commit msg) | [x] | [ ] | [ ] |
+| t2-10 | sync-`FailedToLoad` rewrite | `af7d5f5` | [x] | [x] | [x] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
@@ -217,6 +217,37 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   an Orientation=6 tag; (c) Small EXIF-tagged JPEGs now incur one
   extra re-encode round-trip (necessary for correctness — worth a
   code-comment note for future maintainers). — `reviews/tier2-t2-9-r1.md`.
+- **t2-10-r1.** (a) The t2-10 commit message claims `06-mislabeled.png`
+  hits the synchronous-`FailedToLoad` path on the *first* `load_asset`
+  call. R1 verified against `crates/warpui_core/src/assets/asset_cache.rs:320-326`
+  that `load_asset` for an `AssetSource::LocalFile` always inserts
+  `loading()` and spawns via `load_asynchronously` on a cold cache,
+  so the synchronous reach is actually via warm-cache hits,
+  `AssetSource::Bundled`, or `AssetSource::Raw`. The fix is still
+  necessary (§182 / §695 require it across all sources) but the
+  headline repro narrative deserves either a corrected stack or a
+  pointer at the warm-cache path. (b) `apply_rewrite_to_slot_leaves_loading_state_alone`
+  uses `AssetState::Evicted` as a stand-in for "not Loading,
+  not failed" rather than a true `Loading { handle }` — exercises
+  the same `_ => None` branch but doesn't pin the `Loading`-specific
+  contract. Worth tightening with either a direct-`Loading`-handle
+  assertion or an additional `Loaded` no-op test. —
+  `reviews/tier2-t2-10-r1.md`.
+- **t2-10-r2.** (a) Rename
+  `apply_rewrite_to_slot_leaves_loading_state_alone` to
+  `apply_rewrite_to_slot_leaves_non_failure_states_alone` — the
+  current name over-promises since the body uses `Evicted`, not
+  `Loading`. (b) Four-line `// GH9729 §695 / t2-10:` comment inside
+  the helper partially duplicates the helper's own doc; collapse.
+  (c) Helper placement at the closing of `impl LightboxView`
+  separates it from its peer `rewrite_image_for_load_state` higher
+  in the file; consider regrouping. (d) "Tiny" framing in the doc
+  comment implies a size threshold that isn't the actual mechanism
+  (the mechanism is warm-cache, not file size); tighten. (e) No
+  end-to-end view-harness regression guard against a future
+  contributor removing the inline call — file as a t3 follow-up
+  (view-harness exists per `app/src/code/editor/comment_editor_tests.rs:91`).
+  — `reviews/tier2-t2-10-r2.md`.
 - **t2-9-r2.** (a) `decoder.orientation()?` propagates `ImageError`
   from a corrupt EXIF segment, so a malformed-EXIF-but-otherwise-decodable
   JPEG newly fails. Recommend
