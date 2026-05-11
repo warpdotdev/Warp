@@ -55,8 +55,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-command -v tar >/dev/null 2>&1 || { echo "error: tar is not available — please install tar and try again" >&2; exit 1; }
-
 staging_tarball_path="{staging_tarball_path}"
 if [ -n "$staging_tarball_path" ]; then
   # SCP fallback: tarball already uploaded by the client.

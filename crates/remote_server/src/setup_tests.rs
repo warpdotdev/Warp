@@ -340,15 +340,6 @@ fn parse_uname_unsupported_armv7l() {
 }
 
 #[test]
-fn install_script_contains_tar_pre_check() {
-    let script = install_script(None);
-    assert!(
-        script.contains("command -v tar"),
-        "install script should contain a tar availability check",
-    );
-}
-
-#[test]
 fn parse_preinstall_missing_status_falls_open() {
     // Garbled / partial script output — missing status field. Confirms
     // the fail-open invariant: anything we can't positively classify as
