@@ -10,8 +10,10 @@ use ai::agent::action_result::{
     RunAgentsAgentOutcome, RunAgentsAgentOutcomeKind, RunAgentsLaunchedExecutionMode,
     RunAgentsResult,
 };
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationExecutionMode};
 use ai::skills::SkillReference;
 use futures::{future::BoxFuture, FutureExt};
+use warp_core::execution_mode::AppExecutionMode;
 use warpui::{Entity, ModelContext, ModelHandle};
 
 use super::start_agent::{StartAgentExecutor, StartAgentOutcome};
@@ -253,9 +255,35 @@ impl RunAgentsExecutor {
         let AIAgentActionType::RunAgents(request) = action else {
             return ActionExecution::InvalidAction;
         };
-        let request = request.clone();
+        let mut request = request.clone();
         let action_id = id.clone();
         let parent_conversation_id = input.conversation_id;
+
+        // When auto-executing (autonomous/CLI-driver mode), the confirmation
+        // card is bypassed. Replicate its policy/normalization here:
+        // 1. Deny if the orchestration config is explicitly disapproved.
+        // 2. Resolve empty model/harness/execution_mode from the approved config.
+        if AppExecutionMode::as_ref(ctx).is_autonomous() {
+            if let Some(conversation) =
+                BlocklistAIHistoryModel::as_ref(ctx).conversation(&parent_conversation_id)
+            {
+                if let Some((config, status)) =
+                    conversation.orchestration_config_for_plan(&request.plan_id)
+                {
+                    if status.is_disapproved() {
+                        return ActionExecution::Sync(AIAgentActionResultType::RunAgents(
+                            RunAgentsResult::Denied {
+                                reason: "Orchestration config was disapproved".to_string(),
+                            },
+                        ));
+                    }
+                    if status.is_approved() {
+                        resolve_request_from_config(&mut request, config);
+                    }
+                }
+            }
+        }
+
         let receiver = self.dispatch_run_agents(action_id, request, parent_conversation_id, ctx);
 
         ActionExecution::new_async(
@@ -270,10 +298,11 @@ impl RunAgentsExecutor {
     pub(super) fn should_autoexecute(
         &self,
         _input: ExecuteActionInput,
-        _ctx: &mut ModelContext<Self>,
+        ctx: &mut ModelContext<Self>,
     ) -> bool {
-        // Confirmation card always required.
-        false
+        // Non-interactive (CLI driver) agents cannot present a
+        // confirmation card, so they must auto-execute.
+        AppExecutionMode::as_ref(ctx).is_autonomous()
     }
 
     pub(super) fn preprocess_action(
@@ -288,6 +317,31 @@ impl RunAgentsExecutor {
 enum ChildSlot {
     Failed(String),
     Pending(async_channel::Receiver<StartAgentOutcome>),
+}
+
+/// Resolves empty fields on a `RunAgentsRequest` from an approved
+/// orchestration config — the same normalization the confirmation card
+/// applies via `OrchestrationEditState::resolve_from_config`.
+fn resolve_request_from_config(request: &mut RunAgentsRequest, config: &OrchestrationConfig) {
+    if request.harness_type.is_empty() && !config.harness_type.is_empty() {
+        request.harness_type = config.harness_type.clone();
+    }
+    if request.model_id.is_empty() && !config.model_id.is_empty() {
+        request.model_id = config.model_id.clone();
+    }
+    if !request.execution_mode.is_remote() && config.execution_mode.is_remote() {
+        if let OrchestrationExecutionMode::Remote {
+            environment_id,
+            worker_host,
+        } = &config.execution_mode
+        {
+            request.execution_mode = RunAgentsExecutionMode::Remote {
+                environment_id: environment_id.clone(),
+                worker_host: worker_host.clone(),
+                computer_use_enabled: false,
+            };
+        }
+    }
 }
 
 /// Defence-in-depth validation; mirrors the card view's
