@@ -75,9 +75,16 @@ pub const ZOOM_STEP: f32 = 1.5;
 const DESCRIPTION_SPACING: f32 = 12.;
 const LIGHTBOX_TEXT_SIZE_DELTA: f32 = 4.;
 
-/// Semi-transparent black background color for the scrim.
+/// GH9729 t2-14: nearly-opaque black background colour for the scrim.
+///
+/// v1 shipped with alpha=230 (90% opacity), which let bright text in
+/// the underlying view (new-tab page, terminal output) show through
+/// and competed with the lightbox's description / dimensions text for
+/// legibility. 250 (~98% opacity) suppresses bleed-through while
+/// keeping a faint hint of the underlying surface for spatial
+/// context. Set to 255 if a fully opaque modal is preferred.
 fn scrim_color() -> ColorU {
-    ColorU::new(0, 0, 0, 230)
+    ColorU::new(0, 0, 0, 250)
 }
 
 /// The loading state of a lightbox image.

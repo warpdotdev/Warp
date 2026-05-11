@@ -75,6 +75,17 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-14.** Scrim opacity + toolbar prominence. Manual screenshot
+       at 427% zoom showed three layered issues: (a) the scrim's
+       current alpha (230/255 = 90%) lets the underlying new-tab
+       content bleed through, making the lightbox feel non-modal and
+       making the filename / dimensions text hard to read; (b) the
+       zoom toolbar blends into the dim scrim with no background
+       container, so the `[−] [100%] [+]` cluster is barely visible;
+       (c) the t2-7-r1 visual-no-op gotcha is reachable from cmd+scroll
+       (footer reports 427% but the image is window-capped) — but
+       fixing that needs drag-to-pan (deferred as `t2-7-pan`). This
+       row addresses (a) and (b). — supplements `tech.md` §697-699.
 - [x] **t2-13.** Polish the t2-12 zoom toolbar after manual feedback:
        (a) Zoom-in `+` button doesn't fire on click — likely a Flex-row
        inside `add_positioned_child` hit-test routing issue, so
@@ -153,6 +164,7 @@ Hard rules:
 | t2-11 | zoom keys + visual indicator | `9b51d44` | [x] | [x] | [x] |
 | t2-12 | GUI zoom buttons + scroll-zoom | `65b2f56` | [x] | [x] | [x] |
 | t2-13 | toolbar polish + fix + button | `a655650` | [x] | [x] | [x] |
+| t2-14 | scrim opacity + toolbar prominence | `46f0a2e` | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
