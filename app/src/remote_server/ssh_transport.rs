@@ -250,8 +250,7 @@ impl RemoteTransport for SshTransport {
                     Ok(output) if output.status.success() => {}
                     Ok(output) => {
                         let code = output.status.code().unwrap_or(-1);
-                        let stderr =
-                            String::from_utf8_lossy(&output.stderr).trim().to_string();
+                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
                         outcome.result = Err(Error::Other(anyhow::anyhow!(
                             "Post-install verification failed: binary not found or not \
                              executable at {binary_path} (exit {code}): {stderr}"
@@ -355,7 +354,7 @@ impl RemoteTransport for SshTransport {
 /// Exit codes where SCP fallback would not help because the failure
 /// is on the remote host itself (not a network/download issue).
 fn should_skip_scp_fallback(error: &Error) -> bool {
-    matches!(error, Error::ScriptFailed { exit_code , .. }     if *exit_code == remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE)
+    matches!(error, Error::ScriptFailed { exit_code , .. } if *exit_code == remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE)
 }
 
 /// Runs the install script on the remote host to download and install
