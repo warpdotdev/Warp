@@ -14,6 +14,8 @@ en:
 
     new_window: "New Window"
     new_tab: "New Tab"
+    new_terminal_tab: "New Terminal Tab"
+    new_agent_tab: "New Agent Tab"
     preferences: "Preferences"
     set_default_terminal: "Set Warp as Default Terminal"
     log_out: "Log out"
@@ -31,8 +33,16 @@ en:
     hide_init_block: "Hide Initialization Block"
     show_ssh_blocks: "Show Warpified SSH Blocks"
     hide_ssh_blocks: "Hide Warpified SSH Blocks"
+    show_in_band_command_blocks: "Show In-band Command Blocks"
+    hide_in_band_command_blocks: "Hide In-band Command Blocks"
     export_settings_csv: "Export Default Settings as CSV to home dir"
 
+    enable_shell_debug_mode: "Enable Shell Debug Mode (-x) for New Sessions"
+    disable_shell_debug_mode: "Disable Shell Debug Mode (-x) for New Sessions"
+    enable_in_band_generators: "Enable In-band Generators for New Sessions"
+    disable_in_band_generators: "Disable in-band generators for new sessions"
+    enable_pty_recording: "Enable PTY Recording Mode (warp.pty.recording)"
+    disable_pty_recording: "Disable PTY Recording Mode (warp.pty.recording)"
     manually_toggle_network: "Manually Toggle Network Status"
     debug: "Debug"
 
@@ -54,10 +64,51 @@ en:
   workspace:
     settings: "Settings"
     new_tab: "New Tab"
+    whats_new: "What's new"
+    keyboard_shortcuts: "Keyboard shortcuts"
+    tab_configs: "Tab configs"
+    new_worktree_config: "New worktree config"
+    new_tab_config: "New tab config"
+    open_file: "Open file"
+    open: "Open: %s"
     rename_pane: "Rename pane"
     rename_active_pane: "Rename active pane"
     rename_current_tab: "Rename the current tab"
     rename_current_pane: "Rename the current pane"
+
+  # ── Authentication ──
+  auth:
+    log_out_confirm: "Log out?"
+    show_running_processes: "Show running processes"
+    new_login_detected: "New login detected"
+    export_your_data: "Export your data"
+    disable_warp_drive: "Disable Warp Drive"
+    disable_ai_features: "Disable AI features"
+    enable_warp_drive: "Enable Warp Drive"
+    enable_ai_features: "Enable AI features"
+    help_improve_warp: "Help improve Warp"
+
+  # ── AI Assistant ──
+  ai_assistant:
+    close: "Close Warp AI"
+    copy_transcript: "Copy transcript to clipboard"
+    show_examples: "Show examples."
+    what_to_do_next: "What should I do next?"
+    accuracy_notice: "AI responses can be inaccurate."
+    copy_code: "Copy code to clipboard [Cmd + C]"
+    copy_answer: "Copy answer to clipboard"
+
+  # ── Code Review ──
+  code_review:
+    copy_text: "Copy text"
+    edit: "Edit"
+    view_in_github: "View in GitHub"
+    open_pr: "Open PR"
+    file_level_comment_edit_hint: "File-level comments currently can't be edited."
+
+  # ── Context Chips ──
+  context:
+    view_pull_request: "View pull request"
 
   # ── Common ──
   common:

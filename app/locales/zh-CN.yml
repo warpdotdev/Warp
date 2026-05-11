@@ -14,6 +14,8 @@ zh-CN:
 
     new_window: "新建窗口"
     new_tab: "新建标签页"
+    new_terminal_tab: "新建终端标签页"
+    new_agent_tab: "新建 Agent 标签页"
     preferences: "偏好设置"
     set_default_terminal: "设置 Warp 为默认终端"
     log_out: "退出登录"
@@ -31,8 +33,16 @@ zh-CN:
     hide_init_block: "隐藏初始化区块"
     show_ssh_blocks: "显示 Warpified SSH 区块"
     hide_ssh_blocks: "隐藏 Warpified SSH 区块"
+    show_in_band_command_blocks: "显示带内命令区块"
+    hide_in_band_command_blocks: "隐藏带内命令区块"
     export_settings_csv: "导出默认设置为 CSV 到主目录"
 
+    enable_shell_debug_mode: "启用 Shell 调试模式 (-x)"
+    disable_shell_debug_mode: "禁用 Shell 调试模式 (-x)"
+    enable_in_band_generators: "启用带内生成器"
+    disable_in_band_generators: "禁用带内生成器"
+    enable_pty_recording: "启用 PTY 录制模式"
+    disable_pty_recording: "禁用 PTY 录制模式"
     manually_toggle_network: "手动切换网络状态"
     debug: "调试"
 
@@ -54,10 +64,51 @@ zh-CN:
   workspace:
     settings: "设置"
     new_tab: "新建标签页"
+    whats_new: "新功能"
+    keyboard_shortcuts: "键盘快捷键"
+    tab_configs: "标签页配置"
+    new_worktree_config: "新建工作树配置"
+    new_tab_config: "新建标签页配置"
+    open_file: "打开文件"
+    open: "打开: %s"
     rename_pane: "重命名面板"
     rename_active_pane: "重命名当前面板"
     rename_current_tab: "重命名当前标签页"
     rename_current_pane: "重命名当前面板"
+
+  # ── 认证 ──
+  auth:
+    log_out_confirm: "确定退出登录？"
+    show_running_processes: "显示运行中的进程"
+    new_login_detected: "检测到新登录"
+    export_your_data: "导出数据"
+    disable_warp_drive: "禁用 Warp 云盘"
+    disable_ai_features: "禁用 AI 功能"
+    enable_warp_drive: "启用 Warp 云盘"
+    enable_ai_features: "启用 AI 功能"
+    help_improve_warp: "帮助改进 Warp"
+
+  # ── AI 助手 ──
+  ai_assistant:
+    close: "关闭 Warp AI"
+    copy_transcript: "复制对话到剪贴板"
+    show_examples: "查看示例"
+    what_to_do_next: "接下来我该做什么？"
+    accuracy_notice: "AI 回复可能不准确"
+    copy_code: "复制代码到剪贴板 [Cmd + C]"
+    copy_answer: "复制回答到剪贴板"
+
+  # ── 代码审查 ──
+  code_review:
+    copy_text: "复制文本"
+    edit: "编辑"
+    view_in_github: "在 GitHub 中查看"
+    open_pr: "打开 PR"
+    file_level_comment_edit_hint: "文件级评论暂不支持编辑"
+
+  # ── 上下文 ──
+  context:
+    view_pull_request: "查看 Pull Request"
 
   # ── 通用 ──
   common:
