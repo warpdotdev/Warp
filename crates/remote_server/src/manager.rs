@@ -20,7 +20,7 @@ use crate::setup::RemoteServerSetupState;
 use crate::setup::UnsupportedReason;
 #[cfg(not(target_family = "wasm"))]
 use crate::transport::Connection;
-use crate::transport::{Error, RemoteTransport};
+use crate::transport::{Error, InstallSource, RemoteTransport};
 use crate::HostId;
 use repo_metadata::RepoMetadataUpdate;
 use serde::Serialize;
@@ -387,11 +387,11 @@ pub enum RemoteServerManagerEvent {
         has_old_binary: bool,
     },
     /// Result of [`RemoteServerManager::install_binary`]. Returns a result where:
-    /// - `Ok(())` means the install succeeded, and
+    /// - `Ok(method)` means the install succeeded via the given [`InstallSource`], and
     /// - `Err(_)` means the install failed and carries the failure reason (SSH error, timeout, script error, etc.).
     BinaryInstallComplete {
         session_id: SessionId,
-        result: Result<(), Arc<Error>>,
+        result: Result<InstallSource, Arc<Error>>,
     },
 
     // --- Telemetry events ---
@@ -646,7 +646,7 @@ impl RemoteServerManager {
     /// Installs the remote server binary.
     /// Emits `BinaryInstallComplete { result }`.
     ///
-    /// Returns Ok(()) if the install succeeded, and
+    /// Returns Ok(method) with the install method on success, and
     /// Err(_) if the install failed (e.g. SSH timeout/unreachable).
     #[cfg_attr(target_family = "wasm", allow(unused_variables))]
     pub fn install_binary<T>(

@@ -19,7 +19,7 @@ use remote_server::setup::{
     parse_uname_output, remote_server_daemon_dir, PreinstallCheckResult, RemotePlatform,
 };
 use remote_server::ssh::{ssh_args, SshCommandError};
-use remote_server::transport::{Connection, Error, RemoteTransport};
+use remote_server::transport::{Connection, Error, InstallSource, RemoteTransport};
 
 /// SSH transport: connects via a ControlMaster socket.
 ///
@@ -192,7 +192,7 @@ impl RemoteTransport for SshTransport {
         })
     }
 
-    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>> {
+    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<InstallSource, Error>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let script = remote_server::setup::install_script(None);
@@ -207,7 +207,7 @@ impl RemoteTransport for SshTransport {
             )
             .await
             {
-                Ok(output) if output.status.success() => Ok(()),
+                Ok(output) if output.status.success() => Ok(InstallSource::Server),
                 Ok(output)
                     if output.status.code()
                         == Some(remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE) =>
@@ -215,6 +215,7 @@ impl RemoteTransport for SshTransport {
                     log::info!("Remote server has no curl/wget, falling back to SCP upload");
                     scp_install_fallback(&socket_path)
                         .await
+                        .map(|()| InstallSource::Client)
                         .map_err(Error::Other)
                 }
                 Ok(output) => {
