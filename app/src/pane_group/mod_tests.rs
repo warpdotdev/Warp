@@ -14,7 +14,7 @@ use crate::{
         agent_conversations_model::AgentConversationsModel,
         ambient_agents::github_auth_notifier::GitHubAuthNotifier,
         ambient_agents::{
-            task::TaskCreatorInfo, AgentSource, AmbientAgentTask, AmbientAgentTaskId,
+            task::TaskPrincipalInfo, AgentSource, AmbientAgentTask, AmbientAgentTaskId,
             AmbientAgentTaskState,
         },
         blocklist::{
@@ -278,7 +278,8 @@ fn ambient_agent_task_for_current_user(task_id: AmbientAgentTaskId) -> AmbientAg
         source: Some(AgentSource::CloudMode),
         session_id: None,
         session_link: None,
-        creator: Some(TaskCreatorInfo {
+        executor: None,
+        creator: Some(TaskPrincipalInfo {
             creator_type: "USER".to_string(),
             uid: TEST_USER_UID.to_string(),
             display_name: None,
