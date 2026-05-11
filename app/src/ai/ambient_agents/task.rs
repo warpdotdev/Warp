@@ -74,12 +74,18 @@ pub struct HarnessConfig {
         deserialize_with = "deserialize_harness"
     )]
     pub harness_type: Harness,
+    /// The model to use with this harness. None means use the harness default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
 }
 
 impl HarnessConfig {
     /// Builds a harness config from just the harness type.
     pub fn from_harness_type(harness_type: Harness) -> Self {
-        Self { harness_type }
+        Self {
+            harness_type,
+            model_id: None,
+        }
     }
 }
 
@@ -237,7 +243,9 @@ pub struct AmbientAgentTask {
     pub source: Option<AgentSource>,
     pub session_id: Option<String>,
     pub session_link: Option<String>,
-    pub creator: Option<TaskCreatorInfo>,
+    pub creator: Option<TaskPrincipalInfo>,
+    #[serde(default)]
+    pub executor: Option<TaskPrincipalInfo>,
     pub conversation_id: Option<String>,
     pub request_usage: Option<RequestUsage>,
     pub is_sandbox_running: bool,
@@ -362,6 +370,11 @@ impl AmbientAgentTask {
     /// Creator's display name, if available.
     pub fn creator_display_name(&self) -> Option<String> {
         self.creator.as_ref().and_then(|c| c.display_name.clone())
+    }
+
+    /// Principal the run executed as, formatted for user-facing surfaces.
+    pub fn executor_display_name(&self) -> Option<String> {
+        self.executor.as_ref().and_then(|e| e.display_name.clone())
     }
 
     /// Returns true if the underlying session for the ambient agent is no longer running.
@@ -492,7 +505,7 @@ impl std::fmt::Display for AmbientAgentTaskState {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct TaskCreatorInfo {
+pub struct TaskPrincipalInfo {
     #[serde(rename = "type")]
     pub creator_type: String,
     pub uid: String,
@@ -528,6 +541,19 @@ pub fn cancel_task_with_toast<V: View>(task_id: AmbientAgentTaskId, ctx: &mut Vi
                 let toast = DismissibleToast::default(message);
                 toast_stack.add_ephemeral_toast(toast, window_id, ctx);
             });
+        },
+    );
+}
+
+/// Cancel an ambient agent task without surfacing a toast to the user.
+pub fn cancel_task_silently<V: View>(task_id: AmbientAgentTaskId, ctx: &mut ViewContext<V>) {
+    let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
+    ctx.spawn(
+        async move { ai_client.cancel_ambient_agent_task(&task_id).await },
+        move |_view, result, _| {
+            if let Err(e) = result {
+                log::error!("Failed to cancel task: {e}");
+            }
         },
     );
 }

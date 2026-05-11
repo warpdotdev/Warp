@@ -307,5 +307,5 @@ impl SplitPath {
 }
 
 #[cfg(test)]
-#[path = "path_test.rs"]
+#[path = "path_tests.rs"]
 mod tests;

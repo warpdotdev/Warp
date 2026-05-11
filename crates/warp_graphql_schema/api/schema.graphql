@@ -220,8 +220,15 @@ enum AgentHarness {
   OZ
 }
 
+"""A single model available for a third-party harness."""
+type HarnessModel {
+  displayName: String!
+  id: ID!
+}
+
 """A harness available to the requesting user."""
 type HarnessInfo {
+  availableModels: [HarnessModel!]!
   displayName: String!
   enabled: Boolean!
   harness: AgentHarness!
@@ -1324,6 +1331,7 @@ type GcpProviderConfig {
 }
 
 input GenerateApiKeyInput {
+  agentUid: ID
   expiresAt: Time
   name: String!
   teamId: ID
@@ -2059,6 +2067,21 @@ type ManagedSecretsOutput implements Response {
 
 union ManagedSecretsResult = ManagedSecretsOutput | UserFacingError
 
+input ListHarnessAuthSecretsInput {
+  """
+  Harness whose auth-credential secrets should be returned. Harnesses that
+  don't use auth secrets (e.g. OZ) always return an empty result.
+  """
+  harness: AgentHarness!
+}
+
+type HarnessAuthSecretsOutput implements Response {
+  managedSecrets: [ManagedSecret!]!
+  responseContext: ResponseContext!
+}
+
+union HarnessAuthSecretsResult = HarnessAuthSecretsOutput | UserFacingError
+
 enum MembershipRole {
   ADMIN
   OWNER
@@ -2759,6 +2782,12 @@ type RootQuery {
   """
   listWarpDevImages: ListWarpDevImagesResult!
   managedSecrets(input: ManagedSecretsInput!, requestContext: RequestContext!): ManagedSecretsResult!
+
+  """
+  Retrieve managed secrets that serve as authentication credentials for the given harness,
+  scoped to the caller's personal drive and team drives.
+  """
+  harnessAuthSecrets(input: ListHarnessAuthSecretsInput!, requestContext: RequestContext!): HarnessAuthSecretsResult!
   pricingInfo(requestContext: RequestContext!): PricingInfoResult!
   rerankFragments(input: RerankFragmentsInput!, requestContext: RequestContext!): RerankFragmentsResult!
 

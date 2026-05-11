@@ -176,8 +176,16 @@ impl ActiveAgentViewsModel {
                 ctx.emit(ActiveAgentViewsEvent::TerminalViewFocused);
             }
             AgentViewControllerEvent::ExitedAgentView {
-                conversation_id, ..
+                conversation_id,
+                is_exit_before_new_entrance,
+                ..
             } => {
+                // Skip if this exit is part of an in-place switch — the follow-up
+                // entrance will register the new conversation's consumer.
+                if *is_exit_before_new_entrance {
+                    return;
+                }
+
                 model
                     .last_opened_times
                     .remove(&ConversationOrTaskId::ConversationId(*conversation_id));

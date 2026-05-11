@@ -2,6 +2,8 @@ use anyhow::Result;
 #[cfg(feature = "local_fs")]
 use repo_metadata::repositories::RepoDetectionSource;
 use std::collections::HashMap;
+#[cfg(feature = "local_fs")]
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use warpui::{Entity, ModelContext, SingletonEntity};
 
@@ -175,6 +177,10 @@ pub struct ProjectContextModel {
     /// the Vec holds updates that arrived while that task was running.
     #[cfg(feature = "local_fs")]
     pending_updates: HashMap<PathBuf, Vec<RepositoryUpdate>>,
+    /// Repo roots that already have a watcher registered, so we never
+    /// subscribe more than once per root.
+    #[cfg(feature = "local_fs")]
+    watched_roots: HashSet<PathBuf>,
 }
 
 #[derive(Default, Debug)]
@@ -254,9 +260,6 @@ impl ProjectContextModel {
         root_path: PathBuf,
         ctx: &mut ModelContext<Self>,
     ) -> Result<()> {
-        if self.path_to_rules.contains_key(&root_path) {
-            return Ok(());
-        }
         #[cfg(feature = "local_fs")]
         {
             let root_clone = root_path.clone();
@@ -308,7 +311,7 @@ impl ProjectContextModel {
     /// the actual repo watcher might not have been registered yet. We will attempt to register that repo watcher
     /// if it doesn't yet exists.
     #[cfg(feature = "local_fs")]
-    fn try_initialize_and_register_watcher(&self, path: &Path, ctx: &mut ModelContext<Self>) {
+    fn try_initialize_and_register_watcher(&mut self, path: &Path, ctx: &mut ModelContext<Self>) {
         use repo_metadata::repositories::DetectedRepositories;
 
         let directory_watcher = DirectoryWatcher::handle(ctx);
@@ -337,12 +340,18 @@ impl ProjectContextModel {
     }
 
     #[cfg(feature = "local_fs")]
-    fn register_watcher_for_path(&self, path: &Path, ctx: &mut ModelContext<Self>) {
+    fn register_watcher_for_path(&mut self, path: &Path, ctx: &mut ModelContext<Self>) {
+        if self.watched_roots.contains(path) {
+            return;
+        }
+
         let Some(repository_model) =
             DirectoryWatcher::as_ref(ctx).get_watched_directory_for_path(path)
         else {
             return;
         };
+
+        self.watched_roots.insert(path.to_path_buf());
 
         let (repository_update_tx, repository_update_rx) = async_channel::unbounded();
         let start = repository_model.update(ctx, |repo, ctx| {
@@ -571,6 +580,10 @@ impl ProjectContextModel {
                     match async_fs::read_to_string(&target_file.path).await {
                         Ok(content) => {
                             existing_rules.upsert_rule(&target_file.path, content);
+                            rules_delta.discovered_rules.push(ProjectRulePath {
+                                path: target_file.path.clone(),
+                                project_root: project_root.clone(),
+                            });
                         }
                         Err(e) => {
                             log::warn!(

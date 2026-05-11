@@ -73,7 +73,7 @@ Before considering the work complete, verify that the code matches the current s
 
 Prefer:
 
-- `rust-unit-tests` for unit tests and regression coverage
+- unit tests and regression coverage that follow the repository's local testing conventions
 - integration or end-to-end tests for important user flows
 
 ## Best Practices
@@ -88,4 +88,3 @@ Prefer:
 - `spec-driven-implementation`
 - `write-product-spec`
 - `write-tech-spec`
-- `rust-unit-tests`

@@ -530,11 +530,18 @@ impl BlocklistAIController {
             let AgentViewControllerEvent::ExitedAgentView {
                 conversation_id,
                 final_exchange_count,
+                is_exit_before_new_entrance,
                 ..
             } = event
             else {
                 return;
             };
+
+            // Skip if this exit is part of an in-place switch — cancelling here
+            // would kill an in-flight stream every time the user navigates.
+            if *is_exit_before_new_entrance {
+                return;
+            }
 
             // If we exited a brand-new empty conversation, there's nothing meaningful to cancel.
             if *final_exchange_count == 0 {
@@ -2383,6 +2390,15 @@ impl BlocklistAIController {
     ) -> bool {
         self.in_flight_response_streams
             .try_cancel_stream(stream_id, reason, ctx)
+    }
+
+    pub fn has_active_stream_for_conversation(
+        &self,
+        conversation_id: AIConversationId,
+        app: &AppContext,
+    ) -> bool {
+        self.in_flight_response_streams
+            .has_active_stream_for_conversation(conversation_id, app)
     }
 
     /// Cancels 'progress' for the active conversation if there is one:

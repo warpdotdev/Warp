@@ -25,13 +25,17 @@ use crate::view_components::{Dropdown, DropdownItem};
 use crate::workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME;
 use crate::workspace::WorkspaceAction;
 use crate::{
-    appearance::Appearance,
+    appearance::{Appearance, AppearanceEvent},
     drive::panel::{MAX_SIDEBAR_WIDTH_RATIO, MIN_SIDEBAR_WIDTH},
     terminal::resizable_data::{ModalType, ResizableData},
 };
-use crate::{code_review::diff_state::DiffStateModel, terminal::view::TerminalView};
+use crate::{
+    code::buffer_location::BufferLocation, code_review::diff_state::DiffStateModel,
+    terminal::view::TerminalView,
+};
 use dunce::canonicalize;
 use itertools::Itertools;
+use pathfinder_color::ColorU;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -136,16 +140,27 @@ struct CodeReviewSessionEnv {
     is_wsl: bool,
 }
 
+/// Resolve the repo-switcher dropdown's text color from the current theme.
+/// Kept as a free function so the construction site and the
+/// `AppearanceEvent::ThemeChanged` subscription compute the exact same color.
+fn repo_dropdown_font_color(appearance: &Appearance) -> ColorU {
+    appearance
+        .theme()
+        .sub_text_color(appearance.theme().background())
+        .into_solid()
+}
+
 impl CodeReviewState {
     pub fn new(ctx: &mut ViewContext<RightPanelView>) -> Self {
         CodeReviewState {
             dropdown: ctx.add_typed_action_view(|ctx| {
-                let appearance = Appearance::as_ref(ctx);
-                let font_color = appearance
-                    .theme()
-                    .sub_text_color(appearance.theme().background())
-                    .into_solid();
-                let ui_font_size = appearance.ui_font_size();
+                let (font_color, ui_font_size) = {
+                    let appearance = Appearance::as_ref(ctx);
+                    (
+                        repo_dropdown_font_color(appearance),
+                        appearance.ui_font_size(),
+                    )
+                };
                 let mut dropdown = Dropdown::new(ctx);
                 dropdown.set_menu_position(
                     PositionedElementAnchor::BottomRight,
@@ -158,6 +173,19 @@ impl CodeReviewState {
                 dropdown.set_vertical_margin(0., ctx);
                 dropdown.set_top_bar_height(warp_core::ui::icons::ICON_DIMENSIONS, ctx);
                 dropdown.set_padding(HEADER_BUTTON_PADDING, ctx);
+
+                // The font color above is derived from the active theme and
+                // cached inside the dropdown. Without this subscription, the
+                // cached value goes stale across light/dark switches and the
+                // header label becomes unreadable on the new background
+                // (e.g. white-on-white in light mode after starting in dark).
+                ctx.subscribe_to_model(&Appearance::handle(ctx), |dropdown, _, event, ctx| {
+                    if matches!(event, AppearanceEvent::ThemeChanged) {
+                        let font_color = repo_dropdown_font_color(Appearance::as_ref(ctx));
+                        dropdown.set_font_color(font_color, ctx);
+                    }
+                });
+
                 dropdown
             }),
             available_repos: vec![],
@@ -856,7 +884,7 @@ impl RightPanelView {
         let repo_path = crv.repo_path();
         let branch_name = crv
             .diff_state_model()
-            .read(app, |model, _| model.get_current_branch_name());
+            .read(app, |model, ctx| model.get_current_branch_name(ctx));
         let diff_stats = crv.loaded_diff_stats();
 
         let repo_path_element = repo_path.map(|repo_path| {
@@ -1594,7 +1622,10 @@ impl RightPanelView {
             }
         } else {
             let diff_state_model = self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(repo_path.to_path_buf(), ctx)
+                model.get_or_create_diff_state_model(
+                    BufferLocation::Local(repo_path.to_path_buf()),
+                    ctx,
+                )
             });
 
             let Some(diff_state_model) = diff_state_model else {

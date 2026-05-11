@@ -5643,5 +5643,5 @@ impl TypedActionView for DriveIndex {
 }
 
 #[cfg(test)]
-#[path = "index_test.rs"]
+#[path = "index_tests.rs"]
 mod tests;

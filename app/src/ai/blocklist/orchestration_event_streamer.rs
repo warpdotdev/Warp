@@ -12,12 +12,13 @@ use crate::ai::agent_events::{
     AgentEventDriverConfig, MessageHydrator, ServerApiAgentEventSource,
 };
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::server::retry_strategies::is_transient_http_error;
 use crate::server::server_api::ai::{AIClient, AgentRunEvent};
 use crate::server::server_api::{ServerApi, ServerApiProvider};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::channel::mpsc;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
@@ -30,10 +31,16 @@ use warpui::{
 };
 
 /// Backoff schedule (seconds) for the post-restore
-/// `get_ambient_agent_task` retry: 1s, 2s, 5s, then 10s max.
+/// `get_ambient_agent_task` retry on transient errors: 1s, 2s, 5s, then 10s max.
 const RESTORE_FETCH_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
+/// Slower backoff for permanent HTTP errors (e.g. 404 for deleted runs).
+/// Retries still happen in case the error was spurious, but at a much
+/// lower frequency to avoid log spam.
+const RESTORE_FETCH_PERMANENT_BACKOFF_STEPS: &[u64] = &[30];
 /// How often (milliseconds) the drain timer checks for SSE events.
 const SSE_DRAIN_INTERVAL_MS: u64 = 500;
+/// Cap killed-run tombstones while keeping normal sessions well below the limit.
+const MAX_KILLED_RUN_IDS: usize = 1024;
 
 /// Per-event item delivered from the SSE background task to the entity.
 struct SseStreamItem {
@@ -47,6 +54,8 @@ struct SseConnectionState {
     event_receiver: mpsc::UnboundedReceiver<SseStreamItem>,
     /// Generation counter; used to discard stale callbacks after reconnect.
     generation: u64,
+    /// Abort handle for the spawned SSE driver task, used to cancel on teardown.
+    abort_handle: futures::future::AbortHandle,
 }
 
 struct SseForwardingConsumer {
@@ -181,6 +190,9 @@ pub struct OrchestrationEventStreamer {
     /// Monotonic counter for wake-only listener generations. Ensures stale
     /// callbacks from replaced listeners are discarded.
     next_wake_generation: u64,
+    /// Run IDs killed locally; kept briefly to drop late server events.
+    killed_run_ids: HashSet<String>,
+    killed_run_id_order: VecDeque<String>,
 }
 
 pub enum OrchestrationEventStreamerEvent {
@@ -208,6 +220,8 @@ impl OrchestrationEventStreamer {
             streams: HashMap::new(),
             next_sse_generation: 0,
             next_wake_generation: 0,
+            killed_run_ids: HashSet::new(),
+            killed_run_id_order: VecDeque::new(),
         }
     }
 
@@ -230,10 +244,40 @@ impl OrchestrationEventStreamer {
             streams: HashMap::new(),
             next_sse_generation: 0,
             next_wake_generation: 0,
+            killed_run_ids: HashSet::new(),
+            killed_run_id_order: VecDeque::new(),
         }
     }
 
     // ---- Public consumer registry API ---------------------------------
+
+    /// Tombstone a killed run so late SSE events cannot resurrect it.
+    pub fn mark_conversation_killed(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(run_id) = self.self_run_id(conversation_id, ctx) else {
+            log::info!("mark_conversation_killed: conversation {conversation_id:?} has no run_id");
+            return;
+        };
+        log::info!(
+            "Marking orchestration run as killed: conversation_id={conversation_id:?} run_id={run_id}"
+        );
+        self.remember_killed_run_id(run_id);
+    }
+
+    fn remember_killed_run_id(&mut self, run_id: String) {
+        if self.killed_run_ids.insert(run_id.clone()) {
+            self.killed_run_id_order.push_back(run_id);
+        }
+        while self.killed_run_ids.len() > MAX_KILLED_RUN_IDS {
+            let Some(evicted_run_id) = self.killed_run_id_order.pop_front() else {
+                break;
+            };
+            self.killed_run_ids.remove(&evicted_run_id);
+        }
+    }
 
     /// Register a consumer for a conversation. Re-evaluates eligibility
     /// and opens the SSE connection if the conversation is newly
@@ -563,14 +607,14 @@ impl OrchestrationEventStreamer {
         // to fail and exit; the drain timer's `is_current` check then
         // no-ops on its next tick.
         if let Some(mut stream) = self.streams.remove(&conversation_id) {
+            if let Some(connection) = stream.sse_connection.take() {
+                connection.abort_handle.abort();
+            }
             if let Some(connection) = stream.wake_connection.take() {
                 connection.task.abort();
             }
         }
 
-        // Prune the removed conversation's run_id from every other
-        // tracked conversation's watched set, then re-evaluate eligibility
-        // for the affected parents.
         if let Some(run_id) = removed_run_id.as_deref() {
             let mut affected = Vec::new();
             for (other_id, stream) in self.streams.iter_mut() {
@@ -745,30 +789,41 @@ impl OrchestrationEventStreamer {
                 if !self.streams.contains_key(&conv_id) {
                     return;
                 }
-                log::warn!("Restore: get_agent_run failed for {conv_id:?}: {err:#}; will retry");
-                self.start_restore_fetch_retry_timer(conv_id, task_id, sqlite_cursor, ctx);
+                if is_transient_http_error(&err) {
+                    log::warn!(
+                        "Restore: get_agent_run failed for {conv_id:?}: {err:#}; will retry"
+                    );
+                } else {
+                    log::warn!("Restore: get_agent_run hit permanent error for {conv_id:?}: {err:#}; retrying with slow backoff");
+                }
+                self.start_restore_fetch_retry_timer(conv_id, task_id, sqlite_cursor, &err, ctx);
             }
         }
     }
 
     /// Schedules a retry of the post-restore `get_ambient_agent_task`
-    /// fetch after an exponential backoff (1s, 2s, 5s, 10s capped) keyed
-    /// on a per-conversation failure counter. The counter resets on
-    /// success.
+    /// fetch after an exponential backoff keyed on a per-conversation
+    /// failure counter. Uses a fast schedule (1-10s) for transient errors
+    /// and a slow schedule (30s) for permanent HTTP errors. The counter
+    /// resets on success.
     fn start_restore_fetch_retry_timer(
         &mut self,
         conv_id: AIConversationId,
         task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
         sqlite_cursor: i64,
+        err: &anyhow::Error,
         ctx: &mut ModelContext<Self>,
     ) {
+        let backoff_steps = if is_transient_http_error(err) {
+            RESTORE_FETCH_BACKOFF_STEPS
+        } else {
+            RESTORE_FETCH_PERMANENT_BACKOFF_STEPS
+        };
         let stream = self.streams.entry(conv_id).or_default();
         stream.restore_fetch_failures += 1;
         let failures = stream.restore_fetch_failures;
-        let step_index = failures
-            .saturating_sub(1)
-            .min(RESTORE_FETCH_BACKOFF_STEPS.len() - 1);
-        let backoff = Duration::from_secs(RESTORE_FETCH_BACKOFF_STEPS[step_index]);
+        let step_index = failures.saturating_sub(1).min(backoff_steps.len() - 1);
+        let backoff = Duration::from_secs(backoff_steps[step_index]);
         ctx.spawn(
             async move { Timer::after(backoff).await },
             move |me, _, ctx| {
@@ -1084,12 +1139,6 @@ impl OrchestrationEventStreamer {
         let generation = self.next_sse_generation;
         self.next_sse_generation += 1;
 
-        let stream = self.streams.entry(conversation_id).or_default();
-        stream.sse_connection = Some(SseConnectionState {
-            event_receiver: rx,
-            generation,
-        });
-
         log::info!(
             "Opening SSE stream for {conversation_id:?} (gen={generation}, \
              run_ids={run_ids:?}, since={cursor})"
@@ -1099,7 +1148,7 @@ impl OrchestrationEventStreamer {
         let source = ServerApiAgentEventSource::new(server_api);
         let hydrator = self.message_hydrator_for_run_id(&self_run_id);
 
-        ctx.spawn(
+        let handle = ctx.spawn(
             async move {
                 let mut consumer = SseForwardingConsumer {
                     tx,
@@ -1129,6 +1178,13 @@ impl OrchestrationEventStreamer {
                 }
             },
         );
+
+        let stream = self.streams.entry(conversation_id).or_default();
+        stream.sse_connection = Some(SseConnectionState {
+            event_receiver: rx,
+            generation,
+            abort_handle: handle.abort_handle(),
+        });
 
         // Start periodic event drain.
         self.start_sse_drain_timer(conversation_id, generation, ctx);
@@ -1208,8 +1264,8 @@ impl OrchestrationEventStreamer {
         conversation_id: AIConversationId,
         self_run_id: &str,
         previous_cursor: i64,
-        events: Vec<AgentRunEvent>,
-        messages: Vec<ReceivedMessageInput>,
+        mut events: Vec<AgentRunEvent>,
+        mut messages: Vec<ReceivedMessageInput>,
         ctx: &mut ModelContext<Self>,
     ) {
         let max_seq = events
@@ -1222,9 +1278,8 @@ impl OrchestrationEventStreamer {
             .or_default()
             .event_cursor = max_seq;
 
-        // Persist the cursor to SQLite so that after a restart we can
-        // resume event delivery from this sequence number without
-        // re-delivering events the parent has already acted on.
+        // Advance the cursor before filtering so dropped killed-run events
+        // are not replayed later.
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
             model.update_event_sequence(conversation_id, max_seq, ctx);
         });
@@ -1256,6 +1311,25 @@ impl OrchestrationEventStreamer {
             );
         }
 
+        if !self.killed_run_ids.is_empty() {
+            let dropped_message_ids: HashSet<String> = events
+                .iter()
+                .filter(|event| self.killed_run_ids.contains(&event.run_id))
+                .filter_map(|event| event.ref_id.clone())
+                .collect();
+            let event_count_before = events.len();
+            events.retain(|event| !self.killed_run_ids.contains(&event.run_id));
+            messages.retain(|message| {
+                !dropped_message_ids.contains(&message.message_id)
+                    && !self.killed_run_ids.contains(&message.sender_agent_id)
+            });
+            let dropped_event_count = event_count_before - events.len();
+            if dropped_event_count > 0 {
+                log::info!(
+                    "Dropped {dropped_event_count} orchestration events for killed run IDs while handling {conversation_id:?}"
+                );
+            }
+        }
         // Track message IDs for server-side mark_delivered calls.
         let message_ids: Vec<String> = messages
             .iter()
@@ -1287,7 +1361,9 @@ impl OrchestrationEventStreamer {
         // discard already-fetched message bodies.
         self.drain_sse_events(conversation_id, ctx);
         if let Some(stream) = self.streams.get_mut(&conversation_id) {
-            stream.sse_connection = None;
+            if let Some(connection) = stream.sse_connection.take() {
+                connection.abort_handle.abort();
+            }
         }
 
         if self.is_eligible(conversation_id, ctx) {
@@ -1302,8 +1378,9 @@ impl OrchestrationEventStreamer {
         // Drain anything buffered so we don't lose hydrated messages.
         self.drain_sse_events(conversation_id, ctx);
         if let Some(stream) = self.streams.get_mut(&conversation_id) {
-            if stream.sse_connection.take().is_some() {
+            if let Some(connection) = stream.sse_connection.take() {
                 log::info!("Tearing down SSE for {conversation_id:?} (no longer eligible)");
+                connection.abort_handle.abort();
             }
         }
     }

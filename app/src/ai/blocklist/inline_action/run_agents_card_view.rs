@@ -3,6 +3,8 @@
 //! Each card is a `View` keyed by `AIAgentActionId`, embedded by
 //! `AIBlock` via `ChildView`. Keybindings and Accept dispatch live on
 //! the view; only `RejectRequested` flows back to the parent.
+use std::collections::HashMap;
+
 use ai::agent::action::{RunAgentsAgentRunConfig, RunAgentsExecutionMode, RunAgentsRequest};
 use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
 use ai::agent::orchestration_config::{
@@ -15,7 +17,7 @@ use warpui::elements::{
     Border, ChildView, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, MainAxisSize,
     OffsetPositioning, ParentElement, Radius, Stack, Text,
 };
-use warpui::keymap::{FixedBinding, Keystroke};
+use warpui::keymap::FixedBinding;
 use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
@@ -39,6 +41,7 @@ use crate::ai::blocklist::inline_action::orchestration_controls::{
 use crate::ai::blocklist::inline_action::requested_action::{
     render_requested_action_row_for_text, CTRL_C_KEYSTROKE, ENTER_KEYSTROKE,
 };
+use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
 use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::appearance::Appearance;
 use crate::menu::{Event as MenuEvent, Menu, MenuItemFields, MenuVariant};
@@ -50,11 +53,9 @@ use crate::view_components::compactible_action_button::{
 };
 use crate::view_components::compactible_split_action_button::CompactibleSplitActionButton;
 use crate::view_components::dropdown::DropdownEvent;
-use crate::view_components::FilterableDropdownEvent;
+use crate::view_components::{FilterableDropdownEvent, FilterableDropdownOrientation};
 
-const RUN_AGENTS_CARD_TITLE: &str = "Can I add additional agents to this task?";
-
-const RUN_AGENTS_EDITOR_OPEN: &str = "RunAgentsEditorOpen";
+const RUN_AGENTS_CARD_TITLE: &str = "Can I start additional agents for this task?";
 
 pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
@@ -75,17 +76,6 @@ pub fn init(app: &mut AppContext) {
             RunAgentsCardViewAction::Reject,
             id!(RunAgentsCardView::ui_name()),
         ),
-        FixedBinding::new(
-            "cmdorctrl-e",
-            RunAgentsCardViewAction::ToggleEdit,
-            id!(RunAgentsCardView::ui_name()),
-        ),
-        // Esc closes the editor; Reject is Ctrl-C.
-        FixedBinding::new(
-            "escape",
-            RunAgentsCardViewAction::DiscardEdits,
-            id!(RunAgentsCardView::ui_name()) & id!(RUN_AGENTS_EDITOR_OPEN),
-        ),
     ]);
 }
 
@@ -94,7 +84,6 @@ pub fn init(app: &mut AppContext) {
 /// and adds card-specific fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunAgentsEditState {
-    pub is_editor_open: bool,
     pub orch: oc::OrchestrationEditState,
     pub agent_run_configs: Vec<RunAgentsAgentRunConfig>,
     pub base_prompt: String,
@@ -106,7 +95,6 @@ pub struct RunAgentsEditState {
 impl RunAgentsEditState {
     pub fn from_request(req: &RunAgentsRequest) -> Self {
         Self {
-            is_editor_open: false,
             orch: oc::OrchestrationEditState::from_run_agents_fields(
                 &req.model_id,
                 &req.harness_type,
@@ -150,12 +138,10 @@ impl OrchestrationControlAction for RunAgentsCardViewAction {
     }
 }
 
-/// Per-action UI handles. Picker views are lazily created on first
-/// editor open.
+/// Per-action UI handles for the confirmation card.
 #[derive(Default, Clone)]
 struct RunAgentsCardHandles {
     reject_button: Option<CompactibleActionButton>,
-    edit_button: Option<CompactibleActionButton>,
     accept_button: Option<CompactibleSplitActionButton>,
     pickers: OrchestrationPickerHandles<RunAgentsCardViewAction>,
 }
@@ -166,8 +152,6 @@ pub enum RunAgentsCardViewAction {
     AcceptWithoutOrchestration,
     ToggleAcceptMenu,
     Reject,
-    ToggleEdit,
-    DiscardEdits,
     ExecutionModeToggled { is_remote: bool },
     ModelChanged { model_id: String },
     HarnessChanged { harness_type: String },
@@ -183,9 +167,6 @@ pub enum RunAgentsCardViewEvent {
 pub struct RunAgentsCardView {
     action_id: AIAgentActionId,
     state: RunAgentsEditState,
-    /// Snapshot of the request as received from the tool call, used to
-    /// reset on "Discard edits".
-    original_request: RunAgentsRequest,
     handles: RunAgentsCardHandles,
     spawning: Option<RunAgentsSpawningSnapshot>,
     /// Set when the active config was approved and matched the request,
@@ -206,6 +187,9 @@ pub struct RunAgentsCardView {
 
     action_model: ModelHandle<BlocklistAIActionModel>,
     block_model: Rc<dyn AIBlockModel<View = AIBlock>>,
+    /// UI-only per-harness model memory so switching harnesses preserves
+    /// the user's previous model selection for each harness.
+    saved_model_per_harness: HashMap<String, String>,
 }
 
 /// Returns `true` when the conditions for auto-launching are met.
@@ -220,12 +204,7 @@ pub(crate) fn should_auto_launch(
     state: &RunAgentsEditState,
     active_config: &Option<(OrchestrationConfig, OrchestrationConfigStatus)>,
 ) -> bool {
-    if auto_launched
-        || is_denied
-        || is_spawning
-        || state.is_editor_open
-        || state.agent_run_configs.is_empty()
-    {
+    if auto_launched || is_denied || is_spawning || state.agent_run_configs.is_empty() {
         return false;
     }
     match active_config {
@@ -291,12 +270,30 @@ impl RunAgentsCardView {
         // once the action becomes blocked.
         let is_denied = compute_is_denied(is_denied, &active_config);
 
-        let state = RunAgentsEditState::from_request(request);
+        let mut state = RunAgentsEditState::from_request(request);
+        // When the LLM omits harness/model to inherit from the active
+        // config, resolve empty fields so the card shows the intended
+        // settings rather than defaults.
+        if let Some((config, status)) = &active_config {
+            if status.is_approved() {
+                state.orch.resolve_from_config(config);
+            }
+        }
+        // For Oz (or empty harness), default to the conversation's base
+        // model so the picker shows e.g. "auto (genius)" instead of the
+        // system default.
+        if state.orch.model_id.is_empty() {
+            let harness =
+                warp_cli::agent::Harness::parse_orchestration_harness(&state.orch.harness_type);
+            if matches!(harness, Some(warp_cli::agent::Harness::Oz) | None) {
+                if let Some(base) = block_model.base_model(ctx).map(|id| id.to_string()) {
+                    state.orch.model_id = base;
+                }
+            }
+        }
         let auto_launched = should_auto_launch(false, is_denied, false, &state, &active_config);
 
         let reject_keystroke = CTRL_C_KEYSTROKE.clone();
-        let edit_keystroke =
-            Keystroke::parse("cmdorctrl-e").expect("orchestrate edit keystroke literal must parse");
         let accept_keystroke = ENTER_KEYSTROKE.clone();
 
         let reject_button = CompactibleActionButton::new(
@@ -305,15 +302,6 @@ impl RunAgentsCardView {
             ButtonSize::Small,
             RunAgentsCardViewAction::Reject,
             Icon::X,
-            std::sync::Arc::new(NakedTheme),
-            ctx,
-        );
-        let edit_button = CompactibleActionButton::new(
-            "Edit".to_string(),
-            Some(KeystrokeSource::Fixed(edit_keystroke)),
-            ButtonSize::Small,
-            RunAgentsCardViewAction::ToggleEdit,
-            Icon::Pencil,
             std::sync::Arc::new(NakedTheme),
             ctx,
         );
@@ -396,30 +384,56 @@ impl RunAgentsCardView {
                     action_model.execute_run_agents(&action_id, request, action_ctx);
                 });
             }
+            BlocklistAIActionEvent::ActionBlockedOnUserConfirmation(action_id)
+                if action_id == &action_id_for_action_events =>
+            {
+                // Normal case: streaming is complete and the action is
+                // ready for user confirmation. Re-render so the card
+                // transitions from the "Configuring agents..." placeholder
+                // to the full confirmation UI.
+                ctx.notify();
+            }
             _ => {}
         });
 
-        // Repopulate the model picker when available LLMs change.
-        // LLMPreferences loads asynchronously from the server; the
-        // picker may have been created before models arrived.
+        // Repopulate the model picker when available Warp LLMs change.
+        // Only relevant for Oz harness — non-Oz harnesses get their
+        // model catalog from HarnessAvailabilityModel, not LLMPreferences.
         ctx.subscribe_to_model(&LLMPreferences::handle(ctx), |me, _, event, ctx| {
             if let LLMPreferencesEvent::UpdatedAvailableLLMs = event {
                 if let Some(handle) = &me.handles.pickers.model_picker {
-                    oc::populate_model_picker(handle, &me.state.orch.model_id, ctx);
+                    let is_local = !me.state.orch.execution_mode.is_remote();
+                    oc::populate_model_picker_for_harness(
+                        handle,
+                        &me.state.orch.model_id,
+                        &me.state.orch.harness_type,
+                        is_local,
+                        ctx,
+                    );
                 }
             }
         });
 
+        // Repopulate harness and model pickers when the server-provided
+        // harness list or harness model catalogs change.
+        ctx.subscribe_to_model(
+            &HarnessAvailabilityModel::handle(ctx),
+            |me, _, event, ctx| {
+                if let HarnessAvailabilityEvent::Changed = event {
+                    oc::repopulate_all_pickers(&mut me.state.orch, &me.handles.pickers, ctx);
+                    ctx.notify();
+                }
+            },
+        );
+
         // When auto_launched is true, execution is deferred to the
         // ActionBlockedOnUserConfirmation subscription above — the action
         // hasn't been queued in pending_actions yet at construction time.
-        Self {
+        let mut view = Self {
             action_id,
-            state: RunAgentsEditState::from_request(request),
-            original_request: request.clone(),
+            state,
             handles: RunAgentsCardHandles {
                 reject_button: Some(reject_button),
-                edit_button: Some(edit_button),
                 accept_button: Some(accept_button),
                 ..Default::default()
             },
@@ -432,27 +446,49 @@ impl RunAgentsCardView {
             position_id_prefix,
             action_model,
             block_model,
-        }
-    }
+            saved_model_per_harness: HashMap::new(),
+        };
 
-    pub fn is_spawning(&self) -> bool {
-        self.spawning.is_some()
+        // Eagerly create picker views so the editor section is always
+        // visible without requiring a toggle.
+        view.ensure_pickers(ctx);
+
+        view
     }
 
     /// Re-sync edit state from the latest streaming request.
-    /// No-op when the editor is open (user edits take precedence).
     pub fn update_request(&mut self, request: &RunAgentsRequest, ctx: &mut ViewContext<Self>) {
-        if self.state.is_editor_open
-            || self.spawning.is_some()
-            || self.auto_launched
-            || self.is_denied
-        {
+        if self.spawning.is_some() || self.auto_launched || self.is_denied {
             return;
         }
-        let new_state = RunAgentsEditState::from_request(request);
+        let mut new_state = RunAgentsEditState::from_request(request);
+        // Resolve empty fields from the active config (same as in new()).
+        if let Some((config, status)) = &self.active_config {
+            if status.is_approved() {
+                new_state.orch.resolve_from_config(config);
+            }
+        }
+        if new_state.orch.model_id.is_empty() {
+            let harness =
+                warp_cli::agent::Harness::parse_orchestration_harness(&new_state.orch.harness_type);
+            if matches!(harness, Some(warp_cli::agent::Harness::Oz) | None) {
+                if let Some(base) = self.block_model.base_model(ctx).map(|id| id.to_string()) {
+                    new_state.orch.model_id = base;
+                }
+            }
+        }
         if self.state != new_state {
+            let harness_or_model_changed = self.state.orch.harness_type
+                != new_state.orch.harness_type
+                || self.state.orch.model_id != new_state.orch.model_id
+                || self.state.orch.execution_mode != new_state.orch.execution_mode;
             self.state = new_state;
-            self.original_request = request.clone();
+            // When harness_type, model_id, or execution_mode arrive via
+            // streaming (they may be empty in early chunks), repopulate
+            // and re-sync the pickers so the UI matches the final state.
+            if harness_or_model_changed {
+                oc::repopulate_all_pickers(&mut self.state.orch, &self.handles.pickers, ctx);
+            }
             ctx.notify();
         }
     }
@@ -494,52 +530,13 @@ impl RunAgentsCardView {
             );
             return;
         }
-        // Close the editor before dispatching.
-        if self.state.is_editor_open {
-            self.state.is_editor_open = false;
-            self.sync_card_buttons(ctx);
-        }
         let action_id = self.action_id.clone();
         self.action_model.update(ctx, |action_model, action_ctx| {
             action_model.execute_run_agents(&action_id, request, action_ctx);
         });
     }
 
-    fn handle_toggle_edit(&mut self, ctx: &mut ViewContext<Self>) {
-        self.state.is_editor_open = !self.state.is_editor_open;
-
-        // Lazily build picker views on first editor open.
-        if self.state.is_editor_open {
-            self.ensure_pickers(ctx);
-        }
-
-        self.sync_card_buttons(ctx);
-        ctx.notify();
-    }
-
-    /// Swap Edit ↔ "Discard edits" label/keystroke.
-    fn sync_card_buttons(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(edit_button) = self.handles.edit_button.as_mut() else {
-            return;
-        };
-        let (label, keystroke) = if self.state.is_editor_open {
-            (
-                "Discard edits".to_string(),
-                Keystroke::parse("escape")
-                    .expect("orchestrate discard-edits keystroke literal must parse"),
-            )
-        } else {
-            (
-                "Edit".to_string(),
-                Keystroke::parse("cmdorctrl-e")
-                    .expect("orchestrate edit keystroke literal must parse"),
-            )
-        };
-        edit_button.set_label(label, ctx);
-        edit_button.set_keybinding(Some(KeystrokeSource::Fixed(keystroke)), ctx);
-    }
-
-    /// Lazily construct the picker dropdown views (idempotent).
+    /// Construct the picker dropdown views (idempotent).
     fn ensure_pickers(&mut self, ctx: &mut ViewContext<Self>) {
         let appearance = Appearance::as_ref(ctx);
         let (styles, colors) = oc::picker_styles(appearance);
@@ -557,14 +554,23 @@ impl RunAgentsCardView {
             } else {
                 state.orch.model_id.clone()
             };
+            let is_local = !state.orch.execution_mode.is_remote();
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
-            oc::populate_model_picker(&handle, &initial_model_id, ctx);
+            Self::set_upward_menu_position(&handle, ctx);
+            oc::populate_model_picker_for_harness(
+                &handle,
+                &initial_model_id,
+                &state.orch.harness_type,
+                is_local,
+                ctx,
+            );
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.model_picker = Some(handle);
         }
 
         if self.handles.pickers.harness_picker.is_none() {
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
+            Self::set_upward_menu_position(&handle, ctx);
             oc::populate_harness_picker(&handle, &state.orch.harness_type, ctx);
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.harness_picker = Some(handle);
@@ -576,6 +582,9 @@ impl RunAgentsCardView {
                 RunAgentsExecutionMode::Local => "",
             };
             let handle = oc::create_environment_picker(initial_env, &styles, ctx);
+            handle.update(ctx, |d, _| {
+                d.set_orientation(FilterableDropdownOrientation::Up)
+            });
             ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
                 if let FilterableDropdownEvent::Close = event {
                     me.refocus_after_picker_close(ctx);
@@ -590,12 +599,31 @@ impl RunAgentsCardView {
                 RunAgentsExecutionMode::Local => oc::ORCHESTRATION_WARP_WORKER_HOST,
             };
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
+            Self::set_upward_menu_position(&handle, ctx);
             oc::populate_host_picker(&handle, initial_host, ctx);
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.host_picker = Some(handle);
         }
 
         self.sync_picker_selections(ctx);
+    }
+
+    /// Opens the dropdown menu above the trigger to avoid overlapping
+    /// the input box. Only used by the confirmation card — the plan
+    /// config card renders higher up where downward menus are fine.
+    fn set_upward_menu_position(
+        dropdown_handle: &ViewHandle<
+            crate::view_components::dropdown::Dropdown<RunAgentsCardViewAction>,
+        >,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        dropdown_handle.update(ctx, |dropdown, ctx| {
+            dropdown.set_menu_position(
+                warpui::elements::PositionedElementAnchor::TopLeft,
+                warpui::elements::ChildAnchor::BottomLeft,
+                ctx,
+            );
+        });
     }
 
     fn subscribe_picker_close(
@@ -700,12 +728,25 @@ impl View for RunAgentsCardView {
         }
 
         // Restored-from-history: dispatch state is lost, render as
-        // Cancelled.
+        // Cancelled. Must be checked before the streaming gate below,
+        // because restored blocks have no pending action status.
         if self.block_model.is_restored() {
             return render_status_only_card(
                 "Spawn agents cancelled".to_string(),
                 appearance,
                 StatusKind::Cancelled,
+                app,
+            );
+        }
+
+        // Still streaming: show "Configuring agents..." placeholder until
+        // the action reaches Blocked status (i.e., streaming is complete
+        // and the action is queued for user confirmation).
+        if !matches!(status, Some(AIActionStatus::Blocked)) {
+            return render_status_only_card(
+                "Configuring agents\u{2026}".to_string(),
+                appearance,
+                StatusKind::Spawning,
                 app,
             );
         }
@@ -731,14 +772,6 @@ impl View for RunAgentsCardView {
 
         root_stack.finish()
     }
-
-    fn keymap_context(&self, _app: &AppContext) -> warpui::keymap::Context {
-        let mut context = Self::default_keymap_context();
-        if self.state.is_editor_open {
-            context.set.insert(RUN_AGENTS_EDITOR_OPEN);
-        }
-        context
-    }
 }
 
 impl TypedActionView for RunAgentsCardView {
@@ -761,21 +794,15 @@ impl TypedActionView for RunAgentsCardView {
             RunAgentsCardViewAction::Reject => {
                 ctx.emit(RunAgentsCardViewEvent::RejectRequested);
             }
-            RunAgentsCardViewAction::ToggleEdit => {
-                self.handle_toggle_edit(ctx);
-            }
-            RunAgentsCardViewAction::DiscardEdits => {
-                if self.state.is_editor_open {
-                    // Reset to the original tool-call values.
-                    self.state = RunAgentsEditState::from_request(&self.original_request);
-                    self.sync_card_buttons(ctx);
-                    self.sync_picker_selections(ctx);
-                    ctx.notify();
-                }
-            }
             RunAgentsCardViewAction::ExecutionModeToggled { is_remote } => {
-                self.state.orch.toggle_execution_mode_to_remote(*is_remote);
-                self.sync_picker_selections(ctx);
+                let block_model = self.block_model.clone();
+                oc::apply_execution_mode_change(
+                    &mut self.state.orch,
+                    &self.handles.pickers,
+                    *is_remote,
+                    |ctx| block_model.base_model(ctx).map(|id| id.to_string()),
+                    ctx,
+                );
                 ctx.notify();
             }
             RunAgentsCardViewAction::ModelChanged { model_id } => {
@@ -783,7 +810,15 @@ impl TypedActionView for RunAgentsCardView {
                 ctx.notify();
             }
             RunAgentsCardViewAction::HarnessChanged { harness_type } => {
-                self.state.orch.harness_type = harness_type.clone();
+                let block_model = self.block_model.clone();
+                oc::apply_harness_change(
+                    &mut self.state.orch,
+                    &mut self.saved_model_per_harness,
+                    &self.handles.pickers,
+                    harness_type,
+                    |ctx| block_model.base_model(ctx).map(|id| id.to_string()),
+                    ctx,
+                );
                 ctx.notify();
             }
             RunAgentsCardViewAction::EnvironmentChanged { environment_id } => {
@@ -815,9 +850,7 @@ fn render_confirmation_card(
         .with_child(header)
         .with_child(body);
 
-    if state.is_editor_open {
-        content.add_child(render_editor(state, handles, app));
-    }
+    content.add_child(render_editor(state, handles, app));
 
     let border_color = if is_blocked {
         theme.accent()
@@ -839,16 +872,12 @@ fn render_header(handles: &RunAgentsCardHandles, app: &AppContext) -> Box<dyn El
         .with_icon(icons::yellow_stop_icon(appearance))
         .with_corner_radius_override(CornerRadius::with_top(Radius::Pixels(8.)));
 
-    if let (Some(reject), Some(edit), Some(accept)) = (
+    if let (Some(reject), Some(accept)) = (
         handles.reject_button.as_ref(),
-        handles.edit_button.as_ref(),
         handles.accept_button.as_ref(),
     ) {
-        let action_buttons: Vec<Rc<dyn RenderCompactibleActionButton>> = vec![
-            Rc::new(reject.clone()),
-            Rc::new(edit.clone()),
-            Rc::new(accept.clone()),
-        ];
+        let action_buttons: Vec<Rc<dyn RenderCompactibleActionButton>> =
+            vec![Rc::new(reject.clone()), Rc::new(accept.clone())];
         config = config.with_interaction_mode(InteractionMode::ActionButtons {
             action_buttons,
             size_switch_threshold: MEDIUM_SIZE_SWITCH_THRESHOLD,
@@ -1025,17 +1054,12 @@ fn render_status_only_card(
         false,
         app,
     );
-    Container::new(
-        Container::new(row)
-            .with_background_color(blended_colors::neutral_2(theme))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-            .finish(),
-    )
-    .with_margin_left(16.)
-    .with_margin_right(16.)
-    .finish()
-    .with_agent_output_item_spacing(app)
-    .finish()
+    Container::new(row)
+        .with_background_color(blended_colors::neutral_2(theme))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        .finish()
+        .with_agent_output_item_spacing(app)
+        .finish()
 }
 
 fn render_editor(
