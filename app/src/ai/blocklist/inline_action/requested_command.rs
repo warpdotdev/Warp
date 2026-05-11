@@ -1505,7 +1505,7 @@ impl View for RequestedCommandView {
                                     exchange.id != self.client_ids.client_exchange_id
                                 })
                                 .nth(1)
-                                .map_or(false, |exchange| {
+                                .is_some_and(|exchange| {
                                     !exchange
                                         .input
                                         .iter()
