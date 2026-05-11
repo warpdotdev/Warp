@@ -80,24 +80,22 @@ pub fn build_managed_secret_value(
     }
 }
 
-static CODEX_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 1] = [
-    AuthSecretTypeInfo {
-        display_name: "OpenAI API Key",
-        secret_type: ManagedSecretType::OpenaiApiKey,
-        fields: &[
-            AuthSecretTypeField {
-                label: "OPENAI_API_KEY",
-                placeholder: None,
-                optional: false,
-            },
-            AuthSecretTypeField {
-                label: "BASE_URL",
-                placeholder: Some("BASE_URL (e.g. https://us.api.openai.com/v1)"),
-                optional: true,
-            },
-        ],
-    },
-];
+static CODEX_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 1] = [AuthSecretTypeInfo {
+    display_name: "OpenAI API Key",
+    secret_type: ManagedSecretType::OpenaiApiKey,
+    fields: &[
+        AuthSecretTypeField {
+            label: "OPENAI_API_KEY",
+            placeholder: None,
+            optional: false,
+        },
+        AuthSecretTypeField {
+            label: "BASE_URL",
+            placeholder: Some("BASE_URL (e.g. https://us.api.openai.com/v1)"),
+            optional: true,
+        },
+    ],
+}];
 
 static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
     AuthSecretTypeInfo {

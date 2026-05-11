@@ -178,7 +178,7 @@ fn prepare_codex_config_toml_writes_fresh_config() {
     let working_dir = tmp.path().join("workspace/proj");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None, None).unwrap();
 
     let canonical = working_dir.canonicalize().unwrap();
     let key = canonical.to_string_lossy().into_owned();
@@ -188,7 +188,6 @@ fn prepare_codex_config_toml_writes_fresh_config() {
         cfg["projects"][&key]["trust_level"].as_str(),
         Some("trusted")
     );
-    assert_eq!(cfg["openai_base_url"].as_str(), Some(CODEX_OPENAI_BASE_URL));
 }
 
 #[test]
@@ -205,7 +204,7 @@ fn prepare_codex_config_toml_preserves_unrelated_keys() {
 
     // Pass `None` — the `model` key is intentionally removed (managed
     // key), but unrelated keys like existing project entries are kept.
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None, None).unwrap();
 
     let canonical = working_dir.canonicalize().unwrap();
     let key = canonical.to_string_lossy().into_owned();
@@ -229,9 +228,9 @@ fn prepare_codex_config_toml_is_idempotent() {
     let working_dir = tmp.path().join("workspace");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None, None).unwrap();
     let after_first = fs::read_to_string(&config_path).unwrap();
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None, None).unwrap();
     let after_second = fs::read_to_string(&config_path).unwrap();
 
     assert_eq!(after_first, after_second);
@@ -241,7 +240,6 @@ fn prepare_codex_config_toml_is_idempotent() {
     let projects = cfg["projects"].as_table().unwrap();
     assert_eq!(projects.len(), 1);
     assert_eq!(projects[&key]["trust_level"].as_str(), Some("trusted"));
-    assert_eq!(cfg["openai_base_url"].as_str(), Some(CODEX_OPENAI_BASE_URL));
 }
 
 #[test]
@@ -260,7 +258,7 @@ fn prepare_codex_config_toml_upgrades_untrusted_entry() {
     )
     .unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert_eq!(
@@ -279,7 +277,7 @@ fn prepare_codex_config_toml_trusts_multiple_child_repos() {
     fs::create_dir_all(repo_a.join(".git")).unwrap();
     fs::create_dir_all(repo_b.join(".git")).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     let projects = cfg["projects"].as_table().unwrap();
@@ -307,10 +305,20 @@ fn prepare_codex_config_toml_overwrites_stale_openai_base_url() {
     )
     .unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None).unwrap();
+    prepare_codex_config_toml(
+        &config_path,
+        &working_dir,
+        &HashMap::new(),
+        None,
+        Some("https://custom.api.openai.com/v1"),
+    )
+    .unwrap();
 
     let cfg = read_codex_config(&config_path);
-    assert_eq!(cfg["openai_base_url"].as_str(), Some(CODEX_OPENAI_BASE_URL));
+    assert_eq!(
+        cfg["openai_base_url"].as_str(),
+        Some("https://custom.api.openai.com/v1")
+    );
 }
 
 #[test]
@@ -331,7 +339,7 @@ fn write_codex_mcp_servers_cli_server() {
             },
         },
     )]);
-    prepare_codex_config_toml(&config_path, &working_dir, &servers, None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &servers, None, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     let mcp = &cfg["mcp_servers"]["my-mcp"];
@@ -362,7 +370,7 @@ fn write_codex_mcp_servers_sse_server() {
             },
         },
     )]);
-    prepare_codex_config_toml(&config_path, &working_dir, &servers, None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &servers, None, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     let mcp = &cfg["mcp_servers"]["remote-mcp"];
@@ -388,7 +396,7 @@ fn write_codex_mcp_servers_cli_server_with_cwd() {
             },
         },
     )]);
-    prepare_codex_config_toml(&config_path, &working_dir, &servers, None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &servers, None, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     let mcp = &cfg["mcp_servers"]["my-mcp"];
@@ -414,7 +422,7 @@ fn write_codex_mcp_servers_cli_server_without_cwd_omits_key() {
             },
         },
     )]);
-    prepare_codex_config_toml(&config_path, &working_dir, &servers, None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &servers, None, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     let mcp = &cfg["mcp_servers"]["my-mcp"];
@@ -432,8 +440,14 @@ fn prepare_codex_config_toml_writes_model_when_specified() {
     let working_dir = tmp.path().join("workspace");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), Some("gpt-5.5"))
-        .unwrap();
+    prepare_codex_config_toml(
+        &config_path,
+        &working_dir,
+        &HashMap::new(),
+        Some("gpt-5.5"),
+        None,
+    )
+    .unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert_eq!(cfg["model"].as_str(), Some("gpt-5.5"));
@@ -452,8 +466,14 @@ fn prepare_codex_config_toml_writes_model_migration_for_older_model() {
     let working_dir = tmp.path().join("workspace");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), Some("gpt-5.2"))
-        .unwrap();
+    prepare_codex_config_toml(
+        &config_path,
+        &working_dir,
+        &HashMap::new(),
+        Some("gpt-5.2"),
+        None,
+    )
+    .unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert_eq!(cfg["model"].as_str(), Some("gpt-5.2"));
@@ -472,8 +492,14 @@ fn prepare_codex_config_toml_skips_model_for_default_sentinel() {
     let working_dir = tmp.path().join("workspace");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), Some("default"))
-        .unwrap();
+    prepare_codex_config_toml(
+        &config_path,
+        &working_dir,
+        &HashMap::new(),
+        Some("default"),
+        None,
+    )
+    .unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert!(
@@ -495,7 +521,7 @@ fn prepare_codex_config_toml_skips_model_when_none() {
     let working_dir = tmp.path().join("workspace");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert!(
