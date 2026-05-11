@@ -467,11 +467,7 @@ default = [
     "agent_mode",
     "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",
-    "settings_import",
     "shared_with_me",
-    "block_toolbelt_save_as_workflow",
-    "remove_alt_screen_padding",
-    "less_horizontal_terminal_padding",
     "session_sharing_acls",
     "external_agent_mode_context",
     "shell_selector",
@@ -758,7 +754,6 @@ richtext_multiselect = []
 runtime_feature_flags = []
 selectable_prompt = []
 settings_file = []
-settings_import = []
 sequential_storage = []
 session_sharing = []
 session_sharing_acls = []
@@ -787,14 +782,11 @@ alacritty_settings_import = []
 shared_with_me = []
 ai_rules = []
 am_workflows = []
-less_horizontal_terminal_padding = []
 shell_selector = []
 shared_session_long_running_commands = []
-block_toolbelt_save_as_workflow = []
 blocklist_markdown_table_rendering = []
 blocklist_markdown_images = []
 minimalist_ui = []
-remove_alt_screen_padding = []
 loginless_conversion = []
 external_agent_mode_context = []
 avatar_in_tab_bar = []

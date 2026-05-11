@@ -7,7 +7,7 @@ use warpui::{EntityId, SingletonEntity, ViewContext, ViewHandle};
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
-use crate::ai::blocklist::BlocklistAIHistoryModel;
+use crate::ai::blocklist::{BlocklistAIHistoryModel, StartAgentRequestId};
 use crate::ai::llms::LLMPreferences;
 use crate::pane_group::{PaneGroup, PaneId};
 use crate::terminal::TerminalView;
@@ -31,6 +31,15 @@ pub(crate) struct HiddenChildAgentConversationRequest {
     pub orchestration_harness: Option<Harness>,
     pub env_vars: HashMap<OsString, OsString>,
     pub task_context: Option<HiddenChildAgentTaskContext>,
+}
+
+pub(crate) struct ErrorChildAgentConversationRequest {
+    pub parent_pane_id: PaneId,
+    pub name: String,
+    pub parent_conversation_id: AIConversationId,
+    pub request_id: Option<StartAgentRequestId>,
+    pub orchestration_harness: Option<Harness>,
+    pub error_message: String,
 }
 
 pub(crate) fn apply_hidden_child_agent_task_context(
@@ -193,13 +202,17 @@ fn create_error_child_agent_conversation_context(
 
 pub(crate) fn create_error_child_agent_conversation(
     group: &mut PaneGroup,
-    parent_pane_id: PaneId,
-    name: String,
-    parent_conversation_id: AIConversationId,
-    orchestration_harness: Option<Harness>,
-    error_message: String,
+    request: ErrorChildAgentConversationRequest,
     ctx: &mut ViewContext<PaneGroup>,
-) {
+) -> Option<AIConversationId> {
+    let ErrorChildAgentConversationRequest {
+        parent_pane_id,
+        name,
+        parent_conversation_id,
+        request_id,
+        orchestration_harness,
+        error_message,
+    } = request;
     let Some((terminal_view, terminal_view_id, conversation_id)) =
         create_error_child_agent_conversation_context(
             group,
@@ -213,9 +226,18 @@ pub(crate) fn create_error_child_agent_conversation(
         log::error!(
             "Failed to surface local child harness error for parent conversation {parent_conversation_id:?}: {error_message}"
         );
-        return;
+        return None;
     };
 
+    if let Some(request_id) = request_id {
+        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+            history_model.record_new_conversation_request_complete(
+                request_id,
+                conversation_id,
+                ctx,
+            );
+        });
+    }
     if let Some(terminal_view) = terminal_view {
         terminal_view.update(ctx, |terminal_view, ctx| {
             terminal_view.enter_agent_view(
@@ -236,4 +258,5 @@ pub(crate) fn create_error_child_agent_conversation(
             ctx,
         );
     });
+    Some(conversation_id)
 }

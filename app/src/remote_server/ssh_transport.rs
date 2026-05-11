@@ -208,21 +208,26 @@ impl RemoteTransport for SshTransport {
             .await
             {
                 Ok(output) if output.status.success() => Ok(()),
-                Ok(output)
-                    if output.status.code()
-                        == Some(remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE) =>
-                {
-                    log::info!("Remote server has no curl/wget, falling back to SCP upload");
+                Ok(output) => {
+                    let exit_code = output.status.code().unwrap_or(-1);
+                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    if should_skip_scp_fallback(exit_code) {
+                        Err(Error::ScriptFailed { exit_code, stderr })
+                    } else {
+                        log::info!(
+                            "Install script failed (exit {exit_code}), falling back to SCP upload"
+                        );
+                        scp_install_fallback(&socket_path)
+                            .await
+                            .map_err(Error::Other)
+                    }
+                }
+                Err(SshCommandError::TimedOut { .. }) => {
+                    log::info!("Install script timed out, falling back to SCP upload");
                     scp_install_fallback(&socket_path)
                         .await
                         .map_err(Error::Other)
                 }
-                Ok(output) => {
-                    let exit_code = output.status.code().unwrap_or(-1);
-                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    Err(Error::ScriptFailed { exit_code, stderr })
-                }
-                Err(SshCommandError::TimedOut { .. }) => Err(Error::TimedOut),
                 Err(e) => Err(Error::Other(e.into())),
             }
         })
@@ -308,6 +313,19 @@ impl RemoteTransport for SshTransport {
             // No exit status available — optimistically allow reconnect.
             None => true,
         }
+    }
+}
+
+/// Exit codes where SCP fallback would not help because the failure
+/// is on the remote host itself (not a network/download issue).
+fn should_skip_scp_fallback(exit_code: i32) -> bool {
+    match exit_code {
+        // Unsupported arch/OS — SCP won't change the architecture
+        2 => true,
+        // All other exit codes (curl failures, wget failures, unknown errors)
+        // should trigger SCP fallback since the issue is likely the remote
+        // host's inability to reach the CDN.
+        _ => false,
     }
 }
 

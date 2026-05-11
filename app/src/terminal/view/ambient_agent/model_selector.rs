@@ -15,7 +15,10 @@ use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
 
+use settings::Setting as _;
+
 use crate::ai::blocklist::agent_view::agent_input_footer::AgentInputButtonTheme;
+use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
 use crate::ai::harness_display::icon_for as harness_icon_for;
 use crate::ai::llms::{LLMId, LLMPreferences, LLMPreferencesEvent};
@@ -24,6 +27,7 @@ use crate::editor::{
     SingleLineEditorOptions, TextOptions,
 };
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuVariant};
+use crate::report_if_error;
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
 use crate::ui_components::icons::Icon;
@@ -180,6 +184,8 @@ impl ModelSelector {
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
                 HarnessAvailabilityEvent::Changed => {
+                    // Retry restore in case model metadata just arrived.
+                    me.maybe_restore_harness_model_from_settings(ctx);
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }
@@ -195,8 +201,14 @@ impl ModelSelector {
 
         if let Some(ambient_agent_model) = ambient_agent_model.as_ref() {
             ctx.subscribe_to_model(ambient_agent_model, |me, _, event, ctx| match event {
-                AmbientAgentViewModelEvent::HarnessSelected
-                | AmbientAgentViewModelEvent::HarnessModelSelected => {
+                AmbientAgentViewModelEvent::HarnessSelected => {
+                    // When the harness changes (including from settings restore),
+                    // try to restore the saved model for the new harness.
+                    me.maybe_restore_harness_model_from_settings(ctx);
+                    me.refresh_button(ctx);
+                    me.refresh_menu(ctx);
+                }
+                AmbientAgentViewModelEvent::HarnessModelSelected => {
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }
@@ -215,9 +227,44 @@ impl ModelSelector {
             ambient_agent_model,
         };
 
+        me.maybe_restore_harness_model_from_settings(ctx);
+
         me.refresh_button(ctx);
         me.refresh_menu(ctx);
         me
+    }
+
+    /// Restores the saved harness model from settings if the current harness has no model selected.
+    fn maybe_restore_harness_model_from_settings(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(ambient_model) = self.ambient_agent_model.clone() else {
+            return;
+        };
+        let harness = ambient_model.as_ref(ctx).selected_harness();
+        if matches!(harness, Harness::Oz | Harness::Unknown) {
+            return;
+        }
+        if ambient_model
+            .as_ref(ctx)
+            .selected_harness_model_id()
+            .is_some()
+        {
+            return;
+        }
+        let saved_id = CloudAgentSettings::as_ref(ctx)
+            .last_selected_harness_model
+            .value()
+            .get(harness.config_name())
+            .cloned();
+        if let Some(saved_id) = saved_id {
+            if HarnessAvailabilityModel::as_ref(ctx)
+                .models_for(harness)
+                .is_some_and(|models| models.iter().any(|m| m.id == saved_id))
+            {
+                ambient_model.update(ctx, |model, ctx| {
+                    model.set_harness_model_id(Some(saved_id), ctx);
+                });
+            }
+        }
     }
 
     fn active_harness(&self, app: &AppContext) -> Option<Harness> {
@@ -363,7 +410,13 @@ impl ModelSelector {
         self.menu.update(ctx, |menu, ctx| {
             menu.set_border(Some(border));
             menu.set_items(items, ctx);
-            menu.set_selected_by_action(&selected_action, ctx);
+            // When searching, select the first available item as the best match.
+            // Otherwise, highlight the currently-active model.
+            if self.search_query.is_empty() {
+                menu.set_selected_by_action(&selected_action, ctx);
+            } else {
+                menu.select_first(ctx);
+            }
         });
     }
 
@@ -518,6 +571,12 @@ impl TypedActionView for ModelSelector {
                         });
                     }
                 }
+                // Persist the selection per-harness to settings for next time.
+                CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let mut map = settings.last_selected_harness_model.value().clone();
+                    map.insert(harness.config_name().to_string(), model_id.clone());
+                    report_if_error!(settings.last_selected_harness_model.set_value(map, ctx));
+                });
                 self.set_menu_visibility(false, ctx);
                 self.refresh_button(ctx);
                 self.refresh_menu(ctx);

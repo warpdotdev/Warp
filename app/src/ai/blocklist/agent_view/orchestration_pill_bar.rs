@@ -20,10 +20,13 @@ use warpui::elements::{
     Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType,
     ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds,
     PositioningAxis, Radius, SavePosition, ScrollbarWidth, Stack, Text, XAxisAnchor, YAxisAnchor,
+    DEFAULT_UI_LINE_HEIGHT_RATIO,
 };
 use warpui::fonts::{Properties, Weight};
-use warpui::platform::Cursor;
-use warpui::text_layout::ClipConfig;
+use warpui::platform::{Cursor, LineStyle};
+use warpui::text_layout::{
+    ClipConfig, ClipDirection, ClipStyle, StyleAndFont, TextStyle, DEFAULT_TOP_BOTTOM_RATIO,
+};
 use warpui::{
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
@@ -49,8 +52,13 @@ use warpui::EntityId;
 const PILL_HEIGHT: f32 = 22.;
 const PILL_RADIUS: f32 = PILL_HEIGHT / 2.;
 const AVATAR_SIZE: f32 = 16.;
+const AVATAR_WITH_STATUS_WIDTH: f32 = 20.;
+const STATUS_BADGE_SIZE: f32 = 12.;
+const STATUS_BADGE_ICON_SIZE: f32 = 7.2;
+const STATUS_BADGE_PADDING: f32 = (STATUS_BADGE_SIZE - STATUS_BADGE_ICON_SIZE) / 4.;
 const PILL_LABEL_MAX_WIDTH: f32 = 110.;
 const PILL_GAP: f32 = 6.;
+const PILL_GAP_WITH_STATUS: f32 = 2.;
 const PILL_HORIZONTAL_PADDING_LEFT: f32 = 4.;
 const PILL_HORIZONTAL_PADDING_RIGHT: f32 = 10.;
 
@@ -114,6 +122,26 @@ pub(super) fn render_agent_avatar_disc(
     )
 }
 
+fn descendant_conversation_ids_in_spawn_order(
+    history: &BlocklistAIHistoryModel,
+    parent_id: AIConversationId,
+) -> Vec<AIConversationId> {
+    let mut descendants = Vec::new();
+    collect_descendant_conversation_ids_in_spawn_order(history, parent_id, &mut descendants);
+    descendants
+}
+
+fn collect_descendant_conversation_ids_in_spawn_order(
+    history: &BlocklistAIHistoryModel,
+    parent_id: AIConversationId,
+    descendants: &mut Vec<AIConversationId>,
+) {
+    for child_id in history.child_conversation_ids_of(&parent_id) {
+        descendants.push(*child_id);
+        collect_descendant_conversation_ids_in_spawn_order(history, *child_id, descendants);
+    }
+}
+
 /// What kind of pill we are rendering, which determines click behavior.
 #[derive(Clone, Copy)]
 enum PillKind {
@@ -137,6 +165,7 @@ struct PillSpec {
     label: String,
     avatar_color: ColorU,
     avatar_glyph: AvatarGlyph,
+    status: Option<ConversationStatus>,
     is_selected: bool,
     kind: PillKind,
     pin_state: PillPinState,
@@ -153,6 +182,9 @@ const OVERFLOW_MENU_WIDTH: f32 = 200.;
 /// Size in logical pixels of the 3-dot button at the trailing edge of each
 /// child pill.
 const OVERFLOW_BUTTON_SIZE: f32 = 16.;
+/// Label slot width reserved for the hover-only overflow button. The button
+/// sits 4px into the right padding, so it overlaps 12px of the label slot.
+const OVERFLOW_BUTTON_LABEL_RESERVE: f32 = OVERFLOW_BUTTON_SIZE - 4.;
 
 /// Returns the saved-position id used to anchor the 3-dot menu to a
 /// specific child pill's overflow button. The id is global within the
@@ -167,6 +199,40 @@ fn overflow_button_position_id(conversation_id: AIConversationId) -> String {
 /// pills don't fight over the same id.
 fn pill_body_position_id(conversation_id: AIConversationId) -> String {
     format!("orchestration-pill-body-{conversation_id}")
+}
+
+fn pill_label_width(
+    label: &str,
+    font_properties: Properties,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> f32 {
+    if label.is_empty() {
+        return 0.;
+    }
+
+    let font_cache = app.font_cache();
+    let text_layout_system = font_cache.text_layout_system();
+    let line = text_layout_system.layout_line(
+        label,
+        LineStyle {
+            font_size: appearance.monospace_font_size() - 1.,
+            line_height_ratio: DEFAULT_UI_LINE_HEIGHT_RATIO,
+            baseline_ratio: DEFAULT_TOP_BOTTOM_RATIO,
+            fixed_width_tab_size: None,
+        },
+        &[(
+            0..label.chars().count(),
+            StyleAndFont::new(
+                appearance.ui_font_family(),
+                font_properties,
+                TextStyle::new(),
+            ),
+        )],
+        f32::MAX,
+        ClipConfig::default(),
+    );
+    line.width
 }
 
 /// Width of the per-pill hover details card.
@@ -395,8 +461,8 @@ impl OrchestrationPillBar {
         if let Some(parent_id) = parent_conversation_id(active_conversation, ctx) {
             alive.insert(parent_id);
         }
-        for child in history.child_conversations_of(orchestrator_id) {
-            alive.insert(child.id());
+        for child_id in descendant_conversation_ids_in_spawn_order(history, orchestrator_id) {
+            alive.insert(child_id);
         }
         let mut mouse_states = self.mouse_states.borrow_mut();
         let mut overflow_states = self.overflow_button_mouse_states.borrow_mut();
@@ -423,9 +489,13 @@ impl OrchestrationPillBar {
         let orchestrator_id = parent_conversation_id(active_conversation, app).unwrap_or(active_id);
         let orchestrator = history.conversation(&orchestrator_id)?;
 
-        // Use registration order (stable). Don't re-sort by start_time:
-        // not-yet-started children would reshuffle once they begin streaming.
-        let children = history.child_conversations_of(orchestrator_id);
+        // Walk the full descendant tree in pre-order, preserving each
+        // parent's child registration order so nested branches stay
+        // contiguous and grandchildren remain visible in the row.
+        let children: Vec<_> = descendant_conversation_ids_in_spawn_order(history, orchestrator_id)
+            .into_iter()
+            .filter_map(|id| history.conversation(&id))
+            .collect();
 
         // Nothing to show if the orchestrator has no children yet.
         if children.is_empty() {
@@ -443,14 +513,16 @@ impl OrchestrationPillBar {
             label: orchestrator_label(orchestrator),
             avatar_color: theme.ansi_fg_cyan(),
             avatar_glyph: AvatarGlyph::Icon(Icon::Oz),
+            status: None,
             is_selected: orchestrator_id == active_id,
             kind: PillKind::Orchestrator,
             pin_state: PillPinState::Unpinned,
         });
 
-        // Then a pill per child. Pin detection is currently disabled —
-        // restoring it requires plumbing pane visibility into the active
-        // views model so we can distinguish hidden vs. visible child panes.
+        // Then a pill per descendant child. Pin detection is currently
+        // disabled — restoring it requires plumbing pane visibility into
+        // the active views model so we can distinguish hidden vs. visible
+        // child panes.
         for child in children {
             let name = child
                 .agent_name()
@@ -461,6 +533,7 @@ impl OrchestrationPillBar {
                 label: name.to_string(),
                 avatar_color: pill_avatar_color(name, theme),
                 avatar_glyph: AvatarGlyph::Letter(pill_initial(name)),
+                status: Some(child.status().clone()),
                 is_selected: child.id() == active_id,
                 kind: PillKind::Child,
                 pin_state: PillPinState::Unpinned,
@@ -477,8 +550,10 @@ pub fn render_static_agent_pill(name: &str, app: &AppContext) -> Box<dyn Element
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
     let avatar = render_agent_avatar_disc(name, AVATAR_SIZE, theme, appearance);
+    let text_color = theme.ansi_fg_magenta();
+    let bg_color = coloru_with_opacity(text_color, 10);
     let label_text = Text::new(name.to_string(), appearance.ui_font_family(), 12.)
-        .with_color(internal_colors::text_main(theme, theme.background()))
+        .with_color(text_color)
         .soft_wrap(false)
         .with_clip(ClipConfig::ellipsis())
         .finish();
@@ -499,7 +574,7 @@ pub fn render_static_agent_pill(name: &str, app: &AppContext) -> Box<dyn Element
         Container::new(row)
             .with_padding_left(PILL_HORIZONTAL_PADDING_LEFT)
             .with_padding_right(PILL_HORIZONTAL_PADDING_RIGHT)
-            .with_background_color(internal_colors::fg_overlay_2(theme).into())
+            .with_background_color(bg_color)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_RADIUS)))
             .finish(),
     )
@@ -990,7 +1065,10 @@ fn render_hover_card(
                 appearance.monospace_font_size() - 1.,
             )
             .with_color(main_text)
-            .with_clip(ClipConfig::ellipsis())
+            .with_clip(ClipConfig {
+                direction: ClipDirection::Start,
+                style: ClipStyle::Ellipsis,
+            })
             .soft_wrap(false)
             .finish()
         });
@@ -1207,6 +1285,20 @@ fn render_chip(
         .finish()
 }
 
+fn navigation_action_for_pill(kind: PillKind, conversation_id: AIConversationId) -> TerminalAction {
+    match kind {
+        // The orchestrator pill is the "home" conversation for the tree, so
+        // navigating back to it should switch the current pane's agent view.
+        PillKind::Orchestrator => TerminalAction::SwitchAgentViewToConversation { conversation_id },
+        // Child conversations already have a dedicated hidden pane/session
+        // created at StartAgent time. Revealing that pane keeps any live
+        // harness session, CLI listener, ambient-agent session state, and PTY
+        // output attached to the real owner instead of trying to recreate the
+        // child transcript in the current pane.
+        PillKind::Child => TerminalAction::RevealChildAgent { conversation_id },
+    }
+}
+
 fn render_pill(
     spec: PillSpec,
     mouse_state: MouseStateHandle,
@@ -1228,6 +1320,7 @@ fn render_pill(
     let label = spec.label;
     let avatar_color = spec.avatar_color;
     let avatar_glyph = spec.avatar_glyph;
+    let status = spec.status;
 
     // `Hoverable::new`'s build closure is `FnOnce` (see
     // `crates/warpui_core/src/elements/hoverable.rs`). We can therefore move
@@ -1256,23 +1349,21 @@ fn render_pill(
             )
         };
 
-        // Reserve room for the 3-dot button on every child pill, even
-        // at rest. Switching label_max_width based on hover would cause
-        // the pill to *shrink* when the dots appear (the label would
-        // suddenly clip earlier, which propagates outward through Min
-        // sizing), making sibling pills shift. By always using the
-        // shorter budget for child pills we get a stable pill width
-        // independent of hover state: short labels are well under either
-        // budget so they don't grow the pill, and labels near the limit
-        // always clip to the same width so the dots overlay never
-        // overlaps text. Orchestrator pills don't host a 3-dot button
-        // so they keep the full label budget.
-        let label_max_width = if show_overflow_button {
-            (PILL_LABEL_MAX_WIDTH - OVERFLOW_BUTTON_SIZE - 2.).max(0.)
-        } else {
-            PILL_LABEL_MAX_WIDTH
-        };
         let show_dots = show_overflow_button && (hover_state.is_hovered() || menu_is_open_for_this);
+        let label_style = Properties {
+            weight: if is_selected {
+                Weight::Semibold
+            } else {
+                Weight::Normal
+            },
+            ..Default::default()
+        };
+        // At rest, labels use the full budget. When dots are visible, keep
+        // the rest-state slot width but reserve its trailing slice so the
+        // overlay does not cover glyphs or shift sibling pills.
+        let hover_label_slot_width = show_dots.then(|| {
+            pill_label_width(&label, label_style, appearance, app).min(PILL_LABEL_MAX_WIDTH)
+        });
 
         let label_text = Text::new(
             label,
@@ -1282,26 +1373,57 @@ fn render_pill(
         .with_color(text_color)
         .soft_wrap(false)
         .with_clip(ClipConfig::ellipsis())
-        .with_style(Properties {
-            weight: if is_selected {
-                Weight::Semibold
-            } else {
-                Weight::Normal
-            },
-            ..Default::default()
-        })
+        .with_style(label_style)
         .finish();
+
+        let label_element = if let Some(label_slot_width) = hover_label_slot_width {
+            let clipped_label_width = (label_slot_width - OVERFLOW_BUTTON_LABEL_RESERVE).max(0.);
+            let spacer_width = label_slot_width - clipped_label_width;
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_child(
+                    ConstrainedBox::new(label_text)
+                        .with_max_width(clipped_label_width)
+                        .finish(),
+                )
+                .with_child(
+                    ConstrainedBox::new(Empty::new().finish())
+                        .with_width(spacer_width)
+                        .finish(),
+                )
+                .finish()
+        } else {
+            ConstrainedBox::new(label_text)
+                .with_max_width(PILL_LABEL_MAX_WIDTH)
+                .finish()
+        };
 
         // Pinned pills swap the avatar disc for a pin glyph (per Figma) so
         // the user can spot at a glance that this child is currently living
-        // in a separate pane/tab. Unpinned pills keep the avatar disc.
-        let leading: Box<dyn Element> = if is_pinned {
-            ConstrainedBox::new(Icon::Pin.to_warpui_icon(text_color.into()).finish())
+        // in a separate pane/tab. Unpinned child pills render the avatar with
+        // the compact status badge from the orchestration pill design.
+        let leading: Box<dyn Element> = match (is_pinned, status.as_ref()) {
+            (true, _) => ConstrainedBox::new(Icon::Pin.to_warpui_icon(text_color.into()).finish())
                 .with_width(AVATAR_SIZE)
                 .with_height(AVATAR_SIZE)
-                .finish()
+                .finish(),
+            (false, Some(status)) => render_avatar_with_status_badge(
+                avatar_color,
+                avatar_glyph,
+                status,
+                background,
+                theme,
+                appearance,
+            ),
+            (false, None) => {
+                render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance)
+            }
+        };
+        let leading_label_spacing = if !is_pinned && status.is_some() {
+            PILL_GAP_WITH_STATUS
         } else {
-            render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance)
+            PILL_GAP
         };
 
         // Body row contains just the avatar + label — the 3-dot button
@@ -1313,13 +1435,9 @@ fn render_pill(
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(6.)
+            .with_spacing(leading_label_spacing)
             .with_child(leading)
-            .with_child(
-                ConstrainedBox::new(label_text)
-                    .with_max_width(label_max_width)
-                    .finish(),
-            )
+            .with_child(label_element)
             .finish();
 
         // Constrain pill to a fixed height so the half-stadium corner radius
@@ -1337,11 +1455,8 @@ fn render_pill(
 
         // Render the 3-dot button as a positioned overlay only when the
         // pill is being hovered (or its 3-dot menu is already open). The
-        // overlay sits at the trailing edge of the pill; the label above
-        // already shortens its max width when `show_dots` is true so the
-        // ellipsis truncates before reaching the dots rather than running
-        // underneath them. The pill's outer width still doesn't change
-        // between rest and hover.
+        // overlay sits at the trailing edge of the pill; the label row
+        // reserves matching space only while the dots are visible.
         if show_dots {
             let mut stack = Stack::new();
             stack.add_child(pill_inner);
@@ -1397,7 +1512,6 @@ fn render_pill(
         if is_selected {
             return;
         }
-        let _ = kind;
         // Single source of truth: if the conversation is currently owned
         // by a *different* visible terminal view than this orchestrator
         // pane (because it was split off into a separate pane or tab),
@@ -1416,18 +1530,18 @@ fn render_pill(
             ));
             return;
         }
-        // Pinned pills focus the existing pane/tab that already hosts this
-        // child agent (via `RevealChildAgent`, which the pane group treats
-        // as a request to show + focus an existing child pane). Unpinned
-        // pills navigate the *current* pane in place via
-        // `SwitchAgentViewToConversation`. Both paths bubble through
-        // `PaneHeaderAction::CustomAction` because the pill bar lives
-        // inside the pane header chrome (mirrors `agent_view_back_button`).
-        let action = if is_pinned {
-            TerminalAction::RevealChildAgent { conversation_id }
-        } else {
-            TerminalAction::SwitchAgentViewToConversation { conversation_id }
-        };
+        // Child pills should reveal the existing child pane/session, not
+        // switch the current pane in place. The hidden child pane owns the
+        // live harness/ambient session and associated view-scoped models; if
+        // we merely re-enter the child conversation in the current pane, the
+        // actual running session stays attached to the hidden pane and the
+        // user sees an empty child view. The orchestrator pill still switches
+        // the current pane back to the parent conversation.
+        //
+        // We keep the visible-owner fast path above so a child that's already
+        // open in another visible pane/tab still focuses that existing
+        // destination rather than trying to reveal the hidden bootstrap pane.
+        let action = navigation_action_for_pill(kind, conversation_id);
         ctx.dispatch_typed_action(
             PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(action),
         );
@@ -1496,6 +1610,66 @@ fn render_overflow_button(
     // (rendered as a positioned overlay sibling of the bar in `View::render`)
     // can anchor relative to it.
     SavePosition::new(button, &overflow_button_position_id(conversation_id)).finish()
+}
+
+/// Renders a child-agent avatar with the compact status badge from the
+/// orchestration pill designs. The 20px-wide footprint keeps the label aligned
+/// with the old 16px avatar + 6px gap while making room for the badge overhang.
+fn render_avatar_with_status_badge(
+    avatar_color: ColorU,
+    glyph: AvatarGlyph,
+    status: &ConversationStatus,
+    pill_background: ColorU,
+    theme: &WarpTheme,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let avatar = render_avatar_disc(avatar_color, glyph, AVATAR_SIZE, theme, appearance);
+    let (status_icon, status_color) =
+        status.status_icon_and_color(theme, StatusColorStyle::Standard);
+    let icon = ConstrainedBox::new(status_icon.to_warpui_icon(status_color.into()).finish())
+        .with_width(STATUS_BADGE_ICON_SIZE)
+        .with_height(STATUS_BADGE_ICON_SIZE)
+        .finish();
+    let badge = Container::new(
+        Container::new(icon)
+            .with_uniform_padding(STATUS_BADGE_PADDING)
+            .finish(),
+    )
+    .with_uniform_padding(STATUS_BADGE_PADDING)
+    .with_background_color(pill_background)
+    .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
+    .finish();
+
+    let mut stack = Stack::new();
+    stack.add_child(
+        ConstrainedBox::new(Empty::new().finish())
+            .with_width(AVATAR_WITH_STATUS_WIDTH)
+            .with_height(PILL_HEIGHT)
+            .finish(),
+    );
+    stack.add_positioned_child(
+        avatar,
+        OffsetPositioning::offset_from_parent(
+            vec2f(0., (PILL_HEIGHT - AVATAR_SIZE) / 2.),
+            ParentOffsetBounds::Unbounded,
+            ParentAnchor::TopLeft,
+            ChildAnchor::TopLeft,
+        ),
+    );
+    stack.add_positioned_child(
+        badge,
+        OffsetPositioning::offset_from_parent(
+            vec2f(0., 0.),
+            ParentOffsetBounds::Unbounded,
+            ParentAnchor::BottomRight,
+            ChildAnchor::BottomRight,
+        ),
+    );
+
+    ConstrainedBox::new(stack.finish())
+        .with_width(AVATAR_WITH_STATUS_WIDTH)
+        .with_height(PILL_HEIGHT)
+        .finish()
 }
 
 /// Renders the avatar circle as a colored disc with a centered glyph (letter
@@ -1983,3 +2157,7 @@ fn build_crumb_inner(
     }
     container.finish()
 }
+
+#[cfg(test)]
+#[path = "orchestration_pill_bar_tests.rs"]
+mod tests;

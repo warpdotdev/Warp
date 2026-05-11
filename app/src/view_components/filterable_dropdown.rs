@@ -554,7 +554,7 @@ where
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
                 .finish(),
         )
-        .with_max_width(self.top_bar_max_width)
+        .with_max_width(self.menu_width.unwrap_or(self.top_bar_max_width))
         .with_height(EMPTY_DROPDOWN_HEIGHT)
         .finish();
 

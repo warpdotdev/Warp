@@ -518,9 +518,21 @@ impl CurrentPrompt {
             return false;
         };
 
+        // A retryable failure (`Error`, `TimedOut`) is not a usable cached
+        // result: `last_fingerprint` is recorded before the command runs, and
+        // such failures intentionally do not populate `last_failure_fingerprint`.
+        // Without this guard, the next periodic tick would treat the failed
+        // attempt as a cache hit and never retry. Deterministic failures
+        // continue to be suppressed via `last_failure_fingerprint`.
         let should_skip = self
             .states
             .get(chip_kind)
+            .filter(|state| {
+                !matches!(
+                    state.update_status,
+                    ChipUpdateStatus::Error | ChipUpdateStatus::TimedOut
+                )
+            })
             .and_then(|state| state.last_fingerprint.as_ref())
             .is_some_and(|existing| existing == &new_fingerprint);
 
@@ -982,7 +994,7 @@ impl CurrentPrompt {
                     chip_kind_clone
                 },
                 |me, chip_kind, ctx| {
-                    me.fetch_chip_value_at_interval(&chip_kind, None, None, false, ctx);
+                    me.fetch_chip_value_at_interval(&chip_kind, None, None, true, ctx);
                 },
             );
 

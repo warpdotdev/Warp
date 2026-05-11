@@ -431,11 +431,10 @@ impl LaunchMode {
             LaunchMode::App { .. } => ExecutionMode::App,
             LaunchMode::CommandLine { .. } => ExecutionMode::Sdk,
             LaunchMode::Test { .. } => ExecutionMode::App,
-            // RemoteServerProxy and RemoteServerDaemon don't use execution
-            // mode, but Sdk is the closest match (headless, no GUI).
-            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => {
-                ExecutionMode::Sdk
-            }
+            // RemoteServerProxy is a thin byte bridge; Sdk is the closest match.
+            LaunchMode::RemoteServerProxy => ExecutionMode::Sdk,
+            // RemoteServerDaemon gets its own mode for distinct Sentry tagging.
+            LaunchMode::RemoteServerDaemon { .. } => ExecutionMode::RemoteServerDaemon,
         }
     }
 
@@ -1467,9 +1466,7 @@ pub(crate) fn initialize_app(
     {
         let imported_config_model = ctx.add_singleton_model(ImportedConfigModel::new);
 
-        if FeatureFlag::SettingsImport.is_enabled()
-            && ChannelState::channel() != warp_core::channel::Channel::Integration
-        {
+        if ChannelState::channel() != warp_core::channel::Channel::Integration {
             imported_config_model.update(ctx, |model, ctx| {
                 model.search_for_settings_to_import(ctx);
             });
@@ -2499,8 +2496,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::DefaultWaterfallMode,
         #[cfg(feature = "settings_file")]
         FeatureFlag::SettingsFile,
-        #[cfg(feature = "settings_import")]
-        FeatureFlag::SettingsImport,
         #[cfg(feature = "rect_selection")]
         FeatureFlag::RectSelection,
         #[cfg(feature = "alacritty_settings_import")]
@@ -2515,12 +2510,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AIRules,
         #[cfg(feature = "ssh_tmux_wrapper")]
         FeatureFlag::SSHTmuxWrapper,
-        #[cfg(feature = "less_horizontal_terminal_padding")]
-        FeatureFlag::LessHorizontalTerminalPadding,
         #[cfg(feature = "shell_selector")]
         FeatureFlag::ShellSelector,
-        #[cfg(feature = "block_toolbelt_save_as_workflow")]
-        FeatureFlag::BlockToolbeltSaveAsWorkflow,
         #[cfg(feature = "integration_command")]
         FeatureFlag::IntegrationCommand,
         #[cfg(feature = "artifact_command")]
@@ -2535,8 +2526,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::FullScreenZenMode,
         #[cfg(feature = "minimalist_ui")]
         FeatureFlag::MinimalistUI,
-        #[cfg(feature = "remove_alt_screen_padding")]
-        FeatureFlag::RemoveAltScreenPadding,
         #[cfg(feature = "avatar_in_tab_bar")]
         FeatureFlag::AvatarInTabBar,
         #[cfg(feature = "workflow_aliases")]
