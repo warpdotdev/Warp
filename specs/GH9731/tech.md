@@ -132,6 +132,24 @@ Notes:
 - `languageIds` should use lower-case IDs compatible with existing or future language detection. Current `lsp::LanguageId` covers only a small set, so this should be an optional layer after exact filename and extension, not the only source of language coverage.
 - Reserve a compatible future field such as `svg` inside `IconDefinition`, but reject or ignore it in v1 unless the renderer supports it.
 
+#### Seti-style provenance and attribution (pre-ship)
+
+The Seti-style bundled theme is data-only and depends on two upstream sources, both MIT-licensed:
+
+- **Glyph codepoints**: Nerd Fonts (https://github.com/ryanoasis/nerd-fonts). Only codepoint strings are vendored; no font binary is bundled.
+- **Mapping and color palette**: Seti-UI by Jesse Weed (https://github.com/jesseweed/seti-ui). The `seti-ui/styles/components/icons/mapping.less` table and the matching color list are the canonical references.
+
+Implementation requirements before the Seti-style theme can land:
+
+1. The Seti-style data file carries an `attribution` field (or sibling metadata) naming both upstreams, linking their repositories, **and recording a full 40-character commit SHA for each**. Commit SHAs are required because release tags are not immutable (upstream can force-move a tag) and license review must be reproducible against the exact tree that was vendored. A release tag may appear alongside the SHA as optional display metadata (for example `seti-ui@<40-char SHA> (v1.2.3)`), but the SHA is the pin and the tag alone is not acceptable. Re-vendoring requires bumping the SHA in the same PR that touches the data.
+2. `THIRD_PARTY_NOTICES` (or the Warp equivalent) gains MIT entries for Seti-UI and Nerd Fonts with copyright lines preserved, and each entry includes the same 40-character commit SHA recorded in `attribution` (release tag optional alongside).
+3. The Settings → Appearance picker row for Seti-style shows attribution copy ("Based on Seti-UI by Jesse Weed" or the agreed final wording); implement via existing dropdown tooltip / description plumbing. Display does not need to include the pinned revision, but the picker copy must not contradict the recorded sources.
+4. The PR landing the Seti-style theme links both upstream sources in the description and changelog entry, and quotes the pinned revisions so license review is reproducible from the PR alone.
+5. No font file, no SVG asset, no other binary form of either upstream is committed in v1. If glyphs render as missing-glyph boxes for users without a Nerd Font, the user can switch back to Warp Default.
+6. Theme load-time validation rejects a Seti-style data file whose `attribution` block is missing a 40-character commit SHA for either upstream. A release tag without a SHA is rejected. The validator should match `^[0-9a-f]{40}$` against the SHA portion of each entry. This prevents the bundled theme from drifting away from a reviewable provenance even if a maintainer accidentally records a tag-only pin.
+
+If a future revision adds SVG support and Seti-style adopts SVG assets from any source, those go through a separate provenance review; this spec does not pre-approve future SVG sources.
+
 ### 3. Preserve Warp Default
 
 Warp Default must not surprise existing users. Implement it as one of these approaches:
@@ -143,22 +161,31 @@ Prefer option 1 unless maintainers explicitly accept default visual changes. The
 
 ### 4. Implement resolution order
 
+Normalization rules (mirrors the product spec's name-matching contract; theme-loading and the lookup paths must agree):
+
+- File extensions: case-insensitive over **lowercase ASCII keys only** in v1. Theme keys are stored lowercased, without a leading dot, and matching the regex `[a-z0-9]+`. The lookup uses `Path::extension`, `to_str()`, then `to_ascii_lowercase()` to form the key, then performs an exact match against the lowercased ASCII key set. An extension on disk that contains non-ASCII bytes after the conversion attempt simply misses the `fileExtensions` table and falls through to language ID and then file fallback; v1 does not implement Unicode case-folding for extensions. Empty extensions are not used as keys. Wider Unicode extension support is a documented follow-up.
+- Exact file names: case-sensitive. Theme keys are stored verbatim; the lookup uses `Path::file_name` and matches byte-for-byte. Non-ASCII file names are supported because the comparison is byte-for-byte and does not depend on case folding.
+- Folder names: same case-sensitive, verbatim rule as exact file names, for both `folderNames` and `folderNamesExpanded`. Non-ASCII folder names are supported on the same byte-for-byte basis.
+- Language IDs: lowercase ASCII (`[a-z0-9_-]+`). Theme keys are stored lowercased; lookup lowercases input via `to_ascii_lowercase()`.
+- No trimming, Unicode normalization, or whitespace collapsing in v1.
+- Theme load-time validation must reject keys that violate these rules (uppercased or non-ASCII extension keys, leading-dot extension keys, non-ASCII language IDs) so bundled themes cannot drift.
+
 File resolution:
 
-1. Extract exact filename from the path. Check `fileNames` exactly as normalized by the theme. This must handle dotfiles and extensionless names.
-2. Extract extension from the path. Check `fileExtensions` case-insensitively after lowercasing.
-3. Derive language ID, initially by reusing `lsp::LanguageId::from_path` where possible and mapping `lsp_language_identifier()` values into the theme. If the method is currently `pub(crate)`, either expose a safe public string method or create a local mapping for the same supported languages.
+1. Extract exact file name. Check `fileNames` (case-sensitive, verbatim). This handles dotfiles and extensionless names.
+2. Extract extension. Lowercase it. Check `fileExtensions`.
+3. Derive language ID from `lsp::LanguageId::from_path` where available and lowercase the resulting string. Look it up in `languageIds`. If `lsp_language_identifier()` is `pub(crate)`, either expose a safe public string method or maintain a parallel string table for theme purposes.
 4. Use file fallback.
 
 Folder resolution:
 
-1. Extract folder name from the path.
+1. Extract folder name from the path. Match case-sensitive, verbatim.
 2. If expanded/open, check `folderNamesExpanded` for that name.
 3. Check `folderNames`.
 4. If expanded/open, use folder-open fallback.
 5. Otherwise use folder fallback.
 
-The resolution code should return a fallback icon for every file/folder path and should log invalid data once rather than spamming logs during rendering.
+The resolution code should return a fallback icon for every file/folder path. Mapping-target validation runs at theme-load/test time, not on the render hot path; runtime should log invalid data at most once per process startup rather than spamming logs during rendering.
 
 ### 5. Rendering glyph icons
 
@@ -225,14 +252,13 @@ Because `FileTreeItem::to_render_state` currently receives `Appearance` but not 
 
 Prefer passing explicit theme data for testability.
 
-### 9. Decide global file search behavior
+### 9. Apply the selected theme to global file search
 
-`app/src/search/files/icon.rs` currently reuses `crate::code::icon_from_file_path`. There are two viable v1 paths:
+The product spec resolves this: in v1, global file search file results render the selected File Tree icon theme. `app/src/search/files/icon.rs` currently reuses `crate::code::icon_from_file_path`, so the cleanest implementation routes both Project Explorer and search through the new `icon_for_file_path` API.
 
-1. Update global file search to use the same selected file icon theme. This is consistent and may happen naturally if the shared API keeps the same name.
-2. Keep search on current icons and introduce a Project Explorer-specific API.
-
-The product spec leaves this as an open question. The implementation PR should make the chosen behavior explicit and test or manually validate it.
+- Do not introduce a Project-Explorer-only API in v1; that would require duplicating the resolution code or fork-then-merge later.
+- Search currently renders only file results; folder resolution does not need a search-side path.
+- Add a unit/integration test that confirms the search call site resolves through the same `FileIconTheme` instance the file tree uses, and that switching the theme is observable in search-result render data.
 
 ### 10. Validation and error handling
 
@@ -317,6 +343,14 @@ Runtime behavior:
 7. Manual visual validation:
    - capture Project Explorer with Warp Default and Seti-style for the same sample workspace;
    - verify no row height/alignment regressions and selected/hovered rows stay readable.
+8. Search behavior:
+   - the search-side icon call site routes through the new `icon_for_file_path` API and resolves through the same `FileIconTheme` instance as the file tree;
+   - switching the theme is observable in search-result render data without restart.
+9. Theme-load validation:
+   - rejects extension keys with leading dots or uppercase letters;
+   - rejects non-ASCII / non-lowercase language ID keys;
+   - rejects mapping references to missing icon definitions;
+   - Seti-style fixture carries the required `attribution` metadata and parses successfully.
 
 ## Follow-ups
 
@@ -325,4 +359,3 @@ Runtime behavior:
 - Add a richer theme picker with previews similar to the terminal theme chooser.
 - Publish docs for adding bundled icon themes and mapping common file/folder names.
 - Expand language ID detection beyond current LSP-supported languages.
-- Decide whether global file search should always share the Project Explorer icon theme.

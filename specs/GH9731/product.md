@@ -65,9 +65,13 @@ As Warp becomes an agentic development environment, the Project Explorer is part
 5. If a file has no matching rule, Warp renders the selected theme's file fallback.
 6. If a folder has no matching rule, Warp renders the selected theme's folder fallback for the correct open/closed state.
 7. Dotfiles and extensionless files can be matched by exact file name before fallback handling.
-8. Case handling is deterministic:
-   - Extension matching is case-insensitive for normal file extensions.
-   - Exact filename and folder-name matching use the normalized names defined by the theme format, with dot-prefixed names supported.
+8. Name and extension matching follow explicit normalization rules so theme behavior is deterministic across platforms:
+   - **File extensions** are matched case-insensitively over **lowercase ASCII keys only** in v1. Theme keys are stored lowercased, without a leading dot, matching `[a-z0-9]+`; the lookup lowercases the extracted extension via ASCII case folding before comparison. An extension on disk that is not lowercase ASCII after conversion (for example, a non-ASCII extension) simply misses the extension table and falls through to language ID and then fallback. Empty extensions are not used as keys. Wider Unicode extension support is a follow-up.
+   - **Exact file names** are matched case-sensitively, verbatim against the file name reported by the file system. Themes that want to cover spelling variants (for example `Dockerfile` and `dockerfile`) declare both keys explicitly.
+   - **Folder names** follow the same case-sensitive, verbatim rule as exact file names, for both the closed and open-state mappings.
+   - **Language IDs** are lowercase ASCII; theme keys are stored lowercased and the lookup lowercases its input.
+   - No trimming, Unicode normalization, or whitespace collapsing is applied in v1. Theme keys must be stored in the same form the OS reports the name.
+   - On case-insensitive file systems (default macOS APFS/HFS+, Windows NTFS) the OS-reported name is used as-is; the matching itself remains case-sensitive, so a project that stores `dockerfile` will not match a theme key of `Dockerfile`. Theme authors should add both keys when needed.
 9. Special folder mappings are data-driven. For example, a theme can assign distinct icons for `.git`, `node_modules`, `src`, `dist`, and `target`.
 10. If a Nerd Font glyph is not available in the user's configured font stack, Warp should still keep the row usable. It may show the platform font fallback glyph, but Warp Default remains available as the no-surprise option.
 
@@ -94,7 +98,27 @@ Required behavior:
 
 ### Global file search behavior
 
-Global file search currently reuses the code file icon lookup path. If implementation keeps that shared path, search results should use the selected file icon theme for file results. If implementation narrows the first release to the Project Explorer only, the product behavior must be called out in the implementation PR and not left ambiguous.
+**v1 decision:** Global file search file results render the selected File Tree icon theme. Search and the Project Explorer share the file-icon lookup path today, and v1 deliberately keeps them aligned so theme switching gives a consistent experience across both surfaces.
+
+- Any code surface that currently routes through `crate::code::icon_from_file_path` is in scope; v1 does not introduce a Project-Explorer-only icon API.
+- Folder rows are out of scope for search because search does not render folder results today.
+- Switching the icon theme updates visible search-result icons without restart, the same way Project Explorer rows update.
+
+### Seti-style theme: provenance, license, and attribution requirements
+
+These are pre-ship requirements, not open questions. The Seti-style bundled theme cannot land until they are met.
+
+1. **Source — glyph codepoints.** The Seti-style theme uses codepoints from the Nerd Fonts project (https://github.com/ryanoasis/nerd-fonts), which is MIT-licensed. Only codepoints (not font binaries) are vendored; the user supplies a Nerd Font on their system.
+2. **Source — extension/icon mapping and color palette.** Mapping and colors are derived from Seti-UI by Jesse Weed (https://github.com/jesseweed/seti-ui), MIT-licensed. The repository's icon mapping (e.g. `styles/components/icons/mapping.less`) and the matching color list are the references.
+3. **Pinned upstream revisions.** The Seti-style data file records the exact upstream revision used for each source as a **full 40-character commit SHA**. This is required for both Nerd Fonts and Seti-UI. Release tags are not immutable (upstream can force-move a tag), so a tag alone is not an acceptable pin; tags may sit alongside the SHA as optional human-readable display metadata but are not the pin. Recorded form: `seti-ui@<40-char SHA>` plus optional `(v<tag>)` suffix, same shape for `nerd-fonts`. Re-vendoring later requires bumping the SHA in the same PR that updates the data, so license review and provenance are reproducible from the spec and the PR alone.
+4. **What is checked into this repo.** Only data: codepoint strings, hex color strings, and the lookup keys (extensions, file names, folder names, language IDs). No font file, no SVG asset, no image binary is bundled in v1.
+5. **Required attribution.**
+   - The Seti-style theme's data file includes an `attribution` field that names "Seti-UI by Jesse Weed (MIT)" and "Nerd Fonts icons (MIT)", links to both upstream repositories, and quotes the pinned revisions from item 3.
+   - Repo `THIRD_PARTY_NOTICES` (or the Warp equivalent) carries the full MIT license text for each upstream, with copyright lines preserved, and the same pinned revisions.
+   - The Settings → Appearance row for Seti-style shows the display name and a tooltip line such as "Based on Seti-UI by Jesse Weed". The exact copy can be tuned in implementation review, but the attribution must be visible from the picker. The picker copy does not need to show the pinned revision.
+   - The PR that lands the Seti-style theme links both upstream sources in its description and changelog entry, and quotes the pinned revisions.
+6. **No font vendoring.** If a user has no Nerd Font available, glyphs may render as missing-glyph boxes; users keep Warp Default as the no-surprise option. v1 does not ship a font binary to work around this.
+7. **Future-proofing.** When a future revision adds SVG support, any SVG assets adopted into the Seti-style theme go through the same provenance review as a separate decision; this spec does not pre-approve future SVG sources.
 
 ### Empty, loading, and error states
 
@@ -115,6 +139,8 @@ Global file search currently reuses the code file icon lookup path. If implement
 8. Ignored file/folder styling, selected row styling, hover styling, keyboard navigation, click handling, context menus, drag/drop, and open-in-pane/open-in-tab behavior do not regress.
 9. The selected icon theme persists across app restarts and survives unknown/corrupted stored values by falling back to Warp Default.
 10. The bundled theme format is documented enough that a contributor can add or adjust a bundled icon mapping in a PR without modifying matching code.
+11. Global file search file results render the selected File Tree icon theme, and switching the theme updates visible search-result icons without restart.
+12. The Seti-style bundled theme ships with the attribution requirements above met (data-only vendoring, in-app tooltip attribution, repo-level license notices, PR description linking upstream sources).
 
 ## Validation
 
@@ -124,10 +150,15 @@ Global file search currently reuses the code file icon lookup path. If implement
 4. Manual validation: use keyboard navigation, click-to-open, context menu, and drag/drop in the Project Explorer after switching themes.
 5. Product screenshot or integration artifact: capture the Project Explorer with both bundled themes selected for the same sample workspace.
 6. Automated validation should cover theme resolution precedence, invalid theme references, fallback behavior, and at least one file tree render path using each bundled theme.
+7. Manual validation: open Global file search (command palette files tab); switch File Tree icon theme; verify file-result icons reflect the selected theme without restart.
+8. Manual validation: confirm the Seti-style picker entry shows attribution copy ("Based on Seti-UI by Jesse Weed" or the agreed final wording) and that `THIRD_PARTY_NOTICES` carries Seti-UI and Nerd Fonts MIT entries.
 
 ## Open Questions
 
-1. Should Global file search intentionally share the selected File Tree icon theme in v1, or should the setting apply only to the Project Explorer until search-specific product review happens?
-2. Should the File Tree icon theme setting live under Settings → Appearance only, or also be discoverable from Settings → Code because Project Explorer enablement currently lives there?
-3. Should the Seti-style bundled theme require users to configure a Nerd Font explicitly, or should Warp choose a bundled/fallback font for glyph icons if available?
-4. What exact license/source attribution is required for the Seti-style glyph mapping and color palette before it ships?
+1. Should the File Tree icon theme setting live under Settings → Appearance only, or also be discoverable from Settings → Code because Project Explorer enablement currently lives there?
+
+> Resolved in this revision (previously open):
+>
+> - Global file search behavior — v1 applies the selected File Tree icon theme to file-result icons; see "Global file search behavior" above.
+> - Seti-style font expectations — v1 does not bundle a font; users supply a Nerd Font, and Warp Default remains the no-surprise option if glyphs are missing; see "Project Explorer icon behavior" item 10.
+> - Seti-style license / source / attribution — resolved as a pre-ship requirement; see "Seti-style theme: provenance, license, and attribution requirements".
