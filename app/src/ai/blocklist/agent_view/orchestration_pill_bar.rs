@@ -20,10 +20,13 @@ use warpui::elements::{
     Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType,
     ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds,
     PositioningAxis, Radius, SavePosition, ScrollbarWidth, Stack, Text, XAxisAnchor, YAxisAnchor,
+    DEFAULT_UI_LINE_HEIGHT_RATIO,
 };
 use warpui::fonts::{Properties, Weight};
-use warpui::platform::Cursor;
-use warpui::text_layout::{ClipConfig, ClipDirection, ClipStyle};
+use warpui::platform::{Cursor, LineStyle};
+use warpui::text_layout::{
+    ClipConfig, ClipDirection, ClipStyle, StyleAndFont, TextStyle, DEFAULT_TOP_BOTTOM_RATIO,
+};
 use warpui::{
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
@@ -179,6 +182,9 @@ const OVERFLOW_MENU_WIDTH: f32 = 200.;
 /// Size in logical pixels of the 3-dot button at the trailing edge of each
 /// child pill.
 const OVERFLOW_BUTTON_SIZE: f32 = 16.;
+/// Label slot width reserved for the hover-only overflow button. The button
+/// sits 4px into the right padding, so it overlaps 12px of the label slot.
+const OVERFLOW_BUTTON_LABEL_RESERVE: f32 = OVERFLOW_BUTTON_SIZE - 4.;
 
 /// Returns the saved-position id used to anchor the 3-dot menu to a
 /// specific child pill's overflow button. The id is global within the
@@ -193,6 +199,40 @@ fn overflow_button_position_id(conversation_id: AIConversationId) -> String {
 /// pills don't fight over the same id.
 fn pill_body_position_id(conversation_id: AIConversationId) -> String {
     format!("orchestration-pill-body-{conversation_id}")
+}
+
+fn pill_label_width(
+    label: &str,
+    font_properties: Properties,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> f32 {
+    if label.is_empty() {
+        return 0.;
+    }
+
+    let font_cache = app.font_cache();
+    let text_layout_system = font_cache.text_layout_system();
+    let line = text_layout_system.layout_line(
+        label,
+        LineStyle {
+            font_size: appearance.monospace_font_size() - 1.,
+            line_height_ratio: DEFAULT_UI_LINE_HEIGHT_RATIO,
+            baseline_ratio: DEFAULT_TOP_BOTTOM_RATIO,
+            fixed_width_tab_size: None,
+        },
+        &[(
+            0..label.chars().count(),
+            StyleAndFont::new(
+                appearance.ui_font_family(),
+                font_properties,
+                TextStyle::new(),
+            ),
+        )],
+        f32::MAX,
+        ClipConfig::default(),
+    );
+    line.width
 }
 
 /// Width of the per-pill hover details card.
@@ -1309,23 +1349,21 @@ fn render_pill(
             )
         };
 
-        // Reserve room for the 3-dot button on every child pill, even
-        // at rest. Switching label_max_width based on hover would cause
-        // the pill to *shrink* when the dots appear (the label would
-        // suddenly clip earlier, which propagates outward through Min
-        // sizing), making sibling pills shift. By always using the
-        // shorter budget for child pills we get a stable pill width
-        // independent of hover state: short labels are well under either
-        // budget so they don't grow the pill, and labels near the limit
-        // always clip to the same width so the dots overlay never
-        // overlaps text. Orchestrator pills don't host a 3-dot button
-        // so they keep the full label budget.
-        let label_max_width = if show_overflow_button {
-            (PILL_LABEL_MAX_WIDTH - OVERFLOW_BUTTON_SIZE - 2.).max(0.)
-        } else {
-            PILL_LABEL_MAX_WIDTH
-        };
         let show_dots = show_overflow_button && (hover_state.is_hovered() || menu_is_open_for_this);
+        let label_style = Properties {
+            weight: if is_selected {
+                Weight::Semibold
+            } else {
+                Weight::Normal
+            },
+            ..Default::default()
+        };
+        // At rest, labels use the full budget. When dots are visible, keep
+        // the rest-state slot width but reserve its trailing slice so the
+        // overlay does not cover glyphs or shift sibling pills.
+        let hover_label_slot_width = show_dots.then(|| {
+            pill_label_width(&label, label_style, appearance, app).min(PILL_LABEL_MAX_WIDTH)
+        });
 
         let label_text = Text::new(
             label,
@@ -1335,15 +1373,31 @@ fn render_pill(
         .with_color(text_color)
         .soft_wrap(false)
         .with_clip(ClipConfig::ellipsis())
-        .with_style(Properties {
-            weight: if is_selected {
-                Weight::Semibold
-            } else {
-                Weight::Normal
-            },
-            ..Default::default()
-        })
+        .with_style(label_style)
         .finish();
+
+        let label_element = if let Some(label_slot_width) = hover_label_slot_width {
+            let clipped_label_width = (label_slot_width - OVERFLOW_BUTTON_LABEL_RESERVE).max(0.);
+            let spacer_width = label_slot_width - clipped_label_width;
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_child(
+                    ConstrainedBox::new(label_text)
+                        .with_max_width(clipped_label_width)
+                        .finish(),
+                )
+                .with_child(
+                    ConstrainedBox::new(Empty::new().finish())
+                        .with_width(spacer_width)
+                        .finish(),
+                )
+                .finish()
+        } else {
+            ConstrainedBox::new(label_text)
+                .with_max_width(PILL_LABEL_MAX_WIDTH)
+                .finish()
+        };
 
         // Pinned pills swap the avatar disc for a pin glyph (per Figma) so
         // the user can spot at a glance that this child is currently living
@@ -1383,11 +1437,7 @@ fn render_pill(
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(leading_label_spacing)
             .with_child(leading)
-            .with_child(
-                ConstrainedBox::new(label_text)
-                    .with_max_width(label_max_width)
-                    .finish(),
-            )
+            .with_child(label_element)
             .finish();
 
         // Constrain pill to a fixed height so the half-stadium corner radius
@@ -1405,11 +1455,8 @@ fn render_pill(
 
         // Render the 3-dot button as a positioned overlay only when the
         // pill is being hovered (or its 3-dot menu is already open). The
-        // overlay sits at the trailing edge of the pill; the label above
-        // already shortens its max width when `show_dots` is true so the
-        // ellipsis truncates before reaching the dots rather than running
-        // underneath them. The pill's outer width still doesn't change
-        // between rest and hover.
+        // overlay sits at the trailing edge of the pill; the label row
+        // reserves matching space only while the dots are visible.
         if show_dots {
             let mut stack = Stack::new();
             stack.add_child(pill_inner);
