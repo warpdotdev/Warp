@@ -343,8 +343,6 @@ pub struct UpdateEnvironmentForm {
 }
 
 const DESCRIPTION_MAX_CHARS: usize = 240;
-const REPOS_PLACEHOLDER_AUTHED: &str = "Enter repos (owner/repo format)";
-const REPOS_PLACEHOLDER_UNAUTHED: &str = "Paste repo URL(s)";
 const FORM_FIELD_SPACING: f32 = 20.;
 const FORM_LABEL_SPACING: f32 = 6.;
 const FORM_INPUT_HEIGHT: f32 = 36.;
@@ -387,11 +385,13 @@ impl UpdateEnvironmentForm {
             form.update_editor_text_colors(ctx);
         });
         // Create editors
-        let name_editor = Self::create_single_line_editor("Environment name", ctx);
+        let environment_name_placeholder = t!("environments.environment_name").to_string();
+        let repos_placeholder = t!("environments.repos_placeholder_authed").to_string();
+        let name_editor = Self::create_single_line_editor(environment_name_placeholder, ctx);
         let description_editor = Self::create_description_editor(ctx);
         let docker_image_editor =
             Self::create_single_line_editor("e.g. python:3.11, node:20-alpine", ctx);
-        let repos_input_editor = Self::create_single_line_editor(REPOS_PLACEHOLDER_AUTHED, ctx);
+        let repos_input_editor = Self::create_single_line_editor(repos_placeholder, ctx);
 
         let setup_commands_input = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
@@ -832,12 +832,12 @@ impl UpdateEnvironmentForm {
 
     fn update_repos_input_placeholder(&mut self, ctx: &mut ViewContext<Self>) {
         let placeholder = if self.github_dropdown_state.auth_url.is_some() {
-            REPOS_PLACEHOLDER_UNAUTHED
+            t!("environments.repos_placeholder_unauthed").to_string()
         } else {
-            REPOS_PLACEHOLDER_AUTHED
+            t!("environments.repos_placeholder_authed").to_string()
         };
         self.repos_input_editor.update(ctx, |editor, ctx| {
-            editor.set_placeholder_text(placeholder, ctx);
+            editor.set_placeholder_text(&placeholder, ctx);
         });
     }
 
@@ -850,10 +850,11 @@ impl UpdateEnvironmentForm {
     }
 
     fn create_single_line_editor(
-        placeholder: &'static str,
+        placeholder: impl Into<String>,
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<EditorView> {
-        ctx.add_typed_action_view(|ctx| {
+        let placeholder = placeholder.into();
+        ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::as_ref(ctx);
             let options = SingleLineEditorOptions {
                 text: TextOptions {
@@ -1532,9 +1533,13 @@ impl UpdateEnvironmentForm {
                         theme.active_ui_text_color()
                     };
 
-                    Text::new_inline("Share with team", font_family, font_size)
-                        .with_color(color.into())
-                        .finish()
+                    Text::new_inline(
+                        t!("environments.share_with_team").to_string(),
+                        font_family,
+                        font_size,
+                    )
+                    .with_color(color.into())
+                    .finish()
                 },
             )
             .with_cursor(Cursor::PointingHand)
@@ -1764,7 +1769,7 @@ impl UpdateEnvironmentForm {
             });
 
         let helper_text = Text::new(
-            "Setup commands run independently. Each command runs from the workspace root (/workspace). If a command depends on the previous one, combine them with &&.",
+            t!("environments.setup_commands_help").to_string(),
             appearance.ui_font_family(),
             appearance.ui_font_size() * 0.85,
         )
@@ -1874,7 +1879,7 @@ impl UpdateEnvironmentForm {
     fn render_repos_field_label(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         Text::new(
-            "Repo(s)",
+            t!("environments.repos").to_string(),
             appearance.ui_font_family(),
             appearance.ui_font_size(),
         )
@@ -1998,7 +2003,7 @@ impl UpdateEnvironmentForm {
                         )
                         .with_child(
                             Text::new(
-                                "Auth with GitHub",
+                                t!("environments.auth_with_github").to_string(),
                                 appearance.ui_font_family(),
                                 appearance.ui_font_size(),
                             )
@@ -2347,7 +2352,7 @@ impl UpdateEnvironmentForm {
     fn render_repo_helper_text_row(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let helper = Text::new(
-            "Type owner/repo and press Enter to add, or select from dropdown.",
+            t!("environments.repo_helper").to_string(),
             appearance.ui_font_family(),
             appearance.ui_font_size() * 0.85,
         )
@@ -2373,7 +2378,7 @@ impl UpdateEnvironmentForm {
             // Plain text part
             text_row.add_child(
                 Text::new(
-                    "Missing a repo?",
+                    t!("environments.missing_repo").to_string(),
                     appearance.ui_font_family(),
                     appearance.ui_font_size() * 0.85,
                 )
@@ -2391,7 +2396,7 @@ impl UpdateEnvironmentForm {
                         theme.accent()
                     };
                     Text::new(
-                        "Configure access on GitHub",
+                        t!("environments.configure_access_on_github").to_string(),
                         appearance.ui_font_family(),
                         appearance.ui_font_size() * 0.85,
                     )
@@ -2560,7 +2565,7 @@ impl UpdateEnvironmentForm {
             content.add_child(
                 Container::new(
                     Text::new(
-                        "No repositories found",
+                        t!("environments.no_repositories_found").to_string(),
                         appearance.ui_font_family(),
                         appearance.ui_font_size(),
                     )

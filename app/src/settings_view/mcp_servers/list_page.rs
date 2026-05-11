@@ -75,8 +75,6 @@ use warpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
-const DESCRIPTION_TEXT: &str = "Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers. You can also find team servers that have been shared with you here. ";
-
 #[derive(Debug, Clone)]
 pub enum MCPServersListPageViewEvent {
     Add,
@@ -100,9 +98,6 @@ pub enum MCPServersListPageViewAction {
     Add,
     ToggleFileBasedMcp,
 }
-
-const EMPTY_STATE_TEXT: &str = "Once you add a MCP server, it will be shown here.";
-const NO_SEARCH_RESULTS_TEXT: &str = "No search results found";
 
 pub struct MCPServersListPageView {
     server_cards: HashMap<ServerCardItemId, ViewHandle<ServerCardView>>,
@@ -1182,7 +1177,7 @@ impl MCPServersListPageView {
 
     fn render_page_body(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let description_fragments = vec![
-            FormattedTextFragment::plain_text(DESCRIPTION_TEXT),
+            FormattedTextFragment::plain_text(t!("mcp.list_description")),
             FormattedTextFragment::hyperlink(
                 "Learn more.",
                 "https://docs.warp.dev/agent-platform/capabilities/mcp",
@@ -1497,7 +1492,7 @@ impl MCPServersListPageView {
                         .with_child(
                             appearance
                                 .ui_builder()
-                                .wrappable_text(EMPTY_STATE_TEXT, true)
+                                .wrappable_text(t!("mcp.empty_state").to_string(), true)
                                 .with_style(style::description_text(appearance))
                                 .build()
                                 .finish(),
@@ -1528,7 +1523,7 @@ impl MCPServersListPageView {
                         .with_child(
                             appearance
                                 .ui_builder()
-                                .wrappable_text(NO_SEARCH_RESULTS_TEXT, true)
+                                .wrappable_text(t!("mcp.no_search_results").to_string(), true)
                                 .with_style(style::description_text(appearance))
                                 .build()
                                 .finish(),
