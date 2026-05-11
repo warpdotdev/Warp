@@ -75,6 +75,16 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-19.** Custom `PanClippedImage` element. Finally fixes the
+       t2-7-r1 gotcha that has dogged every zoom iteration since t2-7:
+       framework's `ConstrainedBox::layout` won't let a child exceed
+       parent's max, so any image already at fit-window-size at zoom
+       1.0 can't visibly grow. `PanClippedImage` passes
+       `SizeConstraint::strict(zoom*native)` to its child, bypassing
+       the parent-max binding. Paint goes through a `ClipBounds`-
+       wrapped layer at viewport rect. Drag tracking + cmd+scroll
+       collapsed into this single element. Implements the long-
+       deferred `t2-7-pan`. — `tech.md` §698 fully addressed.
 - [x] **t2-18.** Remove diagnostic logs. Log evidence (11 ZoomIn
        dispatches from a t2-17 run) proved the + button works
        perfectly — closure runs, action dispatches, `zoom_factor`
@@ -211,6 +221,7 @@ Hard rules:
 | t2-16 | Flex::row toolbar + logging | `ae67790` | [x] | [ ] | [ ] |
 | t2-17 | warn-level logs + tighter gaps | `dff6822` | [x] | [ ] | [ ] |
 | t2-18 | remove diagnostic logs | `45ccfe2` | [x] | [ ] | [ ] |
+| t2-19 | custom PanClippedImage element | `67f014b` | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not

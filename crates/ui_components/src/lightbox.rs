@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use instant::Instant;
 use pathfinder_geometry::vector::{Vector2F, vec2f};
@@ -82,7 +82,12 @@ struct PanClippedImage {
 
     origin: Option<Point>,
     viewport_size: Option<Vector2F>,
-    last_drag_position: Option<Vector2F>,
+    /// GH9729 t2-20: drag state held in the persistent `Lightbox`
+    /// struct via `Arc<Mutex<…>>` so it survives the `Pan` action's
+    /// `ctx.notify()` re-render. A plain struct field on
+    /// `PanClippedImage` would be reset every render and the user's
+    /// drag would freeze after the first delta.
+    drag_state: Arc<Mutex<Option<Vector2F>>>,
 }
 
 impl PanClippedImage {
@@ -92,6 +97,7 @@ impl PanClippedImage {
         pan_offset: Vector2F,
         on_pan: Option<Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>>,
         on_zoom: Option<ZoomHandler>,
+        drag_state: Arc<Mutex<Option<Vector2F>>>,
     ) -> Self {
         Self {
             child,
@@ -101,7 +107,7 @@ impl PanClippedImage {
             on_zoom,
             origin: None,
             viewport_size: None,
-            last_drag_position: None,
+            drag_state,
         }
     }
 
@@ -198,25 +204,42 @@ impl Element for PanClippedImage {
     ) -> bool {
         match event.raw_event() {
             Event::LeftMouseDown { position, .. } if self.point_in_viewport(*position) => {
-                // Start tracking drag; consume so the scrim's Dismiss
-                // doesn't fire on the same down event.
-                self.last_drag_position = Some(*position);
+                // Start tracking drag in shared state; consume so the
+                // scrim's Dismiss doesn't fire on the same down event.
+                if let Ok(mut state) = self.drag_state.lock() {
+                    *state = Some(*position);
+                }
                 true
             }
             Event::LeftMouseDragged { position, .. } => {
-                if let Some(last) = self.last_drag_position {
+                let last = self
+                    .drag_state
+                    .lock()
+                    .ok()
+                    .and_then(|state| *state);
+                if let Some(last) = last {
                     let delta = *position - last;
                     if let Some(on_pan) = self.on_pan.as_ref() {
                         on_pan(self.pan_offset + delta, ctx, app);
                     }
-                    self.last_drag_position = Some(*position);
+                    if let Ok(mut state) = self.drag_state.lock() {
+                        *state = Some(*position);
+                    }
                     return true;
                 }
                 false
             }
             Event::LeftMouseUp { .. } => {
-                if self.last_drag_position.is_some() {
-                    self.last_drag_position = None;
+                let was_dragging = self
+                    .drag_state
+                    .lock()
+                    .ok()
+                    .map(|state| state.is_some())
+                    .unwrap_or(false);
+                if was_dragging {
+                    if let Ok(mut state) = self.drag_state.lock() {
+                        *state = None;
+                    }
                     return true;
                 }
                 false
@@ -369,6 +392,15 @@ pub struct Lightbox {
     zoom_in_button: button::Button,
     /// GH9729 §698 / t2-12: zoom-reset (100%) button.
     zoom_reset_button: button::Button,
+    /// GH9729 §698 / t2-20: shared drag-tracking state for
+    /// `PanClippedImage`. Lives on the persistent `Lightbox` struct so
+    /// it survives re-renders (the rendered tree is rebuilt every
+    /// `render()`, including the `PanClippedImage`; transient state on
+    /// the element itself would be lost on every `ctx.notify()`).
+    /// Holds the cursor position from the most recent unhandled
+    /// `LeftMouseDown` / `LeftMouseDragged`; `None` when not currently
+    /// dragging.
+    drag_state: Arc<Mutex<Option<Vector2F>>>,
 }
 
 /// GH9729 §698 / t2-12: direction for a single zoom step in the
@@ -553,6 +585,7 @@ impl Component for Lightbox {
                         params.pan_offset,
                         params.options.on_pan.clone(),
                         params.options.on_zoom.clone(),
+                        self.drag_state.clone(),
                     ))
                 }
                 // Per-image load/decode failure: render a non-blocking error
