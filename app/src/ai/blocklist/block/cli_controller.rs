@@ -318,7 +318,13 @@ impl CLISubagentController {
         let active_block = terminal_model.block_list_mut().active_block_mut();
         let block_id = active_block.id().clone();
         if let Err(e) = active_block.take_over_control_for_user(reason) {
-            log::error!("Failed to take control for user: {e:?}");
+            // The block is not in an agent-controlled state that can be taken
+            // over. This is expected when a shared-session viewer joins while
+            // the block is between agent-monitored commands (e.g. during the
+            // setup → agent-view transition). Log at warn level and bail out
+            // without cancelling the conversation so the agent continues
+            // running and the session viewer can still observe output.
+            log::warn!("Failed to take control for user: {e:?}");
             return;
         }
 
