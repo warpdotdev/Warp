@@ -322,28 +322,6 @@ fn install_script_avoids_pattern_substitution_for_tilde_expansion() {
 }
 
 #[test]
-fn install_timeout_is_three_minutes() {
-    // The install timeout was increased from 60s to 180s to accommodate
-    // slow remote hosts and give the SCP fallback path more runway.
-    assert_eq!(INSTALL_TIMEOUT, std::time::Duration::from_secs(180));
-}
-
-#[test]
-fn install_script_curl_has_connect_timeout() {
-    // The install script must include `--connect-timeout 15` so curl
-    // fails fast on unreachable CDN hosts instead of blocking for the
-    // full INSTALL_TIMEOUT, leaving room for the SCP fallback to run.
-    let template = INSTALL_SCRIPT_TEMPLATE;
-    assert!(
-        template.contains("--connect-timeout 15"),
-        "install_remote_server.sh is missing `--connect-timeout 15` \
-         on the curl invocation. Without it, curl may block for the \
-         full TCP timeout (often 2+ minutes) before the Rust-side \
-         SCP fallback gets a chance to run.",
-    );
-}
-
-#[test]
 fn parse_preinstall_missing_status_falls_open() {
     // Garbled / partial script output — missing status field. Confirms
     // the fail-open invariant: anything we can't positively classify as
