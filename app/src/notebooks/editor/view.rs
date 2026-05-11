@@ -2667,6 +2667,17 @@ impl View for RichTextEditorView {
         let theme = appearance.theme();
         let render_state = self.model.as_ref(app).render_state();
 
+        // When a scroll header is present, the rich text is placed inside a
+        // Flex::column within a ClippedScrollable. The column gives its
+        // children unconstrained height, so FillMaxHeight would expand to
+        // infinity. Use GrowToMaxHeight instead so the element reports its
+        // actual content height.
+        let vertical_expansion_behavior = if self.scroll_header_view.is_some() {
+            VerticalExpansionBehavior::GrowToMaxHeight
+        } else {
+            self.vertical_expansion_behavior
+        };
+
         let display_options = DisplayOptions {
             // If there's a command selection, show that instead of the text cursor.
             // Likewise, if the link editor is open, don't also show a cursor.
@@ -2678,7 +2689,7 @@ impl View for RichTextEditorView {
             left_gutter: self.gutter_width,
             debug_bounds: self.debug_mode,
             hovered_block_start: self.hovered_block,
-            vertical_expansion_behavior: self.vertical_expansion_behavior,
+            vertical_expansion_behavior,
             ..Default::default()
         };
 
