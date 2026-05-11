@@ -3889,8 +3889,6 @@ fn test_first_onboarding_block_exists() {
         initialize_app_for_terminal_view(&mut app);
         let terminal = add_window_with_terminal(&mut app, None);
 
-        // Testing the onboarding sequence with Settings Import disabled.
-        FeatureFlag::SettingsImport.set_enabled(false);
         terminal.update(&mut app, |terminal_view, ctx| {
             terminal_view.handle_action(
                 &TerminalAction::OnboardingFlow(OnboardingVersion::Legacy),
