@@ -154,14 +154,8 @@ impl ActionButtonTheme for LearnMoreButtonTheme {
 struct CtaButtonTheme;
 
 impl ActionButtonTheme for CtaButtonTheme {
-    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {
-        let magenta = appearance.theme().terminal_colors().normal.magenta;
-        let color = if hovered {
-            appearance.theme().ansi_bg(magenta)
-        } else {
-            magenta.into()
-        };
-        Some(Fill::Solid(color))
+    fn background(&self, _hovered: bool, appearance: &Appearance) -> Option<Fill> {
+        Some(Fill::Solid(appearance.theme().foreground().into_solid()))
     }
 
     fn text_color(
@@ -170,7 +164,7 @@ impl ActionButtonTheme for CtaButtonTheme {
         _background: Option<Fill>,
         appearance: &Appearance,
     ) -> ColorU {
-        appearance.theme().foreground().into_solid()
+        appearance.theme().background().into_solid()
     }
 }
 

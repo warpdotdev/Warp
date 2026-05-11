@@ -210,7 +210,7 @@ Create `app/src/workspace/view/<name>_launch_modal/view.rs`. Copy from `orchestr
 - Use terminal theme colors for terminal-color accents (for example, magenta launch badge accents):
   - `appearance.theme().terminal_colors().normal.magenta`
   - `appearance.theme().ansi_overlay_1(magenta)` for low-alpha backgrounds
-- Avoid hardcoded hex colors and avoid adding `PhenomenonStyle` dependencies for new launch modal color work unless explicitly requested.
+- Avoid hardcoded hex colors.
 
 ### Hero image
 
