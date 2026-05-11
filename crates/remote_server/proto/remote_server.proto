@@ -381,6 +381,13 @@ message OpenBuffer {
 
 // Server → client: response to OpenBuffer with the initial file content.
 message OpenBufferResponse {
+  oneof result {
+    OpenBufferSuccess success = 1;
+    FileOperationError error = 2;
+  }
+}
+
+message OpenBufferSuccess {
   string content = 1;
   uint64 server_version = 2;
 }

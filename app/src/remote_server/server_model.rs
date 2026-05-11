@@ -1,4 +1,5 @@
 use crate::terminal::shell::ShellType;
+use remote_server::proto::OpenBufferSuccess;
 use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use repo_metadata::{RepoMetadataEvent, RepoMetadataModel, RepositoryIdentifier};
 use std::collections::{HashMap, HashSet};
@@ -326,12 +327,12 @@ impl ServerModel {
                         for req in pending {
                             let message = match (&content, server_version) {
                                 (Some(content), Some(sv)) => {
-                                    server_message::Message::OpenBufferResponse(
-                                        OpenBufferResponse {
-                                            content: content.clone(),
+                                    server_message::Message::OpenBufferResponse(OpenBufferResponse{
+                                        result: Some(remote_server::proto::open_buffer_response::Result::Success(OpenBufferSuccess {
+                                             content: content.clone(),
                                             server_version: sv,
-                                        },
-                                    )
+                                        }))
+                                    })
                                 }
                                 _ => server_message::Message::Error(ErrorResponse {
                                     code: ErrorCode::Internal.into(),
@@ -461,10 +462,11 @@ impl ServerModel {
                         me.send_server_message(
                             Some(req.connection_id),
                             Some(&req.request_id),
-                            server_message::Message::Error(ErrorResponse {
-                                code: ErrorCode::Internal.into(),
-                                message: format!("Failed to load buffer: {error}"),
-                            }),
+                            server_message::Message::OpenBufferResponse(OpenBufferResponse{
+                                        result: Some(remote_server::proto::open_buffer_response::Result::Error(FileOperationError {
+                                             message: format!("Failed to load buffer: {error}"),
+                                        }))
+                                    }),
                         );
                     }
                 }
@@ -1410,36 +1412,66 @@ impl ServerModel {
             .track_open_buffer(msg.path.clone(), file_id, buffer_state.buffer);
         self.buffers.add_connection(file_id, conn_id);
 
-        // If already loaded and force_reload is requested, re-read from disk.
-        // The response is sent asynchronously when `BufferLoaded` fires.
-        if msg.force_reload && gbm.as_ref(ctx).buffer_loaded(file_id) {
-            gbm.update(ctx, |gbm, ctx| {
-                gbm.force_reload_server_local(file_id, ctx);
-            });
-            self.buffers.insert_pending(
-                file_id,
-                request_id.clone(),
-                conn_id,
-                PendingBufferRequestKind::OpenBuffer,
-            );
-            return HandlerOutcome::Async(None);
-        }
-
-        // If already loaded, respond immediately.
         if gbm.as_ref(ctx).buffer_loaded(file_id) {
-            let content = gbm
-                .as_ref(ctx)
-                .content_for_file(file_id, ctx)
-                .unwrap_or_default();
-            let server_version = gbm
+            // If already loaded and force_reload is requested, re-read from disk.
+            // The response is sent asynchronously when `BufferLoaded` fires.
+            if msg.force_reload {
+                if let Err(e) =
+                    gbm.update(ctx, |gbm, ctx| gbm.force_reload_server_local(file_id, ctx))
+                {
+                    return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
+                        OpenBufferResponse {
+                            result: Some(
+                                remote_server::proto::open_buffer_response::Result::Error(
+                                    FileOperationError { message: e.into() },
+                                ),
+                            ),
+                        },
+                    ));
+                }
+                self.buffers.insert_pending(
+                    file_id,
+                    request_id.clone(),
+                    conn_id,
+                    PendingBufferRequestKind::OpenBuffer,
+                );
+                return HandlerOutcome::Async(None);
+            }
+
+            let Some(content) = gbm.as_ref(ctx).content_for_file(file_id, ctx) else {
+                return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
+                    OpenBufferResponse {
+                        result: Some(remote_server::proto::open_buffer_response::Result::Error(
+                            FileOperationError {
+                                message: format!("Buffer loaded but has no file content"),
+                            },
+                        )),
+                    },
+                ));
+            };
+            let Some(server_version) = gbm
                 .as_ref(ctx)
                 .sync_clock_for_server_local(file_id)
                 .map(|c| c.server_version.as_u64())
-                .unwrap_or(1);
+            else {
+                return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
+                    OpenBufferResponse {
+                        result: Some(remote_server::proto::open_buffer_response::Result::Error(
+                            FileOperationError {
+                                message: format!("Buffer loaded but has no sync clock"),
+                            },
+                        )),
+                    },
+                ));
+            };
             return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
                 OpenBufferResponse {
-                    content,
-                    server_version,
+                    result: Some(remote_server::proto::open_buffer_response::Result::Success(
+                        OpenBufferSuccess {
+                            content,
+                            server_version,
+                        },
+                    )),
                 },
             ));
         }

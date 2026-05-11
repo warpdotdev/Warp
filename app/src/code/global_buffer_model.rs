@@ -1664,8 +1664,7 @@ impl GlobalBufferModel {
         );
 
         // Look up the client on the main thread, then send OpenBuffer asynchronously.
-        let manager = RemoteServerManager::handle(ctx);
-        let Some(client) = manager.as_ref(ctx).client_for_host(&host_id).cloned() else {
+        let Some(client) = client_for_sub else {
             log::warn!("[remote-buffer] No remote server client for host {host_id:?}");
             ctx.emit(GlobalBufferModelEvent::FailedToLoad {
                 file_id,
@@ -1701,19 +1700,28 @@ impl GlobalBufferModel {
         result: Result<remote_server::proto::OpenBufferResponse, String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        match result {
-            Ok(response) => {
+        let res = result.and_then(|res| {
+            res.result
+                .ok_or("No result in OpenBuffer response".to_string())
+        });
+        match res {
+            Ok(remote_server::proto::open_buffer_response::Result::Success(
+                remote_server::proto::OpenBufferSuccess {
+                    content,
+                    server_version,
+                },
+            )) => {
                 log::debug!(
                     "[remote-buffer] OpenBuffer response: content_len={} server_version={}",
-                    response.content.len(),
-                    response.server_version,
+                    content.len(),
+                    server_version,
                 );
                 let Some(state) = self.buffers.get_mut(&file_id) else {
                     log::warn!("[remote-buffer] Buffer state missing for file_id={file_id:?}");
                     return;
                 };
                 if let BufferSource::Remote { sync_clock, .. } = &mut state.source {
-                    *sync_clock = Some(SyncClock::from_wire(response.server_version, 0));
+                    *sync_clock = Some(SyncClock::from_wire(server_version, 0));
                 }
                 let Some(buffer) = state.buffer.upgrade(ctx) else {
                     log::warn!("[remote-buffer] Buffer handle deallocated for file_id={file_id:?}");
@@ -1721,7 +1729,7 @@ impl GlobalBufferModel {
                 };
                 let version = ContentVersion::new();
                 buffer.update(ctx, |buffer, ctx| {
-                    buffer.replace_all(&response.content, ctx);
+                    buffer.replace_all(&content, ctx);
                     buffer.set_version(version);
                 });
                 ctx.emit(GlobalBufferModelEvent::BufferLoaded {
@@ -1729,7 +1737,10 @@ impl GlobalBufferModel {
                     content_version: version,
                 });
             }
-            Err(error) => {
+            Ok(remote_server::proto::open_buffer_response::Result::Error(
+                remote_server::proto::FileOperationError { message: error },
+            ))
+            | Err(error) => {
                 log::warn!("[remote-buffer] Failed to open remote buffer: {error}");
                 ctx.emit(GlobalBufferModelEvent::FailedToLoad {
                     file_id,
@@ -1917,9 +1928,13 @@ impl GlobalBufferModel {
     /// connection gets the new content) and `ServerLocalBufferUpdated` (so
     /// other connections receive a `BufferUpdatedPush` with the fresh content).
     #[cfg(feature = "local_fs")]
-    pub fn force_reload_server_local(&mut self, file_id: FileId, ctx: &mut ModelContext<Self>) {
+    pub fn force_reload_server_local(
+        &mut self,
+        file_id: FileId,
+        ctx: &mut ModelContext<Self>,
+    ) -> Result<(), String> {
         let Some(state) = self.buffers.get(&file_id) else {
-            return;
+            return Err("force_reload: no local path for file_id={file_id:?}".to_string());
         };
         let Some(file_path) =
             self.location_to_id
@@ -1929,18 +1944,14 @@ impl GlobalBufferModel {
                     FileLocation::Remote(_) => None,
                 })
         else {
-            log::warn!("[server-local] force_reload: no local path for file_id={file_id:?}");
-            return;
+            return Err("force_reload: no local path for file_id={file_id:?}".to_string());
         };
         // Capture the current client version before the reload so we can
         // include it in the ServerLocalBufferUpdated event.
         let expected_client_version = match &state.source {
             BufferSource::ServerLocal { sync_clock, .. } => sync_clock.client_version,
             _ => {
-                log::warn!(
-                    "[server-local] force_reload called on non-ServerLocal buffer {file_id:?}"
-                );
-                return;
+                return Err("force_reload called on non-ServerLocal buffer {file_id:?}".to_string());
             }
         };
 
@@ -1949,9 +1960,17 @@ impl GlobalBufferModel {
             move |me, content, ctx| match content {
                 Ok(content) => {
                     let Some(state) = me.buffers.get_mut(&file_id) else {
+                        ctx.emit(GlobalBufferModelEvent::FailedToLoad {
+                            file_id,
+                            error: Rc::new(FileLoadError::DoesNotExist),
+                        });
                         return;
                     };
                     let Some(buffer) = state.buffer.upgrade(ctx) else {
+                        ctx.emit(GlobalBufferModelEvent::FailedToLoad {
+                            file_id,
+                            error: Rc::new(FileLoadError::DoesNotExist),
+                        });
                         return;
                     };
 
@@ -2009,6 +2028,8 @@ impl GlobalBufferModel {
                 }
             },
         );
+
+        Ok(())
     }
 
     /// Re-open an existing remote buffer by sending `OpenBuffer` with
