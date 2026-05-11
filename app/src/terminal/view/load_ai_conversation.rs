@@ -487,9 +487,10 @@ impl TerminalView {
                 // in-place navigation: the child agent's hidden pane must
                 // retain ownership so its `conversation_id_for_action`
                 // lookups for in-flight requested commands keep resolving.
-                // `restore_conversations` above just inserted the conversation
-                // into `self.view_id`'s live list, satisfying mark's
-                // precondition.
+                // `restore_conversation_after_view_creation` decides after
+                // restoration whether the current view should become the
+                // canonical owner (regular terminal panes) or remain a
+                // non-owning mirror (conversation transcript viewers).
                 history_model.mark_active_conversation_id(
                     active_conversation_id,
                     self.view_id,
@@ -621,6 +622,14 @@ impl TerminalView {
         // Restore action results from all exchanges
         let blocks_created =
             self.restore_conversations_from_block_params(all_ai_block_params, vec![restored], ctx);
+
+        if !BlocklistAIHistoryModel::as_ref(ctx)
+            .is_terminal_view_conversation_transcript_viewer(self.view_id)
+        {
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                history_model.set_active_conversation_id(conversation_id, self.view_id, ctx);
+            });
+        }
 
         log::info!(
             "Successfully restored {blocks_created} AI blocks for conversation: {conversation_id}"
