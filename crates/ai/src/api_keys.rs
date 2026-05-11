@@ -74,8 +74,6 @@ impl ApiKeys {
     }
 
     /// Returns `true` when the user has at least one custom endpoint configured.
-    /// Used alongside `include_byo_keys` to decide whether to set the
-    /// `custom_inference_enabled` flag on the request.
     pub fn has_custom_endpoints(&self) -> bool {
         !self.custom_endpoints.is_empty()
     }
@@ -251,11 +249,32 @@ impl ApiKeyManager {
         self.aws_credentials_refresh_strategy = strategy;
     }
 
-    /// Whether custom inference endpoints should be considered active for this
-    /// request. True when the user has saved ≥1 custom endpoint AND BYO keys
-    /// are enabled on the current plan.
-    pub fn custom_inference_enabled(&self, include_byo_keys: bool) -> bool {
-        include_byo_keys && self.keys.has_custom_endpoints()
+    pub fn user_provided_llm_endpoint_for_request(
+        &self,
+        include_byo_keys: bool,
+    ) -> Option<api::request::settings::UserProvidedLlmEndpoint> {
+        include_byo_keys
+            .then(|| {
+                self.keys
+                    .custom_inference
+                    .clone()
+                    .filter(|c| !c.is_effectively_empty())
+                    .or_else(|| {
+                        let endpoint = self.keys.custom_endpoints.first()?;
+                        let model = endpoint.models.first()?;
+                        Some(CustomInference {
+                            endpoint: endpoint.url.clone(),
+                            model: model.name.clone(),
+                            api_key: endpoint.api_key.clone(),
+                        })
+                    })
+            })
+            .flatten()
+            .map(|c| api::request::settings::UserProvidedLlmEndpoint {
+                base_url: c.endpoint,
+                model_id: c.model,
+                api_key: c.api_key,
+            })
     }
 
     pub fn api_keys_for_request(
@@ -279,28 +298,6 @@ impl ApiKeyManager {
             .then(|| self.keys.open_router.clone())
             .flatten()
             .unwrap_or_default();
-        let custom_inference = include_byo_keys
-            .then(|| {
-                self.keys
-                    .custom_inference
-                    .clone()
-                    .filter(|c| !c.is_effectively_empty())
-                    .or_else(|| {
-                        let endpoint = self.keys.custom_endpoints.first()?;
-                        let model = endpoint.models.first()?;
-                        Some(CustomInference {
-                            endpoint: endpoint.url.clone(),
-                            model: model.name.clone(),
-                            api_key: endpoint.api_key.clone(),
-                        })
-                    })
-            })
-            .flatten()
-            .map(|c| api::request::settings::api_keys::CustomInference {
-                endpoint: c.endpoint,
-                model: c.model,
-                api_key: c.api_key,
-            });
 
         // Also include credentials when running with OIDC-managed Bedrock inference, regardless
         // of the per-user setting flag (which only applies to the local credential chain path).
@@ -318,17 +315,10 @@ impl ApiKeyManager {
             })
             .flatten();
 
-        // TODO(proto): wire `custom_inference_enabled` into the proto ApiKeys
-        // message once the field lands in warp-proto-apis. Compute with:
-        //   let custom_inference_enabled = self.custom_inference_enabled(include_byo_keys);
-        // and set it on the returned struct.
-
         if anthropic.is_empty()
             && openai.is_empty()
             && google.is_empty()
             && open_router.is_empty()
-            && custom_inference.is_none()
-            && self.keys.custom_endpoints.is_empty()
             && aws_credentials.is_none()
         {
             None
@@ -340,7 +330,6 @@ impl ApiKeyManager {
                 open_router,
                 allow_use_of_warp_credits: false,
                 aws_credentials,
-                custom_inference,
             })
         }
     }

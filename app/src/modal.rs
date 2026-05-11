@@ -245,7 +245,7 @@ impl<T: View> Modal<T> {
     }
 
     fn render_close_modal_button(&self, appearance: &Appearance) -> Box<dyn Element> {
-        use ui_components::{Component, keyboard_shortcut};
+        use ui_components::{keyboard_shortcut, Component};
 
         const BUTTON_DIAMETER: f32 = 24.;
         let close_button = appearance
@@ -255,34 +255,32 @@ impl<T: View> Modal<T> {
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(ModalAction::Close))
             .finish();
 
-                if let Some(keystroke) = &self.dismiss_keystroke {
-                    let theme = appearance.theme();
-                    Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_child(close_button)
-                        .with_child(
-                            Container::new(
-                                keyboard_shortcut::KeyboardShortcut.render(
-                                    appearance,
-                                    keyboard_shortcut::Params {
-                                        keystroke: keystroke.clone(),
-                                        options: keyboard_shortcut::Options {
-                                            font_color: Some(theme.nonactive_ui_text_color().into()),
-                                            background: Some(blended_colors::neutral_3(theme).into()),
-                                            border_fill: None,
-                                            sizing: keyboard_shortcut::Sizing {
-                                                font_size: 11.,
-                                                padding: 5.,
-                                            },
-                                        },
-                                    },
-                                ),
-                            )
-                            .with_margin_left(4.)
-                            .finish(),
-                        )
-                        .finish()
-                } else {
+        if let Some(keystroke) = &self.dismiss_keystroke {
+            let theme = appearance.theme();
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(close_button)
+                .with_child(
+                    Container::new(keyboard_shortcut::KeyboardShortcut.render(
+                        appearance,
+                        keyboard_shortcut::Params {
+                            keystroke: keystroke.clone(),
+                            options: keyboard_shortcut::Options {
+                                font_color: Some(theme.nonactive_ui_text_color().into()),
+                                background: Some(blended_colors::neutral_3(theme).into()),
+                                border_fill: None,
+                                sizing: keyboard_shortcut::Sizing {
+                                    font_size: 11.,
+                                    padding: 5.,
+                                },
+                            },
+                        },
+                    ))
+                    .with_margin_left(4.)
+                    .finish(),
+                )
+                .finish()
+        } else {
             close_button
         }
     }

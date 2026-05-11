@@ -338,6 +338,7 @@ fn needs_settings_file_migration(ctx: &AppContext) -> bool {
         return false;
     }
 
+    #[cfg(not(test))]
     if super::user_preferences_toml_file_path().exists() {
         return false;
     }
