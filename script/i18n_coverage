@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+
+import argparse
+import re
+from collections import Counter
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+APP_SRC = ROOT / "app" / "src"
+LOCALE_DIR = ROOT / "resources" / "bundled" / "locales"
+
+UI_TARGETS = (
+    "ai_assistant/",
+    "app_menus.rs",
+    "auth/",
+    "billing/",
+    "code_review/",
+    "context_chips/",
+    "drive/",
+    "env_vars/",
+    "notebooks/",
+    "prompt/",
+    "quit_warning/",
+    "settings_view/",
+    "tab.rs",
+    "themes/",
+    "workflows/",
+    "workspace/view.rs",
+    "workspace/view/",
+)
+
+CALL_WITH_LABEL_RE = re.compile(
+    r"""
+    (?:
+        MenuItemFields::new
+        |MenuItemFields::new_submenu
+        |CustomMenuItem::new
+        |CustomMenuItem::new_with_submenu
+        |ToastLink::new
+        |DismissibleToast::(?:default|error|success|warning)
+        |Text::new
+        |Text::new_inline
+    )
+    \(\s*"((?:[^"\\]|\\.)*)"
+    """,
+    re.VERBOSE,
+)
+
+METHOD_WITH_LABEL_RE = re.compile(
+    r"""
+    \.
+    (?:
+        tool_tip
+        |tool_tip_on_element
+        |with_centered_text_label
+        |wrappable_text
+        |set_placeholder_text_with_prefix
+    )
+    \(\s*(?:String::from\()?\"((?:[^"\\]|\\.)*)\"
+    """,
+    re.VERBOSE,
+)
+
+UI_CONST_RE = re.compile(
+    r"""
+    const\s+
+    [A-Z0-9_]*(?:LABEL|TEXT|TITLE|HEADER|DESCRIPTION|TOOLTIP|PLACEHOLDER|BUTTON)[A-Z0-9_]*
+    \s*:\s*&str\s*=\s*"((?:[^"\\]|\\.)*)"
+    """,
+    re.VERBOSE,
+)
+
+T_CALL_RE = re.compile(r't!\(\s*"((?:[^"\\]|\\.)*)"')
+KEY_RE = re.compile(r"^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)")
+LOCALE_SECTION_RE = re.compile(r"^  ([A-Za-z0-9_]+):\s*$")
+LOCALE_KEY_RE = re.compile(r'^    ([A-Za-z0-9_]+):\s*"')
+
+
+def rust_files():
+    return sorted(APP_SRC.rglob("*.rs"))
+
+
+def is_test_file(path: Path) -> bool:
+    parts = path.relative_to(APP_SRC).parts
+    return (
+        any(part in {"tests", "testing", "integration_testing"} for part in parts)
+        or path.name.endswith("_tests.rs")
+        or path.name.endswith("_test.rs")
+        or path.name in {"mod_tests.rs"}
+    )
+
+
+def is_ui_target(path: Path) -> bool:
+    if is_test_file(path):
+        return False
+    rel = path.relative_to(APP_SRC).as_posix()
+    return any(rel == target or rel.startswith(target) for target in UI_TARGETS)
+
+
+def unescape_sample(value: str) -> str:
+    return value.encode("utf-8").decode("unicode_escape", errors="ignore")
+
+
+def looks_internal(value: str) -> bool:
+    value = unescape_sample(value).strip()
+    if not value or not re.search(r"[A-Za-z]", value):
+        return True
+    if len(value) <= 1:
+        return True
+    if value.startswith(("/", "#", "$", ".", "-", "_", "{", "}", "<")):
+        return True
+    if re.match(r"^(https?:|file:|[a-z_]+:|[A-Z_]+:)", value):
+        return True
+    if re.search(r"\.(json|yaml|yml|toml|txt|rs|sh|exe|app|dmg|zip)\b", value):
+        return True
+    if re.search(r"[_{}][a-zA-Z0-9_]*[_{}]", value):
+        return True
+    if re.match(r"^[A-Za-z0-9_./:-]+$", value) and not re.search(r"\s", value):
+        return True
+    return False
+
+
+def locale_keys(path: Path):
+    keys = set()
+    section = None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        section_match = LOCALE_SECTION_RE.match(line)
+        if section_match:
+            section = section_match.group(1)
+            continue
+        key_match = LOCALE_KEY_RE.match(line)
+        if section and key_match:
+            keys.add(f"{section}.{key_match.group(1)}")
+    return keys
+
+
+def collect_locale():
+    en = locale_keys(LOCALE_DIR / "en.yml")
+    zh = locale_keys(LOCALE_DIR / "zh-CN.yml")
+    namespaces = {key.split(".", 1)[0] for key in en}
+    return en, zh, namespaces
+
+
+def collect_keyed_calls(files, namespaces):
+    keyed = []
+    used_keys = set()
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for match in T_CALL_RE.finditer(text):
+            value = match.group(1)
+            key_match = KEY_RE.match(value)
+            if key_match and key_match.group(1) in namespaces:
+                rel = path.relative_to(ROOT).as_posix()
+                keyed.append((rel, value))
+                used_keys.add(value)
+    return keyed, used_keys
+
+
+def collect_hardcoded_candidates(files):
+    candidates = []
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for regex in (CALL_WITH_LABEL_RE, METHOD_WITH_LABEL_RE, UI_CONST_RE):
+            for match in regex.finditer(text):
+                value = match.group(1)
+                if looks_internal(value):
+                    continue
+                rel = path.relative_to(ROOT).as_posix()
+                line = text.count("\n", 0, match.start()) + 1
+                candidates.append((rel, line, unescape_sample(value)))
+    return candidates
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Report Warp UI i18n coverage.")
+    parser.add_argument("--samples", type=int, default=20)
+    args = parser.parse_args()
+
+    en_keys, zh_keys, namespaces = collect_locale()
+    all_files = rust_files()
+    ui_files = [path for path in all_files if is_ui_target(path)]
+
+    all_keyed, all_used_keys = collect_keyed_calls(all_files, namespaces)
+    ui_keyed, _ = collect_keyed_calls(ui_files, namespaces)
+    hardcoded = collect_hardcoded_candidates(ui_files)
+
+    denominator = len(ui_keyed) + len(hardcoded)
+    coverage = (len(ui_keyed) / denominator * 100) if denominator else 100.0
+
+    print("Locale")
+    print(f"  en keys: {len(en_keys)}")
+    print(f"  zh-CN keys: {len(zh_keys)}")
+    print(f"  missing in zh-CN: {len(en_keys - zh_keys)}")
+    print(f"  extra in zh-CN: {len(zh_keys - en_keys)}")
+    print(f"  used keys: {len(all_used_keys)}")
+    print(f"  used keys missing from en: {len(all_used_keys - en_keys)}")
+    print()
+    print("UI Coverage")
+    print(f"  target files: {len(ui_files)}")
+    print(f"  keyed call sites: {len(ui_keyed)}")
+    print(f"  hardcoded candidates: {len(hardcoded)}")
+    print(f"  coverage: {coverage:.1f}%")
+
+    if hardcoded:
+        print()
+        print("Top Hardcoded Candidate Files")
+        for rel, count in Counter(path for path, _, _ in hardcoded).most_common(10):
+            print(f"  {count:4} {rel}")
+
+        print()
+        print(f"Sample Hardcoded Candidates (first {args.samples})")
+        for rel, line, value in hardcoded[: args.samples]:
+            print(f"  {rel}:{line}: {value}")
+
+
+if __name__ == "__main__":
+    main()

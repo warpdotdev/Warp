@@ -30,14 +30,6 @@ const ACTION_BUTTON_BORDER_WIDTH: f32 = 2.;
 const ACTION_BUTTON_HORIZONTAL_PADDING: f32 = 8.;
 const ACTION_BUTTON_FONT_SIZE: f32 = 14.;
 
-const AUTH_OVERRIDE_DESCRIPTION: &str = "It looks like you logged into a Warp account through a web browser. If you continue, any personal Warp drive objects and preferences from this anonymous session with be permanently deleted.";
-const AUTH_OVERRIDE_CONFIRMATION_WARNING: &str = "This cannot be undone.";
-const AUTH_OVERRIDE_CONFIRM_CONFIRMATION_STEP_HEADER: &str =
-    "Delete personal Warp Drive objects and preferences?";
-const AUTH_OVERRIDE_BULK_EXPORT_DESCRIPTION: &str = " to import later.";
-const AUTH_OVERRIDE_CANCEL_BUTTON_LABEL: &str = "Cancel";
-const AUTH_OVERRIDE_CONTINUE_BUTTON_LABEL: &str = "Continue";
-
 #[derive(Clone, Copy, Debug)]
 pub enum AuthOverrideWarningBodyAction {
     Close,
@@ -101,9 +93,7 @@ impl AuthOverrideWarningBody {
 
         let text: Cow<'static, str> = match self.confirmation_step {
             AuthOverrideConfirmationStep::Initial => t!("auth.new_login_detected"),
-            AuthOverrideConfirmationStep::ConfirmChangeUser => {
-                Cow::Borrowed(AUTH_OVERRIDE_CONFIRM_CONFIRMATION_STEP_HEADER)
-            }
+            AuthOverrideConfirmationStep::ConfirmChangeUser => t!("auth.delete_personal_data"),
         };
 
         ui_builder
@@ -154,7 +144,7 @@ impl AuthOverrideWarningBody {
             AuthOverrideConfirmationStep::Initial => {
                 let description = Container::new(
                     ui_builder
-                        .paragraph(AUTH_OVERRIDE_DESCRIPTION)
+                        .paragraph(t!("auth.login_override_description"))
                         .with_style(muted_styles)
                         .build()
                         .finish(),
@@ -184,7 +174,7 @@ impl AuthOverrideWarningBody {
                         )
                         .with_child(
                             ui_builder
-                                .span(AUTH_OVERRIDE_BULK_EXPORT_DESCRIPTION)
+                                .span(t!("auth.import_later_suffix"))
                                 .with_style(muted_styles)
                                 .build()
                                 .finish(),
@@ -200,7 +190,7 @@ impl AuthOverrideWarningBody {
             AuthOverrideConfirmationStep::ConfirmChangeUser => {
                 let confirmation = Container::new(
                     ui_builder
-                        .paragraph(AUTH_OVERRIDE_CONFIRMATION_WARNING)
+                        .paragraph(t!("auth.cannot_be_undone"))
                         .with_style(muted_styles)
                         .build()
                         .finish(),
@@ -285,7 +275,7 @@ impl AuthOverrideWarningBody {
                 Some(click_button_style),
                 None,
             )
-            .with_centered_text_label(AUTH_OVERRIDE_CANCEL_BUTTON_LABEL.into())
+            .with_centered_text_label(t!("common.cancel").to_string())
             .build()
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(AuthOverrideWarningBodyAction::Close);
@@ -311,7 +301,7 @@ impl AuthOverrideWarningBody {
                 Some(outline_click_button_style),
                 None,
             )
-            .with_centered_text_label(AUTH_OVERRIDE_CONTINUE_BUTTON_LABEL.into())
+            .with_centered_text_label(t!("common.continue").to_string())
             .build()
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(continue_action);
