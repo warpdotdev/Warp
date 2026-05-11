@@ -660,13 +660,6 @@ grep_tool = []
 # for things that pull in external dependencies.
 gui = ["voice_input"]
 # Bundled ML models (ONNX / etc.).
-#
-# Each `ml_model_*` feature is the single source of truth for an individual
-# model's compile-time dependencies. The `bundled_app_ml_models_*` umbrellas
-# group the subset that ships in the desktop app build for a given rollout
-# tier; the `_app_` prefix exists so we can introduce sibling umbrellas (for
-# example, a future `bundled_cli_ml_models_*`) without confusion. Bundle
-# scripts only ever reference the umbrella name, not individual model features.
 ml_model_input_classifier_onnx = ["input_classifier/onnx_candle"]
 bundled_app_ml_models_prod = [
     "ml_model_input_classifier_onnx",
