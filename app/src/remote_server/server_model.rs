@@ -1022,16 +1022,35 @@ impl ServerModel {
             move |me, result, _ctx| {
                 let result_oneof = match result {
                     Ok(output) => {
+                        let mut stdout = output.stdout.clone();
+                        let mut stderr = output.stderr.clone();
+
+                        // Truncate to stay under the wire-level message size
+                        // limit. Leave headroom for protobuf framing overhead.
+                        const MAX_OUTPUT_BYTES: usize =
+                            remote_server::protocol::MAX_MESSAGE_SIZE - 1024;
+                        let total = stdout.len() + stderr.len();
+                        if total > MAX_OUTPUT_BYTES {
+                            log::warn!(
+                                "RunCommand output too large \
+                                 (request_id={request_id_for_response}): \
+                                 {total} bytes, truncating to {MAX_OUTPUT_BYTES}"
+                            );
+                            let ratio = MAX_OUTPUT_BYTES as f64 / total as f64;
+                            stdout.truncate((stdout.len() as f64 * ratio) as usize);
+                            stderr.truncate((stderr.len() as f64 * ratio) as usize);
+                        }
+
                         log::info!(
                             "RunCommand completed (request_id={request_id_for_response}): \
                              exit_code={:?}, stdout_len={}, stderr_len={}",
                             output.exit_code,
-                            output.stdout.len(),
-                            output.stderr.len(),
+                            stdout.len(),
+                            stderr.len(),
                         );
                         run_command_response::Result::Success(RunCommandSuccess {
-                            stdout: output.stdout.clone(),
-                            stderr: output.stderr.clone(),
+                            stdout,
+                            stderr,
                             exit_code: output.exit_code.map(|c| c.value()),
                         })
                     }

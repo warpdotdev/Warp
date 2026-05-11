@@ -193,8 +193,36 @@ pub(super) async fn handle_daemon_connection(
     // deregister_connection) or a fatal write error occurs.
     while let Ok(msg) = conn_rx.recv().await {
         if let Err(e) = remote_server::protocol::write_server_message(&mut writer, &msg).await {
-            log::error!("Daemon: write error on conn {conn_id}: {e}");
-            break;
+            if !e.is_write_recoverable() {
+                log::error!("Daemon: write error on conn {conn_id}: {e}");
+                break;
+            }
+            // Recoverable write error (e.g. MessageTooLarge): nothing was
+            // written to the stream, so it remains aligned. Log and skip
+            // rather than tearing down the entire connection.
+            log::warn!("Daemon: skipping undeliverable message on conn {conn_id}: {e}");
+
+            // Send an ErrorResponse so the client doesn't hang waiting
+            // for a response that will never arrive.
+            if msg.request_id.is_empty() {
+                continue;
+            }
+            let error_msg = remote_server::proto::ServerMessage {
+                request_id: msg.request_id.clone(),
+                message: Some(remote_server::proto::server_message::Message::Error(
+                    remote_server::proto::ErrorResponse {
+                        code: remote_server::proto::ErrorCode::Internal.into(),
+                        message: format!("Response could not be delivered: {e}"),
+                    },
+                )),
+            };
+            if let Err(e2) =
+                remote_server::protocol::write_server_message(&mut writer, &error_msg).await
+            {
+                log::warn!("Daemon: failed to send error response on conn {conn_id}: {e2}");
+                continue;
+            }
+            // Fall through to flush the error response.
         }
         // Flush after every message so responses reach the proxy without
         // waiting for the BufWriter's internal buffer to fill up.
