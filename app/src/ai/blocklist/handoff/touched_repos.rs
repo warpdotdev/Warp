@@ -190,10 +190,9 @@ fn parse_github_repo(remote_url: &str) -> Option<GithubRepo> {
 }
 
 /// Resolve a single directory path to its enclosing git repo and parsed GitHub
-/// remote, if any. Used by `&` handoff compose to do pwd-based environment
-/// overlap at activation time.
-pub(crate) async fn resolve_pwd_repo(pwd: PathBuf) -> Option<TouchedRepo> {
-    let git_root = find_git_root(&pwd).await?;
+/// remote, if any.
+pub(crate) async fn resolve_repo_for_path(path: &Path) -> Option<TouchedRepo> {
+    let git_root = find_git_root(path).await?;
     let repo_id = git_origin_url(&git_root)
         .await
         .as_deref()

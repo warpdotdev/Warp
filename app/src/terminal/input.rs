@@ -109,8 +109,14 @@ use crate::persistence::{database_file_path_for_scope, establish_ro_connection, 
 
 use crate::ai::attachment_utils::MAX_ATTACHMENT_SIZE_BYTES;
 use crate::ai::block_context::BlockContext;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::agent_view::agent_input_footer::sort_environments_by_recency;
 use crate::ai::blocklist::agent_view::{
     AgentInputFooter, AgentInputFooterEvent, AgentViewController,
+};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::touched_repos::{
+    pick_handoff_overlap_env, resolve_repo_for_path, TouchedWorkspace,
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, PendingCloudLaunch};
@@ -275,6 +281,8 @@ use string_offset::CharOffset;
 use vec1::Vec1;
 use vim::vim::{VimHandler, VimMode};
 use warp_completer::util::parse_current_commands_and_tokens;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use warpui::r#async::FutureExt as _;
 
 use warp_completer::{
     completer::{
@@ -3760,18 +3768,22 @@ impl Input {
     /// environment overlap, updating the handoff compose state when done.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn start_pwd_environment_overlap(&mut self, ctx: &mut ViewContext<Self>) {
-        use crate::ai::blocklist::agent_view::agent_input_footer::sort_environments_by_recency;
-        use crate::ai::blocklist::handoff::touched_repos::{
-            pick_handoff_overlap_env, resolve_pwd_repo, TouchedWorkspace,
-        };
-
-        let Some(pwd) = self.active_session_path_if_local(ctx).map(Path::to_path_buf) else {
+        let Some(pwd) = self
+            .active_session_path_if_local(ctx)
+            .map(Path::to_path_buf)
+        else {
             return;
         };
 
         let handoff_compose_state = self.handoff_compose_state.clone();
         ctx.spawn(
-            async move { resolve_pwd_repo(pwd).await },
+            async move {
+                resolve_repo_for_path(&pwd)
+                    .with_timeout(Duration::from_secs(5))
+                    .await
+                    .ok()
+                    .flatten()
+            },
             move |_input, touched_repo, ctx| {
                 let Some(touched_repo) = touched_repo else {
                     return;
