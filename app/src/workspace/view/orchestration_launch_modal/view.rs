@@ -211,8 +211,9 @@ impl OrchestrationLaunchModal {
     }
 
     fn render_badge(appearance: &Appearance) -> Box<dyn Element> {
+        let badge_color = appearance.theme().ansi_fg_magenta();
         let text = Text::new_inline("New".to_string(), appearance.ui_font_family(), 14.)
-            .with_color(PhenomenonStyle::modal_badge_text())
+            .with_color(badge_color)
             .finish();
         ConstrainedBox::new(
             Container::new(
@@ -223,7 +224,7 @@ impl OrchestrationLaunchModal {
                     .finish(),
             )
             .with_horizontal_padding(8.)
-            .with_background(Fill::Solid(PhenomenonStyle::modal_badge_background()))
+            .with_background(Fill::Solid(badge_color).with_opacity(10))
             .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
             .finish(),
         )
