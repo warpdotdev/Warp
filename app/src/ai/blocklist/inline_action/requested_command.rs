@@ -1220,19 +1220,27 @@ impl RequestedCommandView {
                 ));
             }
             Some(AIActionStatus::Finished(result)) => {
-                // Determine if command should be expandable based on whether it actually executed
-                let should_be_expandable = match &result.result {
-                    AIAgentActionResultType::RequestCommandOutput(command_result) => {
-                        match command_result {
-                            // All completed commands are expandable (including interrupted ones)
-                            RequestCommandOutputResult::Completed { .. } => true,
-                            // Cancelled before execution are not expandable
-                            RequestCommandOutputResult::CancelledBeforeExecution => false,
-                            _ => result.result.is_successful() || result.result.is_failed(),
+                // Determine if command should be expandable based on whether it actually executed.
+                // If a finished command block exists for this action, the command definitely ran,
+                // so it should be expandable regardless of the action result type. This handles
+                // cases where the action result is stale (e.g. a LongRunningCommandSnapshot
+                // converted to CancelledBeforeExecution on restore, even though the command
+                // completed successfully).
+                let has_finished_command_block = requested_command_block
+                    .is_some_and(|block| block.finished());
+                let should_be_expandable = has_finished_command_block
+                    || match &result.result {
+                        AIAgentActionResultType::RequestCommandOutput(command_result) => {
+                            match command_result {
+                                // All completed commands are expandable (including interrupted ones)
+                                RequestCommandOutputResult::Completed { .. } => true,
+                                // Cancelled before execution are not expandable
+                                RequestCommandOutputResult::CancelledBeforeExecution => false,
+                                _ => result.result.is_successful() || result.result.is_failed(),
+                            }
                         }
-                    }
-                    _ => result.result.is_successful() || result.result.is_failed(),
-                };
+                        _ => result.result.is_successful() || result.result.is_failed(),
+                    };
 
                 if should_be_expandable {
                     config = config.with_interaction_mode(InteractionMode::ManuallyExpandable(
