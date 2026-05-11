@@ -2319,6 +2319,11 @@ impl<A: Action + Clone> Menu<A> {
         self.select(SelectAction::Next, ctx);
     }
 
+    /// Select the first selectable item in the menu. No-op if no item is selectable.
+    pub fn select_first(&mut self, ctx: &mut ViewContext<Self>) {
+        self.menu.select_first_selectable(ctx);
+    }
+
     #[cfg(test)]
     pub fn mimic_confirm(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(item) = self.selected_item() {

@@ -608,7 +608,7 @@ fn test_open_file_non_executable_sh_routes_to_editor() {
 fn test_open_file_executable_bash_zsh_fish_route_to_execute() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
-    for name in ["run.bash", "run.zsh", "run.fish"] {
+    for name in ["run.bash", "run.zsh", "run.fish", "run.command"] {
         let p = dir.path().join(name);
         std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();

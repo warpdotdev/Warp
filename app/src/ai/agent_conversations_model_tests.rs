@@ -18,7 +18,7 @@ use crate::ai::agent::conversation::{
     AIAgentHarness, AIConversation, AIConversationId, ConversationStatus,
     ServerAIConversationMetadata,
 };
-use crate::ai::ambient_agents::task::{TaskCreatorInfo, TaskStatusMessage};
+use crate::ai::ambient_agents::task::{TaskPrincipalInfo, TaskStatusMessage};
 use crate::ai::ambient_agents::AgentConfigSnapshot;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
@@ -64,11 +64,12 @@ fn create_test_task(
         source: None,
         session_id: None,
         session_link: None,
-        creator: Some(TaskCreatorInfo {
+        creator: Some(TaskPrincipalInfo {
             creator_type: "USER".to_string(),
             uid: creator_uid.to_string(),
             display_name: Some(format!("User {creator_uid}")),
         }),
+        executor: None,
         conversation_id: None,
         request_usage: None,
         agent_config_snapshot: None,

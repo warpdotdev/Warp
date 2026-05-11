@@ -497,13 +497,13 @@ pub const NO_HTTP_CLIENT_EXIT_CODE: i32 = 3;
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Timeout for the install script (curl/wget path).
-pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
+pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Timeout for the SCP upload fallback path (local download + SCP +
-/// extraction). Longer than [`INSTALL_TIMEOUT`] because SCP transfers
+/// extraction). Higher than [`INSTALL_TIMEOUT`] because SCP transfers
 /// the tarball over the user's SSH link, which is typically slower than
 /// the remote host's direct internet connection.
-pub const SCP_INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
+pub const SCP_INSTALL_TIMEOUT: Duration = Duration::from_secs(240);
 
 #[cfg(test)]
 #[path = "setup_tests.rs"]

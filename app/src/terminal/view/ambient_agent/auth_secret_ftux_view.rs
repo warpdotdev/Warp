@@ -14,6 +14,8 @@ use warpui::{
     ViewHandle,
 };
 
+use settings::Setting as _;
+
 use crate::ai::auth_secret_types::{
     auth_secret_types_for_harness, build_managed_secret_value, AuthSecretTypeInfo,
 };
@@ -108,6 +110,10 @@ impl AuthSecretFtuxView {
                 });
                 CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings.mark_harness_auth_ftux_completed(harness, ctx);
+                    // Persist the selection so the secret is sticky across sessions.
+                    let mut map = settings.last_selected_auth_secret.value().clone();
+                    map.insert(harness.config_name().to_string(), name.clone());
+                    let _ = settings.last_selected_auth_secret.set_value(map, ctx);
                 });
                 me.clear_all_editor_buffers(ctx);
                 me.creation_state = None;
@@ -390,10 +396,14 @@ impl AuthSecretFtuxView {
         });
         let vm = self.ambient_agent_model.clone();
         vm.update(ctx, |model, ctx| {
-            model.set_harness_auth_secret_name(Some(name), ctx);
+            model.set_harness_auth_secret_name(Some(name.clone()), ctx);
         });
         CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
             settings.mark_harness_auth_ftux_completed(harness, ctx);
+            // Persist the newly created secret so it is sticky across sessions.
+            let mut map = settings.last_selected_auth_secret.value().clone();
+            map.insert(harness.config_name().to_string(), name);
+            let _ = settings.last_selected_auth_secret.set_value(map, ctx);
         });
         self.clear_creation_state(ctx);
         ctx.notify();
