@@ -294,6 +294,16 @@ mod tests {
     }
 
     #[test]
+    fn hermes_is_supported() {
+        assert!(is_agent_supported(&CLIAgent::Hermes));
+    }
+
+    #[test]
+    fn hermes_uses_default_handler_with_rich_status() {
+        assert!(agent_supports_rich_status(&CLIAgent::Hermes));
+    }
+
+    #[test]
     fn pi_is_supported() {
         assert!(is_agent_supported(&CLIAgent::Pi));
     }
