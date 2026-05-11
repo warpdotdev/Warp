@@ -876,46 +876,41 @@ impl RemoteServerManager {
             .await
             .map_err(|e| ConnectAndHandshakeError::Initialize(anyhow::anyhow!("{e:#}")))?;
 
-        // Version compatibility check. For versioned channels (Stable,
-        // Preview, Dev, Integration) the version is already encoded in the
-        // binary path and verified by the pre-connect `check_binary` /
-        // post-install verification steps, so this check is redundant.
-        // For unversioned channels (Local, Oss) the binary path doesn't
-        // encode a version, so we still need this runtime check.
-        use warp_core::channel::Channel;
-        if matches!(
-            ChannelState::channel(),
-            Channel::Local | Channel::Oss
-        ) {
-            let client_version = ChannelState::app_version();
-            if !version_is_compatible(client_version, &resp.server_version) {
+        // Version compatibility check. If the server reports a different
+        // release tag than the client expects, the binary on disk is stale.
+        // Remove it so the next reconnect (or explicit reconnect by the
+        // user) will reinstall.
+        //
+        // For versioned channels (Stable, Preview, Dev, Integration) the
+        // version is also encoded in the binary path and verified by the
+        // pre-connect `check_binary` / post-install verification steps,
+        // so this is a belt-and-suspenders check at zero extra cost (it
+        // uses data already received in the InitializeResponse).
+        let client_version = ChannelState::app_version();
+        if !version_is_compatible(client_version, &resp.server_version) {
+            log::warn!(
+                "Remote server version mismatch, removing stale binary: session={session_id:?} \
+                 client={client_version:?} server={:?}",
+                resp.server_version
+            );
+
+            const REMOVAL_TIMEOUT: Duration = Duration::from_secs(5);
+
+            if let Err(e) = transport
+                .remove_remote_server_binary()
+                .with_timeout(REMOVAL_TIMEOUT)
+                .await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out after {REMOVAL_TIMEOUT:?}")))
+            {
                 log::warn!(
-                    "Remote server version mismatch, removing stale binary: session={session_id:?} \
-                     client={client_version:?} server={:?}",
-                    resp.server_version
+                    "Remote server stale binary removal failed: session={session_id:?} error={e:#}"
                 );
-
-                const REMOVAL_TIMEOUT: Duration = Duration::from_secs(5);
-
-                if let Err(e) = transport
-                    .remove_remote_server_binary()
-                    .with_timeout(REMOVAL_TIMEOUT)
-                    .await
-                    .unwrap_or_else(|_| {
-                        Err(anyhow::anyhow!("timed out after {REMOVAL_TIMEOUT:?}"))
-                    })
-                {
-                    log::warn!(
-                        "Remote server stale binary removal failed: \
-                         session={session_id:?} error={e:#}"
-                    );
-                }
-                return Err(ConnectAndHandshakeError::Initialize(anyhow::anyhow!(
-                    "remote server version mismatch (client: {client_version:?}, \
-                     server: {:?}); reconnect to reinstall",
-                    resp.server_version
-                )));
             }
+            return Err(ConnectAndHandshakeError::Initialize(anyhow::anyhow!(
+                "remote server version mismatch (client: {client_version:?}, \
+                 server: {:?}); reconnect to reinstall",
+                resp.server_version
+            )));
         }
 
         log::info!(
