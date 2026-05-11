@@ -492,6 +492,72 @@ inline. See #11.6.
     - **Open question:** add an opt-in setting "Use my shell bindings in AI
       prompts too"? Default off either way. Resolve before implementation.
 
+22.5. **Interaction with the shell-vs-natural-language classifier.**
+    Warp's agent conversation input runs a per-keystroke classifier that
+    labels the current buffer as "shell command" or "natural language",
+    and the label can flicker as the user types (`cd ~/p` initially
+    looks shell-y, then `cd ~/please help me` flips to NL). If
+    bindkey honoring is gated on this classifier, naive gating
+    produces three failure modes the v1 must avoid:
+
+    - **Flickering inline plugins.** Dimmed autosuggestions and
+      syntax-highlight colors that appear and disappear as the
+      classifier oscillates mid-word. The user sees their command
+      lose its highlighting between keystrokes for no visible reason.
+    - **Misclassified bindkey loss.** The user presses `Ctrl-R`
+      expecting atuin, but the classifier had just flipped to "NL",
+      so the binding is not honored and atuin doesn't open. The
+      user thinks bindings are broken.
+    - **Misclassified bindkey activation.** The user is composing
+      a sentence in NL, classifier briefly flips to "shell", an
+      autosuggest dimmed-text suggestion appears in the middle of
+      their sentence and looks like a rendering bug.
+
+    The v1 rules that resolve these:
+
+    a. **Explicit bound keystrokes are classifier-independent.** When
+       the user presses a key bound to an external widget (Category
+       C: atuin's `Ctrl-R`, fzf's `Ctrl-T`, etc.) the binding is
+       always honored, regardless of the current classifier label.
+       Pressing the bound key is an unambiguous intent signal from
+       the user that overrides whatever the classifier last said.
+       Cost of a stray accidental press is low (the widget opens,
+       user dismisses it with Escape). Cost of a missed intentional
+       press is high (binding feels broken).
+
+    b. **Inline-plugin rendering is hysteretic and debounced.**
+       Continuous inline plugins (autosuggest, syntax-highlighting,
+       fish abbreviations) only render when the classifier has held
+       "shell command" for at least the last N characters (N small,
+       on the order of 3–5) and only stop rendering when the
+       classifier has held "NL" for the last N characters. The
+       output is debounced over a short window (~80 ms) before the
+       transition takes effect. The user sees one stable rendering
+       state per logical phrase of typing, not a flicker on every
+       keystroke.
+
+    c. **Transitions are clean, not animated.** When the
+       hysteretic state flips, inline-plugin output disappears (or
+       appears) in a single frame. No fade, no partial paint.
+
+    d. **Explicit user override (lock).** A keyboard shortcut and a
+       small affordance in the input editor let the user lock the
+       current buffer to "shell mode" or "NL mode", disabling the
+       classifier for that buffer. Use case: the user knows what
+       they're typing and the classifier keeps getting it wrong.
+       The lock resets at the next agent turn (per-buffer, not
+       sticky across the conversation).
+
+    e. **Classifier output is observable for debugging.** A
+       developer setting exposes the current classifier label and
+       hysteresis state in the input editor (subtle indicator).
+       Off by default; used to diagnose user reports of "bindings
+       are flaky in agent input".
+
+    These rules apply whenever #22 is opted in. If #22 stays off
+    (v1 default), the classifier interaction doesn't arise because
+    bindkeys aren't honored in the agent input at all.
+
 ### Settings, opt-out, and discoverability
 
 23. The feature is on by default for supported shells once it ships.

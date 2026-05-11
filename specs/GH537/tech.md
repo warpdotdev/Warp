@@ -863,6 +863,49 @@ contract regardless.
 - **#22 (AI prompt input)** — v1: not honored. The matcher's tab-scoped
   `BindingOrigin::Contextual` tier only activates on tabs whose focus is the shell
   command input editor, not on the AI prompt input.
+- **#22.5 (classifier interaction)** — engaged only when #22 is
+  opted on. The agent input editor wraps the binding matcher and
+  the inline-plugin renderer in a `ClassifierGate`:
+  - `ClassifierGate` holds the last raw classifier label per
+    keystroke and a hysteretic `EffectiveMode { Shell, NL,
+    LockedShell, LockedNL }`. Effective mode transitions
+    Shell↔NL only after N=4 consecutive characters in the new
+    raw label, and only after a ~80 ms quiet window — short
+    enough to feel responsive, long enough to suppress
+    per-keystroke flicker.
+  - **External-widget dispatch is gated *outside* the
+    classifier.** The matcher resolves the key against
+    Category C bindings *before* consulting `EffectiveMode`. If
+    a Category C match is found, dispatch proceeds (§6) and the
+    classifier is bypassed entirely for that keystroke. PRODUCT
+    #22.5(a) is implemented as a "Category C bypass" in the
+    matcher rather than as state in the gate.
+  - **Inline-plugin renderer reads `EffectiveMode` only.** The
+    §7 renderer activates only when `EffectiveMode ∈ { Shell,
+    LockedShell }`. On transition to NL (or LockedNL), it
+    schedules a single-frame clear of any previously painted
+    suggestion / highlight regions — no fade. On transition to
+    Shell, it requests a fresh render against the current
+    buffer.
+  - **Lock action.** A new command `agent-input.lock-mode` toggles
+    `LockedShell` / `LockedNL` / Auto for the current buffer.
+    Bind it to a default keystroke (TBD; suggest
+    `Ctrl-Shift-L`) and surface a chip in the input editor.
+    Lock state resets at the next agent turn boundary.
+  - **Telemetry.** Emit a counter `agent_input.classifier.flip`
+    tagged with `{raw → effective}` and `agent_input.bind_dispatched_in_nl`
+    counting Category C dispatches that happened while
+    `EffectiveMode == NL` (the bypass cases). The latter is the
+    metric that tells us how often the classifier would have
+    mis-suppressed a legitimate binding press; if it's nonzero
+    and growing, the classifier needs retraining or the
+    hysteresis needs tuning.
+  - **Why a gate and not a flag in the matcher.** Keeping
+    `ClassifierGate` as a wrapper means the same matcher and
+    renderer code paths work in both the shell-command input
+    (no gate) and the agent input (gate present). The gate is
+    the single place where #22.5's hysteresis / debounce / lock
+    rules live; matcher and renderer stay classifier-unaware.
 - **#23 (rollout)** — gated by `FeatureFlag::HonorShellBindkeys` (above).
 
 ## Risks and mitigations
@@ -1040,6 +1083,30 @@ Tests are organized to map to numbered PRODUCT invariants. Use
   a plugin emitting an unsupported escape). Assert: render
   degrades to plain text, no crash, one diagnostic emitted, prompt
   remains usable. Covers PRODUCT #11.6 failure mode.
+- **Classifier flicker hysteresis** — unit test on
+  `ClassifierGate` feeding a synthetic stream of raw labels
+  (Shell, Shell, NL, Shell, Shell, Shell, Shell) and asserting
+  that `EffectiveMode` stays Shell throughout (single-keystroke
+  NL spike is suppressed). Companion test with sustained NL
+  (NL, NL, NL, NL, NL) confirms the transition fires after the
+  Nth consecutive label + quiet window. Covers PRODUCT #22.5(b).
+- **Classifier-independent bound key** — integration test in
+  agent input with #22 opted on, `Ctrl-R` bound to atuin, and the
+  classifier rigged to return NL for the current buffer. Press
+  `Ctrl-R`. Assert atuin opens regardless of classifier state.
+  Covers PRODUCT #22.5(a).
+- **Inline-plugin clear on NL transition** — integration test in
+  agent input. Type a buffer that classifies as Shell, observe
+  autosuggest dimmed text rendered. Append text that flips the
+  hysteretic state to NL. Assert dimmed text disappears in a
+  single frame (no fade, no partial paint). Covers PRODUCT
+  #22.5(c).
+- **Mode lock** — integration test that invokes
+  `agent-input.lock-mode` while in NL state, then types a clearly-
+  shell-ish buffer. Assert inline plugins activate (the lock
+  forces Shell) and the lock chip is visible. Pressing the lock
+  key again returns to Auto; advancing to the next agent turn
+  resets the lock. Covers PRODUCT #22.5(d).
 - **Manual** — run Warp against a developer's real zsh+oh-my-zsh +
   atuin + fzf + zsh-autosuggestions + zsh-syntax-highlighting +
   powerlevel10k, a real bash with `~/.inputrc` + `bind -x` widgets +
@@ -1055,5 +1122,7 @@ Tests are organized to map to numbered PRODUCT invariants. Use
 - Honor remote-shell bindings over SSH (PRODUCT #18).
 - Re-query on subshell transitions (PRODUCT #19).
 - Optional opt-in: honor shell bindings in the AI prompt input
-  (PRODUCT #22).
+  (PRODUCT #22). When this lands, the `ClassifierGate` (PRODUCT
+  #22.5, tech §"#22.5") ships at the same time — the two are
+  inseparable; #22 without the gate ships the flicker bug.
 - Extend to PowerShell, nushell, xonsh once the core lands.
