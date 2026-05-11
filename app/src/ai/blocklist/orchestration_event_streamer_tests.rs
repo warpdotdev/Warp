@@ -1,8 +1,16 @@
 use super::*;
+use crate::ai::agent::conversation::AIConversation;
 use crate::ai::agent_events::{
     agent_event_backoff, agent_event_failures_exceeded_threshold, AgentEventConsumerControlFlow,
     DEFAULT_AGENT_EVENT_RECONNECT_BACKOFF_STEPS,
 };
+use crate::persistence::ModelEvent;
+use crate::server::server_api::ai::MockAIClient;
+use crate::server::server_api::ServerApiProvider;
+use crate::test_util::settings::initialize_settings_for_tests;
+use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
+use std::sync::Arc;
+use warpui::App;
 
 #[test]
 fn sse_backoff_escalates_then_caps() {
@@ -663,6 +671,140 @@ fn handle_event_batch_persists_max_seq_to_history_model() {
 }
 
 #[test]
+fn handle_event_batch_drops_events_for_killed_run_ids_after_persisting_cursor() {
+    App::test((), |mut app| async move {
+        let _v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+        initialize_settings_for_tests(&mut app);
+        let (sender, _receiver) = std::sync::mpsc::sync_channel::<ModelEvent>(4);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let event_service = app.add_singleton_model(|_| OrchestrationEventService::default());
+
+        let parent_run_id = "550e8400-e29b-41d4-a716-446655440700".to_string();
+        let killed_run_id = "550e8400-e29b-41d4-a716-446655440701".to_string();
+        let mut parent_conversation = AIConversation::new(false);
+        parent_conversation.set_run_id(parent_run_id.clone());
+        let parent_conversation_id = parent_conversation.id();
+        let terminal_view_id = warpui::EntityId::new();
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![parent_conversation], ctx);
+        });
+
+        let mut mock = MockAIClient::new();
+        mock.expect_update_event_sequence_on_server()
+            .returning(|_, _| Ok(()));
+        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
+        let server_api = ServerApiProvider::new_for_test().get();
+
+        let streamer = app.add_singleton_model(|ctx| {
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        streamer.update(&mut app, |me, ctx| {
+            me.streams.entry(parent_conversation_id).or_default();
+            me.remember_killed_run_id(killed_run_id.clone());
+            me.handle_event_batch(
+                parent_conversation_id,
+                &parent_run_id,
+                0,
+                vec![
+                    AgentRunEvent {
+                        event_type: "new_message".to_string(),
+                        run_id: killed_run_id.clone(),
+                        ref_id: Some("message-from-killed-child".to_string()),
+                        execution_id: None,
+                        occurred_at: "2026-01-01T00:00:00Z".to_string(),
+                        sequence: 17,
+                    },
+                    AgentRunEvent {
+                        event_type: "run_cancelled".to_string(),
+                        run_id: killed_run_id.clone(),
+                        ref_id: None,
+                        execution_id: None,
+                        occurred_at: "2026-01-01T00:00:01Z".to_string(),
+                        sequence: 18,
+                    },
+                    AgentRunEvent {
+                        event_type: "new_message".to_string(),
+                        run_id: killed_run_id.clone(),
+                        ref_id: None,
+                        execution_id: None,
+                        occurred_at: "2026-01-01T00:00:02Z".to_string(),
+                        sequence: 19,
+                    },
+                ],
+                vec![
+                    ReceivedMessageInput {
+                        message_id: "message-from-killed-child".to_string(),
+                        sender_agent_id: killed_run_id.clone(),
+                        addresses: vec![parent_run_id.clone()],
+                        subject: "late message".to_string(),
+                        message_body: "body".to_string(),
+                    },
+                    ReceivedMessageInput {
+                        message_id: "message-from-killed-child-without-ref".to_string(),
+                        sender_agent_id: killed_run_id.clone(),
+                        addresses: vec![parent_run_id.clone()],
+                        subject: "late message without ref".to_string(),
+                        message_body: "body".to_string(),
+                    },
+                ],
+                ctx,
+            );
+        });
+
+        event_service.read(&app, |service, _| {
+            assert!(
+                !service.has_pending_events(parent_conversation_id),
+                "late events from killed run IDs must not be enqueued"
+            );
+        });
+        history_model.read(&app, |model, _| {
+            let last_seq = model
+                .conversation(&parent_conversation_id)
+                .and_then(|conversation| conversation.last_event_sequence());
+            assert_eq!(
+                last_seq,
+                Some(19),
+                "cursor must still advance so dropped killed-run events are not replayed"
+            );
+        });
+    });
+}
+
+#[test]
+fn killed_run_ids_are_bounded() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let mock = MockAIClient::new();
+        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
+        let server_api = ServerApiProvider::new_for_test().get();
+        let streamer = app.add_singleton_model(|ctx| {
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        streamer.update(&mut app, |me, _| {
+            for index in 0..=MAX_KILLED_RUN_IDS {
+                me.remember_killed_run_id(format!("killed-run-{index}"));
+            }
+        });
+
+        streamer.read(&app, |me, _| {
+            assert_eq!(me.killed_run_ids.len(), MAX_KILLED_RUN_IDS);
+            assert!(!me.killed_run_ids.contains("killed-run-0"));
+            assert!(me.killed_run_ids.contains("killed-run-1"));
+            assert!(me
+                .killed_run_ids
+                .contains(&format!("killed-run-{MAX_KILLED_RUN_IDS}")));
+        });
+    });
+}
+
+#[test]
 fn finish_restore_fetch_no_ops_when_conversation_deleted_mid_flight() {
     // If the conversation is removed while the async fetch is in-flight, the
     // RemoveConversation handler removes the streams entry. finish_restore_fetch
@@ -854,6 +996,54 @@ fn on_conversation_removed_prunes_stale_child_run_id_from_parent() {
                     .get(&parent_id)
                     .is_some_and(|s| !s.watched_run_ids.contains(&child_run_id)),
                 "parent's watched_run_ids must be pruned of the removed child's run_id"
+            );
+        });
+    });
+}
+
+#[test]
+fn on_conversation_removed_prunes_killed_child_run_id_from_parent_but_keeps_tombstone() {
+    use crate::ai::agent::conversation::AIConversation;
+    use crate::server::server_api::ai::MockAIClient;
+    use crate::server::server_api::ServerApiProvider;
+    use std::sync::Arc;
+    use warpui::App;
+
+    App::test((), |mut app| async move {
+        let _v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+        app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let parent_id = AIConversation::new(false).id();
+        let child_id = AIConversation::new(false).id();
+        let child_run_id = "550e8400-e29b-41d4-a716-446655440601".to_string();
+
+        let mock = MockAIClient::new();
+        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
+        let server_api = ServerApiProvider::new_for_test().get();
+
+        let poller = app.add_singleton_model(|ctx| {
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        poller.update(&mut app, |me, ctx| {
+            me.streams
+                .entry(parent_id)
+                .or_default()
+                .watched_run_ids
+                .insert(child_run_id.clone());
+            me.remember_killed_run_id(child_run_id.clone());
+
+            me.on_conversation_removed(child_id, Some(child_run_id.clone()), ctx);
+        });
+
+        poller.read(&app, |me, _| {
+            assert!(me.killed_run_ids.contains(&child_run_id));
+            assert!(
+                me.streams
+                    .get(&parent_id)
+                    .is_some_and(|s| !s.watched_run_ids.contains(&child_run_id)),
+                "killed child run_id should be pruned from parent watchers"
             );
         });
     });

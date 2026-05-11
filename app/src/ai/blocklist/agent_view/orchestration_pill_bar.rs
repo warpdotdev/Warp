@@ -255,12 +255,9 @@ pub enum OrchestrationPillBarAction {
     OpenInNewPane(AIConversationId),
     /// Menu item: open this child in a new tab.
     OpenInNewTab(AIConversationId),
-    /// Menu item: stop the in-progress task. Currently hidden; wiring kept
-    /// for re-enabling later.
-    #[allow(dead_code)]
+    /// Menu item: stop the in-progress task.
     Stop(AIConversationId),
-    /// Menu item: cancel and remove from local history. Currently hidden.
-    #[allow(dead_code)]
+    /// Menu item: cancel and remove from local history.
     Kill(AIConversationId),
     /// Set/clear which pill the user is hovering (drives the details card).
     SetHoveredPill(Option<AIConversationId>),
@@ -291,6 +288,23 @@ impl Entity for OrchestrationPillBar {
 }
 
 impl OrchestrationPillBar {
+    fn overflow_menu_item(
+        label: &'static str,
+        icon: Icon,
+        action: OrchestrationPillBarAction,
+        hover_background: Fill,
+        icon_color: Option<Fill>,
+    ) -> MenuItem<OrchestrationPillBarAction> {
+        let mut fields = MenuItemFields::new(label)
+            .with_icon(icon)
+            .with_override_hover_background_color(hover_background)
+            .with_on_select_action(action);
+        if let Some(color) = icon_color {
+            fields = fields.with_override_icon_color(color);
+        }
+        MenuItem::Item(fields)
+    }
+
     pub fn new(
         agent_view_controller: ModelHandle<AgentViewController>,
         ctx: &mut ViewContext<Self>,
@@ -368,16 +382,17 @@ impl OrchestrationPillBar {
         let appearance = Appearance::as_ref(ctx);
         let theme = appearance.theme();
         let hover_background: Fill = internal_colors::neutral_4(theme).into();
-
-        let item = |label: &'static str,
-                    icon: Icon,
-                    action: OrchestrationPillBarAction|
-         -> MenuItem<OrchestrationPillBarAction> {
-            MenuItem::Item(
-                MenuItemFields::new(label)
-                    .with_icon(icon)
-                    .with_override_hover_background_color(hover_background)
-                    .with_on_select_action(action),
+        let item = |label, icon, action| {
+            Self::overflow_menu_item(label, icon, action, hover_background, None)
+        };
+        let destructive_color: Fill = theme.ansi_fg_red().into();
+        let destructive_item = |label, icon, action| {
+            Self::overflow_menu_item(
+                label,
+                icon,
+                action,
+                hover_background,
+                Some(destructive_color),
             )
         };
 
@@ -388,8 +403,7 @@ impl OrchestrationPillBar {
         let is_open_elsewhere =
             is_conversation_open_in_other_visible_view(conversation_id, self_terminal_view_id, ctx);
 
-        // Stop / Kill items intentionally omitted (wiring still in place).
-        let items = if is_open_elsewhere {
+        let mut items = if is_open_elsewhere {
             vec![item(
                 "Focus pane",
                 Icon::ArrowSplit,
@@ -409,6 +423,22 @@ impl OrchestrationPillBar {
                 ),
             ]
         };
+        let is_in_progress = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .is_some_and(|conversation| conversation.status().is_in_progress());
+        items.push(MenuItem::Separator);
+        if is_in_progress {
+            items.push(destructive_item(
+                "Stop agent",
+                Icon::StopFilled,
+                OrchestrationPillBarAction::Stop(conversation_id),
+            ));
+        }
+        items.push(destructive_item(
+            "Kill agent",
+            Icon::X,
+            OrchestrationPillBarAction::Kill(conversation_id),
+        ));
 
         self.menu.update(ctx, |menu, ctx| {
             menu.set_items(items, ctx);
