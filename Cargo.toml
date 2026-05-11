@@ -306,7 +306,9 @@ version-compare = "0.1"
 vte = { git = "https://github.com/warpdotdev/vte.git", rev = "4b399c87b63ba88f45709edaa6383fc519f6c900", default-features = false }
 walkdir = "2"
 warp-workflows = { git = "https://github.com/warpdotdev/workflows", rev = "793a98ddda6ef19682aed66364faebd2829f0e01" }
-warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "3dd0cd81eae83b4ce09c7805c8ef12599798aa26" }
+# TODO: pin to a specific rev once the CustomInference proto change is merged.
+# Placeholder: <CUSTOM_INFERENCE_PROTO_REV>
+warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "CUSTOM_INFERENCE_PROTO_REV_PLACEHOLDER" }
 wasm-bindgen = "0.2.89"
 wasm-bindgen-futures = "0.4.42"
 web-sys = { version = "0.3.69", features = [
@@ -515,5 +517,5 @@ tikv-jemallocator = { git = "https://github.com/warpdotdev/jemallocator.git", re
 tikv-jemalloc-sys = { git = "https://github.com/warpdotdev/jemallocator.git", rev = "2ee30bfdf7059223b54810e4ea6c666f0a379e0b" }
 
 [patch."https://github.com/warpdotdev/warp-proto-apis.git"]
-# Uncomment for local development of warp-proto-apis
-# warp_multi_agent_api = { path = "../warp-proto-apis/apis/multi_agent/v1/gen/rust" }
+# TODO: remove once `warp_multi_agent_api` is pinned to <CUSTOM_INFERENCE_PROTO_REV>.
+warp_multi_agent_api = { path = "../warp-proto-apis/apis/multi_agent/v1/gen/rust" }

@@ -17,11 +17,44 @@ pub enum ApiKeyManagerEvent {
 /// These are used for "Bring Your Own API Key" functionality, allowing
 /// users to use their own API keys instead of Warp's.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ApiKeys {
     pub google: Option<String>,
     pub anthropic: Option<String>,
     pub openai: Option<String>,
     pub open_router: Option<String>,
+    pub custom_inference: Option<CustomInference>,
+    pub custom_endpoints: Vec<CustomEndpoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CustomInference {
+    pub endpoint: String,
+    pub model: String,
+    pub api_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CustomEndpoint {
+    pub name: String,
+    pub url: String,
+    pub api_key: String,
+    pub models: Vec<CustomEndpointModel>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CustomEndpointModel {
+    pub name: String,
+    pub alias: Option<String>,
+}
+
+impl CustomInference {
+    fn is_effectively_empty(&self) -> bool {
+        self.endpoint.is_empty() && self.model.is_empty() && self.api_key.is_empty()
+    }
 }
 
 impl ApiKeys {
@@ -30,6 +63,21 @@ impl ApiKeys {
             || self.anthropic.is_some()
             || self.google.is_some()
             || self.open_router.is_some()
+            || self
+                .custom_inference
+                .as_ref()
+                .is_some_and(|c| !c.api_key.is_empty())
+            || self
+                .custom_endpoints
+                .iter()
+                .any(|endpoint| !endpoint.api_key.trim().is_empty())
+    }
+
+    /// Returns `true` when the user has at least one custom endpoint configured.
+    /// Used alongside `include_byo_keys` to decide whether to set the
+    /// `custom_inference_enabled` flag on the request.
+    pub fn has_custom_endpoints(&self) -> bool {
+        !self.custom_endpoints.is_empty()
     }
 }
 
@@ -93,6 +141,92 @@ impl ApiKeyManager {
         self.write_keys_to_secure_storage(ctx);
     }
 
+    pub fn set_custom_inference_key(
+        &mut self,
+        endpoint: String,
+        model: String,
+        api_key: String,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.keys.custom_inference = Some(CustomInference {
+            endpoint,
+            model,
+            api_key,
+        });
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn clear_custom_inference_key(&mut self, ctx: &mut ModelContext<Self>) {
+        self.keys.custom_inference = None;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn add_custom_endpoint(
+        &mut self,
+        name: String,
+        url: String,
+        api_key: String,
+        models: Vec<(String, Option<String>)>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.keys.custom_endpoints.push(CustomEndpoint {
+            name,
+            url,
+            api_key,
+            models: models
+                .into_iter()
+                .map(|(name, alias)| CustomEndpointModel { name, alias })
+                .collect(),
+        });
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn save_custom_endpoint(
+        &mut self,
+        index: usize,
+        name: String,
+        url: String,
+        api_key: String,
+        models: Vec<(String, Option<String>)>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if index >= self.keys.custom_endpoints.len() {
+            return;
+        }
+        self.keys.custom_endpoints[index] = CustomEndpoint {
+            name,
+            url,
+            api_key,
+            models: models
+                .into_iter()
+                .map(|(name, alias)| CustomEndpointModel { name, alias })
+                .collect(),
+        };
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn remove_custom_endpoint(&mut self, index: usize, ctx: &mut ModelContext<Self>) {
+        if index >= self.keys.custom_endpoints.len() {
+            return;
+        }
+        self.keys.custom_endpoints.remove(index);
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn clear_custom_endpoints(&mut self, ctx: &mut ModelContext<Self>) {
+        if self.keys.custom_endpoints.is_empty() {
+            return;
+        }
+        self.keys.custom_endpoints.clear();
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
     pub fn set_aws_credentials_state(
         &mut self,
         state: AwsCredentialsState,
@@ -117,6 +251,13 @@ impl ApiKeyManager {
         self.aws_credentials_refresh_strategy = strategy;
     }
 
+    /// Whether custom inference endpoints should be considered active for this
+    /// request. True when the user has saved ≥1 custom endpoint AND BYO keys
+    /// are enabled on the current plan.
+    pub fn custom_inference_enabled(&self, include_byo_keys: bool) -> bool {
+        include_byo_keys && self.keys.has_custom_endpoints()
+    }
+
     pub fn api_keys_for_request(
         &self,
         include_byo_keys: bool,
@@ -138,6 +279,29 @@ impl ApiKeyManager {
             .then(|| self.keys.open_router.clone())
             .flatten()
             .unwrap_or_default();
+        let custom_inference = include_byo_keys
+            .then(|| {
+                self.keys
+                    .custom_inference
+                    .clone()
+                    .filter(|c| !c.is_effectively_empty())
+                    .or_else(|| {
+                        let endpoint = self.keys.custom_endpoints.first()?;
+                        let model = endpoint.models.first()?;
+                        Some(CustomInference {
+                            endpoint: endpoint.url.clone(),
+                            model: model.name.clone(),
+                            api_key: endpoint.api_key.clone(),
+                        })
+                    })
+            })
+            .flatten()
+            .map(|c| api::request::settings::api_keys::CustomInference {
+                endpoint: c.endpoint,
+                model: c.model,
+                api_key: c.api_key,
+            });
+
         // Also include credentials when running with OIDC-managed Bedrock inference, regardless
         // of the per-user setting flag (which only applies to the local credential chain path).
         let include_aws = include_aws_bedrock_credentials
@@ -154,10 +318,17 @@ impl ApiKeyManager {
             })
             .flatten();
 
+        // TODO(proto): wire `custom_inference_enabled` into the proto ApiKeys
+        // message once the field lands in warp-proto-apis. Compute with:
+        //   let custom_inference_enabled = self.custom_inference_enabled(include_byo_keys);
+        // and set it on the returned struct.
+
         if anthropic.is_empty()
             && openai.is_empty()
             && google.is_empty()
             && open_router.is_empty()
+            && custom_inference.is_none()
+            && self.keys.custom_endpoints.is_empty()
             && aws_credentials.is_none()
         {
             None
@@ -169,6 +340,7 @@ impl ApiKeyManager {
                 open_router,
                 allow_use_of_warp_credits: false,
                 aws_credentials,
+                custom_inference,
             })
         }
     }
@@ -196,9 +368,7 @@ impl ApiKeyManager {
     }
 
     fn write_keys_to_secure_storage(&mut self, ctx: &mut ModelContext<Self>) {
-        let keys = self.keys.clone();
-
-        let json = match serde_json::to_string(&keys) {
+        let json = match serde_json::to_string(&self.keys) {
             Ok(json) => json,
             Err(e) => {
                 log::error!("Failed to serialize API keys: {e:#}");
@@ -206,9 +376,16 @@ impl ApiKeyManager {
             }
         };
 
-        if let Err(e) = ctx.secure_storage().write_value(SECURE_STORAGE_KEY, &json) {
-            log::error!("Failed to write API keys to secure storage: {e:#}");
-        }
+        // Defer the keychain write so it doesn't block the current event
+        // processing. The in-memory state is already updated and events
+        // already emitted, so the UI updates immediately while the
+        // potentially slow platform secure-storage call runs in a
+        // subsequent main-thread callback.
+        ctx.spawn(async move { json }, |_, json, ctx| {
+            if let Err(e) = ctx.secure_storage().write_value(SECURE_STORAGE_KEY, &json) {
+                log::error!("Failed to write API keys to secure storage: {e:#}");
+            }
+        });
     }
 }
 
@@ -217,3 +394,7 @@ impl Entity for ApiKeyManager {
 }
 
 impl SingletonEntity for ApiKeyManager {}
+
+#[cfg(test)]
+#[path = "api_keys_tests.rs"]
+mod tests;

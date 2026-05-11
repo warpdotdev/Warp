@@ -1,0 +1,883 @@
+use crate::editor::Event as EditorEvent;
+use crate::modal::{Modal, ModalViewState};
+use crate::{
+    appearance::Appearance,
+    editor::{EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions},
+};
+use warp_editor::editor::NavigationKey;
+use warpui::elements::{CrossAxisAlignment, Expanded, MainAxisSize};
+use warpui::{
+    elements::{Container, Empty, Flex, MouseStateHandle, ParentElement, Text},
+    fonts::FamilyId,
+    ui_components::{
+        button::ButtonVariant,
+        components::{Coords, UiComponent, UiComponentStyles},
+    },
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
+};
+
+use ::ai::api_keys::CustomEndpoint;
+
+const LABEL_FONT_SIZE: f32 = 12.;
+const INPUT_WIDTH: f32 = 680.;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CustomEndpointModalEvent {
+    Close,
+    AddEndpoint {
+        name: String,
+        url: String,
+        api_key: String,
+        models: Vec<(String, Option<String>)>,
+    },
+    SaveEndpoint {
+        index: usize,
+        name: String,
+        url: String,
+        api_key: String,
+        models: Vec<(String, Option<String>)>,
+    },
+    RemoveEndpoint {
+        index: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CustomEndpointModalAction {
+    Cancel,
+    Save,
+    AddModel,
+    RemoveModel(usize),
+    RemoveEndpoint,
+}
+
+struct ModelRow {
+    name_editor: ViewHandle<EditorView>,
+    alias_editor: ViewHandle<EditorView>,
+    remove_mouse_state: MouseStateHandle,
+}
+
+pub struct CustomEndpointModal {
+    endpoint_name_editor: ViewHandle<EditorView>,
+    endpoint_url_editor: ViewHandle<EditorView>,
+    api_key_editor: ViewHandle<EditorView>,
+    model_rows: Vec<ModelRow>,
+    cancel_button_mouse_state: MouseStateHandle,
+    save_button_mouse_state: MouseStateHandle,
+    add_model_button_mouse_state: MouseStateHandle,
+    remove_endpoint_button_mouse_state: MouseStateHandle,
+    editing_index: Option<usize>,
+}
+
+impl CustomEndpointModal {
+    pub fn new(
+        endpoint: Option<&CustomEndpoint>,
+        editing_index: Option<usize>,
+        ctx: &mut ViewContext<Self>,
+    ) -> Self {
+        let font_family = Appearance::as_ref(ctx).ui_font_family();
+        let text_colors = crate::settings_view::editor_text_colors(Appearance::as_ref(ctx));
+
+        let endpoint_name_text_colors = text_colors.clone();
+        let endpoint_name_editor = ctx.add_typed_action_view(move |ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_family_override: Some(font_family),
+                    text_colors_override: Some(endpoint_name_text_colors.clone()),
+                    ..Default::default()
+                },
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text("e.g., Zach's external models", ctx);
+            if let Some(ep) = endpoint {
+                editor.set_buffer_text(&ep.name, ctx);
+            }
+            editor
+        });
+
+        let endpoint_url_text_colors = text_colors.clone();
+        let endpoint_url_editor = ctx.add_typed_action_view(move |ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_family_override: Some(font_family),
+                    text_colors_override: Some(endpoint_url_text_colors.clone()),
+                    ..Default::default()
+                },
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text("Please include 'https://'", ctx);
+            if let Some(ep) = endpoint {
+                editor.set_buffer_text(&ep.url, ctx);
+            }
+            editor
+        });
+
+        let api_key_text_colors = text_colors.clone();
+        let api_key_editor = ctx.add_typed_action_view(move |ctx| {
+            let options = SingleLineEditorOptions {
+                is_password: true,
+                text: TextOptions {
+                    font_family_override: Some(font_family),
+                    text_colors_override: Some(api_key_text_colors.clone()),
+                    ..Default::default()
+                },
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text("e.g., sk-...", ctx);
+            if let Some(ep) = endpoint {
+                editor.set_buffer_text(&ep.api_key, ctx);
+            }
+            editor
+        });
+
+        let mut model_rows = Vec::new();
+        if let Some(ep) = endpoint {
+            for model in &ep.models {
+                model_rows.push(Self::create_model_row(
+                    Some(&model.name),
+                    model.alias.as_deref(),
+                    font_family,
+                    &text_colors,
+                    ctx,
+                ));
+            }
+        }
+        if model_rows.is_empty() {
+            model_rows.push(Self::create_model_row(
+                None,
+                None,
+                font_family,
+                &text_colors,
+                ctx,
+            ));
+        }
+
+        ctx.subscribe_to_view(&endpoint_name_editor, |me, _, event, ctx| {
+            me.handle_endpoint_name_event(event, ctx);
+        });
+        ctx.subscribe_to_view(&endpoint_url_editor, |me, _, event, ctx| {
+            me.handle_endpoint_url_event(event, ctx);
+        });
+        ctx.subscribe_to_view(&api_key_editor, |me, _, event, ctx| {
+            me.handle_api_key_event(event, ctx);
+        });
+        for row in &model_rows {
+            let name_editor = row.name_editor.clone();
+            ctx.subscribe_to_view(&name_editor, |me, editor, event, ctx| {
+                me.handle_model_editor_event(&editor, event, ctx);
+            });
+            let alias_editor = row.alias_editor.clone();
+            ctx.subscribe_to_view(&alias_editor, |me, editor, event, ctx| {
+                me.handle_model_editor_event(&editor, event, ctx);
+            });
+        }
+
+        Self {
+            endpoint_name_editor,
+            endpoint_url_editor,
+            api_key_editor,
+            model_rows,
+            cancel_button_mouse_state: Default::default(),
+            save_button_mouse_state: Default::default(),
+            add_model_button_mouse_state: Default::default(),
+            remove_endpoint_button_mouse_state: Default::default(),
+            editing_index,
+        }
+    }
+
+    fn create_model_row(
+        name: Option<&str>,
+        alias: Option<&str>,
+        font_family: FamilyId,
+        text_colors: &crate::editor::TextColors,
+        ctx: &mut ViewContext<Self>,
+    ) -> ModelRow {
+        let tc = text_colors.clone();
+        let name_editor = ctx.add_typed_action_view(move |ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_family_override: Some(font_family),
+                    text_colors_override: Some(tc.clone()),
+                    ..Default::default()
+                },
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text("e.g., GLM-5-FP8", ctx);
+            if let Some(n) = name {
+                editor.set_buffer_text(n, ctx);
+            }
+            editor
+        });
+
+        let tc = text_colors.clone();
+        let alias_editor = ctx.add_typed_action_view(move |ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_family_override: Some(font_family),
+                    text_colors_override: Some(tc.clone()),
+                    ..Default::default()
+                },
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text("e.g., GLM-5", ctx);
+            if let Some(a) = alias {
+                editor.set_buffer_text(a, ctx);
+            }
+            editor
+        });
+
+        ModelRow {
+            name_editor,
+            alias_editor,
+            remove_mouse_state: Default::default(),
+        }
+    }
+
+    pub fn prefill(
+        &mut self,
+        endpoint: Option<&CustomEndpoint>,
+        editing_index: Option<usize>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.editing_index = editing_index;
+        self.endpoint_name_editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text(endpoint.map(|e| e.name.as_str()).unwrap_or(""), ctx);
+        });
+        self.endpoint_url_editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text(endpoint.map(|e| e.url.as_str()).unwrap_or(""), ctx);
+        });
+        self.api_key_editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text(endpoint.map(|e| e.api_key.as_str()).unwrap_or(""), ctx);
+        });
+        // Rebuild model rows
+        // Old model row editors will be dropped with the modal body
+        self.model_rows.clear();
+        let font_family = Appearance::as_ref(ctx).ui_font_family();
+        let text_colors = crate::settings_view::editor_text_colors(Appearance::as_ref(ctx));
+        if let Some(ep) = endpoint {
+            for model in &ep.models {
+                self.model_rows.push(Self::create_model_row(
+                    Some(&model.name),
+                    model.alias.as_deref(),
+                    font_family,
+                    &text_colors,
+                    ctx,
+                ));
+            }
+        }
+        if self.model_rows.is_empty() {
+            self.model_rows.push(Self::create_model_row(
+                None,
+                None,
+                font_family,
+                &text_colors,
+                ctx,
+            ));
+        }
+        for row in &self.model_rows {
+            let name_editor = row.name_editor.clone();
+            ctx.subscribe_to_view(&name_editor, |me, editor, event, ctx| {
+                me.handle_model_editor_event(&editor, event, ctx);
+            });
+            let alias_editor = row.alias_editor.clone();
+            ctx.subscribe_to_view(&alias_editor, |me, editor, event, ctx| {
+                me.handle_model_editor_event(&editor, event, ctx);
+            });
+        }
+    }
+
+    pub fn on_open(&mut self, ctx: &mut ViewContext<Self>) {
+        ctx.focus(&self.endpoint_name_editor);
+    }
+
+    pub fn on_close(&mut self, ctx: &mut ViewContext<Self>) {
+        self.endpoint_name_editor.update(ctx, |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+        });
+        self.endpoint_url_editor.update(ctx, |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+        });
+        self.api_key_editor.update(ctx, |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+        });
+        for row in &self.model_rows {
+            row.name_editor.update(ctx, |editor, ctx| {
+                editor.clear_buffer_and_reset_undo_stack(ctx);
+            });
+            row.alias_editor.update(ctx, |editor, ctx| {
+                editor.clear_buffer_and_reset_undo_stack(ctx);
+            });
+        }
+    }
+
+    fn save(&mut self, ctx: &mut ViewContext<Self>) {
+        let name = self.endpoint_name_editor.as_ref(ctx).buffer_text(ctx);
+        let url = self.endpoint_url_editor.as_ref(ctx).buffer_text(ctx);
+        let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
+        let models: Vec<(String, Option<String>)> = self
+            .model_rows
+            .iter()
+            .map(|row| {
+                let name = row.name_editor.as_ref(ctx).buffer_text(ctx);
+                let alias = row.alias_editor.as_ref(ctx).buffer_text(ctx);
+                let alias_opt = if alias.trim().is_empty() {
+                    None
+                } else {
+                    Some(alias)
+                };
+                (name, alias_opt)
+            })
+            .filter(|(name, _)| !name.trim().is_empty())
+            .collect();
+        if let Some(index) = self.editing_index {
+            ctx.emit(CustomEndpointModalEvent::SaveEndpoint {
+                index,
+                name,
+                url,
+                api_key,
+                models,
+            });
+        } else {
+            ctx.emit(CustomEndpointModalEvent::AddEndpoint {
+                name,
+                url,
+                api_key,
+                models,
+            });
+        }
+    }
+
+    fn cancel(&mut self, ctx: &mut ViewContext<Self>) {
+        ctx.emit(CustomEndpointModalEvent::Close);
+    }
+
+    fn add_model(&mut self, ctx: &mut ViewContext<Self>) {
+        let font_family = Appearance::as_ref(ctx).ui_font_family();
+        let text_colors = crate::settings_view::editor_text_colors(Appearance::as_ref(ctx));
+        let row = Self::create_model_row(None, None, font_family, &text_colors, ctx);
+        // Subscribe to the new editors
+        let name_editor = row.name_editor.clone();
+        ctx.subscribe_to_view(&name_editor, |me, editor, event, ctx| {
+            me.handle_model_editor_event(&editor, event, ctx);
+        });
+        let alias_editor = row.alias_editor.clone();
+        ctx.subscribe_to_view(&alias_editor, |me, editor, event, ctx| {
+            me.handle_model_editor_event(&editor, event, ctx);
+        });
+        self.model_rows.push(row);
+        ctx.notify();
+    }
+
+    fn remove_model(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if index < self.model_rows.len() {
+            let _row = self.model_rows.remove(index);
+            ctx.notify();
+        }
+    }
+
+    fn is_valid(&self, app: &AppContext) -> bool {
+        let name = self.endpoint_name_editor.as_ref(app).buffer_text(app);
+        let url = self.endpoint_url_editor.as_ref(app).buffer_text(app);
+        let api_key = self.api_key_editor.as_ref(app).buffer_text(app);
+        let has_models = self.model_rows.iter().any(|row| {
+            !row.name_editor
+                .as_ref(app)
+                .buffer_text(app)
+                .trim()
+                .is_empty()
+        });
+        !name.trim().is_empty()
+            && !url.trim().is_empty()
+            && !api_key.trim().is_empty()
+            && has_models
+    }
+
+    fn focus_next_editor(&self, current: &ViewHandle<EditorView>, ctx: &mut ViewContext<Self>) {
+        let mut editors: Vec<&ViewHandle<EditorView>> = vec![
+            &self.endpoint_name_editor,
+            &self.endpoint_url_editor,
+            &self.api_key_editor,
+        ];
+        for row in &self.model_rows {
+            editors.push(&row.name_editor);
+            editors.push(&row.alias_editor);
+        }
+        if let Some(pos) = editors.iter().position(|e| *e == current) {
+            let next = (pos + 1) % editors.len();
+            ctx.focus(editors[next]);
+        }
+    }
+
+    fn focus_prev_editor(&self, current: &ViewHandle<EditorView>, ctx: &mut ViewContext<Self>) {
+        let mut editors: Vec<&ViewHandle<EditorView>> = vec![
+            &self.endpoint_name_editor,
+            &self.endpoint_url_editor,
+            &self.api_key_editor,
+        ];
+        for row in &self.model_rows {
+            editors.push(&row.name_editor);
+            editors.push(&row.alias_editor);
+        }
+        if let Some(pos) = editors.iter().position(|e| *e == current) {
+            let prev = if pos == 0 { editors.len() - 1 } else { pos - 1 };
+            ctx.focus(editors[prev]);
+        }
+    }
+
+    fn handle_endpoint_name_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            EditorEvent::Navigate(NavigationKey::Tab) => {
+                ctx.focus(&self.endpoint_url_editor);
+            }
+            EditorEvent::Navigate(NavigationKey::ShiftTab) => {
+                self.focus_prev_editor(&self.endpoint_name_editor, ctx);
+            }
+            EditorEvent::Enter => {
+                ctx.focus(&self.endpoint_url_editor);
+            }
+            EditorEvent::Escape => {
+                self.cancel(ctx);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_endpoint_url_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            EditorEvent::Navigate(NavigationKey::Tab) => {
+                ctx.focus(&self.api_key_editor);
+            }
+            EditorEvent::Navigate(NavigationKey::ShiftTab) => {
+                ctx.focus(&self.endpoint_name_editor);
+            }
+            EditorEvent::Enter => {
+                ctx.focus(&self.api_key_editor);
+            }
+            EditorEvent::Escape => {
+                self.cancel(ctx);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_api_key_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            EditorEvent::Navigate(NavigationKey::Tab) => {
+                if let Some(first_row) = self.model_rows.first() {
+                    ctx.focus(&first_row.name_editor);
+                }
+            }
+            EditorEvent::Navigate(NavigationKey::ShiftTab) => {
+                ctx.focus(&self.endpoint_url_editor);
+            }
+            EditorEvent::Enter => {
+                if let Some(first_row) = self.model_rows.first() {
+                    ctx.focus(&first_row.name_editor);
+                }
+            }
+            EditorEvent::Escape => {
+                self.cancel(ctx);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_model_editor_event(
+        &mut self,
+        editor: &ViewHandle<EditorView>,
+        event: &EditorEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            EditorEvent::Navigate(NavigationKey::Tab) | EditorEvent::Enter => {
+                self.focus_next_editor(editor, ctx);
+            }
+            EditorEvent::Navigate(NavigationKey::ShiftTab) => {
+                self.focus_prev_editor(editor, ctx);
+            }
+            EditorEvent::Escape => {
+                self.cancel(ctx);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Entity for CustomEndpointModal {
+    type Event = CustomEndpointModalEvent;
+}
+
+impl View for CustomEndpointModal {
+    fn ui_name() -> &'static str {
+        "CustomEndpointModal"
+    }
+
+    fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let is_valid = self.is_valid(app);
+        let is_editing = self.editing_index.is_some();
+
+        let label_font_family = appearance.ui_font_family();
+        let label_text_color = theme.active_ui_text_color().into();
+        let label = move |text: &'static str| {
+            Text::new(text, label_font_family, LABEL_FONT_SIZE)
+                .with_color(label_text_color)
+                .finish()
+        };
+
+        let input_style = UiComponentStyles {
+            width: Some(INPUT_WIDTH),
+            ..Default::default()
+        };
+        let button_style = UiComponentStyles {
+            font_size: Some(14.),
+            padding: Some(Coords::uniform(8.).left(12.).right(12.)),
+            ..Default::default()
+        };
+
+        let mut column = Flex::column();
+
+        // Description
+        column.add_child(
+            Container::new(
+                Text::new(
+                    "Provide your endpoint details below. You can add as many models from the endpoint as you'd like and can also provide aliases for the model picker in your input.",
+                    appearance.ui_font_family(),
+                    LABEL_FONT_SIZE,
+                )
+                .with_color(theme.nonactive_ui_text_color().into())
+                .soft_wrap(true)
+                .finish(),
+            )
+            .with_margin_bottom(16.)
+            .finish(),
+        );
+
+        // Endpoint name
+        column.add_child(
+            Container::new(label("Endpoint name"))
+                .with_margin_bottom(4.)
+                .finish(),
+        );
+        column.add_child(
+            Container::new(
+                appearance
+                    .ui_builder()
+                    .text_input(self.endpoint_name_editor.clone())
+                    .with_style(input_style.clone())
+                    .build()
+                    .finish(),
+            )
+            .with_margin_bottom(16.)
+            .finish(),
+        );
+
+        // Endpoint URL
+        column.add_child(
+            Container::new(label("Endpoint URL"))
+                .with_margin_bottom(4.)
+                .finish(),
+        );
+        column.add_child(
+            Container::new(
+                appearance
+                    .ui_builder()
+                    .text_input(self.endpoint_url_editor.clone())
+                    .with_style(input_style.clone())
+                    .build()
+                    .finish(),
+            )
+            .with_margin_bottom(16.)
+            .finish(),
+        );
+
+        // API key
+        column.add_child(
+            Container::new(label("API key"))
+                .with_margin_bottom(4.)
+                .finish(),
+        );
+        column.add_child(
+            Container::new(
+                appearance
+                    .ui_builder()
+                    .text_input(self.api_key_editor.clone())
+                    .with_style(input_style.clone())
+                    .build()
+                    .finish(),
+            )
+            .with_margin_bottom(16.)
+            .finish(),
+        );
+
+        // Model rows
+        for (i, row) in self.model_rows.iter().enumerate() {
+            let mut model_column = Flex::column();
+
+            // Model name label + input
+            model_column.add_child(
+                Container::new(label("Model name"))
+                    .with_margin_bottom(4.)
+                    .finish(),
+            );
+            model_column.add_child(
+                Container::new(
+                    appearance
+                        .ui_builder()
+                        .text_input(row.name_editor.clone())
+                        .with_style(input_style.clone())
+                        .build()
+                        .finish(),
+                )
+                .with_margin_bottom(12.)
+                .finish(),
+            );
+
+            // Model alias label + input
+            model_column.add_child(
+                Container::new(label("Model alias (optional)"))
+                    .with_margin_bottom(4.)
+                    .finish(),
+            );
+            model_column.add_child(
+                appearance
+                    .ui_builder()
+                    .text_input(row.alias_editor.clone())
+                    .with_style(input_style.clone())
+                    .build()
+                    .finish(),
+            );
+
+            // Remove button row (only when >1 model)
+            if self.model_rows.len() > 1 {
+                model_column.add_child(
+                    Container::new(
+                        Flex::row()
+                            .with_main_axis_size(MainAxisSize::Max)
+                            .with_child(
+                                Expanded::new(1., Empty::new().finish()).finish(),
+                            )
+                            .with_child(
+                                appearance
+                                    .ui_builder()
+                                    .button(ButtonVariant::Secondary, row.remove_mouse_state.clone())
+                                    .with_text_label("×".to_string())
+                                    .with_style(UiComponentStyles {
+                                        font_size: Some(16.),
+                                        padding: Some(Coords::uniform(4.)),
+                                        ..Default::default()
+                                    })
+                                    .build()
+                                    .on_click(move |ctx, _, _| {
+                                        ctx.dispatch_typed_action(CustomEndpointModalAction::RemoveModel(
+                                            i,
+                                        ));
+                                    })
+                                    .finish(),
+                            )
+                            .finish(),
+                    )
+                    .with_margin_top(4.)
+                    .finish(),
+                );
+            }
+
+            column.add_child(
+                Container::new(model_column.finish())
+                    .with_margin_bottom(12.)
+                    .finish(),
+            );
+        }
+
+        // + Add model button
+        column.add_child(
+            Container::new(
+                appearance
+                    .ui_builder()
+                    .button(
+                        ButtonVariant::Secondary,
+                        self.add_model_button_mouse_state.clone(),
+                    )
+                    .with_text_label("+ Add model".to_string())
+                    .with_style(UiComponentStyles {
+                        font_size: Some(14.),
+                        padding: Some(Coords::uniform(6.).left(8.).right(8.)),
+                        ..Default::default()
+                    })
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(CustomEndpointModalAction::AddModel);
+                    })
+                    .finish(),
+            )
+            .with_margin_bottom(24.)
+            .finish(),
+        );
+
+        // Bottom buttons row
+        let mut buttons_row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        // Remove button (only when editing)
+        if is_editing {
+            buttons_row.add_child(
+                appearance
+                    .ui_builder()
+                    .button(
+                        ButtonVariant::Error,
+                        self.remove_endpoint_button_mouse_state.clone(),
+                    )
+                    .with_text_label("Remove".to_string())
+                    .with_style(UiComponentStyles {
+                        font_size: Some(14.),
+                        padding: Some(Coords::uniform(8.).left(12.).right(12.)),
+                        ..Default::default()
+                    })
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(CustomEndpointModalAction::RemoveEndpoint);
+                    })
+                    .finish(),
+            );
+        }
+
+        buttons_row.add_child(Expanded::new(1., Empty::new().finish()).finish());
+
+        buttons_row.add_child(
+            appearance
+                .ui_builder()
+                .button(
+                    ButtonVariant::Secondary,
+                    self.cancel_button_mouse_state.clone(),
+                )
+                .with_text_label("Cancel".to_string())
+                .with_style(button_style.clone())
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(CustomEndpointModalAction::Cancel);
+                })
+                .finish(),
+        );
+
+        let mut save_button = appearance
+            .ui_builder()
+            .button(ButtonVariant::Accent, self.save_button_mouse_state.clone())
+            .with_text_label(if is_editing {
+                "Save".to_string()
+            } else {
+                "Add endpoint".to_string()
+            })
+            .with_style(button_style);
+        if !is_valid {
+            save_button = save_button.disabled();
+        }
+
+        buttons_row.add_child(
+            Container::new(
+                save_button
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(CustomEndpointModalAction::Save);
+                    })
+                    .finish(),
+            )
+            .with_margin_left(12.)
+            .finish(),
+        );
+
+        column.add_child(buttons_row.finish());
+
+        column.finish()
+    }
+}
+
+impl TypedActionView for CustomEndpointModal {
+    type Action = CustomEndpointModalAction;
+
+    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
+        match action {
+            CustomEndpointModalAction::Cancel => self.cancel(ctx),
+            CustomEndpointModalAction::Save => self.save(ctx),
+            CustomEndpointModalAction::AddModel => self.add_model(ctx),
+            CustomEndpointModalAction::RemoveModel(index) => self.remove_model(*index, ctx),
+            CustomEndpointModalAction::RemoveEndpoint => {
+                if let Some(index) = self.editing_index {
+                    ctx.emit(CustomEndpointModalEvent::RemoveEndpoint { index });
+                }
+            }
+        }
+    }
+}
+
+pub struct CustomEndpointModalViewState {
+    state: ModalViewState<Modal<CustomEndpointModal>>,
+}
+
+impl CustomEndpointModalViewState {
+    pub fn new(state: ModalViewState<Modal<CustomEndpointModal>>) -> Self {
+        Self { state }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.state.is_open()
+    }
+
+    pub fn render(&self) -> Box<dyn Element> {
+        self.state.render()
+    }
+
+    pub fn set_title<T: View>(&mut self, title: Option<String>, ctx: &mut ViewContext<T>) {
+        self.state.view.update(ctx, |modal, _ctx| {
+            modal.set_title(title);
+        });
+    }
+
+    pub fn prefill<T: View>(
+        &mut self,
+        endpoint: Option<&CustomEndpoint>,
+        editing_index: Option<usize>,
+        ctx: &mut ViewContext<T>,
+    ) {
+        self.state.view.update(ctx, |modal, ctx| {
+            modal.body().update(ctx, |body, ctx| {
+                body.prefill(endpoint, editing_index, ctx);
+            });
+        });
+    }
+
+    pub fn open<T: View>(&mut self, ctx: &mut ViewContext<T>) {
+        self.state.open();
+        self.state.view.update(ctx, |modal, ctx| {
+            modal.body().update(ctx, |body, ctx| {
+                body.on_open(ctx);
+            });
+        });
+    }
+
+    pub fn close<T: View>(&mut self, ctx: &mut ViewContext<T>) {
+        self.state.close();
+        self.state.view.update(ctx, |modal, ctx| {
+            modal.body().update(ctx, |body, ctx| {
+                body.on_close(ctx);
+            });
+        });
+    }
+}
