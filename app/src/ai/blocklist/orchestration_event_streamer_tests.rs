@@ -141,6 +141,7 @@ fn ai_conversation_new_restored_preserves_last_event_sequence() {
         artifacts_json: None,
         parent_agent_id: None,
         agent_name: None,
+        orchestration_harness_type: None,
         parent_conversation_id: None,
         is_remote_child: false,
         run_id: None,
@@ -910,9 +911,11 @@ fn finish_restore_fetch_reconnects_sse_when_children_added_to_open_connection() 
             stream.event_cursor = 0;
             stream.watched_run_ids.insert(own_run_id.to_string());
             stream.consumers.insert(consumer_id);
+            let (abort_handle, _) = futures::future::AbortHandle::new_pair();
             stream.sse_connection = Some(SseConnectionState {
                 event_receiver: rx,
                 generation: 0,
+                abort_handle,
             });
             me.next_sse_generation = 1;
         });

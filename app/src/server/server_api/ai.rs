@@ -213,6 +213,9 @@ pub struct SpawnAgentRequest {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub team: Option<bool>,
+    /// Agent identity UID to use as the execution principal for the run.
+    #[serde(rename = "agent_identity_uid", skip_serializing_if = "Option::is_none")]
+    pub agent_identity_uid: Option<String>,
     /// Use a Claude-compatible skill as the base prompt.
     /// Format: "repo:skill_name" or just "skill_name".
     /// The skill is resolved at runtime in the agent environment.
@@ -1412,6 +1415,14 @@ impl AIClient for ServerApi {
                         harness: convert_harness(h.harness).into(),
                         display_name: h.display_name,
                         enabled: h.enabled,
+                        available_models: h
+                            .available_models
+                            .into_iter()
+                            .map(|m| crate::ai::harness_availability::HarnessModelInfo {
+                                id: m.id.into_inner(),
+                                display_name: m.display_name,
+                            })
+                            .collect(),
                     })
                     .collect())
             }
@@ -2859,5 +2870,5 @@ impl StoreClient for ServerApi {
 }
 
 #[cfg(test)]
-#[path = "ai_test.rs"]
+#[path = "ai_tests.rs"]
 mod tests;

@@ -1,10 +1,10 @@
 ---
 name: review-pr-local
 specializes: review-pr
-description: Repo-specific review guidance for warp-external. Only the categories declared overridable by the core review-pr skill may be specialized here.
+description: Repo-specific review guidance for warp. Only the categories declared overridable by the core review-pr skill may be specialized here.
 ---
 
-# Repo-specific review guidance for `warp-external`
+# Repo-specific review guidance for `warp`
 
 This file is a companion to the core `review-pr` skill. It does not
 redefine the review output schema, severity labels, safety rules, or
@@ -22,13 +22,13 @@ skill marks as overridable.
 - In WarpUI code, flag inline `MouseStateHandle::default()` usage during render or event handling. Mouse state handles should be created during construction and then cloned/referenced where needed.
 - For user-facing UI changes, mention missing validation only when it is tied to a concrete risk or when the PR changes behavior that should be verified visually.
 
-## UI-impacting changes require visual evidence
+## Behavioral or UI-impacting changes require visual evidence
 
 - If the PR changes anything user-visible (UI components, layout, styling, copy in surfaces users see, terminal/Warp app visuals, or other behavior a user can perceive), analyze both `pr_description.txt` and any PR comments available in the workflow context for attached screenshots, GIFs, or videos demonstrating the change end to end.
   - Treat markdown image/video embeds (`![...](...)`, `<img ...>`, `<video ...>`), GitHub user-attachment links (e.g. `https://github.com/user-attachments/...`, `https://user-images.githubusercontent.com/...`), Loom links, and similar hosted media as valid evidence.
   - The `Screenshots / Videos` section from `.github/pull_request_template.md` being present but empty does not count as evidence.
-- If the change is UI-impacting and no screenshots or videos are attached in the description or comments, add an inline or summary-level comment requesting them. Use wording such as: "For faster review, please upload screenshots or a video of the feature working end to end."
-- When required visual evidence is missing for a UI-impacting change, set the final recommendation in `summary` to `Request changes`, even if no other blocking issues were found. Call this out explicitly in the `## Verdict` section.
+- If the change is behavioral or UI-impacting and no screenshots or videos are attached in the description or comments, and the PR description does not justify why there was no manual testing, add an inline or summary-level comment requesting manual testing and evidence. Use wording such as: "Manual testing is required for changes that can be manually tested. Please include screenshots or a screen recording that show it working end to end, or justify why manual testing is not possible."
+- When required visual evidence is missing for a behavioral or UI-impacting change that can be manually tested, set the final recommendation in `summary` to `Request changes`, even if no other blocking issues were found. Call this out explicitly in the `## Verdict` section.
 - If the PR is clearly not user-visible (pure refactor, internal tooling, build scripts, server-only logic with no UI surface, tests, docs-only), do not request screenshots or videos.
 
 ## User-facing strings

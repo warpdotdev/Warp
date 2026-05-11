@@ -403,6 +403,7 @@ fn non_ambient_entry_uses_display_harness() {
             creator: AgentConversationCreator::default(),
             request_usage: None,
             run_time: None,
+            session_status: None,
             source: None,
             working_directory: None,
             environment_id: None,
@@ -425,7 +426,7 @@ fn non_ambient_entry_uses_display_harness() {
         },
     };
 
-    let variant = agent_conversation_entry_icon_variant(&entry).unwrap();
+    let variant = agent_conversation_entry_icon_variant(&entry);
     assert_eq!(
         AgentIconFields::from_variant(&variant).unwrap(),
         AgentIconFields {

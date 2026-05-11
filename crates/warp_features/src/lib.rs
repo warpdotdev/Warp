@@ -161,12 +161,6 @@ pub enum FeatureFlag {
     /// https://github.com/warpdotdev/session-sharing-server/blob/b6590ebd0b0e7f6847d6b2228b4e77d63939ce22/server/Cargo.toml#L13
     SessionSharingAcls,
 
-    /// Removes the extraneous padding from the alt-screen that we previously had
-    /// to keep consistent size between blocklist and alt-screen.
-    ///
-    /// See plan here: https://docs.google.com/document/d/1TBPSWNfh4KylkEgL5o5xyYgK_KQzUQk1oxjuIx2ipXw
-    RemoveAltScreenPadding,
-
     /// Enables the full-screen "zen mode" setting, where we hide the tab bar if there's only one
     /// tab.
     FullScreenZenMode,
@@ -855,6 +849,19 @@ pub enum FeatureFlag {
     /// conversation into a fresh cloud agent run with the current workspace
     /// snapshot attached. Requires `OzHandoff` to also be enabled.
     HandoffLocalCloud,
+
+    /// Enables creating API keys scoped to named agents in the API key
+    /// management UI. When enabled the "Team" option in the key-type
+    /// selector is replaced with "Agent" and users can pick which agent
+    /// identity the key authenticates as.
+    NamedAgents,
+    /// Gates the driver behavior that writes GitHub credentials to disk
+    /// (`~/.git-credentials`, `~/.config/gh/hosts.yaml`) and runs the
+    /// background refresh loop that keeps them fresh during a task run.
+    GitCredentialRefresh,
+
+    /// Replaces the raw harness CLI command with a styled header showing CLI name + status icon.
+    HarnessSessionHeader,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -916,10 +923,8 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::FullSourceCodeEmbedding,
     FeatureFlag::CodebaseIndexSpeedbump,
     // End manually enabled Code features.
-    FeatureFlag::DirectoryTabColors,
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
-    FeatureFlag::OzIdentityFederation,
     FeatureFlag::AgentHarness,
     FeatureFlag::OzHandoff,
     FeatureFlag::ConversationApi,
@@ -932,12 +937,15 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
-    FeatureFlag::ConfigurableContextWindow,
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
     FeatureFlag::HandoffLocalCloud,
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::NamedAgents,
+    FeatureFlag::GitCredentialRefresh,
+    FeatureFlag::HandoffCloudCloud,
+    FeatureFlag::HarnessSessionHeader,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
@@ -946,7 +954,6 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Orchestration,
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::MarkdownTables,
-    FeatureFlag::OzIdentityFederation,
     FeatureFlag::GitOperationsInCodeReview,
 ];
 
@@ -1040,7 +1047,6 @@ impl FeatureFlag {
                 Some("Enables rendering markdown tables inline in AI block list responses.")
             }
             MarkdownTables => Some("Enables rendering and interaction support for markdown tables in notebooks."),
-            OzIdentityFederation => Some("Enables automatic authentication from Oz to AWS and GCP"),
             SettingsFile => Some("Enables configuring Warp via a user-editable `settings.toml` file, with hot reload and error reporting for invalid values."),
             GitOperationsInCodeReview => Some("Enables commit, push, and create-PR actions directly from the code review panel."),
             _ => None,
@@ -1197,5 +1203,5 @@ impl From<TriState> for Option<bool> {
 }
 
 #[cfg(test)]
-#[path = "features_test.rs"]
+#[path = "features_tests.rs"]
 mod tests;

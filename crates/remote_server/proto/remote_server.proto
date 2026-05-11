@@ -24,6 +24,11 @@ message ClientMessage {
     ReadFileContextRequest read_file_context = 10;
     Authenticate authenticate = 11;
     UpdatePreferences update_preferences = 12;
+    OpenBuffer open_buffer = 13;
+    BufferEdit buffer_edit = 14;
+    CloseBuffer close_buffer = 15;
+    SaveBuffer save_buffer = 16;
+    ResolveConflict resolve_conflict = 17;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -42,11 +47,16 @@ message ServerMessage {
     DeleteFileResponse delete_file_response = 9;
     RunCommandResponse run_command_response = 10;
     ReadFileContextResponse read_file_context_response = 11;
+    CodebaseIndexStatusesSnapshot codebase_index_statuses_snapshot = 12;
+    CodebaseIndexStatusUpdated codebase_index_status_updated = 13;
+    OpenBufferResponse open_buffer_response = 14;
+    BufferUpdatedPush buffer_updated = 15;
+    SaveBufferResponse save_buffer_response = 16;
+    ResolveConflictResponse resolve_conflict_response = 17;
   }
 }
 
 // ── Initialize handshake
-
 // Sent by the client immediately after connecting to negotiate the protocol.
 message Initialize {
   // Optional bearer token used by the daemon for Warp-server requests.
@@ -306,6 +316,28 @@ message FileContextProto {
   uint32 line_count = 7;
 }
 
+// ── Remote codebase indexing status ───────────────────────────────
+
+enum CodebaseIndexStatusState {
+  CODEBASE_INDEX_STATUS_STATE_UNSPECIFIED = 0;
+  CODEBASE_INDEX_STATUS_STATE_NOT_ENABLED = 1;
+  CODEBASE_INDEX_STATUS_STATE_UNAVAILABLE = 2;
+}
+
+message CodebaseIndexStatus {
+  string repo_path = 1;
+  CodebaseIndexStatusState state = 2;
+  optional uint64 last_updated_epoch_millis = 3;
+}
+
+message CodebaseIndexStatusesSnapshot {
+  repeated CodebaseIndexStatus statuses = 1;
+}
+
+message CodebaseIndexStatusUpdated {
+  CodebaseIndexStatus status = 1;
+}
+
 // ── Server → client push messages ─────────────────────────────────
 
 // Full or lazy-loaded repo metadata snapshot. Pushed by the server after
@@ -322,3 +354,89 @@ message RepoMetadataUpdatePush {
   repeated string remove_entries = 2;
   repeated RepoMetadataEntryUpdate update_entries = 3;
 }
+
+// ── Buffer syncing ────────────────────────────────────────────────
+
+// Client → server: open a buffer for bidirectional syncing.
+// The server reads the file, starts watching it, and returns the content.
+message OpenBuffer {
+  string path = 1;
+}
+
+// Server → client: response to OpenBuffer with the initial file content.
+message OpenBufferResponse {
+  string content = 1;
+  uint64 server_version = 2;
+}
+
+// Client → server: push an incremental edit (fire-and-forget notification).
+// If the server accepts (expected_server_version matches its local version),
+// it applies the edit silently — no response needed since the client already
+// has the edit applied locally.
+// If the server rejects (version mismatch), it pushes a BufferUpdatedPush
+// with its current state.
+message BufferEdit {
+  string path = 1;
+  uint64 expected_server_version = 2;
+  uint64 new_client_version = 3;
+  repeated TextEdit edits = 4;
+}
+
+// A single text edit within a buffer, using 1-indexed character offsets (matching CharOffset).
+message TextEdit {
+  uint64 start_offset = 1;
+  uint64 end_offset = 2;
+  string text = 3;
+}
+
+// Server → client push: file changed on disk.
+// The client uses expected_client_version to detect conflicts.
+// Carries only incremental edits — full content is served by OpenBufferResponse.
+message BufferUpdatedPush {
+  string path = 1;
+  uint64 new_server_version = 2;
+  uint64 expected_client_version = 3;
+  repeated TextEdit edits = 4;
+}
+
+// Client → server: close a buffer (stop watching).
+message CloseBuffer {
+  string path = 1;
+}
+
+// Client → server: persist the current in-memory buffer to disk.
+message SaveBuffer {
+  string path = 1;
+}
+
+// Server → client: result of a SaveBuffer request.
+message SaveBufferResponse {
+  oneof result {
+    SaveBufferSuccess success = 1;
+    FileOperationError error = 2;
+  }
+}
+
+message SaveBufferSuccess {}
+
+// Client → server: resolve a conflict by accepting the client's content.
+// The server replaces its in-memory buffer with client_content,
+// updates the clock to {acknowledged_server_version, current_client_version},
+// and persists to disk (updates base_content_version to avoid re-triggering).
+// For "accept server", the client simply re-sends OpenBuffer instead.
+message ResolveConflict {
+  string path = 1;
+  uint64 acknowledged_server_version = 2;
+  string client_content = 3;
+  uint64 current_client_version = 4;
+}
+
+// Server → client: result of a ResolveConflict request.
+message ResolveConflictResponse {
+  oneof result {
+    ResolveConflictSuccess success = 1;
+    FileOperationError error = 2;
+  }
+}
+
+message ResolveConflictSuccess {}
