@@ -2558,6 +2558,11 @@ fn update_forked_task_properties(
     preserve_task_ids: bool,
     title_override: Option<&str>,
 ) -> Vec<warp_multi_agent_api::Task> {
+    let root_description = |current: &str| match title_override {
+        Some(title) => title.to_owned(),
+        None => format!("{prefix}{current}"),
+    };
+
     if preserve_task_ids {
         return tasks
             .into_iter()
@@ -2568,10 +2573,7 @@ fn update_forked_task_properties(
                     .map(|deps| deps.parent_task_id.is_empty())
                     .unwrap_or(true);
                 if is_root {
-                    t.description = match title_override {
-                        Some(title) => title.to_owned(),
-                        None => format!("{prefix}{}", t.description),
-                    };
+                    t.description = root_description(&t.description);
                 }
                 t
             })
@@ -2608,10 +2610,7 @@ fn update_forked_task_properties(
                 deps.parent_task_id =
                     get_new_task_id(&mut old_to_new_task_ids, &deps.parent_task_id).clone();
             } else {
-                t.description = match title_override {
-                    Some(title) => title.to_owned(),
-                    None => format!("{prefix}{}", t.description),
-                };
+                t.description = root_description(&t.description);
             }
             t
         })
