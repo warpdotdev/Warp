@@ -1840,6 +1840,10 @@ impl SettingsView {
             AISettingsPageEvent::SignupAnonymousUser => {
                 ctx.emit(SettingsViewEvent::SignupAnonymousUser)
             }
+            AISettingsPageEvent::ShowModal | AISettingsPageEvent::HideModal => {
+                // Modal rendering is handled in get_modal_content_for_page
+                ctx.notify();
+            }
         }
     }
 

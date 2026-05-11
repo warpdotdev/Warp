@@ -8,12 +8,7 @@ fn make_manager(keys: ApiKeys) -> ApiKeyManager {
     }
 }
 
-fn endpoint(
-    name: &str,
-    url: &str,
-    api_key: &str,
-    models: &[(&str, Option<&str>)],
-) -> CustomEndpoint {
+fn endpoint(name: &str, url: &str, api_key: &str, models: &[(&str, Option<&str>)]) -> CustomEndpoint {
     CustomEndpoint {
         name: name.into(),
         url: url.into(),
@@ -162,59 +157,31 @@ fn has_custom_endpoints_true_when_present() {
     assert!(keys.has_custom_endpoints());
 }
 
-// ── user_provided_llm_endpoint_for_request ──────────────────────
+// ── custom_inference_enabled ────────────────────────────────────
 
 #[test]
-fn user_provided_llm_endpoint_none_when_empty() {
+fn custom_inference_enabled_false_no_endpoints() {
     let mgr = make_manager(ApiKeys::default());
-    assert!(mgr.user_provided_llm_endpoint_for_request(true).is_none());
+    assert!(!mgr.custom_inference_enabled(true));
+    assert!(!mgr.custom_inference_enabled(false));
 }
 
 #[test]
-fn user_provided_llm_endpoint_none_when_byo_disabled() {
+fn custom_inference_enabled_false_when_byo_disabled() {
     let mgr = make_manager(ApiKeys {
         custom_endpoints: vec![endpoint("ep", "https://a.io", "k", &[("m", None)])],
         ..Default::default()
     });
-    assert!(mgr.user_provided_llm_endpoint_for_request(false).is_none());
+    assert!(!mgr.custom_inference_enabled(false));
 }
 
 #[test]
-fn user_provided_llm_endpoint_populates_from_endpoint() {
+fn custom_inference_enabled_true_when_endpoints_and_byo() {
     let mgr = make_manager(ApiKeys {
-        custom_endpoints: vec![endpoint(
-            "My EP",
-            "https://custom.io/v1",
-            "ep-key",
-            &[("big-model", Some("alias"))],
-        )],
+        custom_endpoints: vec![endpoint("ep", "https://a.io", "k", &[("m", None)])],
         ..Default::default()
     });
-    let endpoint = mgr.user_provided_llm_endpoint_for_request(true).unwrap();
-    assert_eq!(endpoint.base_url, "https://custom.io/v1");
-    assert_eq!(endpoint.model_id, "big-model");
-    assert_eq!(endpoint.api_key, "ep-key");
-}
-
-#[test]
-fn user_provided_llm_endpoint_prefers_legacy_custom_inference_over_endpoint() {
-    let mgr = make_manager(ApiKeys {
-        custom_inference: Some(CustomInference {
-            endpoint: "https://legacy.io".into(),
-            model: "legacy-m".into(),
-            api_key: "legacy-k".into(),
-        }),
-        custom_endpoints: vec![endpoint(
-            "ep",
-            "https://new.io",
-            "new-k",
-            &[("new-m", None)],
-        )],
-        ..Default::default()
-    });
-    let endpoint = mgr.user_provided_llm_endpoint_for_request(true).unwrap();
-    assert_eq!(endpoint.base_url, "https://legacy.io");
-    assert_eq!(endpoint.model_id, "legacy-m");
+    assert!(mgr.custom_inference_enabled(true));
 }
 
 // ── api_keys_for_request ────────────────────────────────────────
@@ -249,10 +216,48 @@ fn api_keys_for_request_omits_keys_when_byo_disabled() {
 }
 
 #[test]
-fn api_keys_for_request_none_for_custom_endpoints_only() {
+fn api_keys_for_request_populates_custom_inference_from_endpoint() {
+    let mgr = make_manager(ApiKeys {
+        custom_endpoints: vec![endpoint(
+            "My EP",
+            "https://custom.io/v1",
+            "ep-key",
+            &[("big-model", Some("alias"))],
+        )],
+        ..Default::default()
+    });
+    let result = mgr.api_keys_for_request(true, false).unwrap();
+    let ci = result.custom_inference.unwrap();
+    assert_eq!(ci.endpoint, "https://custom.io/v1");
+    assert_eq!(ci.model, "big-model");
+    assert_eq!(ci.api_key, "ep-key");
+}
+
+#[test]
+fn api_keys_for_request_prefers_legacy_custom_inference_over_endpoint() {
+    let mgr = make_manager(ApiKeys {
+        custom_inference: Some(CustomInference {
+            endpoint: "https://legacy.io".into(),
+            model: "legacy-m".into(),
+            api_key: "legacy-k".into(),
+        }),
+        custom_endpoints: vec![endpoint("ep", "https://new.io", "new-k", &[("new-m", None)])],
+        ..Default::default()
+    });
+    let result = mgr.api_keys_for_request(true, false).unwrap();
+    let ci = result.custom_inference.unwrap();
+    assert_eq!(ci.endpoint, "https://legacy.io");
+    assert_eq!(ci.model, "legacy-m");
+}
+
+#[test]
+fn api_keys_for_request_skips_custom_inference_when_byo_disabled() {
     let mgr = make_manager(ApiKeys {
         custom_endpoints: vec![endpoint("ep", "https://a.io", "k", &[("m", None)])],
         ..Default::default()
     });
-    assert!(mgr.api_keys_for_request(true, false).is_none());
+    // BYO disabled but endpoints exist → still returns Some (endpoint list is non-empty
+    // in the none-check), but custom_inference should be None.
+    let result = mgr.api_keys_for_request(false, false).unwrap();
+    assert!(result.custom_inference.is_none());
 }

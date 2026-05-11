@@ -117,9 +117,9 @@ pub struct RequestParams {
 
     /// User-provided API keys for AI providers (BYO API Key).
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
-    /// User-provided OpenAI-compatible endpoint selected from saved custom endpoints.
-    pub user_provided_llm_endpoint:
-        Option<warp_multi_agent_api::request::settings::UserProvidedLlmEndpoint>,
+    /// `true` when ≥1 custom endpoint is saved AND BYO keys are enabled.
+    /// TODO(proto): wire into the proto ApiKeys message once the field lands.
+    pub custom_inference_enabled: bool,
     pub allow_use_of_warp_credits_with_byok: bool,
     pub autonomy_level: warp_multi_agent_api::AutonomyLevel,
     pub isolation_level: warp_multi_agent_api::IsolationLevel,
@@ -244,8 +244,7 @@ impl RequestParams {
             is_byo_enabled,
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
-        let user_provided_llm_endpoint =
-            api_key_manager.user_provided_llm_endpoint_for_request(is_byo_enabled);
+        let custom_inference_enabled = api_key_manager.custom_inference_enabled(is_byo_enabled);
         let allow_use_of_warp_credits_with_byok =
             *AISettings::as_ref(app).can_use_warp_credits_with_byok;
 
@@ -328,7 +327,7 @@ impl RequestParams {
             planning_enabled: true,
             should_redact_secrets,
             api_keys,
-            user_provided_llm_endpoint,
+            custom_inference_enabled,
             allow_use_of_warp_credits_with_byok,
             autonomy_level,
             isolation_level,

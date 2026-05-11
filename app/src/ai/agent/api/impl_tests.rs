@@ -29,7 +29,7 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         planning_enabled: true,
         should_redact_secrets: false,
         api_keys: None,
-        user_provided_llm_endpoint: None,
+        custom_inference_enabled: false,
         allow_use_of_warp_credits_with_byok: false,
         autonomy_level: api::AutonomyLevel::Supervised,
         isolation_level: api::IsolationLevel::None,
