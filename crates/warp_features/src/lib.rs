@@ -145,9 +145,6 @@ pub enum FeatureFlag {
     /// Enables writing to long-running commands in shared sessions.
     SharedSessionWriteToLongRunningCommands,
 
-    /// Replaces the bookmark button with a "save as workflow" button.
-    BlockToolbeltSaveAsWorkflow,
-
     /// Lazily builds scenes at render time instead of eagerly when a view
     /// changes.
     LazySceneBuilding,

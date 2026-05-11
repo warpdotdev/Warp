@@ -1201,9 +1201,7 @@ impl BlockListElement {
             self.ask_ai_assistant_button = Some(element);
         }
 
-        if FeatureFlag::BlockToolbeltSaveAsWorkflow.is_enabled()
-            && WarpDriveSettings::is_warp_drive_enabled(app)
-        {
+        if WarpDriveSettings::is_warp_drive_enabled(app) {
             let icon = Container::new(
                 ConstrainedBox::new(
                     ui_components::icons::Icon::Save
@@ -4189,27 +4187,15 @@ impl Element for BlockListElement {
                             ask_ai_assistant_button.paint(ask_ai_assistant_button_origin, ctx, app);
                         }
 
-                        if FeatureFlag::BlockToolbeltSaveAsWorkflow.is_enabled() {
-                            if let Some(save_as_workflow_button) =
-                                self.save_as_workflow_button.as_mut()
-                            {
-                                save_as_workflow_button.paint(bookmark_button_origin, ctx, app);
-                            }
+                        if let Some(save_as_workflow_button) = self.save_as_workflow_button.as_mut()
+                        {
+                            save_as_workflow_button.paint(bookmark_button_origin, ctx, app);
                         }
                     }
 
                     // When a block has an active filter on it, we want the filter icon to show even when the block is not hovered over.
                     if let Some(filter_element) = self.filter_elements.get_mut(block_index) {
                         filter_element.paint(filter_button_origin, ctx, app);
-                    }
-
-                    if !FeatureFlag::BlockToolbeltSaveAsWorkflow.is_enabled() {
-                        // When a block is bookmarked, we want the bookmark icon to show even when the block is not hovered over.
-                        if let Some(bookmark_element) = self.bookmark_elements.get_mut(block_index)
-                        {
-                            // Paint the bookmark icon to the left of the overflow button.
-                            bookmark_element.paint(bookmark_button_origin, ctx, app);
-                        }
                     }
 
                     // Paint the CLI subagent view on top of everything else for this block

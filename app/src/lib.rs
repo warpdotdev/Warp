@@ -2513,8 +2513,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::SSHTmuxWrapper,
         #[cfg(feature = "shell_selector")]
         FeatureFlag::ShellSelector,
-        #[cfg(feature = "block_toolbelt_save_as_workflow")]
-        FeatureFlag::BlockToolbeltSaveAsWorkflow,
         #[cfg(feature = "integration_command")]
         FeatureFlag::IntegrationCommand,
         #[cfg(feature = "artifact_command")]
