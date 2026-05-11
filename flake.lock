@@ -63,11 +63,11 @@
     "warpProtoApis": {
       "flake": false,
       "locked": {
-        "lastModified": 1776900698,
-        "narHash": "sha256-8bB/tCLIzRCofMK1rYCe8bizUr1U4A6f6uVeckJJKI4=",
+        "lastModified": 1778267021,
+        "narHash": "sha256-qN7dw/EH0ftbpDsAmyNmvgYb8FWGRRig4AYHQqgxByg=",
         "owner": "warpdotdev",
         "repo": "warp-proto-apis",
-        "rev": "78a78f21a75432bf0141e396fb318bf1694e47f0",
+        "rev": "3dd0cd81eae83b4ce09c7805c8ef12599798aa26",
         "type": "github"
       },
       "original": {
