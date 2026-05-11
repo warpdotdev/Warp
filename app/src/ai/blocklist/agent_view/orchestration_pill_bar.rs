@@ -49,8 +49,13 @@ use warpui::EntityId;
 const PILL_HEIGHT: f32 = 22.;
 const PILL_RADIUS: f32 = PILL_HEIGHT / 2.;
 const AVATAR_SIZE: f32 = 16.;
+const AVATAR_WITH_STATUS_WIDTH: f32 = 20.;
+const STATUS_BADGE_SIZE: f32 = 12.;
+const STATUS_BADGE_ICON_SIZE: f32 = 7.2;
+const STATUS_BADGE_PADDING: f32 = (STATUS_BADGE_SIZE - STATUS_BADGE_ICON_SIZE) / 4.;
 const PILL_LABEL_MAX_WIDTH: f32 = 110.;
 const PILL_GAP: f32 = 6.;
+const PILL_GAP_WITH_STATUS: f32 = 2.;
 const PILL_HORIZONTAL_PADDING_LEFT: f32 = 4.;
 const PILL_HORIZONTAL_PADDING_RIGHT: f32 = 10.;
 
@@ -137,6 +142,7 @@ struct PillSpec {
     label: String,
     avatar_color: ColorU,
     avatar_glyph: AvatarGlyph,
+    status: Option<ConversationStatus>,
     is_selected: bool,
     kind: PillKind,
     pin_state: PillPinState,
@@ -443,6 +449,7 @@ impl OrchestrationPillBar {
             label: orchestrator_label(orchestrator),
             avatar_color: theme.ansi_fg_cyan(),
             avatar_glyph: AvatarGlyph::Icon(Icon::Oz),
+            status: None,
             is_selected: orchestrator_id == active_id,
             kind: PillKind::Orchestrator,
             pin_state: PillPinState::Unpinned,
@@ -461,6 +468,7 @@ impl OrchestrationPillBar {
                 label: name.to_string(),
                 avatar_color: pill_avatar_color(name, theme),
                 avatar_glyph: AvatarGlyph::Letter(pill_initial(name)),
+                status: Some(child.status().clone()),
                 is_selected: child.id() == active_id,
                 kind: PillKind::Child,
                 pin_state: PillPinState::Unpinned,
@@ -1231,6 +1239,7 @@ fn render_pill(
     let label = spec.label;
     let avatar_color = spec.avatar_color;
     let avatar_glyph = spec.avatar_glyph;
+    let status = spec.status;
 
     // `Hoverable::new`'s build closure is `FnOnce` (see
     // `crates/warpui_core/src/elements/hoverable.rs`). We can therefore move
@@ -1297,14 +1306,29 @@ fn render_pill(
 
         // Pinned pills swap the avatar disc for a pin glyph (per Figma) so
         // the user can spot at a glance that this child is currently living
-        // in a separate pane/tab. Unpinned pills keep the avatar disc.
-        let leading: Box<dyn Element> = if is_pinned {
-            ConstrainedBox::new(Icon::Pin.to_warpui_icon(text_color.into()).finish())
+        // in a separate pane/tab. Unpinned child pills render the avatar with
+        // the compact status badge from the orchestration pill design.
+        let leading: Box<dyn Element> = match (is_pinned, status.as_ref()) {
+            (true, _) => ConstrainedBox::new(Icon::Pin.to_warpui_icon(text_color.into()).finish())
                 .with_width(AVATAR_SIZE)
                 .with_height(AVATAR_SIZE)
-                .finish()
+                .finish(),
+            (false, Some(status)) => render_avatar_with_status_badge(
+                avatar_color,
+                avatar_glyph,
+                status,
+                background,
+                theme,
+                appearance,
+            ),
+            (false, None) => {
+                render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance)
+            }
+        };
+        let leading_label_spacing = if !is_pinned && status.is_some() {
+            PILL_GAP_WITH_STATUS
         } else {
-            render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance)
+            PILL_GAP
         };
 
         // Body row contains just the avatar + label — the 3-dot button
@@ -1316,7 +1340,7 @@ fn render_pill(
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(6.)
+            .with_spacing(leading_label_spacing)
             .with_child(leading)
             .with_child(
                 ConstrainedBox::new(label_text)
@@ -1499,6 +1523,66 @@ fn render_overflow_button(
     // (rendered as a positioned overlay sibling of the bar in `View::render`)
     // can anchor relative to it.
     SavePosition::new(button, &overflow_button_position_id(conversation_id)).finish()
+}
+
+/// Renders a child-agent avatar with the compact status badge from the
+/// orchestration pill designs. The 20px-wide footprint keeps the label aligned
+/// with the old 16px avatar + 6px gap while making room for the badge overhang.
+fn render_avatar_with_status_badge(
+    avatar_color: ColorU,
+    glyph: AvatarGlyph,
+    status: &ConversationStatus,
+    pill_background: ColorU,
+    theme: &WarpTheme,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let avatar = render_avatar_disc(avatar_color, glyph, AVATAR_SIZE, theme, appearance);
+    let (status_icon, status_color) =
+        status.status_icon_and_color(theme, StatusColorStyle::Standard);
+    let icon = ConstrainedBox::new(status_icon.to_warpui_icon(status_color.into()).finish())
+        .with_width(STATUS_BADGE_ICON_SIZE)
+        .with_height(STATUS_BADGE_ICON_SIZE)
+        .finish();
+    let badge = Container::new(
+        Container::new(icon)
+            .with_uniform_padding(STATUS_BADGE_PADDING)
+            .finish(),
+    )
+    .with_uniform_padding(STATUS_BADGE_PADDING)
+    .with_background_color(pill_background)
+    .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
+    .finish();
+
+    let mut stack = Stack::new();
+    stack.add_child(
+        ConstrainedBox::new(Empty::new().finish())
+            .with_width(AVATAR_WITH_STATUS_WIDTH)
+            .with_height(PILL_HEIGHT)
+            .finish(),
+    );
+    stack.add_positioned_child(
+        avatar,
+        OffsetPositioning::offset_from_parent(
+            vec2f(0., (PILL_HEIGHT - AVATAR_SIZE) / 2.),
+            ParentOffsetBounds::Unbounded,
+            ParentAnchor::TopLeft,
+            ChildAnchor::TopLeft,
+        ),
+    );
+    stack.add_positioned_child(
+        badge,
+        OffsetPositioning::offset_from_parent(
+            vec2f(0., 0.),
+            ParentOffsetBounds::Unbounded,
+            ParentAnchor::BottomRight,
+            ChildAnchor::BottomRight,
+        ),
+    );
+
+    ConstrainedBox::new(stack.finish())
+        .with_width(AVATAR_WITH_STATUS_WIDTH)
+        .with_height(PILL_HEIGHT)
+        .finish()
 }
 
 /// Renders the avatar circle as a colored disc with a centered glyph (letter
