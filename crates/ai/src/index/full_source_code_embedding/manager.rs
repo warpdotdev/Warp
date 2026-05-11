@@ -30,13 +30,13 @@ use warp_core::safe_anyhow;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use super::{
+    CodebaseFragmentMetadata, CodebaseIndex, ContentHash, EmbeddingConfig,
+    Error as CodebaseIndexError, NodeHash, SyncedIndexMetadata,
     codebase_index::{CodebaseIndexEvent, RetrievalID, SyncProgress},
     fragment_metadata::FragmentMetadata,
     priority_queue::{BuildQueue, Priority},
     snapshot::*,
     store_client::StoreClient,
-    CodebaseFragmentMetadata, CodebaseIndex, EmbeddingConfig, Error as CodebaseIndexError,
-    NodeHash, SyncedIndexMetadata,
 };
 
 use crate::{

@@ -17,6 +17,7 @@ fn test_model() -> ServerModel {
         pending_file_ops: PendingFileOps::new(),
         auth_state: Arc::new(AuthState::new_logged_out_for_test()),
         buffers: ServerBufferTracker::new(),
+        codebase_index_statuses: HashMap::new(),
     }
 }
 
