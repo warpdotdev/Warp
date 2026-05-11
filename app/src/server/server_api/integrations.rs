@@ -171,9 +171,6 @@ impl ServerApi {
         let message = message.to_ascii_lowercase();
         let missing_user_github_info_data =
             message.contains("missing response data") && message.contains("usergithubinfo");
-        if missing_user_github_info_data {
-            return true;
-        }
 
         let mentions_github = message.contains("github") || message.contains("usergithubinfo");
         let mentions_auth_material = message.contains("oauth")
@@ -187,10 +184,16 @@ impl ServerApi {
             || message.contains("revoked")
             || message.contains("unauthorized")
             || message.contains("401");
+        let auth_specific_error = message.contains("bad credentials")
+            || message.contains("unauthorized")
+            || message.contains("401")
+            || (mentions_auth_material && looks_invalid);
 
-        (mentions_github || message.contains("bad credentials"))
-            && mentions_auth_material
-            && looks_invalid
+        if missing_user_github_info_data {
+            return auth_specific_error;
+        }
+
+        (mentions_github || message.contains("bad credentials")) && auth_specific_error
     }
 }
 
@@ -222,6 +225,14 @@ mod tests {
     #[test]
     fn unrelated_missing_data_does_not_require_auth_refresh() {
         let error = anyhow::anyhow!("missing response data for GetUserSettings");
+
+        assert!(!ServerApi::should_refresh_github_auth_for_user_github_info_error(&error));
+    }
+
+    #[test]
+    fn unrelated_user_github_info_missing_data_does_not_require_auth_refresh() {
+        let error =
+            anyhow::anyhow!("missing response data for UserGithubInfo: GitHub rate limit exceeded");
 
         assert!(!ServerApi::should_refresh_github_auth_for_user_github_info_error(&error));
     }
