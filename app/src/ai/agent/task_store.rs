@@ -28,10 +28,10 @@ pub struct TaskStore {
     tasks: HashMap<TaskId, Task>,
     linearized_refs: Vec<ExchangeRef>,
     /// If the root task was upgraded from an optimistic (client-generated) ID
-    /// to a server-assigned ID, stores `(old_id, new_id)` so that deferred
-    /// event handlers referencing the stale optimistic ID can still resolve
-    /// the task.
-    upgraded_task_id: Option<(TaskId, TaskId)>,
+    /// to a server-assigned ID, stores the original optimistic ID so that
+    /// deferred event handlers referencing the stale ID can still resolve
+    /// the task via `root_task_id`.
+    optimistic_root_task_id: Option<TaskId>,
 }
 
 impl TaskStore {
@@ -41,7 +41,7 @@ impl TaskStore {
             tasks: HashMap::new(),
             linearized_refs: Vec::new(),
             root_task_id: root_task_id.clone(),
-            upgraded_task_id: None,
+            optimistic_root_task_id: None,
         };
         store.tasks.insert(root_task_id, root_task);
         store.rebuild_linearized_refs_index();
@@ -55,7 +55,7 @@ impl TaskStore {
             tasks,
             linearized_refs: Vec::new(),
             root_task_id,
-            upgraded_task_id: None,
+            optimistic_root_task_id: None,
         };
         store.rebuild_linearized_refs_index();
         store
@@ -67,8 +67,8 @@ impl TaskStore {
 
     pub fn get(&self, task_id: &TaskId) -> Option<&Task> {
         self.tasks.get(task_id).or_else(|| {
-            let (old_id, new_id) = self.upgraded_task_id.as_ref()?;
-            (old_id == task_id).then(|| self.tasks.get(new_id))?
+            let old_id = self.optimistic_root_task_id.as_ref()?;
+            (old_id == task_id).then(|| self.tasks.get(&self.root_task_id))?
         })
     }
 
@@ -153,7 +153,7 @@ impl TaskStore {
 
         let new_root_id = root_task.id().clone();
         if old_root_id != new_root_id {
-            self.upgraded_task_id = Some((old_root_id, new_root_id.clone()));
+            self.optimistic_root_task_id = Some(old_root_id);
         }
         self.root_task_id = new_root_id;
         self.insert(root_task);
