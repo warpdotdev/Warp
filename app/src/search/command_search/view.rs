@@ -336,6 +336,9 @@ impl CommandSearchView {
                                     },
                                     ctx,
                                 );
+                                if let Some(query) = mixer.current_query().cloned() {
+                                    mixer.run_query(query, ctx);
+                                }
                                 ctx.notify();
                             }
                         }

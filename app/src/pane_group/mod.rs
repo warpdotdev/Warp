@@ -3274,7 +3274,6 @@ impl PaneGroup {
                 self.insert_ambient_agent_pane_hidden_for_child_agent(parent_pane_id, ctx);
 
             if let Some(new_terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
-                let new_terminal_view_id = new_terminal_view.id();
                 let mut restored = false;
                 new_terminal_view.update(ctx, |terminal_view, ctx| {
                     terminal_view.restore_conversation_after_view_creation(
@@ -3302,18 +3301,6 @@ impl PaneGroup {
                     restored = true;
                 });
                 if restored {
-                    // Hidden child panes are the canonical owners for child
-                    // conversations. `restore_conversation_after_view_creation`
-                    // intentionally uses the non-transferring history API, so
-                    // explicitly transfer ownership after the child pane has
-                    // restored the conversation.
-                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                        history_model.set_active_conversation_id(
-                            child_id,
-                            new_terminal_view_id,
-                            ctx,
-                        );
-                    });
                     self.child_agent_panes.insert(child_id, new_pane_id.into());
                 } else {
                     log::error!(
@@ -3341,7 +3328,6 @@ impl PaneGroup {
             self.insert_terminal_pane_hidden_for_child_agent(parent_pane_id, HashMap::new(), ctx);
 
         if let Some(new_terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
-            let new_terminal_view_id = new_terminal_view.id();
             if let Some(task_context) = child_task_context.as_ref() {
                 apply_hidden_child_agent_task_context(&new_terminal_view, task_context, ctx);
             }
@@ -3357,14 +3343,6 @@ impl PaneGroup {
                     AgentViewEntryOrigin::ChildAgent,
                     ctx,
                 );
-            });
-            // Hidden child panes are the canonical owners for child
-            // conversations. `restore_conversation_after_view_creation`
-            // intentionally uses the non-transferring history API, so
-            // explicitly transfer ownership after the child pane has restored
-            // the conversation.
-            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                history_model.set_active_conversation_id(child_id, new_terminal_view_id, ctx);
             });
 
             self.child_agent_panes.insert(child_id, new_pane_id.into());

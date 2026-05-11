@@ -33,6 +33,15 @@ pub(crate) struct HiddenChildAgentConversationRequest {
     pub task_context: Option<HiddenChildAgentTaskContext>,
 }
 
+pub(crate) struct ErrorChildAgentConversationRequest {
+    pub parent_pane_id: PaneId,
+    pub name: String,
+    pub parent_conversation_id: AIConversationId,
+    pub request_id: Option<StartAgentRequestId>,
+    pub orchestration_harness: Option<Harness>,
+    pub error_message: String,
+}
+
 pub(crate) fn apply_hidden_child_agent_task_context(
     terminal_view: &ViewHandle<TerminalView>,
     task_context: &HiddenChildAgentTaskContext,
@@ -193,14 +202,17 @@ fn create_error_child_agent_conversation_context(
 
 pub(crate) fn create_error_child_agent_conversation(
     group: &mut PaneGroup,
-    parent_pane_id: PaneId,
-    name: String,
-    parent_conversation_id: AIConversationId,
-    request_id: Option<StartAgentRequestId>,
-    orchestration_harness: Option<Harness>,
-    error_message: String,
+    request: ErrorChildAgentConversationRequest,
     ctx: &mut ViewContext<PaneGroup>,
 ) -> Option<AIConversationId> {
+    let ErrorChildAgentConversationRequest {
+        parent_pane_id,
+        name,
+        parent_conversation_id,
+        request_id,
+        orchestration_harness,
+        error_message,
+    } = request;
     let Some((terminal_view, terminal_view_id, conversation_id)) =
         create_error_child_agent_conversation_context(
             group,

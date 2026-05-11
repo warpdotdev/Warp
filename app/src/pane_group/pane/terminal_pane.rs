@@ -31,7 +31,8 @@ use crate::{
     app_state::{AmbientAgentPaneSnapshot, LeafContents, TerminalPaneSnapshot},
     pane_group::child_agent::{
         create_error_child_agent_conversation, create_hidden_child_agent_conversation,
-        HiddenChildAgentConversation, HiddenChildAgentConversationRequest,
+        ErrorChildAgentConversationRequest, HiddenChildAgentConversation,
+        HiddenChildAgentConversationRequest,
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
@@ -1250,12 +1251,15 @@ fn dispatch_start_agent_conversation(
         StartAgentExecutionMode::Local { .. } => {
             let _ = create_error_child_agent_conversation(
                 group,
-                parent_pane_id,
-                request.name,
-                request.parent_conversation_id,
-                Some(request.id),
-                None,
-                "Local harness child agents are not supported in WASM builds.".to_string(),
+                ErrorChildAgentConversationRequest {
+                    parent_pane_id,
+                    name: request.name,
+                    parent_conversation_id: request.parent_conversation_id,
+                    request_id: Some(request.id),
+                    orchestration_harness: None,
+                    error_message: "Local harness child agents are not supported in WASM builds."
+                        .to_string(),
+                },
                 ctx,
             );
         }
@@ -1451,12 +1455,16 @@ fn launch_local_harness_child(
                 } else {
                     let _ = create_error_child_agent_conversation(
                         group,
-                        parent_pane_id,
-                        request_name,
-                        parent_conversation_id,
-                        Some(request_id),
-                        Some(orchestration_harness),
-                        "Failed to create a hidden pane for the local child harness.".to_string(),
+                        ErrorChildAgentConversationRequest {
+                            parent_pane_id,
+                            name: request_name,
+                            parent_conversation_id,
+                            request_id: Some(request_id),
+                            orchestration_harness: Some(orchestration_harness),
+                            error_message:
+                                "Failed to create a hidden pane for the local child harness."
+                                    .to_string(),
+                        },
                         ctx,
                     );
                 }
@@ -1464,12 +1472,14 @@ fn launch_local_harness_child(
             Err(error_message) => {
                 let _ = create_error_child_agent_conversation(
                     group,
-                    parent_pane_id,
-                    request_name,
-                    parent_conversation_id,
-                    Some(request_id),
-                    Some(orchestration_harness),
-                    error_message,
+                    ErrorChildAgentConversationRequest {
+                        parent_pane_id,
+                        name: request_name,
+                        parent_conversation_id,
+                        request_id: Some(request_id),
+                        orchestration_harness: Some(orchestration_harness),
+                        error_message,
+                    },
                     ctx,
                 );
             }
