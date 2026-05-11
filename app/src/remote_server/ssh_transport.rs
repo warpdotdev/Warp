@@ -354,7 +354,8 @@ impl RemoteTransport for SshTransport {
 /// Exit codes where SCP fallback would not help because the failure
 /// is on the remote host itself (not a network/download issue).
 fn should_skip_scp_fallback(error: &Error) -> bool {
-    matches!(error, Error::ScriptFailed { exit_code , .. } if *exit_code == remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE)
+    // Unsupported arch/OS — SCP won't change the architecture
+    matches!(error, Error::ScriptFailed { exit_code , .. } if *exit_code == 2)
 }
 
 /// Runs the install script on the remote host to download and install
