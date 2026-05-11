@@ -441,17 +441,18 @@ impl InstallationModalBody {
     }
 
     fn render_action_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
         let cancel_button = appearance
             .ui_builder()
             .button(ButtonVariant::Text, self.cancel_mouse_state.clone())
             .with_text_label("Cancel".into())
             .with_style(UiComponentStyles {
                 font_weight: Some(Weight::Bold),
-                font_color: Some(appearance.theme().active_ui_text_color().into()),
+                font_color: Some(theme.active_ui_text_color().into()),
                 ..Default::default()
             })
             .with_hovered_styles(UiComponentStyles {
-                font_color: Some(appearance.theme().disabled_ui_text_color().into()),
+                font_color: Some(theme.disabled_ui_text_color().into()),
                 ..Default::default()
             })
             .build()
@@ -459,7 +460,7 @@ impl InstallationModalBody {
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(InstallationModalBodyAction::Cancel))
             .finish();
 
-        let accent_text_color = appearance.theme().font_color(appearance.theme().accent());
+        let accent_text_color = theme.font_color(theme.accent());
 
         let corner_down_left_icon = Container::new(
             ConstrainedBox::new(

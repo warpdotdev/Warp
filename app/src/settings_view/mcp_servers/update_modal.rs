@@ -299,17 +299,18 @@ impl UpdateModalBody {
     }
 
     fn render_action_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
         let cancel_button = appearance
             .ui_builder()
             .button(ButtonVariant::Text, self.cancel_mouse_state.clone())
             .with_text_label("Cancel".into())
             .with_style(UiComponentStyles {
                 font_weight: Some(Weight::Bold),
-                font_color: Some(appearance.theme().active_ui_text_color().into()),
+                font_color: Some(theme.active_ui_text_color().into()),
                 ..Default::default()
             })
             .with_hovered_styles(UiComponentStyles {
-                font_color: Some(appearance.theme().disabled_ui_text_color().into()),
+                font_color: Some(theme.disabled_ui_text_color().into()),
                 ..Default::default()
             })
             .build()
@@ -320,11 +321,9 @@ impl UpdateModalBody {
         // Disable the update button if no updates are selected
         let has_selection = self.selected_updates.iter().any(|&x| x);
         let label_color = if has_selection {
-            appearance.theme().font_color(appearance.theme().accent())
+            theme.font_color(theme.accent())
         } else {
-            appearance
-                .theme()
-                .disabled_text_color(appearance.theme().surface_3())
+            theme.disabled_text_color(theme.surface_3())
         };
 
         let corner_down_left_icon = Container::new(
