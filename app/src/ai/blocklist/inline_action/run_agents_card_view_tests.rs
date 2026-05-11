@@ -29,6 +29,7 @@ fn make_request_with_skills(
             prompt: "do work".to_string(),
             title: "Child agent".to_string(),
         }],
+        plan_id: String::new(),
     }
 }
 

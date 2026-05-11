@@ -6497,11 +6497,14 @@ impl AIBlock {
         let active_config = {
             let history = crate::BlocklistAIHistoryModel::as_ref(ctx);
             let conv = history.conversation(&self.client_ids.conversation_id);
-            let result = conv.and_then(|conv| {
-                conv.orchestration_config()
-                    .cloned()
-                    .map(|config| (config, conv.orchestration_status()))
-            });
+            let result = if !request.plan_id.is_empty() {
+                conv.and_then(|conv| {
+                    conv.orchestration_config_for_plan(&request.plan_id)
+                        .map(|(config, status)| (config.clone(), status))
+                })
+            } else {
+                None
+            };
             result
         };
 
