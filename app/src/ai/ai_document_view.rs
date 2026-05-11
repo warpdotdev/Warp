@@ -304,12 +304,13 @@ impl AIDocumentView {
                             // sends the orchestration config).
                             if me.orchestration_config_block.is_none() {
                                 let conv_id = *cid;
-                                me.orchestration_config_block =
-                                    Some(ctx.add_typed_action_view(move |ctx| {
+                                let config_block =
+                                    ctx.add_typed_action_view(move |ctx| {
                                         OrchestrationConfigBlockView::new_with_conversation_id(
                                             conv_id, ctx,
                                         )
-                                    }));
+                                    });
+                                me.orchestration_config_block = Some(config_block);
                             }
                             let config_block_id =
                                 me.orchestration_config_block.as_ref().unwrap().id();

@@ -462,12 +462,10 @@ impl View for OrchestrationConfigBlockView {
             }
         }
 
-        // Outer container with accent styling per Figma.
-        // Composite the translucent accent overlay against the theme background
-        // to produce an opaque color. This is necessary because the config block
-        // is rendered inside the editor's ClippedScrollable, which does not have
-        // an opaque background behind it — translucent fills would bleed through
-        // to the underlying content, causing washed-out colors in light themes.
+        // Outer container with accent styling.  Composite the translucent
+        // accent overlay against theme.background() to produce an opaque
+        // color — the config block sits inside the editor's
+        // ClippedScrollable which has no backing background.
         let accent_bg = theme
             .background()
             .blend(&warp_core::ui::theme::color::internal_colors::accent_overlay_1(theme));
