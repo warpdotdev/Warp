@@ -927,7 +927,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::RememberFastForwardState,
     FeatureFlag::HOANotifications,
     FeatureFlag::OrchestrationV2,
-    FeatureFlag::OrchestrationPillBar,
     FeatureFlag::RunAgentsTool,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
@@ -953,6 +952,7 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::MarkdownTables,
     FeatureFlag::GitOperationsInCodeReview,
+    FeatureFlag::OrchestrationPillBar,
 ];
 
 /// Features enabled for all release builds (i.e.: everything but WarpLocal).
@@ -1047,6 +1047,7 @@ impl FeatureFlag {
             MarkdownTables => Some("Enables rendering and interaction support for markdown tables in notebooks."),
             SettingsFile => Some("Enables configuring Warp via a user-editable `settings.toml` file, with hot reload and error reporting for invalid values."),
             GitOperationsInCodeReview => Some("Enables commit, push, and create-PR actions directly from the code review panel."),
+            OrchestrationPillBar => Some("Enables the orchestration pill bar when actively viewing an orchestrator agent."),
             _ => None,
         }
     }
