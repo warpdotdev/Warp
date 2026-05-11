@@ -119,6 +119,26 @@ pub(super) fn render_agent_avatar_disc(
     )
 }
 
+fn descendant_conversation_ids_in_spawn_order(
+    history: &BlocklistAIHistoryModel,
+    parent_id: AIConversationId,
+) -> Vec<AIConversationId> {
+    let mut descendants = Vec::new();
+    collect_descendant_conversation_ids_in_spawn_order(history, parent_id, &mut descendants);
+    descendants
+}
+
+fn collect_descendant_conversation_ids_in_spawn_order(
+    history: &BlocklistAIHistoryModel,
+    parent_id: AIConversationId,
+    descendants: &mut Vec<AIConversationId>,
+) {
+    for child_id in history.child_conversation_ids_of(&parent_id) {
+        descendants.push(*child_id);
+        collect_descendant_conversation_ids_in_spawn_order(history, *child_id, descendants);
+    }
+}
+
 /// What kind of pill we are rendering, which determines click behavior.
 #[derive(Clone, Copy)]
 enum PillKind {
@@ -401,8 +421,8 @@ impl OrchestrationPillBar {
         if let Some(parent_id) = parent_conversation_id(active_conversation, ctx) {
             alive.insert(parent_id);
         }
-        for child in history.child_conversations_of(orchestrator_id) {
-            alive.insert(child.id());
+        for child_id in descendant_conversation_ids_in_spawn_order(history, orchestrator_id) {
+            alive.insert(child_id);
         }
         let mut mouse_states = self.mouse_states.borrow_mut();
         let mut overflow_states = self.overflow_button_mouse_states.borrow_mut();
@@ -429,9 +449,13 @@ impl OrchestrationPillBar {
         let orchestrator_id = parent_conversation_id(active_conversation, app).unwrap_or(active_id);
         let orchestrator = history.conversation(&orchestrator_id)?;
 
-        // Use registration order (stable). Don't re-sort by start_time:
-        // not-yet-started children would reshuffle once they begin streaming.
-        let children = history.child_conversations_of(orchestrator_id);
+        // Walk the full descendant tree in pre-order, preserving each
+        // parent's child registration order so nested branches stay
+        // contiguous and grandchildren remain visible in the row.
+        let children: Vec<_> = descendant_conversation_ids_in_spawn_order(history, orchestrator_id)
+            .into_iter()
+            .filter_map(|id| history.conversation(&id))
+            .collect();
 
         // Nothing to show if the orchestrator has no children yet.
         if children.is_empty() {
@@ -455,9 +479,10 @@ impl OrchestrationPillBar {
             pin_state: PillPinState::Unpinned,
         });
 
-        // Then a pill per child. Pin detection is currently disabled —
-        // restoring it requires plumbing pane visibility into the active
-        // views model so we can distinguish hidden vs. visible child panes.
+        // Then a pill per descendant child. Pin detection is currently
+        // disabled — restoring it requires plumbing pane visibility into
+        // the active views model so we can distinguish hidden vs. visible
+        // child panes.
         for child in children {
             let name = child
                 .agent_name()
@@ -1221,6 +1246,20 @@ fn render_chip(
         .finish()
 }
 
+fn navigation_action_for_pill(kind: PillKind, conversation_id: AIConversationId) -> TerminalAction {
+    match kind {
+        // The orchestrator pill is the "home" conversation for the tree, so
+        // navigating back to it should switch the current pane's agent view.
+        PillKind::Orchestrator => TerminalAction::SwitchAgentViewToConversation { conversation_id },
+        // Child conversations already have a dedicated hidden pane/session
+        // created at StartAgent time. Revealing that pane keeps any live
+        // harness session, CLI listener, ambient-agent session state, and PTY
+        // output attached to the real owner instead of trying to recreate the
+        // child transcript in the current pane.
+        PillKind::Child => TerminalAction::RevealChildAgent { conversation_id },
+    }
+}
+
 fn render_pill(
     spec: PillSpec,
     mouse_state: MouseStateHandle,
@@ -1427,7 +1466,6 @@ fn render_pill(
         if is_selected {
             return;
         }
-        let _ = kind;
         // Single source of truth: if the conversation is currently owned
         // by a *different* visible terminal view than this orchestrator
         // pane (because it was split off into a separate pane or tab),
@@ -1446,18 +1484,18 @@ fn render_pill(
             ));
             return;
         }
-        // Pinned pills focus the existing pane/tab that already hosts this
-        // child agent (via `RevealChildAgent`, which the pane group treats
-        // as a request to show + focus an existing child pane). Unpinned
-        // pills navigate the *current* pane in place via
-        // `SwitchAgentViewToConversation`. Both paths bubble through
-        // `PaneHeaderAction::CustomAction` because the pill bar lives
-        // inside the pane header chrome (mirrors `agent_view_back_button`).
-        let action = if is_pinned {
-            TerminalAction::RevealChildAgent { conversation_id }
-        } else {
-            TerminalAction::SwitchAgentViewToConversation { conversation_id }
-        };
+        // Child pills should reveal the existing child pane/session, not
+        // switch the current pane in place. The hidden child pane owns the
+        // live harness/ambient session and associated view-scoped models; if
+        // we merely re-enter the child conversation in the current pane, the
+        // actual running session stays attached to the hidden pane and the
+        // user sees an empty child view. The orchestrator pill still switches
+        // the current pane back to the parent conversation.
+        //
+        // We keep the visible-owner fast path above so a child that's already
+        // open in another visible pane/tab still focuses that existing
+        // destination rather than trying to reveal the hidden bootstrap pane.
+        let action = navigation_action_for_pill(kind, conversation_id);
         ctx.dispatch_typed_action(
             PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(action),
         );
@@ -2073,3 +2111,7 @@ fn build_crumb_inner(
     }
     container.finish()
 }
+
+#[cfg(test)]
+#[path = "orchestration_pill_bar_tests.rs"]
+mod tests;
