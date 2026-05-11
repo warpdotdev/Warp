@@ -251,7 +251,7 @@ pub enum FeatureFlag {
 
     /// Enables full source code embedding of repos when using codebase context.
     FullSourceCodeEmbedding,
-    
+
     /// Enables codebase indexing inside remote server daemon processes.
     RemoteCodebaseIndexing,
 

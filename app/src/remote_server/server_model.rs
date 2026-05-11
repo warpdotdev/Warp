@@ -7,9 +7,9 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use warp_core::SessionId;
 use warp_core::channel::ChannelState;
 use warp_core::safe_error;
+use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
 use warpui::platform::TerminationMode;
@@ -51,7 +51,7 @@ pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 
 pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
 use crate::ai::agent::FileLocations;
-use crate::ai::blocklist::{ReadFileContextResult, read_local_file_context};
+use crate::ai::blocklist::{read_local_file_context, ReadFileContextResult};
 use crate::auth::auth_state::{AuthState, AuthStateProvider};
 use crate::features::FeatureFlag;
 use crate::terminal::model::session::command_executor::{

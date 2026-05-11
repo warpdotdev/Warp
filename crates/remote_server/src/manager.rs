@@ -5,7 +5,6 @@ use std::sync::Arc;
 #[cfg(not(target_family = "wasm"))]
 use std::time::Duration;
 
-use crate::HostId;
 use crate::auth::RemoteServerAuthContext;
 #[cfg(not(target_family = "wasm"))]
 use crate::client::ClientEvent;
@@ -23,11 +22,12 @@ use crate::setup::UnsupportedReason;
 #[cfg(not(target_family = "wasm"))]
 use crate::transport::Connection;
 use crate::transport::{Error, InstallSource, RemoteTransport};
+use crate::HostId;
 use repo_metadata::RepoMetadataUpdate;
 use serde::Serialize;
-use warp_core::SessionId;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
+use warp_core::SessionId;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::FutureExt as _;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
