@@ -75,6 +75,21 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-11.** Fix t2-7 zoom keybinding routing + add visual zoom
+       indicator. `FixedBinding::new("=", ...)` / `"-"` / `"0"` never
+       dispatch in a Warp terminal context because unmodified
+       character keys route to the terminal stdin layer first; only
+       special keys (`escape`/`left`/`right`) and modifier-prefixed
+       keys reach view-scoped action bindings. Surfaced by manual
+       diagnostic: t2-6 animation + t2-8 footer both work, but
+       zoom keys do nothing. Rebind to `cmdorctrl-=` /
+       `cmdorctrl--` / `cmdorctrl-0` (matching the existing local
+       convention in `app/src/util/bindings.rs`) and drop the
+       redundant `shift-=`. Append a zoom-percentage suffix to the
+       metadata footer (e.g. `"1024 × 1024 px · 150%"`) when
+       `zoom_factor != 1.0` so the user gets visual feedback even
+       when the image is window-capped (the t2-7-r1 gotcha). —
+       supplements `tech.md` §698.
 - [x] **t2-10.** Fix `start_asset_load` synchronous-`FailedToLoad`
        gap. The post-load rewrite callback installed by
        `start_asset_load` only fires for the
@@ -113,6 +128,7 @@ Hard rules:
 | t2-9 | EXIF orientation (ICC deferred to t2-9-icc) | `3e694be` | [x] | [x] | [x] |
 | t2-FINAL | presubmit | `611ec2b` | [x] | — | — |
 | t2-10 | sync-`FailedToLoad` rewrite | `af7d5f5` | [x] | [x] | [x] |
+| t2-11 | zoom keys + visual indicator | (see commit msg) | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
