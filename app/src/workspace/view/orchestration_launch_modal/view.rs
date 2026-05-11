@@ -1,6 +1,6 @@
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::theme::{phenomenon::PhenomenonStyle, Fill};
+use warp_core::ui::theme::Fill;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::elements::{
     Align, CacheOption, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
@@ -21,6 +21,40 @@ const MODAL_WIDTH: f32 = 420.;
 const HERO_HEIGHT: f32 = 92.;
 const HERO_IMAGE_PATH: &str = "async/png/onboarding/orchestration_launch_banner.png";
 const LEARN_MORE_URL: &str = "https://warp.dev/placeholder-launch-blog-link";
+fn modal_background(appearance: &Appearance) -> Fill {
+    appearance.theme().surface_3()
+}
+
+fn modal_text_main(appearance: &Appearance) -> ColorU {
+    appearance
+        .theme()
+        .main_text_color(modal_background(appearance))
+        .into_solid()
+}
+
+fn modal_text_sub(appearance: &Appearance) -> ColorU {
+    appearance
+        .theme()
+        .sub_text_color(modal_background(appearance))
+        .into_solid()
+}
+
+fn modal_overlay_1(appearance: &Appearance) -> Fill {
+    appearance.theme().surface_overlay_1()
+}
+
+fn modal_overlay_2(appearance: &Appearance) -> Fill {
+    appearance.theme().surface_overlay_2()
+}
+
+fn modal_terminal_magenta(appearance: &Appearance) -> ColorU {
+    appearance.theme().terminal_colors().normal.magenta.into()
+}
+
+fn modal_terminal_magenta_overlay_1(appearance: &Appearance) -> ColorU {
+    let magenta = appearance.theme().terminal_colors().normal.magenta;
+    appearance.theme().ansi_overlay_1(magenta)
+}
 
 struct FeatureItem {
     icon: Icon,
@@ -74,9 +108,9 @@ pub enum OrchestrationLaunchModalEvent {
 struct CloseButtonTheme;
 
 impl ActionButtonTheme for CloseButtonTheme {
-    fn background(&self, hovered: bool, _appearance: &Appearance) -> Option<Fill> {
+    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {
         if hovered {
-            Some(Fill::Solid(PhenomenonStyle::modal_close_button_hover()))
+            Some(modal_overlay_1(appearance))
         } else {
             None
         }
@@ -86,18 +120,18 @@ impl ActionButtonTheme for CloseButtonTheme {
         &self,
         _hovered: bool,
         _background: Option<Fill>,
-        _appearance: &Appearance,
+        appearance: &Appearance,
     ) -> ColorU {
-        PhenomenonStyle::modal_close_button_text()
+        appearance.theme().foreground().into_solid()
     }
 }
 
 struct LearnMoreButtonTheme;
 
 impl ActionButtonTheme for LearnMoreButtonTheme {
-    fn background(&self, hovered: bool, _appearance: &Appearance) -> Option<Fill> {
+    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {
         if hovered {
-            Some(Fill::Solid(PhenomenonStyle::subtle_border()))
+            Some(modal_overlay_2(appearance))
         } else {
             None
         }
@@ -107,30 +141,36 @@ impl ActionButtonTheme for LearnMoreButtonTheme {
         &self,
         _hovered: bool,
         _background: Option<Fill>,
-        _appearance: &Appearance,
+        appearance: &Appearance,
     ) -> ColorU {
-        PhenomenonStyle::modal_feature_title_text()
+        modal_text_main(appearance)
     }
 
-    fn border(&self, _appearance: &Appearance) -> Option<ColorU> {
-        Some(PhenomenonStyle::subtle_border())
+    fn border(&self, appearance: &Appearance) -> Option<ColorU> {
+        Some(appearance.theme().outline().into_solid())
     }
 }
 
 struct CtaButtonTheme;
 
 impl ActionButtonTheme for CtaButtonTheme {
-    fn background(&self, hovered: bool, _appearance: &Appearance) -> Option<Fill> {
-        Some(PhenomenonStyle::modal_button_background_fill(hovered))
+    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {
+        let magenta = appearance.theme().terminal_colors().normal.magenta;
+        let color = if hovered {
+            appearance.theme().ansi_bg(magenta)
+        } else {
+            magenta.into()
+        };
+        Some(Fill::Solid(color))
     }
 
     fn text_color(
         &self,
         _hovered: bool,
         _background: Option<Fill>,
-        _appearance: &Appearance,
+        appearance: &Appearance,
     ) -> ColorU {
-        PhenomenonStyle::modal_button_text()
+        appearance.theme().foreground().into_solid()
     }
 }
 
@@ -211,9 +251,10 @@ impl OrchestrationLaunchModal {
     }
 
     fn render_badge(appearance: &Appearance) -> Box<dyn Element> {
-        let badge_color = appearance.theme().ansi_fg_magenta();
+        let text_color = modal_terminal_magenta(appearance);
+        let background_color = modal_terminal_magenta_overlay_1(appearance);
         let text = Text::new_inline("New".to_string(), appearance.ui_font_family(), 14.)
-            .with_color(badge_color)
+            .with_color(text_color)
             .finish();
         ConstrainedBox::new(
             Container::new(
@@ -224,7 +265,7 @@ impl OrchestrationLaunchModal {
                     .finish(),
             )
             .with_horizontal_padding(8.)
-            .with_background(Fill::Solid(badge_color).with_opacity(10))
+            .with_background(Fill::Solid(background_color))
             .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
             .finish(),
         )
@@ -238,7 +279,7 @@ impl OrchestrationLaunchModal {
             appearance.ui_font_family(),
             20.,
         )
-        .with_color(PhenomenonStyle::modal_title_text())
+        .with_color(modal_text_main(appearance))
         .with_style(Properties::default().weight(Weight::Semibold))
         .finish()
     }
@@ -249,13 +290,13 @@ impl OrchestrationLaunchModal {
             appearance.ui_font_family(),
             14.,
         )
-        .with_color(PhenomenonStyle::modal_feature_description_text())
+        .with_color(modal_text_sub(appearance))
         .finish()
     }
 
     fn render_feature_badge(label: &'static str, appearance: &Appearance) -> Box<dyn Element> {
         let font_family = appearance.ui_font_family();
-        let color = PhenomenonStyle::modal_feature_description_text();
+        let color = modal_text_sub(appearance);
         Container::new(
             Text::new_inline(label.to_string(), font_family, 11.)
                 .with_color(color)
@@ -264,16 +305,14 @@ impl OrchestrationLaunchModal {
         .with_horizontal_padding(6.)
         .with_vertical_padding(2.)
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-        .with_background(Fill::Solid(color).with_opacity(15))
+        .with_background(modal_overlay_1(appearance))
         .finish()
     }
 
     fn render_feature_row(&self, item: &FeatureItem, appearance: &Appearance) -> Box<dyn Element> {
         let icon_el = ConstrainedBox::new(
             item.icon
-                .to_warpui_icon(Fill::Solid(
-                    PhenomenonStyle::modal_feature_description_text(),
-                ))
+                .to_warpui_icon(Fill::Solid(modal_text_sub(appearance)))
                 .finish(),
         )
         .with_width(16.)
@@ -285,7 +324,7 @@ impl OrchestrationLaunchModal {
             .with_spacing(6.);
         title_row.add_child(
             Text::new_inline(item.title.to_string(), appearance.ui_font_family(), 14.)
-                .with_color(PhenomenonStyle::modal_feature_title_text())
+                .with_color(modal_text_main(appearance))
                 .finish(),
         );
         if let Some(badge_label) = item.badge {
@@ -298,7 +337,7 @@ impl OrchestrationLaunchModal {
             .with_child(title_row.finish())
             .with_child(
                 Text::new(item.description, appearance.ui_font_family(), 14.)
-                    .with_color(PhenomenonStyle::modal_feature_description_text())
+                    .with_color(modal_text_sub(appearance))
                     .finish(),
             )
             .finish();
@@ -352,7 +391,7 @@ impl OrchestrationLaunchModal {
         )
         .with_horizontal_padding(32.)
         .with_vertical_padding(32.)
-        .with_background(Fill::Solid(PhenomenonStyle::modal_background()))
+        .with_background(modal_background(appearance))
         .with_corner_radius(CornerRadius::with_bottom(Radius::Pixels(8.)))
         .finish()
     }
@@ -383,7 +422,7 @@ impl View for OrchestrationLaunchModal {
                     .with_child(self.render_body(appearance))
                     .finish(),
             )
-            .with_background(Fill::Solid(PhenomenonStyle::modal_background()))
+            .with_background(modal_background(appearance))
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
             .finish(),
         )
@@ -391,7 +430,13 @@ impl View for OrchestrationLaunchModal {
         .finish();
 
         Container::new(Align::new(card).finish())
-            .with_background_color(ColorU::new(18, 18, 18, 128))
+            .with_background_color(
+                appearance
+                    .theme()
+                    .foreground()
+                    .with_opacity(70)
+                    .into_solid(),
+            )
             .finish()
     }
 }
