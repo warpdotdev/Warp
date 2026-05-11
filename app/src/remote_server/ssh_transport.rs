@@ -147,7 +147,6 @@ impl RemoteTransport for SshTransport {
             // exit (e.g. SSH exit 255 for a dead connection, or signal
             // termination) is treated as a transport-level failure.
             let code = output.status.code();
-            let stdout = String::from_utf8_lossy(&output.stdout);
             match code {
                 Some(0) => Ok(true),
                 Some(126) | Some(127) => Ok(false),
