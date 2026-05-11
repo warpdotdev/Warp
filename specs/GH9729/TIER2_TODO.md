@@ -243,7 +243,7 @@ Hard rules:
 | t2-18 | remove diagnostic logs | `45ccfe2` | [x] | [x] | [x] |
 | t2-19 | custom PanClippedImage element | `67f014b` | [x] | [x] | [x] |
 | t2-20 | pan state on persistent struct | `c102817` | [x] | [x] | [x] |
-| t2-21 | 1.25× step + double-tap zoom-and-center | `d28f6f3` | [x] | [ ] | [ ] |
+| t2-21 | 1.25× step + double-tap zoom-and-center | `d28f6f3` | [x] | [x] | [x] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
