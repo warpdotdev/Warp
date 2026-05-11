@@ -90,6 +90,78 @@ const TAB_INTERNAL_MARGIN: f32 = 4.;
 const TAB_HORIZONTAL_MARGIN: f32 = 8.;
 const TAB_PADDING: f32 = 2.;
 
+/// Position id used to track the rendered width of the editor tab strip so
+/// [`TabDisplayMode`] can be derived from the previous-frame layout.
+const TABS_ROW_POSITION_ID: &str = "code_view_tabs_row";
+
+/// Estimated per-tab width at which we keep the close button visible for every
+/// tab (the historical "wide" behavior). Above this we have enough room for an
+/// icon, a meaningful filename, and a 24px close-button slot on every tab.
+const TAB_WIDE_THRESHOLD: f32 = 160.;
+/// Estimated per-tab width at which we still reserve room for the close button
+/// on the active tab only. Below this we stop reserving the slot at all and
+/// only reveal the close button on hover (Chrome-style narrow tabs).
+const TAB_MEDIUM_THRESHOLD: f32 = 100.;
+/// Estimated per-tab width below which the file icon and the close-button
+/// overlay would visually overlap. Roughly: outer overhead (~20px) + file
+/// icon slot (~20px) + close button (~24px) = 64px. Below this we hide the
+/// file icon when the close-button overlay is shown, so the user sees a
+/// clean X instead of an X stacked on top of the icon.
+const TAB_VERY_NARROW_THRESHOLD: f32 = 64.;
+
+/// Layout/affordance mode for an individual editor tab, derived from the
+/// estimated per-tab width. As the tab strip gets more crowded we progressively
+/// remove the always-visible close button.
+///
+/// See <https://github.com/warpdotdev/warp/issues/10592>.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum TabDisplayMode {
+    /// Plenty of room: file icon + filename + right-side close button on hover
+    /// or active. (Historical behavior.)
+    Wide,
+    /// Tabs are getting tight: keep the right-side close button only on the
+    /// active tab. Hovering an inactive tab does not reveal the close button.
+    Medium,
+    /// Tabs are very narrow: stop always reserving the 24px close-button slot
+    /// so the filename can use the recovered space, and only show the close
+    /// button (on the right, where it normally lives) when the *active* tab
+    /// is hovered. Inactive tabs never reveal the X on hover here, to avoid
+    /// accidental closes when tabs are tiny. The file icon stays in its
+    /// usual left-side slot.
+    Narrow,
+    /// Tabs are so narrow that the file icon and the close-button overlay
+    /// would visually overlap. Behaves like [`Self::Narrow`] for visibility
+    /// rules, but additionally hides the file icon while the close overlay
+    /// is shown (i.e. while the *active* tab is hovered), so the user sees a
+    /// clean X to click instead of an X stacked on top of the file icon.
+    VeryNarrow,
+}
+
+impl TabDisplayMode {
+    /// Picks a display mode from the editor tab strip's measured width and the
+    /// number of tabs currently in the strip. Falls back to [`Self::Wide`] when
+    /// the width is unknown (e.g. on the very first frame) so the initial
+    /// render keeps the existing behavior.
+    fn from_tabs_row_width(tabs_row_width: Option<f32>, tab_count: usize) -> Self {
+        let Some(total) = tabs_row_width else {
+            return Self::Wide;
+        };
+        if tab_count == 0 {
+            return Self::Wide;
+        }
+        let per_tab = total / tab_count as f32;
+        if per_tab >= TAB_WIDE_THRESHOLD {
+            Self::Wide
+        } else if per_tab >= TAB_MEDIUM_THRESHOLD {
+            Self::Medium
+        } else if per_tab >= TAB_VERY_NARROW_THRESHOLD {
+            Self::Narrow
+        } else {
+            Self::VeryNarrow
+        }
+    }
+}
+
 // Keybinding constants - exported so AI document view can reuse
 pub const SAVE_FILE_BINDING_NAME: &str = "code_view:save";
 pub const SAVE_FILE_BINDING_DESCRIPTION: &str = "Save file";
@@ -1458,6 +1530,7 @@ impl CodeView {
         is_hovered: bool,
         has_unsaved_changes: bool,
         appearance: &Appearance,
+        display_mode: TabDisplayMode,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let text_color = if is_active {
@@ -1466,10 +1539,6 @@ impl CodeView {
             blended_colors::text_sub(theme, theme.surface_1())
         };
 
-        let mut row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
-
         let file_name = tab_data
             .path
             .as_ref()
@@ -1477,18 +1546,69 @@ impl CodeView {
             .unwrap_or_else(|| "Untitled".to_string());
         let language_icon =
             icon_from_file_path(&file_name, appearance, ItemHighlightState::Default);
-        row.add_child(
-            Container::new(
-                ConstrainedBox::new(language_icon)
-                    .with_width(LANGUAGE_ICON_WIDTH)
-                    .with_height(LANGUAGE_ICON_WIDTH)
-                    .finish(),
-            )
-            .with_margin_right(TAB_INTERNAL_MARGIN)
-            .finish(),
-        );
 
-        if has_unsaved_changes {
+        // The close button is rendered as a `Stack` overlay anchored to the
+        // tab's right edge instead of as a regular Flex child. This guarantees
+        // the 24x24 button is never squeezed and never overflows past the
+        // tab's right boundary, even when many tabs are crammed into the
+        // strip.
+        //
+        // - Wide: visible when the tab is active or hovered.
+        // - Medium: visible only when the tab is active.
+        // - Narrow / VeryNarrow: visible only when the *active* tab is hovered,
+        //   so a stray hover on an inactive tab can't accidentally close it.
+        let show_close_overlay = match display_mode {
+            TabDisplayMode::Wide => is_active || is_hovered,
+            TabDisplayMode::Medium => is_active,
+            TabDisplayMode::Narrow | TabDisplayMode::VeryNarrow => is_active && is_hovered,
+        };
+
+        // In Wide / Medium we always reserve room on the right for the
+        // close button so tab widths stay visually consistent even when the
+        // button isn't currently visible. In Narrow / VeryNarrow we only
+        // reserve room when the overlay is actually being shown, so the
+        // filename can reclaim those pixels in the common (un-hovered) case.
+        let reserve_close_slot = match display_mode {
+            TabDisplayMode::Wide | TabDisplayMode::Medium => true,
+            TabDisplayMode::Narrow | TabDisplayMode::VeryNarrow => show_close_overlay,
+        };
+        let filename_right_margin = if reserve_close_slot {
+            // 24px for the close button itself plus a small gap so the
+            // filename text doesn't butt up against the X.
+            CLOSE_BUTTON_WIDTH + TAB_INTERNAL_MARGIN
+        } else {
+            TAB_INTERNAL_MARGIN
+        };
+
+        // VeryNarrow + close-overlay visible: the icon and the X would
+        // visually overlap, so hide the file icon (and the unsaved-changes
+        // dot) and let the X stand alone on the right.
+        let hide_icon = matches!(display_mode, TabDisplayMode::VeryNarrow) && show_close_overlay;
+
+        // Build the base row: icon (+ unsaved indicator) + filename. The
+        // close button is overlaid separately below.
+        let mut row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_alignment(MainAxisAlignment::Start)
+            // Fill the allotted width so the `Stack` (and therefore the
+            // close-button overlay) is anchored to the tab's right edge
+            // rather than to the filename text's right edge.
+            .with_main_axis_size(MainAxisSize::Max);
+
+        if !hide_icon {
+            row.add_child(
+                Container::new(
+                    ConstrainedBox::new(language_icon)
+                        .with_width(LANGUAGE_ICON_WIDTH)
+                        .with_height(LANGUAGE_ICON_WIDTH)
+                        .finish(),
+                )
+                .with_margin_right(TAB_INTERNAL_MARGIN)
+                .finish(),
+            );
+        }
+
+        if has_unsaved_changes && !hide_icon {
             row.add_child(
                 Container::new(render_unsaved_changes_icon(text_color))
                     .with_margin_right(TAB_INTERNAL_MARGIN)
@@ -1513,38 +1633,36 @@ impl CodeView {
             Shrinkable::new(
                 1.,
                 Container::new(file_name_text)
-                    .with_margin_right(TAB_INTERNAL_MARGIN)
+                    .with_margin_right(filename_right_margin)
                     .finish(),
             )
             .finish(),
         );
 
-        let show_close = is_active || is_hovered;
-        row.add_child(
-            Shrinkable::new(
-                1.,
-                if show_close {
-                    Self::render_close_button(
-                        appearance,
-                        tab_data.mouse_state_handles.close_handle.clone(),
-                        index,
-                    )
-                } else {
-                    Container::new(
-                        ConstrainedBox::new(Empty::new().finish())
-                            .with_width(CLOSE_BUTTON_WIDTH)
-                            .with_height(CLOSE_BUTTON_WIDTH)
-                            .finish(),
-                    )
-                    .finish()
-                },
-            )
-            .finish(),
-        );
+        // Overlay the close button at the tab's right edge when appropriate.
+        // `ParentOffsetBounds::ParentByPosition` keeps the button inside the
+        // tab even if the layout otherwise wanted to push it out.
+        let mut row_stack = Stack::new();
+        row_stack.add_child(row.finish());
+        if show_close_overlay {
+            row_stack.add_positioned_overlay_child(
+                Self::render_close_button(
+                    appearance,
+                    tab_data.mouse_state_handles.close_handle.clone(),
+                    index,
+                ),
+                OffsetPositioning::offset_from_parent(
+                    Vector2F::zero(),
+                    ParentOffsetBounds::ParentByPosition,
+                    ParentAnchor::MiddleRight,
+                    ChildAnchor::MiddleRight,
+                ),
+            );
+        }
 
         let draggable = Draggable::new(
             tab_data.mouse_state_handles.tab_draggable_state.clone(),
-            row.finish(),
+            row_stack.finish(),
         )
         .with_drag_bounds_callback(|_, window_size| Some(RectF::new(Vector2F::zero(), window_size)))
         .with_accepted_by_drop_target_fn(move |_, _| AcceptedByDropTarget::Yes)
@@ -1651,6 +1769,21 @@ impl CodeView {
         let theme = appearance.theme();
         let is_pane_dragging = header_ctx.draggable_state.is_dragging();
 
+        // Pick a per-tab display mode based on the editor tab strip's measured
+        // width from the previous frame. While dragging a pane, force Wide so
+        // the dragged tab always shows its close affordance.
+        let tabs_row_width = if is_pane_dragging {
+            None
+        } else {
+            app.element_position_by_id_at_last_frame(self.window_id, TABS_ROW_POSITION_ID)
+                .map(|rect| rect.width())
+        };
+        let display_mode = if is_pane_dragging {
+            TabDisplayMode::Wide
+        } else {
+            TabDisplayMode::from_tabs_row_width(tabs_row_width, self.tab_group.len())
+        };
+
         let mut header_row = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -1680,14 +1813,29 @@ impl CodeView {
                 tab_data.mouse_state_handles.tab_handle.clone(),
                 |tab_handle| {
                     let mut stack = Stack::new();
+                    // We treat the tab as hovered if either the tab itself or
+                    // its (overlaid) close button reports hover. The close
+                    // button sits on a higher z-layer so when the mouse is
+                    // over it `Hoverable::is_mouse_over_element` returns false
+                    // for the outer tab (it's "covered"). Without this OR the
+                    // close-button overlay would flicker in Narrow mode: the
+                    // outer hover would drop, hide the overlay, the mouse
+                    // would no longer be covered, hover would re-fire, the
+                    // overlay would reappear, ad nauseam.
+                    let is_hovered = tab_handle.is_hovered()
+                        || close_handle
+                            .lock()
+                            .map(|handle| handle.is_hovered())
+                            .unwrap_or(false);
                     let container = Container::new(
                         Container::new(Self::render_tab_internal(
                             tab_data,
                             index,
                             is_active,
-                            tab_handle.is_hovered(),
+                            is_hovered,
                             Self::has_unsaved_changes(tab_data, app),
                             appearance,
+                            display_mode,
                         ))
                         .with_horizontal_margin(TAB_HORIZONTAL_MARGIN)
                         .with_padding(Padding::uniform(TAB_PADDING))
@@ -1724,7 +1872,7 @@ impl CodeView {
                         stack.add_child(container.finish());
                     }
 
-                    if tab_handle.is_hovered()
+                    if is_hovered
                         && !tab_data
                             .mouse_state_handles
                             .tab_draggable_state
@@ -1804,8 +1952,14 @@ impl CodeView {
             Expanded::new(1., draggable_spacer).finish()
         });
 
-        // Clip tabs so overflow doesn't push the buttons off-screen.
-        let clipped_tabs = Clipped::new(tabs_row.finish()).finish();
+        // Clip tabs so overflow doesn't push the buttons off-screen. Wrap with
+        // a SavePosition so the next frame can read the strip's allocated
+        // width and pick a TabDisplayMode for it.
+        let clipped_tabs = SavePosition::new(
+            Clipped::new(tabs_row.finish()).finish(),
+            TABS_ROW_POSITION_ID,
+        )
+        .finish();
         header_row.add_child(if is_pane_dragging {
             clipped_tabs
         } else {
@@ -2300,4 +2454,95 @@ fn render_unsaved_changes_icon(color: ColorU) -> Box<dyn Element> {
     .with_width(8.)
     .with_height(8.)
     .finish()
+}
+
+#[cfg(test)]
+mod tab_display_mode_tests {
+    use super::{
+        TabDisplayMode, TAB_MEDIUM_THRESHOLD, TAB_VERY_NARROW_THRESHOLD, TAB_WIDE_THRESHOLD,
+    };
+
+    #[test]
+    fn unknown_width_keeps_wide_mode() {
+        // First-frame fallback: when the layout cache has no entry for the
+        // tab strip, we keep the historical (wide) behavior so we never start
+        // out hiding the close button.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(None, 5),
+            TabDisplayMode::Wide,
+        );
+    }
+
+    #[test]
+    fn empty_tab_group_does_not_divide_by_zero() {
+        // Defensive: render_tab_bar_with_draggable is only used for >=2 tabs
+        // today, but the helper should still be safe with 0.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some(800.0), 0),
+            TabDisplayMode::Wide,
+        );
+    }
+
+    #[test]
+    fn wide_when_each_tab_has_at_least_the_wide_threshold() {
+        // 5 tabs with 1000px of strip → 200px/tab > 160px wide threshold.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some(1000.0), 5),
+            TabDisplayMode::Wide,
+        );
+        // Right at the wide boundary: 160px/tab.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some(TAB_WIDE_THRESHOLD * 5.0), 5),
+            TabDisplayMode::Wide,
+        );
+    }
+
+    #[test]
+    fn medium_between_thresholds() {
+        // Just below wide → Medium (active-only close button).
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some((TAB_WIDE_THRESHOLD - 1.0) * 4.0), 4),
+            TabDisplayMode::Medium,
+        );
+        // Right at the medium boundary: 100px/tab.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some(TAB_MEDIUM_THRESHOLD * 8.0), 8),
+            TabDisplayMode::Medium,
+        );
+    }
+
+    #[test]
+    fn narrow_when_each_tab_falls_below_the_medium_threshold() {
+        // 12 tabs sharing 1000px → ~83px/tab — fits icon+X side by side, so
+        // we still want the regular Narrow mode (icon kept on hover).
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some(1000.0), 12),
+            TabDisplayMode::Narrow,
+        );
+        // Just below medium boundary.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some((TAB_MEDIUM_THRESHOLD - 1.0) * 4.0), 4),
+            TabDisplayMode::Narrow,
+        );
+        // Right at the very-narrow boundary — still Narrow.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some(TAB_VERY_NARROW_THRESHOLD * 8.0), 8),
+            TabDisplayMode::Narrow,
+        );
+    }
+
+    #[test]
+    fn very_narrow_when_icon_and_close_button_would_overlap() {
+        // 16 tabs in 800px → 50px/tab, below the very-narrow threshold so the
+        // file icon and the close-button overlay would stack on each other.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some(800.0), 16),
+            TabDisplayMode::VeryNarrow,
+        );
+        // Just below the very-narrow boundary.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some((TAB_VERY_NARROW_THRESHOLD - 1.0) * 6.0), 6,),
+            TabDisplayMode::VeryNarrow,
+        );
+    }
 }
