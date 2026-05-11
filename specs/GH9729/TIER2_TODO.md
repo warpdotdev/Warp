@@ -152,7 +152,7 @@ Hard rules:
 | t2-10 | sync-`FailedToLoad` rewrite | `af7d5f5` | [x] | [x] | [x] |
 | t2-11 | zoom keys + visual indicator | `9b51d44` | [x] | [x] | [x] |
 | t2-12 | GUI zoom buttons + scroll-zoom | `65b2f56` | [x] | [x] | [x] |
-| t2-13 | toolbar polish + fix + button | `a655650` | [x] | [ ] | [ ] |
+| t2-13 | toolbar polish + fix + button | `a655650` | [x] | [x] | [x] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
@@ -257,6 +257,24 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   an Orientation=6 tag; (c) Small EXIF-tagged JPEGs now incur one
   extra re-encode round-trip (necessary for correctness — worth a
   code-comment note for future maintainers). — `reviews/tier2-t2-9-r1.md`.
+- **t2-13-r1.** (a) Prev/next buttons at `lightbox.rs:451, 479`
+  still use the raw `12.` literal instead of `SCRIM_BUTTON_INSET`,
+  leaving the "one source of truth" consolidation incomplete. (b)
+  Commit message claim "step_zoom never produces exactly 1.0 from
+  non-1.0 inputs" is wrong — `1.5 / 1.5 = 1.0` exactly in IEEE-754.
+  This strengthens (not weakens) the correctness of the
+  `zoom == 1.0` disabled check: a user zoom-in/zoom-out round-trip
+  lands on exactly 1.0 and the 100% button correctly disables. —
+  `reviews/tier2-t2-13-r1.md`.
+- **t2-13-r2.** (a) `ZOOM_BUTTON_SLOT_WIDTH = 56.` is a calibrated
+  magic number — well-commented technical debt but worth a
+  follow-up tracker bullet (proper hit-test-correct flex wrapper
+  or measured button width). (b) `disabled: zoom == 1.0` strict
+  float equality is provably correct but warrants a one-line
+  justification comment to defuse the obvious `f32::EPSILON`
+  review question. (c) `SCRIM_BUTTON_INSET` unification is
+  incomplete — same as r1.(a). —
+  `reviews/tier2-t2-13-r2.md`.
 - **t2-12-r1.** Minor nits all non-blocking: (a) cmd+scroll only
   fires when the cursor is over the image rect rather than anywhere
   over the scrim — extending the scroll handler to the scrim is a
