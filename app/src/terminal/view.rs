@@ -5292,17 +5292,24 @@ impl TerminalView {
                     }
                 }
 
-                if self.is_ambient_agent_session(ctx)
-                    && self
-                        .model
-                        .lock()
+                if self.is_ambient_agent_session(ctx) {
+                    let mut model = self.model.lock();
+                    if model
                         .block_list()
                         .is_executing_oz_environment_startup_commands()
-                {
-                    self.model
-                        .lock()
-                        .block_list_mut()
-                        .set_is_executing_oz_environment_startup_commands(false);
+                    {
+                        model
+                            .block_list_mut()
+                            .set_is_executing_oz_environment_startup_commands(false);
+                    } else if model.is_shared_ambient_agent_session() {
+                        // When CloudModeSetupV2 is off, the startup commands mechanism
+                        // isn't active. Tag all existing terminal blocks with the
+                        // conversation so they appear at the top of the agent view
+                        // (matching the pre-fullscreen-agent-view behavior).
+                        model
+                            .block_list_mut()
+                            .attach_all_blocks_to_conversation(*conversation_id);
+                    }
                 }
 
                 // For an oz local-to-cloud handoff, the first `AppendedExchange` is the

@@ -1654,6 +1654,28 @@ impl BlockList {
         modified_blocks
     }
 
+    /// Attaches every block in the list to `conversation_id` so each block is
+    /// visible while that conversation is the active one in agent view.
+    /// Used for shared ambient session viewers (without CloudModeSetupV2) to make setup commands
+    /// visible at the top of the agent view.
+    pub fn attach_all_blocks_to_conversation(&mut self, conversation_id: AIConversationId) {
+        for block in &mut self.blocks {
+            if let AgentViewVisibility::Agent {
+                origin_conversation_id,
+                ..
+            } = block.agent_view_visibility()
+            {
+                if *origin_conversation_id == conversation_id {
+                    continue;
+                }
+            }
+            block.add_attached_conversation_id(conversation_id);
+        }
+
+        self.mark_agent_view_rich_content_dirty();
+        self.update_blocks_and_sumtree(None, None, |_| {}, |_| {});
+    }
+
     /// Attaches every non-oz-startup block in the list to `conversation_id` so each block is
     /// visible while that conversation is the active one in agent view. Skips blocks flagged
     /// as `is_oz_environment_startup_command` since those are hidden by their own mechanism.
