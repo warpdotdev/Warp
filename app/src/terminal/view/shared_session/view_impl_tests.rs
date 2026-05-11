@@ -6,7 +6,7 @@ use warp_multi_agent_api::{self as api, client_action as api_client_action};
 use crate::ai::agent::conversation::ConversationStatus;
 use crate::ai::agent::AIAgentInput;
 use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentRunDisplayStatus};
-use crate::ai::ambient_agents::task::TaskCreatorInfo;
+use crate::ai::ambient_agents::task::TaskPrincipalInfo;
 use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::auth::user::TEST_USER_UID;
@@ -445,11 +445,12 @@ fn create_cloud_mode_task_for_user(creator_uid: &str) -> AmbientAgentTask {
         source: Some(AgentSource::CloudMode),
         session_id: None,
         session_link: None,
-        creator: Some(TaskCreatorInfo {
+        creator: Some(TaskPrincipalInfo {
             creator_type: "USER".to_string(),
             uid: creator_uid.to_string(),
             display_name: None,
         }),
+        executor: None,
         conversation_id: None,
         request_usage: None,
         is_sandbox_running: false,

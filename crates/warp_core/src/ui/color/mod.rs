@@ -20,6 +20,15 @@ pub const CLAUDE_ORANGE: ColorU = ColorU {
     a: OPAQUE,
 };
 
+/// Magenta design-token color (#BF409D), used for the "New" badge and
+/// agent name pills in the orchestration UI.
+pub const MAGENTA: ColorU = ColorU {
+    r: 0xBF,
+    g: 0x40,
+    b: 0x9D,
+    a: OPAQUE,
+};
+
 /// Simple type representing a color _without_ an alpha channel.
 pub struct Rgb {
     r: u8,

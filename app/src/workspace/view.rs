@@ -10,6 +10,7 @@ pub(crate) mod launch_modal;
 pub(crate) mod left_panel;
 pub(crate) mod onboarding;
 pub(crate) mod openwarp_launch_modal;
+pub(crate) mod orchestration_launch_modal;
 pub(crate) mod right_panel;
 mod startup_directory;
 #[cfg(test)]
@@ -147,6 +148,9 @@ use crate::workspace::view::free_tier_limit_hit_modal::{
 use crate::workspace::view::launch_modal::{LaunchModal, LaunchModalEvent, OzLaunchSlide};
 use crate::workspace::view::openwarp_launch_modal::{
     OpenWarpLaunchModal, OpenWarpLaunchModalEvent,
+};
+use crate::workspace::view::orchestration_launch_modal::{
+    OrchestrationLaunchModal, OrchestrationLaunchModalEvent,
 };
 use crate::workspace::{ForkFromExchange, ForkedConversationDestination};
 use crate::BlocklistAIHistoryModel;
@@ -1001,6 +1005,7 @@ pub struct Workspace {
     suggested_rule_modal: ViewHandle<SuggestedRuleModal>,
     oz_launch_modal: ModalWithTab<LaunchModal<OzLaunchSlide>>,
     openwarp_launch_modal: ViewHandle<OpenWarpLaunchModal>,
+    orchestration_launch_modal: ViewHandle<OrchestrationLaunchModal>,
     enable_auto_reload_modal: ViewHandle<EnableAutoReloadModal>,
     build_plan_migration_modal: ViewHandle<BuildPlanMigrationModal>,
     codex_modal: ViewHandle<CodexModal>,
@@ -2715,6 +2720,11 @@ impl Workspace {
             me.handle_openwarp_launch_modal_event(event, ctx);
         });
 
+        let orchestration_launch_view = ctx.add_typed_action_view(OrchestrationLaunchModal::new);
+        ctx.subscribe_to_view(&orchestration_launch_view, |me, _, event, ctx| {
+            me.handle_orchestration_launch_modal_event(event, ctx);
+        });
+
         let launch_config_save_modal = Self::build_launch_config_save_modal(ctx);
 
         let tab_config_params_modal = Self::build_tab_config_params_modal(ctx);
@@ -3055,6 +3065,8 @@ impl Workspace {
                         me.open_tab_and_focus_oz_launch_modal(ctx);
                     } else if model_ref.is_openwarp_launch_modal_open() {
                         me.focus_openwarp_launch_modal(ctx);
+                    } else if model_ref.is_orchestration_launch_modal_open() {
+                        me.focus_orchestration_launch_modal(ctx);
                     } else if model_ref.is_hoa_onboarding_open() {
                         me.show_hoa_onboarding_flow(ctx);
                     } else if model_ref.is_build_plan_migration_modal_open() {
@@ -3188,6 +3200,7 @@ impl Workspace {
                 tab_pane_group_id: None,
             },
             openwarp_launch_modal: openwarp_launch_view,
+            orchestration_launch_modal: orchestration_launch_view,
             enable_auto_reload_modal,
             agent_management_view,
             notification_mailbox_view,
@@ -16389,6 +16402,22 @@ impl Workspace {
         }
     }
 
+    fn handle_orchestration_launch_modal_event(
+        &mut self,
+        event: &OrchestrationLaunchModalEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            OrchestrationLaunchModalEvent::Close => {
+                OneTimeModalModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.mark_orchestration_launch_modal_dismissed(ctx);
+                });
+                self.focus_active_tab(ctx);
+                ctx.notify();
+            }
+        }
+    }
+
     fn handle_oz_launch_modal_event(
         &mut self,
         event: &LaunchModalEvent,
@@ -20213,6 +20242,10 @@ impl Workspace {
         ctx.focus(&self.openwarp_launch_modal);
     }
 
+    fn focus_orchestration_launch_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        ctx.focus(&self.orchestration_launch_modal);
+    }
+
     fn open_tab_and_focus_oz_launch_modal(&mut self, ctx: &mut ViewContext<Self>) {
         // Create a new tab with one terminal session titled "Introducing Oz"
         self.add_tab_with_pane_layout(
@@ -22071,6 +22104,34 @@ impl TypedActionView for Workspace {
                 );
             }
             #[cfg(debug_assertions)]
+            OpenOrchestrationLaunchModal => {
+                OneTimeModalModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.force_open_orchestration_launch_modal(ctx);
+                });
+                ctx.notify();
+            }
+            #[cfg(debug_assertions)]
+            ResetOrchestrationLaunchModalState => {
+                let old_value =
+                    *AISettings::as_ref(ctx).did_check_to_trigger_orchestration_launch_modal;
+                AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
+                    if let Err(e) = ai_settings
+                        .did_check_to_trigger_orchestration_launch_modal
+                        .set_value(false, ctx)
+                    {
+                        log::warn!(
+                            "Failed to reset orchestration launch modal dismissed setting: {e}"
+                        );
+                    }
+                });
+                let new_value =
+                    *AISettings::as_ref(ctx).did_check_to_trigger_orchestration_launch_modal;
+                log::info!(
+                    "Orchestration launch modal state: old={old_value}, new={new_value}, feature_flag_enabled={}",
+                    FeatureFlag::OrchestrationLaunchModal.is_enabled()
+                );
+            }
+            #[cfg(debug_assertions)]
             InstallOpenCodeWarpPlugin => {
                 let message = set_opencode_warp_plugin("github:warpdotdev/opencode-warp-internal");
                 self.toast_stack.update(ctx, |view, ctx| {
@@ -23260,6 +23321,10 @@ impl View for Workspace {
 
         if should_show_modal && one_time_modal_model.is_openwarp_launch_modal_open() {
             stack.add_child(ChildView::new(&self.openwarp_launch_modal).finish());
+        }
+
+        if should_show_modal && one_time_modal_model.is_orchestration_launch_modal_open() {
+            stack.add_child(ChildView::new(&self.orchestration_launch_modal).finish());
         }
 
         if let Some(hoa_flow) = &self.hoa_onboarding_flow {

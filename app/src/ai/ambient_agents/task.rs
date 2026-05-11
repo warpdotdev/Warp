@@ -243,7 +243,9 @@ pub struct AmbientAgentTask {
     pub source: Option<AgentSource>,
     pub session_id: Option<String>,
     pub session_link: Option<String>,
-    pub creator: Option<TaskCreatorInfo>,
+    pub creator: Option<TaskPrincipalInfo>,
+    #[serde(default)]
+    pub executor: Option<TaskPrincipalInfo>,
     pub conversation_id: Option<String>,
     pub request_usage: Option<RequestUsage>,
     pub is_sandbox_running: bool,
@@ -368,6 +370,11 @@ impl AmbientAgentTask {
     /// Creator's display name, if available.
     pub fn creator_display_name(&self) -> Option<String> {
         self.creator.as_ref().and_then(|c| c.display_name.clone())
+    }
+
+    /// Principal the run executed as, formatted for user-facing surfaces.
+    pub fn executor_display_name(&self) -> Option<String> {
+        self.executor.as_ref().and_then(|e| e.display_name.clone())
     }
 
     /// Returns true if the underlying session for the ambient agent is no longer running.
@@ -498,7 +505,7 @@ impl std::fmt::Display for AmbientAgentTaskState {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct TaskCreatorInfo {
+pub struct TaskPrincipalInfo {
     #[serde(rename = "type")]
     pub creator_type: String,
     pub uid: String,

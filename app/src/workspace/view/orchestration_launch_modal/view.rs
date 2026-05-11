@@ -1,15 +1,11 @@
-use markdown_parser::{
-    FormattedText, FormattedTextFragment, FormattedTextLine, FormattedTextStyles, Hyperlink,
-};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::theme::{phenomenon::PhenomenonStyle, Fill};
 use warpui::assets::asset_cache::AssetSource;
 use warpui::elements::{
-    Align, CacheOption, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
-    CrossAxisAlignment, Expanded, Flex, FormattedTextElement, HighlightedHyperlink, Image,
-    MainAxisSize, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius,
-    Stack, Text,
+    Align, CacheOption, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
+    CrossAxisAlignment, Expanded, Flex, Image, MainAxisSize, OffsetPositioning, ParentAnchor,
+    ParentElement, ParentOffsetBounds, Radius, Stack, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::keymap::FixedBinding;
@@ -23,48 +19,34 @@ use crate::view_components::action_button::{ActionButton, ActionButtonTheme, But
 
 const MODAL_WIDTH: f32 = 420.;
 const HERO_HEIGHT: f32 = 92.;
-const HERO_IMAGE_PATH: &str = "async/png/onboarding/openwarp_launch_banner.png";
-const REPO_URL: &str = "https://github.com/warpdotdev/warp";
-const CONTRIBUTING_URL: &str = "https://github.com/warpdotdev/warp/blob/master/CONTRIBUTING.md";
-const OZ_URL: &str = "https://oz.warp.dev";
-
-struct InlineLink {
-    text: &'static str,
-    url: &'static str,
-}
+const HERO_IMAGE_PATH: &str = "async/png/onboarding/orchestration_launch_banner.png";
+const LEARN_MORE_URL: &str = "https://warp.dev/placeholder-launch-blog-link";
 
 struct FeatureItem {
     icon: Icon,
     title: &'static str,
     description: &'static str,
-    /// If set, the first occurrence of `text` in the description is rendered as a hyperlink.
-    inline_link: Option<InlineLink>,
+    badge: Option<&'static str>,
 }
 
 const FEATURE_ITEMS: &[FeatureItem] = &[
     FeatureItem {
-        icon: Icon::HeartHand,
-        title: "Contribute",
-        description: "Warp's client code is now open source. Get started by using the /feedback skill to open an issue, and follow the contribution guidelines here.",
-        inline_link: Some(InlineLink {
-            text: "here",
-            url: CONTRIBUTING_URL,
-        }),
+        icon: Icon::Cloud,
+        title: "Run any agent harness in the cloud",
+        description: "Use Oz to spin up Claude Code or Codex agents in the cloud; Oz will help you track and steer the agents.",
+        badge: None,
     },
     FeatureItem {
-        icon: Icon::Oz,
-        title: "Open Automated Development",
-        description: "The Warp repo is managed by an agent-first workflow powered by Oz, our cloud agent orchestration platform.",
-        inline_link: Some(InlineLink {
-            text: "Oz",
-            url: OZ_URL,
-        }),
+        icon: Icon::Atom02,
+        title: "Multi-agent orchestration",
+        description: "Warp Agents will now orchestrate subagents automatically, deploying and tracking parallel agents.",
+        badge: None,
     },
     FeatureItem {
-        icon: Icon::MessageChatSquare,
-        title: "Introducing 'auto (open-weights)'",
-        description: "We've added a new auto model that picks the best open weight model for a task, like Kimi or MiniMax.",
-        inline_link: None,
+        icon: Icon::Cognition,
+        title: "Agent Memory",
+        description: "Agents will now store and access long-term memories, enabling self-improvement over time.",
+        badge: Some("Research preview"),
     },
 ];
 
@@ -73,19 +55,19 @@ pub fn init(app: &mut AppContext) {
 
     app.register_fixed_bindings([FixedBinding::new(
         "escape",
-        OpenWarpLaunchModalAction::Close,
-        id!(OpenWarpLaunchModal::ui_name()),
+        OrchestrationLaunchModalAction::Close,
+        id!(OrchestrationLaunchModal::ui_name()),
     )]);
 }
 
 #[derive(Clone, Debug)]
-pub enum OpenWarpLaunchModalAction {
+pub enum OrchestrationLaunchModalAction {
     Close,
-    VisitRepo,
+    LearnMore,
 }
 
 #[derive(Clone, Debug)]
-pub enum OpenWarpLaunchModalEvent {
+pub enum OrchestrationLaunchModalEvent {
     Close,
 }
 
@@ -110,6 +92,31 @@ impl ActionButtonTheme for CloseButtonTheme {
     }
 }
 
+struct LearnMoreButtonTheme;
+
+impl ActionButtonTheme for LearnMoreButtonTheme {
+    fn background(&self, hovered: bool, _appearance: &Appearance) -> Option<Fill> {
+        if hovered {
+            Some(Fill::Solid(PhenomenonStyle::subtle_border()))
+        } else {
+            None
+        }
+    }
+
+    fn text_color(
+        &self,
+        _hovered: bool,
+        _background: Option<Fill>,
+        _appearance: &Appearance,
+    ) -> ColorU {
+        PhenomenonStyle::modal_feature_title_text()
+    }
+
+    fn border(&self, _appearance: &Appearance) -> Option<ColorU> {
+        Some(PhenomenonStyle::subtle_border())
+    }
+}
+
 struct CtaButtonTheme;
 
 impl ActionButtonTheme for CtaButtonTheme {
@@ -127,47 +134,61 @@ impl ActionButtonTheme for CtaButtonTheme {
     }
 }
 
-pub struct OpenWarpLaunchModal {
+pub struct OrchestrationLaunchModal {
     close_button: ViewHandle<ActionButton>,
-    cta_button: ViewHandle<ActionButton>,
+    learn_more_button: ViewHandle<ActionButton>,
+    go_to_warp_button: ViewHandle<ActionButton>,
 }
 
-impl OpenWarpLaunchModal {
+impl OrchestrationLaunchModal {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let close_button = ctx.add_view(|_ctx| {
             ActionButton::new("", CloseButtonTheme)
                 .with_icon(Icon::X)
                 .with_size(ButtonSize::Small)
-                .on_click(|ctx| ctx.dispatch_typed_action(OpenWarpLaunchModalAction::Close))
+                .on_click(|ctx| ctx.dispatch_typed_action(OrchestrationLaunchModalAction::Close))
         });
 
-        let cta_button = ctx.add_view(|_ctx| {
-            ActionButton::new("Visit the repo", CtaButtonTheme)
+        let learn_more_button = ctx.add_view(|_ctx| {
+            ActionButton::new("Learn more", LearnMoreButtonTheme)
+                .with_icon(Icon::LinkExternal)
                 .with_full_width(true)
-                .on_click(|ctx| ctx.dispatch_typed_action(OpenWarpLaunchModalAction::VisitRepo))
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(OrchestrationLaunchModalAction::LearnMore)
+                })
+        });
+
+        let go_to_warp_button = ctx.add_view(|_ctx| {
+            ActionButton::new("Go to Warp", CtaButtonTheme)
+                .with_full_width(true)
+                .on_click(|ctx| ctx.dispatch_typed_action(OrchestrationLaunchModalAction::Close))
         });
 
         Self {
             close_button,
-            cta_button,
+            learn_more_button,
+            go_to_warp_button,
         }
     }
 
     fn render_hero(&self) -> Box<dyn Element> {
-        let hero = ConstrainedBox::new(
-            Image::new(
-                AssetSource::Bundled {
-                    path: HERO_IMAGE_PATH,
-                },
-                CacheOption::Original,
+        let hero = Clipped::new(
+            ConstrainedBox::new(
+                Image::new(
+                    AssetSource::Bundled {
+                        path: HERO_IMAGE_PATH,
+                    },
+                    CacheOption::Original,
+                )
+                .with_corner_radius(CornerRadius::with_top(Radius::Pixels(8.)))
+                .cover()
+                .top_aligned()
+                .finish(),
             )
-            .with_corner_radius(CornerRadius::with_top(Radius::Pixels(8.)))
-            .cover()
-            .top_aligned()
+            .with_width(MODAL_WIDTH)
+            .with_height(HERO_HEIGHT)
             .finish(),
         )
-        .with_width(MODAL_WIDTH)
-        .with_height(HERO_HEIGHT)
         .finish();
 
         let close_el = Container::new(ChildView::new(&self.close_button).finish())
@@ -211,15 +232,19 @@ impl OpenWarpLaunchModal {
     }
 
     fn render_title(appearance: &Appearance) -> Box<dyn Element> {
-        Text::new("Warp is now open-source", appearance.ui_font_family(), 20.)
-            .with_color(PhenomenonStyle::modal_title_text())
-            .with_style(Properties::default().weight(Weight::Semibold))
-            .finish()
+        Text::new(
+            "Orchestrate any agent, anywhere",
+            appearance.ui_font_family(),
+            20.,
+        )
+        .with_color(PhenomenonStyle::modal_title_text())
+        .with_style(Properties::default().weight(Weight::Semibold))
+        .finish()
     }
 
     fn render_description(appearance: &Appearance) -> Box<dyn Element> {
         Text::new(
-            "You, our community, can participate in building Warp using an agent-first workflow.",
+            "Major improvements to Warp's cloud agent orchestration platform, Oz.",
             appearance.ui_font_family(),
             14.,
         )
@@ -227,80 +252,22 @@ impl OpenWarpLaunchModal {
         .finish()
     }
 
-    /// Splits a plain text string on occurrences of `/feedback`, emitting
-    /// `inline_code` fragments for each match and plain fragments for the rest.
-    fn split_inline_code_fragments(text: &str) -> Vec<FormattedTextFragment> {
-        const CODE_TOKEN: &str = "/feedback";
-        let mut fragments = Vec::new();
-        let mut remaining = text;
-        while let Some(pos) = remaining.find(CODE_TOKEN) {
-            if pos > 0 {
-                fragments.push(FormattedTextFragment::plain_text(&remaining[..pos]));
-            }
-            fragments.push(FormattedTextFragment {
-                text: CODE_TOKEN.into(),
-                styles: FormattedTextStyles {
-                    inline_code: true,
-                    ..Default::default()
-                },
-            });
-            remaining = &remaining[pos + CODE_TOKEN.len()..];
-        }
-        if !remaining.is_empty() {
-            fragments.push(FormattedTextFragment::plain_text(remaining));
-        }
-        fragments
-    }
-
-    fn render_feature_description(item: &FeatureItem, appearance: &Appearance) -> Box<dyn Element> {
-        let Some(link) = &item.inline_link else {
-            return Text::new(item.description, appearance.ui_font_family(), 14.)
-                .with_color(PhenomenonStyle::modal_feature_description_text())
-                .finish();
-        };
-
-        // Build a formatted description with an inline hyperlink and inline code.
-        let (before, after) = item
-            .description
-            .split_once(link.text)
-            .unwrap_or((item.description, ""));
-
-        let link_fragment = FormattedTextFragment {
-            text: link.text.into(),
-            styles: FormattedTextStyles {
-                underline: true,
-                hyperlink: Some(Hyperlink::Url(link.url.into())),
-                ..Default::default()
-            },
-        };
-
-        let mut fragments = Self::split_inline_code_fragments(before);
-        fragments.push(link_fragment);
-        if !after.is_empty() {
-            fragments.extend(Self::split_inline_code_fragments(after));
-        }
-
-        let formatted = FormattedText::new([FormattedTextLine::Line(fragments)]);
-
-        FormattedTextElement::new(
-            formatted,
-            14.,
-            appearance.ui_font_family(),
-            appearance.monospace_font_family(),
-            PhenomenonStyle::modal_feature_description_text(),
-            HighlightedHyperlink::default(),
+    fn render_feature_badge(label: &'static str, appearance: &Appearance) -> Box<dyn Element> {
+        let font_family = appearance.ui_font_family();
+        let color = PhenomenonStyle::modal_feature_description_text();
+        Container::new(
+            Text::new_inline(label.to_string(), font_family, 11.)
+                .with_color(color)
+                .finish(),
         )
-        .with_line_height_ratio(1.2)
-        // Render the inline link in the same color as the description text so it
-        // blends in; the underline (applied via FormattedTextStyles) still signals it's a link.
-        .with_hyperlink_font_color(PhenomenonStyle::modal_feature_description_text())
-        .register_default_click_handlers(|link, _ctx, app| {
-            app.open_url(&link.url);
-        })
+        .with_horizontal_padding(6.)
+        .with_vertical_padding(2.)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .with_background(Fill::Solid(color).with_opacity(15))
         .finish()
     }
 
-    fn render_feature_row(item: &FeatureItem, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_feature_row(&self, item: &FeatureItem, appearance: &Appearance) -> Box<dyn Element> {
         let icon_el = ConstrainedBox::new(
             item.icon
                 .to_warpui_icon(Fill::Solid(
@@ -312,15 +279,27 @@ impl OpenWarpLaunchModal {
         .with_height(16.)
         .finish();
 
+        let mut title_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(6.);
+        title_row.add_child(
+            Text::new_inline(item.title.to_string(), appearance.ui_font_family(), 14.)
+                .with_color(PhenomenonStyle::modal_feature_title_text())
+                .finish(),
+        );
+        if let Some(badge_label) = item.badge {
+            title_row.add_child(Self::render_feature_badge(badge_label, appearance));
+        }
+
         let text_col = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_spacing(2.)
+            .with_child(title_row.finish())
             .with_child(
-                Text::new_inline(item.title.to_string(), appearance.ui_font_family(), 14.)
-                    .with_color(PhenomenonStyle::modal_feature_title_text())
+                Text::new(item.description, appearance.ui_font_family(), 14.)
+                    .with_color(PhenomenonStyle::modal_feature_description_text())
                     .finish(),
             )
-            .with_child(Self::render_feature_description(item, appearance))
             .finish();
 
         Flex::row()
@@ -336,10 +315,19 @@ impl OpenWarpLaunchModal {
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_spacing(12.);
         for item in FEATURE_ITEMS {
-            features_col.add_child(Self::render_feature_row(item, appearance));
+            features_col.add_child(self.render_feature_row(item, appearance));
         }
 
-        let cta = ChildView::new(&self.cta_button).finish();
+        let footer = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(8.)
+            .with_child(
+                Expanded::new(1., ChildView::new(&self.learn_more_button).finish()).finish(),
+            )
+            .with_child(
+                Expanded::new(1., ChildView::new(&self.go_to_warp_button).finish()).finish(),
+            )
+            .finish();
 
         Container::new(
             Flex::column()
@@ -358,7 +346,7 @@ impl OpenWarpLaunchModal {
                         .with_margin_top(16.)
                         .finish(),
                 )
-                .with_child(Container::new(cta).with_margin_top(32.).finish())
+                .with_child(Container::new(footer).with_margin_top(32.).finish())
                 .finish(),
         )
         .with_horizontal_padding(32.)
@@ -369,13 +357,13 @@ impl OpenWarpLaunchModal {
     }
 }
 
-impl Entity for OpenWarpLaunchModal {
-    type Event = OpenWarpLaunchModalEvent;
+impl Entity for OrchestrationLaunchModal {
+    type Event = OrchestrationLaunchModalEvent;
 }
 
-impl View for OpenWarpLaunchModal {
+impl View for OrchestrationLaunchModal {
     fn ui_name() -> &'static str {
-        "OpenWarpLaunchModal"
+        "OrchestrationLaunchModal"
     }
 
     fn on_focus(&mut self, _focus_ctx: &warpui::FocusContext, ctx: &mut ViewContext<Self>) {
@@ -407,17 +395,16 @@ impl View for OpenWarpLaunchModal {
     }
 }
 
-impl TypedActionView for OpenWarpLaunchModal {
-    type Action = OpenWarpLaunchModalAction;
+impl TypedActionView for OrchestrationLaunchModal {
+    type Action = OrchestrationLaunchModalAction;
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
-            OpenWarpLaunchModalAction::Close => {
-                ctx.emit(OpenWarpLaunchModalEvent::Close);
+            OrchestrationLaunchModalAction::Close => {
+                ctx.emit(OrchestrationLaunchModalEvent::Close);
             }
-            OpenWarpLaunchModalAction::VisitRepo => {
-                ctx.open_url(REPO_URL);
-                ctx.emit(OpenWarpLaunchModalEvent::Close);
+            OrchestrationLaunchModalAction::LearnMore => {
+                ctx.open_url(LEARN_MORE_URL);
             }
         }
     }
