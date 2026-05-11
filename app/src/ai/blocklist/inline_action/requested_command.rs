@@ -1226,8 +1226,8 @@ impl RequestedCommandView {
                 // cases where the action result is stale (e.g. a LongRunningCommandSnapshot
                 // converted to CancelledBeforeExecution on restore, even though the command
                 // completed successfully).
-                let has_finished_command_block = requested_command_block
-                    .is_some_and(|block| block.finished());
+                let has_finished_command_block =
+                    requested_command_block.is_some_and(|block| block.finished());
                 let should_be_expandable = has_finished_command_block
                     || match &result.result {
                         AIAgentActionResultType::RequestCommandOutput(command_result) => {

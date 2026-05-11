@@ -1605,16 +1605,18 @@ impl PaneGroup {
                     .collect();
 
                 let conversation_restoration = {
-                    let conversations =
-                        RestoredAgentConversations::handle(ctx).update(ctx, |store, _| {
+                    let conversations = RestoredAgentConversations::handle(ctx)
+                        .update(ctx, |store, _| {
                             store.take_conversations(&filtered_conversation_ids)
                         });
                     vec1::Vec1::try_from_vec(conversations)
                         .ok()
-                        .map(|conversations| ConversationRestorationInNewPaneType::Startup {
-                            conversations,
-                            active_conversation_id: terminal_snapshot.active_conversation_id,
-                        })
+                        .map(
+                            |conversations| ConversationRestorationInNewPaneType::Startup {
+                                conversations,
+                                active_conversation_id: terminal_snapshot.active_conversation_id,
+                            },
+                        )
                 };
                 let (terminal_view, terminal_manager) = PaneGroup::create_session(
                     startup_directory,

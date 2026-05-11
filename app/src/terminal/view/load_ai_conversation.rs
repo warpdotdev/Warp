@@ -644,9 +644,7 @@ impl TerminalView {
 
         // Extract restored conversations from restoration type
         let restored_conversations: Vec<RestoredAIConversation> = match conversation_restoration {
-            ConversationRestorationInNewPaneType::Startup {
-                conversations, ..
-            } => conversations
+            ConversationRestorationInNewPaneType::Startup { conversations, .. } => conversations
                 .into_iter()
                 .map(RestoredAIConversation::new)
                 .collect(),
