@@ -3479,7 +3479,7 @@ impl FeaturesPageView {
                         .with_child(
                             Container::new(
                                 Text::new_inline(
-                                    "Width %",
+                                    t!("features.width_percent").to_string(),
                                     appearance.ui_font_family(),
                                     appearance.ui_font_size(),
                                 )
@@ -3517,7 +3517,7 @@ impl FeaturesPageView {
                         .with_child(
                             Container::new(
                                 Text::new_inline(
-                                    "Height %",
+                                    t!("features.height_percent").to_string(),
                                     appearance.ui_font_family(),
                                     appearance.ui_font_size(),
                                 )
@@ -3691,7 +3691,7 @@ impl FeaturesPageView {
                 Container::new(
                     Align::new(
                         Text::new_inline(
-                            "When a command takes longer than",
+                            t!("features.command_takes_longer_than").to_string(),
                             appearance.ui_font_family(),
                             font_size,
                         )
@@ -3727,7 +3727,7 @@ impl FeaturesPageView {
                 Container::new(
                     Align::new(
                         Text::new_inline(
-                            "seconds to complete",
+                            t!("features.seconds_to_complete").to_string(),
                             appearance.ui_font_family(),
                             font_size,
                         )
@@ -3921,7 +3921,7 @@ impl FeaturesPageView {
                                 2.,
                                 Align::new(
                                     Text::new_inline(
-                                        "Press new keyboard shortcut",
+                                        t!("features.press_new_keyboard_shortcut").to_string(),
                                         appearance.ui_font_family(),
                                         13.,
                                     )
@@ -3972,9 +3972,13 @@ impl FeaturesPageView {
                 }
 
                 Container::new(
-                    Text::new_inline("Change keybinding", appearance.ui_font_family(), 12.)
-                        .with_color(button_color)
-                        .finish(),
+                    Text::new_inline(
+                        t!("features.change_keybinding").to_string(),
+                        appearance.ui_font_family(),
+                        12.,
+                    )
+                    .with_color(button_color)
+                    .finish(),
                 )
                 .with_border(border)
                 .finish()
@@ -4287,7 +4291,7 @@ impl SettingsWidget for SessionRestorationWidget {
 
         if app.is_wayland() {
             let message = Text::new_inline(
-                "Window positions won't be restored on Wayland. ",
+                t!("features.window_positions_wayland").to_string(),
                 appearance.ui_font_family(),
                 CONTENT_FONT_SIZE,
             )
@@ -4686,7 +4690,7 @@ impl SettingsWidget for MouseScrollMultiplierWidget {
                 } else {
                     appearance
                         .ui_builder()
-                        .wrappable_text("Allowed Values: 1-20", true)
+                        .wrappable_text(t!("features.allowed_values_1_to_20").to_string(), true)
                         .with_style(UiComponentStyles {
                             font_color: Some(themes::theme::Fill::error().into_solid()),
                             ..Default::default()
@@ -4794,7 +4798,7 @@ impl SettingsWidget for DefaultTerminalWidget {
         let default_terminal = DefaultTerminal::as_ref(app);
         if default_terminal.is_warp_default() {
             ui_builder
-                .wrappable_text("Warp is the default terminal", true)
+                .wrappable_text(t!("features.warp_is_default_terminal").to_string(), true)
                 .with_style(UiComponentStyles {
                     font_color: Some(appearance.theme().disabled_ui_text_color().into()),
                     margin: Some(Coords::default().bottom(16.)),
@@ -5079,7 +5083,7 @@ impl SettingsWidget for DesktopNotificationsWidget {
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_child(
                         Text::new_inline(
-                            "Toast notifications stay visible for",
+                            t!("features.toast_notifications_stay_visible_for").to_string(),
                             appearance.ui_font_family(),
                             font_size,
                         )
@@ -7095,7 +7099,10 @@ impl SettingsWidget for GPUWidget {
                 Container::new(
                     appearance
                         .ui_builder()
-                        .wrappable_text("Changes will apply to new windows.", true)
+                        .wrappable_text(
+                            t!("features.changes_apply_to_new_windows").to_string(),
+                            true,
+                        )
                         .with_style(UiComponentStyles {
                             font_color: Some(theme.sub_text_color(theme.background()).into_solid()),
                             ..Default::default()
@@ -7246,7 +7253,10 @@ impl SettingsWidget for GraphicsBackendWidget {
                 Container::new(
                     appearance
                         .ui_builder()
-                        .wrappable_text("Changes will apply to new windows.", true)
+                        .wrappable_text(
+                            t!("features.changes_apply_to_new_windows").to_string(),
+                            true,
+                        )
                         .with_style(UiComponentStyles {
                             font_color: Some(theme.sub_text_color(theme.background()).into_solid()),
                             ..Default::default()

@@ -491,7 +491,7 @@ impl ServerCardView {
 
         if tools.is_empty() {
             return Text::new(
-                "No tools available".to_string(),
+                t!("mcp.no_tools_available").to_string(),
                 appearance.ui_font_family(),
                 appearance.ui_font_size(),
             )
@@ -829,7 +829,7 @@ impl ServerCardView {
                     ButtonVariant::Secondary,
                     self.mouse_handles.view_logs_button.clone(),
                 )
-                .with_centered_text_label("View logs".to_string())
+                .with_centered_text_label(t!("mcp.view_logs").to_string())
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(ServerCardAction::ViewLogs(item_id))
@@ -845,7 +845,7 @@ impl ServerCardView {
                     ButtonVariant::Accent,
                     self.mouse_handles.edit_config_button.clone(),
                 )
-                .with_centered_text_label("Edit config".to_string())
+                .with_centered_text_label(t!("mcp.edit_config").to_string())
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(ServerCardAction::Edit(item_id));
@@ -861,7 +861,7 @@ impl ServerCardView {
                     ButtonVariant::Accent,
                     self.mouse_handles.setup_button.clone(),
                 )
-                .with_centered_text_label("Set up".to_string())
+                .with_centered_text_label(t!("mcp.set_up").to_string())
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(ServerCardAction::Install(item_id));

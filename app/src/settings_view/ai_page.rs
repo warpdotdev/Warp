@@ -150,15 +150,8 @@ const AI_SETTINGS_DROPDOWN_MAX_HEIGHT: f32 = 250.;
 const CONTEXT_WINDOW_SLIDER_WIDTH: f32 = 220.;
 const CONTEXT_WINDOW_INPUT_BOX_WIDTH: f32 = 120.;
 
-const NEXT_COMMAND_DESCRIPTION: &str = "Let AI suggest the next command to run based on your command history, outputs, and common workflows.";
-const PROMPT_SUGGESTIONS_DESCRIPTION: &str = "Let AI suggest natural language prompts, as inline banners in the input, based on recent commands and their outputs.";
-const SUGGESTED_CODE_BANNERS_DESCRIPTION: &str = "Let AI suggest code diffs and queries as inline banners in the blocklist, based on recent commands and their outputs.";
 const NATURAL_LANGUAGE_AUTOSUGGESTIONS: &str =
     "Let AI suggest natural language autosuggestions, based on recent commands and their outputs.";
-const SHARED_BLOCK_TITLE_GENERATION_DESCRIPTION: &str =
-    "Let AI generate a title for your shared block based on the command and output.";
-const GIT_OPERATIONS_AUTOGEN_DESCRIPTION: &str =
-    "Let AI generate commit messages and pull request titles and descriptions.";
 const WISPR_FLOW_URL: &str = "https://wisprflow.ai/";
 
 pub fn init_actions_from_parent_view<T: Action + Clone>(
@@ -3297,7 +3290,7 @@ impl SettingsWidget for GlobalAIWidget {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(
                 Text::new_inline(
-                    "Warp Agent",
+                    t!("ai_assistant.warp_agent").to_string(),
                     appearance.ui_font_family(),
                     PRIMARY_HEADER_FONT_SIZE,
                 )
@@ -3310,16 +3303,20 @@ impl SettingsWidget for GlobalAIWidget {
             row.add_child(
                 ConstrainedBox::new(
                     Container::new(
-                        Text::new("Your organization disallows AI when the active pane contains content from a remote session", appearance.ui_font_family(), 12.)
-                            .with_color(appearance.theme().ui_warning_color())
-                            .finish()
+                        Text::new(
+                            t!("ai_assistant.remote_session_org_policy").to_string(),
+                            appearance.ui_font_family(),
+                            12.,
+                        )
+                        .with_color(appearance.theme().ui_warning_color())
+                        .finish(),
                     )
                     .with_padding_left(8.)
                     .with_padding_right(8.)
-                    .finish()
+                    .finish(),
                 )
                 .with_max_width(400.)
-                .finish()
+                .finish(),
             );
         }
 
@@ -3331,7 +3328,7 @@ impl SettingsWidget for GlobalAIWidget {
                     .with_child(
                         Container::new(
                             Text::new_inline(
-                                "To use AI features, please create an account.",
+                                t!("ai_assistant.create_account_to_use_ai").to_string(),
                                 appearance.ui_font_family(),
                                 14.,
                             )
@@ -3773,7 +3770,7 @@ impl ActiveAIWidget {
                 ),
             )
             .with_child(render_ai_setting_description(
-                NEXT_COMMAND_DESCRIPTION,
+                t!("ai_assistant.next_command_description"),
                 is_toggleable,
                 app,
             ))
@@ -3800,7 +3797,7 @@ impl ActiveAIWidget {
                 ),
             )
             .with_child(render_ai_setting_description(
-                PROMPT_SUGGESTIONS_DESCRIPTION,
+                t!("ai_assistant.prompt_suggestions_description"),
                 is_toggleable,
                 app,
             ))
@@ -3827,7 +3824,7 @@ impl ActiveAIWidget {
                 ),
             )
             .with_child(render_ai_setting_description(
-                SUGGESTED_CODE_BANNERS_DESCRIPTION,
+                t!("ai_assistant.suggested_code_banners_description"),
                 is_toggleable,
                 app,
             ))
@@ -3881,7 +3878,7 @@ impl ActiveAIWidget {
                 ),
             )
             .with_child(render_ai_setting_description(
-                SHARED_BLOCK_TITLE_GENERATION_DESCRIPTION,
+                t!("ai_assistant.shared_block_title_generation_description"),
                 is_toggleable,
                 app,
             ))
@@ -3906,7 +3903,7 @@ impl ActiveAIWidget {
                 app,
             ))
             .with_child(render_ai_setting_description(
-                GIT_OPERATIONS_AUTOGEN_DESCRIPTION,
+                t!("ai_assistant.git_operations_autogen_description"),
                 is_toggleable,
                 app,
             ))

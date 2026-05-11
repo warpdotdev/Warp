@@ -303,7 +303,7 @@ impl PlatformPageView {
                 let window_id = ctx.window_id();
                 crate::ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = crate::view_components::DismissibleToast::success(
-                        "API key deleted".to_string(),
+                        t!("platform.api_key_deleted").to_string(),
                     );
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
@@ -486,11 +486,15 @@ impl PlatformPageWidget {
             Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(
-                    Text::new_inline("Oz Cloud API Keys", appearance.ui_font_family(), 16.)
-                        .with_style(Properties::default().weight(Weight::Bold))
-                        .with_color(appearance.theme().active_ui_text_color().into())
-                        .with_clip(ClipConfig::end())
-                        .finish(),
+                    Text::new_inline(
+                        t!("platform.oz_cloud_api_keys").to_string(),
+                        appearance.ui_font_family(),
+                        16.,
+                    )
+                    .with_style(Properties::default().weight(Weight::Bold))
+                    .with_color(appearance.theme().active_ui_text_color().into())
+                    .with_clip(ClipConfig::end())
+                    .finish(),
                 )
                 .with_child(Shrinkable::new(1.0, Empty::new().finish()).finish())
                 .with_child(
@@ -797,7 +801,7 @@ impl PlatformPageWidget {
                     .with_child(
                         Container::new(
                             Text::new(
-                                "No API Keys",
+                                t!("platform.no_api_keys").to_string(),
                                 appearance.ui_font_family(),
                                 SUBHEADER_FONT_SIZE,
                             )
@@ -811,7 +815,7 @@ impl PlatformPageWidget {
                     .with_child(
                         Container::new(
                             Text::new(
-                                "Create a key to manage external access to Warp",
+                                t!("platform.create_key_description").to_string(),
                                 appearance.ui_font_family(),
                                 CONTENT_FONT_SIZE,
                             )
