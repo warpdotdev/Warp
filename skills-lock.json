@@ -62,7 +62,7 @@
       "ref": "zach/move-common-skill-scripts",
       "sourceType": "github",
       "skillPath": ".agents/skills/update-skill/SKILL.md",
-      "computedHash": "210c403740f049290cc4d335e61439e937478ac0984fd15b1d87eb6b1fe4436f"
+      "computedHash": "1e23c5a5c37ed084eced7fa507031e3cdb8e23f09cd5d004e00efd6f66bf200f"
     },
     "write-product-spec": {
       "source": "warpdotdev/common-skills",
