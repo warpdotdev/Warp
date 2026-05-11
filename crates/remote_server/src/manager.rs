@@ -5,6 +5,7 @@ use std::sync::Arc;
 #[cfg(not(target_family = "wasm"))]
 use std::time::Duration;
 
+use crate::HostId;
 use crate::auth::RemoteServerAuthContext;
 #[cfg(not(target_family = "wasm"))]
 use crate::client::ClientEvent;
@@ -22,12 +23,11 @@ use crate::setup::UnsupportedReason;
 #[cfg(not(target_family = "wasm"))]
 use crate::transport::Connection;
 use crate::transport::{Error, InstallSource, RemoteTransport};
-use crate::HostId;
 use repo_metadata::RepoMetadataUpdate;
 use serde::Serialize;
+use warp_core::SessionId;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
-use warp_core::SessionId;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::FutureExt as _;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
@@ -1215,6 +1215,7 @@ impl RemoteServerManager {
     fn connected_session_for_host(
         &self,
         host_id: &HostId,
+        expected_identity_key: &str,
     ) -> Option<(SessionId, Arc<RemoteServerClient>, String)> {
         let sessions = self.host_to_sessions.get(host_id)?;
         sessions.iter().find_map(|session_id| {
@@ -1226,6 +1227,9 @@ impl RemoteServerManager {
             else {
                 return None;
             };
+            if identity_key != expected_identity_key {
+                return None;
+            }
             Some((*session_id, client.clone(), identity_key.clone()))
         })
     }
@@ -1258,10 +1262,22 @@ impl RemoteServerManager {
         ctx: &mut ModelContext<Self>,
     ) {
         let operation = mutation.operation();
+
+        let Some(auth_context) = self.auth_context.clone() else {
+            log::warn!(
+                "Remote server codebase index mutation: no auth context \
+                 operation={operation:?} host={host_id} repo_path={repo_path}"
+            );
+            return;
+        };
+        let current_identity_key = auth_context.remote_server_identity_key();
         let Some((session_id, client, remote_identity_key)) =
-            self.connected_session_for_host(&host_id)
+            self.connected_session_for_host(&host_id, &current_identity_key)
         else {
-            log::warn!("Remote server codebase index mutation: no connected client host={host_id}");
+            log::warn!(
+                "Remote server codebase index mutation: no connected client for current identity \
+                 operation={operation:?} host={host_id} repo_path={repo_path}"
+            );
             return;
         };
         log::info!(
@@ -1269,19 +1285,6 @@ impl RemoteServerManager {
              operation={operation:?} host={host_id} session={session_id:?} \
              remote_identity_key={remote_identity_key} repo_path={repo_path}"
         );
-
-        let Some(auth_context) = self.auth_context.clone() else {
-            log::warn!(
-                "Remote server codebase index mutation: no auth context \
-                 operation={operation:?} host={host_id} session={session_id:?} repo_path={repo_path}"
-            );
-            ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                session_id,
-                operation,
-                error_kind: RemoteServerErrorKind::Other,
-            });
-            return;
-        };
 
         let spawner = self.spawner.clone();
         ctx.background_executor()
@@ -1451,11 +1454,15 @@ impl RemoteServerManager {
         ctx: &mut ModelContext<Self>,
     ) {
         let Some(client) = self.client_for_session(session_id).cloned() else {
-            log::warn!("Remote server load_remote_repo_metadata_directory: no connected client session={session_id:?}");
+            log::warn!(
+                "Remote server load_remote_repo_metadata_directory: no connected client session={session_id:?}"
+            );
             return;
         };
         let Some(host_id) = self.host_id_for_session(session_id).cloned() else {
-            log::warn!("Remote server load_remote_repo_metadata_directory: no host_id session={session_id:?}");
+            log::warn!(
+                "Remote server load_remote_repo_metadata_directory: no host_id session={session_id:?}"
+            );
             return;
         };
 
@@ -1665,7 +1672,9 @@ impl RemoteServerManager {
         // initial connect and every reconnect.
         if let Some(info) = self.session_bootstrap_info.get(&session_id) {
             if let Some(client) = self.client_for_session(session_id) {
-                log::info!("Remote server sending SessionBootstrapped notification: session={session_id:?}");
+                log::info!(
+                    "Remote server sending SessionBootstrapped notification: session={session_id:?}"
+                );
                 client.notify_session_bootstrapped(
                     session_id,
                     &info.shell_type,
@@ -1743,17 +1752,23 @@ impl RemoteServerManager {
             // exit status. For example, SSH returns false when exit code
             // 255 indicates the ControlMaster's TCP connection is dead.
             if !transport.is_reconnectable(exit_status.as_ref()) {
-                log::warn!("Transport reports disconnect is not reconnectable, skipping reconnect: session={session_id:?} exit_status={exit_status:?}");
+                log::warn!(
+                    "Transport reports disconnect is not reconnectable, skipping reconnect: session={session_id:?} exit_status={exit_status:?}"
+                );
                 self.finalize_disconnect(session_id, host_id, exit_status, ctx);
                 return;
             }
 
             let Some(auth_context) = self.auth_context.clone() else {
-                log::warn!("Remote server spontaneous disconnect without auth context: session={session_id:?}");
+                log::warn!(
+                    "Remote server spontaneous disconnect without auth context: session={session_id:?}"
+                );
                 self.finalize_disconnect(session_id, host_id, exit_status, ctx);
                 return;
             };
-            log::info!("Remote server spontaneous disconnect, will attempt reconnect: session={session_id:?} host={host_id:?}");
+            log::info!(
+                "Remote server spontaneous disconnect, will attempt reconnect: session={session_id:?} host={host_id:?}"
+            );
 
             // Clear stale repo metadata and host index so downstream
             // models don't hold onto data from the dead server process.
