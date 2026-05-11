@@ -142,7 +142,7 @@ Hard rules:
 | t2-FINAL | presubmit | `611ec2b` | [x] | — | — |
 | t2-10 | sync-`FailedToLoad` rewrite | `af7d5f5` | [x] | [x] | [x] |
 | t2-11 | zoom keys + visual indicator | `9b51d44` | [x] | [x] | [x] |
-| t2-12 | GUI zoom buttons + scroll-zoom | `65b2f56` | [x] | [ ] | [ ] |
+| t2-12 | GUI zoom buttons + scroll-zoom | `65b2f56` | [x] | [x] | [x] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
@@ -247,6 +247,27 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   an Orientation=6 tag; (c) Small EXIF-tagged JPEGs now incur one
   extra re-encode round-trip (necessary for correctness — worth a
   code-comment note for future maintainers). — `reviews/tier2-t2-9-r1.md`.
+- **t2-12-r1.** Minor nits all non-blocking: (a) cmd+scroll only
+  fires when the cursor is over the image rect rather than anywhere
+  over the scrim — extending the scroll handler to the scrim is a
+  small UX improvement. (b) Toolbar's BottomLeft anchor risks visual
+  crowding against the centred description on narrow windows. (c)
+  Scroll-direction comment misdescribes natural-scroll semantics. (d)
+  Dead-zone is magic-numbered. (e) No unit tests for new wiring
+  (acceptable since it mirrors the already-untested on_navigate path).
+  — `reviews/tier2-t2-12-r1.md`.
+- **t2-12-r2.** (a) Add `SCRIM_BUTTON_INSET = 12.` const to deduplicate
+  four literal `12.` offsets in `lightbox.rs` without conflating
+  with `SCRIM_PADDING = 48.`. (b) `Icon::Refresh` for zoom-reset is
+  the least-bad of available glyphs — the icon enum lacks
+  `ZoomReset`/`OneToOne`/`1:1` variants. Right fix is to add a glyph
+  rather than change the choice here — OR use a `Content::Label("100%")`
+  text button (addressed in t2-13). (c) `SCROLL_ZOOM_DEAD_ZONE = 1.0`
+  is plausible for precise (trackpad, pixel-unit) deltas but borderline
+  for non-precise (classic wheel, line-unit) deltas. Branching on
+  `Event::ScrollWheel.precise` would be cleaner. (d) Extract
+  `dy → Option<ZoomDirection>` decision (3 lines around the dead-zone)
+  into a pure helper for unit-testability. — `reviews/tier2-t2-12-r2.md`.
 - **t2-11-r1.** Commit-message claim that `cmdorctrl-=` "covers both
   `+` and `=` presses" is mechanically wrong. `Keystroke` derives
   strict `Eq` across all five modifier booleans plus the key, so
