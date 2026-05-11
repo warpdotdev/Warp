@@ -16,7 +16,8 @@ use super::{
     merkle_tree::{MerkleTree, SerializedCodebaseIndex},
     store_client::StoreClient,
     sync_client::{FlushFragmentResult, SyncOperationError},
-    CodebaseContextConfig, ContentHash, EmbeddingConfig, Error, Fragment, NodeHash, RepoMetadata,
+    CodebaseContextConfig, CodebaseFragmentMetadata, ContentHash, EmbeddingConfig, Error,
+    Fragment, NodeHash, RepoMetadata, SyncedIndexMetadata,
 };
 use crate::{
     index::locations::{CodeContextLocation, FileFragmentLocation},
@@ -1326,6 +1327,35 @@ impl CodebaseIndex {
 
     fn embedding_config(&self) -> EmbeddingConfig {
         self.embedding_config
+    }
+
+    pub(super) fn synced_index_metadata(&self) -> Option<SyncedIndexMetadata> {
+        Some(SyncedIndexMetadata {
+            root_hash: self.last_server_synced_root_node()?,
+            embedding_config: self.embedding_config(),
+        })
+    }
+
+    pub(super) fn fragment_metadata_for_hashes(
+        &self,
+        hashes: &[ContentHash],
+    ) -> Vec<CodebaseFragmentMetadata> {
+        hashes
+            .iter()
+            .flat_map(|hash| {
+                self.fragment_metadatas_from_hash(hash)
+                    .into_iter()
+                    .flatten()
+                    .map(|metadata| CodebaseFragmentMetadata {
+                        content_hash: hash.clone(),
+                        absolute_path: metadata.absolute_path.clone(),
+                        start_line: metadata.location.start_line,
+                        end_line: metadata.location.end_line,
+                        byte_start: metadata.location.byte_range.start.as_usize(),
+                        byte_end: metadata.location.byte_range.end.as_usize(),
+                    })
+            })
+            .collect()
     }
 
     pub(super) fn update_embedding_generation_batch_size(&mut self, new_batch_size: usize) {

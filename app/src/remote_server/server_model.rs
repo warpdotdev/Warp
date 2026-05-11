@@ -25,11 +25,11 @@ use super::proto::{
     CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
     DeleteFileSuccess, DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead,
     FileContextProto, FileOperationError, IndexCodebase, Initialize, InitializeResponse,
-    ListCodebaseIndexStatuses, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
-    ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
-    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
-    ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
+    NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse,
+    ReadFileContextResponse, ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess,
+    RunCommandError, RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess,
+    SaveBuffer, SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped,
+    TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -625,9 +625,6 @@ impl ServerModel {
             Some(client_message::Message::GetDiffState(_)) => return,
             Some(client_message::Message::UnsubscribeDiffState(_)) => return,
             Some(client_message::Message::DiscardFiles(_)) => return,
-            Some(client_message::Message::ListCodebaseIndexStatuses(
-                ListCodebaseIndexStatuses {},
-            )) => self.handle_list_codebase_index_statuses(&request_id, conn_id),
             Some(client_message::Message::IndexCodebase(msg)) => {
                 self.handle_index_codebase(msg, &request_id, conn_id)
             }
@@ -689,22 +686,6 @@ impl ServerModel {
         CodebaseIndexStatusesSnapshot {
             statuses: Vec::new(),
         }
-    }
-
-    fn handle_list_codebase_index_statuses(
-        &self,
-        request_id: &RequestId,
-        conn_id: ConnectionId,
-    ) -> HandlerOutcome {
-        let snapshot = self.codebase_index_statuses_snapshot();
-        let status_count = snapshot.statuses.len();
-        log::info!(
-            "[Remote codebase indexing] Daemon handling ListCodebaseIndexStatuses: \
-             request_id={request_id} conn_id={conn_id} status_count={status_count}"
-        );
-        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusesSnapshot(
-            snapshot,
-        ))
     }
 
     fn handle_index_codebase(
