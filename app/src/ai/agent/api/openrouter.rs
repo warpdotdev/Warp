@@ -9,7 +9,7 @@ use warp_multi_agent_api::{
     self as api, client_action, message, response_event, response_event::stream_finished,
 };
 
-use crate::ai::agent::AIAgentInput;
+use crate::ai::agent::{AIAgentInput, UserQueryMode};
 
 use super::{RequestParams, ResponseStream};
 
@@ -175,6 +175,7 @@ pub fn generate_openrouter_output(params: RequestParams) -> ResponseStream {
                     task_id,
                     request_id,
                     model_id.clone(),
+                    &params.input,
                     completion.text,
                     completion.tool_calls,
                 ));
@@ -185,6 +186,7 @@ pub fn generate_openrouter_output(params: RequestParams) -> ResponseStream {
                     task_id,
                     request_id,
                     model_id.clone(),
+                    &params.input,
                     Some(error.user_message()),
                     Vec::new(),
                 ));
@@ -422,16 +424,16 @@ fn build_openrouter_messages(params: &RequestParams) -> Vec<OpenRouterMessage> {
         user_content = "Continue the conversation.".to_owned();
     }
 
-    vec![
-        OpenRouterMessage {
-            role: "system",
-            content: system,
-        },
-        OpenRouterMessage {
-            role: "user",
-            content: user_content,
-        },
-    ]
+    let mut messages = vec![OpenRouterMessage {
+        role: "system",
+        content: system,
+    }];
+    messages.extend(openrouter_messages_from_tasks(&params.tasks));
+    messages.push(OpenRouterMessage {
+        role: "user",
+        content: user_content,
+    });
+    messages
 }
 
 fn input_to_prompt_text(input: &AIAgentInput) -> String {
@@ -490,10 +492,97 @@ fn create_task_event(task_id: &str) -> api::ResponseEvent {
     }
 }
 
+fn openrouter_messages_from_tasks(tasks: &[api::Task]) -> Vec<OpenRouterMessage> {
+    tasks
+        .iter()
+        .flat_map(|task| task.messages.iter())
+        .filter_map(api_message_to_openrouter_message)
+        .collect()
+}
+
+fn api_message_to_openrouter_message(message: &api::Message) -> Option<OpenRouterMessage> {
+    match message.message.as_ref()? {
+        message::Message::UserQuery(user_query) => Some(OpenRouterMessage {
+            role: "user",
+            content: user_query.query.clone(),
+        }),
+        message::Message::SystemQuery(query) => {
+            system_query_to_prompt_text(query).map(|content| OpenRouterMessage {
+                role: "user",
+                content,
+            })
+        }
+        message::Message::ToolCallResult(result) => Some(OpenRouterMessage {
+            role: "user",
+            content: format!("Tool result:\n{}", tool_call_result_to_prompt_text(result)),
+        }),
+        message::Message::AgentOutput(output) => Some(OpenRouterMessage {
+            role: "assistant",
+            content: output.text.clone(),
+        }),
+        message::Message::ToolCall(tool_call) => {
+            tool_call_to_prompt_text(tool_call).map(|content| OpenRouterMessage {
+                role: "assistant",
+                content,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn system_query_to_prompt_text(query: &message::SystemQuery) -> Option<String> {
+    match query.r#type.as_ref()? {
+        message::system_query::Type::AutoCodeDiff(query) => Some(query.query.clone()),
+        message::system_query::Type::CreateNewProject(query) => Some(query.query.clone()),
+        message::system_query::Type::CloneRepository(query) => Some(format!("Clone {}", query.url)),
+        message::system_query::Type::SummarizeConversation(query) => Some(query.prompt.clone()),
+        message::system_query::Type::FetchReviewComments(query) => {
+            Some(format!("Fetch review comments for {}", query.repo_path))
+        }
+        message::system_query::Type::ResumeConversation(_)
+        | message::system_query::Type::GeneratePassiveSuggestions(_) => None,
+    }
+}
+
+fn tool_call_to_prompt_text(tool_call: &message::ToolCall) -> Option<String> {
+    match tool_call.tool.as_ref()? {
+        message::tool_call::Tool::RunShellCommand(command) => {
+            Some(format!("Requested shell command:\n{}", command.command))
+        }
+        _ => None,
+    }
+}
+
+fn tool_call_result_to_prompt_text(result: &message::ToolCallResult) -> String {
+    match result.result.as_ref() {
+        Some(message::tool_call_result::Result::RunShellCommand(result)) => {
+            let output = match result.result.as_ref() {
+                Some(api::run_shell_command_result::Result::CommandFinished(finished)) => {
+                    finished.output.clone()
+                }
+                Some(api::run_shell_command_result::Result::LongRunningCommandSnapshot(
+                    snapshot,
+                )) => snapshot.output.clone(),
+                Some(api::run_shell_command_result::Result::PermissionDenied(_)) => {
+                    "Permission denied.".to_owned()
+                }
+                None => String::new(),
+            };
+            format!("Command: {}\n{}", result.command, output)
+        }
+        Some(message::tool_call_result::Result::Server(server)) => server.serialized_result.clone(),
+        Some(message::tool_call_result::Result::Subagent(subagent)) => subagent.payload.clone(),
+        Some(message::tool_call_result::Result::Cancel(_)) => "Canceled.".to_owned(),
+        Some(other) => format!("{other:?}"),
+        None => String::new(),
+    }
+}
+
 fn add_messages_event(
     task_id: String,
     request_id: String,
     model_id: String,
+    input: &[AIAgentInput],
     text: Option<String>,
     tool_calls: Vec<OpenRouterToolCall>,
 ) -> api::ResponseEvent {
@@ -517,7 +606,8 @@ fn add_messages_event(
         })),
     };
 
-    let mut messages = vec![model_used];
+    let mut messages = input_messages_for_task(input, &task_id, &request_id, timestamp);
+    messages.push(model_used);
     if let Some(text) = text {
         messages.push(api::Message {
             id: Uuid::new_v4().to_string(),
@@ -545,6 +635,60 @@ fn add_messages_event(
             },
         )),
     }
+}
+
+fn input_messages_for_task(
+    input: &[AIAgentInput],
+    task_id: &str,
+    request_id: &str,
+    timestamp: Option<prost_types::Timestamp>,
+) -> Vec<api::Message> {
+    input
+        .iter()
+        .filter_map(|input| input_to_user_query_message(input, task_id, request_id, timestamp))
+        .collect()
+}
+
+fn input_to_user_query_message(
+    input: &AIAgentInput,
+    task_id: &str,
+    request_id: &str,
+    timestamp: Option<prost_types::Timestamp>,
+) -> Option<api::Message> {
+    let AIAgentInput::UserQuery {
+        query,
+        user_query_mode,
+        intended_agent,
+        ..
+    } = input
+    else {
+        return None;
+    };
+
+    Some(api::Message {
+        id: Uuid::new_v4().to_string(),
+        task_id: task_id.to_owned(),
+        request_id: request_id.to_owned(),
+        timestamp,
+        server_message_data: String::new(),
+        citations: vec![],
+        message: Some(message::Message::UserQuery(message::UserQuery {
+            query: query.clone(),
+            context: None,
+            referenced_attachments: Default::default(),
+            mode: Some(api_user_query_mode(*user_query_mode)),
+            intended_agent: intended_agent.map(|agent| agent as i32).unwrap_or_default(),
+        })),
+    })
+}
+
+fn api_user_query_mode(mode: UserQueryMode) -> api::UserQueryMode {
+    let r#type = match mode {
+        UserQueryMode::Normal => None,
+        UserQueryMode::Plan => Some(api::user_query_mode::Type::Plan(())),
+        UserQueryMode::Orchestrate => Some(api::user_query_mode::Type::Orchestrate(())),
+    };
+    api::UserQueryMode { r#type }
 }
 
 fn done_event(usage: Option<OpenRouterUsage>, model_id: String) -> api::ResponseEvent {
@@ -638,6 +782,50 @@ mod tests {
         }
     }
 
+    fn user_query_input(query: &str) -> AIAgentInput {
+        AIAgentInput::UserQuery {
+            query: query.to_owned(),
+            context: Default::default(),
+            static_query_type: None,
+            referenced_attachments: Default::default(),
+            user_query_mode: UserQueryMode::Normal,
+            running_command: None,
+            intended_agent: None,
+        }
+    }
+
+    fn user_query_message(query: &str, request_id: &str) -> api::Message {
+        api::Message {
+            id: Uuid::new_v4().to_string(),
+            task_id: "test-task".to_owned(),
+            request_id: request_id.to_owned(),
+            timestamp: None,
+            server_message_data: String::new(),
+            citations: vec![],
+            message: Some(message::Message::UserQuery(message::UserQuery {
+                query: query.to_owned(),
+                context: None,
+                referenced_attachments: Default::default(),
+                mode: None,
+                intended_agent: Default::default(),
+            })),
+        }
+    }
+
+    fn agent_output_message(text: &str, request_id: &str) -> api::Message {
+        api::Message {
+            id: Uuid::new_v4().to_string(),
+            task_id: "test-task".to_owned(),
+            request_id: request_id.to_owned(),
+            timestamp: None,
+            server_message_data: String::new(),
+            citations: vec![],
+            message: Some(message::Message::AgentOutput(message::AgentOutput {
+                text: text.to_owned(),
+            })),
+        }
+    }
+
     #[test]
     fn output_creates_task_before_adding_messages_for_new_conversation() {
         let params = request_params_for_test();
@@ -675,6 +863,57 @@ mod tests {
             .messages
             .iter()
             .any(|message| matches!(message.message, Some(message::Message::AgentOutput(_)))));
+    }
+
+    #[test]
+    fn output_persists_current_user_query_message() {
+        let mut params = request_params_for_test();
+        params.input = vec![user_query_input("remember this")];
+
+        let events = block_on(generate_openrouter_output(params).collect::<Vec<_>>());
+
+        let response_event::Type::ClientActions(add_actions) =
+            events[2].as_ref().unwrap().r#type.as_ref().unwrap()
+        else {
+            panic!("expected AddMessagesToTask client action");
+        };
+        let Some(client_action::Action::AddMessagesToTask(add)) =
+            add_actions.actions[0].action.as_ref()
+        else {
+            panic!("expected AddMessagesToTask action");
+        };
+
+        assert!(add.messages.iter().any(|message| matches!(
+            message.message.as_ref(),
+            Some(message::Message::UserQuery(query)) if query.query == "remember this"
+        )));
+    }
+
+    #[test]
+    fn request_messages_include_prior_task_history() {
+        let mut params = request_params_for_test();
+        params.tasks.push(api::Task {
+            id: "test-task".to_owned(),
+            messages: vec![
+                user_query_message("first question", "request-1"),
+                agent_output_message("first answer", "request-1"),
+            ],
+            dependencies: None,
+            description: String::new(),
+            summary: String::new(),
+            server_data: String::new(),
+        });
+        params.input = vec![user_query_input("follow up")];
+
+        let messages = build_openrouter_messages(&params);
+
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[1].content, "first question");
+        assert_eq!(messages[2].role, "assistant");
+        assert_eq!(messages[2].content, "first answer");
+        assert_eq!(messages[3].role, "user");
+        assert_eq!(messages[3].content, "follow up");
     }
 
     #[test]
