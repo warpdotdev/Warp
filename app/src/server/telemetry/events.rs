@@ -2808,6 +2808,7 @@ pub enum TelemetryEvent {
     /// `error` is `None` on success, `Some(reason)` on failure.
     RemoteServerInstallation {
         error: Option<String>,
+        install_source: Option<remote_server::transport::InstallSource>,
         remote_os: Option<String>,
         remote_arch: Option<String>,
     },
@@ -4168,10 +4169,12 @@ impl TelemetryEvent {
             })),
             TelemetryEvent::RemoteServerInstallation {
                 error,
+                install_source,
                 remote_os,
                 remote_arch,
             } => Some(json!({
                 "error": error,
+                "install_source": install_source,
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
