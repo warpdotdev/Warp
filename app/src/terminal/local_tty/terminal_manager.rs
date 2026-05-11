@@ -1538,6 +1538,7 @@ impl TerminalManager {
                 {
                     let mut model = model.lock();
                     model.set_shared_session_status(SharedSessionStatus::NotShared);
+                    model.set_obfuscate_secrets(get_secret_obfuscation_mode(ctx));
                     model.clear_ordered_terminal_events_for_shared_session_tx();
                 }
 
