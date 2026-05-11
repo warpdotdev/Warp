@@ -470,7 +470,6 @@ default = [
     "settings_import",
     "shared_with_me",
     "block_toolbelt_save_as_workflow",
-    "remove_alt_screen_padding",
     "less_horizontal_terminal_padding",
     "session_sharing_acls",
     "external_agent_mode_context",
@@ -794,7 +793,6 @@ block_toolbelt_save_as_workflow = []
 blocklist_markdown_table_rendering = []
 blocklist_markdown_images = []
 minimalist_ui = []
-remove_alt_screen_padding = []
 loginless_conversion = []
 external_agent_mode_context = []
 avatar_in_tab_bar = []

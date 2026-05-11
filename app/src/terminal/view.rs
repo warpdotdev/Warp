@@ -11382,14 +11382,11 @@ impl TerminalView {
                         .block_list()
                         .active_block()
                         .top_level_command(self.sessions.as_ref(ctx));
-                    if FeatureFlag::RemoveAltScreenPadding.is_enabled()
-                        // If we don't know what the top-level command is,
-                        // we should still perform the redundant resize.
-                        && active_command.is_none_or(|cmd| {
-                            !ALT_SCREEN_APPS_THAT_MUST_MATCH_BLOCKLIST_PADDING
-                                .contains(cmd.as_str())
-                        })
-                    {
+                    // If we don't know what the top-level command is,
+                    // we should still perform the redundant resize.
+                    if active_command.is_none_or(|cmd| {
+                        !ALT_SCREEN_APPS_THAT_MUST_MATCH_BLOCKLIST_PADDING.contains(cmd.as_str())
+                    }) {
                         // Since the alt-screen and blocklist have different sizes,
                         // let's make sure to refresh the winsize when switching
                         // back and forth between these modes.
@@ -27100,8 +27097,7 @@ pub fn create_size_info(
 
     match *TerminalSettings::as_ref(ctx).alt_screen_padding {
         AltScreenPaddingMode::Custom { uniform_padding }
-            if FeatureFlag::RemoveAltScreenPadding.is_enabled()
-                && model.is_alt_screen_active()
+            if model.is_alt_screen_active()
                 // If we don't know what the top-level command is,
                 // it's not denylisted so we use the custom padding.
                 && active_command.is_none_or(|cmd| {
