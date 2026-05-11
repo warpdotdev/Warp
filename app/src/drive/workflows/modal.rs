@@ -99,20 +99,7 @@ const DIALOG_WIDTH: f32 = 460.;
 const AI_ASSIST_BUTTON_SIZE: f32 = 96.;
 const SCROLLBAR_WIDTH: ScrollbarWidth = ScrollbarWidth::Auto;
 
-const TITLE_PLACEHOLDER_TEXT: &str = "Untitled workflow";
-const DESCRIPTION_PLACEHOLDER_TEXT: &str = "Add a description";
-const COMMAND_EDITOR_PLACEHOLDER_TEXT: &str =
-    "echo \"Hello {{your_name}}\" # insert arguments with curly braces\n# enter a single-line command or an entire shell script";
-const ARGUMENT_BUTTON_TEXT: &str = "New argument";
-const ARGUMENT_DESCRIPTION_PLACEHOLDER_TEXT: &str = "Description";
-const ARGUMENT_DEFAULT_VALUE_PLACEHOLDER_TEXT: &str = "Default value (optional)";
-const SAVE_BUTTON_TEXT: &str = "Save workflow";
-const AI_ASSIST_BUTTON_TEXT: &str = "Autofill";
-const AI_ASSIST_LOADING_TEXT: &str = "Loading";
 const DEFAULT_ARGUMENT_PREFIX: &str = "argument";
-const UNSAVED_CHANGES_TEXT: &str = "You have unsaved changes.";
-const KEEP_EDITING_TEXT: &str = "Keep editing";
-const DISCARD_CHANGES_TEXT: &str = "Discard changes";
 
 #[derive(Default)]
 struct MouseStateHandles {
@@ -233,7 +220,7 @@ impl WorkflowModal {
             ctx,
             Some(header_font_size),
             Some(ui_font_family),
-            Some(TITLE_PLACEHOLDER_TEXT),
+            Some(t!("drive.untitled_workflow").to_string()),
             false, /* vim_keybindings */
             true,  /* single_line */
         );
@@ -246,7 +233,7 @@ impl WorkflowModal {
             ctx,
             Some(DESCRIPTION_FONT_SIZE),
             Some(ui_font_family),
-            Some(DESCRIPTION_PLACEHOLDER_TEXT),
+            Some(t!("drive.add_description").to_string()),
             false, /* vim_keybindings */
             false, /* single_line */
         );
@@ -259,7 +246,7 @@ impl WorkflowModal {
             ctx,
             Some(CONTENT_EDITOR_FONT_SIZE),
             None,
-            Some(COMMAND_EDITOR_PLACEHOLDER_TEXT),
+            Some(t!("drive.command_editor_placeholder").to_string()),
             true,  /* vim_keybindings */
             false, /* single_line */
         );
@@ -373,7 +360,7 @@ impl WorkflowModal {
         ctx: &mut ViewContext<Self>,
         font_size_override: Option<f32>,
         font_family_override: Option<FamilyId>,
-        placeholder_text: Option<&str>,
+        placeholder_text: Option<String>,
         vim_keybindings: bool,
         single_line: bool,
     ) -> ViewHandle<EditorView> {
@@ -409,7 +396,7 @@ impl WorkflowModal {
             );
 
             if let Some(text) = placeholder_text {
-                editor.set_placeholder_text(text, ctx);
+                editor.set_placeholder_text(&text, ctx);
             }
 
             editor
@@ -1212,7 +1199,7 @@ impl WorkflowModal {
                                 ctx,
                                 Some(ARGUMENT_EDITOR_FONT_SIZE),
                                 Some(ui_font_family),
-                                Some(ARGUMENT_DESCRIPTION_PLACEHOLDER_TEXT),
+                                Some(t!("drive.description").to_string()),
                                 false, /* vim_keybindings */
                                 false,
                             );
@@ -1228,7 +1215,7 @@ impl WorkflowModal {
                                 ctx,
                                 Some(ARGUMENT_EDITOR_FONT_SIZE),
                                 Some(ui_font_family),
-                                Some(ARGUMENT_DEFAULT_VALUE_PLACEHOLDER_TEXT),
+                                Some(t!("drive.default_value_optional").to_string()),
                                 false, /* vim_keybindings */
                                 false,
                             );
@@ -1655,7 +1642,7 @@ impl WorkflowModal {
                 padding: Some(Coords::uniform(BUTTON_PADDING)),
                 ..Default::default()
             })
-            .with_text_label(ARGUMENT_BUTTON_TEXT.into());
+            .with_text_label(t!("drive.new_argument").to_string());
 
         if self.is_new_argument_button_disabled() {
             new_argument_button = new_argument_button.disabled();
@@ -1671,7 +1658,7 @@ impl WorkflowModal {
                 Some(primary_hovered_and_clicked_styles),
                 Some(primary_disabled_styles),
             )
-            .with_text_label(SAVE_BUTTON_TEXT.into());
+            .with_text_label(t!("drive.save_workflow").to_string());
 
         if self.is_save_workflow_button_disabled() {
             save_button = save_button.disabled();
@@ -1701,15 +1688,19 @@ impl WorkflowModal {
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
 
         let label_and_icon = match self.ai_metadata_assist_state {
-            AiAssistState::PreRequest => Some((AI_ASSIST_BUTTON_TEXT, Icon::AiAssistant)),
-            AiAssistState::RequestInFlight => Some((AI_ASSIST_LOADING_TEXT, Icon::Refresh)),
+            AiAssistState::PreRequest => {
+                Some((t!("drive.autofill").to_string(), Icon::AiAssistant))
+            }
+            AiAssistState::RequestInFlight => {
+                Some((t!("drive.loading").to_string(), Icon::Refresh))
+            }
             AiAssistState::Generated => None,
         };
 
         if let Some((label, icon)) = label_and_icon {
             let text_and_icon = TextAndIcon::new(
                 TextAndIconAlignment::TextFirst,
-                label.to_string(),
+                label,
                 icon.to_warpui_icon(appearance.theme().active_ui_text_color()),
                 MainAxisSize::Min,
                 MainAxisAlignment::Center,
@@ -1740,7 +1731,7 @@ impl WorkflowModal {
                 .finish();
 
             let button_with_tool_tip = appearance.ui_builder().tool_tip_on_element(
-                "Generate a title, descriptions, or parameters with Warp AI".to_string(),
+                t!("drive.generate_workflow_fields_tooltip").to_string(),
                 self.button_mouse_states.ai_assist_tool_tip.clone(),
                 rendered_button,
                 ParentAnchor::BottomMiddle,
@@ -1783,7 +1774,7 @@ impl WorkflowModal {
                 padding: Some(Coords::uniform(BUTTON_PADDING)),
                 ..Default::default()
             })
-            .with_text_label(KEEP_EDITING_TEXT.into())
+            .with_text_label(t!("drive.keep_editing").to_string())
             .build()
             .with_cursor(Cursor::PointingHand)
             .on_click(move |ctx, _, _| {
@@ -1803,7 +1794,7 @@ impl WorkflowModal {
                 padding: Some(Coords::uniform(BUTTON_PADDING)),
                 ..Default::default()
             })
-            .with_text_label(DISCARD_CHANGES_TEXT.into())
+            .with_text_label(t!("drive.discard_changes").to_string())
             .build()
             .with_cursor(Cursor::PointingHand)
             .on_click(move |ctx, _, _| ctx.dispatch_typed_action(WorkflowModalAction::ForceClose))
@@ -1811,7 +1802,7 @@ impl WorkflowModal {
 
         Container::new(
             Dialog::new(
-                UNSAVED_CHANGES_TEXT.to_string(),
+                t!("drive.unsaved_changes").to_string(),
                 None,
                 dialog_styles(appearance),
             )

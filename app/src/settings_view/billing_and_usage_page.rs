@@ -81,19 +81,6 @@ use super::{
 };
 
 const HEADER_FONT_SIZE: f32 = 16.;
-const OVERAGE_USAGE_LINK_TEXT: &str = "View details on overage usage";
-const OVERAGE_TOGGLE_ADMIN_HEADER: &str = "Enable premium model usage overages";
-const OVERAGE_TOGGLE_USER_HEADER_ENABLED: &str = "Premium model usage overages are enabled";
-const OVERAGE_TOGGLE_USER_HEADER_DISABLED: &str = "Premium model usage overages are not enabled";
-const OVERAGE_TOGGLE_DESCRIPTION: &str = "Continue using premium models beyond your plan's limits. Usage is charged in $20 increments up to your spending limit, with any remaining balance charged on your scheduled billing date.";
-const OVERAGE_TOGGLE_USER_DESCRIPTION: &str =
-    "Ask a team admin to enable overages for more AI usage.";
-
-const SORT_MENU_ITEM_DISPLAY_NAME_A_Z_LABEL: &str = "A to Z";
-const SORT_MENU_ITEM_DISPLAY_NAME_Z_A_LABEL: &str = "Z to A";
-const SORT_MENU_ITEM_REQUEST_USAGE_ASCENDING_LABEL: &str = "Usage ascending";
-const SORT_MENU_ITEM_REQUEST_USAGE_DESCENDING_LABEL: &str = "Usage descending";
-
 const AUTO_RELOAD_EXCEED_LIMIT_WARNING_STRING: &str =
     "Auto reload is disabled, as the next reload would exceed your monthly spend limit. Increase your limit to use auto reload.";
 const AUTO_RELOAD_DELINQUENT_WARNING_STRING: &str =
@@ -101,23 +88,6 @@ const AUTO_RELOAD_DELINQUENT_WARNING_STRING: &str =
 const RESTRICTED_BILLING_USAGE_WARNING_STRING: &str =
     "Auto reload is disabled due to recent failed reload. Please update your payment method and try again.";
 
-const OVERVIEW_TAB_TEXT: &str = "Overview";
-const USAGE_HISTORY_TAB_TEXT: &str = "Usage History";
-
-const ENTERPRISE_USAGE_CALLOUT_HEADER: &str = "Usage reporting is currently limited";
-const ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_PREFIX: &str =
-    "Enterprise credit usage isn't fully available in this view yet. For the most accurate spend tracking, ";
-const ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_LINK: &str = "visit the admin panel";
-const ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_SUFFIX: &str = ".";
-const ENTERPRISE_USAGE_CALLOUT_BODY_NON_ADMIN: &str =
-    "Enterprise credit usage isn't fully available in this view yet. Contact a team admin for detailed usage reporting.";
-
-const ADDON_CREDITS_DESCRIPTION: &str = "Add-on credits are purchased in prepaid packages that roll over each billing cycle and expire after one year. The more you purchase, the better the per-credit rate. Once your base plan credits are used, add-on credits will be consumed.";
-const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM: &str =
-    "Purchased add-on credits are shared across your team.";
-
-// Cloud agent trial widget constants.
-const AMBIENT_AGENT_TRIAL_TITLE: &str = "Cloud agent trial";
 /// The threshold below which we only show the "Buy more" button (not "New agent").
 use crate::ai::request_usage_model::AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD;
 
@@ -148,16 +118,16 @@ pub enum BillingUsageTab {
 impl BillingUsageTab {
     pub fn get_tab_from_label(label: &str) -> Self {
         match label {
-            OVERVIEW_TAB_TEXT => BillingUsageTab::Overview,
-            USAGE_HISTORY_TAB_TEXT => BillingUsageTab::UsageHistory,
+            label if label == t!("billing.overview") => BillingUsageTab::Overview,
+            label if label == t!("billing.usage_history") => BillingUsageTab::UsageHistory,
             _ => BillingUsageTab::Overview,
         }
     }
 
-    pub fn label(&self) -> &str {
+    pub fn label(&self) -> String {
         match self {
-            BillingUsageTab::Overview => OVERVIEW_TAB_TEXT,
-            BillingUsageTab::UsageHistory => USAGE_HISTORY_TAB_TEXT,
+            BillingUsageTab::Overview => t!("billing.overview").to_string(),
+            BillingUsageTab::UsageHistory => t!("billing.usage_history").to_string(),
         }
     }
 }
@@ -827,22 +797,22 @@ impl TypedActionView for BillingAndUsagePageView {
                 // Build four menu items with checkmark for selected state
                 let sort_options = [
                     (
-                        SORT_MENU_ITEM_DISPLAY_NAME_A_Z_LABEL,
+                        t!("billing.sort_a_to_z").to_string(),
                         SortKey::DisplayName,
                         SortOrder::Asc,
                     ),
                     (
-                        SORT_MENU_ITEM_DISPLAY_NAME_Z_A_LABEL,
+                        t!("billing.sort_z_to_a").to_string(),
                         SortKey::DisplayName,
                         SortOrder::Desc,
                     ),
                     (
-                        SORT_MENU_ITEM_REQUEST_USAGE_ASCENDING_LABEL,
+                        t!("billing.sort_usage_ascending").to_string(),
                         SortKey::Requests,
                         SortOrder::Asc,
                     ),
                     (
-                        SORT_MENU_ITEM_REQUEST_USAGE_DESCENDING_LABEL,
+                        t!("billing.sort_usage_descending").to_string(),
                         SortKey::Requests,
                         SortOrder::Desc,
                     ),
@@ -856,12 +826,11 @@ impl TypedActionView for BillingAndUsagePageView {
                             (Some(k), o) if k == *key && o == *order
                         );
 
-                        let mut menu_item = MenuItemFields::new(*label).with_on_select_action(
-                            BillingAndUsagePageAction::ChangeUsageSort {
+                        let mut menu_item = MenuItemFields::new(label.clone())
+                            .with_on_select_action(BillingAndUsagePageAction::ChangeUsageSort {
                                 key: *key,
                                 order: *order,
-                            },
-                        );
+                            });
 
                         menu_item = if is_selected {
                             menu_item.with_icon(Icon::Check)
@@ -1135,10 +1104,14 @@ impl UsageWidget {
         let fg = theme.foreground().into_solid();
         let bg = theme.background().into_solid();
 
-        let title = Text::new_inline(AMBIENT_AGENT_TRIAL_TITLE, appearance.ui_font_family(), 14.)
-            .with_color(theme.active_ui_text_color().into())
-            .with_style(Properties::default().weight(Weight::Semibold))
-            .finish();
+        let title = Text::new_inline(
+            t!("billing.cloud_agent_trial"),
+            appearance.ui_font_family(),
+            14.,
+        )
+        .with_color(theme.active_ui_text_color().into())
+        .with_style(Properties::default().weight(Weight::Semibold))
+        .finish();
 
         let credits_text = if credits_remaining == 1 {
             "1 credit remaining".to_string()
@@ -1290,16 +1263,19 @@ impl UsageWidget {
         let enabled_and_not_delinquent = enabled && !is_delinquent;
 
         let (header_text, description_text) = if has_admin_permissions {
-            (OVERAGE_TOGGLE_ADMIN_HEADER, OVERAGE_TOGGLE_DESCRIPTION)
+            (
+                t!("billing.enable_premium_overages").to_string(),
+                t!("billing.overage_toggle_description").to_string(),
+            )
         } else if enabled {
             (
-                OVERAGE_TOGGLE_USER_HEADER_ENABLED,
-                OVERAGE_TOGGLE_DESCRIPTION,
+                t!("billing.premium_overages_enabled").to_string(),
+                t!("billing.overage_toggle_description").to_string(),
             )
         } else {
             (
-                OVERAGE_TOGGLE_USER_HEADER_DISABLED,
-                OVERAGE_TOGGLE_USER_DESCRIPTION,
+                t!("billing.premium_overages_disabled").to_string(),
+                t!("billing.overage_toggle_user_description").to_string(),
             )
         };
 
@@ -1412,7 +1388,7 @@ impl UsageWidget {
         );
 
         let label = Text::new_inline(
-            "Monthly overage spending limit",
+            t!("billing.monthly_overage_spending_limit"),
             appearance.ui_font_family(),
             12.,
         )
@@ -1481,7 +1457,7 @@ impl UsageWidget {
                 appearance
                     .ui_builder()
                     .link(
-                        OVERAGE_USAGE_LINK_TEXT.to_string(),
+                        t!("billing.view_overage_usage").to_string(),
                         None,
                         Some(Box::new(move |ctx| {
                             ctx.dispatch_typed_action(
@@ -1641,10 +1617,14 @@ impl UsageWidget {
         let ui_builder = appearance.ui_builder();
         let theme = appearance.theme();
 
-        let header = Text::new_inline("Add-on credits", appearance.ui_font_family(), 16.)
-            .with_color(fg.into())
-            .with_style(Properties::default().weight(Weight::Bold))
-            .finish();
+        let header = Text::new_inline(
+            t!("billing.addon_credits"),
+            appearance.ui_font_family(),
+            16.,
+        )
+        .with_color(fg.into())
+        .with_style(Properties::default().weight(Weight::Bold))
+        .finish();
 
         let credits_value = Text::new_inline(
             bonus_credit_balance.separate_with_commas(),
@@ -1791,9 +1771,13 @@ impl UsageWidget {
             .unwrap_or(1);
 
         let paragraph_text = if team_member_count > 1 {
-            format!("{ADDON_CREDITS_DESCRIPTION} {ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM}")
+            format!(
+                "{} {}",
+                t!("billing.addon_credits_description"),
+                t!("billing.addon_credits_team_description")
+            )
         } else {
-            ADDON_CREDITS_DESCRIPTION.to_string()
+            t!("billing.addon_credits_description").to_string()
         };
         let paragraph = ui_builder
             .paragraph(paragraph_text)
@@ -1855,10 +1839,13 @@ impl UsageWidget {
                 let cost_cents = bonus_grants.cents_spent;
                 let cost_dollars = cost_cents as f64 / 100.0;
 
-                let label =
-                    Text::new_inline("Purchased this month", appearance.ui_font_family(), 12.)
-                        .with_color(appearance.theme().active_ui_text_color().into())
-                        .finish();
+                let label = Text::new_inline(
+                    t!("billing.purchased_this_month"),
+                    appearance.ui_font_family(),
+                    12.,
+                )
+                .with_color(appearance.theme().active_ui_text_color().into())
+                .finish();
 
                 let credits_text = if credits_purchased == 1 {
                     "1 credit".to_string()
@@ -2200,9 +2187,13 @@ impl UsageWidget {
 
         let mut left_side_component =
             Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-        let label = Text::new_inline("Total overages", appearance.ui_font_family(), 12.)
-            .with_color(appearance.theme().active_ui_text_color().into())
-            .finish();
+        let label = Text::new_inline(
+            t!("billing.total_overages"),
+            appearance.ui_font_family(),
+            12.,
+        )
+        .with_color(appearance.theme().active_ui_text_color().into())
+        .finish();
 
         left_side_component.add_child(Container::new(label).with_margin_right(8.).finish());
 
@@ -2493,9 +2484,10 @@ impl SettingsWidget for UsageWidget {
             ),
         ];
 
+        let selected_tab_label = view.selected_tab.label();
         let tab_selector = tab_selector::render_tab_selector(
             tabs,
-            view.selected_tab.label(),
+            &selected_tab_label,
             // On click, set clicked tab as selected
             |label, ctx| {
                 ctx.dispatch_typed_action(BillingAndUsagePageAction::SelectTab(
@@ -2547,12 +2539,16 @@ impl UsageWidget {
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_child(
                 Container::new(
-                    Text::new_inline("Last 30 days".to_string(), appearance.ui_font_family(), 14.)
-                        .with_color(blended_colors::text_sub(
-                            appearance.theme(),
-                            appearance.theme().surface_1(),
-                        ))
-                        .finish(),
+                    Text::new_inline(
+                        t!("billing.last_30_days").to_string(),
+                        appearance.ui_font_family(),
+                        14.,
+                    )
+                    .with_color(blended_colors::text_sub(
+                        appearance.theme(),
+                        appearance.theme().surface_1(),
+                    ))
+                    .finish(),
                 )
                 .with_vertical_margin(12.)
                 .finish(),
@@ -2660,19 +2656,23 @@ impl UsageWidget {
                 )
                 .with_child(
                     Container::new(
-                        Text::new("No usage history", appearance.ui_font_family(), 14.)
-                            .with_color(blended_colors::text_sub(
-                                appearance.theme(),
-                                appearance.theme().surface_1(),
-                            ))
-                            .finish(),
+                        Text::new(
+                            t!("billing.no_usage_history"),
+                            appearance.ui_font_family(),
+                            14.,
+                        )
+                        .with_color(blended_colors::text_sub(
+                            appearance.theme(),
+                            appearance.theme().surface_1(),
+                        ))
+                        .finish(),
                     )
                     .with_margin_bottom(4.)
                     .finish(),
                 )
                 .with_child(
                     Text::new(
-                        "Kick off an agent task to view usage history here.",
+                        t!("billing.usage_history_empty"),
                         appearance.ui_font_family(),
                         14.,
                     )
@@ -2719,7 +2719,7 @@ impl UsageWidget {
         .finish();
 
         let header = Text::new_inline(
-            ENTERPRISE_USAGE_CALLOUT_HEADER,
+            t!("billing.enterprise_usage_limited"),
             appearance.ui_font_family(),
             16.,
         )
@@ -2737,12 +2737,9 @@ impl UsageWidget {
         let body = if has_admin_permissions {
             let admin_panel_url = AdminActions::admin_panel_link_for_team(team_uid);
             let text_fragments = vec![
-                FormattedTextFragment::plain_text(ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_PREFIX),
-                FormattedTextFragment::hyperlink(
-                    ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_LINK,
-                    admin_panel_url,
-                ),
-                FormattedTextFragment::plain_text(ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_SUFFIX),
+                FormattedTextFragment::plain_text(t!("billing.enterprise_usage_admin_prefix")),
+                FormattedTextFragment::hyperlink(t!("billing.visit_admin_panel"), admin_panel_url),
+                FormattedTextFragment::plain_text("."),
             ];
             FormattedTextElement::new(
                 FormattedText::new([FormattedTextLine::Line(text_fragments)]),
@@ -2760,7 +2757,7 @@ impl UsageWidget {
         } else {
             appearance
                 .ui_builder()
-                .paragraph(ENTERPRISE_USAGE_CALLOUT_BODY_NON_ADMIN)
+                .paragraph(t!("billing.enterprise_usage_non_admin"))
                 .with_style(UiComponentStyles {
                     font_color: Some(theme.sub_text_color(bg).into()),
                     font_size: Some(12.),
@@ -2868,8 +2865,9 @@ impl UsageWidget {
                     let hoverable =
                         Hoverable::new(self.sort_icon_mouse_state.clone(), |mouse_state| {
                             if mouse_state.is_hovered() {
-                                let tooltip =
-                                    appearance.ui_builder().tool_tip("Sort by".to_string());
+                                let tooltip = appearance
+                                    .ui_builder()
+                                    .tool_tip(t!("drive.sort_by").to_string());
 
                                 button.add_positioned_overlay_child(
                                     tooltip.build().finish(),
@@ -3457,10 +3455,14 @@ impl PlanWidget {
     }
 
     fn render_plan_header_text(&self, appearance: &Appearance) -> Box<dyn Element> {
-        Text::new_inline("Plan", appearance.ui_font_family(), HEADER_FONT_SIZE)
-            .with_style(Properties::default().weight(Weight::Bold))
-            .with_color(appearance.theme().active_ui_text_color().into())
-            .finish()
+        Text::new_inline(
+            t!("billing.plan"),
+            appearance.ui_font_family(),
+            HEADER_FONT_SIZE,
+        )
+        .with_style(Properties::default().weight(Weight::Bold))
+        .with_color(appearance.theme().active_ui_text_color().into())
+        .finish()
     }
 
     fn render_team_admin_actions(

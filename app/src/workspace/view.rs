@@ -571,10 +571,6 @@ const TAB_BAR_ICON_PADDING: f32 = 4.;
 
 const TAB_BAR_PILL_WIDTH: f32 = 100.;
 const PILL_FONT_SIZE: f32 = 12.;
-// We use the word "Warp" in the Update Ready button to make it obvious that the terminal is Warp.
-// This can lead to free advertising when users screen-share Warp when an update is available.
-const UPDATE_READY_TEXT: &str = "Update Warp";
-
 const TAB_BAR_OVERFLOW_MENU_WIDTH: f32 = 300.;
 
 #[cfg(not(target_family = "wasm"))]
@@ -600,10 +596,6 @@ const ELLIPSE_SVG_PATH: &str = "bundled/svg/ellipse.svg";
 
 const AI_ASSISTANT_BUTTON_ID: &str = "workspace_view:ai_assistant_button";
 
-const VERSION_DEPRECATION_BANNER_TEXT: &str = "Your app is out of date and some features may not work as expected. Please update immediately.";
-
-const VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT: &str = "Some Warp features may not work as expected without updating immediately, but Warp is unable to perform the update.";
-
 const ASK_AI_ASSISTANT_KEYBINDING_NAME: &str = "workspace:toggle_ai_assistant";
 const TOGGLE_RESOURCE_CENTER_KEYBINDING_NAME: &str = "workspace:toggle_resource_center";
 
@@ -616,7 +608,6 @@ const NEW_SESSION_SIDECAR_SEARCH_BOX_HORIZONTAL_PADDING: f32 = 12.;
 const NEW_SESSION_SIDECAR_SEARCH_BOX_VERTICAL_PADDING: f32 = 6.;
 const NEW_SESSION_SIDECAR_FOOTER_HORIZONTAL_PADDING: f32 = 16.;
 const NEW_SESSION_SIDECAR_FOOTER_VERTICAL_PADDING: f32 = 8.;
-const SESSION_CONFIG_TAB_CONFIG_CHIP_TEXT: &str = "Access your tab configs here.";
 const SESSION_CONFIG_TAB_CONFIG_CHIP_WIDTH: f32 = 206.;
 const SHOW_SETTINGS_KEYBINDING_NAME: &str = "workspace:show_settings";
 pub const TOGGLE_COMMAND_PALETTE_KEYBINDING_NAME: &str = "workspace:toggle_command_palette";
@@ -1226,7 +1217,7 @@ impl Workspace {
                 },
                 ctx,
             );
-            editor.set_placeholder_text("Search repos", ctx);
+            editor.set_placeholder_text(t!("workspace.search_repos").to_string(), ctx);
             editor
         });
         ctx.subscribe_to_view(&editor, |me, editor_view, event, ctx| match event {
@@ -1262,7 +1253,7 @@ impl Workspace {
             EditorView::single_line(options, ctx)
         });
         editor.update(ctx, |editor, ctx| {
-            editor.set_placeholder_text("Search tabs...", ctx);
+            editor.set_placeholder_text(t!("workspace.search_tabs").to_string(), ctx);
         });
         ctx.subscribe_to_view(&editor, |me, editor_view, event, ctx| match event {
             EditorEvent::Edited(_) => {
@@ -2353,7 +2344,7 @@ impl Workspace {
         .finish();
 
         let text = Text::new_inline(
-            SESSION_CONFIG_TAB_CONFIG_CHIP_TEXT.to_string(),
+            t!("workspace.tab_configs_chip").to_string(),
             appearance.ui_font_family(),
             12.,
         )
@@ -8820,9 +8811,13 @@ impl Workspace {
                                 .with_main_axis_size(MainAxisSize::Max)
                                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                                 .with_child(
-                                    Text::new_inline(" + Add new repo", font_family, font_size)
-                                        .with_color(text_color.into())
-                                        .finish(),
+                                    Text::new_inline(
+                                        t!("workspace.add_new_repo").to_string(),
+                                        font_family,
+                                        font_size,
+                                    )
+                                    .with_color(text_color.into())
+                                    .finish(),
                                 )
                                 .finish(),
                         )
@@ -9610,9 +9605,9 @@ impl Workspace {
 
                 self.toast_stack.update(ctx, |view, ctx| {
                     let new_toast =
-                        DismissibleToast::error("Looks like you're out of AI credits.".into())
+                        DismissibleToast::error(t!("ai_assistant.out_of_credits_short").into())
                             .with_link(
-                                ToastLink::new("Upgrade for more credits.".into())
+                                ToastLink::new(t!("ai_assistant.upgrade_for_more_credits").into())
                                     .with_href(upgrade_link),
                             );
                     view.add_ephemeral_toast(new_toast, ctx);
@@ -11540,7 +11535,9 @@ impl Workspace {
                     ctx.notify();
                 });
                 WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::error("Failed to load conversation.".to_owned());
+                    let toast = DismissibleToast::error(
+                        t!("workspace.failed_load_conversation").to_string(),
+                    );
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
                 return;
@@ -11593,7 +11590,9 @@ impl Workspace {
             let Some(conversation) = conversation else {
                 log::warn!("Failed to load conversation {conversation_id}");
                 WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::error("Failed to load conversation.".to_owned());
+                    let toast = DismissibleToast::error(
+                        t!("workspace.failed_load_conversation").to_string(),
+                    );
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
                 // Close the loading pane
@@ -11662,7 +11661,9 @@ impl Workspace {
             let Some(conversation) = conversation else {
                 log::warn!("Failed to load conversation {conversation_id}");
                 WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::error("Failed to load conversation.".to_owned());
+                    let toast = DismissibleToast::error(
+                        t!("workspace.failed_load_conversation").to_string(),
+                    );
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
                 // Close the loading tab
@@ -11774,7 +11775,7 @@ impl Workspace {
                 log::error!("Failed to load Oz conversation {conversation_id} for forking.");
                 WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = DismissibleToast::error(
-                        "Failed to load conversation for forking.".to_owned(),
+                        t!("workspace.failed_load_conversation_for_forking").to_string(),
                     );
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
@@ -11808,8 +11809,9 @@ impl Workspace {
                 Err(e) => {
                     log::error!("Conversation forking failed. {e}.");
                     WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        let toast =
-                            DismissibleToast::error("Conversation forking failed.".to_owned());
+                        let toast = DismissibleToast::error(
+                            t!("workspace.conversation_forking_failed").to_string(),
+                        );
                         toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                     });
                     return;
@@ -13209,8 +13211,7 @@ impl Workspace {
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn show_handoff_prepare_failed_toast(window_id: WindowId, ctx: &mut ViewContext<Self>) {
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast =
-                DismissibleToast::error("Failed to prepare handoff. Please try again.".to_owned());
+            let toast = DismissibleToast::error(t!("workspace.failed_prepare_handoff").to_string());
             toast_stack.add_ephemeral_toast(toast, window_id, ctx);
         });
     }
@@ -13312,9 +13313,7 @@ impl Workspace {
         let window_id = ctx.window_id();
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
             toast_stack.add_ephemeral_toast(
-                DismissibleToast::default(
-                    "Starting cloud environment for this session...".to_owned(),
-                ),
+                DismissibleToast::success(t!("workspace.handing_off_to_cloud").to_string()),
                 window_id,
                 ctx,
             );
@@ -15214,7 +15213,7 @@ impl Workspace {
             let window_id = ctx.window_id();
             WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                 let toast = DismissibleToast::default(
-                    "No terminal pane open. Open a new pane to attach as context.".to_owned(),
+                    t!("workspace.no_terminal_pane_for_context").to_string(),
                 );
                 toast_stack.add_ephemeral_toast(toast, window_id, ctx);
             });
@@ -15233,8 +15232,9 @@ impl Workspace {
             {
                 let window_id = ctx.window_id();
                 WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast =
-                        DismissibleToast::default("This plan is already in context.".to_owned());
+                    let toast = DismissibleToast::default(
+                        t!("workspace.plan_already_in_context").to_string(),
+                    );
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
                 return;
@@ -15849,8 +15849,7 @@ impl Workspace {
                                     DismissibleToast::error(message)
                                         .with_link(
                                             ToastLink::new(
-                                                "Check out the latest version and try again."
-                                                    .to_string(),
+                                                t!("workspace.check_latest_version").to_string(),
                                             )
                                             .with_onclick_action(
                                                 WorkspaceAction::HandleConflictingWorkflow(
@@ -15863,8 +15862,7 @@ impl Workspace {
                                     DismissibleToast::error(message)
                                         .with_link(
                                             ToastLink::new(
-                                                "Check out the latest version and try again."
-                                                    .to_string(),
+                                                t!("workspace.check_latest_version").to_string(),
                                             )
                                             .with_onclick_action(
                                                 WorkspaceAction::HandleConflictingEnvVarCollection(
@@ -17251,10 +17249,7 @@ impl Workspace {
 
         let body = appearance
             .ui_builder()
-            .wrappable_text(
-                "Ask Warp AI to explain errors, suggest commands or write scripts.".to_owned(),
-                true,
-            )
+            .wrappable_text(t!("workspace.ask_ai_description").to_string(), true)
             .with_style(UiComponentStyles {
                 font_size: Some(12.),
                 font_color: Some(sub_text_color),
@@ -17741,7 +17736,7 @@ impl Workspace {
                         Shrinkable::new(
                             1.,
                             Text::new_inline(
-                                "Search sessions, agents, files...",
+                                t!("workspace.search_sessions_agents_files"),
                                 appearance.ui_font_family(),
                                 14.,
                             )
@@ -18740,7 +18735,7 @@ impl Workspace {
                 Some(hovered_styles),
                 None,
             )
-            .with_centered_text_label(String::from("Sign up"));
+            .with_centered_text_label(t!("workspace.sign_up").to_string());
 
         Align::new(
             button
@@ -18782,7 +18777,7 @@ impl Workspace {
                 Some(hovered_styles),
                 None,
             )
-            .with_centered_text_label(String::from("Sign up"));
+            .with_centered_text_label(t!("workspace.sign_up").to_string());
 
         Align::new(
             button
@@ -18962,7 +18957,7 @@ impl Workspace {
                     Flex::row()
                         .with_child(
                             Text::new_inline(
-                                UPDATE_READY_TEXT,
+                                t!("workspace.update_warp"),
                                 appearance.ui_font_family(),
                                 PILL_FONT_SIZE,
                             )
@@ -19217,10 +19212,9 @@ impl Workspace {
                 {
                     let description =
                         if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
-                            VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT.to_owned()
+                            t!("workspace.version_deprecation_without_permissions").to_string()
                         } else {
-                            "A new version is available but Warp is unable to perform the update."
-                                .to_owned()
+                            t!("workspace.unable_update_new_version").to_string()
                         };
 
                     Some(WorkspaceBannerFields {
@@ -19230,7 +19224,7 @@ impl Workspace {
                         description,
                         secondary_button: None,
                         button: Some(WorkspaceBannerButtonDetails {
-                            text: "Update Warp manually".to_string(),
+                            text: t!("workspace.update_warp_manually").to_string(),
                             action: WorkspaceAction::DownloadNewVersion,
                             variant: BannerButtonVariant::Outlined,
                             icon: None,
@@ -19243,9 +19237,9 @@ impl Workspace {
                 {
                     let description =
                         if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
-                            VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT.to_owned()
+                            t!("workspace.version_deprecation_without_permissions").to_string()
                         } else {
-                            "Warp was unable to launch the new installed version.".to_owned()
+                            t!("workspace.unable_launch_new_version").to_string()
                         };
 
                     Some(WorkspaceBannerFields {
@@ -19255,7 +19249,7 @@ impl Workspace {
                         description,
                         secondary_button: None,
                         button: Some(WorkspaceBannerButtonDetails {
-                            text: "Update Warp manually".to_string(),
+                            text: t!("workspace.update_warp_manually").to_string(),
                             action: WorkspaceAction::DownloadNewVersion,
                             variant: BannerButtonVariant::Outlined,
                             icon: None,
@@ -19270,10 +19264,10 @@ impl Workspace {
                             banner_type: WorkspaceBanner::VersionDeprecated,
                             severity: BannerSeverity::Error,
                             heading: None,
-                            description: VERSION_DEPRECATION_BANNER_TEXT.to_string(),
+                            description: t!("workspace.version_deprecation").to_string(),
                             secondary_button: None,
                             button: Some(WorkspaceBannerButtonDetails {
-                                text: "Update now".to_string(),
+                                text: t!("workspace.update_now").to_string(),
                                 action: WorkspaceAction::ApplyUpdate,
                                 variant: BannerButtonVariant::Outlined,
                                 icon: None,
@@ -19287,11 +19281,10 @@ impl Workspace {
                                     banner_type: WorkspaceBanner::VersionDeprecated,
                                     severity: BannerSeverity::Warning,
                                     heading: None,
-                                    description: "Your app is out of date and needs to update."
-                                        .to_string(),
+                                    description: t!("workspace.app_needs_update").to_string(),
                                     secondary_button: None,
                                     button: Some(WorkspaceBannerButtonDetails {
-                                        text: "Restart app and update now".to_string(),
+                                        text: t!("workspace.restart_and_update_now").to_string(),
                                         action: WorkspaceAction::ApplyUpdate,
                                         variant: BannerButtonVariant::Outlined,
                                         icon: None,
@@ -21639,8 +21632,9 @@ impl TypedActionView for Workspace {
                 self.process_updated_sync_state(ctx);
 
                 self.toast_stack.update(ctx, |view, ctx| {
-                    let new_toast =
-                        DismissibleToast::success("Disabled all synchronized inputs.".to_string());
+                    let new_toast = DismissibleToast::success(
+                        t!("workspace.disabled_synchronized_inputs").to_string(),
+                    );
                     view.add_ephemeral_toast(new_toast, ctx);
                 });
                 send_telemetry_from_ctx!(TelemetryEvent::DisableInputSync, ctx);
@@ -22323,7 +22317,7 @@ impl TypedActionView for Workspace {
 
                 self.toast_stack.update(ctx, |view, ctx| {
                     view.add_ephemeral_toast(
-                        DismissibleToast::default("Sampling process for 3 seconds...".to_string()),
+                        DismissibleToast::default(t!("workspace.sampling_process").to_string()),
                         ctx,
                     );
                 });
@@ -22546,7 +22540,7 @@ impl TypedActionView for Workspace {
                         ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                             toast_stack.add_ephemeral_toast(
                                 DismissibleToast::error(
-                                    "Failed to delete conversation. Please exit the agent view and try again.".to_string(),
+                                    t!("workspace.failed_delete_conversation").to_string(),
                                 ),
                                 window_id,
                                 ctx,
@@ -22561,7 +22555,7 @@ impl TypedActionView for Workspace {
                 send_telemetry_from_ctx!(TelemetryEvent::ConversationListItemDeleted, ctx);
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast(
-                        DismissibleToast::success("Conversation deleted".to_string()),
+                        DismissibleToast::success(t!("workspace.conversation_deleted").to_string()),
                         window_id,
                         ctx,
                     );
