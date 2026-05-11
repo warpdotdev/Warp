@@ -974,6 +974,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
         ignore_hover_when_covered: bool,
         safe_zone_suppresses_hover: bool,
         submenu_being_shown_for_item: bool,
+        suppress_item_hover: bool,
         appearance: &Appearance,
         vertical_padding: f32,
         horizontal_padding: f32,
@@ -987,7 +988,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             .unwrap_or(horizontal_padding);
         let mut ret = Hoverable::new(self.mouse_state.clone(), |state| {
             let is_hovered = state.is_hovered() && !safe_zone_suppresses_hover
-                && !self.suppress_item_hover;
+                && !suppress_item_hover;
             let is_hovered_or_selected = is_hovered || is_selected;
             let default_hover_background = if self.highlight_on_hover {
                 theme.accent_button_color()
@@ -1329,6 +1330,7 @@ impl<A: Action + Clone> MenuItem<A> {
         ignore_hover_when_covered: bool,
         safe_zone_suppresses_hover: bool,
         submenu_being_shown_for_item: bool,
+        suppress_item_hover: bool,
         appearance: &Appearance,
         menu_width: f32,
         app: &AppContext,
@@ -1344,6 +1346,7 @@ impl<A: Action + Clone> MenuItem<A> {
                 ignore_hover_when_covered,
                 safe_zone_suppresses_hover,
                 submenu_being_shown_for_item,
+                suppress_item_hover,
                 appearance,
                 MENU_ITEM_VERTICAL_PADDING,
                 MENU_ITEM_HORIZONTAL_PADDING,
@@ -1354,7 +1357,7 @@ impl<A: Action + Clone> MenuItem<A> {
                 let horizontal_padding = ((menu_width - (MENU_ITEM_HORIZONTAL_PADDING * 2.))
                     / (items.len() as f32)
                     / 5.)
-                    .round();
+                .round();
                 let items_row = Flex::row()
                     .with_children(items.iter().enumerate().map(|(item_idx, fields)| {
                         fields.render(
@@ -1367,6 +1370,7 @@ impl<A: Action + Clone> MenuItem<A> {
                             ignore_hover_when_covered,
                             safe_zone_suppresses_hover,
                             submenu_being_shown_for_item,
+                            suppress_item_hover,
                             appearance,
                             MENU_ITEM_VERTICAL_PADDING,
                             horizontal_padding,
@@ -1910,6 +1914,7 @@ impl<A: Action + Clone> SubMenu<A> {
         ignore_hover_when_covered: bool,
         safe_zone_anchor_row: Option<usize>,
         submenu_being_shown_for_item_index: Option<usize>,
+        suppress_item_hover: bool,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Vec<Box<dyn Element>> {
@@ -1939,6 +1944,7 @@ impl<A: Action + Clone> SubMenu<A> {
                                 ignore_hover_when_covered,
                                 safe_zone_suppresses_hover,
                                 submenu_being_shown_for_item,
+                                suppress_item_hover,
                                 appearance,
                                 submenu_width,
                                 app,
@@ -1969,6 +1975,7 @@ impl<A: Action + Clone> SubMenu<A> {
                     ignore_hover_when_covered,
                     None,
                     None,
+                    suppress_item_hover,
                     appearance,
                     app,
                 ));
@@ -2544,6 +2551,7 @@ impl<A: Action + Clone> SubMenu<A> {
             ignore_hover_when_covered,
             safe_zone_anchor_row,
             submenu_being_shown_for_item_index,
+            self.suppress_item_hover,
             appearance,
             app,
         );
