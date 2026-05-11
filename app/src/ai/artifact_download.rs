@@ -63,7 +63,7 @@ pub(crate) async fn download_artifact_bytes(
 ) -> anyhow::Result<()> {
     use std::time::Duration;
 
-    use anyhow::{anyhow, Context as _};
+    use anyhow::{Context as _, anyhow};
     use futures::TryStreamExt as _;
     use tokio_util::io::StreamReader;
 
@@ -125,6 +125,7 @@ mod tests {
             },
             data: FileArtifactResponseData {
                 download_url: "https://storage.example.com/report.txt".to_string(),
+                stable_download_url: None,
                 expires_at: Utc.with_ymd_and_hms(2024, 1, 15, 11, 30, 0).unwrap(),
                 content_type: "text/plain".to_string(),
                 filepath: filepath.to_string(),
@@ -189,6 +190,7 @@ mod tests {
             },
             data: ScreenshotArtifactResponseData {
                 download_url: "https://storage.example.com/screenshot".to_string(),
+                stable_download_url: None,
                 expires_at: Utc.with_ymd_and_hms(2024, 1, 15, 11, 30, 0).unwrap(),
                 content_type: "application/octet-stream".to_string(),
                 description: Some("dashboard screenshot".to_string()),

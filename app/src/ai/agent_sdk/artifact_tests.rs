@@ -13,6 +13,8 @@ fn sample_completed_upload() -> CompletedFileArtifactUpload {
 fn sample_artifact_record() -> FileArtifactRecord {
     FileArtifactRecord {
         artifact_uid: "artifact-123".to_string(),
+        stable_download_url: "https://api.example.com/api/v1/agent/artifacts/artifact-123/download"
+            .to_string(),
         filepath: "outputs/report.txt".to_string(),
         description: Some("daily summary".to_string()),
         mime_type: "text/plain".to_string(),
@@ -28,6 +30,7 @@ fn sample_file_download_response() -> ArtifactDownloadResponse {
             "created_at": "2024-01-15T10:30:00Z",
             "data": {
                 "download_url": "https://storage.example.com/report.txt",
+                "stable_download_url": "https://api.example.com/api/v1/agent/artifacts/artifact-123/download",
                 "expires_at": "2024-01-15T11:30:00Z",
                 "content_type": "text/plain",
                 "filepath": "outputs/report.txt",
@@ -48,6 +51,7 @@ fn sample_screenshot_download_response() -> ArtifactDownloadResponse {
             "created_at": "2024-01-15T10:30:00Z",
             "data": {
                 "download_url": "https://storage.example.com/screenshot.png",
+                "stable_download_url": "https://api.example.com/api/v1/agent/artifacts/screenshot-123/download",
                 "expires_at": "2024-01-15T11:30:00Z",
                 "content_type": "image/png",
                 "description": "dashboard screenshot"
@@ -70,7 +74,7 @@ fn write_get_output_to_writes_json_output() {
 
     assert_eq!(
         String::from_utf8(output).unwrap(),
-        "{\"artifact_uid\":\"artifact-123\",\"artifact_type\":\"FILE\",\"created_at\":\"2024-01-15T10:30:00+00:00\",\"download_url\":\"https://storage.example.com/report.txt\",\"expires_at\":\"2024-01-15T11:30:00+00:00\",\"content_type\":\"text/plain\",\"filepath\":\"outputs/report.txt\",\"filename\":\"report.txt\",\"description\":\"daily summary\",\"size_bytes\":42}\n"
+        "{\"artifact_uid\":\"artifact-123\",\"artifact_type\":\"FILE\",\"created_at\":\"2024-01-15T10:30:00+00:00\",\"download_url\":\"https://storage.example.com/report.txt\",\"stable_download_url\":\"https://api.example.com/api/v1/agent/artifacts/artifact-123/download\",\"expires_at\":\"2024-01-15T11:30:00+00:00\",\"content_type\":\"text/plain\",\"filepath\":\"outputs/report.txt\",\"filename\":\"report.txt\",\"description\":\"daily summary\",\"size_bytes\":42}\n"
     );
 }
 
@@ -87,7 +91,7 @@ fn write_get_output_to_writes_ndjson_output() {
 
     assert_eq!(
         String::from_utf8(output).unwrap(),
-        "{\"artifact_uid\":\"artifact-123\",\"artifact_type\":\"FILE\",\"created_at\":\"2024-01-15T10:30:00+00:00\",\"download_url\":\"https://storage.example.com/report.txt\",\"expires_at\":\"2024-01-15T11:30:00+00:00\",\"content_type\":\"text/plain\",\"filepath\":\"outputs/report.txt\",\"filename\":\"report.txt\",\"description\":\"daily summary\",\"size_bytes\":42}\n"
+        "{\"artifact_uid\":\"artifact-123\",\"artifact_type\":\"FILE\",\"created_at\":\"2024-01-15T10:30:00+00:00\",\"download_url\":\"https://storage.example.com/report.txt\",\"stable_download_url\":\"https://api.example.com/api/v1/agent/artifacts/artifact-123/download\",\"expires_at\":\"2024-01-15T11:30:00+00:00\",\"content_type\":\"text/plain\",\"filepath\":\"outputs/report.txt\",\"filename\":\"report.txt\",\"description\":\"daily summary\",\"size_bytes\":42}\n"
     );
 }
 
@@ -104,7 +108,7 @@ fn write_get_output_to_writes_pretty_output() {
 
     assert_eq!(
         String::from_utf8(output).unwrap(),
-        "Artifact UID: artifact-123\nArtifact type: FILE\nCreated at: 2024-01-15T10:30:00+00:00\nDownload URL: https://storage.example.com/report.txt\nExpires at: 2024-01-15T11:30:00+00:00\nContent type: text/plain\nFilepath: outputs/report.txt\nFilename: report.txt\nDescription: daily summary\nSize bytes: 42\n"
+        "Artifact UID: artifact-123\nArtifact type: FILE\nCreated at: 2024-01-15T10:30:00+00:00\nDownload URL: https://storage.example.com/report.txt\nStable download URL: https://api.example.com/api/v1/agent/artifacts/artifact-123/download\nExpires at: 2024-01-15T11:30:00+00:00\nContent type: text/plain\nFilepath: outputs/report.txt\nFilename: report.txt\nDescription: daily summary\nSize bytes: 42\n"
     );
 }
 
@@ -121,7 +125,7 @@ fn write_get_output_to_writes_text_output() {
 
     assert_eq!(
         String::from_utf8(output).unwrap(),
-        "Artifact UID\tArtifact type\tCreated at\tDownload URL\tExpires at\tContent type\tFilepath\tFilename\tDescription\tSize bytes\nartifact-123\tFILE\t2024-01-15T10:30:00+00:00\thttps://storage.example.com/report.txt\t2024-01-15T11:30:00+00:00\ttext/plain\toutputs/report.txt\treport.txt\tdaily summary\t42\n"
+        "Artifact UID\tArtifact type\tCreated at\tDownload URL\tStable download URL\tExpires at\tContent type\tFilepath\tFilename\tDescription\tSize bytes\nartifact-123\tFILE\t2024-01-15T10:30:00+00:00\thttps://storage.example.com/report.txt\thttps://api.example.com/api/v1/agent/artifacts/artifact-123/download\t2024-01-15T11:30:00+00:00\ttext/plain\toutputs/report.txt\treport.txt\tdaily summary\t42\n"
     );
 }
 
@@ -204,7 +208,7 @@ fn write_upload_output_to_writes_json_output() {
 
     assert_eq!(
         String::from_utf8(output).unwrap(),
-        "{\"artifact_uid\":\"artifact-123\",\"filepath\":\"outputs/report.txt\",\"description\":\"daily summary\",\"mime_type\":\"text/plain\",\"size_bytes\":42}\n"
+        "{\"artifact_uid\":\"artifact-123\",\"stable_download_url\":\"https://api.example.com/api/v1/agent/artifacts/artifact-123/download\",\"filepath\":\"outputs/report.txt\",\"description\":\"daily summary\",\"mime_type\":\"text/plain\",\"size_bytes\":42}\n"
     );
 }
 
@@ -221,7 +225,7 @@ fn write_upload_output_to_writes_ndjson_output() {
 
     assert_eq!(
         String::from_utf8(output).unwrap(),
-        "{\"artifact_uid\":\"artifact-123\",\"filepath\":\"outputs/report.txt\",\"description\":\"daily summary\",\"mime_type\":\"text/plain\",\"size_bytes\":42}\n"
+        "{\"artifact_uid\":\"artifact-123\",\"stable_download_url\":\"https://api.example.com/api/v1/agent/artifacts/artifact-123/download\",\"filepath\":\"outputs/report.txt\",\"description\":\"daily summary\",\"mime_type\":\"text/plain\",\"size_bytes\":42}\n"
     );
 }
 
@@ -238,7 +242,7 @@ fn write_upload_output_to_writes_pretty_output() {
 
     assert_eq!(
         String::from_utf8(output).unwrap(),
-        "Artifact uploaded\nArtifact UID: artifact-123\nFilepath: outputs/report.txt\nDescription: daily summary\nMIME type: text/plain\nSize bytes: 42\n"
+        "Artifact uploaded\nArtifact UID: artifact-123\nStable download URL: https://api.example.com/api/v1/agent/artifacts/artifact-123/download\nFilepath: outputs/report.txt\nDescription: daily summary\nMIME type: text/plain\nSize bytes: 42\n"
     );
 }
 
@@ -250,6 +254,6 @@ fn write_upload_output_to_writes_text_output() {
 
     assert_eq!(
         String::from_utf8(output).unwrap(),
-        "Artifact UID\tFilepath\tDescription\tMIME type\tSize bytes\nartifact-123\toutputs/report.txt\tdaily summary\ttext/plain\t42\n"
+        "Artifact UID\tStable download URL\tFilepath\tDescription\tMIME type\tSize bytes\nartifact-123\thttps://api.example.com/api/v1/agent/artifacts/artifact-123/download\toutputs/report.txt\tdaily summary\ttext/plain\t42\n"
     );
 }
