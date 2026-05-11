@@ -25,6 +25,7 @@ use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::BlocklistAIHistoryModel;
+use warp_core::ui::color::blend::Blend;
 use warp_core::ui::theme::WarpTheme;
 
 /// Renders a pill-shaped toggle switch (36×18) matching the Figma mock.
@@ -461,11 +462,19 @@ impl View for OrchestrationConfigBlockView {
             }
         }
 
-        // Outer container with accent styling per Figma
+        // Outer container with accent styling per Figma.
+        // Composite the translucent accent overlay against the theme background
+        // to produce an opaque color. This is necessary because the config block
+        // is rendered inside the editor's ClippedScrollable, which does not have
+        // an opaque background behind it — translucent fills would bleed through
+        // to the underlying content, causing washed-out colors in light themes.
+        let accent_bg = theme
+            .background()
+            .blend(&warp_core::ui::theme::color::internal_colors::accent_overlay_1(theme));
         Container::new(column.finish())
             .with_uniform_padding(12.)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-            .with_background(warp_core::ui::theme::color::internal_colors::accent_overlay_1(theme))
+            .with_background(accent_bg)
             .with_border(warpui::elements::Border::all(1.).with_border_fill(theme.accent()))
             .finish()
     }
