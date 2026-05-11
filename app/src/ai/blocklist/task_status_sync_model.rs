@@ -157,7 +157,11 @@ impl TaskStatusSyncModel {
             let Some(task_id) = conversation.task_id() else {
                 return;
             };
-            let (state, msg) = map_conversation_status(conversation);
+            let Some((state, msg)) = map_conversation_status(conversation) else {
+                // map_conversation_status returns None when the status change
+                // should not be reported (e.g. optimistic CLI subagent completion).
+                return;
+            };
             (task_id, state, msg)
         };
 
@@ -211,12 +215,16 @@ impl SingletonEntity for TaskStatusSyncModel {}
 
 /// Maps conversation state to an `AgentTaskState` and optional status message.
 /// For errors, extracts the specific error from the last exchange when available.
+///
+/// Returns `None` when the status change should NOT be reported to the server
+/// (e.g. `OptimisticCLISubagentCompletion` cancellations are internal signals,
+/// not user-initiated cancellations).
 fn map_conversation_status(
     conversation: &AIConversation,
-) -> (AgentTaskState, Option<TaskStatusUpdate>) {
+) -> Option<(AgentTaskState, Option<TaskStatusUpdate>)> {
     match conversation.status() {
-        ConversationStatus::InProgress => (AgentTaskState::InProgress, None),
-        ConversationStatus::Success => (AgentTaskState::Succeeded, None),
+        ConversationStatus::InProgress => Some((AgentTaskState::InProgress, None)),
+        ConversationStatus::Success => Some((AgentTaskState::Succeeded, None)),
         ConversationStatus::Error => {
             // Extract the specific RenderableAIError from the last exchange to
             // classify ERROR vs FAILED and provide a PlatformErrorCode.
@@ -234,23 +242,45 @@ fn map_conversation_status(
                     }
                 });
             match renderable_error {
-                Some(error) => classify_renderable_error(error),
-                None => (
+                Some(error) => Some(classify_renderable_error(error)),
+                None => Some((
                     AgentTaskState::Error,
                     Some(TaskStatusUpdate::message("Agent encountered an error")),
-                ),
+                )),
             }
         }
-        ConversationStatus::Cancelled => (
-            AgentTaskState::Cancelled,
-            Some(TaskStatusUpdate::message("Cancelled by user")),
-        ),
-        ConversationStatus::Blocked { blocked_action } => (
+        ConversationStatus::Cancelled => {
+            // Check the cancellation reason from the last exchange. If this was
+            // an OptimisticCLISubagentCompletion (a long-running command finished
+            // naturally), don't report it as a task-level CANCELLED — the agent
+            // will report IN_PROGRESS when it starts its next action. Reporting
+            // CANCELLED here causes the Oz web UI to cycle between "Stopped" and
+            // "Running" for self-hosted workers that idle between exchanges.
+            let is_optimistic_completion = conversation
+                .root_task_exchanges()
+                .last()
+                .is_some_and(|exchange| {
+                    matches!(
+                        &exchange.output_status,
+                        AIAgentOutputStatus::Finished {
+                            finished_output: FinishedAIAgentOutput::Cancelled { reason, .. },
+                        } if reason.is_lrc_command_completed()
+                    )
+                });
+            if is_optimistic_completion {
+                return None;
+            }
+            Some((
+                AgentTaskState::Cancelled,
+                Some(TaskStatusUpdate::message("Cancelled by user")),
+            ))
+        }
+        ConversationStatus::Blocked { blocked_action } => Some((
             AgentTaskState::Blocked,
             Some(TaskStatusUpdate::message(format!(
                 "The agent got stuck waiting for user confirmation on the action: {blocked_action}"
             ))),
-        ),
+        )),
     }
 }
 
