@@ -29,6 +29,9 @@ async fn init_repo_with_initial_commit(file: &str, contents: &str) -> tempfile::
     run_git(repo, &["config", "user.email", "test@test.com"]).await;
     run_git(repo, &["config", "user.name", "Test"]).await;
     run_git(repo, &["config", "commit.gpgsign", "false"]).await;
+    // Disable Windows CRLF normalization so that `"v1\n"` round-trips
+    // through `git add` without creating phantom diffs.
+    run_git(repo, &["config", "core.autocrlf", "false"]).await;
     std::fs::write(repo.join(file), contents).expect("write initial file");
     run_git(repo, &["add", file]).await;
     run_git(repo, &["commit", "-m", "initial", "--quiet"]).await;
@@ -275,36 +278,42 @@ fn test_parse_git_status_file_without_spaces_still_works() {
 // ===== Staged-then-reverted regression coverage (#10512) ==============================
 
 #[test]
-fn should_retry_with_staged_skips_new_untracked_and_renamed() {
-    // Untracked/new files don't exist in the index in a comparable way, so
-    // there is nothing to surface via `--cached`. Renames have their own
-    // diff path. Everything else (Modified/Deleted/Conflicted/Copied) is
-    // eligible for the staged fallback.
-    assert!(!LocalDiffStateModel::should_retry_with_staged(
-        &GitFileStatus::Untracked
-    ));
-    assert!(!LocalDiffStateModel::should_retry_with_staged(
-        &GitFileStatus::New
-    ));
-    assert!(!LocalDiffStateModel::should_retry_with_staged(
-        &GitFileStatus::Renamed {
-            old_path: "x".into()
-        }
-    ));
+fn should_retry_with_staged_only_for_modified_or_deleted() {
+    // Eligible: Modified, Deleted — these are the cases where the index
+    // can still differ from HEAD after a working-tree revert.
     assert!(LocalDiffStateModel::should_retry_with_staged(
         &GitFileStatus::Modified
     ));
     assert!(LocalDiffStateModel::should_retry_with_staged(
         &GitFileStatus::Deleted
     ));
-    assert!(LocalDiffStateModel::should_retry_with_staged(
-        &GitFileStatus::Conflicted
-    ));
+
+    // Not eligible: Untracked / New (not in the index in a comparable
+    // way), Renamed / Copied (paired old/new path semantics that the
+    // simple `--cached -- new_path` form doesn't reproduce), Conflicted
+    // (`--cached` against an unmerged entry would render stage-2-vs-HEAD,
+    // which is not what the panel wants).
+    for ineligible in [
+        GitFileStatus::Untracked,
+        GitFileStatus::New,
+        GitFileStatus::Renamed {
+            old_path: "x".into(),
+        },
+        GitFileStatus::Copied {
+            old_path: "x".into(),
+        },
+        GitFileStatus::Conflicted,
+    ] {
+        assert!(
+            !LocalDiffStateModel::should_retry_with_staged(&ineligible),
+            "expected staged fallback to skip {ineligible:?}"
+        );
+    }
 }
 
 #[test]
 fn staged_diff_args_targets_index_against_head_for_given_file() {
-    let args = LocalDiffStateModel::staged_diff_args("path/to/foo.txt", &GitFileStatus::Modified);
+    let args = LocalDiffStateModel::staged_diff_args("path/to/foo.txt");
     // `--cached` (synonym for `--staged`) compares the index to HEAD, which
     // is exactly the patch the staged-then-reverted fallback wants.
     assert!(args.contains(&"--cached"));
@@ -365,19 +374,38 @@ async fn diff_state_against_head_surfaces_staged_then_reverted_file() {
 
 #[cfg(feature = "local_fs")]
 #[tokio::test]
-async fn diff_state_against_head_unchanged_for_plain_unstaged_edit() {
-    // Control case: a plain working-tree edit (no `git add`) must continue
-    // to surface its hunks through the primary `git diff HEAD` path. The
-    // staged fallback should be a no-op here.
+async fn diff_state_against_head_uses_worktree_when_worktree_diverges_from_index() {
+    // Control case: distinguishes the primary path from the fallback by
+    // staging v2, then editing the worktree to v3 *without* re-staging.
+    // Now `git diff HEAD -- foo.txt` (worktree vs HEAD) shows v1→v3 while
+    // `git diff --cached -- foo.txt` would show v1→v2. If the primary
+    // path is taken, the resulting hunks must mention v3 — that's
+    // observably different from the fallback path.
     let dir = init_repo_with_initial_commit("foo.txt", "v1\n").await;
     let repo = dir.path();
 
     std::fs::write(repo.join("foo.txt"), "v2\n").expect("write v2");
+    run_git(repo, &["add", "foo.txt"]).await;
+    std::fs::write(repo.join("foo.txt"), "v3\n").expect("write v3");
 
     let diffs = LocalDiffStateModel::diff_state_against_head(repo)
         .await
         .expect("diff_state_against_head");
 
     assert_eq!(diffs.files_changed, 1);
-    assert!(!diffs.files[0].file_diff.hunks.is_empty());
+    let hunks = &diffs.files[0].file_diff.hunks;
+    assert!(!hunks.is_empty(), "expected hunks from primary path");
+    let hunk_text: String = hunks
+        .iter()
+        .flat_map(|h| h.lines.iter().map(|l| l.text.clone()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        hunk_text.contains("v3"),
+        "expected primary (worktree) path; hunks did not mention v3: {hunk_text:?}"
+    );
+    assert!(
+        !hunk_text.contains("v2"),
+        "expected fallback (staged) path NOT to be used; hunks mention v2: {hunk_text:?}"
+    );
 }
