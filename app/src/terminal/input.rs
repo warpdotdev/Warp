@@ -12514,7 +12514,7 @@ impl Input {
                 || self.is_cloud_mode_input_v2_composing(ctx))
         {
             // If we're submitting an AI query, we want to send telemetry for the input type.
-            if FeatureFlag::NldImprovements.is_enabled() {
+            {
                 let input_model = self.ai_input_model.as_ref(ctx);
                 let input_type = input_model.input_type();
                 let is_locked = input_model.is_input_type_locked();
@@ -12620,7 +12620,7 @@ impl Input {
             self.submit_ai_query(None, ctx);
         } else {
             // If we're submitting a shell command, we want to send telemetry for the input type.
-            if FeatureFlag::NldImprovements.is_enabled() {
+            {
                 let input_model = self.ai_input_model.as_ref(ctx);
                 let input_type = input_model.input_type();
                 let is_locked = input_model.is_input_type_locked();

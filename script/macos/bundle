@@ -350,7 +350,7 @@ if [[ "$ARTIFACT" == cli ]]; then
   OPEN_AFTER_BUNDLE=false
   FEATURES="$FEATURES,standalone"
 elif [[ "$ARTIFACT" == app ]]; then
-  FEATURES="$FEATURES,gui,nld_improvements"
+  FEATURES="$FEATURES,gui"
 fi
 
 # If we're building a universal bundle for the app artifact, make sure the additional target is available.
