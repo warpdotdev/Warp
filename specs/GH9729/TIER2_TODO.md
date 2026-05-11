@@ -75,6 +75,18 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-15.** Adjacent zoom icons + conditional reset. User manual
+       feedback after t2-13: (a) `+` button STILL doesn't fire even
+       after the t2-13 individually-positioned-children restructure —
+       most likely cause is the wider "100%" Label button at slot 2
+       overlapping into slot 3 (`+`) and swallowing its clicks. (b)
+       Layout preference: zoom-out + zoom-in should sit adjacent
+       (icon cluster); the "100%" reset should appear only when
+       `zoom != 1.0` (not greyed-out — actually hidden). The
+       conditional rendering of the wider button independently
+       sidesteps the overlap hypothesis: at native zoom the `+`
+       button is rightmost with nothing to its right, so its click
+       area is unobstructed. — supplements `tech.md` §698.
 - [x] **t2-14.** Scrim opacity + toolbar prominence. Manual screenshot
        at 427% zoom showed three layered issues: (a) the scrim's
        current alpha (230/255 = 90%) lets the underlying new-tab
@@ -165,6 +177,7 @@ Hard rules:
 | t2-12 | GUI zoom buttons + scroll-zoom | `65b2f56` | [x] | [x] | [x] |
 | t2-13 | toolbar polish + fix + button | `a655650` | [x] | [x] | [x] |
 | t2-14 | scrim opacity + toolbar prominence | `46f0a2e` | [x] | [ ] | [ ] |
+| t2-15 | adjacent icons + conditional reset | _pending_ | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not

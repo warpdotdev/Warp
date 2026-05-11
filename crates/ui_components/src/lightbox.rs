@@ -15,16 +15,23 @@ use crate::{Component, Options as _, button};
 /// Padding between the scrim edge and the image.
 const SCRIM_PADDING: f32 = 48.;
 
-/// GH9729 §698 / t2-13: horizontal slot width for each zoom toolbar
-/// button, including the gap between buttons. The buttons are
-/// positioned individually (one `add_positioned_child` call each)
-/// rather than via a shared `Flex::row` wrapper because the t2-12
-/// Flex layout caused the rightmost button's click to not fire —
-/// suspected hit-test routing bug when multiple children share one
-/// positioned parent. Width is an approximation calibrated for
-/// `Button::Size::Small` with a `Label("100%")` middle slot; needs
-/// re-tuning if a future icon set changes the rendered button width.
-const ZOOM_BUTTON_SLOT_WIDTH: f32 = 56.;
+/// GH9729 §698 / t2-15: horizontal slot width for each Size::Small
+/// zoom icon button (Minus / Plus). Sized to give the two icons a
+/// tight visual cluster (button is ~24 px square + a small gap).
+///
+/// t2-13 used a single 56-px slot for all three buttons including
+/// the "100%" label; this failed for the rightmost slot because the
+/// label button rendered wider than the slot and overlapped the `+`
+/// button's hit area. t2-15 splits the slot constants: icon buttons
+/// get their own narrow slot, the label button is positioned
+/// separately with a gap so nothing can overlap it (or vice-versa).
+const ZOOM_ICON_BUTTON_SLOT: f32 = 32.;
+
+/// GH9729 §698 / t2-15: extra horizontal gap between the icon
+/// cluster ([Minus][Plus]) and the optional "100%" reset label. The
+/// gap visually separates the persistent controls from the
+/// conditional state-reset control.
+const ZOOM_RESET_GAP_FROM_ICONS: f32 = 16.;
 
 /// GH9729 §698 / t2-13: inset for buttons anchored to a scrim corner
 /// (close button top-right, zoom toolbar bottom-left). One source of
@@ -492,20 +499,17 @@ impl Component for Lightbox {
             }
         }
 
-        // GH9729 §698 / t2-13: zoom toolbar — three buttons in the
-        // bottom-left corner, positioned individually rather than via a
-        // shared `Flex::row` wrapper (t2-12 used a Flex wrapper inside
-        // `add_positioned_child`; manual test surfaced that the
-        // rightmost button's click never fired, suspected hit-test
-        // routing bug when multiple children share one positioned
-        // parent). Mirrors the existing prev/next button placement —
-        // each button is its own positioned child.
+        // GH9729 §698 / t2-15: zoom toolbar — icon buttons adjacent,
+        // optional "100%" reset label appears only when zoom != 1.0.
         //
-        // Reset uses a text "100%" label rather than the silly
-        // `Icon::Refresh` glyph from t2-12, and is disabled when the
-        // image is already at native size (`zoom_factor == 1.0`) so
-        // the user gets a clear visual signal that there's nothing to
-        // reset.
+        // The t2-13 layout positioned three buttons at fixed 56-px
+        // slots, but the "100%" label button rendered wider than the
+        // slot, overlapping the `+` button's hit area and silently
+        // swallowing its clicks. The fix is structural: render the two
+        // icon buttons adjacent (narrow, well within their slot) and
+        // gate the wider label button on `zoom != 1.0`. When the user
+        // is at native size, the `+` button has nothing to its right
+        // and can't be obscured.
         if let Some(on_zoom) = params.options.on_zoom {
             let zoom = params.zoom_factor;
             let on_zoom_out = on_zoom.clone();
@@ -523,23 +527,7 @@ impl Component for Lightbox {
                     },
                 },
             );
-            let on_zoom_reset = on_zoom.clone();
-            let zoom_reset_button = self.zoom_reset_button.render(
-                appearance,
-                button::Params {
-                    content: button::Content::Label("100%".into()),
-                    theme: &button::themes::Secondary,
-                    options: button::Options {
-                        size: button::Size::Small,
-                        disabled: zoom == 1.0,
-                        on_click: Some(Box::new(move |ctx, app, _| {
-                            on_zoom_reset(ZoomDirection::Reset, ctx, app);
-                        })),
-                        ..button::Options::default(appearance)
-                    },
-                },
-            );
-            let on_zoom_in = on_zoom;
+            let on_zoom_in = on_zoom.clone();
             let zoom_in_button = self.zoom_in_button.render(
                 appearance,
                 button::Params {
@@ -555,13 +543,6 @@ impl Component for Lightbox {
                 },
             );
 
-            // Each button sits independently at the bottom-left, offset
-            // rightward by an accumulating step so they appear in a
-            // visible row without depending on Flex layout. The step
-            // size (`ZOOM_BUTTON_SLOT_WIDTH`) is an approximation that
-            // accommodates Button::Size::Small icon + label widths; on
-            // a future tighter layout pass it could be replaced with a
-            // hit-test-correct flex wrapper.
             content.add_positioned_child(
                 zoom_out_button,
                 OffsetPositioning::offset_from_parent(
@@ -572,19 +553,10 @@ impl Component for Lightbox {
                 ),
             );
             content.add_positioned_child(
-                zoom_reset_button,
-                OffsetPositioning::offset_from_parent(
-                    vec2f(SCRIM_BUTTON_INSET + ZOOM_BUTTON_SLOT_WIDTH, -SCRIM_BUTTON_INSET),
-                    ParentOffsetBounds::Unbounded,
-                    ParentAnchor::BottomLeft,
-                    ChildAnchor::BottomLeft,
-                ),
-            );
-            content.add_positioned_child(
                 zoom_in_button,
                 OffsetPositioning::offset_from_parent(
                     vec2f(
-                        SCRIM_BUTTON_INSET + 2. * ZOOM_BUTTON_SLOT_WIDTH,
+                        SCRIM_BUTTON_INSET + ZOOM_ICON_BUTTON_SLOT,
                         -SCRIM_BUTTON_INSET,
                     ),
                     ParentOffsetBounds::Unbounded,
@@ -592,6 +564,42 @@ impl Component for Lightbox {
                     ChildAnchor::BottomLeft,
                 ),
             );
+
+            // Reset only renders when the image is NOT at native zoom
+            // — the user's explicit preference. Side effect: at zoom
+            // 1.0 the `+` button is the rightmost toolbar element, so
+            // it can't be overlapped by a wider neighbour.
+            if zoom != 1.0 {
+                let on_zoom_reset = on_zoom;
+                let zoom_reset_button = self.zoom_reset_button.render(
+                    appearance,
+                    button::Params {
+                        content: button::Content::Label("100%".into()),
+                        theme: &button::themes::Secondary,
+                        options: button::Options {
+                            size: button::Size::Small,
+                            on_click: Some(Box::new(move |ctx, app, _| {
+                                on_zoom_reset(ZoomDirection::Reset, ctx, app);
+                            })),
+                            ..button::Options::default(appearance)
+                        },
+                    },
+                );
+                content.add_positioned_child(
+                    zoom_reset_button,
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(
+                            SCRIM_BUTTON_INSET
+                                + 2. * ZOOM_ICON_BUTTON_SLOT
+                                + ZOOM_RESET_GAP_FROM_ICONS,
+                            -SCRIM_BUTTON_INSET,
+                        ),
+                        ParentOffsetBounds::Unbounded,
+                        ParentAnchor::BottomLeft,
+                        ChildAnchor::BottomLeft,
+                    ),
+                );
+            }
         }
 
         content.finish()
