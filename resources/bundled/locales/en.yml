@@ -105,6 +105,7 @@ en:
     sign_up: "Sign up"
     billing_and_usage: "Billing and usage"
     upgrade: "Upgrade"
+    upgrade_plan: "Upgrade plan"
     invite_a_friend: "Invite a friend"
     log_out: "Log out"
     staging_api_call_failed: "Staging API call failed. Did your IP address change?"
@@ -135,6 +136,11 @@ en:
     successfully_uninstalled_oz_command: "Successfully uninstalled the Oz command."
     failed_uninstall_oz_command: "Failed to uninstall Oz command: {error}"
     notifications_permission_denied: "Warp doesn't have permission to send desktop notifications."
+    no_settings_match: "No settings match your search."
+    no_settings_match_hint: "You may want to try using different keywords or checking for any possible typos."
+    open_settings_file: "Open settings file"
+    workspace_override_tooltip: "This option is enforced by your organization's settings and cannot be customized."
+    close_panel: "Close panel"
     troubleshoot_notifications: "Troubleshoot notifications"
     view_changelog: "View changelog"
     warp_updated: "Warp updated!"
@@ -176,6 +182,10 @@ en:
     restart_and_update_now: "Restart app and update now"
     search_repos: "Search repos"
     search_tabs: "Search tabs..."
+
+  openwarp_launch:
+    title: "Warp is now open-source"
+    description: "You, our community, can participate in building Warp using an agent-first workflow."
 
   # ── Authentication ──
   auth:
@@ -224,6 +234,8 @@ en:
     premium_overages_disabled: "Premium model usage overages are not enabled"
     overage_toggle_description: "Continue using premium models beyond your plan's limits. Usage is charged in $20 increments up to your spending limit, with any remaining balance charged on your scheduled billing date."
     overage_toggle_user_description: "Ask a team admin to enable overages for more AI usage."
+    overage_limit_description: "Warp will prevent use of premium models when this dollar limit is reached. Resets on a monthly basis."
+    overage_limit_note: "Note that AI credits made near your chosen limit may exceed it by a few dollars."
     sort_a_to_z: "A to Z"
     sort_z_to_a: "Z to A"
     sort_usage_ascending: "Usage ascending"
@@ -280,6 +292,9 @@ en:
     seconds_to_complete: "seconds to complete"
     press_new_keyboard_shortcut: "Press new keyboard shortcut"
     change_keybinding: "Change keybinding"
+    group_files_single_editor_pane: "Group files into single editor pane"
+    group_files_single_editor_pane_description: "When this setting is on, any files opened in the same tab will be automatically grouped into a single editor pane."
+    grace_period_seconds: "Grace period (seconds)"
     window_positions_wayland: "Window positions won't be restored on Wayland. "
     allowed_values_1_to_20: "Allowed Values: 1-20"
     warp_is_default_terminal: "Warp is the default terminal"
@@ -300,6 +315,9 @@ en:
     missing_repo: "Missing a repo?"
     configure_access_on_github: "Configure access on GitHub"
     no_repositories_found: "No repositories found"
+    no_repos_selected: "No repos selected yet"
+    all_indexed_repos_selected: "All locally indexed repos are already selected."
+    new_environment: "New environment"
     no_matches: "No environments match your search."
     empty_title: "You haven’t set up any environments yet."
     empty_subtitle: "Choose how you’d like to set up your environment:"
@@ -312,6 +330,10 @@ en:
     create_theme: "Create theme"
     theme_name: "Theme name"
     background_color: "Background color"
+    create_new_theme_from_image: "Create new theme from image"
+    delete_theme_description: "This will permanently delete the theme."
+    delete_theme: "Delete theme"
+    delete_theme_confirm_title: "Are you sure you want to delete this theme?"
 
   node:
     install_nvm_title: "Install nvm to enable version switching"
@@ -322,6 +344,7 @@ en:
   env_vars:
     education_text: "Add secret or command. Warp never stores external secrets"
     invoke_error: "An error occurred while trying to invoke the env var"
+    restore_from_trash: "Restore environment variables from trash"
 
   prompt:
     edit_prompt: "Edit prompt"
@@ -334,8 +357,11 @@ en:
     directory_tab_colors_description: "Automatically color tabs based on the directory or repo you're working in."
     uniform_padding_px: "Uniform padding (px)"
     restart_for_macos_icon_style: "You may need to restart Warp for MacOS to apply the preferred icon style."
+    add_directory: "+ Add directory…"
+    add_directory_color: "Add directory color"
 
   mcp:
+    title: "MCP Servers"
     server_contains_secrets: "This MCP server contains secrets. Visit Settings > Privacy to modify your secret redaction settings."
     no_server_specified: "No MCP Server specified."
     cannot_add_multiple_while_editing: "Cannot add multiple MCP servers while editing a single server."
@@ -346,20 +372,48 @@ en:
     list_description: "Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers. You can also find team servers that have been shared with you here. "
     empty_state: "Once you add a MCP server, it will be shown here."
     no_search_results: "No search results found"
+    no_server_selected: "No MCP server selected"
+    no_updates_available: "No updates available"
 
   platform:
     api_key_deleted: "API key deleted"
     oz_cloud_api_keys: "Oz Cloud API Keys"
     no_api_keys: "No API Keys"
     create_key_description: "Create a key to manage external access to Warp"
+    secret_key_once: "This secret key is shown only once. Copy and store it securely."
+    no_agents_available: "No agents available. Create one first."
+    secret_key_copied: "Secret key copied."
 
   arguments:
     add_workflow_argument: "Add a workflow argument"
     value_optional: "Value (optional)"
     add_environment_variables: "Add environment variables"
 
+  referrals:
+    header: "Invite a friend to Warp"
+    anonymous_header: "Sign up to participate in Warp's referral program"
+    failed_load_code: "Failed to load referral code."
+    cta: "Earn rewards by sharing Warp with friends & colleagues"
+    current_referral: "Current referral"
+    current_referrals: "Current referrals"
+    terms_link: "Certain restrictions apply."
+    terms_contact: " If you have any questions about the referral program, please contact referrals@warp.dev."
+
+  keybindings:
+    search_placeholder: "Search by name or by keys (ex. \"cmd d\")"
+    shortcut_conflict_warning: "This shortcut conflicts with other keybinds"
+
+  warpify:
+    ssh_tmux_warpification_description: "The tmux ssh wrapper works in many situations where the default one does not, but may require you to hit a button to warpify. Takes effect in new tabs."
+    ssh_extension_install_mode_description: "Controls the installation behavior for Warp's SSH extension when a remote host doesn't have it installed."
+
+  workflows:
+    command_edited: "Command edited."
+    to_cycle_parameters: "to cycle parameters"
+
   # ── AI Assistant ──
   ai_assistant:
+    ask_warp_ai: "Ask Warp AI"
     close: "Close Warp AI"
     warp_agent: "Warp Agent"
     remote_session_org_policy: "Your organization disallows AI when the active pane contains content from a remote session"
@@ -433,6 +487,13 @@ en:
     committing: "Committing…"
     include_unstaged: "Include unstaged"
     commit_message: "Commit message"
+    outdated_comment_singular: "1 comment will be omitted because it is outdated."
+    outdated_comment_plural: "{count} comments will be omitted because they are outdated."
+    included_commits: "Included commits"
+    from_github: "From GitHub"
+    no_matches: "No matches"
+    pr_successfully_created: "PR successfully created."
+    code_review: "Code review"
 
   code:
     code: "Code"
@@ -454,10 +515,17 @@ en:
     privacy_policy: "Privacy policy"
     read_privacy_policy: "Read Warp's privacy policy"
     zero_data_retention_admin_tooltip: "Your administrator has enabled zero data retention for your team. User generated content will never be collected."
+    name_optional: "Name (optional)"
+    regex_pattern: "Regex pattern"
+    invalid_regex: "Invalid regex"
+    add_regex: "Add regex"
 
   # ── Context Chips ──
   context:
     view_pull_request: "View pull request"
+    change_git_branch: "Change git branch"
+    change_working_directory: "Change working directory"
+    working_directory: "Working directory"
 
   # ── Warp Drive ──
   drive:
@@ -474,6 +542,8 @@ en:
     copy_workflow_text: "Copy workflow text"
     copy_id: "Copy id"
     copy_variables: "Copy variables"
+    create_account_to_use: "To use Warp Drive, please create an account."
+    supported_import_file_types: "md, yaml, yml"
     no_access: "No access"
     only_people_invited: "Only people invited"
     anyone_with_link: "Anyone with the link"
@@ -562,6 +632,7 @@ en:
     open_in_editor: "Open in editor"
     copy_file_path: "Copy file path"
     content_contains_secrets: "This notebook cannot be saved because its content contains secrets"
+    title_contains_secrets: "This notebook cannot be saved because its title contains secrets"
     restore_from_trash: "Restore notebook from trash"
     restore: "Restore"
     copy_to_personal_tooltip: "Copy notebook contents into your personal workspace"
@@ -570,6 +641,8 @@ en:
     copy_all: "Copy All"
     refresh_notebook: "Refresh notebook"
     refresh: "Refresh"
+    insert_block: "Insert block"
+    apply_link: "Apply link"
     link_copied: "Link copied to clipboard"
 
   # ── Common ──

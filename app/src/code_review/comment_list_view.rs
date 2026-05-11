@@ -57,19 +57,12 @@ use warpui::{
     ViewHandle, WeakViewHandle,
 };
 
-/// Header text for the outdated section when there is exactly one outdated comment.
-const OUTDATED_SECTION_HEADER_SINGULAR: &str = "1 comment will be omitted because it is outdated.";
-/// Header text format for the outdated section when there are multiple outdated comments.
-/// Use with `format!` to insert the count.
-const OUTDATED_SECTION_HEADER_PLURAL_FMT: &str =
-    " comments will be omitted because they are outdated.";
-
 /// Returns the header text for the outdated section based on the number of outdated comments.
 fn outdated_section_header_text(count: usize) -> Cow<'static, str> {
     if count == 1 {
-        Cow::Borrowed(OUTDATED_SECTION_HEADER_SINGULAR)
+        t!("code_review.outdated_comment_singular")
     } else {
-        Cow::Owned(format!("{count}{OUTDATED_SECTION_HEADER_PLURAL_FMT}"))
+        t!("code_review.outdated_comment_plural", count = count)
     }
 }
 

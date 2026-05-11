@@ -315,7 +315,7 @@ impl RichTextEditorView {
         })
         .with_tooltip(move || {
             ui_builder
-                .tool_tip("Insert block".to_string())
+                .tool_tip(t!("notebook.insert_block").to_string())
                 .build()
                 .finish()
         })

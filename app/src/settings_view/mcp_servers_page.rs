@@ -47,7 +47,7 @@ pub enum InstallOrigin {
     Deeplink,
 }
 
-const PAGE_TITLE_TEXT: &str = "MCP Servers";
+const PAGE_TITLE_TEXT: &str = "mcp.title";
 #[derive(Debug, Default, Copy, Clone)]
 pub enum MCPServersSettingsPage {
     #[default]

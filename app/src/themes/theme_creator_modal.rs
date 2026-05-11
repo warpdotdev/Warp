@@ -16,8 +16,6 @@ use warpui::ViewHandle;
 use warpui::{AppContext, SingletonEntity as _};
 use warpui::{Element, Entity, TypedActionView, View, ViewContext};
 
-const THEME_CREATOR_MODAL_HEADER: &str = "Create new theme from image";
-
 pub struct ThemeCreatorModal {
     theme_creator_modal: ViewHandle<Modal<ThemeCreatorBody>>,
 }
@@ -56,7 +54,7 @@ impl ThemeCreatorModal {
 
         let theme_creator_modal = ctx.add_typed_action_view(|ctx| {
             Modal::new(
-                Some(THEME_CREATOR_MODAL_HEADER.to_string()),
+                Some(t!("themes.create_new_theme_from_image").to_string()),
                 theme_creator_body,
                 ctx,
             )

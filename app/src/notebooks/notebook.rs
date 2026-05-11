@@ -1750,10 +1750,7 @@ impl NotebookView {
                 let window_id = ctx.window_id();
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast(
-                        DismissibleToast::error(
-                            "This notebook cannot be saved because its title contains secrets"
-                                .to_string(),
-                        ),
+                        DismissibleToast::error(t!("notebook.title_contains_secrets").to_string()),
                         window_id,
                         ctx,
                     );

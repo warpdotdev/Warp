@@ -282,7 +282,7 @@ impl CodeReviewDiffMenu {
         let theme = appearance.theme();
         Container::new(
             Text::new(
-                "No matches",
+                t!("code_review.no_matches").to_string(),
                 appearance.ui_font_family(),
                 appearance.ui_font_size(),
             )

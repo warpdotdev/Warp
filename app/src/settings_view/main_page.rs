@@ -56,10 +56,8 @@ use warpui::{
 };
 
 const PHOTO_SIZE: f32 = 40.;
-const REFERRAL_CTA: &str = "Earn rewards by sharing Warp with friends & colleagues";
 const REGULAR_TEXT_FONT_SIZE: f32 = 12.;
 const VERTICAL_MARGIN: f32 = 24.;
-const LOG_OUT_TEXT: &str = "Log out";
 lazy_static! {
     static ref SETTINGS_SYNC_BINDINGS_ADDED: Arc<Mutex<bool>> = Default::default();
 }
@@ -783,7 +781,7 @@ impl SettingsWidget for EarnRewardsWidget {
         Container::new(
             self.render_row(
                 appearance,
-                REFERRAL_CTA,
+                t!("referrals.cta").as_ref(),
                 appearance
                     .ui_builder()
                     .link(
@@ -1048,7 +1046,7 @@ impl LogoutWidget {
         appearance
             .ui_builder()
             .button(ButtonVariant::Secondary, self.mouse_state.clone())
-            .with_text_label(LOG_OUT_TEXT.into())
+            .with_text_label(t!("workspace.log_out").to_string())
             .with_style(UiComponentStyles {
                 font_size: Some(14.),
                 padding: Some(Coords::uniform(8.).left(32.).right(32.)),

@@ -2383,7 +2383,10 @@ impl RichTextEditorView {
                     .ui_builder()
                     .copy_button(12., self.mouse_states.copy_link_mouse_handle.clone())
                     .with_tooltip(move || {
-                        ui_builder.tool_tip("Copy link".to_owned()).build().finish()
+                        ui_builder
+                            .tool_tip(t!("drive.copy_link").to_string())
+                            .build()
+                            .finish()
                     })
                     .build()
                     .on_click(|ctx, _, _| ctx.dispatch_typed_action(EditorViewAction::CopyLink))

@@ -25,9 +25,6 @@ use crate::{
     view_components::{Dropdown, DropdownItem},
 };
 
-const TABBED_FILE_VIEWER_TOGGLE_HEADER: &str = "Group files into single editor pane";
-const TABBED_FILE_VIEWER_TOGGLE_DESCRIPTION: &str = "When this setting is on, any files opened in the same tab will be automatically grouped into a single editor pane.";
-
 #[derive(Debug, Clone)]
 pub enum ExternalEditorAction {
     SetEditor(EditorChoice),
@@ -330,7 +327,7 @@ impl View for ExternalEditorView {
 
         if FeatureFlag::TabbedEditorView.is_enabled() {
             column.add_child(render_body_item::<ExternalEditorAction>(
-                TABBED_FILE_VIEWER_TOGGLE_HEADER.into(),
+                t!("features.group_files_single_editor_pane").to_string(),
                 None,
                 LocalOnlyIconState::for_setting(
                     PreferTabbedEditorView::storage_key(),
@@ -353,7 +350,7 @@ impl View for ExternalEditorView {
                         ctx.dispatch_typed_action(ExternalEditorAction::ToggleTabbedEditorView);
                     })
                     .finish(),
-                Some(TABBED_FILE_VIEWER_TOGGLE_DESCRIPTION.into()),
+                Some(t!("features.group_files_single_editor_pane_description").into()),
             ));
         }
 

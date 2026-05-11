@@ -213,7 +213,7 @@ fn render_commits_section(state: &PushState, appearance: &Appearance) -> Box<dyn
     let sub_color = theme.sub_text_color(theme.surface_1()).into_solid();
 
     let label = Text::new(
-        "Included commits",
+        t!("code_review.included_commits").to_string(),
         appearance.ui_font_family(),
         appearance.ui_font_size(),
     )
@@ -340,7 +340,7 @@ fn render_commits_section(state: &PushState, appearance: &Appearance) -> Box<dyn
             } else {
                 let loading = Container::new(
                     Text::new(
-                        "Loading…",
+                        t!("drive.loading").to_string(),
                         appearance.ui_font_family(),
                         appearance.ui_font_size(),
                     )

@@ -76,11 +76,6 @@ const ITEM_VERTICAL_SPACING: f32 = 24.;
 const BUILT_IN_TEXT_INPUT_MARGIN: f32 = 10.;
 const SPACE_AFTER_TEXT_INPUT: f32 = ITEM_VERTICAL_SPACING - BUILT_IN_TEXT_INPUT_MARGIN;
 
-const SSH_TMUX_WARPIFICATION_DESCRIPTION: &str = "The tmux ssh wrapper works in many situations where the default one does not, but may require you to hit a button to warpify. Takes effect in new tabs.";
-
-const SSH_EXTENSION_INSTALL_MODE_DESCRIPTION: &str =
-    "Controls the installation behavior for Warp's SSH extension when a remote host doesn't have it installed.";
-
 /// This page lets users configure when they get asked to warpify a session. Some shell commands
 /// are recognized by default. Users can add new shell commands, or prevent the default ones from
 /// asking. Users can also enable the SSH wrapper, and add hosts to a denylist.
@@ -719,7 +714,7 @@ impl SettingsWidget for SSHWidget {
                     Container::new(render_dropdown_item(
                         appearance,
                         "Install SSH extension",
-                        Some(SSH_EXTENSION_INSTALL_MODE_DESCRIPTION),
+                        Some(t!("warpify.ssh_extension_install_mode_description").as_ref()),
                         None,
                         LocalOnlyIconState::for_setting(
                             SshExtensionInstallModeSetting::storage_key(),
@@ -778,7 +773,7 @@ impl SettingsWidget for SSHWidget {
 
                 column.add_child(
                     ui_builder
-                        .paragraph(SSH_TMUX_WARPIFICATION_DESCRIPTION.to_owned())
+                        .paragraph(t!("warpify.ssh_tmux_warpification_description").to_string())
                         .with_style(UiComponentStyles {
                             font_color: Some(description_text_color.into_solid()),
                             margin: Some(
