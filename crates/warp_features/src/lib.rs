@@ -142,10 +142,6 @@ pub enum FeatureFlag {
     /// Routes SSH sessions through the tmux-backed SSH wrapper.
     SSHTmuxWrapper,
 
-    /// Reduces the amount of horizontal padding in the blocklist
-    /// from 20px to 16px.
-    LessHorizontalTerminalPadding,
-
     /// Enables the shell selector, allowing us to open a new tab in
     /// a shell other than the default shell.
     ShellSelector,

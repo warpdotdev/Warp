@@ -470,7 +470,6 @@ default = [
     "settings_import",
     "shared_with_me",
     "block_toolbelt_save_as_workflow",
-    "less_horizontal_terminal_padding",
     "session_sharing_acls",
     "external_agent_mode_context",
     "shell_selector",
@@ -786,7 +785,6 @@ alacritty_settings_import = []
 shared_with_me = []
 ai_rules = []
 am_workflows = []
-less_horizontal_terminal_padding = []
 shell_selector = []
 shared_session_long_running_commands = []
 block_toolbelt_save_as_workflow = []
