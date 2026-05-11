@@ -1,17 +1,18 @@
 use super::*;
+use crate::util::git::{parse_range, parse_unified_diff_header, sort_branches_main_first};
 
 #[test]
 fn test_parse_range_with_comma() {
-    let (start, count) = DiffStateModel::parse_range("10,5")
-        .expect("parse_range should succeed for range with count");
+    let (start, count) =
+        parse_range("10,5").expect("parse_range should succeed for range with count");
     assert_eq!(start, 10);
     assert_eq!(count, 5);
 }
 
 #[test]
 fn test_parse_range_without_comma() {
-    let (start, count) = DiffStateModel::parse_range("10")
-        .expect("parse_range should succeed for range without count");
+    let (start, count) =
+        parse_range("10").expect("parse_range should succeed for range without count");
     assert_eq!(start, 10);
     assert_eq!(count, 1);
 }
@@ -19,7 +20,7 @@ fn test_parse_range_without_comma() {
 #[test]
 fn test_parse_unified_diff_header_basic() {
     let header = "@@ -10,5 +12,7 @@";
-    let parsed = DiffStateModel::parse_unified_diff_header(header)
+    let parsed = parse_unified_diff_header(header)
         .expect("parse_unified_diff_header should succeed for basic header");
     assert_eq!(parsed.old_start_line, 10);
     assert_eq!(parsed.old_line_count, 5);
@@ -30,7 +31,7 @@ fn test_parse_unified_diff_header_basic() {
 #[test]
 fn test_parse_unified_diff_header_with_context() {
     let header = "@@ -4978,33 +4978,43 @@ impl TerminalView {";
-    let parsed = DiffStateModel::parse_unified_diff_header(header)
+    let parsed = parse_unified_diff_header(header)
         .expect("parse_unified_diff_header should succeed for header with context");
     assert_eq!(parsed.old_start_line, 4978);
     assert_eq!(parsed.old_line_count, 33);
@@ -41,7 +42,7 @@ fn test_parse_unified_diff_header_with_context() {
 #[test]
 fn test_parse_unified_diff_header_single_line() {
     let header = "@@ -10 +12,3 @@";
-    let parsed = DiffStateModel::parse_unified_diff_header(header)
+    let parsed = parse_unified_diff_header(header)
         .expect("parse_unified_diff_header should succeed for single line header");
     assert_eq!(parsed.old_start_line, 10);
     assert_eq!(parsed.old_line_count, 1);
@@ -52,7 +53,7 @@ fn test_parse_unified_diff_header_single_line() {
 #[test]
 fn test_sort_branches_main_first_empty() {
     let branches: Vec<(String, bool)> = vec![];
-    let result: Vec<_> = DiffStateModel::sort_branches_main_first(&branches).collect();
+    let result: Vec<_> = sort_branches_main_first(&branches).collect();
     assert!(result.is_empty());
 }
 
@@ -63,7 +64,7 @@ fn test_sort_branches_main_first_no_main() {
         ("feature-b".to_string(), false),
         ("feature-c".to_string(), false),
     ];
-    let result: Vec<_> = DiffStateModel::sort_branches_main_first(&branches).collect();
+    let result: Vec<_> = sort_branches_main_first(&branches).collect();
     // No main branches — order should be unchanged.
     assert_eq!(result, branches.iter().collect::<Vec<_>>());
 }
@@ -75,7 +76,7 @@ fn test_sort_branches_main_first_promotes_main() {
         ("main".to_string(), true),
         ("feature-b".to_string(), false),
     ];
-    let result: Vec<_> = DiffStateModel::sort_branches_main_first(&branches)
+    let result: Vec<_> = sort_branches_main_first(&branches)
         .map(|(name, _)| name.as_str())
         .collect();
     assert_eq!(result, vec!["main", "feature-a", "feature-b"]);
@@ -88,7 +89,7 @@ fn test_sort_branches_main_first_main_already_first() {
         ("feature-a".to_string(), false),
         ("feature-b".to_string(), false),
     ];
-    let result: Vec<_> = DiffStateModel::sort_branches_main_first(&branches)
+    let result: Vec<_> = sort_branches_main_first(&branches)
         .map(|(name, _)| name.as_str())
         .collect();
     assert_eq!(result, vec!["main", "feature-a", "feature-b"]);
@@ -103,7 +104,7 @@ fn test_sort_branches_main_first_preserves_recency_order_for_non_main() {
         ("older-feature".to_string(), false),
         ("oldest-feature".to_string(), false),
     ];
-    let result: Vec<_> = DiffStateModel::sort_branches_main_first(&branches)
+    let result: Vec<_> = sort_branches_main_first(&branches)
         .map(|(name, _)| name.as_str())
         .collect();
     assert_eq!(
@@ -121,7 +122,7 @@ fn test_sort_branches_main_first_multiple_main_flags() {
         ("main".to_string(), true),
         ("master".to_string(), true),
     ];
-    let result: Vec<_> = DiffStateModel::sort_branches_main_first(&branches)
+    let result: Vec<_> = sort_branches_main_first(&branches)
         .map(|(name, _)| name.as_str())
         .collect();
     // Both main-flagged entries appear first, non-main last.
@@ -131,11 +132,11 @@ fn test_sort_branches_main_first_multiple_main_flags() {
 #[test]
 fn test_parse_unified_diff_header_malformed() {
     let header = "not a diff header";
-    let result = DiffStateModel::parse_unified_diff_header(header);
+    let result = parse_unified_diff_header(header);
     assert!(result.is_err());
 
     let header2 = "@@ incomplete";
-    let result2 = DiffStateModel::parse_unified_diff_header(header2);
+    let result2 = parse_unified_diff_header(header2);
     assert!(result2.is_err());
 }
 
@@ -144,7 +145,7 @@ fn test_parse_git_status_modified_file_with_spaces() {
     // Porcelain v2 output for a modified file with spaces in the name.
     // Format: 1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
     let status_output = "1 .M N... 100644 100644 100644 abc1234 def5678 test file.txt";
-    let result = DiffStateModel::parse_git_status(status_output).unwrap();
+    let result = LocalDiffStateModel::parse_git_status(status_output).unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].0, std::path::PathBuf::from("test file.txt"));
     assert_eq!(result[0].1, GitFileStatus::Modified);
@@ -154,7 +155,7 @@ fn test_parse_git_status_modified_file_with_spaces() {
 fn test_parse_git_status_modified_file_with_multiple_spaces() {
     // Filename with multiple spaces.
     let status_output = "1 .M N... 100644 100644 100644 abc1234 def5678 path to/my test file.txt";
-    let result = DiffStateModel::parse_git_status(status_output).unwrap();
+    let result = LocalDiffStateModel::parse_git_status(status_output).unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(
         result[0].0,
@@ -166,7 +167,7 @@ fn test_parse_git_status_modified_file_with_multiple_spaces() {
 #[test]
 fn test_parse_git_status_new_file_with_spaces() {
     let status_output = "1 A. N... 000000 100644 100644 0000000 abc1234 new file name.rs";
-    let result = DiffStateModel::parse_git_status(status_output).unwrap();
+    let result = LocalDiffStateModel::parse_git_status(status_output).unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].0, std::path::PathBuf::from("new file name.rs"));
     assert_eq!(result[0].1, GitFileStatus::New);
@@ -178,7 +179,7 @@ fn test_parse_git_status_renamed_file_with_spaces() {
     // Format: 2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>\0<origPath>
     let status_output =
         "2 R. N... 100644 100644 100644 abc1234 def5678 R100 new name.txt\0old name.txt";
-    let result = DiffStateModel::parse_git_status(status_output).unwrap();
+    let result = LocalDiffStateModel::parse_git_status(status_output).unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].0, std::path::PathBuf::from("new name.txt"));
     assert!(matches!(
@@ -190,7 +191,7 @@ fn test_parse_git_status_renamed_file_with_spaces() {
 #[test]
 fn test_parse_git_status_untracked_file_with_spaces() {
     let status_output = "? my untracked file.txt";
-    let result = DiffStateModel::parse_git_status(status_output).unwrap();
+    let result = LocalDiffStateModel::parse_git_status(status_output).unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(
         result[0].0,
@@ -205,7 +206,7 @@ fn test_parse_git_status_unmerged_file_with_spaces() {
     // Format: u <xy> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>
     let status_output =
         "u UU N... 100644 100644 100644 100644 abc1234 def5678 ghi9012 conflict file.txt";
-    let result = DiffStateModel::parse_git_status(status_output).unwrap();
+    let result = LocalDiffStateModel::parse_git_status(status_output).unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].0, std::path::PathBuf::from("conflict file.txt"));
     assert_eq!(result[0].1, GitFileStatus::Conflicted);
@@ -217,7 +218,7 @@ fn test_parse_git_status_mixed_entries_with_spaces() {
     let status_output = "1 .M N... 100644 100644 100644 abc1234 def5678 test file.txt\0\
          1 .M N... 100644 100644 100644 abc1234 def5678 normal.txt\0\
          ? another file with spaces.rs";
-    let result = DiffStateModel::parse_git_status(status_output).unwrap();
+    let result = LocalDiffStateModel::parse_git_status(status_output).unwrap();
     assert_eq!(result.len(), 3);
     assert_eq!(result[0].0, std::path::PathBuf::from("test file.txt"));
     assert_eq!(result[1].0, std::path::PathBuf::from("normal.txt"));
@@ -231,7 +232,7 @@ fn test_parse_git_status_mixed_entries_with_spaces() {
 fn test_parse_git_status_file_without_spaces_still_works() {
     // Ensure the splitn change doesn't break files without spaces.
     let status_output = "1 .M N... 100644 100644 100644 abc1234 def5678 simple.txt";
-    let result = DiffStateModel::parse_git_status(status_output).unwrap();
+    let result = LocalDiffStateModel::parse_git_status(status_output).unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].0, std::path::PathBuf::from("simple.txt"));
     assert_eq!(result[0].1, GitFileStatus::Modified);

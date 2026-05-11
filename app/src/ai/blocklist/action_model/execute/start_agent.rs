@@ -93,10 +93,13 @@ impl StartAgentExecutor {
         &mut self,
         request_id: StartAgentRequestId,
         child_conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
     ) {
-        if let Some(pending) = self.pending.get_mut(&request_id) {
-            pending.child_conversation_id = Some(child_conversation_id);
-        }
+        let Some(pending) = self.pending.get_mut(&request_id) else {
+            return;
+        };
+        pending.child_conversation_id = Some(child_conversation_id);
+        self.maybe_complete_pending_for_child_state(request_id, child_conversation_id, ctx);
     }
 
     fn find_pending_by_child(
@@ -106,6 +109,102 @@ impl StartAgentExecutor {
         self.pending.iter().find_map(|(id, pending)| {
             (pending.child_conversation_id.as_ref() == Some(child_conversation_id)).then_some(*id)
         })
+    }
+
+    fn complete_pending_as_started(
+        &mut self,
+        request_id: StartAgentRequestId,
+        child_conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(pending) = self.pending.remove(&request_id) else {
+            return;
+        };
+        let agent_id = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&child_conversation_id)
+            .and_then(|conversation| conversation.orchestration_agent_id());
+        match agent_id {
+            Some(id) => {
+                let _ = pending.sender.try_send(StartAgentOutcome::Started {
+                    agent_id: id.clone(),
+                });
+                if FeatureFlag::OrchestrationV2.is_enabled() {
+                    OrchestrationEventStreamer::handle(ctx).update(ctx, |streamer, ctx| {
+                        streamer.register_watched_run_id(pending.parent_conversation_id, id, ctx);
+                    });
+                } else {
+                    OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                        svc.emit_child_startup_started(child_conversation_id, ctx);
+                    });
+                }
+            }
+            None => {
+                log::error!(
+                    "No agent identifier found for child conversation {child_conversation_id:?}"
+                );
+                let _ = pending.sender.try_send(StartAgentOutcome::Error(
+                    "Server did not assign an agent identifier".to_string(),
+                ));
+                if !FeatureFlag::OrchestrationV2.is_enabled() {
+                    OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                        svc.emit_child_startup_errored(
+                            child_conversation_id,
+                            "missing_agent_id".to_string(),
+                            "Server did not assign an agent identifier".to_string(),
+                            ctx,
+                        );
+                    });
+                }
+            }
+        }
+    }
+
+    fn complete_pending_as_error(
+        &mut self,
+        request_id: StartAgentRequestId,
+        child_conversation_id: AIConversationId,
+        error_msg: String,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(pending) = self.pending.remove(&request_id) else {
+            return;
+        };
+        let _ = pending
+            .sender
+            .try_send(StartAgentOutcome::Error(error_msg.clone()));
+        if !FeatureFlag::OrchestrationV2.is_enabled() {
+            OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                svc.emit_child_startup_errored(
+                    child_conversation_id,
+                    "conversation_status".to_string(),
+                    error_msg,
+                    ctx,
+                );
+            });
+        }
+    }
+
+    fn maybe_complete_pending_for_child_state(
+        &mut self,
+        request_id: StartAgentRequestId,
+        child_conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(conversation) =
+            BlocklistAIHistoryModel::as_ref(ctx).conversation(&child_conversation_id)
+        else {
+            return;
+        };
+        if let Some(error_msg) = start_agent_error_message_for_status(
+            conversation.status(),
+            conversation.status_error_message(),
+        ) {
+            self.complete_pending_as_error(request_id, child_conversation_id, error_msg, ctx);
+            return;
+        }
+        if conversation.orchestration_agent_id().is_some() {
+            self.complete_pending_as_started(request_id, child_conversation_id, ctx);
+        }
     }
 
     fn handle_history_event(
@@ -120,49 +219,7 @@ impl StartAgentExecutor {
                 let Some(request_id) = self.find_pending_by_child(conversation_id) else {
                     return;
                 };
-                let pending = self.pending.remove(&request_id).unwrap();
-                let agent_id = BlocklistAIHistoryModel::as_ref(ctx)
-                    .conversation(conversation_id)
-                    .and_then(|c| c.orchestration_agent_id());
-                match agent_id {
-                    Some(id) => {
-                        let _ = pending.sender.try_send(StartAgentOutcome::Started {
-                            agent_id: id.clone(),
-                        });
-                        if FeatureFlag::OrchestrationV2.is_enabled() {
-                            OrchestrationEventStreamer::handle(ctx).update(ctx, |streamer, ctx| {
-                                streamer.register_watched_run_id(
-                                    pending.parent_conversation_id,
-                                    id,
-                                    ctx,
-                                );
-                            });
-                        } else {
-                            OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                                svc.emit_child_startup_started(*conversation_id, ctx);
-                            });
-                        }
-                    }
-                    None => {
-                        log::error!(
-                            "ConversationServerTokenAssigned fired but no agent identifier for \
-                             {conversation_id:?}"
-                        );
-                        let _ = pending.sender.try_send(StartAgentOutcome::Error(
-                            "Server did not assign an agent identifier".to_string(),
-                        ));
-                        if !FeatureFlag::OrchestrationV2.is_enabled() {
-                            OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                                svc.emit_child_startup_errored(
-                                    *conversation_id,
-                                    "missing_agent_id".to_string(),
-                                    "Server did not assign an agent identifier".to_string(),
-                                    ctx,
-                                );
-                            });
-                        }
-                    }
-                }
+                self.complete_pending_as_started(request_id, *conversation_id, ctx);
             }
             BlocklistAIHistoryEvent::UpdatedConversationStatus {
                 conversation_id, ..
@@ -179,27 +236,14 @@ impl StartAgentExecutor {
                     conversation.status_error_message(),
                 );
                 if let Some(error_msg) = error_msg {
-                    let pending = self.pending.remove(&request_id).unwrap();
-                    let _ = pending
-                        .sender
-                        .try_send(StartAgentOutcome::Error(error_msg.clone()));
-                    if !FeatureFlag::OrchestrationV2.is_enabled() {
-                        OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                            svc.emit_child_startup_errored(
-                                *conversation_id,
-                                "conversation_status".to_string(),
-                                error_msg,
-                                ctx,
-                            );
-                        });
-                    }
+                    self.complete_pending_as_error(request_id, *conversation_id, error_msg, ctx);
                 }
             }
             BlocklistAIHistoryEvent::NewConversationRequestComplete {
                 request_id,
                 conversation_id,
             } => {
-                self.record_child_conversation(*request_id, *conversation_id);
+                self.record_child_conversation(*request_id, *conversation_id, ctx);
             }
             BlocklistAIHistoryEvent::StartedNewConversation { .. }
             | BlocklistAIHistoryEvent::CreatedSubtask { .. }

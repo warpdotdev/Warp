@@ -1,6 +1,6 @@
 use crate::editor::Event as EditorEvent;
 use crate::modal::{Modal, ModalViewState};
-use crate::server::server_api::auth::AuthClient;
+use crate::server::server_api::auth::{AgentIdentity, AuthClient};
 use crate::util::truncation::truncate_from_end;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{
@@ -25,6 +25,8 @@ use warpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
+const OZ_AGENTS_URL: &str = "https://oz.warp.dev/agents?new=true";
+
 const LABEL_FONT_SIZE: f32 = 14.;
 const INPUT_WIDTH: f32 = 428.; // 460px - (2 * 16px) padding
 
@@ -32,6 +34,7 @@ const INPUT_WIDTH: f32 = 428.; // 460px - (2 * 16px) padding
 pub(crate) enum ApiKeyType {
     Personal,
     Team,
+    Agent,
 }
 
 impl ApiKeyType {
@@ -43,6 +46,9 @@ impl ApiKeyType {
             ApiKeyType::Team => {
                 "This API key is tied to your team and can make requests on behalf of your team."
             }
+            ApiKeyType::Agent => {
+                "This API key is tied to an agent and can make requests on behalf of the agent."
+            }
         }
     }
 }
@@ -50,14 +56,20 @@ impl ApiKeyType {
 pub struct CreateApiKeyModal {
     name_editor: ViewHandle<EditorView>,
     expiration_dropdown: ViewHandle<DropdownView<CreateApiKeyModalAction>>,
+    agent_dropdown: ViewHandle<DropdownView<CreateApiKeyModalAction>>,
     api_key_type_control: ViewHandle<SegmentedControl<ApiKeyType>>,
     expiration: ExpirationOption,
     cancel_button_mouse_state: MouseStateHandle,
     create_button_mouse_state: MouseStateHandle,
+    create_agent_button_mouse_state: MouseStateHandle,
     request_state: RequestState,
     raw_key_copied: bool,
     raw_key: Option<String>,
     has_team: bool,
+    has_named_agents: bool,
+    agents: Vec<AgentIdentity>,
+    selected_agent_uid: Option<String>,
+    is_loading_agents: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +115,8 @@ pub enum CreateApiKeyModalAction {
     Create,
     CopyRawKey,
     SetExpiration(ExpirationOption),
+    SelectAgent(String),
+    CreateNewAgent,
 }
 
 pub enum CreateApiKeyModalEvent {
@@ -128,6 +142,7 @@ impl CreateApiKeyModal {
 
         let has_team = FeatureFlag::TeamApiKeys.is_enabled()
             && UserWorkspaces::as_ref(ctx).current_team_uid().is_some();
+        let has_named_agents = FeatureFlag::NamedAgents.is_enabled();
 
         let name_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
@@ -144,13 +159,20 @@ impl CreateApiKeyModal {
             editor
         });
 
-        // Expiration dropdown
         let expiration_dropdown =
             ctx.add_typed_action_view(DropdownView::<CreateApiKeyModalAction>::new);
 
-        // API key type segmented control
+        let agent_dropdown =
+            ctx.add_typed_action_view(DropdownView::<CreateApiKeyModalAction>::new);
+        agent_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_top_bar_max_width(INPUT_WIDTH);
+            dropdown.set_menu_width(INPUT_WIDTH, ctx);
+        });
+
         let api_key_type_control = ctx.add_typed_action_view(move |ctx| {
-            let options = if has_team {
+            let options = if has_named_agents {
+                vec![ApiKeyType::Personal, ApiKeyType::Agent]
+            } else if has_team {
                 vec![ApiKeyType::Personal, ApiKeyType::Team]
             } else {
                 vec![ApiKeyType::Personal]
@@ -168,6 +190,7 @@ impl CreateApiKeyModal {
                             label: match key_type {
                                 ApiKeyType::Personal => "Personal".into(),
                                 ApiKeyType::Team => "Team".into(),
+                                ApiKeyType::Agent => "Agent".into(),
                             },
                             width_override: Some(55.0),
                             color: if is_selected {
@@ -190,21 +213,22 @@ impl CreateApiKeyModal {
         });
 
         ctx.subscribe_to_view(&api_key_type_control, |me, _, _, ctx| {
+            let selected = me.api_key_type_control.as_ref(ctx).selected_option();
+            if selected == ApiKeyType::Agent && me.agents.is_empty() && !me.is_loading_agents {
+                me.fetch_agents(ctx);
+            }
             ctx.notify();
             me.name_editor.update(ctx, |_, ctx| ctx.notify());
         });
 
-        // Subscribe to UserWorkspaces to update has_team when team membership changes
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _, _, ctx| {
             me.update_has_team(ctx);
         });
 
-        // Subscribe to editor events for navigation and validation
         ctx.subscribe_to_view(&name_editor, |me, _, event, ctx| {
             me.handle_name_editor_event(event, ctx);
         });
 
-        // Populate expiration dropdown items and default selection (90 days)
         let default_expiration = ExpirationOption::NinetyDays;
         let items: Vec<DropdownItem<CreateApiKeyModalAction>> = ExpirationOption::all()
             .into_iter()
@@ -217,7 +241,6 @@ impl CreateApiKeyModal {
             .collect();
         expiration_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_items(items, ctx);
-            // Match the input width (460 - 2*16 padding = 428)
             dropdown.set_top_bar_max_width(INPUT_WIDTH);
             dropdown.set_menu_width(INPUT_WIDTH, ctx);
             dropdown.set_selected_by_action(
@@ -229,15 +252,65 @@ impl CreateApiKeyModal {
         Self {
             name_editor,
             expiration_dropdown,
+            agent_dropdown,
             api_key_type_control,
             expiration: default_expiration,
             cancel_button_mouse_state: Default::default(),
             create_button_mouse_state: Default::default(),
+            create_agent_button_mouse_state: Default::default(),
             request_state: RequestState::Idle,
             raw_key_copied: false,
             raw_key: None,
             has_team,
+            has_named_agents,
+            agents: Vec::new(),
+            selected_agent_uid: None,
+            is_loading_agents: false,
         }
+    }
+
+    fn fetch_agents(&mut self, ctx: &mut ViewContext<Self>) {
+        self.is_loading_agents = true;
+        ctx.notify();
+
+        let server_api = crate::server::server_api::ServerApiProvider::as_ref(ctx).get();
+        ctx.spawn(
+            async move { server_api.list_agent_identities().await },
+            |me, res, ctx| {
+                me.is_loading_agents = false;
+                match res {
+                    Ok(agents) => {
+                        me.agents = agents;
+                        me.populate_agent_dropdown(ctx);
+                    }
+                    Err(err) => {
+                        log::error!("Failed to load agent identities: {err}");
+                        ctx.emit(CreateApiKeyModalEvent::Error {
+                            message: "Failed to load agents. Please close and try again."
+                                .to_string(),
+                        });
+                    }
+                }
+                ctx.notify();
+            },
+        );
+    }
+
+    fn populate_agent_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
+        let items: Vec<DropdownItem<CreateApiKeyModalAction>> = self
+            .agents
+            .iter()
+            .filter(|a| a.available)
+            .map(|agent| {
+                DropdownItem::new(
+                    &agent.name,
+                    CreateApiKeyModalAction::SelectAgent(agent.uid.clone()),
+                )
+            })
+            .collect();
+        self.agent_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_items(items, ctx);
+        });
     }
 
     fn create(&mut self, ctx: &mut ViewContext<Self>) {
@@ -246,7 +319,6 @@ impl CreateApiKeyModal {
         }
         let name = self.name_editor.as_ref(ctx).buffer_text(ctx);
 
-        // Always allow creation, even with empty name (we'll use a default)
         let final_name = if name.trim().is_empty() {
             "Warp API Key".to_string()
         } else {
@@ -256,7 +328,6 @@ impl CreateApiKeyModal {
         self.request_state = RequestState::Pending;
         ctx.notify();
 
-        // Compute expiration timestamp based on selected option
         let expires_at = match self.expiration.days() {
             Some(days) => {
                 let t = Utc::now() + chrono::Duration::days(days);
@@ -265,15 +336,29 @@ impl CreateApiKeyModal {
             None => None,
         };
 
-        // Get team_id if creating for team
-        let for_team = self.api_key_type_control.as_ref(ctx).selected_option() == ApiKeyType::Team;
-        let team_id = if for_team {
+        let selected_type = self.api_key_type_control.as_ref(ctx).selected_option();
+
+        let agent_uid = if selected_type == ApiKeyType::Agent {
+            match &self.selected_agent_uid {
+                Some(uid) => Some(cynic::Id::new(uid.clone())),
+                None => {
+                    self.request_state = RequestState::Idle;
+                    ctx.emit(CreateApiKeyModalEvent::Error {
+                        message: "Please select an agent.".to_string(),
+                    });
+                    ctx.notify();
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
+        let team_id = if selected_type == ApiKeyType::Team {
             let workspaces = UserWorkspaces::as_ref(ctx);
             match workspaces.current_team_uid() {
                 Some(uid) => Some(cynic::Id::new(uid.uid())),
                 None => {
-                    // Fail fast if the user requested a team key but there is no current team.
-                    // This can happen if the team state changed between render and click.
                     self.request_state = RequestState::Idle;
                     ctx.emit(CreateApiKeyModalEvent::Error {
                         message:
@@ -288,16 +373,13 @@ impl CreateApiKeyModal {
             None
         };
 
-        // Fire mutation via ServerApi AuthClient
         let server_api = crate::server::server_api::ServerApiProvider::as_ref(ctx).get();
         ctx.spawn(
-            async move { server_api.create_api_key(final_name, team_id, expires_at).await },
+            async move { server_api.create_api_key(final_name, team_id, agent_uid, expires_at).await },
             |me, res, ctx| {
                 match res {
                     Ok(warp_graphql::mutations::generate_api_key::GenerateApiKeyResult::GenerateApiKeyOutput(output)) => {
-                        // Notify parent to append
                         ctx.emit(CreateApiKeyModalEvent::Created { api_key: output.api_key });
-                        // Switch to success view and show raw key
                         me.request_state = RequestState::Succeeded;
                         me.raw_key_copied = false;
                         me.raw_key = Some(output.raw_api_key);
@@ -327,6 +409,7 @@ impl CreateApiKeyModal {
         self.request_state = RequestState::Idle;
         self.raw_key_copied = false;
         self.raw_key = None;
+        self.selected_agent_uid = None;
         self.name_editor.update(ctx, |editor, ctx| {
             editor.clear_buffer_and_reset_undo_stack(ctx);
         });
@@ -334,16 +417,22 @@ impl CreateApiKeyModal {
 
     pub fn on_open(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.focus(&self.name_editor);
+        if self.has_named_agents {
+            self.fetch_agents(ctx);
+        }
     }
 
     fn update_has_team(&mut self, ctx: &mut ViewContext<Self>) {
         let new_has_team = FeatureFlag::TeamApiKeys.is_enabled()
             && UserWorkspaces::as_ref(ctx).current_team_uid().is_some();
+        let new_has_named_agents = FeatureFlag::NamedAgents.is_enabled();
 
-        if new_has_team != self.has_team {
+        if new_has_team != self.has_team || new_has_named_agents != self.has_named_agents {
             self.has_team = new_has_team;
-            // Update the segmented control options
-            let options = if new_has_team {
+            self.has_named_agents = new_has_named_agents;
+            let options = if new_has_named_agents {
+                vec![ApiKeyType::Personal, ApiKeyType::Agent]
+            } else if new_has_team {
                 vec![ApiKeyType::Personal, ApiKeyType::Team]
             } else {
                 vec![ApiKeyType::Personal]
@@ -507,7 +596,6 @@ impl View for CreateApiKeyModal {
         match self.request_state {
             RequestState::Succeeded => self.render_success_content(app),
             _ => {
-                // Entry form (Idle, Pending, Failed)
                 let selected_key_type = self.api_key_type_control.as_ref(app).selected_option();
 
                 let description_text = Text::new(
@@ -523,6 +611,10 @@ impl View for CreateApiKeyModal {
                     .finish();
 
                 let is_pending = self.request_state == RequestState::Pending;
+
+                let is_create_disabled = is_pending
+                    || (selected_key_type == ApiKeyType::Agent
+                        && (self.selected_agent_uid.is_none() || self.is_loading_agents));
 
                 let mut cancel_button_hover = appearance
                     .ui_builder()
@@ -557,7 +649,7 @@ impl View for CreateApiKeyModal {
                     .on_click(move |ctx, _, _| {
                         ctx.dispatch_typed_action(CreateApiKeyModalAction::Create);
                     });
-                if is_pending {
+                if is_create_disabled {
                     create_button_hover = create_button_hover.disable();
                 }
                 let create_button = create_button_hover.finish();
@@ -576,8 +668,7 @@ impl View for CreateApiKeyModal {
 
                 let mut col = Flex::column();
 
-                // Show segmented control only if user has a team
-                if self.has_team {
+                if self.has_team || self.has_named_agents {
                     let type_label =
                         Text::new("Type", appearance.ui_font_family(), LABEL_FONT_SIZE)
                             .with_color(theme.active_ui_text_color().into())
@@ -595,6 +686,70 @@ impl View for CreateApiKeyModal {
                         .with_margin_bottom(24.)
                         .finish(),
                 );
+
+                if selected_key_type == ApiKeyType::Agent {
+                    let agent_label =
+                        Text::new("Agent", appearance.ui_font_family(), LABEL_FONT_SIZE)
+                            .with_color(theme.active_ui_text_color().into())
+                            .finish();
+                    col.add_child(Container::new(agent_label).with_margin_bottom(4.).finish());
+
+                    let available_agents: Vec<&AgentIdentity> =
+                        self.agents.iter().filter(|a| a.available).collect();
+
+                    if !self.is_loading_agents && available_agents.is_empty() {
+                        let empty_text = Text::new(
+                            "No agents available. Create one first.",
+                            appearance.ui_font_family(),
+                            LABEL_FONT_SIZE,
+                        )
+                        .with_color(theme.nonactive_ui_text_color().into())
+                        .finish();
+
+                        let create_agent_button = appearance
+                            .ui_builder()
+                            .button(
+                                ButtonVariant::Secondary,
+                                self.create_agent_button_mouse_state.clone(),
+                            )
+                            .with_text_label("Create agent".to_string())
+                            .with_style(button_style)
+                            .build()
+                            .on_click(|ctx, _, _| {
+                                ctx.dispatch_typed_action(CreateApiKeyModalAction::CreateNewAgent);
+                            })
+                            .finish();
+
+                        col.add_child(
+                            Container::new(
+                                Flex::column()
+                                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                                    .with_child(
+                                        Container::new(empty_text).with_margin_bottom(8.).finish(),
+                                    )
+                                    .with_child(create_agent_button)
+                                    .finish(),
+                            )
+                            .with_border(Border::all(1.).with_border_fill(theme.outline()))
+                            .with_padding(Padding::uniform(16.))
+                            .with_background(theme.surface_2())
+                            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                            .with_margin_bottom(16.)
+                            .finish(),
+                        );
+                    } else {
+                        col.add_child(
+                            ConstrainedBox::new(
+                                Container::new(ChildView::new(&self.agent_dropdown).finish())
+                                    .with_margin_bottom(16.)
+                                    .finish(),
+                            )
+                            .with_width(INPUT_WIDTH)
+                            .finish(),
+                        );
+                    }
+                }
+
                 col.add_child(Container::new(name_label).with_margin_bottom(4.).finish());
                 col.add_child(
                     ConstrainedBox::new(
@@ -664,6 +819,13 @@ impl TypedActionView for CreateApiKeyModal {
                 // menu click; attempting to re-set the selection here causes a circular update.
                 self.expiration = *exp;
                 ctx.notify();
+            }
+            CreateApiKeyModalAction::SelectAgent(uid) => {
+                self.selected_agent_uid = Some(uid.clone());
+                ctx.notify();
+            }
+            CreateApiKeyModalAction::CreateNewAgent => {
+                ctx.open_url(OZ_AGENTS_URL);
             }
         }
     }

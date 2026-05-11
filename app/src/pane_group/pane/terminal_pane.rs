@@ -21,7 +21,8 @@ use crate::{
         },
         ambient_agents::{task::HarnessConfig, AgentConfigSnapshot},
         blocklist::{
-            agent_view::AgentViewEntryOrigin, orchestration_events::OrchestrationEventService,
+            agent_view::{AgentViewControllerEvent, AgentViewEntryOrigin},
+            orchestration_events::OrchestrationEventService,
             BlocklistAIHistoryModel, StartAgentRequest,
         },
         llms::LLMPreferences,
@@ -30,7 +31,8 @@ use crate::{
     app_state::{AmbientAgentPaneSnapshot, LeafContents, TerminalPaneSnapshot},
     pane_group::child_agent::{
         create_error_child_agent_conversation, create_hidden_child_agent_conversation,
-        HiddenChildAgentConversation,
+        ErrorChildAgentConversationRequest, HiddenChildAgentConversation,
+        HiddenChildAgentConversationRequest,
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
@@ -351,6 +353,22 @@ impl PaneContent for TerminalPane {
         agent_view_controller.update(ctx, |controller, _ctx| {
             controller.set_pane_group_id(pane_group_id);
         });
+        ctx.subscribe_to_model(&agent_view_controller, move |group, _, event, ctx| {
+            if let AgentViewControllerEvent::EnteredAgentView {
+                conversation_id,
+                display_mode,
+                ..
+            } = event
+            {
+                if display_mode.is_fullscreen() {
+                    group.restore_missing_child_agent_panes_for_parent(
+                        *conversation_id,
+                        terminal_pane_id.into(),
+                        ctx,
+                    );
+                }
+            }
+        });
         let active_session = terminal_view.as_ref(ctx).active_session().clone();
         ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
             model.register_agent_view_controller(
@@ -411,6 +429,13 @@ impl PaneContent for TerminalPane {
         ctx.unsubscribe_to_model(&pane_stack);
 
         ctx.unsubscribe_to_view(&self.view);
+        ctx.unsubscribe_to_model(
+            &self
+                .terminal_view(ctx)
+                .as_ref(ctx)
+                .agent_view_controller()
+                .clone(),
+        );
 
         ctx.unsubscribe_to_model(&Manager::handle(ctx));
 
@@ -451,6 +476,14 @@ impl PaneContent for TerminalPane {
                 active_profile_id: None,
                 conversation_ids_to_restore: vec![],
                 active_conversation_id: None,
+            })
+        } else if let Some(task_id) = view
+            .ambient_agent_view_model()
+            .and_then(|ambient_model| ambient_model.as_ref(app).task_id())
+        {
+            LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
+                uuid: self.uuid.clone(),
+                task_id: Some(task_id),
             })
         } else if view.model.lock().is_conversation_transcript_viewer() {
             // Conversation transcript viewers (opened from the conversation list)
@@ -1124,28 +1157,52 @@ fn handle_terminal_view_event(
             }
             Event::RevealChildAgent { conversation_id } => {
                 // Routed through the swap mechanism to land all reveal cases in one path.
-                group.swap_active_pane_to_conversation(pane_id, *conversation_id, ctx);
+                if group.ensure_hidden_child_agent_pane_for_conversation(*conversation_id, ctx) {
+                    group.swap_active_pane_to_conversation(pane_id, *conversation_id, ctx);
+                } else {
+                    log::warn!(
+                        "RevealChildAgent: failed to materialize child conversation {conversation_id:?}"
+                    );
+                }
             }
             Event::SwapPaneToConversation { conversation_id } => {
                 // Swap visibility instead of cloning so in-flight state in the
                 // target pane is preserved.
-                group.swap_active_pane_to_conversation(pane_id, *conversation_id, ctx);
+                if group.ensure_hidden_child_agent_pane_for_conversation(*conversation_id, ctx) {
+                    group.swap_active_pane_to_conversation(pane_id, *conversation_id, ctx);
+                } else {
+                    log::warn!(
+                        "SwapPaneToConversation: failed to materialize conversation {conversation_id:?}"
+                    );
+                }
             }
             Event::OpenChildAgentInNewTab { conversation_id } => {
                 // Pane group can't add tabs; forward to the workspace.
-                ctx.emit(pane_group::Event::OpenChildAgentInNewTab {
-                    conversation_id: *conversation_id,
-                });
+                if group.ensure_hidden_child_agent_pane_for_conversation(*conversation_id, ctx) {
+                    ctx.emit(pane_group::Event::OpenChildAgentInNewTab {
+                        conversation_id: *conversation_id,
+                    });
+                } else {
+                    log::warn!(
+                        "OpenChildAgentInNewTab: failed to materialize child conversation {conversation_id:?}"
+                    );
+                }
             }
             Event::OpenChildAgentInNewPane { conversation_id } => {
                 // Reuse the existing hidden child pane to preserve in-flight
                 // state and the live transcript instead of creating a new view.
-                if group
-                    .unhide_child_agent_pane_for_split_off(*conversation_id, ctx)
-                    .is_none()
-                {
+                if group.ensure_hidden_child_agent_pane_for_conversation(*conversation_id, ctx) {
+                    if group
+                        .unhide_child_agent_pane_for_split_off(*conversation_id, ctx)
+                        .is_none()
+                    {
+                        log::warn!(
+                            "OpenChildAgentInNewPane: no hidden child pane registered for conversation {conversation_id:?}"
+                        );
+                    }
+                } else {
                     log::warn!(
-                        "OpenChildAgentInNewPane: no hidden child pane registered for conversation {conversation_id:?}"
+                        "OpenChildAgentInNewPane: failed to materialize child conversation {conversation_id:?}"
                     );
                 }
             }
@@ -1200,12 +1257,17 @@ fn dispatch_start_agent_conversation(
         }
         #[cfg(target_family = "wasm")]
         StartAgentExecutionMode::Local { .. } => {
-            create_error_child_agent_conversation(
+            let _ = create_error_child_agent_conversation(
                 group,
-                parent_pane_id,
-                request.name,
-                request.parent_conversation_id,
-                "Local harness child agents are not supported in WASM builds.".to_string(),
+                ErrorChildAgentConversationRequest {
+                    parent_pane_id,
+                    name: request.name,
+                    parent_conversation_id: request.parent_conversation_id,
+                    request_id: Some(request.id),
+                    orchestration_harness: None,
+                    error_message: "Local harness child agents are not supported in WASM builds."
+                        .to_string(),
+                },
                 ctx,
             );
         }
@@ -1256,11 +1318,14 @@ fn launch_local_no_harness_child(
         ..
     } = create_hidden_child_agent_conversation(
         group,
-        parent_pane_id,
-        request.name,
-        request.parent_conversation_id,
-        HashMap::new(),
-        None,
+        HiddenChildAgentConversationRequest {
+            parent_pane_id,
+            name: request.name,
+            parent_conversation_id: request.parent_conversation_id,
+            orchestration_harness: Some(Harness::Oz),
+            env_vars: HashMap::new(),
+            task_context: None,
+        },
         ctx,
     )?;
 
@@ -1316,15 +1381,19 @@ fn launch_local_harness_child(
     let parent_run_id = request.parent_run_id.clone();
     let prompt = request.prompt.clone();
     let lifecycle_subscription = request.lifecycle_subscription.clone();
+    let orchestration_harness =
+        Harness::parse_orchestration_harness(&harness_type).unwrap_or(Harness::Unknown);
     let shell_type = group
         .terminal_view_from_pane_id(parent_pane_id, ctx)
         .and_then(|terminal_view| terminal_view.as_ref(ctx).active_session_shell_type(ctx));
 
+    let model_id_for_harness_env = model_id.clone();
     let _ = ctx.spawn(
         async move {
             prepare_local_harness_child_launch(
                 prompt,
                 harness_type,
+                model_id_for_harness_env,
                 parent_run_id,
                 shell_type,
                 startup_directory,
@@ -1347,11 +1416,14 @@ fn launch_local_harness_child(
                     ..
                 }) = create_hidden_child_agent_conversation(
                     group,
-                    parent_pane_id,
-                    request_name.clone(),
-                    parent_conversation_id,
-                    env_vars,
-                    None,
+                    HiddenChildAgentConversationRequest {
+                        parent_pane_id,
+                        name: request_name.clone(),
+                        parent_conversation_id,
+                        orchestration_harness: Some(orchestration_harness),
+                        env_vars,
+                        task_context: None,
+                    },
                     ctx,
                 ) {
                     apply_child_model_id_override(terminal_view_id, model_id.as_deref(), ctx);
@@ -1391,23 +1463,33 @@ fn launch_local_harness_child(
                         );
                     });
                 } else {
-                    create_error_child_agent_conversation(
+                    let _ = create_error_child_agent_conversation(
                         group,
-                        parent_pane_id,
-                        request_name,
-                        parent_conversation_id,
-                        "Failed to create a hidden pane for the local child harness.".to_string(),
+                        ErrorChildAgentConversationRequest {
+                            parent_pane_id,
+                            name: request_name,
+                            parent_conversation_id,
+                            request_id: Some(request_id),
+                            orchestration_harness: Some(orchestration_harness),
+                            error_message:
+                                "Failed to create a hidden pane for the local child harness."
+                                    .to_string(),
+                        },
                         ctx,
                     );
                 }
             }
             Err(error_message) => {
-                create_error_child_agent_conversation(
+                let _ = create_error_child_agent_conversation(
                     group,
-                    parent_pane_id,
-                    request_name,
-                    parent_conversation_id,
-                    error_message,
+                    ErrorChildAgentConversationRequest {
+                        parent_pane_id,
+                        name: request_name,
+                        parent_conversation_id,
+                        request_id: Some(request_id),
+                        orchestration_harness: Some(orchestration_harness),
+                        error_message,
+                    },
                     ctx,
                 );
             }
@@ -1458,6 +1540,11 @@ fn launch_remote_child(
     } = fields;
 
     let request_id = request.id;
+    let orchestration_harness = if harness_type.trim().is_empty() {
+        Harness::Oz
+    } else {
+        Harness::parse_orchestration_harness(&harness_type).unwrap_or(Harness::Unknown)
+    };
     let Some(parent_run_id) = request.parent_run_id.clone() else {
         log::error!(
             "Remote StartAgent request missing parent_run_id for {:?}",
@@ -1480,6 +1567,7 @@ fn launch_remote_child(
             terminal_view_id,
             request.name,
             request.parent_conversation_id,
+            Some(orchestration_harness),
             ctx,
         );
         // Mark as remote so the parent's TaskStatusSyncModel skips status
@@ -1564,6 +1652,7 @@ fn launch_remote_child(
         referenced_attachments: vec![],
         conversation_id: None,
         initial_snapshot_token: None,
+        agent_identity_uid: None,
     };
 
     new_terminal_view.update(ctx, |terminal_view, ctx| {

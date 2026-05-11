@@ -32,6 +32,7 @@ use crate::{
             model::{FileLinkResolutionContext, NotebooksEditorModel, RichTextEditorModelEvent},
             rich_text_styles,
         },
+        file::MarkdownDisplayMode,
         post_process_notebook, CloudNotebookModel, NotebookId,
     },
     server::{
@@ -826,6 +827,7 @@ impl AIDocumentModel {
             let styles = rich_text_styles(appearance, font_settings);
 
             let mut model = NotebooksEditorModel::new_unbound(styles, ctx);
+            model.set_default_mermaid_display_mode(MarkdownDisplayMode::Rendered, ctx);
             model.set_file_link_resolution_context(file_link_resolution_context);
 
             let content = content.into();
