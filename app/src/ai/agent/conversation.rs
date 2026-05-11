@@ -853,6 +853,7 @@ impl AIConversation {
     pub fn set_agent_name(&mut self, name: String) {
         self.agent_name = Some(name);
     }
+
     pub fn orchestration_harness_type(&self) -> Option<&str> {
         self.orchestration_harness_type.as_deref()
     }
@@ -2569,6 +2570,29 @@ impl AIConversation {
                 message: Some(message),
                 mask: Some(mask),
             }) => {
+                // Process OrchestrationConfigSnapshot if the updated
+                // message carries one (e.g. create_orchestration_config
+                // tool call result updating a single message in place).
+                if let Some(api::message::Message::OrchestrationConfigSnapshot(snapshot)) =
+                    &message.message
+                {
+                    let config = snapshot
+                        .config
+                        .as_ref()
+                        .map(OrchestrationConfig::from_proto);
+                    let status = OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());
+                    let plan_id = if snapshot.plan_id.is_empty() {
+                        None
+                    } else {
+                        Some(snapshot.plan_id.clone())
+                    };
+                    if self.set_orchestration_config(config, status, plan_id) {
+                        ctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                            conversation_id: self.id,
+                        });
+                    }
+                }
+
                 let task_id = TaskId::new(task_id);
                 let exchange_id = self
                     .added_exchanges_by_response
@@ -3831,6 +3855,14 @@ impl From<AIConversationAutoexecuteMode> for PersistedAutoexecuteMode {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum StatusColorStyle {
+    /// Foreground-blend colors (`ansi_fg`) used by the regular status badge.
+    Standard,
+    /// Background-blend colors (`ansi_bg`) used by the cloud overlay badge.
+    Cloud,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConversationStatus {
     /// Agent is running.
@@ -3872,13 +3904,41 @@ impl ConversationStatus {
         }
     }
 
-    pub fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
+    pub fn status_icon_and_color(
+        &self,
+        theme: &WarpTheme,
+        color_style: StatusColorStyle,
+    ) -> (Icon, ColorU) {
         match self {
-            ConversationStatus::InProgress => (Icon::ClockLoader, theme.ansi_fg_magenta()),
-            ConversationStatus::Success => (Icon::Check, theme.ansi_fg_green()),
-            ConversationStatus::Error => (Icon::Triangle, theme.ansi_fg_red()),
+            ConversationStatus::InProgress => (
+                Icon::ClockLoader,
+                match color_style {
+                    StatusColorStyle::Standard => theme.ansi_fg_magenta(),
+                    StatusColorStyle::Cloud => theme.ansi_bg_magenta(),
+                },
+            ),
+            ConversationStatus::Success => (
+                Icon::Check,
+                match color_style {
+                    StatusColorStyle::Standard => theme.ansi_fg_green(),
+                    StatusColorStyle::Cloud => theme.ansi_bg_green(),
+                },
+            ),
+            ConversationStatus::Error => (
+                Icon::Triangle,
+                match color_style {
+                    StatusColorStyle::Standard => theme.ansi_fg_red(),
+                    StatusColorStyle::Cloud => theme.ansi_bg_red(),
+                },
+            ),
             ConversationStatus::Cancelled => (Icon::StopFilled, internal_colors::neutral_5(theme)),
-            ConversationStatus::Blocked { .. } => (Icon::StopFilled, theme.ansi_fg_yellow()),
+            ConversationStatus::Blocked { .. } => (
+                Icon::StopFilled,
+                match color_style {
+                    StatusColorStyle::Standard => theme.ansi_fg_yellow(),
+                    StatusColorStyle::Cloud => theme.ansi_bg_yellow(),
+                },
+            ),
         }
     }
 

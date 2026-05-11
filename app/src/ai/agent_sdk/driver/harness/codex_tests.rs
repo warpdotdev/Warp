@@ -202,13 +202,15 @@ fn prepare_codex_config_toml_preserves_unrelated_keys() {
     )
     .unwrap();
 
-    // Pass `None` for the model id so the helper preserves the user's existing `model = ...`.
+    // Pass `None` — the `model` key is intentionally removed (managed
+    // key), but unrelated keys like existing project entries are kept.
     prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None).unwrap();
 
     let canonical = working_dir.canonicalize().unwrap();
     let key = canonical.to_string_lossy().into_owned();
     let cfg = read_codex_config(&config_path);
-    assert_eq!(cfg["model"].as_str(), Some("gpt-5"));
+    // `model` is a managed key — removed when no override is provided.
+    assert!(!cfg.contains_key("model"));
     assert_eq!(
         cfg["projects"]["/other/path"]["trust_level"].as_str(),
         Some("trusted")

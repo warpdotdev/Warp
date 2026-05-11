@@ -3999,7 +3999,7 @@ impl Workspace {
         let history = BlocklistAIHistoryModel::as_ref(ctx);
         let Some(conversation_id) = history.find_conversation_id_by_server_token(&server_token)
         else {
-            self.load_cloud_conversation_into_new_transcript_viewer(server_token, ctx);
+            self.load_cloud_conversation_into_new_transcript_viewer(server_token, None, ctx);
             return;
         };
 
@@ -4020,7 +4020,7 @@ impl Workspace {
         };
 
         if !conversation_is_owned_by_current_user {
-            self.load_cloud_conversation_into_new_transcript_viewer(server_token, ctx);
+            self.load_cloud_conversation_into_new_transcript_viewer(server_token, None, ctx);
             return;
         }
 
@@ -4031,7 +4031,7 @@ impl Workspace {
         ) {
             ctx.dispatch_typed_action_deferred(action);
         } else {
-            self.load_cloud_conversation_into_new_transcript_viewer(server_token, ctx);
+            self.load_cloud_conversation_into_new_transcript_viewer(server_token, None, ctx);
         }
     }
 
@@ -4039,6 +4039,7 @@ impl Workspace {
     pub fn load_cloud_conversation_into_new_transcript_viewer(
         &mut self,
         conversation_id: ServerConversationToken,
+        ambient_agent_task_id: Option<AmbientAgentTaskId>,
         ctx: &mut ViewContext<Self>,
     ) {
         // Create the tab immediately with a loading state
@@ -4085,8 +4086,11 @@ impl Workspace {
 
                 // Update the pane group with the loaded conversation
                 new_pane_group.update(ctx, |pane_group, ctx| {
-                    pane_group
-                        .load_data_into_conversation_transcript_viewer(cloud_conversation, ctx);
+                    pane_group.load_data_into_conversation_transcript_viewer(
+                        cloud_conversation,
+                        ambient_agent_task_id,
+                        ctx,
+                    );
                 });
 
                 // Open the transcript details panel by default on WASM (unless on mobile)
@@ -4108,9 +4112,8 @@ impl Workspace {
                         .as_ref(ctx)
                         .active_session_view(ctx)
                         .map(|view| view.id());
-                    let ambient_agent_task_id = me
-                        .get_active_session_terminal_model(ctx)
-                        .and_then(|model| model.lock().ambient_agent_task_id());
+                    let ambient_agent_task_id =
+                        me.ambient_agent_task_id_for_focused_terminal_view(ctx);
                     me.notify_terminal_focus_change(
                         focused_terminal_view_id,
                         ambient_agent_task_id,
@@ -4870,8 +4873,8 @@ impl Workspace {
                         if active_terminal_view_id == Some(tv.id()) {
                             return true;
                         }
-                        // Fall back to checking the terminal model directly
-                        tv.as_ref(ctx).model.lock().ambient_agent_task_id() == Some(task_id)
+                        // Fall back to checking the terminal view directly.
+                        tv.as_ref(ctx).ambient_agent_task_id_for_details_panel(ctx) == Some(task_id)
                     })
             });
             has_task.then_some(index)
@@ -4965,6 +4968,21 @@ impl Workspace {
     }
 
     /// Notifies the agent views model and notifications model that a terminal view gained focus.
+    fn ambient_agent_task_id_for_focused_terminal_view(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<AmbientAgentTaskId> {
+        let pane_group = self.active_tab_pane_group().as_ref(ctx);
+        let focused_pane_id = pane_group.focused_pane_id(ctx);
+        pane_group
+            .terminal_view_from_pane_id(focused_pane_id, ctx)
+            .and_then(|view| {
+                view.as_ref(ctx)
+                    .ambient_agent_task_id_for_details_panel(ctx)
+            })
+    }
+
+    /// Notifies the agent views model and notifications model that a terminal view gained focus.
     fn notify_terminal_focus_change(
         &self,
         focused_terminal_view_id: Option<EntityId>,
@@ -5046,9 +5064,7 @@ impl Workspace {
             .as_ref(ctx)
             .terminal_view_from_pane_id(pane_group.as_ref(ctx).focused_pane_id(ctx), ctx)
             .map(|tv| tv.id());
-        let ambient_agent_task_id = self
-            .get_active_session_terminal_model(ctx)
-            .and_then(|model| model.lock().ambient_agent_task_id());
+        let ambient_agent_task_id = self.ambient_agent_task_id_for_focused_terminal_view(ctx);
         self.notify_terminal_focus_change(focused_terminal_view_id, ambient_agent_task_id, ctx);
 
         self.update_active_session(ctx);
@@ -11716,6 +11732,7 @@ impl Workspace {
                         fork_from.exchange_id,
                         fork_from.fork_from_exact_exchange,
                         FORK_PREFIX,
+                        None,
                         ctx,
                     )
                 } else {
@@ -11723,6 +11740,7 @@ impl Workspace {
                         &source_conversation,
                         FORK_PREFIX,
                         false, /* preserve_task_ids */
+                        None,
                         ctx,
                     )
                 }
@@ -13188,8 +13206,15 @@ impl Workspace {
 
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         let source_conversation_id = source_token.as_str().to_string();
+        let title_for_fork = source_conversation
+            .title()
+            .map(|t| format!("{t} (Moved to cloud)"));
         ctx.spawn(
-            async move { ai_client.fork_conversation(source_conversation_id).await },
+            async move {
+                ai_client
+                    .fork_conversation(source_conversation_id, title_for_fork)
+                    .await
+            },
             move |me, result, ctx| match result {
                 Ok(response) => {
                     me.complete_local_to_cloud_handoff_open(
@@ -13229,8 +13254,17 @@ impl Workspace {
     ) {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         // Materialize the fork locally so the new pane can restore it.
+        let title_override = source_conversation
+            .title()
+            .map(|t| format!("{t} (Moved to cloud)"));
         let local_fork = match history_model.update(ctx, |history_model, ctx| {
-            history_model.fork_conversation(&source_conversation, FORK_PREFIX, true, ctx)
+            history_model.fork_conversation(
+                &source_conversation,
+                FORK_PREFIX,
+                true,
+                title_override.as_deref(),
+                ctx,
+            )
         }) {
             Ok(forked) => forked,
             Err(err) => {
@@ -13298,6 +13332,7 @@ impl Workspace {
         // Keep handoff state on the cloud model until snapshot prep and submit finish.
         let pending = PendingHandoff {
             forked_conversation_id: forked_conversation_id.clone(),
+            title: title_override,
             touched_workspace: None,
             snapshot_upload: SnapshotUploadStatus::Pending,
             submission_state: HandoffSubmissionState::Idle,
@@ -13887,9 +13922,8 @@ impl Workspace {
                         .terminal_view_from_pane_id(pane_group.focused_pane_id(ctx), ctx)
                         .map(|tv| tv.id())
                 };
-                let ambient_agent_task_id = self
-                    .get_active_session_terminal_model(ctx)
-                    .and_then(|model| model.lock().ambient_agent_task_id());
+                let ambient_agent_task_id =
+                    self.ambient_agent_task_id_for_focused_terminal_view(ctx);
                 self.notify_terminal_focus_change(
                     focused_terminal_view_id,
                     ambient_agent_task_id,
@@ -18070,15 +18104,7 @@ impl Workspace {
         let zoom_factor = WindowSettings::as_ref(ctx).zoom_level.as_zoom_factor();
         let traffic_light_data = traffic_light_data(ctx, self.window_id);
         if let Some(traffic_light_data) = traffic_light_data.as_ref() {
-            let vertical_tabs_active = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(ctx).use_vertical_tabs;
-            let right_panel_open = self.current_workspace_state.is_right_panel_open();
-            let should_reserve_right_traffic_light_space =
-                vertical_tabs_active || !right_panel_open;
-
-            if traffic_light_data.side == TrafficLightSide::Right
-                && should_reserve_right_traffic_light_space
-            {
+            if should_reserve_traffic_light_space_in_tab_bar(traffic_light_data.side) {
                 target.add_child(
                     ConstrainedBox::new(Empty::new().finish())
                         .with_width(traffic_light_data.width(zoom_factor))
@@ -21829,6 +21855,7 @@ impl TypedActionView for Workspace {
                 }
                 self.load_cloud_conversation_into_new_transcript_viewer(
                     conversation_id.clone(),
+                    *ambient_agent_task_id,
                     ctx,
                 );
             }
@@ -24458,6 +24485,10 @@ impl Workspace {
 
         current_index
     }
+}
+
+fn should_reserve_traffic_light_space_in_tab_bar(side: TrafficLightSide) -> bool {
+    side == TrafficLightSide::Right
 }
 
 /// Returns every tab-bar-equivalent rect laid out in `window_id` (horizontal

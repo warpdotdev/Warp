@@ -664,6 +664,9 @@ fn set_codex_model(doc: &mut toml_edit::DocumentMut, third_party_harness_model_i
     let Some(model_id) =
         third_party_harness_model_id.filter(|id| !id.is_empty() && *id != "default")
     else {
+        // No model specified or "default" selected — remove any pre-existing
+        // key so Codex uses its own default.
+        doc.remove(CODEX_MODEL_KEY);
         return;
     };
     doc[CODEX_MODEL_KEY] = toml_edit::value(model_id);

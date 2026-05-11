@@ -130,6 +130,8 @@ pub(crate) struct PendingHandoff {
     /// Forked conversation id minted by `POST /agent/conversations/{conversation_id}/fork`.
     /// Sent under `conversation_id` on the subsequent `POST /agent/runs` request.
     pub(crate) forked_conversation_id: String,
+    /// Title override for the cloud run (e.g. "<title> (Moved to cloud)").
+    pub(crate) title: Option<String>,
     /// `None` until `derive_touched_workspace` completes.
     pub(crate) touched_workspace: Option<TouchedWorkspace>,
     /// Outcome of the async snapshot upload.
@@ -600,7 +602,7 @@ impl AmbientAgentViewModel {
             prompt,
             mode,
             config,
-            title: None,
+            title: self.pending_handoff.as_ref().and_then(|h| h.title.clone()),
             team: None,
             skill: None,
             attachments,
@@ -760,6 +762,19 @@ impl AmbientAgentViewModel {
     /// Whether or not the ambient agent is currently running.
     pub fn is_agent_running(&self) -> bool {
         matches!(self.status, Status::AgentRunning)
+    }
+
+    /// Returns true when an existing ambient task can accept a follow-up prompt.
+    ///
+    /// `AgentRunning` means this pane has moved past setup/composition into an ambient task view;
+    /// `active_execution_session_id` is the live-session signal. After a Cloud Mode execution ends,
+    /// the status stays `AgentRunning` while the active session is cleared, which is the editable
+    /// post-run state where follow-ups are allowed.
+    pub fn is_ready_for_cloud_followup_prompt(&self) -> bool {
+        self.task_id.is_some()
+            && self.active_execution_session_id.is_none()
+            && self.pending_followup_prompt.is_none()
+            && matches!(self.status, Status::AgentRunning)
     }
 
     /// Whether or not we should show a status footer (loading, error, auth, or cancelled).

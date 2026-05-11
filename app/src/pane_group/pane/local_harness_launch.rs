@@ -6,7 +6,7 @@ use crate::ai::{
         driver::{
             harness::{
                 claude_code::{prepare_claude_environment_config, CLAUDE_CODE_FORMAT},
-                harness_kind, HarnessKind,
+                harness_kind, harness_model_env_vars, HarnessKind,
             },
             AgentDriverError,
         },
@@ -29,6 +29,16 @@ pub(super) struct PreparedLocalHarnessLaunch {
     pub run_id: String,
     pub task_id: AmbientAgentTaskId,
     pub local_claude_harness_metadata: Option<LocalClaudeHarnessMetadata>,
+}
+pub(super) struct LocalHarnessChildLaunchRequest {
+    pub prompt: String,
+    pub harness_type: String,
+    pub model_id: Option<String>,
+    pub parent_run_id: Option<String>,
+    pub shell_type: Option<ShellType>,
+    pub startup_directory: Option<PathBuf>,
+    pub ai_client: Arc<dyn AIClient>,
+    pub harness_support_client: Arc<dyn HarnessSupportClient>,
 }
 
 pub(super) fn normalize_local_child_harness(harness_type: &str) -> Option<Harness> {
@@ -80,14 +90,18 @@ fn local_child_task_config(harness: Harness) -> Option<AgentConfigSnapshot> {
 }
 
 pub(super) async fn prepare_local_harness_child_launch(
-    prompt: String,
-    harness_type: String,
-    parent_run_id: Option<String>,
-    shell_type: Option<ShellType>,
-    startup_directory: Option<PathBuf>,
-    ai_client: Arc<dyn AIClient>,
-    harness_support_client: Arc<dyn HarnessSupportClient>,
+    request: LocalHarnessChildLaunchRequest,
 ) -> Result<PreparedLocalHarnessLaunch, String> {
+    let LocalHarnessChildLaunchRequest {
+        prompt,
+        harness_type,
+        model_id,
+        parent_run_id,
+        shell_type,
+        startup_directory,
+        ai_client,
+        harness_support_client,
+    } = request;
     let Some(harness) = normalize_local_child_harness(&harness_type) else {
         let harness_name = harness_type.trim();
         return Err(if harness_name.is_empty() {
@@ -202,9 +216,15 @@ pub(super) async fn prepare_local_harness_child_launch(
             })?;
     }
 
+    let mut env_vars = task_env_vars(Some(&task_id), parent_run_id.as_deref(), harness);
+    // Propagate the selected model to Claude Code via ANTHROPIC_MODEL.
+    // Codex local children never receive a model override — the UI
+    // ensures model_id is empty for local Codex.
+    env_vars.extend(harness_model_env_vars(harness, model_id.as_deref()));
+
     Ok(PreparedLocalHarnessLaunch {
         command,
-        env_vars: task_env_vars(Some(&task_id), parent_run_id.as_deref(), harness),
+        env_vars,
         run_id: task_id.to_string(),
         task_id,
         local_claude_harness_metadata,

@@ -7,6 +7,7 @@ use super::{
     build_local_claude_child_command, build_local_codex_child_command,
     build_local_opencode_child_command, local_child_task_config, normalize_local_child_harness,
     prepare_local_harness_child_launch, validate_local_harness_shell,
+    LocalHarnessChildLaunchRequest,
 };
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_sdk::driver::harness::claude_code::CLAUDE_CODE_FORMAT;
@@ -183,15 +184,16 @@ async fn prepare_local_codex_child_launch_does_not_rewrite_global_codex_state() 
         .times(1)
         .returning(|_, _, _, _| Ok("550e8400-e29b-41d4-a716-446655440000".parse().unwrap()));
 
-    let prepared = prepare_local_harness_child_launch(
-        "hello world".to_string(),
-        "codex".to_string(),
-        Some("parent-run".to_string()),
-        Some(ShellType::Zsh),
-        Some(working_dir),
-        Arc::new(ai_client),
-        Arc::new(MockHarnessSupportClient::new()),
-    )
+    let prepared = prepare_local_harness_child_launch(LocalHarnessChildLaunchRequest {
+        prompt: "hello world".to_string(),
+        harness_type: "codex".to_string(),
+        model_id: None,
+        parent_run_id: Some("parent-run".to_string()),
+        shell_type: Some(ShellType::Zsh),
+        startup_directory: Some(working_dir),
+        ai_client: Arc::new(ai_client),
+        harness_support_client: Arc::new(MockHarnessSupportClient::new()),
+    })
     .await
     .unwrap();
 
@@ -251,15 +253,16 @@ async fn prepare_local_claude_child_launch_creates_and_links_external_conversati
         },
     );
 
-    let prepared = prepare_local_harness_child_launch(
-        "hello world".to_string(),
-        "claude".to_string(),
-        Some("parent-run".to_string()),
-        Some(ShellType::Zsh),
-        Some(working_dir.clone()),
-        Arc::new(ai_client),
-        Arc::new(harness_support_client),
-    )
+    let prepared = prepare_local_harness_child_launch(LocalHarnessChildLaunchRequest {
+        prompt: "hello world".to_string(),
+        harness_type: "claude".to_string(),
+        model_id: None,
+        parent_run_id: Some("parent-run".to_string()),
+        shell_type: Some(ShellType::Zsh),
+        startup_directory: Some(working_dir.clone()),
+        ai_client: Arc::new(ai_client),
+        harness_support_client: Arc::new(harness_support_client),
+    })
     .await
     .unwrap();
 
@@ -272,4 +275,115 @@ async fn prepare_local_claude_child_launch_creates_and_links_external_conversati
     )));
     assert_eq!(prepared.task_id, task_id);
     assert_eq!(prepared.run_id, task_id.to_string());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn prepare_local_claude_child_merges_anthropic_model_env_var() {
+    let fake_home = TempDir::new().unwrap();
+    let fake_bin_dir = TempDir::new().unwrap();
+    let working_dir = fake_home.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+    write_fake_cli(fake_bin_dir.path(), "claude");
+
+    let _home = EnvVarGuard::set("HOME", fake_home.path().as_os_str().to_os_string());
+    let _path = EnvVarGuard::set("PATH", fake_bin_dir.path().as_os_str().to_os_string());
+
+    let conversation_id =
+        AIConversationId::try_from("550e8400-e29b-41d4-a716-446655440001".to_string()).unwrap();
+    let task_id = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
+    let mut harness_support_client = MockHarnessSupportClient::new();
+    harness_support_client
+        .expect_create_external_conversation()
+        .times(1)
+        .returning(move |format| {
+            assert_eq!(format, CLAUDE_CODE_FORMAT);
+            Ok(conversation_id)
+        });
+
+    let mut ai_client = MockAIClient::new();
+    ai_client
+        .expect_create_agent_task()
+        .times(1)
+        .returning(move |_, _, _, _| Ok(task_id));
+    ai_client.expect_update_agent_task().times(1).returning(
+        move |updated_task_id, _, _, linked_conversation_id, _| {
+            assert_eq!(updated_task_id, task_id);
+            assert_eq!(linked_conversation_id, Some(conversation_id.to_string()));
+            Ok(())
+        },
+    );
+
+    let prepared = prepare_local_harness_child_launch(LocalHarnessChildLaunchRequest {
+        prompt: "hello world".to_string(),
+        harness_type: "claude".to_string(),
+        model_id: Some("opus".to_string()),
+        parent_run_id: Some("parent-run".to_string()),
+        shell_type: Some(ShellType::Zsh),
+        startup_directory: Some(working_dir),
+        ai_client: Arc::new(ai_client),
+        harness_support_client: Arc::new(harness_support_client),
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        prepared.env_vars.get(&OsString::from("ANTHROPIC_MODEL")),
+        Some(&OsString::from("opus"))
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn prepare_local_claude_child_no_anthropic_model_when_empty() {
+    let fake_home = TempDir::new().unwrap();
+    let fake_bin_dir = TempDir::new().unwrap();
+    let working_dir = fake_home.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+    write_fake_cli(fake_bin_dir.path(), "claude");
+
+    let _home = EnvVarGuard::set("HOME", fake_home.path().as_os_str().to_os_string());
+    let _path = EnvVarGuard::set("PATH", fake_bin_dir.path().as_os_str().to_os_string());
+
+    let conversation_id =
+        AIConversationId::try_from("550e8400-e29b-41d4-a716-446655440001".to_string()).unwrap();
+    let task_id = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
+    let mut harness_support_client = MockHarnessSupportClient::new();
+    harness_support_client
+        .expect_create_external_conversation()
+        .times(1)
+        .returning(move |format| {
+            assert_eq!(format, CLAUDE_CODE_FORMAT);
+            Ok(conversation_id)
+        });
+
+    let mut ai_client = MockAIClient::new();
+    ai_client
+        .expect_create_agent_task()
+        .times(1)
+        .returning(move |_, _, _, _| Ok(task_id));
+    ai_client.expect_update_agent_task().times(1).returning(
+        move |updated_task_id, _, _, linked_conversation_id, _| {
+            assert_eq!(updated_task_id, task_id);
+            assert_eq!(linked_conversation_id, Some(conversation_id.to_string()));
+            Ok(())
+        },
+    );
+
+    let prepared = prepare_local_harness_child_launch(LocalHarnessChildLaunchRequest {
+        prompt: "hello world".to_string(),
+        harness_type: "claude".to_string(),
+        model_id: None,
+        parent_run_id: Some("parent-run".to_string()),
+        shell_type: Some(ShellType::Zsh),
+        startup_directory: Some(working_dir),
+        ai_client: Arc::new(ai_client),
+        harness_support_client: Arc::new(harness_support_client),
+    })
+    .await
+    .unwrap();
+
+    assert!(!prepared
+        .env_vars
+        .contains_key(&OsString::from("ANTHROPIC_MODEL")));
 }

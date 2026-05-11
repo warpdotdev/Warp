@@ -104,6 +104,8 @@ use crate::ASSETS;
 
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
+#[cfg(feature = "local_fs")]
+use crate::persistence::{database_file_path_for_scope, establish_ro_connection, PersistenceScope};
 
 use crate::ai::attachment_utils::MAX_ATTACHMENT_SIZE_BYTES;
 use crate::ai::block_context::BlockContext;
@@ -1009,6 +1011,10 @@ pub enum Event {
         server_conversation_token: Option<ServerConversationToken>,
         prompt: String,
         attachments: Vec<AgentAttachment>,
+    },
+    /// A disconnected Cloud Mode pane is requesting to submit a cloud follow-up.
+    SubmitCloudFollowup {
+        prompt: String,
     },
     /// A viewer in a shared session is requesting to cancel the active agent conversation.
     CancelSharedSessionConversation {
@@ -3558,8 +3564,8 @@ impl Input {
         };
 
         #[cfg(feature = "local_fs")]
-        if let Some(db_url) = crate::persistence::database_file_path().to_str() {
-            if let Ok(conn) = crate::persistence::establish_ro_connection(db_url) {
+        if let Some(db_url) = database_file_path_for_scope(&PersistenceScope::App).to_str() {
+            if let Ok(conn) = establish_ro_connection(db_url) {
                 input.conn = Some(Arc::new(Mutex::new(conn)));
             }
         }
@@ -12479,6 +12485,19 @@ impl Input {
                 suggestions.confirm(ctx);
             });
         } else if self.should_block_cloud_mode_setup_submission(ctx) {
+            return;
+        } else if FeatureFlag::HandoffCloudCloud.is_enabled()
+            && self
+                .ambient_agent_view_model()
+                .is_some_and(|ambient_agent_model| {
+                    ambient_agent_model
+                        .as_ref(ctx)
+                        .is_ready_for_cloud_followup_prompt()
+                })
+        {
+            ctx.emit(Event::SubmitCloudFollowup {
+                prompt: command.trim().to_owned(),
+            });
             return;
         } else if FeatureFlag::AgentMode.is_enabled()
             && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
