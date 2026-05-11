@@ -239,7 +239,7 @@ Hard rules:
 | t2-14 | scrim opacity + toolbar prominence | `46f0a2e` | [x] | [x] | [x] |
 | t2-15 | adjacent icons + conditional reset | `6623e0e` | [x] | [x] | [x] |
 | t2-16 | Flex::row toolbar + logging | `ae67790` | [x] | [x] | [x] |
-| t2-17 | warn-level logs + tighter gaps | `dff6822` | [x] | [ ] | [ ] |
+| t2-17 | warn-level logs + tighter gaps | `dff6822` | [x] | [x] | [x] |
 | t2-18 | remove diagnostic logs | `45ccfe2` | [x] | [ ] | [ ] |
 | t2-19 | custom PanClippedImage element | `67f014b` | [x] | [ ] | [ ] |
 | t2-20 | pan state on persistent struct | `c102817` | [x] | [ ] | [ ] |
