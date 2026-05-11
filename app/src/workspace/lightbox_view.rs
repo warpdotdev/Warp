@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use instant::Instant;
-use pathfinder_geometry::vector::Vector2F;
+use pathfinder_geometry::vector::{Vector2F, vec2f};
 use ui_components::{lightbox, Component as _};
 use warpui::assets::asset_cache::{AssetCache, AssetSource, AssetState};
 use warpui::image_cache::ImageType;
@@ -83,6 +83,11 @@ pub enum LightboxViewAction {
     ZoomOut,
     /// GH9729 §698: reset the current image to native size (`zoom_factor = 1.0`).
     ZoomReset,
+    /// GH9729 §698 / t2-19: pan the currently-displayed image to a new
+    /// pixel offset. Fields are floats (not Vector2F) so the action
+    /// implements `Debug` cleanly without an extra impl on the wrapping
+    /// type.
+    Pan { offset_x: f32, offset_y: f32 },
 }
 
 /// A view that renders a full-window lightbox overlay.
@@ -105,6 +110,13 @@ pub struct LightboxView {
     /// so a freshly-shown image is never inherited at an unexpected
     /// zoom level.
     zoom_factor: f32,
+    /// GH9729 §698 / t2-19: drag-to-pan offset for the currently-
+    /// displayed image (pixels). Reset to `Vector2F::zero()` on every
+    /// image change AND on every zoom action — at native zoom the
+    /// image always fits viewport so pan would be meaningless. The
+    /// lightbox component clamps the actual paint offset so the user
+    /// can't drag the visible edge past viewport center.
+    pan_offset: Vector2F,
 }
 
 impl LightboxView {
@@ -118,6 +130,7 @@ impl LightboxView {
             lightbox: lightbox::Lightbox::default(),
             animation_start_time: Instant::now(),
             zoom_factor: 1.0,
+            pan_offset: Vector2F::zero(),
         };
         view.start_asset_loads(ctx);
         view
@@ -134,13 +147,15 @@ impl LightboxView {
         self.start_asset_loads(ctx);
     }
 
-    /// GH9729 §697 + §698: reset the per-image transient state (animation
-    /// timeline anchor and zoom factor) so the next render starts the
-    /// image from frame 0 at native size. Called from every site that
-    /// changes which image is currently displayed.
+    /// GH9729 §697 + §698 + §698/t2-19: reset the per-image transient
+    /// state (animation timeline anchor, zoom factor, pan offset) so
+    /// the next render starts the image from frame 0 at native size,
+    /// centered. Called from every site that changes which image is
+    /// currently displayed.
     fn reset_per_image_state(&mut self) {
         self.animation_start_time = Instant::now();
         self.zoom_factor = 1.0;
+        self.pan_offset = Vector2F::zero();
     }
 
     /// Update a single image at the given index without replacing the full list.
@@ -406,6 +421,7 @@ impl View for LightboxView {
                 current_image_native_size,
                 animation_start_time: Some(self.animation_start_time),
                 zoom_factor: self.zoom_factor,
+                pan_offset: self.pan_offset,
                 // GH9729 §699 + t2-11: surface the loaded image's intrinsic
                 // dimensions plus the current zoom percentage when zoom is
                 // not 1.0 (so the user gets visual feedback even when the
@@ -437,6 +453,15 @@ impl View for LightboxView {
                         lightbox::ZoomDirection::Reset => {
                             ctx.dispatch_typed_action(LightboxViewAction::ZoomReset);
                         }
+                    })),
+                    // GH9729 §698 / t2-19: route the lightbox's pan
+                    // gesture (drag inside viewport) into a typed
+                    // action so the view owns the canonical offset.
+                    on_pan: Some(Arc::new(|new_offset, ctx, _| {
+                        ctx.dispatch_typed_action(LightboxViewAction::Pan {
+                            offset_x: new_offset.x(),
+                            offset_y: new_offset.y(),
+                        });
                     })),
                 },
             },
@@ -483,6 +508,23 @@ impl TypedActionView for LightboxView {
             LightboxViewAction::ZoomReset => {
                 if self.zoom_factor != 1.0 {
                     self.zoom_factor = 1.0;
+                    // GH9729 §698 / t2-19: dropping back to native
+                    // zoom invalidates any pan offset — at 1.0 the
+                    // image fits viewport and pan is meaningless.
+                    self.pan_offset = Vector2F::zero();
+                    ctx.notify();
+                }
+            }
+            LightboxViewAction::Pan { offset_x, offset_y } => {
+                // GH9729 §698 / t2-19: the Lightbox component clamps
+                // the visible paint offset, but we still want the
+                // model state to mirror the clamped value so
+                // subsequent drag deltas accumulate sanely. NaN-
+                // sanitise defensively — the on_pan handler receives
+                // arbitrary float input from mouse-position math.
+                let next = vec2f(*offset_x, *offset_y);
+                if next.x().is_finite() && next.y().is_finite() && next != self.pan_offset {
+                    self.pan_offset = next;
                     ctx.notify();
                 }
             }

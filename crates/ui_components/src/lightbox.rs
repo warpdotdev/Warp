@@ -4,8 +4,11 @@ use instant::Instant;
 use pathfinder_geometry::vector::{Vector2F, vec2f};
 use warp_core::ui::{Icon, appearance::Appearance};
 use warpui::{
+    AfterLayoutContext, AppContext, ClipBounds, Element, EventContext, LayoutContext,
+    PaintContext, SizeConstraint,
     assets::asset_cache::AssetSource,
-    elements::{CacheOption, Dismiss, DispatchEventResult, EventHandler, Image, Shrinkable},
+    elements::{CacheOption, Dismiss, Image, Point, Shrinkable},
+    event::{DispatchedEvent, Event, ModifiersState},
     keymap::Keystroke,
     prelude::{stack::*, *},
 };
@@ -50,6 +53,216 @@ const SCRIM_BUTTON_INSET: f32 = 12.;
 /// continuous-touch scroll events report values well below 1.0 at
 /// rest and above 1.0 during deliberate gestures.
 const SCROLL_ZOOM_DEAD_ZONE: f32 = 1.0;
+
+/// GH9729 §698 / t2-19: a viewport that lets its child render at any
+/// size (potentially larger than the viewport itself), centers it, and
+/// clips paint to viewport bounds. Also tracks drag-to-pan and routes
+/// the user's drag into a caller-supplied `on_pan` callback.
+///
+/// This is the answer to the long-standing t2-7-r1 gotcha: the
+/// framework's `ConstrainedBox::layout` tightens its child's max by
+/// parent's max, so images can't grow past viewport via the normal
+/// layout path. `PanClippedImage` short-circuits that by forcing its
+/// child's layout constraint to `SizeConstraint::strict(desired_size)`
+/// — the child renders at exactly the size we ask for, regardless of
+/// our own bounds. Then we paint it inside a clipped layer at the
+/// viewport rect, optionally offset by `pan_offset`.
+///
+/// Mouse-down + drag + mouse-up are tracked here so the lightbox view
+/// owns the canonical `pan_offset` state and we get a single point of
+/// truth for clamping. cmd+scroll-wheel is also captured here (it used
+/// to live on the per-image `EventHandler`) so all viewport-scoped
+/// gestures share the same hit-test bounds.
+struct PanClippedImage {
+    child: Box<dyn Element>,
+    desired_size: Vector2F,
+    pan_offset: Vector2F,
+    on_pan: Option<Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>>,
+    on_zoom: Option<ZoomHandler>,
+
+    origin: Option<Point>,
+    viewport_size: Option<Vector2F>,
+    last_drag_position: Option<Vector2F>,
+}
+
+impl PanClippedImage {
+    fn new(
+        child: Box<dyn Element>,
+        desired_size: Vector2F,
+        pan_offset: Vector2F,
+        on_pan: Option<Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>>,
+        on_zoom: Option<ZoomHandler>,
+    ) -> Self {
+        Self {
+            child,
+            desired_size,
+            pan_offset,
+            on_pan,
+            on_zoom,
+            origin: None,
+            viewport_size: None,
+            last_drag_position: None,
+        }
+    }
+
+    /// Compute the maximum half-extent of pan in each axis: half of the
+    /// overflow of child past viewport. Zero when child fits in viewport.
+    fn max_pan(child_size: Vector2F, viewport: Vector2F) -> Vector2F {
+        vec2f(
+            ((child_size.x() - viewport.x()) / 2.0).max(0.0),
+            ((child_size.y() - viewport.y()) / 2.0).max(0.0),
+        )
+    }
+
+    /// Clamp `pan_offset` so the user can't drag the image so far that
+    /// the visible edge moves past viewport center (which would reveal
+    /// the scrim and feel sloppy).
+    fn clamp_pan(pan: Vector2F, child_size: Vector2F, viewport: Vector2F) -> Vector2F {
+        let max = Self::max_pan(child_size, viewport);
+        vec2f(
+            pan.x().clamp(-max.x(), max.x()),
+            pan.y().clamp(-max.y(), max.y()),
+        )
+    }
+
+    fn point_in_viewport(&self, position: Vector2F) -> bool {
+        let Some(origin) = self.origin else {
+            return false;
+        };
+        let Some(viewport) = self.viewport_size else {
+            return false;
+        };
+        let origin_xy = origin.xy();
+        position.x() >= origin_xy.x()
+            && position.x() <= origin_xy.x() + viewport.x()
+            && position.y() >= origin_xy.y()
+            && position.y() <= origin_xy.y() + viewport.y()
+    }
+}
+
+impl Element for PanClippedImage {
+    fn layout(
+        &mut self,
+        constraint: SizeConstraint,
+        ctx: &mut LayoutContext,
+        app: &AppContext,
+    ) -> Vector2F {
+        // Fill parent's max (the lightbox content area). This becomes
+        // the viewport — clip bounds and pan-clamp boundary.
+        let viewport = constraint.max;
+        self.viewport_size = Some(viewport);
+
+        // Force child to render at exactly `desired_size`, bypassing
+        // parent-max binding. This is the load-bearing line — without
+        // it, t2-7-r1 returns.
+        self.child
+            .layout(SizeConstraint::strict(self.desired_size), ctx, app);
+
+        viewport
+    }
+
+    fn after_layout(&mut self, ctx: &mut AfterLayoutContext, app: &AppContext) {
+        self.child.after_layout(ctx, app);
+    }
+
+    fn paint(&mut self, origin: Vector2F, ctx: &mut PaintContext, app: &AppContext) {
+        let origin_point = Point::from_vec2f(origin, ctx.scene.z_index());
+        self.origin = Some(origin_point);
+
+        let viewport = self
+            .viewport_size
+            .expect("layout must run before paint");
+        let child_size = self.child.size().unwrap_or(self.desired_size);
+
+        // Center child within viewport, apply clamped pan offset.
+        let pan = Self::clamp_pan(self.pan_offset, child_size, viewport);
+        let child_origin = vec2f(
+            origin.x() + (viewport.x() - child_size.x()) / 2.0 + pan.x(),
+            origin.y() + (viewport.y() - child_size.y()) / 2.0 + pan.y(),
+        );
+
+        // Paint inside a clipped layer at viewport bounds so the
+        // oversized child doesn't bleed past the lightbox scrim.
+        if let Some(visible) = ctx.scene.visible_rect(origin_point, viewport) {
+            ctx.scene.start_layer(ClipBounds::BoundedBy(visible));
+            self.child.paint(child_origin, ctx, app);
+            ctx.scene.stop_layer();
+        }
+    }
+
+    fn dispatch_event(
+        &mut self,
+        event: &DispatchedEvent,
+        ctx: &mut EventContext,
+        app: &AppContext,
+    ) -> bool {
+        match event.raw_event() {
+            Event::LeftMouseDown { position, .. } if self.point_in_viewport(*position) => {
+                // Start tracking drag; consume so the scrim's Dismiss
+                // doesn't fire on the same down event.
+                self.last_drag_position = Some(*position);
+                true
+            }
+            Event::LeftMouseDragged { position, .. } => {
+                if let Some(last) = self.last_drag_position {
+                    let delta = *position - last;
+                    if let Some(on_pan) = self.on_pan.as_ref() {
+                        on_pan(self.pan_offset + delta, ctx, app);
+                    }
+                    self.last_drag_position = Some(*position);
+                    return true;
+                }
+                false
+            }
+            Event::LeftMouseUp { .. } => {
+                if self.last_drag_position.is_some() {
+                    self.last_drag_position = None;
+                    return true;
+                }
+                false
+            }
+            Event::ScrollWheel {
+                position,
+                delta,
+                modifiers,
+                ..
+            } if self.point_in_viewport(*position) => {
+                // cmd+scroll = zoom (preserved from t2-12). Plain
+                // scroll falls through so parent surfaces can use it.
+                let cmd_or_ctrl = modifiers_have_cmd_or_ctrl(modifiers);
+                if !cmd_or_ctrl {
+                    return false;
+                }
+                let dy = delta.y();
+                if dy.abs() < SCROLL_ZOOM_DEAD_ZONE {
+                    return true;
+                }
+                if let Some(on_zoom) = self.on_zoom.as_ref() {
+                    let direction = if dy > 0.0 {
+                        ZoomDirection::In
+                    } else {
+                        ZoomDirection::Out
+                    };
+                    on_zoom(direction, ctx, app);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn size(&self) -> Option<Vector2F> {
+        self.viewport_size
+    }
+
+    fn origin(&self) -> Option<Point> {
+        self.origin
+    }
+}
+
+fn modifiers_have_cmd_or_ctrl(modifiers: &ModifiersState) -> bool {
+    modifiers.cmd || modifiers.ctrl
+}
 
 /// GH9729 §699: how much smaller the metadata strip is than the
 /// description. The metadata strip carries secondary information
@@ -207,6 +420,13 @@ pub struct Params<'a> {
     /// localising it.
     pub metadata_line: Option<String>,
 
+    /// GH9729 §698 / t2-19: drag-to-pan offset (pixels) for the
+    /// currently-displayed image. `Vector2F::zero()` for centered.
+    /// Caller is responsible for resetting on zoom-to-native and on
+    /// navigation. The lightbox component clamps the offset internally
+    /// so the user can't drag the image past viewport center.
+    pub pan_offset: Vector2F,
+
     /// GH9729 §698: zoom factor applied to the image's bounding box.
     /// `1.0` renders at native size (the v1 default). Values `> 1.0`
     /// scale the `ConstrainedBox` linearly so the image renders larger
@@ -246,6 +466,13 @@ pub struct Options {
     /// `None`, the zoom toolbar is not rendered and scroll-wheel
     /// events fall through.
     pub on_zoom: Option<ZoomHandler>,
+
+    /// GH9729 §698 / t2-19: handler invoked when the user drags the
+    /// image to pan. Called with the new desired pan offset (before
+    /// clamping — caller can clamp or ignore as needed). If `None`,
+    /// drag-to-pan is disabled and mouse-down on the image just stops
+    /// scrim-dismiss as before.
+    pub on_pan: Option<Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>>,
 }
 
 impl crate::Options for Options {
@@ -254,6 +481,7 @@ impl crate::Options for Options {
             dismiss_keystroke: None,
             on_navigate: None,
             on_zoom: None,
+            on_pan: None,
         }
     }
 }
@@ -297,62 +525,35 @@ impl Component for Lightbox {
                 // Image source resolved AND native size known → render the image.
                 (Some(LightboxImageSource::Resolved { asset_source }), Some(native_size)) => {
                     // GH9729 §697: opt into continuous animated playback when
-                    // the caller supplied a timeline anchor. The Image
-                    // element's `paint_animated_image` schedules its own
-                    // per-frame redraw via `ctx.repaint_after`, so no
-                    // explicit timer or task is needed at this layer.
+                    // the caller supplied a timeline anchor.
                     let mut image_builder =
                         Image::new(asset_source.clone(), CacheOption::Original).contain();
                     if let Some(start) = params.animation_start_time {
                         image_builder = image_builder.enable_animation_with_start_time(start);
                     }
-                    // GH9729 §698: scale the bounding box by the caller-
-                    // supplied zoom factor. Negative or non-finite values
-                    // would NaN-poison the layout, so clamp to a sane
-                    // range first.
+                    // GH9729 §698 / t2-19: feed the desired (zoom*native)
+                    // size into PanClippedImage, which forces the child
+                    // to render at exactly that size regardless of
+                    // parent's available area. Clamp first so a poisoned
+                    // float can't blow up the layout.
                     let zoom = params.zoom_factor.clamp(MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR);
-                    let image = ConstrainedBox::new(
-                        image_builder
-                            .before_load(Align::new(loading_element(appearance)).finish())
-                            .finish(),
-                    )
-                    .with_max_width(native_size.x() * zoom)
-                    .with_max_height(native_size.y() * zoom)
-                    .finish();
+                    let desired_size = vec2f(native_size.x() * zoom, native_size.y() * zoom);
 
-                    // GH9729 §698 / t2-12: cmd+scroll-wheel zooms the
-                    // image when the caller supplied an `on_zoom`
-                    // handler. Plain scroll (no modifier) is left
-                    // un-consumed so trackpad-induced flicks don't
-                    // surprise the user — matches macOS Preview
-                    // convention. Reset isn't reachable via scroll;
-                    // that's a button-only action.
-                    let scroll_zoom = params.options.on_zoom.clone();
-                    let mut handler = EventHandler::new(image)
-                        .on_left_mouse_down(|_, _, _| DispatchEventResult::StopPropagation);
-                    if let Some(on_zoom) = scroll_zoom {
-                        handler = handler.on_scroll_wheel(move |ctx, app, delta, modifiers| {
-                            if !modifiers.cmd && !modifiers.ctrl {
-                                return DispatchEventResult::PropagateToParent;
-                            }
-                            // Vertical scroll convention: positive y is
-                            // "wheel up / push fingers up" → zoom in.
-                            // Treat tiny deltas as no-ops so resting
-                            // on a near-zero trackpad doesn't drift.
-                            let dy = delta.y();
-                            if dy.abs() < SCROLL_ZOOM_DEAD_ZONE {
-                                return DispatchEventResult::StopPropagation;
-                            }
-                            let direction = if dy > 0.0 {
-                                ZoomDirection::In
-                            } else {
-                                ZoomDirection::Out
-                            };
-                            on_zoom(direction, ctx, app);
-                            DispatchEventResult::StopPropagation
-                        });
-                    }
-                    handler.finish()
+                    let image_element = image_builder
+                        .before_load(Align::new(loading_element(appearance)).finish())
+                        .finish();
+
+                    // PanClippedImage handles its own mouse-down (stops
+                    // scrim dismiss), drag (pan), and cmd+scroll (zoom),
+                    // so the previous `EventHandler` wrapping is no
+                    // longer needed.
+                    Box::new(PanClippedImage::new(
+                        image_element,
+                        desired_size,
+                        params.pan_offset,
+                        params.options.on_pan.clone(),
+                        params.options.on_zoom.clone(),
+                    ))
                 }
                 // Per-image load/decode failure: render a non-blocking error
                 // panel with the filename (description) on one line and the

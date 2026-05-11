@@ -565,9 +565,11 @@ impl RootView {
                 current_image_native_size,
                 animation_start_time: None,
                 zoom_factor: 1.0,
+                pan_offset: pathfinder_geometry::vector::Vector2F::zero(),
                 metadata_line: None,
                 options: lightbox::Options {
                     on_zoom: None,
+                    on_pan: None,
                     dismiss_keystroke: Some(warpui::keymap::Keystroke {
                         key: "escape".to_string(),
                         ..Default::default()
@@ -602,9 +604,11 @@ impl RootView {
                 current_image_native_size,
                 animation_start_time: None,
                 zoom_factor: 1.0,
+                pan_offset: pathfinder_geometry::vector::Vector2F::zero(),
                 metadata_line: None,
                 options: lightbox::Options {
                     on_zoom: None,
+                    on_pan: None,
                     dismiss_keystroke: Some(warpui::keymap::Keystroke {
                         key: "escape".to_string(),
                         ..Default::default()
