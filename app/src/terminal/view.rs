@@ -194,9 +194,9 @@ use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, Child
 use warpui::fonts::Properties;
 use warpui::{ViewHandle, WeakModelHandle};
 
-use crate::ai::agent::conversation::{
-    AIConversation, AIConversationId, ConversationStatus, LocalClaudeHarnessMetadata,
-};
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent::conversation::LocalClaudeHarnessMetadata;
+use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 
 #[cfg(any(test, feature = "integration_tests"))]
 use crate::ai::agent::UserQueryMode;
