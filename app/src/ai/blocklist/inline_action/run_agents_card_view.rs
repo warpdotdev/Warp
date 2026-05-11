@@ -10,6 +10,8 @@ use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
 use ai::agent::orchestration_config::{
     matches_active_config, OrchestrationConfig, OrchestrationConfigStatus,
 };
+
+use crate::ai::agent::conversation::AIConversationId;
 use ai::skills::SkillReference;
 use pathfinder_geometry::vector::vec2f;
 use std::rc::Rc;
@@ -501,7 +503,26 @@ impl RunAgentsCardView {
     /// the request is fully populated.  Called from
     /// `AIBlock::handle_complete_output` so we don't act on partial
     /// streaming chunks that arrive with an empty `agent_run_configs`.
-    pub fn try_auto_launch_on_stream_complete(&mut self, ctx: &mut ViewContext<Self>) {
+    pub fn try_auto_launch_on_stream_complete(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        // Refresh active_config: at card construction time plan_id may
+        // have been empty (not yet streamed) so active_config was None.
+        // Now that streaming is complete the full plan_id is available
+        // and the OrchestrationConfigSnapshot should already be hydrated.
+        if self.active_config.is_none() && !self.state.plan_id.is_empty() {
+            self.active_config = crate::BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&conversation_id)
+                .and_then(|conv| {
+                    conv.orchestration_config_for_plan(&self.state.plan_id)
+                        .map(|(c, s)| (c.clone(), s))
+                });
+            // Re-evaluate denied status with the refreshed config.
+            self.is_denied = compute_is_denied(self.is_denied, &self.active_config);
+        }
+
         if should_auto_launch(
             self.auto_launched,
             self.is_denied,
