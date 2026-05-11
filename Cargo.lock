@@ -2596,15 +2596,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cfasttext-sys"
-version = "0.7.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "982185af4edba23861639c25e46b36e077d2d60e553c20d1341c9fbf17fdb369"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "cfb"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4655,15 +4646,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
-name = "fasttext"
-version = "0.7.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd26f3978ff7b22e594af9026912da644237fd7d360889d0c5a6ac8ec4f940c8"
-dependencies = [
- "cfasttext-sys",
-]
-
-[[package]]
 name = "fax"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6616,7 +6598,6 @@ dependencies = [
  "candle-onnx",
  "cfg-if",
  "clap",
- "fasttext",
  "futures",
  "futures-lite 1.13.0",
  "instant",
@@ -6631,7 +6612,6 @@ dependencies = [
  "rust-embed 8.7.2",
  "serde",
  "smol_str",
- "tempfile",
  "tokenizers",
  "warp_completer",
 ]
