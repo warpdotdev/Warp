@@ -120,21 +120,20 @@ enum RuleRow {
 
 impl RuleRow {
     fn matches_search_term(&self, search_term: &str) -> bool {
+        let search_term = search_term.to_lowercase();
         match self {
             RuleRow::Global(row) => {
                 let AIFact::Memory(AIMemory { name, content, .. }) =
                     row.fact.model().string_model.clone();
                 name.unwrap_or_default()
                     .to_lowercase()
-                    .contains(search_term.to_lowercase().as_str())
-                    || content
-                        .to_lowercase()
-                        .contains(search_term.to_lowercase().as_str())
+                    .contains(search_term.as_str())
+                    || content.to_lowercase().contains(search_term.as_str())
             }
             RuleRow::FileBacked(row) => row
                 .file_path
                 .to_str()
-                .map(|s| s.to_lowercase().contains(search_term))
+                .map(|s| s.to_lowercase().contains(search_term.as_str()))
                 .unwrap_or(false),
         }
     }

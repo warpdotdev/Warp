@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, HashMap};
 #[cfg(feature = "local_fs")]
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
 cfg_if::cfg_if! {
@@ -28,7 +30,7 @@ cfg_if::cfg_if! {
 
 /// A well-known location under `$HOME` that may contain a global rule file.
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
 enum GlobalRuleSource {
     /// `~/.agents/AGENTS.md`.
     Agents,
@@ -36,11 +38,6 @@ enum GlobalRuleSource {
 
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 impl GlobalRuleSource {
-    /// Iterates every known global rule source.
-    fn iter() -> impl Iterator<Item = Self> {
-        [Self::Agents].into_iter()
-    }
-
     /// Display name (used in safe logs that don't expose user paths).
     fn name(self) -> &'static str {
         match self {
@@ -814,14 +811,6 @@ impl ProjectContextModel {
         for source in GlobalRuleSource::iter() {
             let subdir_path = home_dir.join(source.home_subdir());
 
-            let subdir_added =
-                fs_event.added.contains(&subdir_path) || fs_event.moved.contains_key(&subdir_path);
-            if subdir_added {
-                self.register_global_source_watcher(source, &subdir_path, ctx);
-                let target_file = subdir_path.join(source.file_pattern());
-                Self::spawn_global_rule_read(target_file, ctx);
-            }
-
             let subdir_deleted = fs_event.deleted.contains(&subdir_path)
                 || fs_event.moved.values().any(|v| v == &subdir_path);
             if subdir_deleted {
@@ -840,6 +829,14 @@ impl ProjectContextModel {
                     ));
                 }
             }
+
+            let subdir_added =
+                fs_event.added.contains(&subdir_path) || fs_event.moved.contains_key(&subdir_path);
+            if subdir_added {
+                self.register_global_source_watcher(source, &subdir_path, ctx);
+                let target_file = subdir_path.join(source.file_pattern());
+                Self::spawn_global_rule_read(target_file, ctx);
+            }
         }
     }
 
@@ -847,13 +844,8 @@ impl ProjectContextModel {
     /// root above `path` actually contributes a rule — globals are
     /// deliberately ignored.
     ///
-    /// Use this for callers that read "do we have rules for this repo?" as a
-    /// project-initialization signal (for example the `/init` flow's
-    /// `should_have_available_steps` check, or the code-review empty
-    /// state's "Repo is initialized with a WARP.md file" hint). Mixing
-    /// global fallbacks into that signal would make every repo look
-    /// initialized as soon as the user drops a single `~/.agents/AGENTS.md`,
-    /// which is the wrong product behavior.
+    /// Use this for callers that need a project-initialization signal rather
+    /// than the full rule context sent to agents.
     pub fn find_applicable_project_rules(&self, path: &Path) -> Option<ProjectRulesResult> {
         let mut current_path = path.to_owned();
 
