@@ -386,12 +386,15 @@ pub enum RemoteServerManagerEvent {
         /// detection itself failed.
         has_old_binary: bool,
     },
-    /// Result of [`RemoteServerManager::install_binary`]. Returns a result where:
-    /// - `Ok(method)` means the install succeeded via the given [`InstallSource`], and
-    /// - `Err(_)` means the install failed and carries the failure reason (SSH error, timeout, script error, etc.).
+    /// Result of [`RemoteServerManager::install_binary`].
     BinaryInstallComplete {
         session_id: SessionId,
-        result: Result<InstallSource, Arc<Error>>,
+        /// Whether the install succeeded or failed.
+        result: Result<(), Arc<Error>>,
+        /// Which install path was attempted (`Server` for remote download,
+        /// `Client` for SCP upload). `None` if the path could not be
+        /// determined before the failure.
+        install_source: Option<InstallSource>,
     },
 
     // --- Telemetry events ---
@@ -679,10 +682,10 @@ impl RemoteServerManager {
             let spawner = self.spawner.clone();
             ctx.background_executor()
                 .spawn(async move {
-                    let result = transport.install_binary().await;
+                    let outcome = transport.install_binary().await;
                     let _ = spawner
                         .spawn(move |_me, ctx| {
-                            if let Err(error) = &result {
+                            if let Err(error) = &outcome.result {
                                 ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
                                     session_id,
                                     state: RemoteServerSetupState::Failed {
@@ -692,7 +695,8 @@ impl RemoteServerManager {
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryInstallComplete {
                                 session_id,
-                                result: result.map_err(Arc::new),
+                                result: outcome.result.map_err(Arc::new),
+                                install_source: outcome.source,
                             });
                         })
                         .await;

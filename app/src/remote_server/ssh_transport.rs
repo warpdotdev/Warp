@@ -19,7 +19,7 @@ use remote_server::setup::{
     parse_uname_output, remote_server_daemon_dir, PreinstallCheckResult, RemotePlatform,
 };
 use remote_server::ssh::{ssh_args, SshCommandError};
-use remote_server::transport::{Connection, Error, InstallSource, RemoteTransport};
+use remote_server::transport::{Connection, Error, InstallOutcome, InstallSource, RemoteTransport};
 
 /// SSH transport: connects via a ControlMaster socket.
 ///
@@ -192,39 +192,43 @@ impl RemoteTransport for SshTransport {
         })
     }
 
-    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<InstallSource, Error>> + Send>> {
+    fn install_binary(&self) -> Pin<Box<dyn Future<Output = InstallOutcome> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
-            let script = remote_server::setup::install_script(None);
             log::info!(
                 "Installing remote server binary to {}",
                 remote_server::setup::remote_server_binary()
             );
-            match remote_server::ssh::run_ssh_script(
-                &socket_path,
-                &script,
-                remote_server::setup::INSTALL_TIMEOUT,
-            )
-            .await
-            {
-                Ok(output) if output.status.success() => Ok(InstallSource::Server),
-                Ok(output)
-                    if output.status.code()
-                        == Some(remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE) =>
-                {
-                    log::info!("Remote server has no curl/wget, falling back to SCP upload");
-                    scp_install_fallback(&socket_path)
-                        .await
-                        .map(|()| InstallSource::Client)
-                        .map_err(Error::Other)
+            match install_on_server(&socket_path).await {
+                Ok(()) => InstallOutcome {
+                    source: Some(InstallSource::Server),
+                    result: Ok(()),
+                },
+                Err(server_err) => {
+                    let should_try_scp = matches!(
+                        server_err,
+                        Error::ScriptFailed { exit_code, .. }
+                            if exit_code == remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE
+                    );
+                    if should_try_scp {
+                        log::info!("Remote server has no curl/wget, falling back to SCP upload");
+                        match scp_install_fallback(&socket_path).await {
+                            Ok(()) => InstallOutcome {
+                                source: Some(InstallSource::Client),
+                                result: Ok(()),
+                            },
+                            Err(e) => InstallOutcome {
+                                source: Some(InstallSource::Client),
+                                result: Err(Error::Other(e)),
+                            },
+                        }
+                    } else {
+                        InstallOutcome {
+                            source: Some(InstallSource::Server),
+                            result: Err(server_err),
+                        }
+                    }
                 }
-                Ok(output) => {
-                    let exit_code = output.status.code().unwrap_or(-1);
-                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    Err(Error::ScriptFailed { exit_code, stderr })
-                }
-                Err(SshCommandError::TimedOut { .. }) => Err(Error::TimedOut),
-                Err(e) => Err(Error::Other(e.into())),
             }
         })
     }
@@ -309,6 +313,28 @@ impl RemoteTransport for SshTransport {
             // No exit status available — optimistically allow reconnect.
             None => true,
         }
+    }
+}
+
+/// Runs the install script on the remote host to download and install
+/// the binary directly from the CDN.
+async fn install_on_server(socket_path: &Path) -> Result<(), Error> {
+    let script = remote_server::setup::install_script(None);
+    match remote_server::ssh::run_ssh_script(
+        socket_path,
+        &script,
+        remote_server::setup::INSTALL_TIMEOUT,
+    )
+    .await
+    {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => {
+            let exit_code = output.status.code().unwrap_or(-1);
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(Error::ScriptFailed { exit_code, stderr })
+        }
+        Err(SshCommandError::TimedOut { .. }) => Err(Error::TimedOut),
+        Err(e) => Err(Error::Other(e.into())),
     }
 }
 

@@ -34,6 +34,17 @@ pub enum InstallSource {
     Client,
 }
 
+/// Result of [`RemoteTransport::install_binary`], bundling the install
+/// result with the source that was attempted. The source is always set
+/// once the install path is determined, regardless of whether the
+/// install succeeded or failed.
+pub struct InstallOutcome {
+    /// Which install path was attempted.
+    pub source: Option<InstallSource>,
+    /// Whether the install succeeded.
+    pub result: Result<(), Error>,
+}
+
 /// Structured error for user-facing display in the SSH remote-server
 /// failed banner. Separates the always-visible body from an optional set of
 /// details.
@@ -222,9 +233,9 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// ([`RemoteServerManager::install_binary`]) is responsible for emitting
     /// [`SetupStateChanged`] and [`BinaryInstallComplete`].
     ///
-    /// Returns `Ok(method)` with the [`InstallSource`] used on success,
-    /// and `Err(_)` if the install failed (e.g. timeout or script error).
-    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<InstallSource, Error>> + Send>>;
+    /// Returns an [`InstallOutcome`] containing the install result and
+    /// the [`InstallSource`] that was attempted (if known).
+    fn install_binary(&self) -> Pin<Box<dyn Future<Output = InstallOutcome> + Send>>;
 
     /// Establish a new connection to the remote server.
     ///

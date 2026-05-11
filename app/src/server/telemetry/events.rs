@@ -2808,8 +2808,6 @@ pub enum TelemetryEvent {
     /// `error` is `None` on success, `Some(reason)` on failure.
     RemoteServerInstallation {
         error: Option<String>,
-        /// How the binary was installed: `"on_server"` (remote download)
-        /// or `"on_client"` (local download + SCP upload). `None` on failure.
         install_source: Option<remote_server::transport::InstallSource>,
         remote_os: Option<String>,
         remote_arch: Option<String>,
