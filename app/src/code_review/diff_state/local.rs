@@ -1906,7 +1906,14 @@ impl LocalDiffStateModel {
 
         // Skip files that have no actual changes (empty hunks and not binary)
         // Also skip files with no additions or deletions (no real changes) except for renamed or new files.
-        if !is_binary
+        //
+        // Trust `file_diff.is_binary` (post-call truth) rather than the caller's
+        // upstream guess: the staged-then-reverted fallback inside
+        // `get_file_diff` (see #10512) can promote a file to binary when the
+        // staged content is binary even though the caller probed the worktree
+        // as text. Filtering on the caller's value here would silently drop
+        // such files.
+        if !file_diff.is_binary
             && (file_diff.hunks.is_empty() || file_diff.is_empty())
             && !status.is_renamed()
             && !status.is_new_file()

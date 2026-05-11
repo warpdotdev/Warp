@@ -374,6 +374,42 @@ async fn diff_state_against_head_surfaces_staged_then_reverted_file() {
 
 #[cfg(feature = "local_fs")]
 #[tokio::test]
+async fn retrieve_diff_state_keeps_binary_staged_then_reverted_file() {
+    // Regression for the Oz review on #10512: the per-file invalidation
+    // path (`retrieve_diff_state` → `file_diff_for_path`) used the caller's
+    // upstream `is_binary` probe to decide whether to drop empty-hunk
+    // files. When the staged-then-reverted fallback inside `get_file_diff`
+    // detects that the *staged* content is binary, it returns
+    // `is_binary: true` with empty hunks — but the caller-side filter saw
+    // `!is_binary` and dropped the file entirely. The filter must trust
+    // `file_diff.is_binary`, the post-call truth.
+    let dir = init_repo_with_initial_commit("foo.txt", "v1\n").await;
+    let repo = dir.path();
+
+    // Stage a binary blob, then revert the worktree back to text v1.
+    let binary_payload: Vec<u8> = (0..256u16).map(|b| (b & 0xff) as u8).collect();
+    std::fs::write(repo.join("foo.txt"), &binary_payload).expect("write binary");
+    run_git(repo, &["add", "foo.txt"]).await;
+    std::fs::write(repo.join("foo.txt"), "v1\n").expect("revert worktree");
+
+    let abs_path = repo.join("foo.txt");
+    let (relative, diff) =
+        LocalDiffStateModel::retrieve_diff_state(repo, &abs_path, &DiffMode::Head, None)
+            .await
+            .expect("retrieve_diff_state");
+
+    assert_eq!(relative, std::path::PathBuf::from("foo.txt"));
+    let diff = diff.expect(
+        "binary-staged-then-reverted file must not be filtered out by the per-file invalidation path",
+    );
+    assert!(
+        diff.file_diff.is_binary,
+        "expected staged-binary fallback to surface as is_binary=true"
+    );
+}
+
+#[cfg(feature = "local_fs")]
+#[tokio::test]
 async fn diff_state_against_head_uses_worktree_when_worktree_diverges_from_index() {
     // Control case: distinguishes the primary path from the fallback by
     // staging v2, then editing the worktree to v3 *without* re-staging.
