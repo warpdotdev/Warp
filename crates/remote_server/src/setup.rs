@@ -270,7 +270,7 @@ pub fn parse_uname_output(
     };
 
     let arch = match arch_str {
-        "x86_64" => RemoteArch::X86_64,
+        "x86_64" | "amd64" => RemoteArch::X86_64,
         "aarch64" | "arm64" | "armv8l" => RemoteArch::Aarch64,
         other => {
             return Err(Error::UnsupportedArch {

@@ -120,9 +120,9 @@ impl ActionButtonTheme for CloseButtonTheme {
         &self,
         _hovered: bool,
         _background: Option<Fill>,
-        appearance: &Appearance,
+        _appearance: &Appearance,
     ) -> ColorU {
-        appearance.theme().foreground().into_solid()
+        ColorU::white()
     }
 }
 

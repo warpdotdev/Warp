@@ -19,7 +19,7 @@ use remote_server::setup::{
     parse_uname_output, remote_server_daemon_dir, PreinstallCheckResult, RemotePlatform,
 };
 use remote_server::ssh::{ssh_args, SshCommandError};
-use remote_server::transport::{Connection, Error, RemoteTransport};
+use remote_server::transport::{Connection, Error, InstallOutcome, InstallSource, RemoteTransport};
 
 /// SSH transport: connects via a ControlMaster socket.
 ///
@@ -147,6 +147,8 @@ impl RemoteTransport for SshTransport {
             // exit (e.g. SSH exit 255 for a dead connection, or signal
             // termination) is treated as a transport-level failure.
             let code = output.status.code();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            log::info!("Binary check result: exit={code:?} stdout={stdout}");
             match code {
                 Some(0) => Ok(true),
                 Some(126) | Some(127) => Ok(false),
@@ -196,69 +198,74 @@ impl RemoteTransport for SshTransport {
         })
     }
 
-    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>> {
+    fn install_binary(&self) -> Pin<Box<dyn Future<Output = InstallOutcome> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let binary_path = remote_server::setup::remote_server_binary();
-            let script = remote_server::setup::install_script(None);
             log::info!("Installing remote server binary to {binary_path}");
-            match remote_server::ssh::run_ssh_script(
-                &socket_path,
-                &script,
-                remote_server::setup::INSTALL_TIMEOUT,
-            )
-            .await
-            {
-                Ok(output) if output.status.success() => {}
-                Ok(output) => {
-                    let exit_code = output.status.code().unwrap_or(-1);
-                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    if should_skip_scp_fallback(exit_code) {
-                        return Err(Error::ScriptFailed { exit_code, stderr });
+            let mut outcome = match install_on_server(&socket_path).await {
+                Ok(()) => InstallOutcome {
+                    source: Some(InstallSource::Server),
+                    result: Ok(()),
+                },
+                Err(server_err) => {
+                    let should_try_scp = !should_skip_scp_fallback(&server_err);
+
+                    if should_try_scp {
+                        log::info!("Remote server has no curl/wget, falling back to SCP upload");
+                        match scp_install_fallback(&socket_path).await {
+                            Ok(()) => InstallOutcome {
+                                source: Some(InstallSource::Client),
+                                result: Ok(()),
+                            },
+                            Err(e) => InstallOutcome {
+                                source: Some(InstallSource::Client),
+                                result: Err(Error::Other(e)),
+                            },
+                        }
+                    } else {
+                        InstallOutcome {
+                            source: Some(InstallSource::Server),
+                            result: Err(server_err),
+                        }
                     }
-                    log::info!(
-                        "Install script failed (exit {exit_code}), falling back to SCP upload"
-                    );
-                    scp_install_fallback(&socket_path)
-                        .await
-                        .map_err(Error::Other)?;
                 }
-                Err(SshCommandError::TimedOut { .. }) => {
-                    log::info!("Install script timed out, falling back to SCP upload");
-                    scp_install_fallback(&socket_path)
-                        .await
-                        .map_err(Error::Other)?;
-                }
-                Err(e) => return Err(Error::Other(e.into())),
-            }
+            };
 
             // Post-install verification: confirm the binary actually
             // landed at the expected path and is functional. This catches
             // silent install failures (e.g. tilde-expansion bugs) that
             // would otherwise surface as a cryptic "Response channel
             // closed" error during the IPC handshake.
-            log::info!("Running post-install verification for {binary_path}");
-            let check_cmd = remote_server::setup::binary_check_command();
-            let verify = remote_server::ssh::run_ssh_command(
-                &socket_path,
-                &check_cmd,
-                remote_server::setup::CHECK_TIMEOUT,
-            )
-            .await;
-            match verify {
-                Ok(output) if output.status.success() => Ok(()),
-                Ok(output) => {
-                    let code = output.status.code().unwrap_or(-1);
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    Err(Error::Other(anyhow::anyhow!(
-                        "Post-install verification failed: binary not found or not \
-                         executable at {binary_path} (exit {code}): {stderr}"
-                    )))
+            if outcome.result.is_ok() {
+                log::info!("Running post-install verification for {binary_path}");
+                let check_cmd = remote_server::setup::binary_check_command();
+                let verify = remote_server::ssh::run_ssh_command(
+                    &socket_path,
+                    &check_cmd,
+                    remote_server::setup::CHECK_TIMEOUT,
+                )
+                .await;
+                match verify {
+                    Ok(output) if output.status.success() => {}
+                    Ok(output) => {
+                        let code = output.status.code().unwrap_or(-1);
+                        let stderr =
+                            String::from_utf8_lossy(&output.stderr).trim().to_string();
+                        outcome.result = Err(Error::Other(anyhow::anyhow!(
+                            "Post-install verification failed: binary not found or not \
+                             executable at {binary_path} (exit {code}): {stderr}"
+                        )));
+                    }
+                    Err(e) => {
+                        outcome.result = Err(Error::Other(anyhow::anyhow!(
+                            "Post-install verification failed: {e}"
+                        )));
+                    }
                 }
-                Err(e) => Err(Error::Other(anyhow::anyhow!(
-                    "Post-install verification failed: {e}"
-                ))),
             }
+
+            outcome
         })
     }
 
@@ -347,14 +354,29 @@ impl RemoteTransport for SshTransport {
 
 /// Exit codes where SCP fallback would not help because the failure
 /// is on the remote host itself (not a network/download issue).
-fn should_skip_scp_fallback(exit_code: i32) -> bool {
-    match exit_code {
-        // Unsupported arch/OS — SCP won't change the architecture
-        2 => true,
-        // All other exit codes (curl failures, wget failures, unknown errors)
-        // should trigger SCP fallback since the issue is likely the remote
-        // host's inability to reach the CDN.
-        _ => false,
+fn should_skip_scp_fallback(error: &Error) -> bool {
+    matches!(error, Error::ScriptFailed { exit_code , .. }     if *exit_code == remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE)
+}
+
+/// Runs the install script on the remote host to download and install
+/// the binary directly from the CDN.
+async fn install_on_server(socket_path: &Path) -> Result<(), Error> {
+    let script = remote_server::setup::install_script(None);
+    match remote_server::ssh::run_ssh_script(
+        socket_path,
+        &script,
+        remote_server::setup::INSTALL_TIMEOUT,
+    )
+    .await
+    {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => {
+            let exit_code = output.status.code().unwrap_or(-1);
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(Error::ScriptFailed { exit_code, stderr })
+        }
+        Err(SshCommandError::TimedOut { .. }) => Err(Error::TimedOut),
+        Err(e) => Err(Error::Other(e.into())),
     }
 }
 

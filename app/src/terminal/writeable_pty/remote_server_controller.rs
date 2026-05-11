@@ -121,7 +121,11 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                     ctx,
                 );
             }
-            RemoteServerManagerEvent::BinaryInstallComplete { session_id, result } => {
+            RemoteServerManagerEvent::BinaryInstallComplete {
+                session_id,
+                result,
+                install_source: _,
+            } => {
                 me.on_binary_install_complete(*session_id, result.clone(), ctx);
             }
             RemoteServerManagerEvent::SessionConnected { session_id, .. } => {

@@ -14,8 +14,8 @@ pub mod task;
 pub mod telemetry;
 
 pub use task::{
-    cancel_task_with_toast, AgentConfigSnapshot, AgentSource, AmbientAgentTask,
-    AmbientAgentTaskState, TaskStatusMessage,
+    cancel_task_silently, cancel_task_with_toast, AgentConfigSnapshot, AgentSource,
+    AmbientAgentTask, AmbientAgentTaskState, TaskStatusMessage,
 };
 pub const OUT_OF_CREDITS_TASK_FAILURE_MESSAGE: &str =
     "Out of credits. Upgrade your Warp plan to continue running cloud agents.";
