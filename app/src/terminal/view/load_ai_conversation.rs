@@ -936,52 +936,6 @@ impl TerminalView {
                          RequestCommandOutput (msg_id: {msg_id:?}, action_id: {id:?}). \
                          Command blocks should be pre-inserted via to_serialized_blocklist_items."
                     );
-
-                    // Defensive fallback: look up the result and create the block without timestamps.
-                    let cmd_result =
-                        BlocklistAIHistoryModel::handle(ctx).read(ctx, |history_model, _| {
-                            history_model
-                                .conversation(&conversation_id)
-                                .and_then(|conversation| {
-                                    let tool_call_id = conversation
-                                        .all_tasks()
-                                        .filter_map(|task| task.source())
-                                        .find_map(|api_task| {
-                                            api_task
-                                                .messages
-                                                .iter()
-                                                .find(|m| m.id == **msg_id)
-                                                .and_then(|m| m.tool_call())
-                                                .map(|tc| tc.tool_call_id.clone())
-                                        })?;
-                                    conversation
-                                        .find_run_shell_command_result(&tool_call_id)
-                                        .map(|(result, _)| result)
-                                })
-                        });
-                    if let Some(cmd_result) = cmd_result {
-                        if let Some(api::run_shell_command_result::Result::CommandFinished(
-                            api::ShellCommandFinished {
-                                output: command_output,
-                                exit_code,
-                                ..
-                            },
-                        )) = &cmd_result.result
-                        {
-                            let mut model = self.model.lock();
-                            let block_list = model.block_list_mut();
-                            block_list.create_restored_command_block(
-                                command,
-                                command_output,
-                                ai_block.current_working_directory().cloned(),
-                                *exit_code,
-                                Some(id.clone()),
-                                Some(conversation_id),
-                                None,
-                                None,
-                            );
-                        }
-                    }
                 }
                 _ => {}
             }

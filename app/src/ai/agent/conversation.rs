@@ -3156,8 +3156,8 @@ impl AIConversation {
         };
 
         // Build a map from message ID to exchange for timestamp lookups.
-        // The exchange's start_time (derived from CurrentTime input context) is used as
-        // the completed_ts for command blocks whose tool call result is in that exchange.
+        // The exchange's start_time (derived from CurrentTime input context) is combined with
+        // the result message proto ts to pick the earlier time as completed_ts for RunShellCommand blocks.
         let message_id_to_exchange: HashMap<&str, &AIAgentExchange> = self
             .all_exchanges()
             .into_iter()
@@ -3248,7 +3248,6 @@ impl AIConversation {
                 {
                     let tool_call_id = &tool_call.tool_call_id;
                     let command = &run_cmd.command;
-                    log::info!("Found run shell command {tool_call_id:?} {command:?}");
 
                     // Find the corresponding tool call result in this message set.
                     if let Some((cmd_result, result_message_id, result_proto_ts)) =
@@ -3268,7 +3267,7 @@ impl AIConversation {
                             if !finished_command_id.is_empty() {
                                 seen_command_ids.insert(finished_command_id.clone());
                             }
-                            log::info!("Found run shell command result for tool call {tool_call_id:?} {command:?}");
+
                             // start_ts: tool call message's proto timestamp.
                             // This should always be populated.
                             let start_ts = message
@@ -3281,18 +3280,21 @@ impl AIConversation {
                                 );
                             }
 
-                            // completed_ts: prefer the exchange start_time of the exchange
-                            // containing the result message. This is derived from the CurrentTime
-                            // input context and is a better proxy for "command finished" than the
-                            // result message's proto timestamp. Fall back to result proto ts.
-                            let exchange_start_time = message_id_to_exchange
+                            // completed_ts: the earlier of (1) the exchange start_time for the
+                            // exchange containing the result message (from CurrentTime input
+                            // context) and (2) the result message's proto timestamp. Use whichever
+                            // side is present when only one exists.
+                            let exchange_ts = message_id_to_exchange
                                 .get(*result_message_id)
                                 .map(|exchange| exchange.start_time);
-                            let completed_ts = message_id_to_exchange
-                                .get(*result_message_id)
-                                .map(|exchange| exchange.start_time)
-                                .or(*result_proto_ts);
-                            log::info!("Timestamp for tool call {tool_call_id:?} {command:?} is {start_ts:?} {completed_ts:?}. Exchange start time is {exchange_start_time:?}. Result proto ts is {result_proto_ts:?}.");
+                            let completed_ts = match (*result_proto_ts, exchange_ts) {
+                                (Some(proto_ts), Some(exchange_ts)) => {
+                                    Some(proto_ts.min(exchange_ts))
+                                }
+                                (Some(proto_ts), None) => Some(proto_ts),
+                                (None, Some(exchange_ts)) => Some(exchange_ts),
+                                (None, None) => None,
+                            };
 
                             command_blocks.push(CommandBlockInfo {
                                 command: command.clone(),
@@ -3318,8 +3320,6 @@ impl AIConversation {
                                 completed_ts,
                             });
                         }
-                    } else {
-                        log::warn!("No run shell command result found for tool call {tool_call_id:?} {command:?}");
                     }
                 }
             }
