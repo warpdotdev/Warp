@@ -169,3 +169,7 @@ impl GlobalDiffStateModel {
         self.pending_responses.remove(key).unwrap_or_default()
     }
 }
+
+#[cfg(test)]
+#[path = "diff_state_tracker_tests.rs"]
+mod tests;
