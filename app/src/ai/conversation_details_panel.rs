@@ -419,7 +419,12 @@ impl ConversationDetailsData {
                     .then(|| task.status_message.as_ref().map(|m| m.message.clone()))
                     .flatten()
             });
-            let credits = task.and_then(AmbientAgentTask::credits_used);
+            // Fall back to the entry's denormalized total when the task record isn't
+            // currently loaded, so the panel stays consistent with the card metadata
+            // (which always reads `entry.display.request_usage`).
+            let credits = task
+                .and_then(AmbientAgentTask::credits_used)
+                .or(entry.display.request_usage);
             let skill_spec = task
                 .and_then(|task| task.agent_config_snapshot.as_ref())
                 .and_then(|config| config.skill_spec.as_ref())

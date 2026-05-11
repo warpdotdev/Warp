@@ -10,7 +10,7 @@ mod utils;
 mod wasm;
 
 #[cfg(all(test, not(target_family = "wasm")))]
-mod utils_test;
+mod utils_tests;
 
 #[cfg(not(target_family = "wasm"))]
 use diesel::SqliteConnection;
