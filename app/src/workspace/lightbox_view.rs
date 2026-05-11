@@ -88,6 +88,16 @@ pub enum LightboxViewAction {
     /// implements `Debug` cleanly without an extra impl on the wrapping
     /// type.
     Pan { offset_x: f32, offset_y: f32 },
+    /// GH9729 §698 / t2-21: zoom in (or back to native) and re-center
+    /// on the supplied tap location. `tap_offset_from_center_*` is the
+    /// click position relative to viewport center. Combined into one
+    /// action (vs separate ZoomIn + Pan) so the pan calculation runs
+    /// against the same `zoom_factor` it's being applied with — splitting
+    /// it would compute pan against the post-zoom value and miscenter.
+    DoubleTapZoom {
+        tap_offset_from_center_x: f32,
+        tap_offset_from_center_y: f32,
+    },
 }
 
 /// A view that renders a full-window lightbox overlay.
@@ -252,6 +262,49 @@ impl LightboxView {
             }
         }
     }
+}
+
+/// GH9729 §698 / t2-21: compute the `(zoom_factor, pan_offset)` to
+/// apply when the user double-taps on the image.
+///
+/// **Toggle behaviour** — macOS Preview / iOS Photos convention:
+///   * If currently zoomed in (`zoom > 1.0`): zoom back to `1.0` and
+///     reset pan to centred. Tap position is irrelevant.
+///   * Otherwise: zoom to `DOUBLE_TAP_TARGET_ZOOM` (2.0×) and shift
+///     the pan so the tapped point lands at viewport centre.
+///
+/// **Centering math** — for the tap at viewport-center-relative
+/// offset `tap`, the image-coordinate of the tapped point is
+/// `(tap - pan_old) / s_old`. After zooming to `s_new`, the tapped
+/// point's screen offset from the new image centre is
+/// `(tap - pan_old) * (s_new / s_old)`. To land at viewport centre,
+/// the image centre must be at `-((tap - pan_old) * (s_new / s_old))`
+/// from viewport centre:
+///
+/// ```text
+///     pan_new = -tap * (s_new / s_old) + pan_old * (s_new / s_old)
+/// ```
+///
+/// Visible image pan is clamped by `lightbox::PanClippedImage` at
+/// paint time; this helper returns the unclamped value so the
+/// stored model state stays accurate for subsequent drag deltas.
+fn double_tap_zoom_target(
+    zoom_old: f32,
+    pan_old: pathfinder_geometry::vector::Vector2F,
+    tap_offset_from_center: pathfinder_geometry::vector::Vector2F,
+) -> (f32, pathfinder_geometry::vector::Vector2F) {
+    use pathfinder_geometry::vector::Vector2F;
+    if !zoom_old.is_finite() || zoom_old <= 0.0 {
+        return (1.0, Vector2F::zero());
+    }
+    // Toggle: any non-native zoom returns to native; native zooms in.
+    if zoom_old > 1.0 {
+        return (1.0, Vector2F::zero());
+    }
+    let zoom_new = lightbox::DOUBLE_TAP_TARGET_ZOOM;
+    let scale_ratio = zoom_new / zoom_old;
+    let pan_new = -tap_offset_from_center * scale_ratio + pan_old * scale_ratio;
+    (zoom_new, pan_new)
 }
 
 /// GH9729 §699 + t2-11: format the lightbox status-footer string for an
@@ -463,6 +516,15 @@ impl View for LightboxView {
                             offset_y: new_offset.y(),
                         });
                     })),
+                    // GH9729 §698 / t2-21: route double-tap-on-image
+                    // through the same action dispatch so the zoom +
+                    // pan transition is atomic at the model layer.
+                    on_double_tap_zoom: Some(Arc::new(|tap_offset, ctx, _| {
+                        ctx.dispatch_typed_action(LightboxViewAction::DoubleTapZoom {
+                            tap_offset_from_center_x: tap_offset.x(),
+                            tap_offset_from_center_y: tap_offset.y(),
+                        });
+                    })),
                 },
             },
         )
@@ -525,6 +587,22 @@ impl TypedActionView for LightboxView {
                 let next = vec2f(*offset_x, *offset_y);
                 if next.x().is_finite() && next.y().is_finite() && next != self.pan_offset {
                     self.pan_offset = next;
+                    ctx.notify();
+                }
+            }
+            LightboxViewAction::DoubleTapZoom {
+                tap_offset_from_center_x,
+                tap_offset_from_center_y,
+            } => {
+                let tap = vec2f(*tap_offset_from_center_x, *tap_offset_from_center_y);
+                if !tap.x().is_finite() || !tap.y().is_finite() {
+                    return;
+                }
+                let (next_zoom, next_pan) =
+                    double_tap_zoom_target(self.zoom_factor, self.pan_offset, tap);
+                if next_zoom != self.zoom_factor || next_pan != self.pan_offset {
+                    self.zoom_factor = next_zoom;
+                    self.pan_offset = next_pan;
                     ctx.notify();
                 }
             }
@@ -627,6 +705,70 @@ mod tests {
             z = super::step_zoom(z, super::ZoomDirection::Out);
         }
         assert_eq!(z, lightbox::MIN_ZOOM_FACTOR);
+    }
+
+    #[test]
+    fn double_tap_zoom_from_native_targets_2x_and_centers_on_tap() {
+        // GH9729 t2-21: at native zoom, double-tap should zoom to
+        // DOUBLE_TAP_TARGET_ZOOM (2.0) and re-center on the tap.
+        // Tap 100 px left of viewport center → image must shift +200
+        // (rightward) so the tapped point lands at viewport center.
+        let (zoom, pan) = super::double_tap_zoom_target(
+            1.0,
+            pathfinder_geometry::vector::Vector2F::zero(),
+            pathfinder_geometry::vector::vec2f(-100.0, 0.0),
+        );
+        assert_eq!(zoom, lightbox::DOUBLE_TAP_TARGET_ZOOM);
+        assert!((pan.x() - 200.0).abs() < f32::EPSILON);
+        assert!(pan.y().abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn double_tap_zoom_returns_to_native_when_zoomed_in() {
+        // Toggle behaviour: any zoom > 1.0 → back to 1.0 with pan
+        // reset to zero, tap location ignored (at native zoom, pan is
+        // meaningless because image fits viewport).
+        let (zoom, pan) = super::double_tap_zoom_target(
+            3.0,
+            pathfinder_geometry::vector::vec2f(50.0, 75.0),
+            pathfinder_geometry::vector::vec2f(123.0, 456.0),
+        );
+        assert_eq!(zoom, 1.0);
+        assert_eq!(pan, pathfinder_geometry::vector::Vector2F::zero());
+    }
+
+    #[test]
+    fn double_tap_zoom_preserves_existing_pan_under_scale() {
+        // Already at 0.5x with pan (40, -20). Double-tap from a
+        // non-native shrunk state should zoom to TARGET (2.0) and
+        // apply the centering math against the OLD zoom.
+        let (zoom, pan) = super::double_tap_zoom_target(
+            0.5,
+            pathfinder_geometry::vector::vec2f(40.0, -20.0),
+            pathfinder_geometry::vector::vec2f(10.0, 10.0),
+        );
+        assert_eq!(zoom, lightbox::DOUBLE_TAP_TARGET_ZOOM);
+        // scale_ratio = 2.0 / 0.5 = 4.0.
+        // pan_new = -tap * 4 + pan_old * 4 = (-10, -10)*4 + (40, -20)*4
+        //         = (-40, -40) + (160, -80) = (120, -120).
+        assert!((pan.x() - 120.0).abs() < f32::EPSILON);
+        assert!((pan.y() - (-120.0)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn double_tap_zoom_sanitises_non_positive_zoom() {
+        // Defensive: pathological zoom_old (≤ 0 or non-finite) must
+        // collapse to the safe default (native, no pan) rather than
+        // dividing by zero or propagating NaN into pan_offset.
+        for bad in [0.0f32, -1.0, f32::NAN, f32::INFINITY] {
+            let (zoom, pan) = super::double_tap_zoom_target(
+                bad,
+                pathfinder_geometry::vector::Vector2F::zero(),
+                pathfinder_geometry::vector::vec2f(50.0, 50.0),
+            );
+            assert_eq!(zoom, 1.0, "bad zoom_old={bad} should reset to 1.0");
+            assert_eq!(pan, pathfinder_geometry::vector::Vector2F::zero());
+        }
     }
 
     #[test]

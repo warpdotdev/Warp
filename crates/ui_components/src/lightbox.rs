@@ -79,6 +79,8 @@ struct PanClippedImage {
     pan_offset: Vector2F,
     on_pan: Option<Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>>,
     on_zoom: Option<ZoomHandler>,
+    on_double_tap_zoom:
+        Option<Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>>,
 
     origin: Option<Point>,
     viewport_size: Option<Vector2F>,
@@ -97,6 +99,9 @@ impl PanClippedImage {
         pan_offset: Vector2F,
         on_pan: Option<Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>>,
         on_zoom: Option<ZoomHandler>,
+        on_double_tap_zoom: Option<
+            Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>,
+        >,
         drag_state: Arc<Mutex<Option<Vector2F>>>,
     ) -> Self {
         Self {
@@ -105,6 +110,7 @@ impl PanClippedImage {
             pan_offset,
             on_pan,
             on_zoom,
+            on_double_tap_zoom,
             origin: None,
             viewport_size: None,
             drag_state,
@@ -203,9 +209,32 @@ impl Element for PanClippedImage {
         app: &AppContext,
     ) -> bool {
         match event.raw_event() {
-            Event::LeftMouseDown { position, .. } if self.point_in_viewport(*position) => {
-                // Start tracking drag in shared state; consume so the
-                // scrim's Dismiss doesn't fire on the same down event.
+            Event::LeftMouseDown {
+                click_count,
+                position,
+                ..
+            } if self.point_in_viewport(*position) => {
+                // GH9729 t2-21: double-click = zoom-and-center on tap.
+                // Skip drag-tracking so the second-click's drag delta
+                // doesn't pan the image during the gesture.
+                if *click_count >= 2 {
+                    if let (Some(origin), Some(viewport)) =
+                        (self.origin, self.viewport_size)
+                    {
+                        let viewport_center = origin.xy() + viewport * 0.5;
+                        let tap_offset = *position - viewport_center;
+                        if let Some(cb) = self.on_double_tap_zoom.as_ref() {
+                            cb(tap_offset, ctx, app);
+                        }
+                    }
+                    if let Ok(mut state) = self.drag_state.lock() {
+                        *state = None;
+                    }
+                    return true;
+                }
+                // Single click: start tracking drag in shared state;
+                // consume so the scrim's Dismiss doesn't fire on the
+                // same down event.
                 if let Ok(mut state) = self.drag_state.lock() {
                     *state = Some(*position);
                 }
@@ -314,11 +343,18 @@ pub const MIN_ZOOM_FACTOR: f32 = 0.25;
 /// cost grows quadratically.
 pub const MAX_ZOOM_FACTOR: f32 = 8.0;
 
-/// GH9729 §698: multiplicative step applied per zoom-in / zoom-out
-/// keystroke. `1.5` reaches `MAX_ZOOM_FACTOR = 8.0` in five `+` presses
-/// and `MIN_ZOOM_FACTOR = 0.25` in four `-` presses from the
-/// `1.0` default.
-pub const ZOOM_STEP: f32 = 1.5;
+/// GH9729 §698 / t2-21: multiplicative step applied per zoom-in /
+/// zoom-out button click. `1.25` matches the macOS Preview /
+/// Safari / Chrome cmd-+ convention. At this step,
+/// `MAX_ZOOM_FACTOR = 8.0` is reached in ~10 `+` clicks and
+/// `MIN_ZOOM_FACTOR = 0.25` in ~7 `-` clicks from the `1.0` default.
+pub const ZOOM_STEP: f32 = 1.25;
+
+/// GH9729 §698 / t2-21: target zoom for the double-tap-to-zoom
+/// gesture. macOS Preview and iOS Photos use the same convention —
+/// double-tap zooms to a fixed multiple of native size, second
+/// double-tap returns to native. `2.0` is the established target.
+pub const DOUBLE_TAP_TARGET_ZOOM: f32 = 2.0;
 
 /// Spacing between the image/loading area and the description text.
 const DESCRIPTION_SPACING: f32 = 12.;
@@ -505,6 +541,14 @@ pub struct Options {
     /// drag-to-pan is disabled and mouse-down on the image just stops
     /// scrim-dismiss as before.
     pub on_pan: Option<Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>>,
+
+    /// GH9729 §698 / t2-21: handler invoked when the user double-taps
+    /// inside the image. Called with the tap position **relative to
+    /// viewport center** (so the caller can compute a re-centering
+    /// pan_offset against any zoom factor). If `None`, double-tap
+    /// is ignored and the second click just resumes drag tracking.
+    pub on_double_tap_zoom:
+        Option<Arc<dyn Fn(Vector2F, &mut EventContext, &AppContext)>>,
 }
 
 impl crate::Options for Options {
@@ -514,6 +558,7 @@ impl crate::Options for Options {
             on_navigate: None,
             on_zoom: None,
             on_pan: None,
+            on_double_tap_zoom: None,
         }
     }
 }
@@ -585,6 +630,7 @@ impl Component for Lightbox {
                         params.pan_offset,
                         params.options.on_pan.clone(),
                         params.options.on_zoom.clone(),
+                        params.options.on_double_tap_zoom.clone(),
                         self.drag_state.clone(),
                     ))
                 }

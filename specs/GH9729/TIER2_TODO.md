@@ -75,6 +75,16 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-20.** Fix t2-19 pan-state persistence. t2-19 shipped the
+       PanClippedImage element but stored `last_drag_position` as a
+       plain struct field on the (per-render) element — every
+       `Pan` action's `ctx.notify()` rebuilt the element with a fresh
+       `None` state, so consecutive drag events lost their context
+       and dragging produced one imperceptible step then froze. Move
+       drag state to `Arc<Mutex<Option<Vector2F>>>` on the
+       *persistent* `Lightbox` struct (same pattern `Button` uses
+       for its `MouseStateHandle`). State now survives re-renders.
+       — `tech.md` §698.
 - [x] **t2-19.** Custom `PanClippedImage` element. Finally fixes the
        t2-7-r1 gotcha that has dogged every zoom iteration since t2-7:
        framework's `ConstrainedBox::layout` won't let a child exceed
@@ -222,6 +232,7 @@ Hard rules:
 | t2-17 | warn-level logs + tighter gaps | `dff6822` | [x] | [ ] | [ ] |
 | t2-18 | remove diagnostic logs | `45ccfe2` | [x] | [ ] | [ ] |
 | t2-19 | custom PanClippedImage element | `67f014b` | [x] | [ ] | [ ] |
+| t2-20 | pan state on persistent struct | `c102817` | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
