@@ -731,12 +731,15 @@ pub fn render_citation(
 /// dropdown for the `ask_user_question` permission, and a right-aligned
 /// "Manage AI Autonomy permissions" link. Matches the visual rhythm of
 /// [`render_autonomy_checkbox_setting_speedbump_footer`].
-pub fn render_autonomy_dropdown_setting_speedbump_footer(
+pub fn render_autonomy_dropdown_setting_speedbump_footer<A>(
     description: &'static str,
-    dropdown: &warpui::ViewHandle<crate::view_components::dropdown::Dropdown<super::AIBlockAction>>,
+    dropdown: &warpui::ViewHandle<crate::view_components::dropdown::Dropdown<A>>,
     settings_link_handle: MouseStateHandle,
     app: &AppContext,
-) -> Box<dyn Element> {
+) -> Box<dyn Element>
+where
+    A: warpui::Action + Clone,
+{
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
     Flex::row()

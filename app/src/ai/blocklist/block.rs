@@ -111,7 +111,6 @@ use crate::util::openable_file_type::{is_supported_image_file, FileTarget};
 use crate::view_components::action_button::ActionButton;
 use crate::view_components::action_button::ButtonSize;
 use crate::view_components::action_button::KeystrokeSource;
-use crate::view_components::dropdown::{Dropdown, DropdownItem};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::Appearance;
 use crate::LLMPreferences;
@@ -133,7 +132,7 @@ use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::button::TextAndIcon;
 use warpui::ui_components::button::TextAndIconAlignment;
 use warpui::ui_components::components::UiComponent;
-use warpui::ui_components::components::{Coords, UiComponentStyles};
+use warpui::ui_components::components::UiComponentStyles;
 
 use crate::util::link_detection::*;
 use chrono::Duration;
@@ -173,7 +172,6 @@ use crate::ai::blocklist::permissions::{
 use crate::ai::blocklist::suggestion_chip_view::{SuggestedChipViewEvent, SuggestionChipView};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDocumentVersion};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::ai::execution_profiles::AskUserQuestionPermission;
 use crate::ai::get_relevant_files::controller::{
     GetRelevantFilesController, GetRelevantFilesControllerEvent,
 };
@@ -521,19 +519,6 @@ pub enum AutonomySettingSpeedbump {
         /// Set at render-time.
         shown: Arc<Mutex<bool>>,
     },
-}
-
-#[derive(Clone)]
-pub(crate) struct AskUserQuestionSpeedbumpFooter {
-    pub dropdown: ViewHandle<Dropdown<AIBlockAction>>,
-    pub settings_link_handle: MouseStateHandle,
-}
-
-fn first_ask_user_question_action_id(output: &AIAgentOutput) -> Option<AIAgentActionId> {
-    output.actions().find_map(|action| {
-        matches!(action.action, AIAgentActionType::AskUserQuestion { .. })
-            .then(|| action.id.clone())
-    })
 }
 
 /// State for the todo list preview element in the AI block.
@@ -992,9 +977,6 @@ pub struct AIBlock {
     terminal_view_handle: WeakViewHandle<TerminalView>,
 
     ask_user_question_view: Option<ViewHandle<AskUserQuestionView>>,
-
-    /// Kept on the block so the dropdown's event subscription survives re-renders.
-    ask_user_question_speedbump_dropdown: Option<ViewHandle<Dropdown<AIBlockAction>>>,
 }
 
 struct EmbeddedCodeEditorView {
@@ -1105,7 +1087,12 @@ impl AIBlock {
         });
 
         ctx.subscribe_to_model(&AIExecutionProfilesModel::handle(ctx), |me, _, _, ctx| {
-            me.refresh_ask_user_question_speedbump_dropdown_selection(ctx);
+            let terminal_view_id = me.terminal_view_id;
+            if let Some(view) = me.ask_user_question_view.clone() {
+                view.update(ctx, |v, ctx| {
+                    v.refresh_speedbump_dropdown_selection(terminal_view_id, ctx);
+                });
+            }
         });
 
         let detected_links_state: DetectedLinksState = Default::default();
@@ -1427,7 +1414,6 @@ impl AIBlock {
             resolved_blocklist_image_sources: Default::default(),
             terminal_view_handle,
             ask_user_question_view: None,
-            ask_user_question_speedbump_dropdown: None,
         };
         me.run_secret_redaction_on_user_query(me.client_ids.conversation_id, ctx);
         me.spawn_link_detection(ctx);
@@ -2571,45 +2557,44 @@ impl AIBlock {
             }
         }
 
-        for action_id in output.actions().filter_map(|action| {
-            let should_show_file_access_speedbump =
-                action.is_get_specific_files() || action.is_grep() || action.is_file_glob();
-            should_show_file_access_speedbump.then_some(&action.id)
-        }) {
-            if is_agent_mode_autonomy_allowed(ctx)
-                && *AISettings::as_ref(ctx).should_show_agent_mode_autoread_files_speedbump
-            {
-                // Try to show the speedbump for autoread files setting
-                // if we haven't shown it enough before.
-                self.autonomy_setting_speedbump =
-                    AutonomySettingSpeedbump::ShouldShowForFileAccess {
-                        action_id: action_id.clone(),
-                        checked: true,
-                        shown: Arc::new(Mutex::new(false)),
-                    };
-                // Mark the speedbump as shown in settings so that we do not render it again.
-                AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
-                    if let Err(err) = ai_settings
-                        .should_show_agent_mode_autoread_files_speedbump
-                        .set_value(false, ctx)
-                    {
-                        log::warn!("Error with marking autoread files speedbump as shown {err}");
-                    }
-                })
-            }
-        }
-
         // One-shot flag is consumed only after the footer is attached, so restored
         // blocks and views that haven't arrived yet don't burn the flag.
-        if !self.model.is_restored()
-            && FeatureFlag::AskUserQuestion.is_enabled()
-            && is_agent_mode_autonomy_allowed(ctx)
-            && *AISettings::as_ref(ctx).should_show_agent_mode_ask_user_question_speedbump
-        {
-            if let Some(action_id) = first_ask_user_question_action_id(output) {
+        for action in output.actions() {
+            let is_file_access =
+                action.is_get_specific_files() || action.is_grep() || action.is_file_glob();
+            if is_file_access {
+                if is_agent_mode_autonomy_allowed(ctx)
+                    && *AISettings::as_ref(ctx).should_show_agent_mode_autoread_files_speedbump
+                {
+                    // Try to show the speedbump for autoread files setting
+                    // if we haven't shown it enough before.
+                    self.autonomy_setting_speedbump =
+                        AutonomySettingSpeedbump::ShouldShowForFileAccess {
+                            action_id: action.id.clone(),
+                            checked: true,
+                            shown: Arc::new(Mutex::new(false)),
+                        };
+                    // Mark the speedbump as shown in settings so that we do not render it again.
+                    AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
+                        if let Err(err) = ai_settings
+                            .should_show_agent_mode_autoread_files_speedbump
+                            .set_value(false, ctx)
+                        {
+                            log::warn!(
+                                "Error with marking autoread files speedbump as shown {err}"
+                            );
+                        }
+                    })
+                }
+            } else if matches!(action.action, AIAgentActionType::AskUserQuestion { .. })
+                && !self.model.is_restored()
+                && FeatureFlag::AskUserQuestion.is_enabled()
+                && is_agent_mode_autonomy_allowed(ctx)
+                && *AISettings::as_ref(ctx).should_show_agent_mode_ask_user_question_speedbump
+            {
                 self.autonomy_setting_speedbump =
                     AutonomySettingSpeedbump::ShouldShowForAskUserQuestion {
-                        action_id: action_id.clone(),
+                        action_id: action.id.clone(),
                         shown: Arc::new(Mutex::new(false)),
                     };
                 if self.sync_ask_user_question_speedbump_footer(ctx) {
@@ -3442,68 +3427,6 @@ impl AIBlock {
         ctx.notify();
     }
 
-    fn ensure_ask_user_question_speedbump_dropdown(
-        &mut self,
-        ctx: &mut ViewContext<Self>,
-    ) -> ViewHandle<Dropdown<AIBlockAction>> {
-        if let Some(view) = self.ask_user_question_speedbump_dropdown.as_ref() {
-            return view.clone();
-        }
-        let view = ctx.add_typed_action_view(|ctx| {
-            let dropdown_font_size = Appearance::as_ref(ctx).monospace_font_size() - 1.;
-            let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_font_size(dropdown_font_size, ctx);
-            dropdown.set_padding(
-                Coords {
-                    top: 2.,
-                    bottom: 2.,
-                    left: 8.,
-                    right: 8.,
-                },
-                ctx,
-            );
-            dropdown.set_vertical_margin(0., ctx);
-            dropdown.set_top_bar_height(24., ctx);
-            let permissions = [
-                AskUserQuestionPermission::Never,
-                AskUserQuestionPermission::AskExceptInAutoApprove,
-                AskUserQuestionPermission::AlwaysAsk,
-            ];
-            dropdown.set_items(
-                permissions
-                    .into_iter()
-                    .map(|p| {
-                        DropdownItem::new(
-                            p.label(),
-                            AIBlockAction::SetAskUserQuestionSpeedbumpPermission(p),
-                        )
-                    })
-                    .collect(),
-                ctx,
-            );
-            dropdown
-        });
-        self.ask_user_question_speedbump_dropdown = Some(view.clone());
-        self.refresh_ask_user_question_speedbump_dropdown_selection(ctx);
-        view
-    }
-
-    fn refresh_ask_user_question_speedbump_dropdown_selection(
-        &mut self,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let Some(dropdown) = self.ask_user_question_speedbump_dropdown.clone() else {
-            return;
-        };
-        let permission = AIExecutionProfilesModel::as_ref(ctx)
-            .active_profile(Some(self.terminal_view_id), ctx)
-            .data()
-            .ask_user_question;
-        dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_selected_by_name(permission.label(), ctx);
-        });
-    }
-
     /// Attaches the footer to the view if the speedbump variant matches. Called from
     /// both the variant-seeding and view-creation paths.
     fn sync_ask_user_question_speedbump_footer(&mut self, ctx: &mut ViewContext<Self>) -> bool {
@@ -3516,7 +3439,6 @@ impl AIBlock {
                 if action_id == view.as_ref(ctx).action_id()
         );
         if speedbump_matches {
-            let dropdown = self.ensure_ask_user_question_speedbump_dropdown(ctx);
             let settings_link_handle = self
                 .state_handles
                 .ask_user_question_speedbump_settings_link_handle
@@ -3526,14 +3448,11 @@ impl AIBlock {
             {
                 *shown.lock() = true;
             }
+            let terminal_view_id = self.terminal_view_id;
             view.update(ctx, |view, ctx| {
-                view.set_speedbump_footer(
-                    Some(AskUserQuestionSpeedbumpFooter {
-                        dropdown,
-                        settings_link_handle,
-                    }),
-                    ctx,
-                );
+                view.set_speedbump_settings_link(Some(settings_link_handle), ctx);
+                view.init_speedbump_dropdown(ctx);
+                view.refresh_speedbump_dropdown_selection(terminal_view_id, ctx);
             });
             true
         } else {
@@ -3557,6 +3476,25 @@ impl AIBlock {
 
         match event {
             AskUserQuestionViewEvent::Updated => {
+                ctx.notify();
+            }
+            AskUserQuestionViewEvent::SpeedbumpPermissionChanged(permission) => {
+                let permission = *permission;
+                let profile_id = *AIExecutionProfilesModel::as_ref(ctx)
+                    .active_profile(Some(self.terminal_view_id), ctx)
+                    .id();
+                AIExecutionProfilesModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.set_ask_user_question(profile_id, permission, ctx);
+                });
+                send_telemetry_from_ctx!(
+                    TelemetryEvent::ChangedAgentModeAskUserQuestionPermission {
+                        src: AutonomySettingToggleSource::Speedbump,
+                        new: permission,
+                    },
+                    ctx
+                );
+                Self::mark_ask_user_question_speedbump_as_shown(ctx);
+                self.autonomy_setting_speedbump = AutonomySettingSpeedbump::None;
                 ctx.notify();
             }
         }
@@ -5881,7 +5819,6 @@ pub enum AIBlockAction {
     ToggleAutoreadFilesSpeedbumpCheckbox,
     ToggleAwsBedrockAutoLogin,
     ToggleCodebaseSearchSpeedbump(Option<usize>),
-    SetAskUserQuestionSpeedbumpPermission(AskUserQuestionPermission),
     StartNewConversationButtonClicked {
         action_id: AIAgentActionId,
         server_output_id: Option<ServerOutputId>,
@@ -6282,25 +6219,6 @@ impl TypedActionView for AIBlock {
                         }
                     });
                 }
-            }
-            AIBlockAction::SetAskUserQuestionSpeedbumpPermission(permission) => {
-                let permission = *permission;
-                let profile_id = *AIExecutionProfilesModel::as_ref(ctx)
-                    .active_profile(Some(self.terminal_view_id), ctx)
-                    .id();
-                AIExecutionProfilesModel::handle(ctx).update(ctx, |model, ctx| {
-                    model.set_ask_user_question(profile_id, permission, ctx);
-                });
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::ChangedAgentModeAskUserQuestionPermission {
-                        src: AutonomySettingToggleSource::Speedbump,
-                        new: permission,
-                    },
-                    ctx
-                );
-                Self::mark_ask_user_question_speedbump_as_shown(ctx);
-                self.autonomy_setting_speedbump = AutonomySettingSpeedbump::None;
-                ctx.notify();
             }
             AIBlockAction::StartNewConversationButtonClicked {
                 action_id,

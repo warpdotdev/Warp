@@ -1,10 +1,5 @@
-use super::first_ask_user_question_action_id;
 use super::{received_message_collapsible_id, CollapsibleElementState, CollapsibleExpansionState};
-use crate::ai::agent::task::TaskId;
-use crate::ai::agent::{
-    AIAgentAction, AIAgentActionId, AIAgentActionType, AIAgentOutput, AIAgentOutputMessage,
-    AIAgentOutputMessageType, MessageId, StartAgentExecutionMode,
-};
+use crate::ai::agent::StartAgentExecutionMode;
 use crate::ai::blocklist::action_model::{
     compose_run_agents_child_prompt, run_agents_to_start_agent_mode,
 };
@@ -15,23 +10,6 @@ use ai::skills::SkillReference;
 use settings::Setting;
 use std::path::PathBuf;
 use warpui::{App, SingletonEntity};
-
-fn test_action(action_id: &str, action: AIAgentActionType) -> AIAgentAction {
-    AIAgentAction {
-        id: AIAgentActionId::from(action_id.to_string()),
-        action,
-        task_id: TaskId::new(format!("task-{action_id}")),
-        requires_result: false,
-    }
-}
-
-fn action_message(message_id: &str, action: AIAgentAction) -> AIAgentOutputMessage {
-    AIAgentOutputMessage {
-        id: MessageId::new(message_id.to_string()),
-        message: AIAgentOutputMessageType::Action(action),
-        citations: vec![],
-    }
-}
 
 #[test]
 fn reasoning_auto_collapses_when_user_has_not_manually_toggled() {
@@ -240,51 +218,6 @@ fn remote_arm_rejects_opencode() {
     )
     .expect_err("Remote+opencode must be rejected");
     assert!(err.to_lowercase().contains("opencode"));
-}
-
-#[test]
-fn first_ask_user_question_action_id_returns_first_ask_action() {
-    let output = AIAgentOutput {
-        messages: vec![
-            action_message(
-                "init-project",
-                test_action("init-project", AIAgentActionType::InitProject),
-            ),
-            action_message(
-                "ask-1",
-                test_action(
-                    "ask-1",
-                    AIAgentActionType::AskUserQuestion { questions: vec![] },
-                ),
-            ),
-            action_message(
-                "ask-2",
-                test_action(
-                    "ask-2",
-                    AIAgentActionType::AskUserQuestion { questions: vec![] },
-                ),
-            ),
-        ],
-        ..Default::default()
-    };
-
-    assert_eq!(
-        first_ask_user_question_action_id(&output),
-        Some(AIAgentActionId::from("ask-1".to_string()))
-    );
-}
-
-#[test]
-fn first_ask_user_question_action_id_returns_none_without_ask_action() {
-    let output = AIAgentOutput {
-        messages: vec![action_message(
-            "init-project",
-            test_action("init-project", AIAgentActionType::InitProject),
-        )],
-        ..Default::default()
-    };
-
-    assert_eq!(first_ask_user_question_action_id(&output), None);
 }
 
 #[test]
