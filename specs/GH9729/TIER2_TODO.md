@@ -75,6 +75,15 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-13.** Polish the t2-12 zoom toolbar after manual feedback:
+       (a) Zoom-in `+` button doesn't fire on click — likely a Flex-row
+       inside `add_positioned_child` hit-test routing issue, so
+       restructure to three individually positioned buttons (mirroring
+       the existing prev/next button placement pattern). (b) Replace
+       the silly `Icon::Refresh` reset glyph with a text `100%` label
+       button. (c) Make the reset button disabled when
+       `zoom_factor == 1.0` (no-op state). — supplements `tech.md`
+       §698.
 - [x] **t2-12.** GUI zoom controls. Manual test revealed
        `cmdorctrl-=` from t2-11 does NOT shadow the workspace
        font-zoom binding in practice — pressing cmd-= zooms the
@@ -143,6 +152,7 @@ Hard rules:
 | t2-10 | sync-`FailedToLoad` rewrite | `af7d5f5` | [x] | [x] | [x] |
 | t2-11 | zoom keys + visual indicator | `9b51d44` | [x] | [x] | [x] |
 | t2-12 | GUI zoom buttons + scroll-zoom | `65b2f56` | [x] | [x] | [x] |
+| t2-13 | toolbar polish + fix + button | `a655650` | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not

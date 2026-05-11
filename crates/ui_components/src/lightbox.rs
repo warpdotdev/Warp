@@ -15,9 +15,21 @@ use crate::{Component, Options as _, button};
 /// Padding between the scrim edge and the image.
 const SCRIM_PADDING: f32 = 48.;
 
-/// GH9729 §698 / t2-12: horizontal spacing between the three zoom
-/// toolbar buttons.
-const ZOOM_TOOLBAR_SPACING: f32 = 8.;
+/// GH9729 §698 / t2-13: horizontal slot width for each zoom toolbar
+/// button, including the gap between buttons. The buttons are
+/// positioned individually (one `add_positioned_child` call each)
+/// rather than via a shared `Flex::row` wrapper because the t2-12
+/// Flex layout caused the rightmost button's click to not fire —
+/// suspected hit-test routing bug when multiple children share one
+/// positioned parent. Width is an approximation calibrated for
+/// `Button::Size::Small` with a `Label("100%")` middle slot; needs
+/// re-tuning if a future icon set changes the rendered button width.
+const ZOOM_BUTTON_SLOT_WIDTH: f32 = 56.;
+
+/// GH9729 §698 / t2-13: inset for buttons anchored to a scrim corner
+/// (close button top-right, zoom toolbar bottom-left). One source of
+/// truth so the corners stay symmetric.
+const SCRIM_BUTTON_INSET: f32 = 12.;
 
 /// GH9729 §698 / t2-12: scroll-delta magnitude below which a
 /// cmd+scroll event is treated as a no-op. Stops trackpad jitter at
@@ -405,7 +417,7 @@ impl Component for Lightbox {
         content.add_positioned_child(
             close_button,
             OffsetPositioning::offset_from_parent(
-                vec2f(-12., 12.),
+                vec2f(-SCRIM_BUTTON_INSET, SCRIM_BUTTON_INSET),
                 ParentOffsetBounds::Unbounded,
                 ParentAnchor::TopRight,
                 ChildAnchor::TopRight,
@@ -473,11 +485,22 @@ impl Component for Lightbox {
             }
         }
 
-        // GH9729 §698 / t2-12: zoom toolbar in the bottom-left corner —
-        // three small icon buttons for zoom-out / reset / zoom-in.
-        // Only rendered when the caller supplied an `on_zoom` handler
-        // (so test surfaces and read-only previews can opt out).
+        // GH9729 §698 / t2-13: zoom toolbar — three buttons in the
+        // bottom-left corner, positioned individually rather than via a
+        // shared `Flex::row` wrapper (t2-12 used a Flex wrapper inside
+        // `add_positioned_child`; manual test surfaced that the
+        // rightmost button's click never fired, suspected hit-test
+        // routing bug when multiple children share one positioned
+        // parent). Mirrors the existing prev/next button placement —
+        // each button is its own positioned child.
+        //
+        // Reset uses a text "100%" label rather than the silly
+        // `Icon::Refresh` glyph from t2-12, and is disabled when the
+        // image is already at native size (`zoom_factor == 1.0`) so
+        // the user gets a clear visual signal that there's nothing to
+        // reset.
         if let Some(on_zoom) = params.options.on_zoom {
+            let zoom = params.zoom_factor;
             let on_zoom_out = on_zoom.clone();
             let zoom_out_button = self.zoom_out_button.render(
                 appearance,
@@ -497,10 +520,11 @@ impl Component for Lightbox {
             let zoom_reset_button = self.zoom_reset_button.render(
                 appearance,
                 button::Params {
-                    content: button::Content::Icon(Icon::Refresh),
+                    content: button::Content::Label("100%".into()),
                     theme: &button::themes::Secondary,
                     options: button::Options {
                         size: button::Size::Small,
+                        disabled: zoom == 1.0,
                         on_click: Some(Box::new(move |ctx, app, _| {
                             on_zoom_reset(ZoomDirection::Reset, ctx, app);
                         })),
@@ -524,16 +548,38 @@ impl Component for Lightbox {
                 },
             );
 
-            let toolbar = Flex::row()
-                .with_spacing(ZOOM_TOOLBAR_SPACING)
-                .with_child(zoom_out_button)
-                .with_child(zoom_reset_button)
-                .with_child(zoom_in_button)
-                .finish();
+            // Each button sits independently at the bottom-left, offset
+            // rightward by an accumulating step so they appear in a
+            // visible row without depending on Flex layout. The step
+            // size (`ZOOM_BUTTON_SLOT_WIDTH`) is an approximation that
+            // accommodates Button::Size::Small icon + label widths; on
+            // a future tighter layout pass it could be replaced with a
+            // hit-test-correct flex wrapper.
             content.add_positioned_child(
-                toolbar,
+                zoom_out_button,
                 OffsetPositioning::offset_from_parent(
-                    vec2f(12., -12.),
+                    vec2f(SCRIM_BUTTON_INSET, -SCRIM_BUTTON_INSET),
+                    ParentOffsetBounds::Unbounded,
+                    ParentAnchor::BottomLeft,
+                    ChildAnchor::BottomLeft,
+                ),
+            );
+            content.add_positioned_child(
+                zoom_reset_button,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(SCRIM_BUTTON_INSET + ZOOM_BUTTON_SLOT_WIDTH, -SCRIM_BUTTON_INSET),
+                    ParentOffsetBounds::Unbounded,
+                    ParentAnchor::BottomLeft,
+                    ChildAnchor::BottomLeft,
+                ),
+            );
+            content.add_positioned_child(
+                zoom_in_button,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(
+                        SCRIM_BUTTON_INSET + 2. * ZOOM_BUTTON_SLOT_WIDTH,
+                        -SCRIM_BUTTON_INSET,
+                    ),
                     ParentOffsetBounds::Unbounded,
                     ParentAnchor::BottomLeft,
                     ChildAnchor::BottomLeft,
