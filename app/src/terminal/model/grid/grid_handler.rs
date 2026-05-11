@@ -958,11 +958,11 @@ impl GridHandler {
             };
             let row_length = grid_row.line_length();
             let cols = if row == start_row && row == end_row {
-                start.col..end.col.min(row_length)
+                start.col..end.col.saturating_add(1).min(row_length)
             } else if row == start_row {
                 start.col..row_length
             } else if row == end_row {
-                0..end.col.min(row_length)
+                0..end.col.saturating_add(1).min(row_length)
             } else {
                 0..row_length
             };

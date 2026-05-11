@@ -770,9 +770,19 @@ pub(super) async fn run_step(
                             },
                             step_data_map,
                         );
-                        let modifiers = crate::event::ModifiersState {
-                            cmd: true,
-                            ..Default::default()
+                        // Match `should_directly_open_link`: Cmd on macOS,
+                        // Ctrl on Linux/Windows so the synthetic click
+                        // exercises the platform-correct direct-open shortcut.
+                        let modifiers = if OperatingSystem::get().is_mac() {
+                            crate::event::ModifiersState {
+                                cmd: true,
+                                ..Default::default()
+                            }
+                        } else {
+                            crate::event::ModifiersState {
+                                ctrl: true,
+                                ..Default::default()
+                            }
                         };
                         let mouse_down = Event::LeftMouseDown {
                             position: center,
