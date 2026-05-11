@@ -52,6 +52,7 @@ use crate::terminal::model::blocks::{insert_block, TotalIndex};
 use crate::terminal::model::grid::Dimensions as _;
 use crate::terminal::model::terminal_model::WithinBlock;
 use crate::terminal::session_settings::AgentToolbarChipSelection;
+use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent;
 use crate::terminal::CLIAgent;
 
@@ -645,8 +646,6 @@ fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
 
 #[test]
 fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
-    use crate::terminal::shared_session::SharedSessionStatus;
-
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         FeatureFlag::AgentView.set_enabled(true);
@@ -669,6 +668,151 @@ fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
             assert!(!view.agent_view_controller().as_ref(ctx).is_active());
             view.handle_action(&TerminalAction::SetInputModeAgent, ctx);
             assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+        });
+    });
+}
+
+#[test]
+fn cloud_mode_v1_agent_prefixed_query_spawns_cloud_agent() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_mode = FeatureFlag::AgentMode.override_enabled(true);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+        let _cloud_mode_input_v2 = FeatureFlag::CloudModeInputV2.override_enabled(false);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+        let input = terminal.read(&app, |view, _| view.input.clone());
+
+        input.update(&mut app, |input, ctx| {
+            input.ai_input_model().update(ctx, |ai_input, ctx| {
+                ai_input.set_input_config(
+                    InputConfig {
+                        input_type: InputType::AI,
+                        is_locked: false,
+                    },
+                    true,
+                    ctx,
+                );
+            });
+            assert!(!input.is_cloud_mode_input_v2_composing(ctx));
+            input.replace_buffer_content("/agent fix the tests", ctx);
+            input.input_enter(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let ambient_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .as_ref(ctx);
+            let request = ambient_model
+                .request()
+                .expect("enter should submit through the cloud agent spawn path");
+            assert_eq!(request.prompt, "/agent fix the tests");
+            assert_eq!(request.mode, UserQueryMode::Normal);
+            assert!(input.as_ref(ctx).buffer_text(ctx).is_empty());
+        });
+    });
+}
+
+#[test]
+fn cloud_mode_v2_agent_prefixed_query_spawns_cloud_agent() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_mode = FeatureFlag::AgentMode.override_enabled(true);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+        let _cloud_mode_input_v2 = FeatureFlag::CloudModeInputV2.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+        let input = terminal.read(&app, |view, _| view.input.clone());
+
+        input.update(&mut app, |input, ctx| {
+            assert!(input.is_cloud_mode_input_v2_composing(ctx));
+            input.replace_buffer_content("/agent fix the tests", ctx);
+            input.input_enter(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let ambient_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .as_ref(ctx);
+            let request = ambient_model
+                .request()
+                .expect("enter should submit through the cloud agent spawn path");
+            assert_eq!(request.prompt, "/agent fix the tests");
+            assert_eq!(request.mode, UserQueryMode::Normal);
+            assert!(input.as_ref(ctx).buffer_text(ctx).is_empty());
+        });
+    });
+}
+
+#[test]
+fn fresh_cloud_mode_setup_enters_agent_view_when_view_pending() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_status(SharedSessionStatus::ViewPending);
+
+            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+            view.enter_ambient_agent_setup(Some("write the tests".to_string()), ctx);
+
+            assert!(view.agent_view_controller().as_ref(ctx).is_active());
+            assert_eq!(view.input().as_ref(ctx).buffer_text(ctx), "write the tests");
+        });
+    });
+}
+
+#[test]
+fn cloud_mode_followup_input_uses_explicit_submit_event_even_when_view_pending() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _agent_mode = FeatureFlag::AgentMode.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+        let _handoff = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+        let _setup_v2 = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+        let task_id = AmbientAgentTaskId::from_str("123e4567-e89b-12d3-a456-426614174000")
+            .expect("valid task id");
+
+        let ambient_agent_view_model = terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_status(SharedSessionStatus::ViewPending);
+            view.pending_cloud_followup_task_id = Some(task_id);
+            let ambient_agent_view_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .clone();
+            ambient_agent_view_model.update(ctx, |model, ctx| {
+                model.enter_viewing_existing_session(task_id, ctx);
+            });
+
+            view.input().update(ctx, |input, ctx| {
+                input.set_input_mode_agent(true, ctx);
+                input.replace_buffer_content("follow up", ctx);
+                input.input_enter(ctx);
+            });
+            ambient_agent_view_model
+        });
+
+        terminal.read(&app, |_view, ctx| {
+            assert_eq!(
+                ambient_agent_view_model
+                    .as_ref(ctx)
+                    .pending_followup_prompt(),
+                Some("follow up")
+            );
         });
     });
 }

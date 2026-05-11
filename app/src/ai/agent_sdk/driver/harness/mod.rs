@@ -172,6 +172,7 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         prompt: &str,
         system_prompt: Option<&str>,
         resumption_prompt: Option<&str>,
+        context: Option<&str>,
         working_dir: &Path,
         task_id: Option<AmbientAgentTaskId>,
         server_api: Arc<ServerApi>,

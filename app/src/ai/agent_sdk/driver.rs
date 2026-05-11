@@ -1583,12 +1583,13 @@ impl AgentDriver {
             .map_err(|_| AgentDriverError::InvalidRuntimeState)
             .flatten()?;
 
-        let (prompt_text, system_prompt, resumption_prompt): (
+        let (prompt_text, system_prompt, resumption_prompt, server_context): (
             Cow<'_, str>,
             Option<String>,
             Option<String>,
+            Option<String>,
         ) = match prompt {
-            AgentRunPrompt::Local(text) => (Cow::Borrowed(text), None, None),
+            AgentRunPrompt::Local(text) => (Cow::Borrowed(text), None, None, None),
             AgentRunPrompt::ServerSide {
                 skill,
                 attachments_dir,
@@ -1612,6 +1613,7 @@ impl AgentDriver {
                     Cow::Owned(resolved.prompt),
                     resolved.system_prompt,
                     resolved.resumption_prompt,
+                    resolved.context,
                 )
             }
         };
@@ -1654,6 +1656,7 @@ impl AgentDriver {
                 prompt_text.as_ref(),
                 system_prompt.as_deref(),
                 resumption_prompt.as_deref(),
+                server_context.as_deref(),
                 &working_dir,
                 task_id,
                 server_api,

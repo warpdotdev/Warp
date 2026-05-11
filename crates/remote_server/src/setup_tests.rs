@@ -53,15 +53,23 @@ fn parse_uname_trims_whitespace() {
 #[test]
 fn parse_uname_unsupported_os() {
     let result = parse_uname_output("Windows x86_64");
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("unsupported OS"));
+    match result {
+        Err(crate::transport::Error::UnsupportedOs { os }) => {
+            assert_eq!(os, "Windows");
+        }
+        other => panic!("expected UnsupportedOs, got {other:?}"),
+    }
 }
 
 #[test]
 fn parse_uname_unsupported_arch() {
     let result = parse_uname_output("Linux mips");
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("unsupported arch"));
+    match result {
+        Err(crate::transport::Error::UnsupportedArch { arch }) => {
+            assert_eq!(arch, "mips");
+        }
+        other => panic!("expected UnsupportedArch, got {other:?}"),
+    }
 }
 
 #[test]
@@ -74,6 +82,23 @@ fn parse_uname_empty_output() {
 fn parse_uname_missing_arch() {
     let result = parse_uname_output("Linux");
     assert!(result.is_err());
+}
+#[test]
+fn remote_server_identity_data_dir_uses_encoded_identity_directory() {
+    let data_dir = remote_server_daemon_data_dir("user@example.com/ssh host");
+    assert_eq!(
+        data_dir,
+        format!(
+            "{}/user%40example%2Ecom%2Fssh%20host/data",
+            remote_server_dir()
+        )
+    );
+}
+
+#[test]
+fn remote_server_identity_data_dir_handles_empty_identity_key() {
+    let data_dir = remote_server_daemon_data_dir("");
+    assert_eq!(data_dir, format!("{}/empty/data", remote_server_dir()));
 }
 
 #[test]

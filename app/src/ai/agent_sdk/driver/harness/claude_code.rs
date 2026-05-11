@@ -96,6 +96,7 @@ impl ThirdPartyHarness for ClaudeHarness {
         prompt: &str,
         system_prompt: Option<&str>,
         resumption_prompt: Option<&str>,
+        context: Option<&str>,
         working_dir: &Path,
         task_id: Option<AmbientAgentTaskId>,
         server_api: Arc<ServerApi>,
@@ -116,11 +117,21 @@ impl ThirdPartyHarness for ClaudeHarness {
         // The ResumePayload shouldn't contain non-Claude information, error if it does.
         let claude_resume = resume.map(ClaudeResumeInfo::try_from).transpose()?;
         // Claude treats the user-turn message as immediate intent, so the resumption preamble
-        // is most reliable when prepended directly to the prompt that gets piped into the CLI.
-        let owned_prompt = match resumption_prompt {
-            Some(preamble) if !preamble.is_empty() => format!("{preamble}\n\n{prompt}"),
-            _ => prompt.to_string(),
-        };
+        // and server context are most reliable when prepended directly to the prompt that gets
+        // piped into the CLI. Order: resumption_prompt → context → prompt
+        let mut parts: Vec<&str> = Vec::new();
+        if let Some(preamble) = resumption_prompt {
+            if !preamble.is_empty() {
+                parts.push(preamble);
+            }
+        }
+        if let Some(ctx) = context {
+            if !ctx.is_empty() {
+                parts.push(ctx);
+            }
+        }
+        parts.push(prompt);
+        let owned_prompt = parts.join("\n\n");
         Ok(Box::new(ClaudeHarnessRunner::new(
             self.cli_agent().command_prefix(),
             &owned_prompt,

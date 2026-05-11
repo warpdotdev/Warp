@@ -20,6 +20,8 @@ use crate::ai::ambient_agents::{
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::TouchedWorkspace;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::PendingCloudLaunch;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
@@ -75,16 +77,17 @@ pub enum SessionStartupKind {
 /// Gates `submit_handoff` against double-submits.
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum HandoffSubmissionState {
+pub(crate) enum HandoffSubmissionState {
     #[default]
     Idle,
+    Queued,
     Starting,
 }
 
 /// Outcome of the chip-click async snapshot upload.
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum SnapshotUploadStatus {
+pub(crate) enum SnapshotUploadStatus {
     /// Upload is still in flight, or has not started yet.
     #[default]
     Pending,
@@ -100,10 +103,12 @@ pub enum SnapshotUploadStatus {
 
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 impl SnapshotUploadStatus {
-    /// True when the upload has settled successfully (uploaded or skipped).
-    /// Pending and Failed both block submit.
+    /// True when the upload has resolved to a final state. `Pending` blocks
+    /// submit; all other variants (including `Failed`) allow it to proceed.
+    /// On `Failed`, `initial_snapshot_token()` returns `None` so the cloud
+    /// run starts without a local file snapshot.
     fn is_settled(&self) -> bool {
-        matches!(self, Self::Uploaded(_) | Self::SkippedEmptyWorkspace)
+        !matches!(self, Self::Pending)
     }
 
     /// Returns the initial snapshot token to send on spawn, if any.
@@ -131,6 +136,12 @@ pub(crate) struct PendingHandoff {
     pub(crate) snapshot_upload: SnapshotUploadStatus,
     /// Gates submit — prevents double-submitting while the spawn is in flight.
     pub(crate) submission_state: HandoffSubmissionState,
+    /// When the user types `& query` or `/handoff query`, the launch payload is
+    /// stashed here so `maybe_auto_submit_handoff` can consume it once
+    /// the touched workspace and snapshot upload have settled.
+    pub(crate) auto_submit: Option<PendingCloudLaunch>,
+    /// Explicit source environment selection. When set, touched-repo overlap must not override it.
+    pub(crate) explicit_environment_id: Option<SyncId>,
 }
 
 /// Status of the ambient agent run.
@@ -492,7 +503,10 @@ impl AmbientAgentViewModel {
             };
             handoff.touched_workspace.is_some()
                 && handoff.snapshot_upload.is_settled()
-                && matches!(handoff.submission_state, HandoffSubmissionState::Idle)
+                && matches!(
+                    handoff.submission_state,
+                    HandoffSubmissionState::Idle | HandoffSubmissionState::Queued
+                )
         }
         #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
         {
@@ -531,6 +545,13 @@ impl AmbientAgentViewModel {
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
     }
 
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn pending_handoff_has_explicit_environment(&self) -> bool {
+        self.pending_handoff
+            .as_ref()
+            .is_some_and(|handoff| handoff.explicit_environment_id.is_some())
+    }
+
     /// Records the outcome of the async snapshot upload. The standard success
     /// case is `Uploaded(token)`; `SkippedEmptyWorkspace` when the workspace
     /// had nothing to upload; `Failed` is set by `record_handoff_snapshot_upload_failed`.
@@ -548,9 +569,9 @@ impl AmbientAgentViewModel {
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
     }
 
-    /// Records a snapshot upload failure on the pending handoff. Sets
-    /// `snapshot_upload` to `Failed` (so submit stays gated) and emits
-    /// `HandoffSnapshotUploadFailed` so the input layer can surface a user-visible toast.
+    /// Records a snapshot upload failure on the pending handoff. The run will
+    /// proceed without a local file snapshot (the cloud agent still has the
+    /// forked conversation context).
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn record_handoff_snapshot_upload_failed(
         &mut self,
@@ -562,6 +583,88 @@ impl AmbientAgentViewModel {
             ctx,
         );
         ctx.emit(AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { error_message });
+    }
+
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn build_handoff_spawn_request(
+        &self,
+        prompt: String,
+        attachments: Vec<AttachmentInput>,
+        forked_conversation_id: String,
+        initial_snapshot_token: Option<InitialSnapshotToken>,
+        ctx: &AppContext,
+    ) -> SpawnAgentRequest {
+        let config = Some(self.build_default_spawn_config(ctx));
+        let (prompt, mode) = extract_user_query_mode(prompt);
+        SpawnAgentRequest {
+            prompt,
+            mode,
+            config,
+            title: None,
+            team: None,
+            skill: None,
+            attachments,
+            interactive: None,
+            parent_run_id: None,
+            runtime_skills: vec![],
+            referenced_attachments: vec![],
+            conversation_id: Some(forked_conversation_id),
+            initial_snapshot_token,
+            agent_identity_uid: None,
+        }
+    }
+
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn queue_handoff_auto_submit(&mut self, ctx: &mut ModelContext<Self>) -> bool {
+        let Some((launch, forked_conversation_id)) = ({
+            let handoff = self.pending_handoff.as_mut();
+            handoff.and_then(|handoff| {
+                if !matches!(handoff.submission_state, HandoffSubmissionState::Idle) {
+                    return None;
+                }
+                let launch = handoff.auto_submit.as_ref()?.clone();
+                handoff.submission_state = HandoffSubmissionState::Queued;
+                Some((launch, handoff.forked_conversation_id.clone()))
+            })
+        }) else {
+            return false;
+        };
+
+        self.request = Some(self.build_handoff_spawn_request(
+            launch.prompt,
+            launch.attachments.request_attachments,
+            forked_conversation_id,
+            None,
+            ctx,
+        ));
+        self.status = Status::WaitingForSession {
+            progress: AgentProgress::new(),
+            kind: SessionStartupKind::InitialRun,
+        };
+        self.start_progress_timer(ctx);
+        ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+        ctx.emit(AmbientAgentViewModelEvent::DispatchedAgent);
+        true
+    }
+
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn maybe_auto_submit_handoff(
+        &mut self,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<PendingCloudLaunch> {
+        let handoff = self.pending_handoff.as_mut()?;
+        if handoff.touched_workspace.is_none()
+            || !handoff.snapshot_upload.is_settled()
+            || !matches!(
+                handoff.submission_state,
+                HandoffSubmissionState::Idle | HandoffSubmissionState::Queued
+            )
+        {
+            return None;
+        }
+        let launch = handoff.auto_submit.take()?;
+        ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+        Some(launch)
     }
 
     /// Whether the harness CLI has started running. Only meaningful for non-oz runs.
@@ -657,6 +760,19 @@ impl AmbientAgentViewModel {
     /// Whether or not the ambient agent is currently running.
     pub fn is_agent_running(&self) -> bool {
         matches!(self.status, Status::AgentRunning)
+    }
+
+    /// Returns true when an existing ambient task can accept a follow-up prompt.
+    ///
+    /// `AgentRunning` means this pane has moved past setup/composition into an ambient task view;
+    /// `active_execution_session_id` is the live-session signal. After a Cloud Mode execution ends,
+    /// the status stays `AgentRunning` while the active session is cleared, which is the editable
+    /// post-run state where follow-ups are allowed.
+    pub fn is_ready_for_cloud_followup_prompt(&self) -> bool {
+        self.task_id.is_some()
+            && self.active_execution_session_id.is_none()
+            && self.pending_followup_prompt.is_none()
+            && matches!(self.status, Status::AgentRunning)
     }
 
     /// Whether or not we should show a status footer (loading, error, auth, or cancelled).
@@ -1303,6 +1419,10 @@ impl AmbientAgentViewModel {
 
         self.status = Status::Cancelled { progress };
         self.pending_followup_prompt = None;
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        if let Some(handoff) = self.pending_handoff.as_mut() {
+            handoff.auto_submit = None;
+        }
 
         ctx.emit(AmbientAgentViewModelEvent::Cancelled);
     }
@@ -1342,26 +1462,13 @@ impl AmbientAgentViewModel {
         handoff.submission_state = HandoffSubmissionState::Starting;
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
 
-        // Build the spawn config so the env selector chip + `/plan` / `/orchestrate`
-        // mode prefix propagate into the request, matching a regular cloud-mode spawn.
-        let config = Some(self.build_default_spawn_config(ctx));
-        let (prompt, mode) = extract_user_query_mode(prompt);
-        let request = SpawnAgentRequest {
+        let request = self.build_handoff_spawn_request(
             prompt,
-            mode,
-            config,
-            title: None,
-            team: None,
-            skill: None,
             attachments,
-            interactive: None,
-            parent_run_id: None,
-            runtime_skills: vec![],
-            referenced_attachments: vec![],
-            conversation_id: Some(forked_conversation_id),
+            forked_conversation_id,
             initial_snapshot_token,
-            agent_identity_uid: None,
-        };
+            ctx,
+        );
         self.spawn_agent_with_request(request, ctx);
     }
 
@@ -1470,3 +1577,7 @@ pub enum AmbientAgentViewModelEvent {
 impl Entity for AmbientAgentViewModel {
     type Event = AmbientAgentViewModelEvent;
 }
+
+#[cfg(test)]
+#[path = "model_tests.rs"]
+mod tests;

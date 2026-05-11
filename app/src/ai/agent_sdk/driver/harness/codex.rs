@@ -80,6 +80,7 @@ impl ThirdPartyHarness for CodexHarness {
         prompt: &str,
         system_prompt: Option<&str>,
         resumption_prompt: Option<&str>,
+        context: Option<&str>,
         working_dir: &Path,
         _task_id: Option<AmbientAgentTaskId>,
         server_api: Arc<ServerApi>,
@@ -105,12 +106,22 @@ impl ThirdPartyHarness for CodexHarness {
         // The ResumePayload shouldn't contain non-Codex information, error if it does.
         let codex_resume = resume.map(CodexResumeInfo::try_from).transpose()?;
 
-        // Mirror Claude harness behavior: prepend the resumption preamble to
-        // the user-turn prompt so codex treats it as immediate intent.
-        let owned_prompt = match resumption_prompt {
-            Some(preamble) if !preamble.is_empty() => format!("{preamble}\n\n{prompt}"),
-            _ => prompt.to_string(),
-        };
+        // Mirror Claude harness behavior: prepend the resumption preamble and server context
+        // to the user-turn prompt so codex treats it as immediate intent.
+        // Order: resumption_prompt → context → prompt
+        let mut parts: Vec<&str> = Vec::new();
+        if let Some(preamble) = resumption_prompt {
+            if !preamble.is_empty() {
+                parts.push(preamble);
+            }
+        }
+        if let Some(ctx) = context {
+            if !ctx.is_empty() {
+                parts.push(ctx);
+            }
+        }
+        parts.push(prompt);
+        let owned_prompt = parts.join("\n\n");
         let client: Arc<dyn HarnessSupportClient> = server_api;
         Ok(Box::new(CodexHarnessRunner::new(
             self.cli_agent().command_prefix(),
@@ -653,6 +664,9 @@ fn set_codex_model(doc: &mut toml_edit::DocumentMut, third_party_harness_model_i
     let Some(model_id) =
         third_party_harness_model_id.filter(|id| !id.is_empty() && *id != "default")
     else {
+        // No model specified or "default" selected — remove any pre-existing
+        // key so Codex uses its own default.
+        doc.remove(CODEX_MODEL_KEY);
         return;
     };
     doc[CODEX_MODEL_KEY] = toml_edit::value(model_id);

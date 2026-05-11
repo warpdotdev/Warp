@@ -11,7 +11,9 @@ use warpui::{AppContext, Element, SingletonEntity};
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warpui::elements::FormattedTextElement;
 
-use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
+use crate::ai::agent::conversation::{
+    AIConversation, AIConversationId, ConversationStatus, StatusColorStyle,
+};
 use crate::ai::agent::{
     AIAgentActionId, AIAgentActionResultType, MessageId, ReceivedMessageDisplay,
     SendMessageToAgentResult, StartAgentExecutionMode, StartAgentResult,
@@ -554,7 +556,9 @@ pub(super) fn render_start_agent(
                     );
                     MouseStateHandle::default()
                 });
-            let status_icon = card_data.status.status_icon_and_color(theme);
+            let status_icon = card_data
+                .status
+                .status_icon_and_color(theme, StatusColorStyle::Standard);
             column.add_child(render_conversation_navigation_card_row(
                 &card_data.agent_name,
                 Some(&card_data.title),

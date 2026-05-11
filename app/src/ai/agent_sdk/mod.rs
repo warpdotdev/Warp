@@ -1600,6 +1600,9 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
                     success: finish_args.status == TaskStatus::Success,
                 }
             }
+            HarnessSupportCommand::ReportShutdown(_) => {
+                CliTelemetryEvent::HarnessSupportReportShutdown
+            }
         },
         CliCommand::Artifact(artifact_cmd) => match artifact_cmd {
             ArtifactCommand::Upload(_) => CliTelemetryEvent::ArtifactUpload,

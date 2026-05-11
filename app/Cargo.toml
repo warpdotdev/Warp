@@ -28,6 +28,11 @@ path = "src/bin/local.rs"
 test = false
 
 [[bin]]
+name = "integration"
+path = "src/bin/integration.rs"
+test = false
+
+[[bin]]
 name = "stable"
 path = "src/bin/stable.rs"
 test = false
@@ -203,6 +208,7 @@ toml_edit.workspace = true
 tracing.workspace = true
 ui_components.workspace = true
 unicase = "2.7.0"
+unicode-general-category.workspace = true
 unicode-width.workspace = true
 unindent = "0.1.7"
 url = { workspace = true, features = ["serde"] }
@@ -463,8 +469,6 @@ default = [
     "render_continuous_block_selections_with_single_border",
     "settings_import",
     "shared_with_me",
-    "remove_alt_screen_padding",
-    "less_horizontal_terminal_padding",
     "session_sharing_acls",
     "external_agent_mode_context",
     "shell_selector",
@@ -780,13 +784,11 @@ alacritty_settings_import = []
 shared_with_me = []
 ai_rules = []
 am_workflows = []
-less_horizontal_terminal_padding = []
 shell_selector = []
 shared_session_long_running_commands = []
 blocklist_markdown_table_rendering = []
 blocklist_markdown_images = []
 minimalist_ui = []
-remove_alt_screen_padding = []
 loginless_conversion = []
 external_agent_mode_context = []
 avatar_in_tab_bar = []
