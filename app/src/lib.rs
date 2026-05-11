@@ -434,7 +434,7 @@ impl LaunchMode {
             // RemoteServerProxy is a thin byte bridge; Sdk is the closest match.
             LaunchMode::RemoteServerProxy => ExecutionMode::Sdk,
             // RemoteServerDaemon gets its own mode for distinct Sentry tagging.
-            LaunchMode::RemoteServerDaemon { .. } => ExecutionMode::Daemon,
+            LaunchMode::RemoteServerDaemon { .. } => ExecutionMode::RemoteServerDaemon,
         }
     }
 
