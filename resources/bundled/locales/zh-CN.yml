@@ -202,6 +202,42 @@ zh-CN:
   context:
     view_pull_request: "查看 Pull Request"
 
+  # ── Warp Drive ──
+  drive:
+    import: "导入"
+    remove: "移除"
+    rename: "重命名"
+    copy_link: "复制链接"
+    share: "共享"
+    collapse_all: "全部折叠"
+    retry: "重试"
+    revert_to_server: "还原为服务器版本"
+    attach_to_active_session: "附加到当前会话"
+    copy_prompt: "复制提示词"
+    copy_workflow_text: "复制工作流文本"
+    copy_id: "复制 ID"
+    copy_variables: "复制变量"
+    load_in_subshell: "在子 shell 中加载"
+    move_to_space: "移动到 {space}"
+    open_on_desktop: "在桌面端打开"
+    duplicate: "复制副本"
+    export: "导出"
+    trash: "移到废纸篓"
+    open: "打开"
+    edit: "编辑"
+    restore: "恢复"
+    delete_forever: "永久删除"
+
+  # ── 笔记本 ──
+  notebook:
+    move_to_space: "移动到 {space}"
+    attach_to_active_session: "附加到当前会话"
+    copy_link: "复制链接"
+    open_on_desktop: "在桌面端打开"
+    duplicate: "复制副本"
+    export: "导出"
+    trash: "移到废纸篓"
+
   # ── 通用 ──
   common:
     show: "显示"

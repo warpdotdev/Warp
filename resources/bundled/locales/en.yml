@@ -202,6 +202,42 @@ en:
   context:
     view_pull_request: "View pull request"
 
+  # ── Warp Drive ──
+  drive:
+    import: "Import"
+    remove: "Remove"
+    rename: "Rename"
+    copy_link: "Copy link"
+    share: "Share"
+    collapse_all: "Collapse all"
+    retry: "Retry"
+    revert_to_server: "Revert to server"
+    attach_to_active_session: "Attach to active session"
+    copy_prompt: "Copy prompt"
+    copy_workflow_text: "Copy workflow text"
+    copy_id: "Copy id"
+    copy_variables: "Copy variables"
+    load_in_subshell: "Load in subshell"
+    move_to_space: "Move to {space}"
+    open_on_desktop: "Open on Desktop"
+    duplicate: "Duplicate"
+    export: "Export"
+    trash: "Trash"
+    open: "Open"
+    edit: "Edit"
+    restore: "Restore"
+    delete_forever: "Delete forever"
+
+  # ── Notebooks ──
+  notebook:
+    move_to_space: "Move to {space}"
+    attach_to_active_session: "Attach to active session"
+    copy_link: "Copy link"
+    open_on_desktop: "Open on Desktop"
+    duplicate: "Duplicate"
+    export: "Export"
+    trash: "Trash"
+
   # ── Common ──
   common:
     show: "Show"
