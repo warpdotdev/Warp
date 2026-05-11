@@ -46,7 +46,6 @@ use crate::{
             BlocklistAIActionModel, BlocklistAIController, ClientIdentifiers,
         },
         get_relevant_files::controller::GetRelevantFilesController,
-        restored_conversations::RestoredAgentConversations,
     },
     persistence::model::AgentConversationData,
     terminal::{
@@ -81,10 +80,10 @@ pub(crate) enum RestorationDirState {
 #[derive(Clone, Debug)]
 pub enum ConversationRestorationInNewPaneType {
     /// Restore conversations from persistence during app startup.
-    /// Contains the conversation IDs to load from the database.
-    /// Uses Vec1 to ensure at least one conversation ID is present.
+    /// Contains the conversations to restore, already loaded from the database.
+    /// Uses Vec1 to ensure at least one conversation is present.
     Startup {
-        conversation_ids: Vec1<AIConversationId>,
+        conversations: Vec1<AIConversation>,
         /// If set, the agent view was open in fullscreen mode for this conversation
         /// and should be restored after conversations are loaded.
         active_conversation_id: Option<AIConversationId>,
@@ -325,29 +324,6 @@ impl TerminalView {
             .lock()
             .block_list_mut()
             .insert_restored_block(&block);
-    }
-
-    /// Get AIConversations to restore given conversation IDs.
-    pub(super) fn get_conversations_to_restore(
-        conversation_ids: &[AIConversationId],
-        ctx: &mut ViewContext<Self>,
-    ) -> Vec<AIConversation> {
-        let mut conversations = Vec::new();
-        for &conversation_id in conversation_ids {
-            if let Some(conversation) = RestoredAgentConversations::handle(ctx)
-                .update(ctx, |store, _| store.take_conversation(&conversation_id))
-            {
-                conversations.push(conversation);
-            };
-        }
-
-        // Sort by first exchange start time (oldest first)
-        conversations.sort_by_key(|conversation| {
-            conversation
-                .first_exchange()
-                .map(|exchange| exchange.start_time)
-        });
-        conversations
     }
 
     /// Restore AI documents from exchanges by processing CreateDocuments and EditDocuments actions.
@@ -669,8 +645,8 @@ impl TerminalView {
         // Extract restored conversations from restoration type
         let restored_conversations: Vec<RestoredAIConversation> = match conversation_restoration {
             ConversationRestorationInNewPaneType::Startup {
-                conversation_ids, ..
-            } => Self::get_conversations_to_restore(&conversation_ids, ctx)
+                conversations, ..
+            } => conversations
                 .into_iter()
                 .map(RestoredAIConversation::new)
                 .collect(),
