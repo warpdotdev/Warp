@@ -307,7 +307,7 @@ fn open_worktree_sidecar(workspace: &ViewHandle<Workspace>, app: &mut App) {
                 menu.items().iter().position(|item| {
                     matches!(
                         item,
-                        MenuItem::Item(fields) if fields.label() == "New worktree config"
+                        MenuItem::Item(fields) if fields.label() == t!("workspace.new_worktree_config")
                     )
                 })
             })
@@ -405,7 +405,7 @@ fn test_worktree_sidecar_pointer_entry_does_not_select_top_repo() {
                     menu.items().iter().position(|item| {
                         matches!(
                             item,
-                            MenuItem::Item(fields) if fields.label() == "New worktree config"
+                            MenuItem::Item(fields) if fields.label() == t!("workspace.new_worktree_config")
                         )
                     })
                 })
@@ -2706,11 +2706,11 @@ fn test_unified_new_session_menu_uses_new_worktree_config_label_and_order() {
 
             assert_eq!(
                 labels.get(separator_index + 1),
-                Some(&"New worktree config".to_string())
+                Some(&t!("workspace.new_worktree_config").to_string())
             );
             assert_eq!(
                 labels.get(separator_index + 2),
-                Some(&"New tab config".to_string())
+                Some(&t!("workspace.new_tab_config").to_string())
             );
         });
     });

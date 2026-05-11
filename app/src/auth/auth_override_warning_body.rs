@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::appearance::Appearance;
 use crate::util::color::lighten;
 use warp_core::ui::builder::UiBuilder;
@@ -30,10 +32,8 @@ const ACTION_BUTTON_FONT_SIZE: f32 = 14.;
 
 const AUTH_OVERRIDE_DESCRIPTION: &str = "It looks like you logged into a Warp account through a web browser. If you continue, any personal Warp drive objects and preferences from this anonymous session with be permanently deleted.";
 const AUTH_OVERRIDE_CONFIRMATION_WARNING: &str = "This cannot be undone.";
-const AUTH_OVERRIDE_INITIAL_STEP_HEADER: &str = "New login detected";
 const AUTH_OVERRIDE_CONFIRM_CONFIRMATION_STEP_HEADER: &str =
     "Delete personal Warp Drive objects and preferences?";
-const AUTH_OVERRIDE_BULK_EXPORT_BUTTON_LABEL: &str = "Export your data";
 const AUTH_OVERRIDE_BULK_EXPORT_DESCRIPTION: &str = " to import later.";
 const AUTH_OVERRIDE_CANCEL_BUTTON_LABEL: &str = "Cancel";
 const AUTH_OVERRIDE_CONTINUE_BUTTON_LABEL: &str = "Continue";
@@ -99,10 +99,10 @@ impl AuthOverrideWarningBody {
             ..Default::default()
         };
 
-        let text = match self.confirmation_step {
-            AuthOverrideConfirmationStep::Initial => AUTH_OVERRIDE_INITIAL_STEP_HEADER,
+        let text: Cow<'static, str> = match self.confirmation_step {
+            AuthOverrideConfirmationStep::Initial => t!("auth.new_login_detected"),
             AuthOverrideConfirmationStep::ConfirmChangeUser => {
-                AUTH_OVERRIDE_CONFIRM_CONFIRMATION_STEP_HEADER
+                Cow::Borrowed(AUTH_OVERRIDE_CONFIRM_CONFIRMATION_STEP_HEADER)
             }
         };
 
@@ -167,7 +167,7 @@ impl AuthOverrideWarningBody {
                         .with_child(
                             ui_builder
                                 .link(
-                                    AUTH_OVERRIDE_BULK_EXPORT_BUTTON_LABEL.into(),
+                                    t!("auth.export_your_data").to_string(),
                                     None,
                                     Some(Box::new(|ctx| {
                                         ctx.dispatch_typed_action(
@@ -376,7 +376,7 @@ impl View for AuthOverrideWarningBody {
 
     fn accessibility_contents(&self, _: &AppContext) -> Option<AccessibilityContent> {
         Some(AccessibilityContent::new(
-            "New login detected",
+            &t!("auth.new_login_detected").to_string(),
             "Warp has detected a new login from a web browser. Press escape to cancel and continue using Warp without login.",
             WarpA11yRole::HelpRole,
         ))

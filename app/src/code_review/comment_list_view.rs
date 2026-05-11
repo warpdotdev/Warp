@@ -1061,12 +1061,12 @@ impl CommentListView {
         html_url: Option<&str>,
         appearance: &Appearance,
     ) -> Vec<MenuItem<CommentListAction>> {
-        let mut items = vec![MenuItemFields::new("Copy text")
+        let mut items = vec![MenuItemFields::new(t!("code_review.copy_text").to_string())
             .with_icon(Icon::Copy)
             .with_on_select_action(CommentListAction::CopyCommentText)
             .into_item()];
 
-        let mut edit_item = MenuItemFields::new("Edit")
+        let mut edit_item = MenuItemFields::new(t!("code_review.edit").to_string())
             .with_icon(Icon::Pencil)
             .with_on_select_action(CommentListAction::EditComment);
         if is_file_level || is_outdated {
@@ -1081,7 +1081,7 @@ impl CommentListView {
 
         if let Some(url) = html_url {
             items.push(
-                MenuItemFields::new("View in GitHub")
+                MenuItemFields::new(t!("code_review.view_in_github").to_string())
                     .with_icon(Icon::Github)
                     .with_on_select_action(CommentListAction::ViewInGitHub {
                         url: url.to_string(),

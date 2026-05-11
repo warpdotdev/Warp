@@ -1,4 +1,6 @@
 /// Common functionality used across different AI Assistant components.
+use std::borrow::Cow;
+
 use markdown_parser::{parse_markdown, CodeBlockText, FormattedText, FormattedTextLine};
 use pathfinder_color::ColorU;
 use warpui::{
@@ -262,8 +264,10 @@ pub fn render_prepared_response_button(
     mouse_state_handle: MouseStateHandle,
     width: Option<f32>,
     right_left_padding: Option<f32>,
+    label: impl Into<Cow<'static, str>>,
     prompt: &'static str,
 ) -> Box<dyn Element> {
+    let label = label.into();
     let theme = appearance.theme();
     let default_button_styles = UiComponentStyles {
         width,
@@ -301,7 +305,7 @@ pub fn render_prepared_response_button(
             Some(hovered_and_clicked_styles),
             Some(hovered_and_clicked_styles),
         )
-        .with_centered_text_label(prompt.to_string())
+        .with_centered_text_label(label.into_owned())
         .build()
         .with_cursor(Cursor::PointingHand)
         .on_click(move |ctx, _, _| {
@@ -330,7 +334,12 @@ pub fn render_request_limit_info(
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
         .with_child(
             Text::new_inline(
-                format!("Credits used: {num_requests_used} / {request_limit}.",),
+                t!(
+                    "ai_assistant.credits_used",
+                    num_requests_used,
+                    request_limit
+                )
+                .to_string(),
                 appearance.ui_font_family(),
                 REQUEST_LIMIT_INFO_FONT_SIZE,
             )
@@ -371,7 +380,7 @@ pub fn render_request_limit_info(
         row.add_child(
             Container::new(
                 Text::new_inline(
-                    format!("{next_refresh_time} until refresh."),
+                    t!("ai_assistant.until_refresh", next_refresh_time).to_string(),
                     appearance.ui_font_family(),
                     REQUEST_LIMIT_INFO_FONT_SIZE,
                 )

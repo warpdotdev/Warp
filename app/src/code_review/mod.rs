@@ -64,7 +64,7 @@ pub fn init(app: &mut AppContext) {
         .with_key_binding("cmdorctrl-s"),
         EditableBinding::new(
             "code_review:show_find_bar",
-            "Show find bar in code review",
+            t!("common.show").to_string(),
             CodeReviewAction::ShowFindBar,
         )
         .with_context_predicate(id!("CodeReviewView"))

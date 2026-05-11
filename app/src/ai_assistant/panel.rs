@@ -151,7 +151,7 @@ pub fn init(app: &mut AppContext) {
     app.register_fixed_bindings([FixedBinding::custom(
         CustomAction::CloseCurrentSession,
         AIAssistantAction::ClosePanel,
-        "Close Warp AI",
+        t!("ai_assistant.close").to_string(),
         id!("AIAssistantPanel"),
     )]);
 
@@ -788,7 +788,7 @@ impl AIAssistantPanelView {
                 ..Default::default()
             };
             ui_builder
-                .tool_tip("Copy transcript to clipboard".to_owned())
+                .tool_tip(t!("ai_assistant.copy_transcript").to_string())
                 .with_style(tool_tip_style)
                 .build()
                 .finish()
@@ -926,6 +926,7 @@ impl AIAssistantPanelView {
                     Some(300.),
                     None,
                     GIT_ZERO_STATE_PROMPT,
+                    GIT_ZERO_STATE_PROMPT,
                 ))
                 .with_margin_top(20.)
                 .with_margin_bottom(10.)
@@ -936,6 +937,7 @@ impl AIAssistantPanelView {
                     Some(300.),
                     None,
                     FILES_ZERO_STATE_PROMPT,
+                    FILES_ZERO_STATE_PROMPT,
                 ))
                 .with_margin_bottom(10.)
                 .finish(),
@@ -944,6 +946,7 @@ impl AIAssistantPanelView {
                     self.mouse_state_handles.script_zero_state_prompt.clone(),
                     Some(300.),
                     None,
+                    SCRIPT_ZERO_STATE_PROMPT,
                     SCRIPT_ZERO_STATE_PROMPT,
                 ))
                 .finish(),

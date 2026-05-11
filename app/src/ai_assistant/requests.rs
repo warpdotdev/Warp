@@ -247,9 +247,9 @@ impl Requests {
                             cache_request_limit_info(request_limit_info, ctx);
                             model.request_limit_info = request_limit_info;
                             let next_time = if let Some(next_refresh_time) = model.serialized_time_until_refresh() {
-                                format!("after {next_refresh_time}")
+                                t!("ai_assistant.after_refresh", next_refresh_time).to_string()
                             } else {
-                                String::from("later")
+                                t!("ai_assistant.later").to_string()
                             };
 
                             let auth_state = AuthStateProvider::as_ref(ctx).get();
@@ -259,17 +259,17 @@ impl Requests {
                                 if team.billing_metadata.can_upgrade_to_higher_tier_plan() {
                                     if has_admin_permissions {
                                         let upgrade_url = UserWorkspaces::upgrade_link_for_team(team.uid);
-                                        format!("It seems you're out of credits. Please try again {next_time}.\n\n[Upgrade]({upgrade_url}) for more credits.")
+                                        t!("ai_assistant.out_of_credits_upgrade", next_time, upgrade_url).to_string()
                                     } else {
-                                        format!("It seems you're out of credits. Please try again {next_time}.\n\nContact a team admin to upgrade for more credits.")
+                                        t!("ai_assistant.out_of_credits_contact_admin", next_time).to_string()
                                     }
                                 } else {
-                                    format!("It seems you're out of credits. Please try again {next_time}.")
+                                    t!("ai_assistant.out_of_credits", next_time).to_string()
                                 }
                             } else {
                                 let user_id = auth_state.user_id().unwrap_or_default();
                                 let upgrade_url = UserWorkspaces::upgrade_link(user_id);
-                                format!("It seems you're out of credits. Please try again {next_time}.\n\n[Upgrade]({upgrade_url}) for more credits.")
+                                t!("ai_assistant.out_of_credits_upgrade", next_time, upgrade_url).to_string()
                             };
                             let response_in_markdown = markdown_segments_from_text(
                                 transcript_part_index,
@@ -407,11 +407,11 @@ impl Requests {
                 let num_hours = num_minutes / 60;
                 let num_days = num_hours / 24;
                 let remaining_text = if num_days > 0 {
-                    format!("{num_days} days")
+                    t!("ai_assistant.days", num_days).to_string()
                 } else if num_hours > 0 {
-                    format!("{num_hours} hours")
+                    t!("ai_assistant.hours", num_hours).to_string()
                 } else {
-                    format!("{num_minutes} minutes")
+                    t!("ai_assistant.minutes", num_minutes).to_string()
                 };
                 Some(remaining_text)
             }

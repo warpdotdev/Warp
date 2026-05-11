@@ -64,7 +64,6 @@ const HOW_DO_I_FIX_PROMPT: &str = "How do I fix this?";
 const SHOW_EXAMPLES_PROMPT: &str = "Show examples.";
 const WHAT_TO_DO_NEXT_PROMPT: &str = "What should I do next?";
 const IN_FLIGHT_REQUEST_TEXT: &str = "Generating answer...";
-const ACCURACY_NOTICE_TEXT: &str = "AI responses can be inaccurate.";
 const MISSING_CONTEXT_NOTICE_TEXT: &str =
     "Warp AI might forget earlier answers as conversations get long.";
 
@@ -437,7 +436,7 @@ impl Transcript {
             .finish();
 
         buttons.add_child(appearance.ui_builder().tool_tip_on_element(
-            "Copy code to clipboard [Cmd + C]".to_string(),
+            t!("ai_assistant.copy_code").to_string(),
             mouse_state_handles.copy_button_tooltip.clone(),
             copy_button,
             ParentAnchor::TopRight,
@@ -472,7 +471,7 @@ impl Transcript {
 
             buttons.add_child(
                 Container::new(appearance.ui_builder().tool_tip_on_element(
-                    "Insert code into terminal input [Cmd + Enter]".to_string(),
+                    t!("ai_assistant.insert_code_into_terminal").to_string(),
                     mouse_state_handles.play_button_tooltip.clone(),
                     insert_button,
                     ParentAnchor::TopRight,
@@ -507,7 +506,7 @@ impl Transcript {
             buttons.add_child(
                 SavePosition::new(
                     Container::new(appearance.ui_builder().tool_tip_on_element(
-                        "Save as workflow [Cmd + S]".to_string(),
+                        t!("ai_assistant.save_as_workflow").to_string(),
                         mouse_state_handles.save_as_workflow_button_tooltip.clone(),
                         save_as_workflow_button,
                         ParentAnchor::TopRight,
@@ -569,7 +568,7 @@ impl Transcript {
                     .finish();
 
                 appearance.ui_builder().tool_tip_on_element(
-                    "Copy answer to clipboard".to_string(),
+                    t!("ai_assistant.copy_answer").to_string(),
                     tooltip_handle,
                     copy_button,
                     ParentAnchor::TopRight,
@@ -771,6 +770,7 @@ impl Transcript {
                 self.mouse_state_handles.what_to_do_next_button.clone(),
                 None,
                 Some(8.),
+                t!("ai_assistant.what_to_do_next"),
                 WHAT_TO_DO_NEXT_PROMPT,
             ))
             .with_child(
@@ -779,6 +779,7 @@ impl Transcript {
                     self.mouse_state_handles.show_examples_button.clone(),
                     None,
                     Some(8.),
+                    t!("ai_assistant.show_examples"),
                     SHOW_EXAMPLES_PROMPT,
                 ))
                 .with_margin_left(10.)
@@ -790,6 +791,7 @@ impl Transcript {
                 self.mouse_state_handles.how_do_i_fix_button.clone(),
                 None,
                 Some(8.),
+                HOW_DO_I_FIX_PROMPT,
                 HOW_DO_I_FIX_PROMPT,
             ))
             .finish()
@@ -889,9 +891,10 @@ impl View for Transcript {
                 .current_transcript_summarized();
 
             blocks.add_child(
-                Container::new(
-                    self.render_warning_message(ACCURACY_NOTICE_TEXT.to_string(), appearance),
-                )
+                Container::new(self.render_warning_message(
+                    t!("ai_assistant.accuracy_notice").to_string(),
+                    appearance,
+                ))
                 .with_margin_top(DETAILS_BOTTOM_MARGIN)
                 .with_margin_bottom(if current_transcript_summarized {
                     DETAILS_BOTTOM_MARGIN / 2.
