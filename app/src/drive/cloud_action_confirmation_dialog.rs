@@ -23,17 +23,6 @@ const BUTTON_BORDER_RADIUS: f32 = 4.;
 const BORDER_WIDTH: f32 = 1.;
 
 const DIALOG_WIDTH: f32 = 450.;
-const CANCEL_TEXT: &str = "Cancel";
-
-const DELETE_TEAM_TITLE_TEXT: &str = "Are you sure you want to delete this team?";
-const LEAVE_TEAM_TITLE_TEXT: &str = "Are you sure you want to leave this team?";
-
-const DELETE_TEAM_BODY_TEXT: &str = "Deleting this team will permanently delete it and all of its related content, including billing information or credits. You will not be able to restore them.";
-const LEAVE_TEAM_BODY_TEXT: &str = "You will need to be reinvited in order to rejoin.";
-
-const DELETE_TEAM_CONFIRM_TEXT: &str = "Yes, delete";
-const LEAVE_TEAM_CONFIRM_TEXT: &str = "Yes, leave";
-
 pub enum CloudActionConfirmationDialogEvent {
     Cancel,
     Confirm,
@@ -80,26 +69,32 @@ impl CloudActionConfirmationDialog {
 
     fn title_text(&self) -> String {
         match self.variant {
-            CloudActionConfirmationDialogVariant::LeaveTeam => LEAVE_TEAM_TITLE_TEXT.to_string(),
-            CloudActionConfirmationDialogVariant::DeleteTeam => DELETE_TEAM_TITLE_TEXT.to_string(),
+            CloudActionConfirmationDialogVariant::LeaveTeam => {
+                t!("drive.leave_team_confirm_title").to_string()
+            }
+            CloudActionConfirmationDialogVariant::DeleteTeam => {
+                t!("drive.delete_team_confirm_title").to_string()
+            }
             CloudActionConfirmationDialogVariant::None => "".to_string(),
         }
     }
 
     fn body_text(&self) -> String {
         match self.variant {
-            CloudActionConfirmationDialogVariant::LeaveTeam => LEAVE_TEAM_BODY_TEXT.to_string(),
-            CloudActionConfirmationDialogVariant::DeleteTeam => DELETE_TEAM_BODY_TEXT.to_string(),
+            CloudActionConfirmationDialogVariant::LeaveTeam => {
+                t!("drive.leave_team_confirm_body").to_string()
+            }
+            CloudActionConfirmationDialogVariant::DeleteTeam => {
+                t!("drive.delete_team_confirm_body").to_string()
+            }
             CloudActionConfirmationDialogVariant::None => "".to_string(),
         }
     }
 
     fn confirm_button_text(&self) -> String {
         match self.variant {
-            CloudActionConfirmationDialogVariant::LeaveTeam => LEAVE_TEAM_CONFIRM_TEXT.to_string(),
-            CloudActionConfirmationDialogVariant::DeleteTeam => {
-                DELETE_TEAM_CONFIRM_TEXT.to_string()
-            }
+            CloudActionConfirmationDialogVariant::LeaveTeam => t!("drive.yes_leave").to_string(),
+            CloudActionConfirmationDialogVariant::DeleteTeam => t!("drive.yes_delete").to_string(),
             CloudActionConfirmationDialogVariant::None => "".to_string(),
         }
     }
@@ -156,7 +151,7 @@ impl View for CloudActionConfirmationDialog {
                 padding: Some(Coords::uniform(BUTTON_PADDING)),
                 ..Default::default()
             })
-            .with_text_label(CANCEL_TEXT.into())
+            .with_text_label(t!("common.cancel").to_string())
             .build()
             .with_cursor(Cursor::PointingHand)
             .on_click(move |ctx, _, _| {
