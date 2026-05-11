@@ -915,9 +915,16 @@ impl RemoteServerManager {
             .await
             .map_err(|e| ConnectAndHandshakeError::Initialize(anyhow::anyhow!("{e:#}")))?;
 
-        // Version compatibility check. If the server reports a different release
-        // tag than the client expects, the binary on disk is stale. Remove it so
-        // the next reconnect (or explicit reconnect by the user) will reinstall.
+        // Version compatibility check. If the server reports a different
+        // release tag than the client expects, the binary on disk is stale.
+        // Remove it so the next reconnect (or explicit reconnect by the
+        // user) will reinstall.
+        //
+        // For versioned channels (Stable, Preview, Dev, Integration) the
+        // version is also encoded in the binary path and verified by the
+        // pre-connect `check_binary` / post-install verification steps,
+        // so this is a belt-and-suspenders check at zero extra cost (it
+        // uses data already received in the InitializeResponse).
         let client_version = ChannelState::app_version();
         if !version_is_compatible(client_version, &resp.server_version) {
             log::warn!(
