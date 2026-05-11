@@ -23,13 +23,15 @@ use warpui::elements::{
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
-use warpui::text_layout::ClipConfig;
+use warpui::text_layout::{ClipConfig, ClipDirection, ClipStyle};
 use warpui::{
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
 
-use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
+use crate::ai::agent::conversation::{
+    AIConversation, AIConversationId, ConversationStatus, StatusColorStyle,
+};
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_id;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
@@ -1013,7 +1015,10 @@ fn render_hover_card(
                 appearance.monospace_font_size() - 1.,
             )
             .with_color(main_text)
-            .with_clip(ClipConfig::ellipsis())
+            .with_clip(ClipConfig {
+                direction: ClipDirection::Start,
+                style: ClipStyle::Ellipsis,
+            })
             .soft_wrap(false)
             .finish()
         });
@@ -1157,7 +1162,7 @@ fn render_status_badge(
     theme: &WarpTheme,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
-    let (icon, color) = status.status_icon_and_color(theme);
+    let (icon, color) = status.status_icon_and_color(theme, StatusColorStyle::Standard);
     let icon_el = ConstrainedBox::new(icon.to_warpui_icon(color.into()).finish())
         .with_width(12.)
         .with_height(12.)

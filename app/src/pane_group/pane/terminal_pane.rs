@@ -477,6 +477,14 @@ impl PaneContent for TerminalPane {
                 conversation_ids_to_restore: vec![],
                 active_conversation_id: None,
             })
+        } else if let Some(task_id) = view
+            .ambient_agent_view_model()
+            .and_then(|ambient_model| ambient_model.as_ref(app).task_id())
+        {
+            LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
+                uuid: self.uuid.clone(),
+                task_id: Some(task_id),
+            })
         } else if view.model.lock().is_conversation_transcript_viewer() {
             // Conversation transcript viewers (opened from the conversation list)
             // can be restored via the ambient agent task if one exists.
@@ -1379,11 +1387,13 @@ fn launch_local_harness_child(
         .terminal_view_from_pane_id(parent_pane_id, ctx)
         .and_then(|terminal_view| terminal_view.as_ref(ctx).active_session_shell_type(ctx));
 
+    let model_id_for_harness_env = model_id.clone();
     let _ = ctx.spawn(
         async move {
             prepare_local_harness_child_launch(
                 prompt,
                 harness_type,
+                model_id_for_harness_env,
                 parent_run_id,
                 shell_type,
                 startup_directory,

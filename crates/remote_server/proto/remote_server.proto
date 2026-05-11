@@ -7,6 +7,8 @@ syntax = "proto3";
 
 package remote_server;
 
+import "diff_state.proto";
+
 // ── Top-level envelopes ───────────────────────────────────────────
 
 // Top-level envelope for all client → server messages.
@@ -29,6 +31,9 @@ message ClientMessage {
     CloseBuffer close_buffer = 15;
     SaveBuffer save_buffer = 16;
     ResolveConflict resolve_conflict = 17;
+    GetDiffState get_diff_state = 18;
+    UnsubscribeDiffState unsubscribe_diff_state = 19;
+    DiscardFilesRequest discard_files = 20;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -53,6 +58,11 @@ message ServerMessage {
     BufferUpdatedPush buffer_updated = 15;
     SaveBufferResponse save_buffer_response = 16;
     ResolveConflictResponse resolve_conflict_response = 17;
+    GetDiffStateResponse get_diff_state_response = 18;
+    DiffStateSnapshot diff_state_snapshot = 19;
+    DiffStateMetadataUpdate diff_state_metadata_update = 20;
+    DiffStateFileDelta diff_state_file_delta = 21;
+    DiscardFilesResponse discard_files_response = 22;
   }
 }
 

@@ -337,6 +337,12 @@ pub fn remote_server_daemon_dir(identity_key: &str) -> String {
     )
 }
 
+/// Returns the identity-scoped remote directory used for daemon-owned
+/// per-user data files.
+pub fn remote_server_daemon_data_dir(identity_key: &str) -> String {
+    format!("{}/data", remote_server_daemon_dir(identity_key))
+}
+
 /// Returns the binary name, keyed by channel.
 ///
 /// Matches the CLI command names: `oz` (stable), `oz-preview`, `oz-dev`.
