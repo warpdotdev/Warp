@@ -11,6 +11,8 @@ pub enum ExecutionMode {
     App,
     /// Warp is running as a CLI.
     Sdk,
+    /// Warp is running as the remote server daemon.
+    Daemon,
 }
 
 impl ExecutionMode {
@@ -20,6 +22,7 @@ impl ExecutionMode {
         match self {
             ExecutionMode::App => "warp-app",
             ExecutionMode::Sdk => "warp-cli",
+            ExecutionMode::Daemon => "warp-daemon",
         }
     }
 }
@@ -98,7 +101,7 @@ impl AppExecutionMode {
     /// Wherever possible, prefer more targeted capability checks like
     /// [`Self::can_autostart_mcp_servers`].
     pub fn is_autonomous(&self) -> bool {
-        matches!(self.mode, ExecutionMode::Sdk)
+        matches!(self.mode, ExecutionMode::Sdk | ExecutionMode::Daemon)
     }
 
     /// Returns the client ID to report to the server.
@@ -119,7 +122,7 @@ impl Entity for AppExecutionMode {
 
 impl SingletonEntity for AppExecutionMode {}
 
-/// Returns the current global client ID string ("warp-app" or "warp-cli").
+/// Returns the current global client ID string ("warp-app", "warp-cli", or "warp-daemon").
 /// This is set when AppExecutionMode is constructed during application start.
 /// Returns None if the execution mode has not been set yet.
 pub fn current_client_id() -> Option<&'static str> {
