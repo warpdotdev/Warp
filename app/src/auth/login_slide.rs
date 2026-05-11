@@ -293,7 +293,7 @@ impl LoginSlideView {
                 },
                 ctx,
             );
-            editor.set_placeholder_text("Auth Token", ctx);
+            editor.set_placeholder_text(t!("auth.auth_token").to_string(), ctx);
             editor
         });
 

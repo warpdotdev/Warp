@@ -314,10 +314,9 @@ const CODE_REVIEW_EDITOR_LINE_HEIGHT_RATIO: f32 = 1.4;
 /// Extra scroll buffer (in pixels) added when scrolling to a line that has a comment editor below it.
 const COMMENT_EDITOR_SCROLL_BUFFER: f32 = 200.0;
 
-pub const CODE_REVIEW_TOOLTIP_TEXT: &str = "View changes";
-const REMOTE_TEXT: &str = "Diffs only work for local workspaces.";
-const DISABLED_TEXT: &str = "Diffs only work for git repositories.";
-const WSL_TEXT: &str = "Diffs don't currently work in WSL.";
+pub fn code_review_tooltip_text() -> String {
+    t!("code_review.view_changes").to_string()
+}
 
 #[cfg(not(target_family = "wasm"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3753,7 +3752,7 @@ impl CodeReviewView {
             )
             .with_child(
                 Text::new(
-                    "Error loading diffs",
+                    t!("code_review.error_loading_diffs"),
                     appearance.ui_font_family(),
                     appearance.ui_font_size() + 2.,
                 )
@@ -3796,7 +3795,7 @@ impl CodeReviewView {
                         )
                         .with_text_and_icon_label(TextAndIcon::new(
                             TextAndIconAlignment::IconFirst,
-                            " Retry".to_string(),
+                            format!(" {}", t!("drive.retry")),
                             Icon::Refresh.to_warpui_icon(warp_core::ui::theme::Fill::Solid(
                                 theme.main_text_color(theme.background()).into(),
                             )),
@@ -3836,9 +3835,10 @@ impl CodeReviewView {
     fn render_no_repo_found_state_with_buttons(
         &self,
         appearance: &Appearance,
-        message: &'static str,
+        message: impl Into<std::borrow::Cow<'static, str>>,
         buttons: InitButtons,
     ) -> Box<dyn Element> {
+        let message = message.into();
         let theme = appearance.theme();
 
         let main_column = Flex::column()
@@ -3863,7 +3863,7 @@ impl CodeReviewView {
             )
             .with_child(
                 Text::new(
-                    "Cannot detect diffs for this folder",
+                    t!("code_review.cannot_detect_diffs_folder"),
                     appearance.ui_font_family(),
                     appearance.ui_font_size() + 2.,
                 )
@@ -3916,9 +3916,10 @@ impl CodeReviewView {
 
     pub fn render_no_repo_found_state(
         appearance: &Appearance,
-        message: &'static str,
+        message: impl Into<std::borrow::Cow<'static, str>>,
         open_repo_button: Option<Box<dyn Element>>,
     ) -> Box<dyn Element> {
+        let message = message.into();
         let theme = appearance.theme();
 
         let main_column = Flex::column()
@@ -3943,7 +3944,7 @@ impl CodeReviewView {
             )
             .with_child(
                 Text::new(
-                    "Cannot detect diffs for this folder",
+                    t!("code_review.cannot_detect_diffs_folder"),
                     appearance.ui_font_family(),
                     appearance.ui_font_size() + 2.,
                 )
@@ -3984,28 +3985,40 @@ impl CodeReviewView {
         appearance: &Appearance,
         open_repo_button: Option<Box<dyn Element>>,
     ) -> Box<dyn Element> {
-        Self::render_no_repo_found_state(appearance, REMOTE_TEXT, open_repo_button)
+        Self::render_no_repo_found_state(
+            appearance,
+            t!("code_review.local_workspaces_only"),
+            open_repo_button,
+        )
     }
 
     pub fn render_wsl_state(
         appearance: &Appearance,
         open_repo_button: Option<Box<dyn Element>>,
     ) -> Box<dyn Element> {
-        Self::render_no_repo_found_state(appearance, WSL_TEXT, open_repo_button)
+        Self::render_no_repo_found_state(
+            appearance,
+            t!("code_review.wsl_unsupported"),
+            open_repo_button,
+        )
     }
 
     pub fn render_not_repo_state(
         appearance: &Appearance,
         open_repo_button: Option<Box<dyn Element>>,
     ) -> Box<dyn Element> {
-        Self::render_no_repo_found_state(appearance, DISABLED_TEXT, open_repo_button)
+        Self::render_no_repo_found_state(
+            appearance,
+            t!("code_review.git_repositories_only"),
+            open_repo_button,
+        )
     }
 
     #[cfg(not(target_family = "wasm"))]
     fn render_remote_state_with_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
         self.render_no_repo_found_state_with_buttons(
             appearance,
-            REMOTE_TEXT,
+            t!("code_review.local_workspaces_only"),
             InitButtons::OpenRepository,
         )
     }
@@ -4014,7 +4027,7 @@ impl CodeReviewView {
     fn render_wsl_state_with_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
         self.render_no_repo_found_state_with_buttons(
             appearance,
-            WSL_TEXT,
+            t!("code_review.wsl_unsupported"),
             InitButtons::OpenRepository,
         )
     }
@@ -4023,7 +4036,7 @@ impl CodeReviewView {
     fn render_not_repo_state_with_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
         self.render_no_repo_found_state_with_buttons(
             appearance,
-            DISABLED_TEXT,
+            t!("code_review.git_repositories_only"),
             InitButtons::OpenRepository,
         )
     }
@@ -4111,15 +4124,19 @@ impl CodeReviewView {
                 .finish(),
             )
             .with_child(
-                Text::new("No open changes", appearance.ui_font_family(), 16.)
-                    .with_style(Properties::default().weight(Weight::Semibold))
-                    .with_color(theme.main_text_color(theme.surface_2()).into())
-                    .finish(),
+                Text::new(
+                    t!("code_review.no_open_changes"),
+                    appearance.ui_font_family(),
+                    16.,
+                )
+                .with_style(Properties::default().weight(Weight::Semibold))
+                .with_color(theme.main_text_color(theme.surface_2()).into())
+                .finish(),
             )
             .with_child(
                 Container::new(
                     Text::new(
-                        "As you or the Agent make changes, you'll be able to track them here.",
+                        t!("code_review.no_open_changes_description"),
                         appearance.ui_font_family(),
                         14.,
                     )
@@ -4304,7 +4321,8 @@ impl CodeReviewView {
 
                 self.clear_review_comments(ctx);
                 ToastStack::handle(ctx).update(ctx, |stack, ctx| {
-                    let toast = DismissibleToast::default("Comments sent to agent".into());
+                    let toast =
+                        DismissibleToast::default(t!("code_review.comments_sent_to_agent").into());
                     stack.add_ephemeral_toast(toast, self.window_id, ctx);
                 });
                 ctx.emit(CodeReviewViewEvent::ReviewSubmitted);
@@ -5209,7 +5227,7 @@ impl CodeReviewView {
         if diff_size == DiffSize::Unrenderable {
             return Self::styled_file_content_container(
                 Text::new(
-                    "Diff is too large to render",
+                    t!("code_review.diff_too_large"),
                     appearance.monospace_font_family(),
                     appearance.monospace_font_size(),
                 )
@@ -5222,7 +5240,7 @@ impl CodeReviewView {
         if file.file_diff.is_binary {
             Self::styled_file_content_container(
                 Text::new(
-                    "Binary file - no diff available",
+                    t!("code_review.binary_file_no_diff"),
                     appearance.monospace_font_family(),
                     appearance.monospace_font_size(),
                 )
@@ -5233,7 +5251,7 @@ impl CodeReviewView {
         } else if file.file_diff.status.is_renamed() && file.file_diff.is_empty() {
             Self::styled_file_content_container(
                 Text::new(
-                    "File renamed without changes",
+                    t!("code_review.file_renamed_without_changes"),
                     appearance.monospace_font_family(),
                     appearance.monospace_font_size(),
                 )
@@ -5244,7 +5262,7 @@ impl CodeReviewView {
         } else if file.file_diff.status.is_new_file() && file.file_diff.is_empty() {
             Self::styled_file_content_container(
                 Text::new(
-                    "New empty file",
+                    t!("code_review.new_empty_file"),
                     appearance.monospace_font_family(),
                     appearance.monospace_font_size(),
                 )
@@ -5274,7 +5292,7 @@ impl CodeReviewView {
         } else {
             Self::styled_file_content_container(
                 Text::new(
-                    "Unable to load file content",
+                    t!("code_review.unable_to_load_file_content"),
                     appearance.ui_font_family(),
                     appearance.ui_font_size(),
                 )
@@ -5366,7 +5384,7 @@ impl CodeReviewView {
 
         if self.discard_dialog_state.discard_file_paths.is_empty() {
             return Text::new(
-                "No file selected",
+                t!("code_review.no_file_selected"),
                 appearance.ui_font_family(),
                 appearance.ui_font_size(),
             )
@@ -5381,7 +5399,7 @@ impl CodeReviewView {
 
         let CodeReviewViewState::Loaded(loaded) = self.state() else {
             return Text::new(
-                "No files to discard",
+                t!("code_review.no_files_to_discard"),
                 appearance.ui_font_family(),
                 appearance.ui_font_size(),
             )
@@ -5637,7 +5655,7 @@ impl CodeReviewView {
                 let toast_id = self.revert_hunk_toast_id(ctx);
                 crate::workspace::ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = crate::view_components::DismissibleToast::default(
-                        "Diff removed".to_string(),
+                        t!("code_review.diff_removed").to_string(),
                     )
                     .with_object_id(toast_id)
                     .with_action_button(self.undo_action_button.clone());
@@ -5732,7 +5750,7 @@ impl CodeReviewView {
                 let toast_id = self.attach_context_not_allowed_toast_id(ctx);
                 crate::workspace::ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = crate::view_components::DismissibleToast::default(
-                        "Cannot attach context when terminal is running".to_string(),
+                        t!("code_review.cannot_attach_context_terminal_running").to_string(),
                     )
                     .with_object_id(toast_id);
                     toast_stack.add_ephemeral_toast(toast, self.window_id, ctx);
@@ -5845,7 +5863,7 @@ impl CodeReviewView {
                 let toast_id = self.attach_diff_not_allowed_toast_id(ctx);
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = DismissibleToast::default(
-                        "Cannot attach diff while input is not available".to_string(),
+                        t!("code_review.cannot_attach_diff_input_unavailable").to_string(),
                     )
                     .with_object_id(toast_id);
                     toast_stack.add_ephemeral_toast(toast, self.window_id, ctx);
@@ -6592,7 +6610,7 @@ impl CodeReviewView {
             let is_on_main = diff_state.is_on_main_branch(app);
             let has_upstream = diff_state.upstream_ref(app).is_some();
             let upstream_differs_from_main = diff_state.upstream_differs_from_main(app);
-            MenuItemFields::new("Create PR")
+            MenuItemFields::new(t!("code_review.create_pr").to_string())
                 .with_icon(Icon::Github)
                 .with_on_select_action(CodeReviewAction::OpenCreatePrDialog)
                 .with_disabled(
@@ -6666,7 +6684,7 @@ impl CodeReviewView {
 
         if FeatureFlag::DiffSetAsContext.is_enabled() && has_changes {
             items.push(
-                MenuItemFields::new("Add diff set as context")
+                MenuItemFields::new(t!("code_review.add_diff_set_as_context").to_string())
                     .with_icon(Icon::Paperclip)
                     .with_on_select_action(CodeReviewAction::AddDiffSetAsContext(DiffSetScope::All))
                     .into_item(),
@@ -6674,9 +6692,15 @@ impl CodeReviewView {
         }
 
         let (comment_label, comment_icon) = if self.get_existing_diffset_comment(ctx).is_some() {
-            ("Show saved comment", Icon::MessageText)
+            (
+                t!("code_review.show_saved_comment").to_string(),
+                Icon::MessageText,
+            )
         } else {
-            ("Add comment", Icon::MessagePlusSquare)
+            (
+                t!("code_review.add_comment").to_string(),
+                Icon::MessagePlusSquare,
+            )
         };
 
         items.push(
@@ -6701,7 +6725,7 @@ impl CodeReviewView {
         let is_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         if is_ai_enabled && FeatureFlag::DiffSetAsContext.is_enabled() && has_changes {
             items.push(
-                MenuItemFields::new("Add diff set as context")
+                MenuItemFields::new(t!("code_review.add_diff_set_as_context").to_string())
                     .with_icon(Icon::Paperclip)
                     .with_on_select_action(CodeReviewAction::AddDiffSetAsContext(DiffSetScope::All))
                     .into_item(),
@@ -6711,9 +6735,15 @@ impl CodeReviewView {
         if FeatureFlag::FileAndDiffSetComments.is_enabled() && has_changes {
             let (comment_label, comment_icon) = if self.get_existing_diffset_comment(ctx).is_some()
             {
-                ("Show saved comment", Icon::MessageText)
+                (
+                    t!("code_review.show_saved_comment").to_string(),
+                    Icon::MessageText,
+                )
             } else {
-                ("Add comment", Icon::MessagePlusSquare)
+                (
+                    t!("code_review.add_comment").to_string(),
+                    Icon::MessagePlusSquare,
+                )
             };
 
             items.push(
@@ -6726,7 +6756,7 @@ impl CodeReviewView {
 
         if FeatureFlag::DiscardPerFileAndAllChanges.is_enabled() && has_changes {
             items.push(
-                MenuItemFields::new("Discard all")
+                MenuItemFields::new(t!("code_review.discard_all").to_string())
                     .with_icon(Icon::ReverseLeft)
                     .with_on_select_action(CodeReviewAction::ShowDiscardConfirmDialog(None))
                     .into_item(),
