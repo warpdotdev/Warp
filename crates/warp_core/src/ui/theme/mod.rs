@@ -530,12 +530,15 @@ impl AnsiColors {
     Eq,
     schemars::JsonSchema,
     settings_value::SettingsValue,
+    strum_macros::Display,
+    strum_macros::EnumString,
 )]
 #[schemars(
     description = "One of the eight standard ANSI terminal colors.",
     rename_all = "snake_case"
 )]
 #[serde(rename_all = "lowercase")]
+#[strum(ascii_case_insensitive)]
 pub enum AnsiColorIdentifier {
     Black,
     Red,
@@ -545,22 +548,6 @@ pub enum AnsiColorIdentifier {
     Magenta,
     Cyan,
     White,
-}
-
-impl std::fmt::Display for AnsiColorIdentifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let color_name = match self {
-            Self::Black => "Black",
-            Self::Red => "Red",
-            Self::Green => "Green",
-            Self::Yellow => "Yellow",
-            Self::Blue => "Blue",
-            Self::Magenta => "Magenta",
-            Self::Cyan => "Cyan",
-            Self::White => "White",
-        };
-        write!(f, "{color_name}")
-    }
 }
 
 impl AnsiColorIdentifier {

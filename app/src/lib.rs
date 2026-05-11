@@ -196,6 +196,7 @@ use workflows::manager::WorkflowManager;
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::facts::manager::AIFactManager;
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::llms::LLMPreferences;
 use crate::ai::mcp::MCPGalleryManager;
 use crate::ai::mcp::TemplatableMCPServerManager;
@@ -336,6 +337,9 @@ fn determine_agent_source(
         LaunchMode::App { .. } | LaunchMode::Test { .. } => {
             Some(crate::ai::ambient_agents::AgentSource::CloudMode)
         }
+        // RemoteServerProxy and RemoteServerDaemon are headless server
+        // processes that don't use the agent subsystem.
+        LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => None,
     }
 }
 
@@ -365,13 +369,28 @@ pub enum LaunchMode {
         driver: Box<Option<TestDriver>>,
         is_integration_test: bool,
     },
+
+    /// Remote server proxy — bridges SSH stdio to the daemon's Unix socket.
+    /// This is a short-lived process that runs for the lifetime of an SSH session.
+    RemoteServerProxy,
+
+    /// Remote server daemon — long-lived headless process serving remote
+    /// connections via a Unix domain socket.
+    RemoteServerDaemon {
+        /// Stable identity key used to partition the daemon's socket/PID
+        /// directory on the remote host.
+        identity_key: String,
+    },
 }
 
 impl LaunchMode {
     fn args(&self) -> Cow<'_, warp_cli::AppArgs> {
         match self {
             LaunchMode::App { args, .. } => Cow::Borrowed(args),
-            _ => Cow::Owned(warp_cli::AppArgs::default()),
+            LaunchMode::CommandLine { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon { .. } => Cow::Owned(warp_cli::AppArgs::default()),
         }
     }
 
@@ -382,14 +401,20 @@ impl LaunchMode {
                 is_integration_test,
                 ..
             } => *is_integration_test,
-            _ => false,
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon { .. } => false,
         }
     }
 
     fn take_test_driver(&mut self) -> Option<TestDriver> {
         match self {
             LaunchMode::Test { driver, .. } => driver.take(),
-            _ => None,
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon { .. } => None,
         }
     }
 
@@ -406,13 +431,21 @@ impl LaunchMode {
             LaunchMode::App { .. } => ExecutionMode::App,
             LaunchMode::CommandLine { .. } => ExecutionMode::Sdk,
             LaunchMode::Test { .. } => ExecutionMode::App,
+            // RemoteServerProxy and RemoteServerDaemon don't use execution
+            // mode, but Sdk is the closest match (headless, no GUI).
+            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => {
+                ExecutionMode::Sdk
+            }
         }
     }
 
     fn is_sandboxed(&self) -> bool {
         match self {
             LaunchMode::CommandLine { is_sandboxed, .. } => *is_sandboxed,
-            _ => false,
+            LaunchMode::App { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon { .. } => false,
         }
     }
 
@@ -423,7 +456,8 @@ impl LaunchMode {
                 CliCommand::Agent(AgentCommand::Run(args)) => !args.gui,
                 _ => true,
             },
-            _ => false,
+            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => true,
+            LaunchMode::App { .. } | LaunchMode::Test { .. } => false,
         }
     }
 
@@ -433,7 +467,8 @@ impl LaunchMode {
             LaunchMode::CommandLine { command, .. } => {
                 matches!(command, CliCommand::Agent(AgentCommand::Run { .. }))
             }
-            _ => true,
+            LaunchMode::App { .. } | LaunchMode::Test { .. } => true,
+            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => false,
         }
     }
 
@@ -442,8 +477,50 @@ impl LaunchMode {
     pub(crate) fn crash_recovery_enabled(&self) -> bool {
         match self {
             LaunchMode::App { .. } => true,
-            LaunchMode::CommandLine { .. } => false,
-            LaunchMode::Test { .. } => false,
+            LaunchMode::CommandLine { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon { .. } => false,
+        }
+    }
+
+    /// Whether Sentry / crash reporting should be initialized.
+    #[cfg_attr(not(feature = "crash_reporting"), allow(dead_code))]
+    pub(crate) fn needs_crash_reporting(&self) -> bool {
+        match self {
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::RemoteServerDaemon { .. }
+            | LaunchMode::RemoteServerProxy => true,
+        }
+    }
+
+    /// Whether profiling and tracing should be initialized.
+    pub(crate) fn needs_profiling(&self) -> bool {
+        match self {
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::RemoteServerDaemon { .. }
+            | LaunchMode::RemoteServerProxy => true,
+        }
+    }
+
+    /// Log destination for this mode.
+    fn log_destination(&self) -> Option<LogDestination> {
+        match self {
+            LaunchMode::CommandLine { debug, .. } => {
+                if *debug {
+                    Some(LogDestination::Stderr)
+                } else {
+                    Some(LogDestination::File)
+                }
+            }
+            // Proxy must log to stderr because stdout is the protocol channel.
+            LaunchMode::RemoteServerProxy => Some(LogDestination::Stderr),
+            LaunchMode::RemoteServerDaemon { .. } => Some(LogDestination::File),
+            LaunchMode::App { .. } | LaunchMode::Test { .. } => None,
         }
     }
 
@@ -566,10 +643,20 @@ pub fn run() -> Result<()> {
             }
             #[cfg(not(target_family = "wasm"))]
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy(args)) => {
+                // Proxy is a thin byte bridge (stdin/stdout ↔ Unix socket).
+                // It only needs logging to stderr since stdout is the protocol
+                // channel. No crash reporting, no initialize_app.
+                let launch_mode = LaunchMode::RemoteServerProxy;
+                warp_logging::init(warp_logging::LogConfig {
+                    is_cli: true,
+                    log_destination: launch_mode.log_destination(),
+                })?;
                 return crate::remote_server::run_proxy(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon(args)) => {
+                // Daemon handles its own full initialization (including
+                // initialize_app and crash reporting) inside run_daemon_app.
                 return crate::remote_server::run_daemon(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
@@ -663,21 +750,27 @@ pub fn run_integration_test(driver: TestDriver) -> Result<()> {
     run_internal(launch)
 }
 
-/// Runs the app.
+/// Runs the app (or CLI / daemon).
 fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
+    let mut timer = IntervalTimer::new();
+
+    // ── Early initialization (pre-AppBuilder) ──────────────────────
+    // These steps run before the platform event loop is started.
+    // They must not depend on AppContext.
+
     #[cfg(windows)]
     dynamic_libraries::configure_library_loading();
 
-    profiling::init();
+    if launch_mode.needs_profiling() {
+        profiling::init();
+    }
 
     // The `run` function already initializes feature flags, but ensure they're initialized here
     // for other entrypoints.
     init_feature_flags();
 
-    let mut timer = IntervalTimer::new();
-
     #[cfg(feature = "crash_reporting")]
-    {
+    if launch_mode.needs_crash_reporting() {
         // Ensure that the main/root Sentry hub is initialized on the main
         // thread.  PtySpawner creates a background thread to receive logs from
         // the terminal server process, and we don't want it to be the host of
@@ -685,21 +778,12 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         sentry::Hub::main();
     }
 
-    tracing::init()?;
+    if launch_mode.needs_profiling() {
+        tracing::init()?;
+    }
 
-    let is_cli = matches!(launch_mode, LaunchMode::CommandLine { .. });
-
-    // Log to a file for CLI commands to not obscure the command output.
-    let log_destination = match &launch_mode {
-        LaunchMode::CommandLine { debug, .. } => {
-            if *debug {
-                Some(LogDestination::Stderr)
-            } else {
-                Some(LogDestination::File)
-            }
-        }
-        _ => None,
-    };
+    let log_destination = launch_mode.log_destination();
+    let is_cli = log_destination.is_some();
 
     cfg_if::cfg_if! {
         if #[cfg(enable_crash_recovery)] {
@@ -715,10 +799,21 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
 
     timer.mark_interval_end("LOG_FILE_SETUP_COMPLETE");
 
+    #[cfg(windows)]
+    platform::windows::check_redirection_guard();
+
     // Adjust resource limits early, before doing other work, to ensure that
     // any children we spawn (like the terminal server) inherit our adjusted
     // rlimits.
     resource_limits::adjust_resource_limits();
+
+    // Configure rustls to use its default crypto provider.  This MUST be called
+    // before making any network requests that use TLS, otherwise rustls will
+    // panic.
+    #[cfg(not(target_family = "wasm"))]
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("must be able to initialize crypto provider for TLS support");
 
     // For wasm builds we have this special case to parse out the intent
     // from the url that is used to visite the app on web.
@@ -734,12 +829,18 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     // Collect errors that occur in run_internal() before the Sentry client is initialized,
     // so they can be replayed to Sentry once it's ready.
     #[cfg_attr(
-        not(all(feature = "release_bundle", any(windows, target_os = "linux"))),
+        not(all(
+            feature = "release_bundle",
+            any(windows, any(target_os = "linux", target_os = "freebsd"))
+        )),
         expect(unused_mut)
     )]
     let mut pre_sentry_errors: Vec<anyhow::Error> = Vec::new();
 
-    #[cfg(all(feature = "release_bundle", target_os = "linux"))]
+    #[cfg(all(
+        feature = "release_bundle",
+        any(target_os = "linux", target_os = "freebsd")
+    ))]
     if let LaunchMode::App { .. } = launch_mode {
         match app_services::linux::pass_startup_args_to_existing_instance(
             launch_mode.args().as_ref(),
@@ -791,21 +892,16 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     #[cfg(windows)]
     command::windows::init();
 
-    // Configure rustls to use its default crypto provider.  This MUST be called
-    // before making any network requests that use TLS, otherwise rustls will
-    // panic.
-    #[cfg(not(target_family = "wasm"))]
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("must be able to initialize crypto provider for TLS support");
-
     let private_preferences = settings::init_private_user_preferences();
     let (public_preferences, startup_toml_parse_error) = settings::init_public_user_preferences();
 
     // When the SettingsFile feature flag is enabled, public settings live in
     // the TOML-backed store. When disabled, they live in the platform-native
     // store (same backend as private). Use the correct one for pre-app reads.
-    #[cfg_attr(not(any(enable_crash_recovery, target_os = "linux")), expect(unused))]
+    #[cfg_attr(
+        not(any(enable_crash_recovery, any(target_os = "linux", target_os = "freebsd"))),
+        expect(unused)
+    )]
     let prefs_for_public_settings: &dyn warpui_extras::user_preferences::UserPreferences =
         if FeatureFlag::SettingsFile.is_enabled() {
             public_preferences.as_ref()
@@ -854,7 +950,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         app_builder.set_dock_menu_builder(|_| app_menus::dock_menu());
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
         use crate::settings::ForceX11;
         use warpui::platform::linux::{self, AppBuilderExt};
@@ -931,11 +1027,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         ctx.add_singleton_model(move |_ctx| private_preferences);
         let startup_toml_parse_error = startup_toml_parse_error;
 
-        // Tell the settings crate whether the TOML settings file is active.
-        // This must happen after preferences are registered but before settings
-        // are initialized, so the routing logic picks the correct backend.
-        ::settings::set_settings_file_enabled(FeatureFlag::SettingsFile.is_enabled());
-
         #[cfg(enable_crash_recovery)]
         ctx.add_singleton_model(move |_ctx| crash_recovery);
 
@@ -963,7 +1054,7 @@ pub struct UpdateQuakeModeEventArg {
     active_window_id: Option<WindowId>,
 }
 
-fn initialize_app(
+pub(crate) fn initialize_app(
     launch_mode: &LaunchMode,
     mut timer: IntervalTimer,
     startup_toml_parse_error: Option<warpui_extras::user_preferences::Error>,
@@ -979,7 +1070,7 @@ fn initialize_app(
     cfg_if::cfg_if! {
         if #[cfg(feature = "integration_tests")] {
             warpui_extras::secure_storage::register_noop(&data_domain, ctx);
-        } else if #[cfg(target_os = "linux")] {
+        } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             warpui_extras::secure_storage::register_with_fallback(&data_domain, warp_core::paths::state_dir(), ctx)
         } else if #[cfg(target_os = "windows")] {
             warpui_extras::secure_storage::register_with_dir(&data_domain, warp_core::paths::state_dir(), ctx)
@@ -1053,7 +1144,18 @@ fn initialize_app(
 
     // If any part of sqlite initialization fails, we just don't do session restoration (i.e.
     // feature degradation).
-    let (sqlite_data, writer_handles) = persistence::initialize(ctx);
+    let persistence_scope = match launch_mode {
+        LaunchMode::RemoteServerDaemon { identity_key } => {
+            persistence::PersistenceScope::RemoteServerDaemon {
+                identity_key: identity_key.clone(),
+            }
+        }
+        LaunchMode::App { .. }
+        | LaunchMode::CommandLine { .. }
+        | LaunchMode::RemoteServerProxy
+        | LaunchMode::Test { .. } => persistence::PersistenceScope::App,
+    };
+    let (sqlite_data, writer_handles) = persistence::initialize(ctx, persistence_scope);
     timer.mark_interval_end("SQLITE_INITIALIZED");
 
     let persistence_writer = PersistenceWriter::new(writer_handles);
@@ -1365,16 +1467,19 @@ fn initialize_app(
     {
         let imported_config_model = ctx.add_singleton_model(ImportedConfigModel::new);
 
-        if FeatureFlag::SettingsImport.is_enabled()
-            && ChannelState::channel() != warp_core::channel::Channel::Integration
-        {
+        if ChannelState::channel() != warp_core::channel::Channel::Integration {
             imported_config_model.update(ctx, |model, ctx| {
                 model.search_for_settings_to_import(ctx);
             });
         }
 
+        let emit_incremental_updates = matches!(launch_mode, LaunchMode::RemoteServerDaemon { .. });
         ctx.add_singleton_model(|ctx| {
-            let model = RepoMetadataModel::new(ctx);
+            let model = if emit_incremental_updates {
+                RepoMetadataModel::new_with_incremental_updates(ctx)
+            } else {
+                RepoMetadataModel::new(ctx)
+            };
 
             // Subscribe to RemoteServerManager push events so that remote repo
             // metadata snapshots and incremental updates populate the remote
@@ -1570,11 +1675,15 @@ fn initialize_app(
     ctx.add_singleton_model(ai::blocklist::task_status_sync_model::TaskStatusSyncModel::new);
     if warp_core::features::FeatureFlag::OrchestrationV2.is_enabled() {
         ctx.add_singleton_model(
-            ai::blocklist::orchestration_event_poller::OrchestrationEventPoller::new,
+            ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer::new,
         );
     }
 
-    ctx.add_singleton_model(RepoOutlines::new);
+    if launch_mode.supports_indexing() {
+        ctx.add_singleton_model(RepoOutlines::new);
+    } else {
+        ctx.add_singleton_model(|ctx| RepoOutlines::new_with_indexing_enabled(false, ctx));
+    }
     ctx.add_singleton_model(|ctx| {
         warp_core::sync_queue::SyncQueue::<SyncTask>::new_with_rate_limit(
             &ctx.background_executor(),
@@ -1705,6 +1814,7 @@ fn initialize_app(
     ctx.add_singleton_model(LocalWorkflows::new);
 
     ctx.add_singleton_model(LLMPreferences::new);
+    ctx.add_singleton_model(HarnessAvailabilityModel::new);
 
     ctx.add_singleton_model(|ctx| {
         ai::agent_tips::AITipModel::<ai::AgentTip>::new_for_agent_tips(ctx)
@@ -1746,6 +1856,7 @@ fn initialize_app(
             codebase_limits.max_files_per_repo,
             codebase_limits.embedding_generation_batch_size,
             server_api_provider.as_ref(ctx).get(),
+            launch_mode.supports_indexing(),
             ctx,
         )
     });
@@ -1786,7 +1897,7 @@ fn initialize_app(
     app_state
 }
 
-fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
+pub(crate) fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
     warpui::platform::AppCallbacks {
         on_internet_reachability_changed: Some(Box::new(move |reachable, ctx| {
             NetworkStatus::handle(ctx)
@@ -1915,8 +2026,9 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             let general_settings = GeneralSettings::as_ref(ctx);
             // On Linux or Windows, if we're about to close the final window, we should quit the app instead.
             // On Mac, we do this conditionally based on a user setting.
-            let quit_on_last_window_closed = cfg!(any(target_os = "linux", windows))
-                || *general_settings.quit_on_last_window_closed;
+            let quit_on_last_window_closed =
+                cfg!(any(target_os = "linux", target_os = "freebsd", windows))
+                    || *general_settings.quit_on_last_window_closed;
             if ctx.window_ids().count() == 1 && quit_on_last_window_closed {
                 log::info!("No windows left, terminating app");
                 ctx.terminate_app(TerminationMode::Cancellable, None);
@@ -2234,7 +2346,7 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
     #[cfg(target_family = "wasm")]
     ctx.set_fallback_font_fn(font_fallback::fallback_font_fn);
 
-    match &launch_mode {
+    match launch_mode {
         LaunchMode::App { .. } | LaunchMode::Test { .. } => {
             // Attempt to restore windows from the persisted application state.
             let arg = OpenFromRestoredArg { app_state };
@@ -2287,6 +2399,23 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
                     }
                 }
             }
+        }
+        // Proxy should never reach launch() — it's a thin byte bridge.
+        LaunchMode::RemoteServerProxy => {
+            log::error!("Proxy mode should not use the launch() path");
+            std::process::exit(1);
+        }
+        // Daemon: bind the Unix socket and register the ServerModel.
+        // initialize_app already set up everything else including crash
+        // reporting.
+        #[cfg(unix)]
+        LaunchMode::RemoteServerDaemon { identity_key } => {
+            remote_server::unix::launch_daemon(&identity_key, ctx);
+        }
+        #[cfg(not(unix))]
+        LaunchMode::RemoteServerDaemon { .. } => {
+            log::error!("RemoteServerDaemon is not supported on this platform");
+            std::process::exit(1);
         }
     }
 }
@@ -2368,8 +2497,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::DefaultWaterfallMode,
         #[cfg(feature = "settings_file")]
         FeatureFlag::SettingsFile,
-        #[cfg(feature = "settings_import")]
-        FeatureFlag::SettingsImport,
         #[cfg(feature = "rect_selection")]
         FeatureFlag::RectSelection,
         #[cfg(feature = "alacritty_settings_import")]
@@ -2384,12 +2511,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AIRules,
         #[cfg(feature = "ssh_tmux_wrapper")]
         FeatureFlag::SSHTmuxWrapper,
-        #[cfg(feature = "less_horizontal_terminal_padding")]
-        FeatureFlag::LessHorizontalTerminalPadding,
         #[cfg(feature = "shell_selector")]
         FeatureFlag::ShellSelector,
-        #[cfg(feature = "block_toolbelt_save_as_workflow")]
-        FeatureFlag::BlockToolbeltSaveAsWorkflow,
         #[cfg(feature = "integration_command")]
         FeatureFlag::IntegrationCommand,
         #[cfg(feature = "artifact_command")]
@@ -2404,8 +2527,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::FullScreenZenMode,
         #[cfg(feature = "minimalist_ui")]
         FeatureFlag::MinimalistUI,
-        #[cfg(feature = "remove_alt_screen_padding")]
-        FeatureFlag::RemoveAltScreenPadding,
         #[cfg(feature = "avatar_in_tab_bar")]
         FeatureFlag::AvatarInTabBar,
         #[cfg(feature = "workflow_aliases")]
@@ -2726,8 +2847,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::Orchestration,
         #[cfg(feature = "orchestration_v2")]
         FeatureFlag::OrchestrationV2,
-        #[cfg(feature = "orchestration_event_push")]
-        FeatureFlag::OrchestrationEventPush,
+        #[cfg(feature = "orchestration_pill_bar")]
+        FeatureFlag::OrchestrationPillBar,
         #[cfg(feature = "pending_user_query_indicator")]
         FeatureFlag::PendingUserQueryIndicator,
         #[cfg(feature = "queue_slash_command")]
@@ -2752,6 +2873,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AgentHarness,
         #[cfg(feature = "oz_handoff")]
         FeatureFlag::OzHandoff,
+        #[cfg(feature = "handoff_local_cloud")]
+        FeatureFlag::HandoffLocalCloud,
         #[cfg(feature = "hoa_notifications")]
         FeatureFlag::HOANotifications,
         #[cfg(feature = "open_code_notifications")]
@@ -2780,6 +2903,12 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::CloudModeSetupV2,
         #[cfg(feature = "cloud_mode_input_v2")]
         FeatureFlag::CloudModeInputV2,
+        #[cfg(feature = "configurable_context_window")]
+        FeatureFlag::ConfigurableContextWindow,
+        #[cfg(feature = "handoff_cloud_cloud")]
+        FeatureFlag::HandoffCloudCloud,
+        #[cfg(feature = "git_credential_refresh")]
+        FeatureFlag::GitCredentialRefresh,
     ]);
 
     flags

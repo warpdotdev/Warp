@@ -50,8 +50,15 @@ impl AmbientAgentEntryBlock {
         pane_stack: WeakModelHandle<PaneStack<TerminalView>>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let view_model = terminal_view.as_ref(ctx).ambient_agent_view_model().clone();
-        ctx.subscribe_to_model(&view_model, Self::handle_ambient_agent_view_model_event);
+        if let Some(view_model) = terminal_view
+            .as_ref(ctx)
+            .ambient_agent_view_model()
+            .cloned()
+        {
+            ctx.subscribe_to_model(&view_model, Self::handle_ambient_agent_view_model_event);
+        } else {
+            log::warn!("AmbientAgentEntryBlock created without an ambient agent view model");
+        }
 
         let pane_configuration = terminal_view.as_ref(ctx).pane_configuration().clone();
         ctx.subscribe_to_model(&pane_configuration, Self::handle_pane_configuration_event);
@@ -108,17 +115,20 @@ impl AmbientAgentEntryBlock {
             .unwrap_or_else(|| "New cloud agent".to_owned())
     }
 
-    fn ambient_agent_view_model<'a>(&self, app: &'a AppContext) -> &'a AmbientAgentViewModel {
+    fn ambient_agent_view_model<'a>(
+        &self,
+        app: &'a AppContext,
+    ) -> Option<&'a AmbientAgentViewModel> {
         self.terminal_view
             .as_ref(app)
             .ambient_agent_view_model()
-            .as_ref(app)
+            .map(|model| model.as_ref(app))
     }
 
     /// Gets the detail text to display based on the ambient agent status.
     fn detail_text(&self, app: &AppContext) -> Option<&'static str> {
-        match self.ambient_agent_view_model(app).status() {
-            Status::NotAmbientAgent | Status::Setup | Status::Composing => None,
+        match self.ambient_agent_view_model(app)?.status() {
+            Status::Setup | Status::Composing => None,
             Status::WaitingForSession { .. } => Some("Starting environment..."),
             Status::AgentRunning => Some("Agent is working on task"),
             Status::Failed { .. } => Some("Agent failed"),
@@ -135,7 +145,9 @@ impl AmbientAgentEntryBlock {
     ) -> Box<dyn warpui::Element> {
         let theme = appearance.theme();
 
-        let view_model = self.ambient_agent_view_model(app);
+        let Some(view_model) = self.ambient_agent_view_model(app) else {
+            return Empty::new().finish();
+        };
         let (icon, color) = if view_model.is_failed() {
             (Icon::AlertTriangle, theme.ui_error_color())
         } else if view_model.is_needs_github_auth() {

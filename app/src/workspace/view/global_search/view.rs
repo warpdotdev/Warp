@@ -1995,7 +1995,8 @@ impl View for GlobalSearchView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         match self.enablement {
-            CodingPanelEnablementState::RemoteSession { .. } => {
+            CodingPanelEnablementState::PendingRemoteSession
+            | CodingPanelEnablementState::RemoteSession { .. } => {
                 return self.render_remote_state(app);
             }
             CodingPanelEnablementState::UnsupportedSession => {
@@ -2256,7 +2257,7 @@ impl GlobalSearchView {
         self.render_zero_state(
             Icon::AlertTriangle,
             "Global search unavailable",
-            "Global search requries access to your local workspace. Open a new session or navigate to an active session to view.",
+            "Global search requires access to your local workspace. Open a new session or navigate to an active session to view.",
             app,
         )
     }

@@ -20,7 +20,7 @@ use {
 };
 
 #[cfg(feature = "local_fs")]
-use super::diff_state::DiffStats;
+use super::diff_state::{diff_metadata_against_head, DiffStats};
 
 /// Public metadata exposed to consumers — the subset of diff metadata
 /// that the git chip (prompt display, agent view footer) needs.
@@ -288,8 +288,7 @@ impl GitRepoStatusModel {
         // shows the short SHA instead of the literal "HEAD").
         let current_branch_name = detect_current_branch_display(&repo_path).await?;
         // Diff stats against HEAD.
-        let stats_against_head =
-            super::diff_state::DiffStateModel::diff_metadata_against_head(&repo_path).await?;
+        let stats_against_head = diff_metadata_against_head(&repo_path).await?;
 
         Ok(GitStatusMetadata {
             current_branch_name,

@@ -4,21 +4,26 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::codebase_index_proto::{
+    proto_to_codebase_index_status_updated, proto_to_codebase_index_statuses_snapshot,
+    RemoteCodebaseIndexStatus,
+};
 use dashmap::DashMap;
 use futures::channel::oneshot;
 use futures::io::{AsyncRead, AsyncWrite};
 use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
-    client_message, server_message, Abort, Authenticate, ClientMessage, DeleteFile, ErrorCode,
-    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
-    NavigatedToDirectoryResponse, ReadFileContextRequest, ReadFileContextResponse,
-    RunCommandRequest, RunCommandResponse, ServerMessage, SessionBootstrapped, WriteFile,
+    client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
+    DeleteFile, ErrorCode, Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
+    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, ServerMessage,
+    SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
-
 use warp_core::SessionId;
+use warp_core::{safe_error, safe_warn};
 use warpui::r#async::TransportStream;
 
 /// Default request timeout (2 minutes).
@@ -67,9 +72,30 @@ pub enum ClientEvent {
     RepoMetadataUpdated {
         update: repo_metadata::RepoMetadataUpdate,
     },
+    /// A full remote codebase-index status snapshot was pushed by the server.
+    CodebaseIndexStatusesSnapshotReceived {
+        statuses: Vec<RemoteCodebaseIndexStatus>,
+    },
+    /// A single remote codebase-index status update was pushed by the server.
+    CodebaseIndexStatusUpdated { status: RemoteCodebaseIndexStatus },
     /// A server message could not be decoded and had no parseable request_id.
     MessageDecodingError,
+    /// A buffer was updated on the server (file changed on disk).
+    BufferUpdated {
+        path: String,
+        new_server_version: u64,
+        expected_client_version: u64,
+        edits: Vec<crate::proto::TextEdit>,
+    },
 }
+/// Parameters for the `Initialize` handshake, sent to the daemon at
+/// connection time.
+pub struct InitializeParams {
+    pub user_id: String,
+    pub user_email: String,
+    pub crash_reporting_enabled: bool,
+}
+
 /// Client for communicating with a `remote_server` process over the remote server protocol.
 ///
 /// Exposes async request/response APIs over generic I/O streams (child-process pipes,
@@ -185,12 +211,16 @@ impl RemoteServerClient {
     pub async fn initialize(
         &self,
         auth_token: Option<&str>,
+        params: InitializeParams,
     ) -> Result<InitializeResponse, ClientError> {
         let request_id = RequestId::new();
         let msg = ClientMessage {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::Initialize(Initialize {
                 auth_token: auth_token.unwrap_or_default().to_owned(),
+                user_id: params.user_id,
+                user_email: params.user_email,
+                crash_reporting_enabled: params.crash_reporting_enabled,
             })),
         };
 
@@ -199,7 +229,10 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::InitializeResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for Initialize: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for Initialize"),
+                    full: ("Remote server unexpected response for Initialize: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -213,6 +246,20 @@ impl RemoteServerClient {
             message: Some(client_message::Message::Authenticate(Authenticate {
                 auth_token: auth_token.to_owned(),
             })),
+        };
+        self.send_notification(msg);
+    }
+
+    /// Sends an `UpdatePreferences` notification when the user's privacy
+    /// settings change (e.g. toggling crash reporting).
+    pub fn update_preferences(&self, crash_reporting_enabled: bool) {
+        let msg = ClientMessage {
+            request_id: String::new(),
+            message: Some(client_message::Message::UpdatePreferences(
+                crate::proto::UpdatePreferences {
+                    crash_reporting_enabled,
+                },
+            )),
         };
         self.send_notification(msg);
     }
@@ -256,7 +303,10 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::NavigatedToDirectoryResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for NavigatedToDirectory: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for NavigatedToDirectory"),
+                    full: ("Remote server unexpected response for NavigatedToDirectory: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -284,7 +334,10 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::LoadRepoMetadataDirectoryResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for LoadRepoMetadataDirectory: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for LoadRepoMetadataDirectory"),
+                    full: ("Remote server unexpected response for LoadRepoMetadataDirectory: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -310,7 +363,10 @@ impl RemoteServerClient {
                 }
             },
             other => {
-                log::error!("Unexpected response variant for WriteFile: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for WriteFile"),
+                    full: ("Remote server unexpected response for WriteFile: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -335,10 +391,59 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::ReadFileContextResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for ReadFileContext: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for ReadFileContext"),
+                    full: ("Remote server unexpected response for ReadFileContext: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
+    }
+
+    /// Opens a buffer on the remote host for bidirectional syncing.
+    pub async fn open_buffer(&self, path: String) -> Result<OpenBufferResponse, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::OpenBuffer(OpenBuffer { path })),
+        };
+        let response = self.send_request(request_id, msg).await?;
+        match response.message {
+            Some(server_message::Message::OpenBufferResponse(resp)) => Ok(resp),
+            other => {
+                log::error!("Unexpected response variant for OpenBuffer: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Sends a buffer edit notification (fire-and-forget) to the remote host.
+    pub fn send_buffer_edit(
+        &self,
+        path: String,
+        expected_server_version: u64,
+        new_client_version: u64,
+        edits: Vec<TextEdit>,
+    ) {
+        let msg = ClientMessage {
+            request_id: String::new(), // notification — no response expected
+            message: Some(client_message::Message::BufferEdit(BufferEdit {
+                path,
+                expected_server_version,
+                new_client_version,
+                edits,
+            })),
+        };
+        self.send_notification(msg);
+    }
+
+    /// Tells the remote host to close a buffer (stop watching).
+    pub fn close_buffer(&self, path: String) {
+        let msg = ClientMessage {
+            request_id: String::new(),
+            message: Some(client_message::Message::CloseBuffer(CloseBuffer { path })),
+        };
+        self.send_notification(msg);
     }
 
     /// Deletes a file on the remote host.
@@ -357,7 +462,10 @@ impl RemoteServerClient {
                 }
             },
             other => {
-                log::error!("Unexpected response variant for DeleteFile: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for DeleteFile"),
+                    full: ("Remote server unexpected response for DeleteFile: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -374,8 +482,26 @@ impl RemoteServerClient {
                 let update = crate::repo_metadata_proto::proto_to_repo_metadata_update(&push)?;
                 Some(ClientEvent::RepoMetadataUpdated { update })
             }
+            server_message::Message::CodebaseIndexStatusesSnapshot(snapshot) => {
+                Some(ClientEvent::CodebaseIndexStatusesSnapshotReceived {
+                    statuses: proto_to_codebase_index_statuses_snapshot(&snapshot),
+                })
+            }
+            server_message::Message::CodebaseIndexStatusUpdated(update) => {
+                let status = proto_to_codebase_index_status_updated(&update)?;
+                Some(ClientEvent::CodebaseIndexStatusUpdated { status })
+            }
+            server_message::Message::BufferUpdated(push) => Some(ClientEvent::BufferUpdated {
+                path: push.path,
+                new_server_version: push.new_server_version,
+                expected_client_version: push.expected_client_version,
+                edits: push.edits,
+            }),
             other => {
-                log::warn!("Unhandled push message variant: {other:?}");
+                safe_warn!(
+                    safe: ("Unhandled push message variant"),
+                    full: ("Unhandled push message variant: {other:?}")
+                );
                 None
             }
         }
@@ -405,7 +531,10 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::RunCommandResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for RunCommand: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for RunCommand"),
+                    full: ("Remote server unexpected response for RunCommand: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -497,11 +626,11 @@ impl RemoteServerClient {
             if let Err(e) = protocol::write_client_message(&mut writer, &msg).await {
                 let request_id = RequestId::from(msg.request_id);
                 if !e.is_write_recoverable() {
-                    log::error!("Writer task fatal error: request_id={request_id}: {e}");
+                    log::error!("Writer task fatal error: request_id={request_id} error={e}");
                     pending_requests.clear();
                     break;
                 }
-                log::error!("Writer task: request_id={request_id}: {e}");
+                log::warn!("Remote server writer task error: request_id={request_id} error={e}");
                 // Drop the sender so the caller receives ResponseChannelClosed.
                 pending_requests.remove(&request_id);
             }

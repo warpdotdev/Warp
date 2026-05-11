@@ -24,3 +24,4 @@ pub use warp_graphql_schema::schema;
 
 use cynic::impl_scalar;
 impl_scalar!(crate::scalars::Time, schema::Time);
+impl_scalar!(crate::scalars::Uint32, schema::Uint);

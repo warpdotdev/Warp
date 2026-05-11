@@ -114,10 +114,6 @@ pub enum FeatureFlag {
     /// Enables the settings file feature.
     SettingsFile,
 
-    /// Enables the settings import onboarding block and pre-parsing
-    /// configs on app startup.
-    SettingsImport,
-
     /// Enables rect selection.
     RectSelection,
 
@@ -142,19 +138,12 @@ pub enum FeatureFlag {
     /// Routes SSH sessions through the tmux-backed SSH wrapper.
     SSHTmuxWrapper,
 
-    /// Reduces the amount of horizontal padding in the blocklist
-    /// from 20px to 16px.
-    LessHorizontalTerminalPadding,
-
     /// Enables the shell selector, allowing us to open a new tab in
     /// a shell other than the default shell.
     ShellSelector,
 
     /// Enables writing to long-running commands in shared sessions.
     SharedSessionWriteToLongRunningCommands,
-
-    /// Replaces the bookmark button with a "save as workflow" button.
-    BlockToolbeltSaveAsWorkflow,
 
     /// Lazily builds scenes at render time instead of eagerly when a view
     /// changes.
@@ -164,12 +153,6 @@ pub enum FeatureFlag {
     /// corresponding `use_acls` flag in the session sharing server is disabled.
     /// https://github.com/warpdotdev/session-sharing-server/blob/b6590ebd0b0e7f6847d6b2228b4e77d63939ce22/server/Cargo.toml#L13
     SessionSharingAcls,
-
-    /// Removes the extraneous padding from the alt-screen that we previously had
-    /// to keep consistent size between blocklist and alt-screen.
-    ///
-    /// See plan here: https://docs.google.com/document/d/1TBPSWNfh4KylkEgL5o5xyYgK_KQzUQk1oxjuIx2ipXw
-    RemoveAltScreenPadding,
 
     /// Enables the full-screen "zen mode" setting, where we hide the tab bar if there's only one
     /// tab.
@@ -710,14 +693,24 @@ pub enum FeatureFlag {
     Orchestration,
 
     /// Enables server-side durable messaging for orchestration (v2).
-    /// When enabled, messages and events are stored in Postgres and discovered
-    /// via server polling instead of client-local conversation history.
+    /// When enabled, messages and events are stored in Postgres and the client
+    /// opens a persistent SSE connection to the server to receive events in
+    /// real time.
     OrchestrationV2,
 
-    /// Enables SSE-based event push for orchestration instead of polling.
-    /// When enabled the client opens a persistent SSE connection to the server
-    /// and receives events in real time instead of short-polling.
-    OrchestrationEventPush,
+    /// Gates client-side support for the `orchestrate` tool, which batches
+    /// multiple child agents into a single tool call with an inline
+    /// confirmation card. When enabled, the client advertises
+    /// `RequestSettings.SupportsOrchestrate = true` and the server's
+    /// orchestrate tool replaces `start_agent` / `start_agent_v2` for
+    /// orchestration-capable conversations. Layered on top of
+    /// `OrchestrationV2`; has no effect when v2 is off.
+    RunAgentsTool,
+
+    /// Renders a horizontal pill bar in the agent view pane header showing the
+    /// orchestrator agent and all of its child agents, with click-to-switch
+    /// behavior between siblings.
+    OrchestrationPillBar,
 
     /// Shows a pending user query indicator during summarization when a follow-up
     /// prompt is queued via `/fork-and-compact` or `/compact-and`.
@@ -835,6 +828,33 @@ pub enum FeatureFlag {
     VerticalTabsSummaryMode,
 
     CloudModeInputV2,
+
+    /// Gates the user-configurable context window slider in AI settings and
+    /// the execution profile editor. When disabled, the slider is hidden and
+    /// `base_model_context_window_limit` is not sent on outbound requests, so
+    /// the server falls back to its default.
+    ConfigurableContextWindow,
+    /// Enables continuing cloud mode conversations in the cloud after an execution ends.
+    HandoffCloudCloud,
+
+    /// Enables the local-to-cloud Oz handoff entry points (footer chip and
+    /// `/move-to-cloud` slash command) that fork the active local Oz
+    /// conversation into a fresh cloud agent run with the current workspace
+    /// snapshot attached. Requires `OzHandoff` to also be enabled.
+    HandoffLocalCloud,
+
+    /// Enables creating API keys scoped to named agents in the API key
+    /// management UI. When enabled the "Team" option in the key-type
+    /// selector is replaced with "Agent" and users can pick which agent
+    /// identity the key authenticates as.
+    NamedAgents,
+    /// Gates the driver behavior that writes GitHub credentials to disk
+    /// (`~/.git-credentials`, `~/.config/gh/hosts.yaml`) and runs the
+    /// background refresh loop that keeps them fresh during a task run.
+    GitCredentialRefresh,
+
+    /// Replaces the raw harness CLI command with a styled header showing CLI name + status icon.
+    HarnessSessionHeader,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -896,21 +916,29 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::FullSourceCodeEmbedding,
     FeatureFlag::CodebaseIndexSpeedbump,
     // End manually enabled Code features.
-    FeatureFlag::DirectoryTabColors,
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
-    FeatureFlag::OzIdentityFederation,
     FeatureFlag::AgentHarness,
     FeatureFlag::OzHandoff,
     FeatureFlag::ConversationApi,
     FeatureFlag::RememberFastForwardState,
     FeatureFlag::HOANotifications,
     FeatureFlag::OrchestrationV2,
-    FeatureFlag::OrchestrationEventPush,
+    FeatureFlag::OrchestrationPillBar,
+    FeatureFlag::RunAgentsTool,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
+    #[cfg(not(windows))]
+    FeatureFlag::SshRemoteServer,
+    FeatureFlag::CloudModeInputV2,
+    FeatureFlag::HandoffLocalCloud,
+    FeatureFlag::DragTabsToWindows,
+    FeatureFlag::NamedAgents,
+    FeatureFlag::GitCredentialRefresh,
+    FeatureFlag::HandoffCloudCloud,
+    FeatureFlag::HarnessSessionHeader,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
@@ -918,12 +946,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
 pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Orchestration,
     FeatureFlag::BlocklistMarkdownTableRendering,
-    FeatureFlag::BlocklistMarkdownImages,
     FeatureFlag::MarkdownTables,
-    FeatureFlag::OzIdentityFederation,
-    // Remote server binary is not yet supported on Windows.
-    #[cfg(not(windows))]
-    FeatureFlag::SshRemoteServer,
     FeatureFlag::GitOperationsInCodeReview,
 ];
 
@@ -937,6 +960,9 @@ pub const RELEASE_FLAGS: &[FeatureFlag] = &[
     // Marked text is currently only supported on MacOS.
     #[cfg(target_os = "macos")]
     FeatureFlag::ImeMarkedText,
+    // Remote server binary is not yet supported on Windows.
+    #[cfg(not(windows))]
+    FeatureFlag::SshRemoteServer,
 ];
 
 /// Flags that we want to allow to switch at runtime (assuming RuntimeFeatureFlags is set)
@@ -1014,7 +1040,6 @@ impl FeatureFlag {
                 Some("Enables rendering markdown tables inline in AI block list responses.")
             }
             MarkdownTables => Some("Enables rendering and interaction support for markdown tables in notebooks."),
-            OzIdentityFederation => Some("Enables automatic authentication from Oz to AWS and GCP"),
             SettingsFile => Some("Enables configuring Warp via a user-editable `settings.toml` file, with hot reload and error reporting for invalid values."),
             GitOperationsInCodeReview => Some("Enables commit, push, and create-PR actions directly from the code review panel."),
             _ => None,
@@ -1111,7 +1136,7 @@ mod overrides {
 
 /// An atomic tri-state value.
 ///
-/// This is initally unset, and can be set to a true or false value.
+/// This is initially unset, and can be set to a true or false value.
 ///
 /// Writes and reads use [`Ordering::Relaxed`], so should not be used for
 /// synchronization.
@@ -1171,5 +1196,5 @@ impl From<TriState> for Option<bool> {
 }
 
 #[cfg(test)]
-#[path = "features_test.rs"]
+#[path = "features_tests.rs"]
 mod tests;

@@ -15,6 +15,8 @@ use crate::workspace::WorkspaceAction;
 use std::path::Path;
 #[cfg(not(target_family = "wasm"))]
 use warp_cli::agent::Harness;
+#[cfg(not(target_family = "wasm"))]
+use warp_core::features::FeatureFlag;
 use warp_core::paths::home_relative_path;
 
 #[cfg(not(target_family = "wasm"))]
@@ -57,6 +59,12 @@ struct TombstoneDisplayData {
     /// Execution harness for the task. None until the task is loaded.
     #[cfg(not(target_family = "wasm"))]
     harness: Option<Harness>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConversationEndedTombstoneEvent {
+    #[cfg(not(target_family = "wasm"))]
+    ContinueInCloud { task_id: AmbientAgentTaskId },
 }
 
 impl TombstoneDisplayData {
@@ -171,6 +179,8 @@ pub struct ConversationEndedTombstoneView {
     display_data: TombstoneDisplayData,
     artifact_buttons_view: ViewHandle<ArtifactButtonsRow>,
     #[cfg(not(target_family = "wasm"))]
+    continue_in_cloud_button: Option<ViewHandle<ActionButton>>,
+    #[cfg(not(target_family = "wasm"))]
     continue_locally_button: Option<ViewHandle<ActionButton>>,
     #[cfg(target_family = "wasm")]
     open_in_warp_button: Option<ViewHandle<ActionButton>>,
@@ -203,6 +213,20 @@ impl ConversationEndedTombstoneView {
 
         let artifact_buttons_view =
             ctx.add_typed_action_view(|ctx| ArtifactButtonsRow::new(&display_data.artifacts, ctx));
+        #[cfg(not(target_family = "wasm"))]
+        let continue_in_cloud_button = task_id
+            .filter(|_| FeatureFlag::HandoffCloudCloud.is_enabled())
+            .map(|task_id| {
+                ctx.add_typed_action_view(move |_| {
+                    ActionButton::new("Continue", PrimaryTheme)
+                        .with_tooltip("Continue this task in Cloud Mode")
+                        .on_click(move |ctx| {
+                            ctx.dispatch_typed_action(
+                                ConversationEndedTombstoneAction::ContinueInCloud { task_id },
+                            );
+                        })
+                })
+            });
 
         #[cfg(not(target_family = "wasm"))]
         let continue_locally_button = conversation_id.map(|conv_id| {
@@ -235,6 +259,8 @@ impl ConversationEndedTombstoneView {
         let view = Self {
             display_data,
             artifact_buttons_view,
+            #[cfg(not(target_family = "wasm"))]
+            continue_in_cloud_button,
             #[cfg(not(target_family = "wasm"))]
             continue_locally_button,
             #[cfg(target_family = "wasm")]
@@ -482,14 +508,17 @@ impl ConversationEndedTombstoneView {
             // show the button.
             let harness_allows_continue =
                 !matches!(self.display_data.harness, Some(h) if h != Harness::Oz);
-            if self.continue_locally_button.is_some()
-                && AISettings::as_ref(app).is_any_ai_enabled(app)
-                && harness_allows_continue
-            {
-                row.add_child(
-                    ChildView::new(self.continue_locally_button.as_ref().unwrap()).finish(),
-                );
-                has_button = true;
+            if AISettings::as_ref(app).is_any_ai_enabled(app) {
+                if let Some(continue_in_cloud_button) = &self.continue_in_cloud_button {
+                    row.add_child(ChildView::new(continue_in_cloud_button).finish());
+                    has_button = true;
+                }
+                if harness_allows_continue {
+                    if let Some(continue_locally_button) = &self.continue_locally_button {
+                        row.add_child(ChildView::new(continue_locally_button).finish());
+                        has_button = true;
+                    }
+                }
             }
         }
 
@@ -513,6 +542,8 @@ impl ConversationEndedTombstoneView {
 
 #[derive(Debug, Clone)]
 pub enum ConversationEndedTombstoneAction {
+    #[cfg(not(target_family = "wasm"))]
+    ContinueInCloud { task_id: AmbientAgentTaskId },
     #[cfg(not(target_family = "wasm"))]
     ContinueLocally(AIConversationId),
     #[cfg(target_family = "wasm")]
@@ -588,7 +619,7 @@ impl View for ConversationEndedTombstoneView {
 }
 
 impl Entity for ConversationEndedTombstoneView {
-    type Event = ();
+    type Event = ConversationEndedTombstoneEvent;
 }
 
 impl TypedActionView for ConversationEndedTombstoneView {
@@ -596,6 +627,16 @@ impl TypedActionView for ConversationEndedTombstoneView {
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
+            #[cfg(not(target_family = "wasm"))]
+            ConversationEndedTombstoneAction::ContinueInCloud { task_id } => {
+                send_telemetry_from_ctx!(
+                    AgentManagementTelemetryEvent::TombstoneContinueInCloud {
+                        task_id: task_id.to_string()
+                    },
+                    ctx
+                );
+                ctx.emit(ConversationEndedTombstoneEvent::ContinueInCloud { task_id: *task_id });
+            }
             #[cfg(not(target_family = "wasm"))]
             ConversationEndedTombstoneAction::ContinueLocally(conversation_id) => {
                 send_telemetry_from_ctx!(

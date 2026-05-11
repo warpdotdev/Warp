@@ -16,8 +16,6 @@ pub(super) mod util;
 pub use ai::agent::{action::*, action_result::*, AIAgentCitation, FileLocations};
 use warp_core::features::FeatureFlag;
 
-#[cfg(test)]
-mod suggestion_test;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::block::view_impl::output::are_all_text_sections_empty;
 use crate::ai::skills::SkillDescriptor;
@@ -27,6 +25,7 @@ use crate::code_review::comments::{
 };
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::server::server_api::AIApiError;
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 use ai::skills::ParsedSkill;
 use chrono::{DateTime, Local, TimeDelta};
 use comment::ReviewComment;
@@ -717,13 +716,19 @@ impl ProgrammingLanguage {
     #[cfg_attr(target_family = "wasm", allow(unused))]
     pub fn to_extension(&self) -> Option<&str> {
         match self {
+            // The arms below cover both canonical language names emitted by the agent (e.g.
+            // "rust", "kotlin") and common markdown code-fence aliases (e.g. "rs", "kt") to keep
+            // syntax highlighting working when the model uses either. The set of recognized
+            // languages here is kept in sync with `SUPPORTED_LANGUAGES` in the `languages` crate.
             Self::Other(language) => match language.to_lowercase().as_str() {
-                "rust" => Some("rs"),
-                "go" => Some("go"),
-                "python" => Some("py"),
-                "javascript" => Some("js"),
-                "typescript" => Some("ts"),
-                "yaml" => Some("yaml"),
+                "rust" | "rs" => Some("rs"),
+                "go" | "golang" => Some("go"),
+                "python" | "py" => Some("py"),
+                "javascript" | "js" => Some("js"),
+                "typescript" | "ts" => Some("ts"),
+                "jsx" => Some("jsx"),
+                "tsx" => Some("tsx"),
+                "yaml" | "yml" => Some("yaml"),
                 "cpp" | "c++" => Some("cpp"),
                 "java" => Some("java"),
                 "groovy" => Some("java"),
@@ -733,17 +738,22 @@ impl ProgrammingLanguage {
                 "css" => Some("css"),
                 "c" => Some("c"),
                 "json" => Some("json"),
-                "hcl" => Some("hcl"),
+                "hcl" | "terraform" | "tf" => Some("hcl"),
                 "lua" => Some("lua"),
-                "ruby" => Some("rb"),
+                "ruby" | "rb" => Some("rb"),
                 "php" => Some("php"),
                 "toml" => Some("toml"),
                 "swift" => Some("swift"),
-                "kotlin" => Some("kt"),
+                "kotlin" | "kt" => Some("kt"),
                 "powershell" => Some("ps1"),
                 "elixir" => Some("exs"),
                 "scala" => Some("scala"),
                 "sql" => Some("sql"),
+                "objective-c" | "objc" => Some("m"),
+                "starlark" => Some("bzl"),
+                "xml" => Some("xml"),
+                "vue" => Some("vue"),
+                "dockerfile" | "docker" | "containerfile" => Some("dockerfile"),
                 _ => None,
             },
             Self::Shell(ShellType::PowerShell) => Some("ps1"),
@@ -2323,6 +2333,31 @@ pub enum UserQueryMode {
     Orchestrate,
 }
 
+pub fn extract_user_query_mode(query: String) -> (String, UserQueryMode) {
+    if let Some(query) = commands::strip_command_prefix(&query, commands::PLAN_NAME) {
+        (query, UserQueryMode::Plan)
+    } else if let Some(query) = commands::strip_command_prefix(&query, commands::ORCHESTRATE_NAME) {
+        (query, UserQueryMode::Orchestrate)
+    } else {
+        (query, UserQueryMode::Normal)
+    }
+}
+
+/// Reconstructs the display form of a user query that has been stripped via
+/// [`extract_user_query_mode`], by re-prepending the slash-command prefix
+/// associated with [`UserQueryMode`].
+///
+/// This is the inverse of [`extract_user_query_mode`] and the canonical way
+/// for UI to render a stored `(mode, query)` pair so the displayed prompt
+/// always matches what the user originally submitted.
+pub fn display_user_query_with_mode(mode: UserQueryMode, query: &str) -> String {
+    match mode {
+        UserQueryMode::Normal => query.to_owned(),
+        UserQueryMode::Plan => format!("{} {query}", commands::PLAN.name),
+        UserQueryMode::Orchestrate => format!("{} {query}", commands::ORCHESTRATE.name),
+    }
+}
+
 // TODO(zachbai): Refactor this to consolidate with `LongRunningCommandSnapshot` and `Snapshot`
 // variants of `ReadShellCommandOutputResult` and `WriteToLongRunningShellCommandResult`.
 #[derive(Clone, Debug, PartialEq)]
@@ -2418,6 +2453,7 @@ pub enum AIAgentInput {
 
     SummarizeConversation {
         prompt: Option<String>,
+        context: Arc<[AIAgentContext]>,
     },
 
     /// Invoke a skill. The skill content is passed as instructions to the agent.
@@ -2463,6 +2499,15 @@ pub enum AIAgentInput {
         trigger: Option<PassiveSuggestionTrigger>,
         suggestion: PassiveSuggestionResultType,
         context: Arc<[AIAgentContext]>,
+    },
+
+    /// Piggybacked orchestration config update from the plan card.
+    /// Sent on the next outbound request after the user edits the
+    /// config block or toggles approval.
+    OrchestrationConfigUpdate {
+        plan_id: String,
+        config: OrchestrationConfig,
+        status: OrchestrationConfigStatus,
     },
 }
 
@@ -2557,6 +2602,7 @@ impl Display for AIAgentInput {
                 write!(f, "EventsFromAgents({} events)", events.len())
             }
             Self::PassiveSuggestionResult { .. } => write!(f, "PassiveSuggestionResult"),
+            Self::OrchestrationConfigUpdate { .. } => write!(f, "OrchestrationConfigUpdate"),
         }
     }
 }
@@ -2568,13 +2614,7 @@ impl AIAgentInput {
                 query,
                 user_query_mode,
                 ..
-            } => match user_query_mode {
-                UserQueryMode::Plan => Some(format!("{} {query}", commands::PLAN.name)),
-                UserQueryMode::Orchestrate => {
-                    Some(format!("{} {query}", commands::ORCHESTRATE.name))
-                }
-                UserQueryMode::Normal => Some(query.clone()),
-            },
+            } => Some(display_user_query_with_mode(*user_query_mode, query)),
             Self::CreateNewProject { query, .. } => Some(query.clone()),
             Self::CloneRepository {
                 clone_repo_url: url,
@@ -2620,7 +2660,8 @@ impl AIAgentInput {
             | Self::StartFromAmbientRunPrompt { .. }
             | Self::MessagesReceivedFromAgents { .. }
             | Self::EventsFromAgents { .. }
-            | Self::PassiveSuggestionResult { .. } => None,
+            | Self::PassiveSuggestionResult { .. }
+            | Self::OrchestrationConfigUpdate { .. } => None,
         }
     }
 
@@ -2715,9 +2756,10 @@ impl AIAgentInput {
             | Self::InvokeSkill { context, .. }
             | Self::StartFromAmbientRunPrompt { context, .. }
             | Self::PassiveSuggestionResult { context, .. } => Some(context),
-            Self::SummarizeConversation { .. }
-            | Self::MessagesReceivedFromAgents { .. }
-            | Self::EventsFromAgents { .. } => None,
+            Self::SummarizeConversation { context, .. } => Some(context),
+            Self::MessagesReceivedFromAgents { .. }
+            | Self::EventsFromAgents { .. }
+            | Self::OrchestrationConfigUpdate { .. } => None,
         }
     }
 
@@ -2748,7 +2790,8 @@ impl AIAgentInput {
             | Self::StartFromAmbientRunPrompt { .. }
             | Self::MessagesReceivedFromAgents { .. }
             | Self::EventsFromAgents { .. }
-            | Self::PassiveSuggestionResult { .. } => None,
+            | Self::PassiveSuggestionResult { .. }
+            | Self::OrchestrationConfigUpdate { .. } => None,
         }
     }
 
@@ -3030,5 +3073,5 @@ impl Suggestions {
 }
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

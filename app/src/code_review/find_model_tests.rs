@@ -176,8 +176,7 @@ fn create_find_model_with_query(
 ) -> ModelHandle<CodeReviewFindModel> {
     let (window_id, _) = app.add_window(WindowStyle::NotStealFocus, |_| TestView);
 
-    let diff_state_model =
-        app.add_model(|ctx| DiffStateModel::new(Some("/tmp/test".to_string()), ctx));
+    let diff_state_model = app.add_model(DiffStateModel::new_for_test);
     let repo_path = PathBuf::from("/tmp/test");
     let working_directories_model = app.add_model(|_| WorkingDirectoriesModel::new());
     let code_review_comment_batch =

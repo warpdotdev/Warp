@@ -21,7 +21,7 @@ use crate::server::telemetry::{
     AddTabWithShellSource, AgentModeEntrypoint, PaletteSource, SharingDialogSource,
 };
 use crate::settings_view::{SettingsAction as SettingsTabAction, SettingsSection};
-use crate::tab::NewSessionMenuItem;
+use crate::tab::{NewSessionMenuItem, SelectedTabColor};
 use crate::tab_configs::TabConfig;
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
@@ -112,7 +112,17 @@ pub enum WorkspaceAction {
     RenamePane(PaneViewLocator),
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
+    /// Renames the focused pane in the active tab. Mirrors `RenameActiveTab`
+    /// so the action is reachable from the binding registry / Command Palette
+    /// (see #9351). The context-menu path keeps using `RenamePane(locator)`.
+    RenameActivePane,
     SetActiveTabName(String),
+    /// Sets the manual color override for the active tab.
+    ///
+    /// - `Color(_)` — apply that color.
+    /// - `Cleared` — explicitly clear (suppresses any directory default).
+    /// - `Unset` — remove the manual override (lets the directory default apply, if any).
+    SetActiveTabColor(SelectedTabColor),
     ToggleTabRightClickMenu {
         tab_index: usize,
         anchor: TabContextMenuAnchor,
@@ -240,16 +250,7 @@ pub enum WorkspaceAction {
         tab_index: usize,
         tab_position: RectF,
     },
-    HandoffPendingTransfer {
-        target_window_id: WindowId,
-        insertion_index: usize,
-    },
-    ReverseHandoff {
-        target_window_id: WindowId,
-        target_insertion_index: usize,
-    },
     DropTab,
-    FinalizeDropTab,
     /// Toggles the left panel. In Code Mode V1 this toggles Warp Drive.
     /// In Code Mode V2 this toggles the left panel which contains both the project explorer and
     /// Warp Drive. This happens as explicit action from the user.
@@ -481,6 +482,21 @@ pub enum WorkspaceAction {
     },
     /// Insert the /fork slash command into the active terminal's input.
     InsertForkSlashCommand,
+    /// Open a local-to-cloud handoff pane next to the active conversation
+    /// (REMOTE-1486). Triggered by the `/move-to-cloud` slash command
+    /// and the footer chip of the same name. The dispatch site reads the
+    /// active conversation's `server_conversation_token` and gates on
+    /// `FeatureFlag::OzHandoff && FeatureFlag::HandoffLocalCloud`.
+    /// Falls through to splitting a fresh cloud-mode pane when the active
+    /// conversation isn't handoff-able (no synced server token, empty, or no
+    /// active conversation at all).
+    OpenLocalToCloudHandoffPane {
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        launch: Option<crate::ai::blocklist::handoff::PendingCloudLaunch>,
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        launch: Option<()>,
+        explicit_environment_id: Option<crate::server::ids::SyncId>,
+    },
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {
         prompt: Option<String>,
@@ -696,7 +712,7 @@ impl WorkspaceAction {
     }
 
     /// Matches what actions require the app state to be saved, and which don't. We match all
-    /// actions directly, rather than using _, so we're forced to make a concious decision for each
+    /// actions directly, rather than using _, so we're forced to make a conscious decision for each
     /// of them, rather than following some default.
     pub fn should_save_app_state_on_action(&self) -> bool {
         use WorkspaceAction::*;
@@ -720,7 +736,9 @@ impl WorkspaceAction {
             | RenamePane(_)
             | ResetPaneName(_)
             | RenameActiveTab
+            | RenameActivePane
             | SetActiveTabName(_)
+            | SetActiveTabColor(_)
             | CloseTab(_)
             | CloseActiveTab
             | CloseOtherTabs(_)
@@ -820,10 +838,7 @@ impl WorkspaceAction {
             | CreateTeamAIPrompt
             | OpenInExplorer { .. }
             | DragTab { .. }
-            | HandoffPendingTransfer { .. }
-            | ReverseHandoff { .. }
             | StartTabDrag
-            | FinalizeDropTab
             | ToggleLeftPanel
             | ToggleWarpDrive
             | OpenWarpDrive
@@ -933,6 +948,7 @@ impl WorkspaceAction {
             | TabConfigSidecarRemoveConfig { .. }
             | OpenSettingsFile
             | FixSettingsWithOz { .. }
+            | OpenLocalToCloudHandoffPane { .. }
             | OpenNetworkLogPane => false,
             #[cfg(debug_assertions)]
             ShowHoaOnboardingFlow => false,

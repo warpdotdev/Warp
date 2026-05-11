@@ -27,6 +27,7 @@ use crate::{
         message_bar::{Message, MessageItem},
         slash_command_model::SlashCommandModel,
         suggestions_mode_model::InputSuggestionsModeModel,
+        HandoffComposeState,
     },
 };
 use warp_multi_agent_api as api;
@@ -113,7 +114,7 @@ pub struct BlocklistAIStatusBar {
     terminal_model: Arc<FairMutex<TerminalModel>>,
     shimmering_text_handle: ShimmeringTextStateHandle,
     state_handles: StateHandles,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
+    ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
 
     autoexecute_keystroke: Option<Keystroke>,
     queue_next_prompt_keystroke: Option<Keystroke>,
@@ -155,10 +156,11 @@ impl BlocklistAIStatusBar {
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         shortcut_view_model: ModelHandle<AgentShortcutViewModel>,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
+        ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
         input_suggestions_model: ModelHandle<InputSuggestionsModeModel>,
         slash_command_model: ModelHandle<SlashCommandModel>,
         ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
+        handoff_compose_state: ModelHandle<HandoffComposeState>,
         terminal_view_id: EntityId,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
@@ -348,6 +350,7 @@ impl BlocklistAIStatusBar {
                 input_suggestions_model,
                 slash_command_model,
                 context_model.clone(),
+                handoff_compose_state,
                 terminal_model.clone(),
                 ctx,
             )
@@ -356,20 +359,22 @@ impl BlocklistAIStatusBar {
         let child_agent_status_card = ctx.add_typed_action_view(|ctx| {
             ChildAgentStatusCard::new(agent_view_controller.clone(), ctx)
         });
-        ctx.subscribe_to_model(&ambient_agent_view_model, |me, _, event, ctx| match event {
-            AmbientAgentViewModelEvent::DispatchedAgent
-            | AmbientAgentViewModelEvent::ProgressUpdated => {
-                me.update_agent_tip(ctx);
-                ctx.notify();
-            }
-            AmbientAgentViewModelEvent::SessionReady { .. }
-            | AmbientAgentViewModelEvent::Failed { .. }
-            | AmbientAgentViewModelEvent::NeedsGithubAuth
-            | AmbientAgentViewModelEvent::Cancelled => {
-                ctx.notify();
-            }
-            _ => (),
-        });
+        if let Some(ambient_agent_view_model) = ambient_agent_view_model.as_ref() {
+            ctx.subscribe_to_model(ambient_agent_view_model, |me, _, event, ctx| match event {
+                AmbientAgentViewModelEvent::DispatchedAgent
+                | AmbientAgentViewModelEvent::ProgressUpdated => {
+                    me.update_agent_tip(ctx);
+                    ctx.notify();
+                }
+                AmbientAgentViewModelEvent::SessionReady { .. }
+                | AmbientAgentViewModelEvent::Failed { .. }
+                | AmbientAgentViewModelEvent::NeedsGithubAuth
+                | AmbientAgentViewModelEvent::Cancelled => {
+                    ctx.notify();
+                }
+                _ => (),
+            });
+        }
 
         Self {
             active_exchange_model: None,
@@ -879,7 +884,10 @@ impl BlocklistAIStatusBar {
             return None;
         }
 
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
+        let ambient_agent_model = self
+            .ambient_agent_view_model
+            .as_ref()
+            .map(|ambient_agent_view_model| ambient_agent_view_model.as_ref(app))?;
 
         let progress = ambient_agent_model.agent_progress()?;
         let progress_text = if progress.harness_started_at.is_some() {
@@ -911,7 +919,10 @@ impl BlocklistAIStatusBar {
             return None;
         }
 
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
+        let ambient_agent_model = self
+            .ambient_agent_view_model
+            .as_ref()
+            .map(|ambient_agent_view_model| ambient_agent_view_model.as_ref(app))?;
         let theme = Appearance::as_ref(app).theme();
         let error_color = theme.ansi_fg_red();
 
@@ -1142,11 +1153,18 @@ impl View for BlocklistAIStatusBar {
             if let Some(cloud_mode_setup_status) = self.render_cloud_mode_setup_status(app) {
                 cloud_mode_setup_status
             } else if FeatureFlag::CloudModeSetupV2.is_enabled()
-                && is_cloud_agent_pre_first_exchange(
-                    &self.ambient_agent_view_model,
-                    &self.agent_view_controller,
-                    app,
-                )
+                && self
+                    .ambient_agent_view_model
+                    .as_ref()
+                    .is_some_and(|ambient_agent_view_model| {
+                        let terminal_model = self.terminal_model.lock();
+                        is_cloud_agent_pre_first_exchange(
+                            Some(ambient_agent_view_model),
+                            &self.agent_view_controller,
+                            &terminal_model,
+                            app,
+                        )
+                    })
             {
                 render_warping_indicator_base(
                     WarpingIndicatorProps {
@@ -1206,18 +1224,26 @@ impl View for BlocklistAIStatusBar {
                     .is_none(),
             ) {
                 warping_indicator
-            } else if self
-                .ambient_agent_view_model
-                .as_ref(app)
-                .is_waiting_for_session()
-            {
+            } else if self.ambient_agent_view_model.as_ref().is_some_and(
+                |ambient_agent_view_model| {
+                    ambient_agent_view_model
+                        .as_ref(app)
+                        .is_waiting_for_session()
+                },
+            ) {
                 // Don't render warping indicator - the loading screen is shown in the main view
                 return Empty::new().finish();
             } else if agent_view_controller.is_active() {
-                return Flex::column()
-                    .with_child(ChildView::new(&self.child_agent_status_card).finish())
-                    .with_child(ChildView::new(&self.agent_message_bar).finish())
-                    .finish();
+                // The new orchestration pill bar in the agent view header
+                // replaces the legacy child-agent status card rows; when
+                // it's enabled, render only the message bar here.
+                let mut column = Flex::column();
+                if !FeatureFlag::OrchestrationPillBar.is_enabled() {
+                    column =
+                        column.with_child(ChildView::new(&self.child_agent_status_card).finish());
+                }
+                column = column.with_child(ChildView::new(&self.agent_message_bar).finish());
+                return column.finish();
             } else {
                 return Empty::new().finish();
             };
@@ -1283,8 +1309,9 @@ impl View for BlocklistAIStatusBar {
 
         // When the agent view is active, keep the child agent status card
         // visible above the warping/status indicator so it doesn't disappear
-        // while the agent is working.
-        if agent_view_controller.is_active() {
+        // while the agent is working. The new orchestration pill bar
+        // replaces this card, so skip it when that flag is on.
+        if agent_view_controller.is_active() && !FeatureFlag::OrchestrationPillBar.is_enabled() {
             return Flex::column()
                 .with_child(ChildView::new(&self.child_agent_status_card).finish())
                 .with_child(container.finish())

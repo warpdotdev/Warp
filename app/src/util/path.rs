@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     env,
     ffi::OsStr,
-    path::{self, Path},
+    path::{self, Path, PathBuf},
 };
 
 use is_executable::IsExecutable as _;
@@ -39,14 +39,45 @@ pub fn resolve_executable_in_path<'a>(command: &'a str, path_env: &OsStr) -> Opt
         return file_exists_and_is_executable(path).then_some(Cow::Borrowed(path));
     }
     for path_dir in env::split_paths(path_env).unique() {
-        let resolved = path_dir.join(command);
-        if file_exists_and_is_executable(&resolved) {
+        if let Some(resolved) = resolve_executable_in_dir(&path_dir, command) {
             return Some(Cow::Owned(resolved));
         }
     }
     None
 }
 
+fn resolve_executable_in_dir(path_dir: &Path, command: &str) -> Option<PathBuf> {
+    let resolved = path_dir.join(command);
+    if file_exists_and_is_executable(&resolved) {
+        return Some(resolved);
+    }
+
+    #[cfg(windows)]
+    if Path::new(command).extension().is_none() {
+        for ext in windows_path_extensions() {
+            let resolved = path_dir.join(format!("{command}{ext}"));
+            if file_exists_and_is_executable(&resolved) {
+                return Some(resolved);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(windows)]
+fn windows_path_extensions() -> impl Iterator<Item = String> {
+    env::var_os("PATHEXT")
+        .unwrap_or_default()
+        .to_string_lossy()
+        .split(';')
+        .map(str::trim)
+        .filter(|ext| !ext.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>()
+        .into_iter()
+}
+
 #[cfg(test)]
-#[path = "path_test.rs"]
+#[path = "path_tests.rs"]
 mod tests;

@@ -627,7 +627,7 @@ pub enum SshLoginNotificationState {
     Completed,
 }
 
-/// This struct contains metadata for a subshell, and its precence in the SessionInfo indicates
+/// This struct contains metadata for a subshell, and its presence in the SessionInfo indicates
 /// that a session is in a bootstrapped subshell.
 #[derive(Clone, Debug)]
 pub struct SubshellInitializationInfo {
@@ -1222,15 +1222,27 @@ impl TerminalModel {
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
     ) -> Self {
-        let mut me = Self::new_for_shared_session_viewer_internal(
+        let mut me = Self::new_internal(
+            None,
             sizes,
             colors,
             event_proxy,
             background_executor,
+            false,
+            false,
             show_memory_stats,
             honor_ps1,
             is_inverted,
             obfuscate_secrets,
+            false,
+            None,
+            // TODO: use the same shell type as the sharer
+            ShellLaunchState::ShellSpawned {
+                available_shell: None,
+                display_name: ShellName::blank(),
+                shell_type: ShellType::Zsh,
+            },
+            SharedSessionStatus::ViewPending,
             true,
         );
         if FeatureFlag::CloudModeSetupV2.is_enabled() {
@@ -1250,7 +1262,6 @@ impl TerminalModel {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_dummy_cloud_mode_session: bool,
     ) -> Self {
         Self::new_internal(
             None,
@@ -1273,7 +1284,7 @@ impl TerminalModel {
                 shell_type: ShellType::Zsh,
             },
             SharedSessionStatus::ViewPending,
-            is_dummy_cloud_mode_session,
+            false,
         )
     }
 
@@ -1298,7 +1309,6 @@ impl TerminalModel {
             honor_ps1,
             is_inverted,
             obfuscate_secrets,
-            false,
         )
     }
 
@@ -1461,20 +1471,22 @@ impl TerminalModel {
     // TODO: we should be doing this in the constructor of the
     // terminal model for the viewers so that we're guaranteed that
     // loading scrollback is the first thing that we do.
-    pub fn load_shared_session_scrollback(
-        &mut self,
-        scrollback: &[SerializedBlock],
-        is_alt_screen_active: bool,
-    ) {
+    pub fn load_shared_session_scrollback(&mut self, scrollback: &[SerializedBlock]) {
         debug_assert!(self.shared_session_status().is_viewer());
 
         self.block_list_mut()
             .load_shared_session_scrollback(scrollback);
-        if is_alt_screen_active {
-            self.enter_alt_screen(true);
-        }
 
         // The scrollback contains the prompt for the active block, and the terminal view needs to be notified to render it.
+        self.event_proxy.send_wakeup_event();
+    }
+
+    pub fn append_followup_shared_session_scrollback(&mut self, scrollback: &[SerializedBlock]) {
+        debug_assert!(self.shared_session_status().is_viewer());
+
+        self.block_list_mut()
+            .append_followup_shared_session_scrollback(scrollback);
+
         self.event_proxy.send_wakeup_event();
     }
 
@@ -2016,7 +2028,7 @@ impl TerminalModel {
     ///
     /// If the alternate screen is already active, this will not re-initialize
     /// it.
-    fn enter_alt_screen(&mut self, save_cursor_and_clear_screen: bool) {
+    pub(crate) fn enter_alt_screen(&mut self, save_cursor_and_clear_screen: bool) {
         if self.alt_screen_active {
             log::info!("Tried to enter the alternate screen, but it was already active");
             return;
@@ -2439,7 +2451,7 @@ impl ansi::Handler for TerminalModel {
     }
 
     fn input(&mut self, c: char) {
-        // TODO: we should figure out what it means to be simultaneously expecing
+        // TODO: we should figure out what it means to be simultaneously expecting
         // in-band command output and completions data, which is technically possible
         // with the current data structures.
         if let IsReceivingInBandCommandOutput::Yes { output } =
@@ -3644,5 +3656,5 @@ pub enum ExitReason {
 }
 
 #[cfg(test)]
-#[path = "terminal_model_test.rs"]
+#[path = "terminal_model_tests.rs"]
 pub(crate) mod tests;

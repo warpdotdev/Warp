@@ -66,11 +66,18 @@ impl AppExecutionMode {
 
     /// Whether the app can *automatically* update. This does not prevent manual updates.
     pub fn can_autoupdate(&self) -> bool {
-        self.is_app()
+        self.is_app() && cfg!(not(target_family = "wasm"))
     }
 
     /// Whether the app can automatically start MCP servers from the previous session.
     pub fn can_autostart_mcp_servers(&self) -> bool {
+        self.is_app()
+    }
+
+    /// Whether the app can show interactive onboarding UIs (e.g. the onboarding
+    /// callout tutorial). Onboarding requires a user to interact with it, so it
+    /// is disabled in headless modes like SDK/CLI.
+    pub fn can_show_onboarding(&self) -> bool {
         self.is_app()
     }
 

@@ -18,7 +18,7 @@ mod init;
 pub mod initializer;
 mod input;
 mod input_mode;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod linux;
 pub mod macros;
 pub mod manager;
@@ -52,7 +52,7 @@ pub use gpu::*;
 pub use init::*;
 pub use input::*;
 pub use input_mode::*;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub use linux::*;
 pub use native_preference::*;
 pub use onboarding::*;
@@ -214,6 +214,7 @@ pub enum CtrlTabBehavior {
     #[default]
     ActivatePrevNextTab,
     CycleMostRecentSession,
+    CycleMostRecentTab,
 }
 
 impl CtrlTabBehavior {
@@ -221,6 +222,7 @@ impl CtrlTabBehavior {
         match self {
             Self::ActivatePrevNextTab => "Activate previous/next tab",
             Self::CycleMostRecentSession => "Cycle most recent session",
+            Self::CycleMostRecentTab => "Cycle most recent tab",
         }
     }
 }
@@ -488,7 +490,7 @@ impl Settings {
             match res {
                 Ok(versions) => versions[&changelog_version].as_bool().unwrap_or(false),
                 Err(e) => {
-                    log::warn!("Error deserializing changlog user default {e}");
+                    log::warn!("Error deserializing changelog user default {e}");
                     false
                 }
             }
