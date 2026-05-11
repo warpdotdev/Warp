@@ -213,7 +213,7 @@
                 install -Dm644 app/channels/oss/dev.warp.WarpOss.desktop \
                   "$out/share/applications/dev.warp.WarpOss.desktop"
                 substituteInPlace "$out/share/applications/dev.warp.WarpOss.desktop" \
-                  --replace-fail "Exec=warp-oss %U" "Exec=warp-terminal-experimental %U"
+                  --replace-fail "Exec=warp-terminal-oss %U" "Exec=warp-terminal-experimental %U"
 
                 for size in 16x16 32x32 64x64 128x128 256x256 512x512; do
                   icon="app/channels/oss/icon/no-padding/$size.png"
