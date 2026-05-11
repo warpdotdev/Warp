@@ -499,17 +499,26 @@ impl Component for Lightbox {
             }
         }
 
-        // GH9729 §698 / t2-15: zoom toolbar — icon buttons adjacent,
-        // optional "100%" reset label appears only when zoom != 1.0.
+        // GH9729 §698 / t2-16: zoom toolbar layout. Wrap zoom-out +
+        // zoom-in in `Flex::row` with zero spacing so the row
+        // partitions its bounding rect precisely between children —
+        // no possibility of hit-area overlap. The whole row is added
+        // as ONE positioned child.
         //
-        // The t2-13 layout positioned three buttons at fixed 56-px
-        // slots, but the "100%" label button rendered wider than the
-        // slot, overlapping the `+` button's hit area and silently
-        // swallowing its clicks. The fix is structural: render the two
-        // icon buttons adjacent (narrow, well within their slot) and
-        // gate the wider label button on `zoom != 1.0`. When the user
-        // is at native size, the `+` button has nothing to its right
-        // and can't be obscured.
+        // Theory for the persistent `+` bug across t2-12/13/15:
+        // separate `add_positioned_child` siblings each report their
+        // own bbox to the Stack including the button's interactive
+        // padding (hover hit-area beyond visual edge). Stack
+        // dispatches first-added-first, so `−`'s extended hit-area
+        // claimed clicks intended for `+`. The user's "gap" complaint
+        // was the visible evidence of this padding extending into the
+        // gap. Flex::row partitions the row's bbox precisely between
+        // its children, eliminating the overlap regardless of button
+        // padding.
+        //
+        // Diagnostic logging is included; if `+` STILL fails after
+        // this commit, the log will show whether the click is
+        // arriving at the closure at all (and which closure).
         if let Some(on_zoom) = params.options.on_zoom {
             let zoom = params.zoom_factor;
             let on_zoom_out = on_zoom.clone();
@@ -521,6 +530,7 @@ impl Component for Lightbox {
                     options: button::Options {
                         size: button::Size::Small,
                         on_click: Some(Box::new(move |ctx, app, _| {
+                            log::debug!("GH9729 t2-16: zoom_out_button clicked");
                             on_zoom_out(ZoomDirection::Out, ctx, app);
                         })),
                         ..button::Options::default(appearance)
@@ -536,6 +546,7 @@ impl Component for Lightbox {
                     options: button::Options {
                         size: button::Size::Small,
                         on_click: Some(Box::new(move |ctx, app, _| {
+                            log::debug!("GH9729 t2-16: zoom_in_button clicked");
                             on_zoom_in(ZoomDirection::In, ctx, app);
                         })),
                         ..button::Options::default(appearance)
@@ -543,8 +554,17 @@ impl Component for Lightbox {
                 },
             );
 
+            // The two icon buttons sit in a precise-layout Flex::row
+            // with zero spacing. Centered cross-axis so the buttons
+            // align with the row's baseline.
+            let icon_cluster = Flex::row()
+                .with_spacing(0.0)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(zoom_out_button)
+                .with_child(zoom_in_button)
+                .finish();
             content.add_positioned_child(
-                zoom_out_button,
+                icon_cluster,
                 OffsetPositioning::offset_from_parent(
                     vec2f(SCRIM_BUTTON_INSET, -SCRIM_BUTTON_INSET),
                     ParentOffsetBounds::Unbounded,
@@ -552,23 +572,14 @@ impl Component for Lightbox {
                     ChildAnchor::BottomLeft,
                 ),
             );
-            content.add_positioned_child(
-                zoom_in_button,
-                OffsetPositioning::offset_from_parent(
-                    vec2f(
-                        SCRIM_BUTTON_INSET + ZOOM_ICON_BUTTON_SLOT,
-                        -SCRIM_BUTTON_INSET,
-                    ),
-                    ParentOffsetBounds::Unbounded,
-                    ParentAnchor::BottomLeft,
-                    ChildAnchor::BottomLeft,
-                ),
-            );
 
-            // Reset only renders when the image is NOT at native zoom
-            // — the user's explicit preference. Side effect: at zoom
-            // 1.0 the `+` button is the rightmost toolbar element, so
-            // it can't be overlapped by a wider neighbour.
+            // Reset only renders when the image is NOT at native zoom.
+            // Positioned as its own separate positioned child to the
+            // right of the icon cluster, with a visible gap. Since the
+            // icon cluster width depends on button rendering and we
+            // can't measure it from here, the reset's offset is
+            // estimated from `ZOOM_ICON_BUTTON_SLOT * 2 +
+            // ZOOM_RESET_GAP_FROM_ICONS`.
             if zoom != 1.0 {
                 let on_zoom_reset = on_zoom;
                 let zoom_reset_button = self.zoom_reset_button.render(
@@ -579,6 +590,7 @@ impl Component for Lightbox {
                         options: button::Options {
                             size: button::Size::Small,
                             on_click: Some(Box::new(move |ctx, app, _| {
+                                log::debug!("GH9729 t2-16: zoom_reset_button clicked");
                                 on_zoom_reset(ZoomDirection::Reset, ctx, app);
                             })),
                             ..button::Options::default(appearance)

@@ -75,6 +75,22 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-16.** Flex::row toolbar + diagnostic logging. After t2-15
+       the user reports `+` STILL doesn't fire. The bug persists
+       across three layout strategies (Flex::row, individually-positioned
+       wide slots, individually-positioned narrow slots). Common
+       pattern: `+` is always the rightmost-positioned button and
+       always fails. Best theory: separate `add_positioned_child`
+       siblings each report a bbox that includes the button's
+       interactive hover-padding; the Stack dispatches
+       first-added-first, so `−`'s extended bbox swallows clicks
+       intended for `+`. The user's "gap" complaint was visible
+       evidence of this padding. `Flex::row` partitions its bbox
+       precisely between cells, eliminating overlap regardless of
+       per-button padding. Diagnostic `log::debug!` lines added in
+       each button's on_click closure so a future iteration can see
+       whether the click reaches the closure at all. —
+       supplements `tech.md` §698.
 - [x] **t2-15.** Adjacent zoom icons + conditional reset. User manual
        feedback after t2-13: (a) `+` button STILL doesn't fire even
        after the t2-13 individually-positioned-children restructure —
@@ -177,7 +193,8 @@ Hard rules:
 | t2-12 | GUI zoom buttons + scroll-zoom | `65b2f56` | [x] | [x] | [x] |
 | t2-13 | toolbar polish + fix + button | `a655650` | [x] | [x] | [x] |
 | t2-14 | scrim opacity + toolbar prominence | `46f0a2e` | [x] | [ ] | [ ] |
-| t2-15 | adjacent icons + conditional reset | _pending_ | [x] | [ ] | [ ] |
+| t2-15 | adjacent icons + conditional reset | `6623e0e` | [x] | [ ] | [ ] |
+| t2-16 | Flex::row toolbar + logging | `ae67790` | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
