@@ -66,7 +66,7 @@ As Warp becomes an agentic development environment, the Project Explorer is part
 6. If a folder has no matching rule, Warp renders the selected theme's folder fallback for the correct open/closed state.
 7. Dotfiles and extensionless files can be matched by exact file name before fallback handling.
 8. Name and extension matching follow explicit normalization rules so theme behavior is deterministic across platforms:
-   - **File extensions** are matched case-insensitively. Theme keys are stored lowercased and without a leading dot; the lookup lowercases the extracted extension before comparison. Empty extensions are not used as keys.
+   - **File extensions** are matched case-insensitively over **lowercase ASCII keys only** in v1. Theme keys are stored lowercased, without a leading dot, matching `[a-z0-9]+`; the lookup lowercases the extracted extension via ASCII case folding before comparison. An extension on disk that is not lowercase ASCII after conversion (for example, a non-ASCII extension) simply misses the extension table and falls through to language ID and then fallback. Empty extensions are not used as keys. Wider Unicode extension support is a follow-up.
    - **Exact file names** are matched case-sensitively, verbatim against the file name reported by the file system. Themes that want to cover spelling variants (for example `Dockerfile` and `dockerfile`) declare both keys explicitly.
    - **Folder names** follow the same case-sensitive, verbatim rule as exact file names, for both the closed and open-state mappings.
    - **Language IDs** are lowercase ASCII; theme keys are stored lowercased and the lookup lowercases its input.
@@ -110,14 +110,15 @@ These are pre-ship requirements, not open questions. The Seti-style bundled them
 
 1. **Source — glyph codepoints.** The Seti-style theme uses codepoints from the Nerd Fonts project (https://github.com/ryanoasis/nerd-fonts), which is MIT-licensed. Only codepoints (not font binaries) are vendored; the user supplies a Nerd Font on their system.
 2. **Source — extension/icon mapping and color palette.** Mapping and colors are derived from Seti-UI by Jesse Weed (https://github.com/jesseweed/seti-ui), MIT-licensed. The repository's icon mapping (e.g. `styles/components/icons/mapping.less`) and the matching color list are the references.
-3. **What is checked into this repo.** Only data: codepoint strings, hex color strings, and the lookup keys (extensions, file names, folder names, language IDs). No font file, no SVG asset, no image binary is bundled in v1.
-4. **Required attribution.**
-   - The Seti-style theme's data file includes an `attribution` field that names "Seti-UI by Jesse Weed (MIT)" and "Nerd Fonts icons (MIT)" and links to both upstream repositories.
-   - Repo `THIRD_PARTY_NOTICES` (or the Warp equivalent) carries the full MIT license text for each upstream, with copyright lines preserved.
-   - The Settings → Appearance row for Seti-style shows the display name and a tooltip line such as "Based on Seti-UI by Jesse Weed". The exact copy can be tuned in implementation review, but the attribution must be visible from the picker.
-   - The PR that lands the Seti-style theme links both upstream sources in its description and changelog entry.
-5. **No font vendoring.** If a user has no Nerd Font available, glyphs may render as missing-glyph boxes; users keep Warp Default as the no-surprise option. v1 does not ship a font binary to work around this.
-6. **Future-proofing.** When a future revision adds SVG support, any SVG assets adopted into the Seti-style theme go through the same provenance review as a separate decision; this spec does not pre-approve future SVG sources.
+3. **Pinned upstream revisions.** The Seti-style data file records the exact upstream revision used for each source. The recorded form must be immutable: a release tag (preferred) or a full 40-character commit SHA. Examples: `nerd-fonts@v3.3.0` (tag), `seti-ui@<full SHA>` (commit). Re-vendoring later requires bumping these recorded revisions in the same PR that updates the data, so license review and provenance are reproducible from the spec and the PR alone.
+4. **What is checked into this repo.** Only data: codepoint strings, hex color strings, and the lookup keys (extensions, file names, folder names, language IDs). No font file, no SVG asset, no image binary is bundled in v1.
+5. **Required attribution.**
+   - The Seti-style theme's data file includes an `attribution` field that names "Seti-UI by Jesse Weed (MIT)" and "Nerd Fonts icons (MIT)", links to both upstream repositories, and quotes the pinned revisions from item 3.
+   - Repo `THIRD_PARTY_NOTICES` (or the Warp equivalent) carries the full MIT license text for each upstream, with copyright lines preserved, and the same pinned revisions.
+   - The Settings → Appearance row for Seti-style shows the display name and a tooltip line such as "Based on Seti-UI by Jesse Weed". The exact copy can be tuned in implementation review, but the attribution must be visible from the picker. The picker copy does not need to show the pinned revision.
+   - The PR that lands the Seti-style theme links both upstream sources in its description and changelog entry, and quotes the pinned revisions.
+6. **No font vendoring.** If a user has no Nerd Font available, glyphs may render as missing-glyph boxes; users keep Warp Default as the no-surprise option. v1 does not ship a font binary to work around this.
+7. **Future-proofing.** When a future revision adds SVG support, any SVG assets adopted into the Seti-style theme go through the same provenance review as a separate decision; this spec does not pre-approve future SVG sources.
 
 ### Empty, loading, and error states
 

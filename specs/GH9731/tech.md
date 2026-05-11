@@ -141,11 +141,12 @@ The Seti-style bundled theme is data-only and depends on two upstream sources, b
 
 Implementation requirements before the Seti-style theme can land:
 
-1. The Seti-style data file carries an `attribution` field (or sibling metadata) naming both upstreams and linking their repositories.
-2. `THIRD_PARTY_NOTICES` (or the Warp equivalent) gains MIT entries for Seti-UI and Nerd Fonts with copyright lines preserved.
-3. The Settings → Appearance picker row for Seti-style shows attribution copy ("Based on Seti-UI by Jesse Weed" or the agreed final wording) — implement via existing dropdown tooltip / description plumbing.
-4. The PR landing the Seti-style theme links both upstream sources in the description and changelog entry.
+1. The Seti-style data file carries an `attribution` field (or sibling metadata) naming both upstreams, linking their repositories, **and recording the exact upstream revision used for each**. The recorded form must be immutable: a release tag (preferred) or a full 40-character commit SHA. Examples: `nerd-fonts@v3.3.0` (tag) or `seti-ui@e4f6c1b...` (full commit SHA). Re-vendoring requires bumping these fields in the same PR that touches the data.
+2. `THIRD_PARTY_NOTICES` (or the Warp equivalent) gains MIT entries for Seti-UI and Nerd Fonts with copyright lines preserved, and each entry includes the same pinned revision recorded in `attribution`.
+3. The Settings → Appearance picker row for Seti-style shows attribution copy ("Based on Seti-UI by Jesse Weed" or the agreed final wording); implement via existing dropdown tooltip / description plumbing. Display does not need to include the pinned revision, but the picker copy must not contradict the recorded sources.
+4. The PR landing the Seti-style theme links both upstream sources in the description and changelog entry, and quotes the pinned revisions so license review is reproducible from the PR alone.
 5. No font file, no SVG asset, no other binary form of either upstream is committed in v1. If glyphs render as missing-glyph boxes for users without a Nerd Font, the user can switch back to Warp Default.
+6. Theme load-time validation rejects a Seti-style data file whose `attribution` block is missing pinned revisions for both upstreams, so the bundled theme cannot drift away from a reviewable provenance.
 
 If a future revision adds SVG support and Seti-style adopts SVG assets from any source, those go through a separate provenance review; this spec does not pre-approve future SVG sources.
 
@@ -162,12 +163,12 @@ Prefer option 1 unless maintainers explicitly accept default visual changes. The
 
 Normalization rules (mirrors the product spec's name-matching contract; theme-loading and the lookup paths must agree):
 
-- File extensions: case-insensitive. Theme keys are stored lowercased without a leading dot. The lookup uses `Path::extension`, `to_str()`, then `to_ascii_lowercase()` to form the key. Empty extensions are not used as keys.
-- Exact file names: case-sensitive. Theme keys are stored verbatim; the lookup uses `Path::file_name` and matches byte-for-byte.
-- Folder names: same case-sensitive, verbatim rule, for both `folderNames` and `folderNamesExpanded`.
-- Language IDs: lowercase ASCII. Theme keys are stored lowercased; lookup lowercases input.
+- File extensions: case-insensitive over **lowercase ASCII keys only** in v1. Theme keys are stored lowercased, without a leading dot, and matching the regex `[a-z0-9]+`. The lookup uses `Path::extension`, `to_str()`, then `to_ascii_lowercase()` to form the key, then performs an exact match against the lowercased ASCII key set. An extension on disk that contains non-ASCII bytes after the conversion attempt simply misses the `fileExtensions` table and falls through to language ID and then file fallback; v1 does not implement Unicode case-folding for extensions. Empty extensions are not used as keys. Wider Unicode extension support is a documented follow-up.
+- Exact file names: case-sensitive. Theme keys are stored verbatim; the lookup uses `Path::file_name` and matches byte-for-byte. Non-ASCII file names are supported because the comparison is byte-for-byte and does not depend on case folding.
+- Folder names: same case-sensitive, verbatim rule as exact file names, for both `folderNames` and `folderNamesExpanded`. Non-ASCII folder names are supported on the same byte-for-byte basis.
+- Language IDs: lowercase ASCII (`[a-z0-9_-]+`). Theme keys are stored lowercased; lookup lowercases input via `to_ascii_lowercase()`.
 - No trimming, Unicode normalization, or whitespace collapsing in v1.
-- Theme load-time validation must reject keys that violate these rules (uppercased extension keys, leading-dot extension keys, non-ASCII language IDs) so bundled themes cannot drift.
+- Theme load-time validation must reject keys that violate these rules (uppercased or non-ASCII extension keys, leading-dot extension keys, non-ASCII language IDs) so bundled themes cannot drift.
 
 File resolution:
 
