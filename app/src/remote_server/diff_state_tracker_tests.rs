@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use warp_util::standardized_path::StandardizedPath;
 
 use crate::code_review::diff_state::DiffMode;
@@ -8,9 +6,11 @@ use super::super::protocol::RequestId;
 use super::super::server_model::ConnectionId;
 use super::{DiffModelKey, GlobalDiffStateModel};
 
+/// Uses `try_new` instead of `try_from_local` so that Unix-style paths
+/// like `/repo` are recognised as absolute on all platforms (including Windows).
 fn test_key(repo: &str, mode: DiffMode) -> DiffModelKey {
     DiffModelKey {
-        repo_path: StandardizedPath::try_from_local(Path::new(repo)).unwrap(),
+        repo_path: StandardizedPath::try_new(repo).unwrap(),
         mode,
     }
 }

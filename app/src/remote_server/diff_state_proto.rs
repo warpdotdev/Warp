@@ -8,6 +8,8 @@
 //! (`code_review::diff_state`, `util::git`) that are not available in the crate.
 use std::path::{Path, PathBuf};
 
+use typed_path::TypedPath;
+
 use super::proto;
 
 use crate::code_review::diff_size_limits::DiffSize;
@@ -20,10 +22,14 @@ use crate::util::git::{Commit, PrInfo};
 // ── Proto → Rust (for incoming client messages) ────────────────────
 
 /// Rejects empty, absolute, and parent-traversal (`..`) paths.
+///
+/// Uses `typed_path` for platform-agnostic detection so that Unix-style
+/// absolute paths (e.g. `/etc/passwd`) are rejected even on Windows.
 fn validate_relative_path(path: &str) -> Result<(), String> {
     let p = Path::new(path);
+    let typed = TypedPath::derive(path);
     if p.as_os_str().is_empty()
-        || p.is_absolute()
+        || typed.is_absolute()
         || p.components().any(|c| c == std::path::Component::ParentDir)
     {
         return Err(format!(
