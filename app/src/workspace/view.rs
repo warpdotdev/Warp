@@ -13109,11 +13109,13 @@ impl Workspace {
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn show_handoff_success_toast(ctx: &mut ViewContext<Self>) {
+    fn show_handoff_ready_toast(ctx: &mut ViewContext<Self>) {
         let window_id = ctx.window_id();
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
             toast_stack.add_ephemeral_toast(
-                DismissibleToast::success("Handing off to cloud".to_owned()),
+                DismissibleToast::default(
+                    "This conversation is now running in a cloud environment.".to_owned(),
+                ),
                 window_id,
                 ctx,
             );
@@ -13144,7 +13146,7 @@ impl Workspace {
                 model.set_environment_id(Some(environment_id), ctx);
             });
         }
-        Self::show_handoff_success_toast(ctx);
+        Self::show_handoff_ready_toast(ctx);
 
         if let Some(launch) = launch {
             model_handle.update(ctx, |model, ctx| {
@@ -13324,7 +13326,7 @@ impl Workspace {
             model.set_pending_handoff(Some(pending), model_ctx);
         });
 
-        Self::show_handoff_success_toast(ctx);
+        Self::show_handoff_ready_toast(ctx);
         model_handle.update(ctx, |model, ctx| {
             model.queue_handoff_auto_submit(ctx);
         });
