@@ -184,6 +184,30 @@ pub fn block_context_from_terminal_model(
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::terminal::model::TerminalModel;
+
+    #[test]
+    fn block_context_from_terminal_model_includes_shell_output_block_output() {
+        let mut terminal_model = TerminalModel::mock(None, None);
+        let block_id = {
+            let block_list = terminal_model.block_list_mut();
+            block_list.active_block_mut().start_background(None);
+            block_list.active_block().id().clone()
+        };
+
+        terminal_model.process_bytes("shell output\n");
+
+        let context = block_context_from_terminal_model(&terminal_model, &block_id, false)
+            .expect("expected shell output block to convert to agent context");
+        assert_eq!(context.id, block_id);
+        assert_eq!(context.command, "");
+        assert_eq!(context.output, "shell output\n");
+    }
+}
+
 impl BlocklistAIContextModel {
     pub fn new(
         sessions: ModelHandle<Sessions>,
