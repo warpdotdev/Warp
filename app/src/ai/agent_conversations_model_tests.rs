@@ -351,6 +351,68 @@ fn test_display_status_uses_active_execution_over_previous_conversation_status()
 }
 
 #[test]
+fn test_display_status_uses_cancelled_conversation_over_active_execution() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let now = Utc::now();
+        let conversation_id = AIConversationId::new();
+        let terminal_view_id = EntityId::new();
+        let task_id = make_uuid(4007);
+        let session_id = make_uuid(4008);
+
+        let conversation = create_restored_conversation(
+            conversation_id,
+            "child-agent",
+            AgentConversationData {
+                server_conversation_token: None,
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                orchestration_harness_type: None,
+                parent_conversation_id: Some(AIConversationId::new().to_string()),
+                is_remote_child: true,
+                run_id: Some(task_id.clone()),
+                autoexecute_override: None,
+                last_event_sequence: None,
+            },
+        );
+
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
+            model.update_conversation_status(
+                terminal_view_id,
+                conversation_id,
+                ConversationStatus::Cancelled,
+                ctx,
+            );
+        });
+
+        let mut task = create_test_task(&task_id, "user-a", now);
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_id = Some(session_id);
+        task.session_link = Some("https://example.com/session/cancelled".to_string());
+        task.is_sandbox_running = true;
+
+        app.update(|ctx| {
+            assert!(task.has_active_execution());
+            let display_status = AgentRunDisplayStatus::from_task(&task, ctx);
+            assert_eq!(display_status, AgentRunDisplayStatus::ConversationCancelled);
+            assert_eq!(
+                display_status.to_conversation_status(),
+                ConversationStatus::Cancelled
+            );
+            assert!(!display_status.is_cancellable());
+            assert!(!display_status.is_working());
+        });
+    });
+}
+
+#[test]
 fn test_display_status_updates_when_blocked_conversation_resumes() {
     App::test((), |mut app| async move {
         let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);

@@ -273,14 +273,22 @@ impl AgentRunDisplayStatus {
             | AmbientAgentTaskState::Pending
             | AmbientAgentTaskState::Claimed => Self::from_task_state(task),
             AmbientAgentTaskState::InProgress => {
-                if task.has_active_execution() {
+                let history_model = BlocklistAIHistoryModel::as_ref(app);
+                let conversation_status =
+                    entry::conversation_id_shadowed_by_task(task, history_model)
+                        .and_then(|conversation_id| history_model.conversation(&conversation_id))
+                        .map(|conversation| Self::from_conversation_status(conversation.status()));
+
+                if task.has_active_execution()
+                    && !matches!(
+                        conversation_status,
+                        Some(AgentRunDisplayStatus::ConversationCancelled)
+                    )
+                {
                     return Self::from_task_state(task);
                 }
-                let history_model = BlocklistAIHistoryModel::as_ref(app);
-                entry::conversation_id_shadowed_by_task(task, history_model)
-                    .and_then(|conversation_id| history_model.conversation(&conversation_id))
-                    .map(|conversation| Self::from_conversation_status(conversation.status()))
-                    .unwrap_or_else(|| Self::from_task_state(task))
+
+                conversation_status.unwrap_or_else(|| Self::from_task_state(task))
             }
             AmbientAgentTaskState::Succeeded
             | AmbientAgentTaskState::Failed
