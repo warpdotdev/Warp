@@ -1,5 +1,9 @@
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
+#[cfg(unix)]
+use std::ffi::OsString;
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::path::PathBuf;
 
 use super::{known_bare_name, resolve_binary_in_wsl_safe_path};
@@ -18,6 +22,7 @@ fn write_exec(path: &std::path::Path) {
     make_executable(path);
 }
 
+#[cfg(unix)]
 fn join(parts: &[PathBuf]) -> OsString {
     std::env::join_paths(parts).unwrap()
 }
