@@ -15,7 +15,11 @@ use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
 
+use settings::Setting as _;
+
+use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
+use crate::report_if_error;
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::view_components::action_button::{
     ActionButton, ActionButtonTheme, ButtonSize, TooltipAlignment,
@@ -130,6 +134,25 @@ impl HostSelector {
             selected,
             default_host: None,
         };
+        // Restore the last selected host from settings.
+        if let Some(saved_slug) = CloudAgentSettings::as_ref(ctx)
+            .last_selected_host
+            .value()
+            .as_deref()
+        {
+            let restored = if saved_slug == "warp" {
+                Host::Warp
+            } else {
+                Host::SelfHosted {
+                    slug: saved_slug.to_string(),
+                }
+            };
+            me.selected = restored;
+            let label = me.selected.display_name().to_string();
+            me.button.update(ctx, |button, ctx| {
+                button.set_label(label, ctx);
+            });
+        }
         me.refresh_menu(ctx);
         me
     }
@@ -148,12 +171,27 @@ impl HostSelector {
 
     pub fn set_default_host(&mut self, slug: String, ctx: &mut ViewContext<Self>) {
         let host = Host::SelfHosted { slug };
+        self.default_host = Some(host.clone());
+
+        // If the user has a saved selection, preserve it instead of
+        // unconditionally overwriting with the default.
+        let saved_slug = CloudAgentSettings::as_ref(ctx)
+            .last_selected_host
+            .value()
+            .clone();
+        if saved_slug.is_some() {
+            // The constructor already applied the saved selection;
+            // just refresh the menu so the new default appears as an option.
+            self.refresh_menu(ctx);
+            return;
+        }
+
+        // No saved preference — use the default host.
         let label = host.display_name().to_string();
-        self.selected = host.clone();
+        self.selected = host;
         self.button.update(ctx, |button, ctx| {
-            button.set_label(label.clone(), ctx);
+            button.set_label(label, ctx);
         });
-        self.default_host = Some(host);
         self.refresh_menu(ctx);
     }
 
@@ -273,6 +311,12 @@ impl TypedActionView for HostSelector {
                 self.button.update(ctx, |button, ctx| {
                     button.set_label(label.clone(), ctx);
                 });
+                // Persist the selection to settings for next time.
+                if let Some(slug) = host.worker_host_value() {
+                    CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                        report_if_error!(settings.last_selected_host.set_value(Some(slug), ctx));
+                    });
+                }
                 ctx.emit(HostSelectorEvent::HostSelected);
                 self.set_menu_visibility(false, ctx);
             }
