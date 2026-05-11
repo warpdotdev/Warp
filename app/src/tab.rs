@@ -1,6 +1,7 @@
 use crate::ai::agent::conversation::ConversationStatus;
 use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
+use rust_i18n::t;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
 /// the rendering and management of tabs in general.
 use crate::editor::EditorView;
@@ -277,7 +278,7 @@ impl TabData {
 
         if is_shared_or_viewed {
             menu_items.push(
-                MenuItemFields::new("Copy link")
+                MenuItemFields::new(t!("tab.copy_link").to_string())
                     .with_on_select_action(WorkspaceAction::CopySharedSessionLinkFromTab {
                         tab_index: index,
                     })
@@ -312,7 +313,7 @@ impl TabData {
         let mut menu_items = vec![];
         let tab_title = Self::copyable_metadata_value(Some(pane_group.display_title(ctx)));
         if !uses_vertical_tabs(ctx) {
-            Self::push_copy_metadata_menu_item(&mut menu_items, "Copy tab title", tab_title);
+            Self::push_copy_metadata_menu_item(&mut menu_items, &t!("tab.copy_title"), tab_title);
             return menu_items;
         }
 
@@ -332,7 +333,7 @@ impl TabData {
                 })
                 .unwrap_or_else(|| pane_group.focused_pane_id(ctx));
             (
-                "Copy pane title",
+                t!("tab.copy_pane_title").to_string(),
                 Self::copyable_pane_title(pane_group, pane_id, ctx),
                 pane_group.terminal_view_from_pane_id(pane_id, ctx),
             )
@@ -343,20 +344,20 @@ impl TabData {
                     pane_group.terminal_view_from_pane_id(target.locator.pane_id, ctx)
                 })
                 .or_else(|| pane_group.focused_session_view(ctx));
-            ("Copy tab title", tab_title, terminal_view)
+            (t!("tab.copy_title").to_string(), tab_title, terminal_view)
         };
 
         if let Some(terminal_view) = terminal_view {
             let terminal_view = terminal_view.as_ref(ctx);
             Self::push_copy_metadata_menu_item(
                 &mut menu_items,
-                "Copy branch",
+                &t!("tab.copy_branch"),
                 Self::copyable_metadata_value(terminal_view.current_git_branch(ctx)),
             );
-            Self::push_copy_metadata_menu_item(&mut menu_items, title_label, title);
+            Self::push_copy_metadata_menu_item(&mut menu_items, &title_label, title);
             Self::push_copy_metadata_menu_item(
                 &mut menu_items,
-                "Copy working directory",
+                &t!("tab.copy_working_dir"),
                 Self::copyable_metadata_value(
                     terminal_view
                         .pwd()
@@ -365,11 +366,11 @@ impl TabData {
             );
             Self::push_copy_metadata_menu_item(
                 &mut menu_items,
-                "Copy pull request link",
+                &t!("tab.copy_pr_link"),
                 Self::copyable_metadata_value(terminal_view.current_pull_request_url(ctx)),
             );
         } else {
-            Self::push_copy_metadata_menu_item(&mut menu_items, title_label, title);
+            Self::push_copy_metadata_menu_item(&mut menu_items, &title_label, title);
         }
 
         menu_items
@@ -377,7 +378,7 @@ impl TabData {
 
     fn push_copy_metadata_menu_item(
         menu_items: &mut Vec<MenuItem<WorkspaceAction>>,
-        label: &'static str,
+        label: &str,
         value: Option<String>,
     ) {
         if let Some(value) = value {
@@ -405,7 +406,7 @@ impl TabData {
 
         // TODO add option to show the keybinding once we figure out a nice API to retrieve
         // the actual keybinding (based on the user's preferences etc.)
-        menu_items.append(&mut vec![MenuItemFields::new("Rename tab")
+        menu_items.append(&mut vec![MenuItemFields::new(t!("tab.rename").to_string())
             .with_on_select_action(WorkspaceAction::RenameTab(index))
             .into_item()]);
         // Group together with rename option (note, resetting doesn't make
@@ -491,14 +492,14 @@ impl TabData {
 
         if ContextFlag::CloseWindow.is_enabled() || tabs_len != 1 {
             menu_items.push(
-                MenuItemFields::new("Close tab")
+                MenuItemFields::new(t!("tab.close").to_string())
                     .with_on_select_action(WorkspaceAction::CloseTab(index))
                     .into_item(),
             );
         }
         if tabs_len > 1 {
             menu_items.push(
-                MenuItemFields::new("Close other tabs")
+                MenuItemFields::new(t!("tab.close_other").to_string())
                     .with_on_select_action(WorkspaceAction::CloseOtherTabs(index))
                     .into_item(),
             );
@@ -507,9 +508,9 @@ impl TabData {
         if not_last_tab {
             menu_items.push(
                 MenuItemFields::new(if uses_vertical_tabs {
-                    "Close Tabs Below"
+                    t!("tab.close_below").to_string()
                 } else {
-                    "Close Tabs to the Right"
+                    t!("tab.close_right").to_string()
                 })
                 .with_on_select_action(WorkspaceAction::CloseTabsRight(index))
                 .into_item(),

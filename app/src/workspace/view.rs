@@ -20,6 +20,8 @@ mod vertical_tabs;
 #[cfg(target_family = "wasm")]
 mod wasm_view;
 
+use rust_i18n::t;
+
 use self::vertical_tabs::telemetry::{VerticalTabsDisplayOption, VerticalTabsTelemetryEvent};
 use self::vertical_tabs::{
     render_detail_sidecar, render_settings_popup, VerticalTabsPanelState,
@@ -7320,7 +7322,7 @@ impl Workspace {
         self.add_tab_with_pane_layout(
             panes_layout,
             Arc::new(HashMap::new()),
-            Some("Settings".to_owned()),
+            Some(t!("workspace.settings").to_string()),
             ctx,
         );
     }
@@ -8468,7 +8470,7 @@ impl Workspace {
             MenuItemFields::new("What's new")
                 .with_on_select_action(WorkspaceAction::ViewLatestChangelog)
                 .into_item(),
-            MenuItemFields::new("Settings")
+            MenuItemFields::new(t!("workspace.settings").to_string())
                 .with_on_select_action(WorkspaceAction::ShowSettings)
                 .into_item(),
             MenuItemFields::new("Keyboard shortcuts")
@@ -18390,7 +18392,7 @@ impl Workspace {
         const BUTTON_WIDTH: f32 = 24. + SIDE_MENU_WIDTH;
         const BUTTON_LEFT_MARGIN: f32 = 4.;
 
-        let new_tab_tool_tip_label_text = "New Tab".to_string();
+        let new_tab_tool_tip_label_text = t!("workspace.new_tab").to_string();
         let new_tab_tool_tip_sublabel_text =
             keybinding_name_to_display_string(NEW_TAB_BINDING_NAME, ctx);
         let tab_configs_tool_tip_label_text = "Tab configs".to_string();
@@ -18676,7 +18678,7 @@ impl Workspace {
                 icons::Icon::Gear,
                 &self.mouse_states.settings_icon,
                 WorkspaceAction::ShowSettings,
-                "Settings".to_string(),
+                t!("workspace.settings").to_string(),
                 self.cached_keybindings[SHOW_SETTINGS_KEYBINDING_NAME].clone(),
                 false,
                 false,

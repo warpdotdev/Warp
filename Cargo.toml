@@ -375,6 +375,7 @@ streaming-iterator = "0.1.0"
 derivative = "2.2.0"
 parquet = { version = "55.0.0", features = ["arrow"] }
 rmcp = { version = "1.6" }
+rust-i18n = "3"
 
 [profile.release]
 # Use line-tables-only (debug = 1) rather than full debuginfo (debug = 2 /

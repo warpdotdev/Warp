@@ -169,6 +169,7 @@ regex-automata = "0.4.6"
 regex.workspace = true
 reqwest.workspace = true
 rust-embed.workspace = true
+rust-i18n.workspace = true
 sentry-log = { workspace = true, optional = true }
 inventory = "0.3"
 schemars = "1"
