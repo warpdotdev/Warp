@@ -2988,7 +2988,13 @@ impl TypedActionView for RichTextEditorView {
                 char_offset,
             } => self.block_hovered(*block_start, *char_offset, ctx),
             ShowCharacterPalette => ctx.open_character_palette(),
-            ShowFindBar => self.find_bar.show(ctx),
+            ShowFindBar => {
+                if self.find_bar.is_focused(ctx) {
+                    self.find_bar.hide(ctx);
+                } else {
+                    self.find_bar.show(ctx);
+                }
+            }
             Focus => self.focus(ctx),
             DebugCopyBuffer => {
                 let content = self.model.as_ref(ctx).debug_buffer(ctx);

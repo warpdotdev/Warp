@@ -1689,6 +1689,7 @@ impl TypedActionView for RightPanelView {
                         ctx,
                     );
                     self.ensure_code_review_view_exists(repo_path, ctx);
+                    self.focus_active_code_review_view(ctx);
                     ctx.notify();
                 }
             }

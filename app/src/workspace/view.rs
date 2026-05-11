@@ -8228,6 +8228,9 @@ impl Workspace {
                     ctx
                 );
                 self.setup_code_review_panel(panel_update_params.review_pane_context, ctx);
+                self.right_panel_view.update(ctx, |view, ctx| {
+                    view.focus_active_code_review_view(ctx);
+                });
             }
         } else {
             self.focus_active_tab(ctx);
