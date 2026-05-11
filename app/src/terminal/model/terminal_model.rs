@@ -2049,10 +2049,8 @@ impl TerminalModel {
                 .active_block_mut()
                 .set_saved_cursor(block_list_cursor);
 
-            // Reset alt screen contents. DECSET 1049 starts with a fresh
-            // alternate buffer; a transient SGR background from UI chrome like
-            // tmux's status line should not seed the entire pane.
-            let bg = ansi::Color::Named(ansi::NamedColor::Background);
+            // Reset alt screen contents.
+            let bg = self.alt_screen.grid_storage().cursor().template.bg;
             self.alt_screen
                 .grid_storage_mut()
                 .region_mut(..)
