@@ -2735,14 +2735,8 @@ fn build_secret_env_vars(
 ) -> HashMap<OsString, OsString> {
     let mut env_vars = HashMap::with_capacity(secrets.len() + 1);
 
-    // Temporary debug logging to diagnose secret precedence issues.
-    for (name, secret) in secrets {
-        log::error!("[secret-debug] Secret in map: name={name:?}, type={:?}", secret.secret_type());
-    }
-
     // Phase 1: Record which env-var names are claimed by typed auth secrets.
     let typed_env_names = typed_secret_env_names(secrets);
-    log::error!("[secret-debug] Typed env names claimed: {typed_env_names:?}");
 
     // Phase 2: Insert typed auth secrets atomically.
     for (name, secret) in secrets {
@@ -2755,16 +2749,15 @@ fn build_secret_env_vars(
             .iter()
             .find(|(env_name, _)| std::env::var(env_name).is_ok_and(|v| !v.is_empty()))
         {
-            log::error!(
-                "[secret-debug] Phase 2: Skipping auth secret '{name}' ({:?}): '{conflict}' is already set \
+            log::warn!(
+                "Skipping auth secret '{name}' ({:?}): '{conflict}' is already set \
                  in the process environment",
                 secret.secret_type(),
             );
             continue;
         }
 
-        for (env_name, env_value) in &entries {
-            log::error!("[secret-debug] Phase 2: Inserting typed secret '{name}' -> env var '{env_name}'");
+        for (env_name, env_value) in entries {
             env_vars.insert(OsString::from(env_name), OsString::from(env_value));
         }
     }
@@ -2778,15 +2771,14 @@ fn build_secret_env_vars(
         let env_name = name.as_str();
 
         if std::env::var(env_name).is_ok_and(|v| !v.is_empty()) {
-            log::error!("[secret-debug] Phase 3: Skipping managed secret '{env_name}': already set in environment");
+            log::warn!("Skipping managed secret {env_name}: already set in environment");
             continue;
         }
         if typed_env_names.contains(env_name) {
-            log::error!("[secret-debug] Phase 3: Skipping generic secret '{env_name}': overridden by a typed auth secret");
+            log::warn!("Skipping generic secret '{env_name}': overridden by a typed auth secret");
             continue;
         }
 
-        log::error!("[secret-debug] Phase 3: Inserting generic RawValue secret '{env_name}'");
         env_vars.insert(OsString::from(env_name), OsString::from(value.as_str()));
     }
 

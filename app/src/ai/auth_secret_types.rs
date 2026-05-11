@@ -5,6 +5,8 @@ use warp_managed_secrets::ManagedSecretValue;
 
 pub struct AuthSecretTypeField {
     pub label: &'static str,
+    /// Placeholder text shown inside the input editor. Falls back to `label` if `None`.
+    pub placeholder: Option<&'static str>,
     pub optional: bool,
 }
 
@@ -85,10 +87,12 @@ static CODEX_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 1] = [
         fields: &[
             AuthSecretTypeField {
                 label: "OPENAI_API_KEY",
+                placeholder: None,
                 optional: false,
             },
             AuthSecretTypeField {
-                label: "BASE_URL (optional, e.g. https://us.api.openai.com/v1)",
+                label: "BASE_URL",
+                placeholder: Some("BASE_URL (e.g. https://us.api.openai.com/v1)"),
                 optional: true,
             },
         ],
@@ -101,6 +105,7 @@ static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
         secret_type: ManagedSecretType::AnthropicApiKey,
         fields: &[AuthSecretTypeField {
             label: "ANTHROPIC_API_KEY",
+            placeholder: None,
             optional: false,
         }],
     },
@@ -110,10 +115,12 @@ static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
         fields: &[
             AuthSecretTypeField {
                 label: "AWS_BEARER_TOKEN_BEDROCK",
+                placeholder: None,
                 optional: false,
             },
             AuthSecretTypeField {
                 label: "AWS_REGION",
+                placeholder: None,
                 optional: false,
             },
         ],
@@ -124,18 +131,22 @@ static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
         fields: &[
             AuthSecretTypeField {
                 label: "AWS_ACCESS_KEY_ID",
+                placeholder: None,
                 optional: false,
             },
             AuthSecretTypeField {
                 label: "AWS_SECRET_ACCESS_KEY",
+                placeholder: None,
                 optional: false,
             },
             AuthSecretTypeField {
                 label: "AWS_SESSION_TOKEN",
+                placeholder: None,
                 optional: true,
             },
             AuthSecretTypeField {
                 label: "AWS_REGION",
+                placeholder: None,
                 optional: false,
             },
         ],
