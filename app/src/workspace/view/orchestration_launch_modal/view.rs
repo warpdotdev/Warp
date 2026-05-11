@@ -1,6 +1,6 @@
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::theme::{phenomenon::PhenomenonStyle, Fill};
+use warp_core::ui::theme::Fill;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::elements::{
     Align, CacheOption, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
@@ -122,7 +122,7 @@ impl ActionButtonTheme for CloseButtonTheme {
         _background: Option<Fill>,
         _appearance: &Appearance,
     ) -> ColorU {
-        PhenomenonStyle::modal_close_button_text()
+        ColorU::white()
     }
 }
 
