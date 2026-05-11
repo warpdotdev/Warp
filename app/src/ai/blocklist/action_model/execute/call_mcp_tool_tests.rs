@@ -203,6 +203,71 @@ fn fractional_value_is_not_coerced_to_int() {
 }
 
 #[test]
+fn root_level_one_of_branch_with_integer_is_coerced() {
+    // Reviewer-found gap: when the root schema uses a combinator instead of
+    // (or alongside) `properties`, the entrypoint must walk every branch, not
+    // stop at the first one. This caught a real bug pre-refactor.
+    let mut args = obj(json!({ "x": 6.0 }));
+    let schema = obj(json!({
+        "oneOf": [
+            { "properties": { "x": { "type": "string" } } },
+            { "properties": { "x": { "type": "integer" } } }
+        ]
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["x"].as_i64(), Some(6));
+}
+
+#[test]
+fn root_level_additional_properties_is_applied() {
+    let mut args = obj(json!({ "anything": 8.0, "more": 9.0 }));
+    let schema = obj(json!({ "additionalProperties": { "type": "integer" } }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["anything"].as_i64(), Some(8));
+    assert_eq!(args["more"].as_i64(), Some(9));
+}
+
+#[test]
+fn negative_whole_float_is_coerced() {
+    let mut args = obj(json!({ "x": -42.0 }));
+    let schema = obj(json!({
+        "properties": { "x": { "type": "integer" } }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["x"].as_i64(), Some(-42));
+    assert_eq!(serde_json::to_string(&args["x"]).unwrap(), "-42");
+}
+
+#[test]
+fn tuple_style_items_coerces_positional_schemas() {
+    let mut args = obj(json!({ "pair": [1.0, "hi", 2.0] }));
+    let schema = obj(json!({
+        "properties": {
+            "pair": {
+                "type": "array",
+                "items": [
+                    { "type": "integer" },
+                    { "type": "string" },
+                    { "type": "integer" }
+                ]
+            }
+        }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["pair"][0].as_i64(), Some(1));
+    assert_eq!(args["pair"][1].as_str(), Some("hi"));
+    assert_eq!(args["pair"][2].as_i64(), Some(2));
+}
+
+#[test]
 fn already_integer_value_is_unchanged() {
     let mut args = obj(json!({ "x": 5 }));
     let schema = obj(json!({

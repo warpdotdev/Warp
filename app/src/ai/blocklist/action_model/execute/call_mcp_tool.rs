@@ -180,34 +180,16 @@ pub(crate) fn coerce_integer_args(
     args: &mut serde_json::Map<String, serde_json::Value>,
     input_schema: &serde_json::Map<String, serde_json::Value>,
 ) {
+    // Delegate to the recursive walker by wrapping `args` in a borrowed `Value`.
+    // This keeps the root-level traversal consistent with nested levels, so
+    // top-level `oneOf`/`anyOf`/`allOf` and `additionalProperties` are honored
+    // the same way they are deeper in the schema.
+    let mut wrapped = serde_json::Value::Object(std::mem::take(args));
     let schema_value = serde_json::Value::Object(input_schema.clone());
-    for (key, value) in args.iter_mut() {
-        if let Some(prop_schema) = property_schema(&schema_value, key) {
-            coerce_value_against_schema(value, &prop_schema);
-        }
+    coerce_value_against_schema(&mut wrapped, &schema_value);
+    if let serde_json::Value::Object(restored) = wrapped {
+        *args = restored;
     }
-}
-
-/// Returns the schema for `key` under `properties`, walking into
-/// `oneOf`/`anyOf`/`allOf` branches as needed. Returns the first match.
-fn property_schema(schema: &serde_json::Value, key: &str) -> Option<serde_json::Value> {
-    if let Some(prop) = schema
-        .get("properties")
-        .and_then(|p| p.as_object())
-        .and_then(|p| p.get(key))
-    {
-        return Some(prop.clone());
-    }
-    for combinator in ["oneOf", "anyOf", "allOf"] {
-        if let Some(branches) = schema.get(combinator).and_then(|b| b.as_array()) {
-            for branch in branches {
-                if let Some(found) = property_schema(branch, key) {
-                    return Some(found);
-                }
-            }
-        }
-    }
-    None
 }
 
 /// Returns true if the schema's `type` declares `"integer"`, including the
