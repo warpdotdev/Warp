@@ -172,29 +172,126 @@ impl Entity for CallMCPToolExecutor {
 /// MCP tool args round-trip through `google.protobuf.Struct` on the wire, whose
 /// `NumberValue` stores everything as `f64`. Without this fix, serde_json emits
 /// whole-number floats as `"5.0"`, which strict MCP servers reject for integer fields.
+///
+/// Walks the schema recursively so integer fields nested inside objects, arrays,
+/// or `oneOf`/`anyOf`/`allOf` branches are all coerced. `$ref` is not resolved
+/// (the root schema would be required) and is skipped.
 pub(crate) fn coerce_integer_args(
     args: &mut serde_json::Map<String, serde_json::Value>,
     input_schema: &serde_json::Map<String, serde_json::Value>,
 ) {
-    let Some(properties) = input_schema.get("properties").and_then(|p| p.as_object()) else {
-        return;
-    };
+    let schema_value = serde_json::Value::Object(input_schema.clone());
+    for (key, value) in args.iter_mut() {
+        if let Some(prop_schema) = property_schema(&schema_value, key) {
+            coerce_value_against_schema(value, &prop_schema);
+        }
+    }
+}
 
-    for (key, prop_def) in properties {
-        let is_integer = prop_def.get("type").and_then(|t| t.as_str()) == Some("integer");
-        if !is_integer {
-            continue;
+/// Returns the schema for `key` under `properties`, walking into
+/// `oneOf`/`anyOf`/`allOf` branches as needed. Returns the first match.
+fn property_schema(schema: &serde_json::Value, key: &str) -> Option<serde_json::Value> {
+    if let Some(prop) = schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .and_then(|p| p.get(key))
+    {
+        return Some(prop.clone());
+    }
+    for combinator in ["oneOf", "anyOf", "allOf"] {
+        if let Some(branches) = schema.get(combinator).and_then(|b| b.as_array()) {
+            for branch in branches {
+                if let Some(found) = property_schema(branch, key) {
+                    return Some(found);
+                }
+            }
         }
-        let Some(serde_json::Value::Number(n)) = args.get_mut(key) else {
-            continue;
-        };
-        let Some(f) = n.as_f64() else { continue };
-        if f.fract() != 0.0 {
-            continue;
+    }
+    None
+}
+
+/// Returns true if the schema's `type` declares `"integer"`, including the
+/// nullable form `"type": ["integer", "null"]`.
+fn schema_declares_integer(schema: &serde_json::Value) -> bool {
+    match schema.get("type") {
+        Some(serde_json::Value::String(s)) => s == "integer",
+        Some(serde_json::Value::Array(types)) => {
+            types.iter().any(|t| t.as_str() == Some("integer"))
         }
-        if let Ok(i) = i64::try_from(f as i128) {
-            *n = serde_json::Number::from(i);
+        _ => false,
+    }
+}
+
+/// In-place coerces a whole-number `f64` `Number` to `i64`.
+fn coerce_number_to_int(n: &mut serde_json::Number) {
+    let Some(f) = n.as_f64() else { return };
+    if n.is_i64() || n.is_u64() {
+        return;
+    }
+    if f.fract() != 0.0 {
+        return;
+    }
+    if let Ok(i) = i64::try_from(f as i128) {
+        *n = serde_json::Number::from(i);
+    }
+}
+
+/// Recursively walks `value` against `schema`, coercing whole-number f64s to
+/// i64 wherever the schema declares `"type": "integer"`. Safe to call against
+/// multiple `oneOf`/`anyOf`/`allOf` branches: coercion is a no-op on values
+/// the schema does not match.
+fn coerce_value_against_schema(value: &mut serde_json::Value, schema: &serde_json::Value) {
+    if schema_declares_integer(schema) {
+        if let serde_json::Value::Number(n) = value {
+            coerce_number_to_int(n);
         }
+    }
+
+    if let Some(branches) = schema
+        .get("oneOf")
+        .or_else(|| schema.get("anyOf"))
+        .or_else(|| schema.get("allOf"))
+        .and_then(|b| b.as_array())
+    {
+        for branch in branches {
+            coerce_value_against_schema(value, branch);
+        }
+    }
+
+    match value {
+        serde_json::Value::Object(map) => {
+            let properties = schema.get("properties").and_then(|p| p.as_object());
+            let additional = schema.get("additionalProperties");
+            for (k, v) in map.iter_mut() {
+                if let Some(prop_schema) = properties.and_then(|p| p.get(k)) {
+                    coerce_value_against_schema(v, prop_schema);
+                } else if let Some(extra_schema) = additional {
+                    if extra_schema.is_object() {
+                        coerce_value_against_schema(v, extra_schema);
+                    }
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            if let Some(item_schema) = schema.get("items") {
+                match item_schema {
+                    // `items` as an object schema: applies to every element.
+                    serde_json::Value::Object(_) => {
+                        for elem in items.iter_mut() {
+                            coerce_value_against_schema(elem, item_schema);
+                        }
+                    }
+                    // `items` as an array (tuple validation): positional schemas.
+                    serde_json::Value::Array(schemas) => {
+                        for (elem, elem_schema) in items.iter_mut().zip(schemas.iter()) {
+                            coerce_value_against_schema(elem, elem_schema);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
     }
 }
 

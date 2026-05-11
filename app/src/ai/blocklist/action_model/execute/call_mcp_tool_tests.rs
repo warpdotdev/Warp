@@ -46,3 +46,171 @@ fn no_coercion_when_not_typed_as_integer() {
         assert_eq!(serde_json::to_string(&args["x"]).unwrap(), "1.0");
     }
 }
+
+#[test]
+fn nested_object_integer_is_coerced() {
+    let mut args = obj(json!({ "outer": { "inner": 5.0 } }));
+    let schema = obj(json!({
+        "properties": {
+            "outer": {
+                "type": "object",
+                "properties": { "inner": { "type": "integer" } }
+            }
+        }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["outer"]["inner"].as_i64(), Some(5));
+    assert_eq!(serde_json::to_string(&args["outer"]["inner"]).unwrap(), "5");
+}
+
+#[test]
+fn array_items_integer_is_coerced() {
+    let mut args = obj(json!({ "ids": [1.0, 2.0, 3.5] }));
+    let schema = obj(json!({
+        "properties": {
+            "ids": { "type": "array", "items": { "type": "integer" } }
+        }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    // Whole-number floats become i64; fractional values are left alone.
+    assert_eq!(args["ids"][0].as_i64(), Some(1));
+    assert_eq!(args["ids"][1].as_i64(), Some(2));
+    assert_eq!(args["ids"][2].as_f64(), Some(3.5));
+}
+
+#[test]
+fn nullable_integer_type_array_is_coerced() {
+    let mut args = obj(json!({ "n": 7.0, "m": null }));
+    let schema = obj(json!({
+        "properties": {
+            "n": { "type": ["integer", "null"] },
+            "m": { "type": ["integer", "null"] }
+        }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["n"].as_i64(), Some(7));
+    assert!(args["m"].is_null());
+}
+
+#[test]
+fn one_of_branch_with_integer_is_coerced() {
+    // Mirrors the schema shape from issue #10596: a `filters` array whose items
+    // are a oneOf where one branch has `value: integer` (a millisecond timestamp).
+    let mut args = obj(json!({
+        "filters": [
+            { "value": ["a", "b"] },
+            { "value": 1730419200000.0 }
+        ]
+    }));
+    let schema = obj(json!({
+        "properties": {
+            "filters": {
+                "type": "array",
+                "items": {
+                    "oneOf": [
+                        { "properties": { "value": { "type": "array", "items": { "type": "string" } } } },
+                        { "properties": { "value": { "type": "integer" } } }
+                    ]
+                }
+            }
+        }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["filters"][1]["value"].as_i64(), Some(1730419200000));
+    assert_eq!(
+        serde_json::to_string(&args["filters"][1]["value"]).unwrap(),
+        "1730419200000"
+    );
+    // The string-array branch value is untouched.
+    assert_eq!(args["filters"][0]["value"][0].as_str(), Some("a"));
+}
+
+#[test]
+fn any_of_at_property_level_is_coerced() {
+    let mut args = obj(json!({ "x": 9.0 }));
+    let schema = obj(json!({
+        "properties": {
+            "x": {
+                "anyOf": [
+                    { "type": "string" },
+                    { "type": "integer" }
+                ]
+            }
+        }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["x"].as_i64(), Some(9));
+}
+
+#[test]
+fn all_of_with_integer_branch_is_coerced() {
+    let mut args = obj(json!({ "x": 4.0 }));
+    let schema = obj(json!({
+        "properties": {
+            "x": {
+                "allOf": [
+                    { "type": "integer" },
+                    { "minimum": 0 }
+                ]
+            }
+        }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["x"].as_i64(), Some(4));
+}
+
+#[test]
+fn additional_properties_schema_is_applied() {
+    let mut args = obj(json!({ "meta": { "a": 1.0, "b": 2.0 } }));
+    let schema = obj(json!({
+        "properties": {
+            "meta": {
+                "type": "object",
+                "additionalProperties": { "type": "integer" }
+            }
+        }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["meta"]["a"].as_i64(), Some(1));
+    assert_eq!(args["meta"]["b"].as_i64(), Some(2));
+}
+
+#[test]
+fn fractional_value_is_not_coerced_to_int() {
+    let mut args = obj(json!({ "x": 3.14 }));
+    let schema = obj(json!({
+        "properties": { "x": { "type": "integer" } }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    // Schema mismatch (server will reject) but we must not silently truncate.
+    assert_eq!(args["x"].as_f64(), Some(3.14));
+}
+
+#[test]
+fn already_integer_value_is_unchanged() {
+    let mut args = obj(json!({ "x": 5 }));
+    let schema = obj(json!({
+        "properties": { "x": { "type": "integer" } }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["x"].as_i64(), Some(5));
+    assert_eq!(serde_json::to_string(&args["x"]).unwrap(), "5");
+}
