@@ -691,8 +691,10 @@ impl AgentViewController {
         ctx: &mut ModelContext<Self>,
     ) -> Result<AIConversationId, EnterAgentViewError> {
         // Block entry to fullscreen mode if there's an active long-running command. Transcript
-        // viewers and 3p cloud viewers are exempt: in those contexts the long-running block is
-        // either a restored snapshot or the harness CLI we want to wrap in agent-view chrome.
+        // viewers, 3p cloud viewers, and shared-session viewers are exempt: in those contexts
+        // the long-running block is either a restored snapshot, the harness CLI we want to wrap
+        // in agent-view chrome, or replayed scrollback from a shared session whose setup
+        // commands left a long-running block active.
         let is_long_running = {
             let terminal_model = self.terminal_model.lock();
             terminal_model
@@ -700,7 +702,11 @@ impl AgentViewController {
                 .active_block()
                 .is_active_and_long_running()
                 && !terminal_model.is_conversation_transcript_viewer()
-                && !matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent)
+                && !matches!(
+                    origin,
+                    AgentViewEntryOrigin::ThirdPartyCloudAgent
+                        | AgentViewEntryOrigin::SharedSessionSelection
+                )
         };
 
         if is_long_running {

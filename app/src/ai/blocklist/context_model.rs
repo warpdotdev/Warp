@@ -730,7 +730,7 @@ impl BlocklistAIContextModel {
             if let Err(e) = self.agent_view_controller.update(ctx, |controller, ctx| {
                 controller.try_enter_agent_view(Some(conversation_id), origin, ctx)
             }) {
-                log::error!("Failed to enter agent view for existing conversation: {e}");
+                log::error!("Failed to enter agent view for existing conversation (origin={origin:?}): {e}");
             }
         }
     }
