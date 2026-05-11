@@ -4334,12 +4334,8 @@ impl TerminalView {
                                     error: Some(error.clone()),
                                     remote_os,
                                     remote_arch,
-                                    exit_code: exit_status
-                                        .as_ref()
-                                        .and_then(|s| s.code),
-                                    signal_killed: exit_status
-                                        .as_ref()
-                                        .map(|s| s.signal_killed),
+                                    exit_code: exit_status.as_ref().and_then(|s| s.code),
+                                    signal_killed: exit_status.as_ref().map(|s| s.signal_killed),
                                 },
                                 ctx
                             );

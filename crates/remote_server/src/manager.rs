@@ -812,30 +812,24 @@ impl RemoteServerManager {
                                     // exit 255 = ControlMaster death) and the
                                     // process was not signal-killed (OOM etc.
                                     // are real failures).
-                                    let is_cancelled =
-                                        !me.sessions.contains_key(&session_id)
-                                            || exit_status.as_ref().is_some_and(|s| {
-                                                !transport.is_reconnectable(Some(s))
-                                                    && !s.signal_killed
-                                            });
+                                    let is_cancelled = !me.sessions.contains_key(&session_id)
+                                        || exit_status.as_ref().is_some_and(|s| {
+                                            !transport.is_reconnectable(Some(s)) && !s.signal_killed
+                                        });
 
-                                    ctx.emit(
-                                        RemoteServerManagerEvent::SetupStateChanged {
-                                            session_id,
-                                            state: RemoteServerSetupState::Failed {
-                                                error: error.clone(),
-                                            },
+                                    ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                                        session_id,
+                                        state: RemoteServerSetupState::Failed {
+                                            error: error.clone(),
                                         },
-                                    );
-                                    ctx.emit(
-                                        RemoteServerManagerEvent::SessionConnectionFailed {
-                                            session_id,
-                                            phase,
-                                            error,
-                                            exit_status,
-                                            is_cancelled,
-                                        },
-                                    );
+                                    });
+                                    ctx.emit(RemoteServerManagerEvent::SessionConnectionFailed {
+                                        session_id,
+                                        phase,
+                                        error,
+                                        exit_status,
+                                        is_cancelled,
+                                    });
                                     me.mark_session_disconnected(session_id, ctx);
                                 })
                                 .await;
