@@ -10,7 +10,7 @@ use std::time::Duration;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_cli::agent::Harness;
-use warp_core::ui::color::{coloru_with_opacity, MAGENTA};
+use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
 use warpui::elements::new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig};
@@ -510,8 +510,7 @@ pub fn render_static_agent_pill(name: &str, app: &AppContext) -> Box<dyn Element
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
     let avatar = render_agent_avatar_disc(name, AVATAR_SIZE, theme, appearance);
-    // Fixed magenta design-token colors (--magenta_overlay_1 / #BF409D).
-    let text_color = MAGENTA;
+    let text_color = theme.ansi_fg_magenta();
     let bg_color = coloru_with_opacity(text_color, 10);
     let label_text = Text::new(name.to_string(), appearance.ui_font_family(), 12.)
         .with_color(text_color)
