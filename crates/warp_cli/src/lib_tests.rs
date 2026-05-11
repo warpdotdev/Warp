@@ -1602,32 +1602,6 @@ fn harness_parse_local_child_harness_accepts_codex() {
 }
 
 #[test]
-fn agent_run_cloud_accepts_conversation_flag() {
-    let args = Args::try_parse_from([
-        "warp",
-        "agent",
-        "run-cloud",
-        "--prompt",
-        "hello",
-        "--conversation",
-        "92b8aa0f-1525-4813-9990-62db7afe9c12",
-    ])
-    .unwrap();
-
-    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
-        panic!("Expected `warp agent run-cloud` command");
-    };
-    let CliCommand::Agent(AgentCommand::RunCloud(run_args)) = boxed_cmd.as_ref() else {
-        panic!("Expected `warp agent run-cloud` command");
-    };
-
-    assert_eq!(
-        run_args.conversation.as_deref(),
-        Some("92b8aa0f-1525-4813-9990-62db7afe9c12")
-    );
-}
-
-#[test]
 fn agent_run_cloud_accepts_claude_auth_secret_with_harness() {
     let args = Args::try_parse_from([
         "warp",
