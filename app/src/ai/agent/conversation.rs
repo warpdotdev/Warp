@@ -817,6 +817,7 @@ impl AIConversation {
     pub fn set_agent_name(&mut self, name: String) {
         self.agent_name = Some(name);
     }
+
     pub fn orchestration_harness_type(&self) -> Option<&str> {
         self.orchestration_harness_type.as_deref()
     }
@@ -2533,6 +2534,29 @@ impl AIConversation {
                 message: Some(message),
                 mask: Some(mask),
             }) => {
+                // Process OrchestrationConfigSnapshot if the updated
+                // message carries one (e.g. create_orchestration_config
+                // tool call result updating a single message in place).
+                if let Some(api::message::Message::OrchestrationConfigSnapshot(snapshot)) =
+                    &message.message
+                {
+                    let config = snapshot
+                        .config
+                        .as_ref()
+                        .map(OrchestrationConfig::from_proto);
+                    let status = OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());
+                    let plan_id = if snapshot.plan_id.is_empty() {
+                        None
+                    } else {
+                        Some(snapshot.plan_id.clone())
+                    };
+                    if self.set_orchestration_config(config, status, plan_id) {
+                        ctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                            conversation_id: self.id,
+                        });
+                    }
+                }
+
                 let task_id = TaskId::new(task_id);
                 let exchange_id = self
                     .added_exchanges_by_response
@@ -3440,6 +3464,7 @@ fn parse_orchestration_harness_type(value: &str) -> Harness {
         .or_else(|| Harness::parse_orchestration_harness(value))
         .unwrap_or(Harness::Unknown)
 }
+
 pub(super) fn update_todo_list_from_todo_op(
     todo_lists: &mut Vec<AIAgentTodoList>,
     op: api::message::update_todos::Operation,

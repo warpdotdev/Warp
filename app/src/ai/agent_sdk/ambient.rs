@@ -491,7 +491,7 @@ impl AmbientAgentRunner {
                 parent_run_id: None,
                 runtime_skills: vec![],
                 referenced_attachments: vec![],
-                conversation_id: None,
+                conversation_id: args.conversation,
                 initial_snapshot_token: None,
             };
 
