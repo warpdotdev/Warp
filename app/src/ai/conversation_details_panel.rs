@@ -1037,7 +1037,7 @@ impl ConversationDetailsPanel {
 
         let agent_name_element = if let Some(uid) = &executor.uid {
             let oz_root_url = ChannelState::oz_root_url();
-            let agent_url = format!("{oz_root_url}/agent/{}", urlencoding::encode(uid));
+            let agent_url = format!("{oz_root_url}/agents/{}", urlencoding::encode(uid));
             appearance
                 .ui_builder()
                 .link(
