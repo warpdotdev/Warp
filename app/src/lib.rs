@@ -460,14 +460,16 @@ impl LaunchMode {
         }
     }
 
-    /// Returns `true` if running in app mode or via `agent run` to permit codebase indexing.
+    /// Returns `true` if this process can build and sync codebase indices.
     fn supports_indexing(&self) -> bool {
         match self {
             LaunchMode::CommandLine { command, .. } => {
                 matches!(command, CliCommand::Agent(AgentCommand::Run { .. }))
             }
-            LaunchMode::App { .. } | LaunchMode::Test { .. } => true,
-            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => false,
+            LaunchMode::App { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::RemoteServerDaemon { .. } => true,
+            LaunchMode::RemoteServerProxy => false,
         }
     }
 
