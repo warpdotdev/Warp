@@ -189,6 +189,18 @@ fn parse_github_repo(remote_url: &str) -> Option<GithubRepo> {
     Some(GithubRepo::new(owner, repo))
 }
 
+/// Resolve a single directory path to its enclosing git repo and parsed GitHub
+/// remote, if any. Used by `&` handoff compose to do pwd-based environment
+/// overlap at activation time.
+pub(crate) async fn resolve_pwd_repo(pwd: PathBuf) -> Option<TouchedRepo> {
+    let git_root = find_git_root(&pwd).await?;
+    let repo_id = git_origin_url(&git_root)
+        .await
+        .as_deref()
+        .and_then(parse_github_repo);
+    Some(TouchedRepo { git_root, repo_id })
+}
+
 /// Pick the env that has the most overlap with the touched repos, breaking ties by
 /// recency. Returns `None` when no env contains any of the touched repos (or when
 /// `envs` is empty / the workspace touched no GitHub-mapped repos).

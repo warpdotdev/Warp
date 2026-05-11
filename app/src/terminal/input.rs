@@ -3749,7 +3749,46 @@ impl Input {
         self.handoff_compose_state
             .update(ctx, |state, ctx| state.activate(ctx));
         self.is_editor_empty_on_last_edit = is_input_buffer_empty;
+
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        self.start_pwd_environment_overlap(ctx);
+
         ctx.notify();
+    }
+
+    /// Spawns an async task to resolve the pwd's git repo and pick the best
+    /// environment overlap, updating the handoff compose state when done.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn start_pwd_environment_overlap(&mut self, ctx: &mut ViewContext<Self>) {
+        use crate::ai::blocklist::agent_view::agent_input_footer::sort_environments_by_recency;
+        use crate::ai::blocklist::handoff::touched_repos::{
+            pick_handoff_overlap_env, resolve_pwd_repo, TouchedWorkspace,
+        };
+
+        let Some(pwd) = self.active_session_path_if_local(ctx).map(Path::to_path_buf) else {
+            return;
+        };
+
+        let handoff_compose_state = self.handoff_compose_state.clone();
+        ctx.spawn(
+            async move { resolve_pwd_repo(pwd).await },
+            move |_input, touched_repo, ctx| {
+                let Some(touched_repo) = touched_repo else {
+                    return;
+                };
+                let workspace = TouchedWorkspace {
+                    repos: vec![touched_repo],
+                    orphan_files: vec![],
+                };
+                let mut envs = CloudAmbientAgentEnvironment::get_all(ctx);
+                sort_environments_by_recency(&mut envs);
+                if let Some(overlap_env) = pick_handoff_overlap_env(&workspace, envs) {
+                    handoff_compose_state.update(ctx, |state, ctx| {
+                        state.set_environment_id(Some(overlap_env), false, ctx);
+                    });
+                }
+            },
+        );
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
@@ -3841,6 +3880,10 @@ impl Input {
         self.handoff_compose_state
             .update(ctx, |state, ctx| state.activate(ctx));
         self.is_editor_empty_on_last_edit = is_input_buffer_empty;
+
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        self.start_pwd_environment_overlap(ctx);
+
         ctx.notify();
         true
     }
