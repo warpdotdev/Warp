@@ -25,6 +25,7 @@ fn pending_launch() -> PendingCloudLaunch {
 fn pending_handoff() -> PendingHandoff {
     PendingHandoff {
         forked_conversation_id: "forked-conversation".to_owned(),
+        title: None,
         touched_workspace: None,
         snapshot_upload: SnapshotUploadStatus::Pending,
         submission_state: HandoffSubmissionState::Idle,

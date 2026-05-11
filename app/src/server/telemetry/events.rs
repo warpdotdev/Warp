@@ -5445,7 +5445,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::SettingsImportConfigFocused
             | Self::SettingsImportConfigParsed
             | Self::SettingsImportResetButtonClicked
-            | Self::ITermMultipleHotkeys => EnablementState::Flag(FeatureFlag::SettingsImport),
+            | Self::ITermMultipleHotkeys => EnablementState::Always,
             Self::ToggleIntelligentAutosuggestionsSetting | Self::AgentModePrediction => {
                 EnablementState::Always
             }
@@ -5478,9 +5478,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleWorkspaceDecorationVisibility => {
                 EnablementState::Flag(FeatureFlag::FullScreenZenMode)
             }
-            Self::UpdateAltScreenPaddingMode => {
-                EnablementState::Flag(FeatureFlag::RemoveAltScreenPadding)
-            }
+            Self::UpdateAltScreenPaddingMode => EnablementState::Always,
             Self::AddTabWithShell => EnablementState::Flag(FeatureFlag::ShellSelector),
             Self::AgentModeSurfacedCitations | Self::AgentModeOpenedCitation => {
                 EnablementState::Always

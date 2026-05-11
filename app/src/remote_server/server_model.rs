@@ -50,6 +50,7 @@ use crate::terminal::model::session::command_executor::{
 /// Notifications (fire-and-forget messages like `SessionBootstrapped` and
 /// `Abort`) do not produce a `HandlerOutcome`; they are dispatched inline in
 /// `handle_message` and return early.
+#[allow(clippy::large_enum_variant)]
 enum HandlerOutcome {
     /// The response is ready synchronously — the caller sends it immediately.
     Sync(server_message::Message),
@@ -619,6 +620,10 @@ impl ServerModel {
             Some(client_message::Message::ResolveConflict(msg)) => {
                 self.handle_resolve_conflict(msg, &request_id, conn_id, ctx)
             }
+            // TODO: implement diff state handlers
+            Some(client_message::Message::GetDiffState(_)) => return,
+            Some(client_message::Message::UnsubscribeDiffState(_)) => return,
+            Some(client_message::Message::DiscardFiles(_)) => return,
             None => {
                 log::warn!(
                     "Received ClientMessage with no message variant (request_id={request_id})"

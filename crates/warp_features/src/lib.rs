@@ -114,10 +114,6 @@ pub enum FeatureFlag {
     /// Enables the settings file feature.
     SettingsFile,
 
-    /// Enables the settings import onboarding block and pre-parsing
-    /// configs on app startup.
-    SettingsImport,
-
     /// Enables rect selection.
     RectSelection,
 
@@ -142,19 +138,12 @@ pub enum FeatureFlag {
     /// Routes SSH sessions through the tmux-backed SSH wrapper.
     SSHTmuxWrapper,
 
-    /// Reduces the amount of horizontal padding in the blocklist
-    /// from 20px to 16px.
-    LessHorizontalTerminalPadding,
-
     /// Enables the shell selector, allowing us to open a new tab in
     /// a shell other than the default shell.
     ShellSelector,
 
     /// Enables writing to long-running commands in shared sessions.
     SharedSessionWriteToLongRunningCommands,
-
-    /// Replaces the bookmark button with a "save as workflow" button.
-    BlockToolbeltSaveAsWorkflow,
 
     /// Lazily builds scenes at render time instead of eagerly when a view
     /// changes.
@@ -164,12 +153,6 @@ pub enum FeatureFlag {
     /// corresponding `use_acls` flag in the session sharing server is disabled.
     /// https://github.com/warpdotdev/session-sharing-server/blob/b6590ebd0b0e7f6847d6b2228b4e77d63939ce22/server/Cargo.toml#L13
     SessionSharingAcls,
-
-    /// Removes the extraneous padding from the alt-screen that we previously had
-    /// to keep consistent size between blocklist and alt-screen.
-    ///
-    /// See plan here: https://docs.google.com/document/d/1TBPSWNfh4KylkEgL5o5xyYgK_KQzUQk1oxjuIx2ipXw
-    RemoveAltScreenPadding,
 
     /// Enables the full-screen "zen mode" setting, where we hide the tab bar if there's only one
     /// tab.
