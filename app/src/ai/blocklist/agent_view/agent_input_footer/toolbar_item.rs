@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use warpui::SingletonEntity;
-
-use crate::ai::blocklist::is_local_to_cloud_handoff_available;
+use crate::ai::blocklist::handoff::is_local_to_cloud_handoff_available;
 use crate::context_chips::{agent_footer_available_chips, available_chips, ContextChipKind};
 use crate::features::FeatureFlag;
 use crate::settings::AISettings;

@@ -1,6 +1,6 @@
 use super::hoa_onboarding;
 use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
-use crate::ai::blocklist::is_local_to_cloud_handoff_available;
+use crate::ai::blocklist::handoff::is_local_to_cloud_handoff_available;
 use crate::auth::auth_manager::AuthManagerEvent;
 use crate::auth::AuthManager;
 use crate::channel::{Channel, ChannelState};
@@ -65,7 +65,7 @@ impl OneTimeModalModel {
                         if let CloudPreferencesSyncerEvent::InitialLoadCompleted = event {
                             ctx.unsubscribe_from_model(&CloudPreferencesSyncer::handle(ctx));
                             me.check_and_trigger_all_modals(ctx);
-                            ensure_handoff_chip_in_toolbar(ctx);
+                            maybe_ensure_handoff_chip_in_toolbar(ctx);
                         }
                     },
                 );
@@ -449,7 +449,7 @@ impl OneTimeModalModel {
 /// new feature without losing their customization.
 ///
 /// Users on `Default` already see the chip via `AgentToolbarItemKind::default_right()`.
-fn ensure_handoff_chip_in_toolbar(ctx: &mut ModelContext<OneTimeModalModel>) {
+fn maybe_ensure_handoff_chip_in_toolbar(ctx: &mut ModelContext<OneTimeModalModel>) {
     if !is_local_to_cloud_handoff_available() {
         return;
     }

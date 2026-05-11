@@ -6,8 +6,8 @@ pub mod toolbar_item;
 use crate::{
     ai::{
         blocklist::{
+            handoff::is_local_to_cloud_handoff_available,
             history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel},
-            is_local_to_cloud_handoff_available,
             prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
             usage::icon_for_context_window_usage,
             BlocklistAIInputModel,
