@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use warp_cli::agent::Harness;
 
 use crate::ai::ambient_agents::task::{
-    AgentConfigSnapshot, HarnessConfig, RequestUsage, TaskCreatorInfo,
+    AgentConfigSnapshot, HarnessConfig, RequestUsage, TaskPrincipalInfo,
 };
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
@@ -31,11 +31,12 @@ fn task_with_run_time_and_credits() -> AmbientAgentTask {
         source: None,
         session_id: None,
         session_link: None,
-        creator: Some(TaskCreatorInfo {
+        creator: Some(TaskPrincipalInfo {
             creator_type: "USER".to_string(),
             uid: "user-1".to_string(),
             display_name: Some("User 1".to_string()),
         }),
+        executor: None,
         conversation_id: None,
         request_usage: Some(RequestUsage {
             inference_cost: Some(INFERENCE_COST),

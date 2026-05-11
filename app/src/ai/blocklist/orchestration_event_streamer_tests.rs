@@ -181,6 +181,7 @@ fn make_ambient_task_with_event_seq(
         session_id: None,
         session_link: None,
         creator: None,
+        executor: None,
         conversation_id: None,
         request_usage: None,
         agent_config_snapshot: None,

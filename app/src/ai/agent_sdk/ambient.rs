@@ -847,6 +847,10 @@ impl AmbientAgentRunner {
                 table.add_row(vec![title_cell]);
             }
 
+            if let Some(executor) = task.executor_display_name() {
+                table.add_row(vec![format!("Executed as: {executor}")]);
+            }
+
             // Agent config snapshot (if available)
             if let Some(config) = task.agent_config_snapshot.as_ref() {
                 let config_str =
