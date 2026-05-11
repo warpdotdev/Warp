@@ -89,7 +89,7 @@ Hard rules:
 | t2-6 | animated playback (continuous; pause deferred) | `f077496` | [x] | [x] | [x] |
 | t2-7 | zoom (pan deferred to t2-7-pan) | `6aee220` | [x] | [x] | [x] |
 | t2-8 | status footer (dimensions only) | `d9cc0c3` | [x] | [x] | [x] |
-| t2-9 | EXIF orientation (ICC deferred to t2-9-icc) | _pending_ | [x] | [ ] | [ ] |
+| t2-9 | EXIF orientation (ICC deferred to t2-9-icc) | `3e694be` | [x] | [x] | [x] |
 | t2-FINAL | presubmit | | [ ] | — | — |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
@@ -188,6 +188,28 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   v1 §694 (background-executor stat) — once that lands, the
   size can come from the same stat the §119 size-cap check
   already does. — `reviews/tier2-t2-8-r2.md`.
+- **t2-9-r1.** (a) §700 covers EXIF orientation AND ICC together;
+  this commit is a real partial-completion (well-tracked via
+  `t2-9-icc`). (b) No regression-guard test for the EXIF path —
+  could be done with a hand-rolled `&[u8]` JPEG literal carrying
+  an Orientation=6 tag; (c) Small EXIF-tagged JPEGs now incur one
+  extra re-encode round-trip (necessary for correctness — worth a
+  code-comment note for future maintainers). — `reviews/tier2-t2-9-r1.md`.
+- **t2-9-r2.** (a) `decoder.orientation()?` propagates `ImageError`
+  from a corrupt EXIF segment, so a malformed-EXIF-but-otherwise-decodable
+  JPEG newly fails. Recommend
+  `decoder.orientation().unwrap_or(Orientation::NoTransforms)` at
+  both sites. (b) The "preserving v1 zero-copy behaviour" doc
+  comment over-promises — v1 skipped the *decode*, the new path
+  only skips the *output copy*; tighten the comment. (c) Doc
+  comment mentions HEIC, which isn't in `SUPPORTED_IMAGE_MIME_TYPES`;
+  remove or qualify. (d) Two-site duplication of the
+  `into_decoder → orientation → from_decoder → apply_orientation`
+  pattern is acceptable now; revisit if `t2-9-icc` adds a third
+  site. (e) `crates/warpui_core/test_data/` already hosts
+  `local.png` / `animated.webp`, so a tiny EXIF-tagged JPEG
+  fixture is a natural follow-up — the next t2-9 round should
+  clear that bar. — `reviews/tier2-t2-9-r2.md`.
 - **t2-9-icc.** ICC color profile flattening to sRGB. The `image`
   crate exposes `ImageDecoder::icc_profile() -> ImageResult<Option<Vec<u8>>>`
   for the JPEG/PNG/WebP decoders, so reading the embedded profile is
