@@ -542,7 +542,7 @@ use super::settings::AltScreenPaddingMode;
 use super::ssh::error::{SshErrorBlock, SshErrorBlockEvent, SSH_ERROR_BLOCK_VISIBLE_KEY};
 use super::ssh::install_tmux::{
     install_root_tmux_script, install_tmux_script, SshInstallTmuxBlock, SshInstallTmuxBlockEvent,
-    SshKeyEvent, TmuxInstallMethod,
+    SshKeyEvent, TmuxInstallSource,
 };
 use super::ssh::root_access::RootAccess;
 use super::ssh::ssh_detection::evaluate_warpify_ssh_host;
@@ -4388,6 +4388,7 @@ impl TerminalView {
                         send_telemetry_from_ctx!(
                             TelemetryEvent::RemoteServerInstallation {
                                 error: result.as_ref().err().map(|e| e.to_string()),
+                                install_source: result.as_ref().ok().copied(),
                                 remote_os,
                                 remote_arch,
                             },
@@ -8785,10 +8786,10 @@ impl TerminalView {
                 self.warpify_state.abort_ssh_warpify_timeout();
                 self.user_write_ctrl_c_to_pty(ctx);
             }
-            SshInstallTmuxBlockEvent::InstallTmuxAndWarpify(install_method) => {
+            SshInstallTmuxBlockEvent::InstallTmuxAndWarpify(install_source) => {
                 send_telemetry_from_ctx!(TelemetryEvent::SshInstallTmuxBlockAccepted, ctx);
                 self.clear_ssh_blocks(ctx);
-                self.install_tmux_and_warpify(ctx, install_method);
+                self.install_tmux_and_warpify(ctx, install_source);
                 self.update_scroll_position_locking(
                     ScrollPositionUpdate::AfterRichBlockUpdated,
                     ctx,
@@ -24368,10 +24369,10 @@ impl TerminalView {
     fn install_tmux_and_warpify(
         &mut self,
         ctx: &mut ViewContext<Self>,
-        install_method: &TmuxInstallMethod,
+        install_source: &TmuxInstallSource,
     ) {
-        let install_with_root_method = install_method.should_use_package_manager;
-        let install_script = &install_method.script;
+        let install_with_root_method = install_source.should_use_package_manager;
+        let install_script = &install_source.script;
         self.model
             .lock()
             .set_pending_warp_initiated_control_mode_with_install_tmux(install_with_root_method);
