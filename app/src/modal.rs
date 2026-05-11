@@ -9,7 +9,7 @@ use warpui::{
         ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Shrinkable, Stack, Text,
     },
     fonts::{Properties, Weight},
-    keymap::FixedBinding,
+    keymap::{FixedBinding, Keystroke},
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
     ViewContext, ViewHandle,
@@ -34,6 +34,8 @@ pub struct Modal<T> {
     close_modal_hover_state: MouseStateHandle,
     background_opacity: u8,
     offset_positioning: OffsetPositioning,
+    /// Optional keystroke to display alongside the close button.
+    dismiss_keystroke: Option<Keystroke>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -158,6 +160,7 @@ impl<T: View> Modal<T> {
             close_modal_hover_state: Default::default(),
             background_opacity: 179,
             offset_positioning: Self::default_offset_positioning(),
+            dismiss_keystroke: None,
         }
     }
 
@@ -193,6 +196,12 @@ impl<T: View> Modal<T> {
 
     pub fn with_background_opacity(mut self, opacity: u8) -> Self {
         self.background_opacity = opacity;
+        self
+    }
+
+    /// Set the keystroke to display alongside the close button.
+    pub fn with_dismiss_keystroke(mut self, keystroke: Keystroke) -> Self {
+        self.dismiss_keystroke = Some(keystroke);
         self
     }
 
@@ -236,13 +245,46 @@ impl<T: View> Modal<T> {
     }
 
     fn render_close_modal_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        use ui_components::{Component, keyboard_shortcut};
+
         const BUTTON_DIAMETER: f32 = 24.;
-        appearance
+        let close_button = appearance
             .ui_builder()
             .close_button(BUTTON_DIAMETER, self.close_modal_hover_state.clone())
             .build()
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(ModalAction::Close))
-            .finish()
+            .finish();
+
+                if let Some(keystroke) = &self.dismiss_keystroke {
+                    let theme = appearance.theme();
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_child(close_button)
+                        .with_child(
+                            Container::new(
+                                keyboard_shortcut::KeyboardShortcut.render(
+                                    appearance,
+                                    keyboard_shortcut::Params {
+                                        keystroke: keystroke.clone(),
+                                        options: keyboard_shortcut::Options {
+                                            font_color: Some(theme.nonactive_ui_text_color().into()),
+                                            background: Some(blended_colors::neutral_3(theme).into()),
+                                            border_fill: None,
+                                            sizing: keyboard_shortcut::Sizing {
+                                                font_size: 11.,
+                                                padding: 5.,
+                                            },
+                                        },
+                                    },
+                                ),
+                            )
+                            .with_margin_left(4.)
+                            .finish(),
+                        )
+                        .finish()
+                } else {
+            close_button
+        }
     }
 
     fn render_header_icon(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {

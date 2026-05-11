@@ -81,6 +81,7 @@ mod appearance_page;
 mod billing_and_usage;
 mod billing_and_usage_page;
 mod code_page;
+mod custom_inference_modal;
 mod delete_environment_confirmation_dialog;
 mod directory_color_add_picker;
 pub(crate) mod environments_page;
@@ -98,6 +99,7 @@ mod platform_page;
 mod privacy;
 mod privacy_page;
 mod referrals_page;
+mod remove_custom_endpoint_confirmation_dialog;
 mod settings_file_footer;
 pub(crate) mod settings_page;
 mod show_blocks_view;
@@ -158,6 +160,37 @@ pub(super) fn editor_text_colors(appearance: &Appearance) -> TextColors {
         disabled_color: theme.disabled_ui_text_color(),
         hint_color: theme.disabled_ui_text_color(),
     }
+}
+
+/// Renders a horizontal row of pill-shaped chips for model labels.
+/// Used by custom inference endpoint cards and the remove confirmation dialog.
+pub(super) fn render_model_chips(
+    labels: impl IntoIterator<Item = String>,
+    appearance: &Appearance,
+    text_color: warp_core::ui::theme::Fill,
+) -> Box<dyn Element> {
+    use warpui::elements::{Flex, Text, Container, Border, CornerRadius, Radius, ParentElement};
+
+    let theme = appearance.theme();
+    let chip_bg = internal_colors::fg_overlay_2(theme);
+    let chip_border = internal_colors::fg_overlay_3(theme);
+
+    let mut chips = Flex::row().with_spacing(8.);
+    for label in labels {
+        chips.add_child(
+            Container::new(
+                Text::new_inline(label, appearance.ui_font_family(), appearance.ui_font_size())
+                    .with_color(text_color.into())
+                    .finish(),
+            )
+            .with_uniform_padding(6.)
+            .with_background(chip_bg)
+            .with_border(Border::all(1.).with_border_fill(chip_border))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(999.)))
+            .finish(),
+        );
+    }
+    chips.finish()
 }
 
 #[derive(PartialEq, Eq)]
@@ -2183,6 +2216,9 @@ impl SettingsView {
                 view.read(app, |view, _| view.get_modal_content())
             }
             SettingsPageViewHandle::MCPServers(view) => {
+                view.read(app, |view, _| view.get_modal_content(app))
+            }
+            SettingsPageViewHandle::AI(view) => {
                 view.read(app, |view, _| view.get_modal_content(app))
             }
             _ => None,
