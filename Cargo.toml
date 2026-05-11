@@ -306,9 +306,7 @@ version-compare = "0.1"
 vte = { git = "https://github.com/warpdotdev/vte.git", rev = "4b399c87b63ba88f45709edaa6383fc519f6c900", default-features = false }
 walkdir = "2"
 warp-workflows = { git = "https://github.com/warpdotdev/workflows", rev = "793a98ddda6ef19682aed66364faebd2829f0e01" }
-# TODO: pin to a specific rev once the CustomInference proto change is merged.
-# Placeholder: <CUSTOM_INFERENCE_PROTO_REV>
-warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "CUSTOM_INFERENCE_PROTO_REV_PLACEHOLDER" }
+warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "9ebd35215d4c9af203c887293975ffeced4e34e1" }
 wasm-bindgen = "0.2.89"
 wasm-bindgen-futures = "0.4.42"
 web-sys = { version = "0.3.69", features = [
