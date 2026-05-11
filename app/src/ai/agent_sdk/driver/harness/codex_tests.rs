@@ -44,7 +44,7 @@ fn prepare_codex_auth_preserves_unrelated_fields() {
 }
 
 #[test]
-fn prepare_codex_auth_does_not_overwrite_existing_auth_mode() {
+fn prepare_codex_auth_forces_api_key_mode() {
     let tmp = TempDir::new().unwrap();
     let auth_path = tmp.path().join("auth.json");
     fs::write(&auth_path, r#"{"auth_mode":"Chatgpt"}"#).unwrap();
@@ -52,7 +52,7 @@ fn prepare_codex_auth_does_not_overwrite_existing_auth_mode() {
     prepare_codex_auth(&auth_path, "sk-new-key").unwrap();
 
     let auth: Value = serde_json::from_slice(&fs::read(&auth_path).unwrap()).unwrap();
-    assert_eq!(auth["auth_mode"], "Chatgpt");
+    assert_eq!(auth["auth_mode"], "apikey");
     assert_eq!(auth["OPENAI_API_KEY"], "sk-new-key");
 }
 
@@ -86,15 +86,20 @@ fn prepare_codex_auth_writes_with_0600_perms() {
 }
 
 #[test]
+#[serial_test::serial]
 fn resolve_openai_api_key_returns_value_from_resolved_map() {
+    let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
+    std::env::remove_var(OPENAI_API_KEY_ENV);
     let resolved = HashMap::from([(
         OsString::from("OPENAI_API_KEY"),
         OsString::from("sk-from-secret"),
     )]);
-    assert_eq!(
-        resolve_openai_api_key(&resolved).as_deref(),
-        Some("sk-from-secret")
-    );
+    let result = resolve_openai_api_key(&resolved);
+
+    if let Some(v) = prev {
+        std::env::set_var(OPENAI_API_KEY_ENV, v);
+    }
+    assert_eq!(result.as_deref(), Some("sk-from-secret"));
 }
 
 #[test]
@@ -164,6 +169,85 @@ fn resolve_openai_api_key_uses_resolved_map_when_env_empty() {
         None => std::env::remove_var(OPENAI_API_KEY_ENV),
     }
     assert_eq!(result.as_deref(), Some("sk-from-secret"));
+}
+
+#[test]
+fn validate_existing_codex_auth_rejects_missing_auth() {
+    let tmp = TempDir::new().unwrap();
+    let auth_path = tmp.path().join(".codex/auth.json");
+
+    let err = validate_existing_codex_auth(&auth_path).unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("Codex authentication credentials are unavailable"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn validate_existing_codex_auth_accepts_api_key_auth() {
+    let tmp = TempDir::new().unwrap();
+    let auth_path = tmp.path().join(".codex/auth.json");
+    fs::create_dir_all(auth_path.parent().unwrap()).unwrap();
+    fs::write(
+        &auth_path,
+        r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-existing"}"#,
+    )
+    .unwrap();
+
+    validate_existing_codex_auth(&auth_path).unwrap();
+}
+
+#[test]
+fn validate_existing_codex_auth_accepts_chatgpt_token_auth() {
+    let tmp = TempDir::new().unwrap();
+    let auth_path = tmp.path().join(".codex/auth.json");
+    fs::create_dir_all(auth_path.parent().unwrap()).unwrap();
+    fs::write(
+        &auth_path,
+        r#"{"auth_mode":"Chatgpt","tokens":{"access_token":"tok-existing"}}"#,
+    )
+    .unwrap();
+
+    validate_existing_codex_auth(&auth_path).unwrap();
+}
+
+#[test]
+#[serial_test::serial]
+fn prepare_codex_environment_config_fails_without_codex_credentials() {
+    let tmp = TempDir::new().unwrap();
+    let working_dir = tmp.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+
+    let prev_home = std::env::var("HOME").ok();
+    let prev_openai_key = std::env::var(OPENAI_API_KEY_ENV).ok();
+    std::env::set_var("HOME", tmp.path());
+    std::env::remove_var(OPENAI_API_KEY_ENV);
+
+    let err = prepare_codex_environment_config(
+        &working_dir,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+        None,
+    )
+    .unwrap_err();
+
+    match prev_home {
+        Some(v) => std::env::set_var("HOME", v),
+        None => std::env::remove_var("HOME"),
+    }
+    match prev_openai_key {
+        Some(v) => std::env::set_var(OPENAI_API_KEY_ENV, v),
+        None => std::env::remove_var(OPENAI_API_KEY_ENV),
+    }
+
+    assert!(
+        err.to_string()
+            .contains("Codex authentication credentials are unavailable"),
+        "unexpected error: {err:#}"
+    );
 }
 
 fn read_codex_config(path: &std::path::Path) -> toml::Table {
