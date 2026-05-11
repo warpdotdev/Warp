@@ -11,9 +11,10 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::LazyLock;
+use std::time::Duration;
 use warp_core::safe_warn;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
-use watcher::HomeDirectoryWatcherEvent;
+use watcher::{BulkFilesystemWatcher, BulkFilesystemWatcherEvent, HomeDirectoryWatcherEvent};
 
 use crate::ai::mcp::{
     home_config_file_path, parsing::normalize_codex_toml_to_json, MCPProvider,
@@ -32,6 +33,7 @@ static ENV_VAR_REGEX: LazyLock<Regex> =
 /// `.warp/.mcp.json`), capturing the parent directory component.
 static HOME_SUBDIR_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([^/]+)/[^/]+$").expect("Regex is valid"));
+const PROJECT_FILE_MCP_WATCHER_DEBOUNCE_MILLIS: u64 = 500;
 
 /// Returns the subdirectory under the home directory that needs its own [`DirectoryWatcher`],
 /// inferred from the provider's home config path. Matches paths that are exactly one directory
@@ -122,12 +124,18 @@ impl RepositorySubscriber for FileMCPSubscriber {
 /// [`FileMCPWatcherEvent`]s.
 pub struct FileMCPWatcher {
     file_mcp_tx: Sender<FileMCPDetectionMessage>,
+    /// Non-recursive watcher for project-scoped MCP config parent directories.
+    project_watcher: ModelHandle<BulkFilesystemWatcher>,
     /// Watcher handles for home provider subdirectories (e.g. `~/.codex`), keyed by subdir path.
     /// Used to cleanup watchers when the subdir is deleted at runtime.
     home_provider_watchers: HashMap<PathBuf, (ModelHandle<Repository>, SubscriberId)>,
     /// Set of project repository root paths we are already watching for file-based MCP configs.
-    /// Used purely for deduplication — we never tear down project watchers during the session.
+    /// Used purely for deduplication — we never tear down project root watches during the session.
     project_repo_watchers: HashSet<PathBuf>,
+    /// Project-scoped MCP config paths keyed to the logical roots and providers they affect.
+    project_config_targets_by_path: HashMap<PathBuf, Vec<(PathBuf, MCPProvider)>>,
+    /// Non-recursive project config parent directories currently registered with `project_watcher`.
+    project_roots_by_watch_dir: HashMap<PathBuf, HashSet<PathBuf>>,
     /// Tracks how many provider config files remain to be parsed for each cloud environment repo.
     /// When the count reaches zero, a `CloudEnvironmentScanComplete` event is emitted.
     cloud_env_pending: HashMap<PathBuf, usize>,
@@ -136,6 +144,12 @@ pub struct FileMCPWatcher {
 impl FileMCPWatcher {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let (file_mcp_tx, file_mcp_rx) = async_channel::unbounded::<FileMCPDetectionMessage>();
+        let project_watcher = ctx.add_model(|ctx| {
+            BulkFilesystemWatcher::new(
+                Duration::from_millis(PROJECT_FILE_MCP_WATCHER_DEBOUNCE_MILLIS),
+                ctx,
+            )
+        });
 
         ctx.spawn_stream_local(
             file_mcp_rx,
@@ -144,10 +158,12 @@ impl FileMCPWatcher {
             },
             |_, _| {},
         );
+        ctx.subscribe_to_model(&project_watcher, |me, event, ctx| {
+            me.handle_project_watcher_event(event, ctx);
+        });
 
         // Subscribe to changes to detected repositories.
         ctx.subscribe_to_model(&DetectedRepositories::handle(ctx), {
-            let file_mcp_tx = file_mcp_tx.clone();
             move |me, event, ctx| {
                 let DetectedRepositoriesEvent::DetectedGitRepo { repository, source } = event;
                 // Register MCP servers for repos the user actively navigated to, and for
@@ -164,7 +180,7 @@ impl FileMCPWatcher {
                             providers_in_scope(repo_path.clone(), repo_path.clone()).count();
                         me.cloud_env_pending.insert(repo_path.clone(), count);
                     }
-                    me.register_repo_for_file_mcp_watching(repo_path, ctx, file_mcp_tx.clone());
+                    me.register_repo_for_file_mcp_watching(repo_path, ctx);
                 }
             }
         });
@@ -221,54 +237,150 @@ impl FileMCPWatcher {
 
         Self {
             file_mcp_tx,
+            project_watcher,
             home_provider_watchers,
             project_repo_watchers: HashSet::new(),
+            project_config_targets_by_path: HashMap::new(),
+            project_roots_by_watch_dir: HashMap::new(),
             cloud_env_pending: HashMap::new(),
         }
     }
 
-    /// Register a project repo for file-based MCP watching via DirectoryWatcher.
+    /// Register a project repo for file-based MCP watching.
+    ///
+    /// Project-scoped MCP config files live at a small set of known paths relative to the repo
+    /// root. Watch those config parent directories non-recursively instead of subscribing to
+    /// recursive repository updates, which can otherwise consume one inotify watch per subdirectory
+    /// in large ignored trees such as `node_modules`.
     fn register_repo_for_file_mcp_watching(
         &mut self,
         repo_path: PathBuf,
         ctx: &mut ModelContext<Self>,
-        file_mcp_tx: Sender<FileMCPDetectionMessage>,
     ) {
         if self.project_repo_watchers.contains(&repo_path) {
             return;
         }
-
-        let Some(repo_handle) =
-            DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(&repo_path, ctx)
-        else {
-            return;
-        };
-
-        let start = repo_handle.update(ctx, |repo, ctx| {
-            repo.start_watching(
-                Box::new(FileMCPSubscriber {
-                    stored_dir: repo_path.clone(),
-                    message_tx: file_mcp_tx,
-                }),
-                ctx,
-            )
-        });
-        let subscriber_id = start.subscriber_id;
-        // Store optimistically; removed in the error callback below if registration fails.
         self.project_repo_watchers.insert(repo_path.clone());
 
-        ctx.spawn(start.registration_future, move |me, res, ctx| {
-            if let Err(err) = res {
-                log::warn!(
-                    "Failed to start watching {repo_path} for file-based MCP servers: {err}",
-                    repo_path = repo_path.display(),
-                );
-                me.project_repo_watchers.remove(&repo_path);
-                repo_handle.update(ctx, |repo, ctx| {
-                    repo.stop_watching(subscriber_id, ctx);
-                });
+        for (provider, config_path) in providers_in_scope(repo_path.clone(), repo_path.clone()) {
+            insert_project_config_target(
+                &mut self.project_config_targets_by_path,
+                config_path.clone(),
+                repo_path.clone(),
+                provider,
+            );
+            Self::spawn_config_parse(config_path, repo_path.clone(), provider, ctx);
+        }
+
+        for watch_dir in project_config_parent_dirs(repo_path.clone()) {
+            self.register_project_watch_dir(repo_path.clone(), watch_dir, ctx);
+        }
+    }
+
+    fn register_project_watch_dir(
+        &mut self,
+        repo_path: PathBuf,
+        watch_dir: PathBuf,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !watch_dir.is_dir() {
+            return;
+        }
+
+        let roots = self
+            .project_roots_by_watch_dir
+            .entry(watch_dir.clone())
+            .or_default();
+        let should_register = roots.is_empty();
+        roots.insert(repo_path);
+
+        if should_register {
+            self.project_watcher.update(ctx, |watcher, _ctx| {
+                use notify_debouncer_full::notify::{RecursiveMode, WatchFilter};
+
+                std::mem::drop(watcher.register_path(
+                    &watch_dir,
+                    WatchFilter::accept_all(),
+                    RecursiveMode::NonRecursive,
+                ));
+            });
+        }
+    }
+
+    fn handle_project_watcher_event(
+        &mut self,
+        event: &BulkFilesystemWatcherEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let added_or_updated = event.added_or_updated_set();
+        let moved_to: HashSet<_> = event.moved.keys().cloned().collect();
+        let moved_from: HashSet<_> = event.moved.values().cloned().collect();
+
+        let config_targets: Vec<_> = self
+            .project_config_targets_by_path
+            .iter()
+            .flat_map(|(config_path, targets)| {
+                targets.iter().map(move |(root_path, provider)| {
+                    (config_path.clone(), root_path.clone(), *provider)
+                })
+            })
+            .collect();
+        let mut watch_dirs_to_register = Vec::new();
+        let mut watch_dirs_to_forget = HashSet::new();
+        let mut config_updates = Vec::new();
+
+        for (config_path, root_path, provider) in config_targets {
+            let parent_dir = config_path.parent().map(Path::to_path_buf);
+            let parent_was_added = parent_dir.as_ref().is_some_and(|parent| {
+                parent != &root_path
+                    && (added_or_updated.contains(parent) || moved_to.contains(parent))
+            });
+            let parent_was_deleted = parent_dir.as_ref().is_some_and(|parent| {
+                parent != &root_path
+                    && (event.deleted.contains(parent) || moved_from.contains(parent))
+            });
+
+            if parent_was_added {
+                if let Some(parent) = parent_dir.clone() {
+                    watch_dirs_to_register.push((root_path.clone(), parent));
+                }
             }
-        });
+            if parent_was_deleted {
+                if let Some(parent) = parent_dir.clone() {
+                    watch_dirs_to_forget.insert(parent);
+                }
+            }
+
+            let was_deleted = event.deleted.contains(&config_path)
+                || moved_from.contains(&config_path)
+                || parent_was_deleted;
+            let was_added = added_or_updated.contains(&config_path)
+                || moved_to.contains(&config_path)
+                || parent_was_added;
+
+            if was_deleted || was_added {
+                config_updates.push((root_path, provider, config_path, was_deleted, was_added));
+            }
+        }
+
+        for watch_dir in watch_dirs_to_forget {
+            self.project_roots_by_watch_dir.remove(&watch_dir);
+        }
+
+        for (root_path, watch_dir) in watch_dirs_to_register {
+            self.register_project_watch_dir(root_path, watch_dir, ctx);
+        }
+
+        for (root_path, provider, config_path, was_deleted, was_added) in config_updates {
+            self.handle_single_config_update(
+                root_path,
+                provider,
+                config_path,
+                was_deleted,
+                was_added,
+                ctx,
+            );
+        }
     }
 
     /// Register a home provider subdir (e.g. `~/.codex`) for watching via `DirectoryWatcher`,
@@ -608,6 +720,26 @@ fn providers_in_scope(
         }
         results.into_iter()
     })
+}
+
+fn project_config_parent_dirs(root_path: PathBuf) -> HashSet<PathBuf> {
+    providers_in_scope(root_path.clone(), root_path)
+        .filter_map(|(_, config_path)| config_path.parent().map(Path::to_path_buf))
+        .collect()
+}
+
+fn insert_project_config_target(
+    targets_by_path: &mut HashMap<PathBuf, Vec<(PathBuf, MCPProvider)>>,
+    config_path: PathBuf,
+    root_path: PathBuf,
+    provider: MCPProvider,
+) {
+    let targets = targets_by_path.entry(config_path).or_default();
+    if !targets.iter().any(|(existing_root, existing_provider)| {
+        existing_root == &root_path && existing_provider == &provider
+    }) {
+        targets.push((root_path, provider));
+    }
 }
 
 /// Substitutes environment variables in the format ${VAR_NAME} in the given JSON string.
