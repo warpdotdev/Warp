@@ -1267,7 +1267,7 @@ impl TerminalView {
 fn command_block_indices_for_exchanges<'a>(
     terminal_model: &TerminalModel,
     exchanges: impl Iterator<Item = &'a AIAgentExchange>,
-    exchange_count: usize,
+    _exchange_count: usize,
 ) -> Vec<Option<BlockIndex>> {
     let blocks = terminal_model.block_list().blocks();
 
@@ -1285,15 +1285,28 @@ fn command_block_indices_for_exchanges<'a>(
         })
         .collect();
 
-    let mut result = Vec::with_capacity(exchange_count);
+    let exchange_timestamps: Vec<DateTime<Local>> =
+        exchanges.map(|exchange| exchange.start_time).collect();
+    find_block_indices_for_exchange_timestamps(&command_blocks, &exchange_timestamps)
+}
 
-    for exchange_timestamp in exchanges.map(|exchange| exchange.start_time) {
-        // Find the command block with the smallest timestamp that is still after the
-        // exchange timestamp. We iterate backwards because `insert_restored_block`
-        // appends blocks at the end of the blocklist, so the tail may be out of
-        // timestamp order while the prefix is sorted. Iterating backwards lets us
-        // track the best candidate and stop as soon as we see a block at or before
-        // the exchange timestamp (everything earlier is also <=).
+/// Pure implementation of the block-index search used by
+/// [`command_block_indices_for_exchanges`].
+///
+/// For each exchange timestamp, finds the command block with the smallest timestamp
+/// that is >= the exchange timestamp. Iterates the command block list backwards
+/// because `insert_restored_block` appends blocks at the end of the blocklist, so
+/// the tail is a sorted group of conversation blocks while the prefix contains
+/// pre-existing terminal blocks we don't want to match against. The backwards scan
+/// tracks the best candidate and stops as soon as it sees a block before the exchange
+/// timestamp — within the sorted tail, everything earlier is also <=.
+fn find_block_indices_for_exchange_timestamps(
+    command_blocks: &[(BlockIndex, DateTime<Local>)],
+    exchange_timestamps: &[DateTime<Local>],
+) -> Vec<Option<BlockIndex>> {
+    let mut result = Vec::with_capacity(exchange_timestamps.len());
+
+    for &exchange_timestamp in exchange_timestamps {
         let mut best: Option<(BlockIndex, DateTime<Local>)> = None;
         for &(idx, ts) in command_blocks.iter().rev() {
             if ts >= exchange_timestamp {
@@ -1307,8 +1320,10 @@ fn command_block_indices_for_exchanges<'a>(
                 }
             } else {
                 // We've reached a block before the exchange timestamp.
-                // Since the prefix of the blocklist is sorted, all earlier
-                // blocks are also < exchange_timestamp, so we can stop.
+                // The tail (conversation blocks) is sorted, so all earlier
+                // blocks in the tail are also <= exchange_timestamp. Any
+                // blocks further back belong to the pre-existing prefix
+                // and should not be matched.
                 break;
             }
         }
@@ -1318,3 +1333,7 @@ fn command_block_indices_for_exchanges<'a>(
 
     result
 }
+
+#[cfg(test)]
+#[path = "load_ai_conversation_tests.rs"]
+mod tests;
