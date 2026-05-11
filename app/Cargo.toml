@@ -126,7 +126,7 @@ jemalloc_pprof = { version = "0.8.1", optional = true, features = [
 ] }
 lsp-types = "0.97.0"
 indexmap = { version = "2.0.2", features = ["serde"] }
-input_classifier = { workspace = true, features = ["onnx_candle"] }
+input_classifier.workspace = true
 instant.workspace = true
 ipc.workspace = true
 itertools.workspace = true
@@ -659,6 +659,21 @@ grep_tool = []
 # For the most part, including GUI code in headless builds is fine; the main use case is
 # for things that pull in external dependencies.
 gui = ["voice_input"]
+# Bundled ML models (ONNX / etc.).
+#
+# Each `ml_model_*` feature is the single source of truth for an individual
+# model's compile-time dependencies. The `bundled_app_ml_models_*` umbrellas
+# group the subset that ships in the desktop app build for a given rollout
+# tier; the `_app_` prefix exists so we can introduce sibling umbrellas (for
+# example, a future `bundled_cli_ml_models_*`) without confusion. Bundle
+# scripts only ever reference the umbrella name, not individual model features.
+ml_model_input_classifier_onnx = ["input_classifier/onnx_candle"]
+bundled_app_ml_models_prod = [
+    "ml_model_input_classifier_onnx",
+]
+bundled_app_ml_models_dogfood = [
+    "bundled_app_ml_models_prod",
+]
 msys2_shells = []
 file_retrieval_tools = []
 welcome_tab = []

@@ -351,6 +351,11 @@ if [[ "$ARTIFACT" == cli ]]; then
   FEATURES="$FEATURES,standalone"
 elif [[ "$ARTIFACT" == app ]]; then
   FEATURES="$FEATURES,gui"
+  if [[ "$RELEASE_CHANNEL" == "local" || "$RELEASE_CHANNEL" == "dev" ]]; then
+    FEATURES="$FEATURES,bundled_app_ml_models_dogfood"
+  else
+    FEATURES="$FEATURES,bundled_app_ml_models_prod"
+  fi
 fi
 
 # If we're building a universal bundle for the app artifact, make sure the additional target is available.

@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use input_classifier::{HeuristicClassifier, InputClassifier, OnnxClassifier, OnnxModel};
+use input_classifier::{HeuristicClassifier, InputClassifier};
+#[cfg(feature = "ml_model_input_classifier_onnx")]
+use input_classifier::{OnnxClassifier, OnnxModel};
 use warpui::{Entity, ModelContext, SingletonEntity};
 
 pub struct InputClassifierModel {
@@ -9,14 +11,17 @@ pub struct InputClassifierModel {
 
 impl InputClassifierModel {
     pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
-        match OnnxClassifier::new(OnnxModel::BertTiny) {
-            Ok(classifier) => {
-                log::info!("Loaded onnx classifier");
-                return Self {
-                    classifier: Arc::new(classifier),
-                };
+        #[cfg(feature = "ml_model_input_classifier_onnx")]
+        {
+            match OnnxClassifier::new(OnnxModel::BertTiny) {
+                Ok(classifier) => {
+                    log::info!("Loaded onnx classifier");
+                    return Self {
+                        classifier: Arc::new(classifier),
+                    };
+                }
+                Err(e) => log::warn!("Failed to load onnx classifier: {e:#}"),
             }
-            Err(e) => log::warn!("Failed to load onnx classifier: {e:#}"),
         }
 
         Self {

@@ -115,6 +115,12 @@ if ("$CHANNEL" -eq 'local') {
     $FEATURES = 'release_bundle,gui'
 }
 
+if (("$CHANNEL" -eq 'local') -or ("$CHANNEL" -eq 'dev')) {
+    $FEATURES = "$FEATURES,bundled_app_ml_models_dogfood"
+} else {
+    $FEATURES = "$FEATURES,bundled_app_ml_models_prod"
+}
+
 $BINARY_PATH = "$CARGO_TARGET_OUTPUT_DIR\$BINARY_NAME"
 $BUNDLE_ID = "dev.warp.$APP_NAME"
 $INSTALLER_OUTPUT_DIR = "$WINDOWS_INSTALLER_DIR\Output"
