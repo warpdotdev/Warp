@@ -311,6 +311,12 @@ impl AIDocumentView {
                                         )
                                     }));
                             }
+                            let config_block_id =
+                                me.orchestration_config_block.as_ref().unwrap().id();
+                            me.editor.update(ctx, |editor_view, ctx| {
+                                editor_view
+                                    .set_scroll_header_view(Some(config_block_id), ctx);
+                            });
                             ctx.notify();
                         }
                     }
@@ -446,6 +452,13 @@ impl AIDocumentView {
                 OrchestrationConfigBlockView::new_with_conversation_id(conv_id, ctx)
             })
         });
+
+        if let Some(config_block) = &orchestration_config_block {
+            let config_block_id = config_block.id();
+            editor.update(ctx, |editor_view, ctx| {
+                editor_view.set_scroll_header_view(Some(config_block_id), ctx);
+            });
+        }
 
         let mut me = Self {
             document_id,
@@ -1060,32 +1073,9 @@ impl View for AIDocumentView {
         "AIDocumentView"
     }
 
-    fn render(&self, app: &AppContext) -> Box<dyn warpui::Element> {
-        let has_orchestration_config = AIDocumentModel::as_ref(app)
-            .get_conversation_id_for_document_id(&self.document_id)
-            .and_then(|cid| {
-                BlocklistAIHistoryModel::as_ref(app)
-                    .conversation(&cid)
-                    .and_then(|conv| conv.orchestration_config().map(|_| ()))
-            })
-            .is_some();
-
+    fn render(&self, _app: &AppContext) -> Box<dyn warpui::Element> {
         let mut content_column =
             Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-
-        // Orchestration config block — shown above the editor when the
-        // conversation has an active OrchestrationConfigSnapshot.
-        if has_orchestration_config {
-            if let Some(config_block) = &self.orchestration_config_block {
-                content_column.add_child(
-                    Container::new(ChildView::new(config_block).finish())
-                        .with_horizontal_padding(16.)
-                        .with_padding_bottom(12.)
-                        .with_padding_top(8.)
-                        .finish(),
-                );
-            }
-        }
 
         let editor = Container::new(ChildView::new(&self.editor).finish())
             .with_padding_left(8.)

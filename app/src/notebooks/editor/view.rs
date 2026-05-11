@@ -32,8 +32,9 @@ use warpui::{
     assets::asset_cache::{AssetCache, AssetHandle, AssetState},
     clipboard::ClipboardContent,
     elements::{
-        AnchorPair, Axis, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius,
-        Dismiss, Fill, Flex, Icon, MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor,
+        AnchorPair, Axis, Border, ChildAnchor, Clipped, ClippedScrollStateHandle,
+        ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
+        Fill, Flex, Icon, MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor,
         ParentElement, PositionedElementOffsetBounds, PositioningAxis, Radius, ScrollStateHandle,
         Scrollable, ScrollableElement, ScrollbarWidth, Stack, XAxisAnchor, YAxisAnchor,
     },
@@ -49,8 +50,8 @@ use warpui::{
         components::{Coords, UiComponent, UiComponentStyles},
     },
     units::Pixels,
-    windowing, AppContext, BlurContext, CursorInfo, Element, Entity, FocusContext, ModelHandle,
-    SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WeakViewHandle,
+    windowing, AppContext, BlurContext, CursorInfo, Element, Entity, EntityId, FocusContext,
+    ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WeakViewHandle,
 };
 use warpui::{actions::StandardAction, elements::Hoverable};
 use warpui::{keymap::PerPlatformKeystroke, windowing::WindowManager};
@@ -1080,6 +1081,15 @@ pub struct RichTextEditorView {
     /// to propagate to the parent. Used for embedded editors like comment chips.
     disable_scrolling: bool,
 
+    /// Optional view rendered inside the Scrollable, above the rich text content.
+    /// Used by AIDocumentView to place the orchestration config card so it scrolls
+    /// with the plan content.
+    scroll_header_view: Option<EntityId>,
+    /// Scroll state used when `scroll_header_view` is set. In that case the
+    /// rich text and header are combined into a plain `Flex` column (which is
+    /// not a `ScrollableElement`), so we use `ClippedScrollable` to wrap it.
+    clipped_scroll_state: ClippedScrollStateHandle,
+
     /// When true, the block insertion menu (slash menu) is disabled.
     disable_block_insertion_menu: bool,
 }
@@ -1188,8 +1198,19 @@ impl RichTextEditorView {
             vertical_expansion_behavior: config.vertical_expansion_behavior.unwrap_or_default(),
             can_execute_shell_commands: config.can_execute_shell_commands.unwrap_or(true),
             disable_scrolling: config.disable_scrolling,
+            scroll_header_view: None,
+            clipped_scroll_state: ClippedScrollStateHandle::new(),
             disable_block_insertion_menu: config.disable_block_insertion_menu,
         }
+    }
+
+    pub fn set_scroll_header_view(
+        &mut self,
+        view_id: Option<EntityId>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.scroll_header_view = view_id;
+        ctx.notify();
     }
 
     pub(super) fn disable_block_insertion_menu(&self) -> bool {
@@ -2674,10 +2695,44 @@ impl View for RichTextEditorView {
 
         // When disable_scrolling is true, don't wrap in Scrollable to allow scroll events
         // to propagate to the parent (used for embedded editors like comment chips).
-        let main_content: Box<dyn Element> = if self.disable_scrolling {
-            rich_text
-        } else {
-            Scrollable::vertical(
+        // When a scroll header is set, wrap it together with the rich text
+        // in a column so both scroll as a single unit.
+        let main_content: Box<dyn Element> = match (self.disable_scrolling, self.scroll_header_view)
+        {
+            (true, Some(header_id)) => {
+                let header = Container::new(ChildView::<Self>::with_id(header_id).finish())
+                    .with_horizontal_padding(8.)
+                    .with_padding_top(8.)
+                    .with_padding_bottom(12.)
+                    .finish();
+                let mut col =
+                    Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+                col.add_child(header);
+                col.add_child(rich_text);
+                col.finish()
+            }
+            (true, None) => rich_text,
+            (false, Some(header_id)) => {
+                let header = Container::new(ChildView::<Self>::with_id(header_id).finish())
+                    .with_horizontal_padding(8.)
+                    .with_padding_top(8.)
+                    .with_padding_bottom(12.)
+                    .finish();
+                let mut col =
+                    Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+                col.add_child(header);
+                col.add_child(rich_text);
+                ClippedScrollable::vertical(
+                    self.clipped_scroll_state.clone(),
+                    col.finish(),
+                    SCROLLBAR_WIDTH,
+                    theme.disabled_text_color(theme.background()).into(),
+                    theme.main_text_color(theme.background()).into(),
+                    Fill::None,
+                )
+                .finish()
+            }
+            (false, None) => Scrollable::vertical(
                 self.scroll_state.clone(),
                 rich_text,
                 SCROLLBAR_WIDTH,
@@ -2685,7 +2740,7 @@ impl View for RichTextEditorView {
                 theme.main_text_color(theme.background()).into(),
                 Fill::None,
             )
-            .finish()
+            .finish(),
         };
 
         let mut main_stack = Stack::new();
