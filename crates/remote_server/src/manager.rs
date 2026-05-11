@@ -62,10 +62,10 @@ struct InitializeHandshake {
 enum ConnectAndHandshakeError {
     /// `transport.connect()` failed, or the session was deregistered
     /// before the connect phase could complete.
-    #[error("connect: {0:#}")]
+    #[error("{0:#}")]
     Connect(anyhow::Error),
     /// `client.initialize()` handshake failed.
-    #[error("initialize: {0:#}")]
+    #[error("{0:#}")]
     Initialize(anyhow::Error),
 }
 
@@ -261,6 +261,9 @@ pub enum RemoteServerManagerEvent {
         phase: RemoteServerInitPhase,
         /// The error message from the failed phase.
         error: String,
+        /// Exit status of the SSH subprocess, if available.
+        /// Used by telemetry to distinguish proxy crashes from other failures.
+        exit_status: Option<RemoteServerExitStatus>,
     },
     /// This session's connection dropped. Carries `host_id` so consumers
     /// don't need to look it up from the already-transitioned state.
@@ -784,17 +787,59 @@ impl RemoteServerManager {
                             let error = format!("{e}");
                             let _ = spawner
                                 .spawn(move |me, ctx| {
-                                    ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
-                                        session_id,
-                                        state: RemoteServerSetupState::Failed {
-                                            error: error.clone(),
-                                        },
-                                    });
-                                    ctx.emit(RemoteServerManagerEvent::SessionConnectionFailed {
-                                        session_id,
-                                        phase,
-                                        error,
-                                    });
+                                    // Classify: user cancellation vs real failure.
+                                    //
+                                    // Signal A: if `deregister_session` already removed
+                                    // the session, the user exited before the error
+                                    // handler ran.
+                                    //
+                                    // Signal B: the transport reports the connection
+                                    // is unrecoverable (e.g. SSH exit code 255 =
+                                    // ControlMaster death). We additionally exclude
+                                    // signal kills (e.g. OOM) from cancellation since
+                                    // those are real failures the user should see.
+                                    let exit_status = match me.sessions.get_mut(&session_id) {
+                                        Some(RemoteSessionState::Initializing {
+                                            _child, ..
+                                        }) => Self::capture_exit_status(_child, session_id),
+                                        _ => None,
+                                    };
+
+                                    let is_transport_disconnect = exit_status
+                                        .as_ref()
+                                        .is_some_and(|s| {
+                                            !transport.is_reconnectable(Some(s))
+                                                && !s.signal_killed
+                                        });
+                                    let is_cancelled =
+                                        !me.sessions.contains_key(&session_id)
+                                            || is_transport_disconnect;
+
+                                    if !is_cancelled {
+                                        ctx.emit(
+                                            RemoteServerManagerEvent::SetupStateChanged {
+                                                session_id,
+                                                state: RemoteServerSetupState::Failed {
+                                                    error: error.clone(),
+                                                },
+                                            },
+                                        );
+                                        ctx.emit(
+                                            RemoteServerManagerEvent::SessionConnectionFailed {
+                                                session_id,
+                                                phase,
+                                                error,
+                                                exit_status,
+                                            },
+                                        );
+                                    } else {
+                                        log::info!(
+                                            "Remote server init cancelled \
+                                             (user exit or ControlMaster death): \
+                                             session={session_id:?} \
+                                             exit_status={exit_status:?}"
+                                        );
+                                    }
                                     me.mark_session_disconnected(session_id, ctx);
                                 })
                                 .await;

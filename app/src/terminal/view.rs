@@ -4297,6 +4297,8 @@ impl TerminalView {
                                 error: None,
                                 remote_os,
                                 remote_arch,
+                                exit_code: None,
+                                signal_killed: None,
                             },
                             ctx
                         );
@@ -4305,6 +4307,7 @@ impl TerminalView {
                         session_id,
                         phase,
                         error,
+                        exit_status,
                     } => {
                         me.model.lock().event_proxy.send_terminal_event(
                             crate::terminal::event::Event::RemoteServerFailed {
@@ -4328,6 +4331,12 @@ impl TerminalView {
                                 error: Some(error.clone()),
                                 remote_os,
                                 remote_arch,
+                                exit_code: exit_status
+                                    .as_ref()
+                                    .and_then(|s| s.code),
+                                signal_killed: exit_status
+                                    .as_ref()
+                                    .map(|s| s.signal_killed),
                             },
                             ctx
                         );
