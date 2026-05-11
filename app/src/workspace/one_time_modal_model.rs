@@ -23,6 +23,7 @@ pub struct OneTimeModalModel {
     is_oz_launch_modal_open: bool,
     /// Whether the OpenWarp launch modal is currently being shown.
     is_openwarp_launch_modal_open: bool,
+    is_orchestration_launch_modal_open: bool,
     /// Whether the HOA onboarding flow is currently being shown.
     is_hoa_onboarding_open: bool,
     /// The window ID where the currently open one-time modal should be displayed.
@@ -72,6 +73,12 @@ impl OneTimeModalModel {
                     {
                         log::warn!("Failed to mark Oz launch modal as dismissed: {e}");
                     }
+                    if let Err(e) = settings
+                        .did_check_to_trigger_orchestration_launch_modal
+                        .set_value(true, ctx)
+                    {
+                        log::warn!("Failed to mark orchestration launch modal as dismissed: {e}");
+                    }
                 });
                 GeneralSettings::handle(ctx).update(ctx, |settings, ctx| {
                     if let Err(e) = settings
@@ -88,6 +95,7 @@ impl OneTimeModalModel {
             is_build_plan_migration_modal_open: false,
             is_oz_launch_modal_open: false,
             is_openwarp_launch_modal_open: false,
+            is_orchestration_launch_modal_open: false,
             is_hoa_onboarding_open: false,
             target_window_id: None,
         }
@@ -116,6 +124,14 @@ impl OneTimeModalModel {
         self.set_openwarp_launch_modal_open(false, ctx);
     }
 
+    pub fn is_orchestration_launch_modal_open(&self) -> bool {
+        self.is_orchestration_launch_modal_open && self.target_window_id.is_some()
+    }
+
+    pub fn mark_orchestration_launch_modal_dismissed(&mut self, ctx: &mut ModelContext<Self>) {
+        self.set_orchestration_launch_modal_open(false, ctx);
+    }
+
     /// Returns whether the HOA onboarding flow is currently open.
     pub fn is_hoa_onboarding_open(&self) -> bool {
         self.is_hoa_onboarding_open && self.target_window_id.is_some()
@@ -129,6 +145,7 @@ impl OneTimeModalModel {
     pub fn is_any_modal_open(&self) -> bool {
         (self.is_oz_launch_modal_open
             || self.is_openwarp_launch_modal_open
+            || self.is_orchestration_launch_modal_open
             || self.is_build_plan_migration_modal_open
             || self.is_hoa_onboarding_open)
             && self.target_window_id.is_some()
@@ -142,6 +159,11 @@ impl OneTimeModalModel {
     #[cfg(debug_assertions)]
     pub fn force_open_openwarp_launch_modal(&mut self, ctx: &mut ModelContext<Self>) {
         self.set_openwarp_launch_modal_open(true, ctx);
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn force_open_orchestration_launch_modal(&mut self, ctx: &mut ModelContext<Self>) {
+        self.set_orchestration_launch_modal_open(true, ctx);
     }
 
     pub fn update_target_window_id(&mut self, window_id: WindowId, ctx: &mut ModelContext<Self>) {
@@ -176,6 +198,19 @@ impl OneTimeModalModel {
         false
     }
 
+    fn set_orchestration_launch_modal_open(
+        &mut self,
+        is_open: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        if self.is_orchestration_launch_modal_open != is_open {
+            self.is_orchestration_launch_modal_open = is_open;
+            ctx.emit(OneTimeModalEvent::VisibilityChanged { is_open });
+            return true;
+        }
+        false
+    }
+
     fn check_and_trigger_all_modals(&mut self, ctx: &mut ModelContext<Self>) {
         // Never show one-time modals on WASM.
         if cfg!(target_family = "wasm") {
@@ -199,6 +234,10 @@ impl OneTimeModalModel {
         }
 
         if self.check_and_trigger_oz_launch_modal(ctx) {
+            return;
+        }
+
+        if self.check_and_trigger_orchestration_launch_modal(ctx) {
             return;
         }
 
@@ -293,6 +332,33 @@ impl OneTimeModalModel {
         let should_show_openwarp_modal = !matches!(ChannelState::channel(), Channel::Integration);
         self.set_openwarp_launch_modal_open(should_show_openwarp_modal, ctx);
         should_show_openwarp_modal
+    }
+
+    fn check_and_trigger_orchestration_launch_modal(
+        &mut self,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        if !FeatureFlag::OrchestrationLaunchModal.is_enabled() {
+            return false;
+        }
+
+        let ai_settings = AISettings::as_ref(ctx);
+        if *ai_settings.did_check_to_trigger_orchestration_launch_modal {
+            return false;
+        }
+
+        AISettings::handle(ctx).update(ctx, |settings, ctx| {
+            if let Err(e) = settings
+                .did_check_to_trigger_orchestration_launch_modal
+                .set_value(true, ctx)
+            {
+                log::warn!("Failed to mark orchestration launch modal as dismissed: {e}");
+            }
+        });
+
+        let should_show = !matches!(ChannelState::channel(), Channel::Integration);
+        self.set_orchestration_launch_modal_open(should_show, ctx);
+        should_show
     }
 
     pub fn is_build_plan_migration_modal_open(&self) -> bool {

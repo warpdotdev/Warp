@@ -1,14 +1,20 @@
 use super::*;
+use crate::terminal::color;
 use crate::terminal::model::ansi::{Handler, Processor};
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::bootstrap::BootstrapStage;
 use crate::terminal::model::grid::Dimensions as _;
 use crate::terminal::model::index::Side;
 use crate::terminal::model::selection::ExpandedSelectionRange;
+use crate::terminal::model::test_utils::block_size;
+use crate::terminal::model::ObfuscateSecrets;
+use crate::terminal::{event_listener::ChannelEventListener, shared_session::SharedSessionStatus};
 use chrono::{DateTime, Local};
+use std::sync::Arc;
 use vec1::vec1;
 use warp_core::command::ExitCode;
 use warp_terminal::model::ansi::ClearMode;
+use warpui::r#async::executor::Background;
 use warpui::text::str_to_byte_vec;
 use warpui::text::SelectionType;
 
@@ -40,6 +46,47 @@ fn create_default_serialized_block() -> SerializedBlock {
         is_local: None,
         agent_view_visibility: None,
     }
+}
+
+#[test]
+fn cloud_mode_deferred_terminal_model_starts_view_pending() {
+    let model = TerminalModel::new_for_cloud_mode_shared_session_viewer(
+        block_size(),
+        color::List::from(&color::Colors::default()),
+        ChannelEventListener::new_for_test(),
+        Arc::new(Background::default()),
+        false,
+        false,
+        false,
+        ObfuscateSecrets::No,
+    );
+
+    assert!(matches!(
+        model.shared_session_status(),
+        SharedSessionStatus::ViewPending
+    ));
+    assert!(model.shared_session_status().is_viewer());
+    assert!(model.is_dummy_cloud_mode_session());
+}
+
+#[test]
+fn generic_shared_session_viewer_model_starts_view_pending() {
+    let model = TerminalModel::new_for_shared_session_viewer(
+        block_size(),
+        color::List::from(&color::Colors::default()),
+        ChannelEventListener::new_for_test(),
+        Arc::new(Background::default()),
+        false,
+        false,
+        false,
+        ObfuscateSecrets::No,
+    );
+
+    assert!(matches!(
+        model.shared_session_status(),
+        SharedSessionStatus::ViewPending
+    ));
+    assert!(model.shared_session_status().is_viewer());
 }
 
 // Ensures that an ssh session successfully bootstraps even if the block list is empty.

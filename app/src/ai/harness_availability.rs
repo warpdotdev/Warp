@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
 use warp_core::user_preferences::GetUserPreferences;
+use warp_managed_secrets::{client::SecretOwner, ManagedSecretManager, ManagedSecretValue};
 use warpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::ai::harness_display;
@@ -41,12 +44,29 @@ fn default_harnesses() -> Vec<HarnessAvailability> {
     }]
 }
 
+#[derive(Debug, Clone)]
+pub enum AuthSecretFetchState {
+    NotFetched,
+    Loading,
+    Loaded(Vec<AuthSecretEntry>),
+    Failed(#[allow(dead_code)] String),
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthSecretEntry {
+    pub name: String,
+}
+
 pub enum HarnessAvailabilityEvent {
     Changed,
+    AuthSecretsLoaded,
+    AuthSecretCreated { harness: Harness, name: String },
+    AuthSecretCreationFailed { error: String },
 }
 
 pub struct HarnessAvailabilityModel {
     harnesses: Vec<HarnessAvailability>,
+    auth_secrets: HashMap<Harness, AuthSecretFetchState>,
 }
 
 impl HarnessAvailabilityModel {
@@ -64,6 +84,10 @@ impl HarnessAvailabilityModel {
 
         ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, event, ctx| {
             if let AuthManagerEvent::AuthComplete = event {
+                let cached_harnesses: Vec<Harness> = me.auth_secrets.keys().copied().collect();
+                for harness in cached_harnesses {
+                    me.invalidate_auth_secrets(harness);
+                }
                 me.refresh(ctx);
             }
         });
@@ -74,7 +98,10 @@ impl HarnessAvailabilityModel {
             }
         });
 
-        let me = Self { harnesses };
+        let me = Self {
+            harnesses,
+            auth_secrets: HashMap::new(),
+        };
         me.refresh(ctx);
         me
     }
@@ -116,6 +143,101 @@ impl HarnessAvailabilityModel {
             .filter(|m| !m.is_empty())
     }
 
+    pub fn auth_secrets_for(&self, harness: Harness) -> &AuthSecretFetchState {
+        self.auth_secrets
+            .get(&harness)
+            .unwrap_or(&AuthSecretFetchState::NotFetched)
+    }
+
+    pub fn ensure_auth_secrets_fetched(&mut self, harness: Harness, ctx: &mut ModelContext<Self>) {
+        if matches!(
+            self.auth_secrets_for(harness),
+            AuthSecretFetchState::NotFetched | AuthSecretFetchState::Failed(_)
+        ) {
+            self.fetch_auth_secrets(harness, ctx);
+        }
+    }
+
+    fn fetch_auth_secrets(&mut self, harness: Harness, ctx: &mut ModelContext<Self>) {
+        let Some(agent_harness) = harness_to_graphql_harness(harness) else {
+            return;
+        };
+
+        if !AuthStateProvider::as_ref(ctx).get().is_logged_in() {
+            return;
+        }
+
+        self.auth_secrets
+            .insert(harness, AuthSecretFetchState::Loading);
+
+        let api = ServerApiProvider::as_ref(ctx).get_managed_secrets_client();
+        ctx.spawn(
+            async move { api.list_harness_auth_secrets(agent_harness).await },
+            move |me, result: Result<Vec<warp_graphql::managed_secrets::ManagedSecret>, _>, ctx| {
+                match result {
+                    Ok(secrets) => {
+                        let entries = secrets
+                            .into_iter()
+                            .map(|s| AuthSecretEntry { name: s.name })
+                            .collect();
+                        me.auth_secrets
+                            .insert(harness, AuthSecretFetchState::Loaded(entries));
+                        ctx.emit(HarnessAvailabilityEvent::AuthSecretsLoaded);
+                    }
+                    Err(e) => {
+                        let msg = e.to_string();
+                        report_error!(e.context("Failed to fetch harness auth secrets"));
+                        me.auth_secrets
+                            .insert(harness, AuthSecretFetchState::Failed(msg));
+                    }
+                }
+            },
+        );
+    }
+
+    pub fn invalidate_auth_secrets(&mut self, harness: Harness) {
+        self.auth_secrets.remove(&harness);
+    }
+
+    pub fn create_auth_secret(
+        &mut self,
+        harness: Harness,
+        name: String,
+        value: ManagedSecretValue,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let manager = ManagedSecretManager::handle(ctx);
+        let create_future =
+            manager
+                .as_ref(ctx)
+                .create_secret(SecretOwner::CurrentUser, name, value, None);
+        ctx.spawn(create_future, move |me, result, ctx| match result {
+            Ok(secret) => {
+                let entry = AuthSecretEntry {
+                    name: secret.name.clone(),
+                };
+                match me.auth_secrets.get_mut(&harness) {
+                    Some(AuthSecretFetchState::Loaded(entries)) => {
+                        entries.push(entry);
+                    }
+                    _ => {
+                        me.auth_secrets
+                            .insert(harness, AuthSecretFetchState::Loaded(vec![entry]));
+                    }
+                }
+                ctx.emit(HarnessAvailabilityEvent::AuthSecretCreated {
+                    harness,
+                    name: secret.name,
+                });
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                report_error!(e.context("Failed to create harness auth secret"));
+                ctx.emit(HarnessAvailabilityEvent::AuthSecretCreationFailed { error: msg });
+            }
+        });
+    }
+
     pub fn refresh(&self, ctx: &mut ModelContext<Self>) {
         // The endpoint queries `user`, which requires auth.
         if !AuthStateProvider::as_ref(ctx).get().is_logged_in() {
@@ -130,6 +252,11 @@ impl HarnessAvailabilityModel {
                     if new_harnesses != me.harnesses {
                         me.harnesses = new_harnesses;
                         me.cache(ctx);
+                        // Invalidate cached auth secrets so the next menu open refetches.
+                        let stale: Vec<Harness> = me.auth_secrets.keys().copied().collect();
+                        for harness in stale {
+                            me.invalidate_auth_secrets(harness);
+                        }
                         ctx.emit(HarnessAvailabilityEvent::Changed);
                     }
                 }
@@ -158,6 +285,16 @@ fn get_cached(ctx: &ModelContext<HarnessAvailabilityModel>) -> Option<Vec<Harnes
         .read_value(CACHE_KEY)
         .ok()??;
     serde_json::from_str::<Vec<HarnessAvailability>>(&raw).ok()
+}
+
+fn harness_to_graphql_harness(harness: Harness) -> Option<warp_graphql::ai::AgentHarness> {
+    match harness {
+        Harness::Oz => Some(warp_graphql::ai::AgentHarness::Oz),
+        Harness::Claude => Some(warp_graphql::ai::AgentHarness::ClaudeCode),
+        Harness::Gemini => Some(warp_graphql::ai::AgentHarness::Gemini),
+        Harness::Codex => Some(warp_graphql::ai::AgentHarness::Codex),
+        Harness::OpenCode | Harness::Unknown => None,
+    }
 }
 
 impl Entity for HarnessAvailabilityModel {

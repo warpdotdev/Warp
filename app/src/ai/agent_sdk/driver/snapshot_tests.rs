@@ -116,6 +116,18 @@ impl HarnessSupportClient for TestClient {
         unimplemented!("not used by upload_snapshot_from_declarations_file")
     }
 
+    async fn report_clean_shutdown(&self) -> Result<()> {
+        unimplemented!("not used by upload_snapshot_from_declarations_file")
+    }
+
+    async fn report_error_shutdown(
+        &self,
+        _error_category: String,
+        _error_message: String,
+    ) -> Result<()> {
+        unimplemented!("not used by upload_snapshot_from_declarations_file")
+    }
+
     async fn get_snapshot_upload_targets(
         &self,
         request: &SnapshotUploadRequest,

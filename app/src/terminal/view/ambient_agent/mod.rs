@@ -1,3 +1,6 @@
+mod auth_secret_ftux_dropdown;
+mod auth_secret_ftux_view;
+pub(crate) mod auth_secret_selector;
 mod block;
 mod first_time_setup;
 mod footer;
@@ -11,6 +14,10 @@ mod progress_ui_state;
 mod tips;
 mod view_impl;
 
+pub use auth_secret_ftux_view::{AuthSecretFtuxAction, AuthSecretFtuxView};
+pub use auth_secret_selector::{
+    AuthSecretSelector, AuthSecretSelectorAction, AuthSecretSelectorEvent,
+};
 pub use block::*;
 pub use first_time_setup::{FirstTimeCloudAgentSetupView, FirstTimeCloudAgentSetupViewEvent};
 pub use footer::{render_error_footer, render_loading_footer};
@@ -23,7 +30,7 @@ pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loadi
 pub(crate) use model::PendingHandoff;
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-pub use model::{HandoffSubmissionState, SnapshotUploadStatus};
+pub(crate) use model::{HandoffSubmissionState, SnapshotUploadStatus};
 pub use model_selector::{
     HarnessSelection, ModelSelection, ModelSelector, ModelSelectorAction, ModelSelectorEvent,
 };
@@ -119,7 +126,8 @@ pub fn create_cloud_mode_view(
                 | AmbientAgentViewModelEvent::HarnessCommandStarted { .. }
                 | AmbientAgentViewModelEvent::PendingHandoffChanged
                 | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
-                | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => {}
+                | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility
+                | AmbientAgentViewModelEvent::AuthSecretSelected => {}
             }
         });
     });

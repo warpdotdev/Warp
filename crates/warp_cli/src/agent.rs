@@ -438,6 +438,14 @@ pub struct RunCloudArgs {
     #[command(flatten)]
     pub scope: ObjectScope,
 
+    /// UID of the agent to execute this run as.
+    ///
+    /// This will apply the agent's configuration, such
+    /// as its skills and base model, and attribute
+    /// credit usage back to the agent.
+    #[arg(long = "agent", value_name = "UID")]
+    pub agent_uid: Option<String>,
+
     /// Where this job should be hosted. Setting "warp" runs it on Warp's infrastructure. Any other
     /// value is treated is a self-hosted job and the value will be matched with the self-hosted
     /// worker's name.

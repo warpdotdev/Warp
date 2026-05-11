@@ -484,13 +484,14 @@ impl AmbientAgentRunner {
                     (_, true) => Some(false),
                     _ => None,
                 },
+                agent_identity_uid: args.agent_uid,
                 skill,
                 attachments,
                 interactive: None,
                 parent_run_id: None,
                 runtime_skills: vec![],
                 referenced_attachments: vec![],
-                conversation_id: None,
+                conversation_id: args.conversation,
                 initial_snapshot_token: None,
             };
 
