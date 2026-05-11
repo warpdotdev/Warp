@@ -9,7 +9,7 @@ use warp_multi_agent_api::{
     self as api, client_action, message, response_event, response_event::stream_finished,
 };
 
-use crate::ai::agent::{AIAgentInput, UserQueryMode};
+use crate::ai::agent::{AIAgentContext, AIAgentInput, AnyFileContent, UserQueryMode};
 
 use super::{RequestParams, ResponseStream};
 
@@ -438,9 +438,14 @@ fn build_openrouter_messages(params: &RequestParams) -> Vec<OpenRouterMessage> {
 
 fn input_to_prompt_text(input: &AIAgentInput) -> String {
     match input {
-        AIAgentInput::ActionResult { result, .. } => format!("Tool result:\n{result}"),
-        AIAgentInput::AutoCodeDiffQuery { query, .. } => {
-            format!("Code assistance request:\n{query}")
+        AIAgentInput::UserQuery { query, context, .. } => {
+            prompt_text_with_context(query.clone(), context)
+        }
+        AIAgentInput::ActionResult { result, context } => {
+            prompt_text_with_context(format!("Tool result:\n{result}"), context)
+        }
+        AIAgentInput::AutoCodeDiffQuery { query, context } => {
+            prompt_text_with_context(format!("Code assistance request:\n{query}"), context)
         }
         AIAgentInput::SummarizeConversation { prompt } => {
             format!(
@@ -448,11 +453,169 @@ fn input_to_prompt_text(input: &AIAgentInput) -> String {
                 prompt.clone().unwrap_or_default()
             )
         }
-        AIAgentInput::PassiveSuggestionResult { suggestion, .. } => {
-            format!("Passive suggestion result:\n{suggestion:?}")
-        }
+        AIAgentInput::PassiveSuggestionResult {
+            suggestion,
+            context,
+            ..
+        } => prompt_text_with_context(
+            format!("Passive suggestion result:\n{suggestion:?}"),
+            context,
+        ),
         _ => input.user_query().unwrap_or_else(|| input.to_string()),
     }
+}
+
+fn prompt_text_with_context(mut prompt: String, context: &[AIAgentContext]) -> String {
+    if let Some(context_text) = context_to_prompt_text(context) {
+        if !prompt.trim().is_empty() {
+            prompt.push_str("\n\n");
+        }
+        prompt.push_str(&context_text);
+    }
+    prompt
+}
+
+fn context_to_prompt_text(context: &[AIAgentContext]) -> Option<String> {
+    let sections = context
+        .iter()
+        .filter_map(context_item_to_prompt_text)
+        .collect::<Vec<_>>();
+
+    (!sections.is_empty()).then(|| {
+        format!(
+            "Attached context for this request:\n\n{}",
+            sections.join("\n\n")
+        )
+    })
+}
+
+fn context_item_to_prompt_text(context: &AIAgentContext) -> Option<String> {
+    match context {
+        AIAgentContext::Block(block) => {
+            let mut text = String::new();
+            if block.command.trim().is_empty() {
+                text.push_str("Attached terminal output");
+            } else {
+                text.push_str("Attached terminal command");
+                if let Some(pwd) = &block.pwd {
+                    text.push_str(&format!(" from `{pwd}`"));
+                }
+                text.push_str(&format!(
+                    ":\nCommand:\n```sh\n{}\n```\nExit code: {}",
+                    block.command,
+                    block.exit_code.value()
+                ));
+            }
+
+            if !block.output.is_empty() {
+                text.push_str(&format!("\nOutput:\n```text\n{}\n```", block.output));
+            }
+            Some(text)
+        }
+        AIAgentContext::SelectedText(text) => {
+            Some(format!("Attached selected text:\n```text\n{}\n```", text))
+        }
+        AIAgentContext::Directory { pwd, home_dir, .. } => {
+            let mut parts = Vec::new();
+            if let Some(pwd) = pwd {
+                parts.push(format!("Current working directory: {pwd}"));
+            }
+            if let Some(home_dir) = home_dir {
+                parts.push(format!("Home directory: {home_dir}"));
+            }
+            (!parts.is_empty()).then(|| parts.join("\n"))
+        }
+        AIAgentContext::Git { head, branch } => {
+            let branch = branch
+                .as_ref()
+                .map(|branch| format!("\nGit branch: {branch}"))
+                .unwrap_or_default();
+            Some(format!("Git head: {head}{branch}"))
+        }
+        AIAgentContext::File(file) => Some(file_context_to_prompt_text("Attached file", file)),
+        AIAgentContext::ProjectRules { active_rules, .. } => {
+            let rules = active_rules
+                .iter()
+                .map(|file| file_context_to_prompt_text("Project rule", file))
+                .collect::<Vec<_>>();
+            (!rules.is_empty()).then(|| rules.join("\n\n"))
+        }
+        AIAgentContext::ExecutionEnvironment(_)
+        | AIAgentContext::CurrentTime { .. }
+        | AIAgentContext::Image(_)
+        | AIAgentContext::Codebase { .. }
+        | AIAgentContext::Skills { .. } => None,
+    }
+}
+
+fn file_context_to_prompt_text(label: &str, file: &crate::ai::agent::FileContext) -> String {
+    let content = match &file.content {
+        AnyFileContent::StringContent(content) => content.clone(),
+        AnyFileContent::BinaryContent(content) => {
+            format!("<binary content: {} bytes>", content.len())
+        }
+    };
+
+    format!("{label}: {}\n```text\n{}\n```", file.file_name, content)
+}
+
+#[allow(deprecated)]
+fn input_context_to_api(context: &[AIAgentContext]) -> Option<api::InputContext> {
+    let mut api_context = api::InputContext::default();
+    let mut has_context = false;
+
+    for context in context {
+        match context {
+            AIAgentContext::Block(block) => {
+                api_context
+                    .executed_shell_commands
+                    .push(api::ExecutedShellCommand {
+                        command: block.command.clone(),
+                        output: block.output.clone(),
+                        exit_code: block.exit_code.value(),
+                        command_id: block.id.to_string(),
+                        started_ts: None,
+                        finished_ts: None,
+                        is_auto_attached: block.is_auto_attached,
+                    });
+                has_context = true;
+            }
+            AIAgentContext::SelectedText(text) => {
+                api_context
+                    .selected_text
+                    .push(api::input_context::SelectedText { text: text.clone() });
+                has_context = true;
+            }
+            AIAgentContext::Directory {
+                pwd,
+                home_dir,
+                are_file_symbols_indexed,
+            } => {
+                api_context.directory = Some(api::input_context::Directory {
+                    pwd: pwd.clone().unwrap_or_default(),
+                    home: home_dir.clone().unwrap_or_default(),
+                    pwd_file_symbols_indexed: *are_file_symbols_indexed,
+                });
+                has_context = true;
+            }
+            AIAgentContext::Git { head, branch } => {
+                api_context.git = Some(api::input_context::Git {
+                    head: head.clone(),
+                    branch: branch.clone().unwrap_or_default(),
+                });
+                has_context = true;
+            }
+            AIAgentContext::ExecutionEnvironment(_)
+            | AIAgentContext::CurrentTime { .. }
+            | AIAgentContext::Image(_)
+            | AIAgentContext::Codebase { .. }
+            | AIAgentContext::ProjectRules { .. }
+            | AIAgentContext::File(_)
+            | AIAgentContext::Skills { .. } => {}
+        }
+    }
+
+    has_context.then_some(api_context)
 }
 
 fn stream_init_event(conversation_id: String, request_id: String) -> api::ResponseEvent {
@@ -504,7 +667,10 @@ fn api_message_to_openrouter_message(message: &api::Message) -> Option<OpenRoute
     match message.message.as_ref()? {
         message::Message::UserQuery(user_query) => Some(OpenRouterMessage {
             role: "user",
-            content: user_query.query.clone(),
+            content: prompt_text_with_context(
+                user_query.query.clone(),
+                &super::convert_conversation::convert_input_context(user_query.context.as_ref()),
+            ),
         }),
         message::Message::SystemQuery(query) => {
             system_query_to_prompt_text(query).map(|content| OpenRouterMessage {
@@ -657,6 +823,7 @@ fn input_to_user_query_message(
 ) -> Option<api::Message> {
     let AIAgentInput::UserQuery {
         query,
+        context,
         user_query_mode,
         intended_agent,
         ..
@@ -674,7 +841,7 @@ fn input_to_user_query_message(
         citations: vec![],
         message: Some(message::Message::UserQuery(message::UserQuery {
             query: query.clone(),
-            context: None,
+            context: input_context_to_api(context),
             referenced_attachments: Default::default(),
             mode: Some(api_user_query_mode(*user_query_mode)),
             intended_agent: intended_agent.map(|agent| agent as i32).unwrap_or_default(),
@@ -741,9 +908,13 @@ fn truncate_for_log(body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::block_context::BlockContext;
     use crate::ai::blocklist::SessionContext;
     use crate::ai::llms::LLMId;
+    use crate::terminal::model::{block::BlockId, terminal_model::BlockIndex};
     use futures_lite::{future::block_on, StreamExt};
+    use std::sync::Arc;
+    use warp_core::command::ExitCode;
 
     fn request_params_for_test() -> RequestParams {
         let model = LLMId::from("test-model");
@@ -794,6 +965,38 @@ mod tests {
         }
     }
 
+    fn user_query_input_with_context(query: &str, context: Vec<AIAgentContext>) -> AIAgentInput {
+        AIAgentInput::UserQuery {
+            query: query.to_owned(),
+            context: Arc::from(context),
+            static_query_type: None,
+            referenced_attachments: Default::default(),
+            user_query_mode: UserQueryMode::Normal,
+            running_command: None,
+            intended_agent: None,
+        }
+    }
+
+    fn shell_output_context(output: &str) -> AIAgentContext {
+        AIAgentContext::Block(Box::new(BlockContext {
+            id: BlockId::from("test-block".to_owned()),
+            index: BlockIndex::zero(),
+            command: String::new(),
+            output: output.to_owned(),
+            exit_code: ExitCode::from(127),
+            is_auto_attached: false,
+            started_ts: None,
+            finished_ts: None,
+            pwd: None,
+            shell: None,
+            username: None,
+            hostname: None,
+            git_branch: None,
+            os: None,
+            session_id: None,
+        }))
+    }
+
     fn user_query_message(query: &str, request_id: &str) -> api::Message {
         api::Message {
             id: Uuid::new_v4().to_string(),
@@ -810,6 +1013,27 @@ mod tests {
                 intended_agent: Default::default(),
             })),
         }
+    }
+
+    #[allow(deprecated)]
+    fn user_query_message_with_context(query: &str, request_id: &str) -> api::Message {
+        let mut message = user_query_message(query, request_id);
+        let Some(message::Message::UserQuery(user_query)) = message.message.as_mut() else {
+            panic!("expected user query message");
+        };
+        user_query.context = Some(api::InputContext {
+            executed_shell_commands: vec![api::ExecutedShellCommand {
+                command: "asdf".to_owned(),
+                output: "zsh: command not found: asdf".to_owned(),
+                exit_code: 127,
+                command_id: "test-block".to_owned(),
+                started_ts: None,
+                finished_ts: None,
+                is_auto_attached: false,
+            }],
+            ..Default::default()
+        });
+        message
     }
 
     fn agent_output_message(text: &str, request_id: &str) -> api::Message {
@@ -866,9 +1090,13 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn output_persists_current_user_query_message() {
         let mut params = request_params_for_test();
-        params.input = vec![user_query_input("remember this")];
+        params.input = vec![user_query_input_with_context(
+            "remember this",
+            vec![shell_output_context("zsh: command not found: asdf\n")],
+        )];
 
         let events = block_on(generate_openrouter_output(params).collect::<Vec<_>>());
 
@@ -883,10 +1111,37 @@ mod tests {
             panic!("expected AddMessagesToTask action");
         };
 
-        assert!(add.messages.iter().any(|message| matches!(
-            message.message.as_ref(),
-            Some(message::Message::UserQuery(query)) if query.query == "remember this"
-        )));
+        let persisted_query = add.messages.iter().find_map(|message| {
+            let Some(message::Message::UserQuery(query)) = message.message.as_ref() else {
+                return None;
+            };
+            (query.query == "remember this").then_some(query)
+        });
+        assert!(persisted_query.is_some());
+        assert!(persisted_query
+            .and_then(|query| query.context.as_ref())
+            .is_some_and(|context| !context.executed_shell_commands.is_empty()));
+    }
+
+    #[test]
+    fn request_messages_include_current_user_query_context() {
+        let mut params = request_params_for_test();
+        params.input = vec![user_query_input_with_context(
+            "what is the error i'm attaching?",
+            vec![shell_output_context("zsh: command not found: asdf\n")],
+        )];
+
+        let messages = build_openrouter_messages(&params);
+
+        let user_message = messages.last().expect("expected current user message");
+        assert_eq!(user_message.role, "user");
+        assert!(user_message
+            .content
+            .contains("what is the error i'm attaching?"));
+        assert!(user_message.content.contains("Attached terminal output"));
+        assert!(user_message
+            .content
+            .contains("zsh: command not found: asdf"));
     }
 
     #[test]
@@ -914,6 +1169,32 @@ mod tests {
         assert_eq!(messages[2].content, "first answer");
         assert_eq!(messages[3].role, "user");
         assert_eq!(messages[3].content, "follow up");
+    }
+
+    #[test]
+    fn request_messages_include_prior_user_query_context() {
+        let mut params = request_params_for_test();
+        params.tasks.push(api::Task {
+            id: "test-task".to_owned(),
+            messages: vec![user_query_message_with_context(
+                "what is the error i'm attaching?",
+                "request-1",
+            )],
+            dependencies: None,
+            description: String::new(),
+            summary: String::new(),
+            server_data: String::new(),
+        });
+
+        let messages = build_openrouter_messages(&params);
+
+        assert_eq!(messages[1].role, "user");
+        assert!(messages[1]
+            .content
+            .contains("what is the error i'm attaching?"));
+        assert!(messages[1].content.contains("Attached terminal command"));
+        assert!(messages[1].content.contains("asdf"));
+        assert!(messages[1].content.contains("zsh: command not found: asdf"));
     }
 
     #[test]
