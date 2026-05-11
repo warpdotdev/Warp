@@ -704,5 +704,5 @@ pub(crate) fn redact_secrets_in_element<T: PartialClickableElement>(
 }
 
 #[cfg(test)]
-#[path = "secret_redaction_test.rs"]
+#[path = "secret_redaction_tests.rs"]
 mod test;

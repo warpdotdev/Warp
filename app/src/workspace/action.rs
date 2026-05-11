@@ -112,6 +112,10 @@ pub enum WorkspaceAction {
     RenamePane(PaneViewLocator),
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
+    /// Renames the focused pane in the active tab. Mirrors `RenameActiveTab`
+    /// so the action is reachable from the binding registry / Command Palette
+    /// (see #9351). The context-menu path keeps using `RenamePane(locator)`.
+    RenameActivePane,
     SetActiveTabName(String),
     /// Sets the manual color override for the active tab.
     ///
@@ -487,9 +491,11 @@ pub enum WorkspaceAction {
     /// conversation isn't handoff-able (no synced server token, empty, or no
     /// active conversation at all).
     OpenLocalToCloudHandoffPane {
-        /// Pre-fill the new pane's prompt input (slash command captures the
-        /// trailing argument; the chip leaves this `None`).
-        initial_prompt: Option<String>,
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        launch: Option<crate::ai::blocklist::handoff::PendingCloudLaunch>,
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        launch: Option<()>,
+        explicit_environment_id: Option<crate::server::ids::SyncId>,
     },
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {
@@ -730,6 +736,7 @@ impl WorkspaceAction {
             | RenamePane(_)
             | ResetPaneName(_)
             | RenameActiveTab
+            | RenameActivePane
             | SetActiveTabName(_)
             | SetActiveTabColor(_)
             | CloseTab(_)
