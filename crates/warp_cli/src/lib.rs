@@ -93,7 +93,6 @@ pub struct GlobalOptions {
 #[command(
     name = "oz",
     display_name = "Oz",
-    version = version_string(),
     about = r#"The orchestration platform for cloud agents
 
 The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
