@@ -141,6 +141,22 @@ pub enum ConversationListViewAction {
         conversation_id: AgentConversationEntryId,
         destination: ForkedConversationDestination,
     },
+    /// GH8642: begin renaming the given conversation by opening the inline editor
+    /// in place of the row's title. Dispatched from a double-click on the row's
+    /// title region or from the overflow menu's `Rename conversation` item.
+    /// The editor commits on Enter / blur (dispatches `WorkspaceAction::SetConversationUserTitle`)
+    /// and cancels on Escape (clears editor state without dispatching).
+    /// See `specs/GH8642/`.
+    RenameConversation {
+        conversation_id: AIConversationId,
+    },
+    /// GH8642: clears the user-set title override, reverting to the auto-generated
+    /// title chain. Dispatched from the overflow menu's `Reset conversation name`
+    /// item, which is only shown when the conversation already has a user-set
+    /// title. Forwards to `WorkspaceAction::ResetConversationName`. See `specs/GH8642/`.
+    ResetConversationName {
+        conversation_id: AIConversationId,
+    },
 }
 
 pub enum Event {
@@ -176,6 +192,16 @@ pub struct ConversationListView {
     /// (we use this to decide whether or not to show the view all button).
     total_past_items: usize,
     state_handles: StateHandles,
+    /// GH8642: shared single-line editor used to rename the conversation row whose
+    /// id is currently in [`Self::renaming_conversation_id`]. The editor is built
+    /// once in [`Self::new`] and re-seeded with the row's effective title every
+    /// time rename starts. Mirrors the workspace-level `tab_rename_editor`.
+    rename_editor: ViewHandle<EditorView>,
+    /// GH8642: id of the conversation whose row is currently in inline-rename
+    /// mode, or `None` when the list is in normal display mode. Only ever set to
+    /// the id of an [`AIConversation`] (never an ambient task) since rename is
+    /// not supported for tasks.
+    renaming_conversation_id: Option<AIConversationId>,
 }
 
 pub fn register_conversation_list_view_bindings(app: &mut AppContext) {
@@ -268,6 +294,8 @@ impl ConversationListView {
             ctx.notify();
         });
 
+        let rename_editor = Self::build_rename_editor(ctx);
+
         let mut view = Self {
             window_id: ctx.window_id(),
             view_id: ctx.view_id(),
@@ -284,9 +312,139 @@ impl ConversationListView {
             view_all: false,
             total_past_items: 0,
             state_handles: StateHandles::default(),
+            rename_editor,
+            renaming_conversation_id: None,
         };
         view.sync_list_items(ctx);
         view
+    }
+
+    /// Builds the inline-rename editor used by both rename surfaces in this view
+    /// (double-click on the title region and the overflow menu's `Rename
+    /// conversation` item). Mirrors the workspace `tab_rename_editor`: 14pt UI
+    /// font, select-all on focus, and propagate vertical navigation keys so the
+    /// editor doesn't swallow Up/Down (which the list still uses to move
+    /// selection between rows).
+    ///
+    /// Subscribes to the editor's events so:
+    /// * `Enter` / `Blurred` → commit the current buffer via
+    ///   [`Self::commit_rename`] (dispatches
+    ///   [`WorkspaceAction::SetConversationUserTitle`]).
+    /// * `Escape` → cancel via [`Self::cancel_rename`] without dispatching.
+    fn build_rename_editor(ctx: &mut ViewContext<Self>) -> ViewHandle<EditorView> {
+        let editor = ctx.add_typed_action_view(|ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            EditorView::single_line(
+                SingleLineEditorOptions {
+                    text: TextOptions::ui_text(Some(appearance.ui_font_size() + 2.), appearance),
+                    select_all_on_focus: true,
+                    clear_selections_on_blur: true,
+                    propagate_and_no_op_vertical_navigation_keys:
+                        PropagateAndNoOpNavigationKeys::Always,
+                    ..Default::default()
+                },
+                ctx,
+            )
+        });
+        ctx.subscribe_to_view(&editor, |me, _handle, event, ctx| {
+            me.handle_rename_editor_event(event, ctx);
+        });
+        editor
+    }
+
+    fn handle_rename_editor_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
+        if self.renaming_conversation_id.is_none() {
+            return;
+        }
+        match event {
+            EditorEvent::Enter | EditorEvent::Blurred => self.commit_rename(ctx),
+            EditorEvent::Escape => self.cancel_rename(ctx),
+            _ => {}
+        }
+    }
+
+    /// Begin renaming the given conversation: seed the inline editor with the
+    /// row's currently-displayed title and focus the editor. The next render
+    /// pass swaps the row's title text for the editor.
+    fn start_rename(&mut self, conversation_id: AIConversationId, ctx: &mut ViewContext<Self>) {
+        // Defense in depth: shared-session viewer mode does not own the
+        // conversation, so the rename API would reject the commit anyway.
+        // Hide the affordance up front to avoid a no-op editor session.
+        let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+        if history_model
+            .conversation(&conversation_id)
+            .is_some_and(|c| c.is_viewing_shared_session())
+        {
+            log::debug!(
+                "start_rename: refusing to rename {conversation_id} \
+                 (shared-session viewer)"
+            );
+            return;
+        }
+
+        // Resolve the seed title: prefer the live conversation's `title()` (so
+        // an in-flight rename in another surface is reflected), fall back to
+        // the cached metadata title (historical / not-currently-loaded rows),
+        // and finally to the placeholder used elsewhere in this view.
+        let seed_title = history_model
+            .conversation(&conversation_id)
+            .and_then(|c| c.title())
+            .or_else(|| {
+                history_model
+                    .get_conversation_metadata(&conversation_id)
+                    .map(|m| m.title.clone())
+            })
+            .unwrap_or_else(|| "Untitled conversation".to_string());
+
+        self.renaming_conversation_id = Some(conversation_id);
+
+        // Reset and re-seed the editor every time so a previous rename's text
+        // (committed or cancelled) doesn't leak into the new session.
+        self.rename_editor.update(ctx, |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+            editor.insert_selected_text(&seed_title, ctx);
+        });
+        ctx.focus(&self.rename_editor);
+        ctx.notify();
+    }
+
+    /// Commit the in-progress rename by dispatching
+    /// [`WorkspaceAction::SetConversationUserTitle`] with the editor's current
+    /// buffer (or `None` for whitespace-only input, which clears the override).
+    fn commit_rename(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(conversation_id) = self.renaming_conversation_id.take() else {
+            return;
+        };
+
+        let raw = self.rename_editor.as_ref(ctx).buffer_text(ctx);
+        let trimmed = raw.trim();
+        let title = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        };
+
+        ctx.dispatch_typed_action(&WorkspaceAction::SetConversationUserTitle {
+            conversation_id,
+            title,
+        });
+
+        self.rename_editor.update(ctx, |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+        });
+        ctx.notify();
+    }
+
+    /// Cancel the in-progress rename without dispatching: clear editor state
+    /// and return the next render to displaying the title text again.
+    fn cancel_rename(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.renaming_conversation_id.take().is_none() {
+            return;
+        }
+        self.rename_editor.update(ctx, |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+        });
+        ctx.notify();
     }
 
     /// Rebuilds the flat list of items based on sections and collapse state.
@@ -975,10 +1133,63 @@ impl TypedActionView for ConversationListView {
                             None
                         };
 
+                    // GH8642: rename / reset items appear between Share and Fork. Rename is
+                    // available for any non-task, non-shared-viewer conversation. Reset is
+                    // available only when the conversation already has a user-set title (read
+                    // from `nav_data.has_user_set_title`, which is populated for both live and
+                    // historical metadata rows).
+                    let rename_items: Vec<MenuItem<ConversationListViewAction>> =
+                        match conversation_id {
+                            AgentConversationEntryId::Conversation(ai_conversation_id) => {
+                                let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+                                let is_shared_viewer = history_model
+                                    .conversation(&ai_conversation_id)
+                                    .is_some_and(|c| c.is_viewing_shared_session());
+                                if is_shared_viewer {
+                                    Vec::new()
+                                } else {
+                                    // GH8642: the Reset entry is only available when the
+                                    // conversation currently has a user-set title override. Read
+                                    // through the history model so live + historical metadata
+                                    // rows agree on this answer.
+                                    let has_user_set_title = history_model
+                                        .conversation(&ai_conversation_id)
+                                        .and_then(|c| c.user_set_title().map(|_| ()))
+                                        .is_some()
+                                        || history_model
+                                            .get_conversation_metadata(&ai_conversation_id)
+                                            .and_then(|m| m.user_set_title.as_ref())
+                                            .is_some();
+                                    let mut entries =
+                                        vec![MenuItemFields::new("Rename conversation")
+                                            .with_on_select_action(
+                                                ConversationListViewAction::RenameConversation {
+                                                    conversation_id: ai_conversation_id,
+                                                },
+                                            )
+                                            .into_item()];
+                                    if has_user_set_title {
+                                        entries.push(
+                                            MenuItemFields::new("Reset conversation name")
+                                                .with_on_select_action(
+                                                    ConversationListViewAction::ResetConversationName {
+                                                        conversation_id: ai_conversation_id,
+                                                    },
+                                                )
+                                                .into_item(),
+                                        );
+                                    }
+                                    entries
+                                }
+                            }
+                            AgentConversationEntryId::AmbientRun(_) => Vec::new(),
+                        };
+
                     let mut items = Vec::new();
                     if let Some(share_item) = share_item {
                         items.push(share_item);
                     }
+                    items.extend(rename_items);
                     if let Some(fork_items) = fork_items {
                         items.extend(fork_items);
                     }
@@ -1152,6 +1363,18 @@ impl TypedActionView for ConversationListView {
                     destination: *destination,
                 });
             }
+            ConversationListViewAction::RenameConversation { conversation_id } => {
+                // Close the overflow menu (if open for this row) before starting
+                // rename so the inline editor isn't covered by a stale menu.
+                self.overflow_menu_state = None;
+                self.start_rename(*conversation_id, ctx);
+            }
+            ConversationListViewAction::ResetConversationName { conversation_id } => {
+                self.overflow_menu_state = None;
+                ctx.dispatch_typed_action(&WorkspaceAction::ResetConversationName {
+                    conversation_id: *conversation_id,
+                });
+            }
         }
     }
 }
@@ -1208,6 +1431,10 @@ impl View for ConversationListView {
             let sharing_dialog = self.sharing_dialog.clone();
             let share_dialog_open_for = self.share_dialog_open_for;
             let list_position_id = self.get_position_id();
+            // GH8642: capture rename state outside the closure so each rendered
+            // row can decide whether to show the inline editor in its title slot.
+            let renaming_conversation_id = self.renaming_conversation_id;
+            let rename_editor = self.rename_editor.clone();
             let tooltip_opens_right = TabSettings::as_ref(app)
                 .header_toolbar_chip_selection
                 .left_items()
@@ -1275,6 +1502,12 @@ impl View for ConversationListView {
                                     };
                                     let is_share_dialog_open =
                                         share_dialog_open_for == Some(entry.id);
+                                    let is_renaming = match entry.id {
+                                        AgentConversationEntryId::Conversation(id) => {
+                                            renaming_conversation_id == Some(id)
+                                        }
+                                        AgentConversationEntryId::AmbientRun(_) => false,
+                                    };
                                     Some(render_item(
                                         ItemProps {
                                             conversation: &conversation,
@@ -1290,6 +1523,8 @@ impl View for ConversationListView {
                                             is_share_dialog_open,
                                             list_position_id: &list_position_id,
                                             tooltip_opens_right,
+                                            is_renaming,
+                                            rename_editor: &rename_editor,
                                         },
                                         app,
                                     ))

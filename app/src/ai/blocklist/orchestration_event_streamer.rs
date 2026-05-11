@@ -375,7 +375,10 @@ impl OrchestrationEventStreamer {
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
             | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+            // Title renames don't affect orchestration eligibility, watched run ids, or the
+            // SSE connection state.
+            | BlocklistAIHistoryEvent::UpdatedConversationTitle { .. } => {}
         }
     }
 

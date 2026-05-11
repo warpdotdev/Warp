@@ -1056,6 +1056,11 @@ pub struct AgentConversationData {
     /// delivery without re-delivering already-processed events.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_event_sequence: Option<i64>,
+    /// User-supplied custom title for this conversation. When set, takes precedence over the
+    /// auto-generated title in the UI. Local-only — not synced to the server. See
+    /// `specs/GH8642/`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_set_title: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1367,6 +1372,7 @@ mod tests {
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: Some(42),
+            user_set_title: None,
         };
         let json = serde_json::to_string(&data).expect("serialize");
         let roundtripped: AgentConversationData = serde_json::from_str(&json).expect("deserialize");
@@ -1402,6 +1408,7 @@ mod tests {
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,
+            user_set_title: None,
         };
         let json = serde_json::to_string(&data).expect("serialize");
         let roundtripped: AgentConversationData = serde_json::from_str(&json).expect("deserialize");
@@ -1418,6 +1425,7 @@ mod tests {
         assert_eq!(data.last_event_sequence, None);
         assert_eq!(data.orchestration_harness_type, None);
         assert!(!data.is_remote_child);
+        assert_eq!(data.user_set_title, None);
     }
 
     #[test]
@@ -1436,10 +1444,62 @@ mod tests {
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,
+            user_set_title: None,
         };
         let json = serde_json::to_string(&data).expect("serialize");
         assert!(
             !json.contains("last_event_sequence"),
+            "None should be skipped in serialized output: {json}"
+        );
+    }
+
+    #[test]
+    fn agent_conversation_data_roundtrips_user_set_title() {
+        let data = AgentConversationData {
+            server_conversation_token: None,
+            conversation_usage_metadata: None,
+            reverted_action_ids: None,
+            forked_from_server_conversation_token: None,
+            artifacts_json: None,
+            parent_agent_id: None,
+            agent_name: None,
+            parent_conversation_id: None,
+            is_remote_child: false,
+            run_id: None,
+            autoexecute_override: None,
+            last_event_sequence: None,
+            user_set_title: Some("My custom title".to_string()),
+        };
+        let json = serde_json::to_string(&data).expect("serialize");
+        let roundtripped: AgentConversationData = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(
+            roundtripped.user_set_title.as_deref(),
+            Some("My custom title")
+        );
+    }
+
+    #[test]
+    fn agent_conversation_data_skips_serializing_none_user_set_title() {
+        // When no user-set title is present, the field should not appear in the on-disk JSON
+        // payload. This keeps the persisted blob small and avoids polluting legacy rows.
+        let data = AgentConversationData {
+            server_conversation_token: None,
+            conversation_usage_metadata: None,
+            reverted_action_ids: None,
+            forked_from_server_conversation_token: None,
+            artifacts_json: None,
+            parent_agent_id: None,
+            agent_name: None,
+            parent_conversation_id: None,
+            is_remote_child: false,
+            run_id: None,
+            autoexecute_override: None,
+            last_event_sequence: None,
+            user_set_title: None,
+        };
+        let json = serde_json::to_string(&data).expect("serialize");
+        assert!(
+            !json.contains("user_set_title"),
             "None should be skipped in serialized output: {json}"
         );
     }

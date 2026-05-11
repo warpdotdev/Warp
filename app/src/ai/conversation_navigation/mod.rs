@@ -34,6 +34,10 @@ pub struct ConversationNavigationData {
     pub is_closed: bool,
     /// The server-generated conversation token, used to reference this conversation in context tags.
     pub server_conversation_token: Option<ServerConversationToken>,
+    /// Whether the user has set a custom title for this conversation. Used by menu rendering
+    /// to show / hide the conditional `Reset conversation name` item without requiring the
+    /// caller to load the full conversation. See `specs/GH8642/`.
+    pub has_user_set_title: bool,
 }
 
 impl PartialOrd for ConversationNavigationData {
@@ -95,6 +99,7 @@ impl ConversationNavigationData {
             is_in_active_pane,
             is_closed,
             server_conversation_token: conversation.server_conversation_token().cloned(),
+            has_user_set_title: conversation.user_set_title().is_some(),
         }
     }
 
@@ -113,6 +118,7 @@ impl ConversationNavigationData {
             is_in_active_pane: false,
             is_closed: false,
             server_conversation_token: metadata.server_conversation_token.clone(),
+            has_user_set_title: metadata.user_set_title.is_some(),
         }
     }
 

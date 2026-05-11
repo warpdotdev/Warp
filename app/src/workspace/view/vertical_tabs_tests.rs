@@ -158,6 +158,8 @@ fn preferred_agent_tab_titles_default_to_title_like_text() {
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
         is_oz_agent: true,
         cli_agent: Some(CLIAgent::Claude),
+        conversation_id: None,
+        has_user_set_title: false,
     };
 
     assert_eq!(
@@ -178,6 +180,8 @@ fn preferred_agent_tab_titles_do_not_use_cli_prompt_when_disabled() {
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
         is_oz_agent: false,
         cli_agent: Some(CLIAgent::Claude),
+        conversation_id: None,
+        has_user_set_title: false,
     };
 
     assert_eq!(
@@ -195,6 +199,8 @@ fn terminal_primary_line_uses_terminal_title_when_disabled_cli_has_only_prompt()
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
         is_oz_agent: false,
         cli_agent: Some(CLIAgent::Claude),
+        conversation_id: None,
+        has_user_set_title: false,
     };
     let (conversation_title, cli_title) =
         preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::ConversationTitle);
@@ -228,6 +234,8 @@ fn preferred_agent_tab_titles_use_latest_prompt_when_enabled() {
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
         is_oz_agent: true,
         cli_agent: Some(CLIAgent::Claude),
+        conversation_id: None,
+        has_user_set_title: false,
     };
 
     assert_eq!(
@@ -248,6 +256,8 @@ fn terminal_primary_line_uses_cli_prompt_when_enabled_cli_has_prompt() {
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
         is_oz_agent: false,
         cli_agent: Some(CLIAgent::Claude),
+        conversation_id: None,
+        has_user_set_title: false,
     };
     let (conversation_title, cli_title) =
         preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::LatestUserPrompt);
@@ -274,6 +284,8 @@ fn terminal_primary_line_uses_cli_prompt_when_enabled_cli_is_long_running() {
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
         is_oz_agent: false,
         cli_agent: Some(CLIAgent::Claude),
+        conversation_id: None,
+        has_user_set_title: false,
     };
     let (conversation_title, cli_title) =
         preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::LatestUserPrompt);
@@ -300,6 +312,8 @@ fn preferred_agent_tab_titles_fall_back_when_preferred_text_is_missing() {
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
         is_oz_agent: true,
         cli_agent: Some(CLIAgent::Claude),
+        conversation_id: None,
+        has_user_set_title: false,
     };
 
     assert_eq!(
@@ -308,6 +322,59 @@ fn preferred_agent_tab_titles_fall_back_when_preferred_text_is_missing() {
             Some("Generated Oz title".to_string()),
             Some("Latest CLI prompt".to_string())
         )
+    );
+}
+
+/// GH8642 risk mitigation: when the conversation has a user-set title, the title-preference
+/// helper must short-circuit to the display title even when the user has
+/// `use_latest_user_prompt_as_conversation_title_in_tab_names` enabled. Without this, a user
+/// who renames their conversation can have the rename silently overridden whenever they
+/// toggle the latest-prompt setting (or ship a new exchange). See PR #9746 "risks".
+#[test]
+fn preferred_agent_tab_titles_user_set_title_beats_latest_prompt_preference() {
+    let agent_text = TerminalAgentText {
+        conversation_display_title: Some("My custom title".to_string()),
+        conversation_latest_user_prompt: Some("Latest Oz prompt that should NOT win".to_string()),
+        cli_agent_title: None,
+        cli_agent_latest_user_prompt: None,
+        is_oz_agent: true,
+        cli_agent: None,
+        conversation_id: None,
+        has_user_set_title: true,
+    };
+
+    // With LatestUserPrompt preference + has_user_set_title: still returns the display title.
+    assert_eq!(
+        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::LatestUserPrompt),
+        (Some("My custom title".to_string()), None)
+    );
+
+    // And of course also returns the display title under the default preference.
+    assert_eq!(
+        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::ConversationTitle),
+        (Some("My custom title".to_string()), None)
+    );
+}
+
+/// Sanity check: when there's no user-set title, the helper still honors the latest-prompt
+/// preference. This is the inverse of the regression test above and ensures the short-circuit
+/// only fires when needed (so we don't silently break the existing latest-prompt feature).
+#[test]
+fn preferred_agent_tab_titles_honor_preference_when_no_user_set_title() {
+    let agent_text = TerminalAgentText {
+        conversation_display_title: Some("Auto-generated title".to_string()),
+        conversation_latest_user_prompt: Some("Latest Oz prompt".to_string()),
+        cli_agent_title: None,
+        cli_agent_latest_user_prompt: None,
+        is_oz_agent: true,
+        cli_agent: None,
+        conversation_id: None,
+        has_user_set_title: false,
+    };
+
+    assert_eq!(
+        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::LatestUserPrompt),
+        (Some("Latest Oz prompt".to_string()), None)
     );
 }
 

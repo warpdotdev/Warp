@@ -24,6 +24,7 @@ fn test_conversation_navigation_data_ordering() {
         is_closed: false,
         server_conversation_token: None,
         is_in_active_pane: true,
+        has_user_set_title: false,
     };
 
     let active_old = ConversationNavigationData {
@@ -40,6 +41,7 @@ fn test_conversation_navigation_data_ordering() {
         is_closed: false,
         server_conversation_token: None,
         is_in_active_pane: true,
+        has_user_set_title: false,
     };
 
     let inactive_recent = ConversationNavigationData {
@@ -56,6 +58,7 @@ fn test_conversation_navigation_data_ordering() {
         is_closed: false,
         server_conversation_token: None,
         is_in_active_pane: false,
+        has_user_set_title: false,
     };
 
     let inactive_old = ConversationNavigationData {
@@ -72,6 +75,7 @@ fn test_conversation_navigation_data_ordering() {
         is_closed: false,
         server_conversation_token: None,
         is_in_active_pane: false,
+        has_user_set_title: false,
     };
 
     let historical_recent = ConversationNavigationData {
@@ -88,6 +92,7 @@ fn test_conversation_navigation_data_ordering() {
         is_closed: false,
         server_conversation_token: None,
         is_in_active_pane: false,
+        has_user_set_title: false,
     };
 
     let historical_old = ConversationNavigationData {
@@ -104,6 +109,7 @@ fn test_conversation_navigation_data_ordering() {
         is_closed: false,
         server_conversation_token: None,
         is_in_active_pane: false,
+        has_user_set_title: false,
     };
 
     // Test sorting a vector

@@ -5276,7 +5276,9 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
             | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => None,
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+            // Title renames are display-only; no per-view ownership routing needed.
+            | BlocklistAIHistoryEvent::UpdatedConversationTitle { .. } => None,
         }
     }
 
@@ -5735,6 +5737,12 @@ impl TerminalView {
                     self.rich_content_views
                         .retain(|view| view.view_id() != view_id_to_remove);
                 }
+            }
+            BlocklistAIHistoryEvent::UpdatedConversationTitle { .. } => {
+                // Refresh the pane header so it reflects the new title. The pane title is
+                // derived from `selected_conversation_display_title()`, which reads through
+                // `AIConversation::title()` and now picks up the user-set override.
+                self.update_pane_configuration(ctx);
             }
             BlocklistAIHistoryEvent::CreatedSubtask { .. }
             | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }

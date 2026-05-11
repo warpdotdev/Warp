@@ -262,7 +262,11 @@ impl StartAgentExecutor {
             | BlocklistAIHistoryEvent::RestoredConversations { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
-            | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. } => {}
+            | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
+            // The start_agent executor only cares about lifecycle/identity events for the
+            // pending child conversation. Title renames are user-driven display state and
+            // do not affect the pending decision.
+            | BlocklistAIHistoryEvent::UpdatedConversationTitle { .. } => {}
             BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
         }
     }

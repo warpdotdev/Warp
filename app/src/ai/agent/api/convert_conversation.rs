@@ -87,6 +87,9 @@ pub fn convert_conversation_data_to_ai_conversation(
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,
+            // user_set_title is local-only and never synced to the server. Forks always start
+            // with no override. See `specs/GH8642/`.
+            user_set_title: None,
         },
         RestorationMode::Continue => AgentConversationData {
             server_conversation_token: Some(
@@ -108,6 +111,10 @@ pub fn convert_conversation_data_to_ai_conversation(
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,
+            // user_set_title is local-only and not synced. The local DB row's stored value (if
+            // any) is read by `convert_persisted_conversation_to_ai_conversation_with_metadata`,
+            // not this cloud path. See `specs/GH8642/`.
+            user_set_title: None,
         },
     };
 

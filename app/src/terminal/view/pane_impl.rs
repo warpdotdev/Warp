@@ -4,7 +4,7 @@ use super::ambient_agent::is_cloud_agent_pre_first_exchange;
 use super::shared_session::adapter::Kind as SharedSessionKind;
 use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState, Viewer};
 use crate::ai::agent::conversation::{
-    AIConversation, ConversationStatus, ServerAIConversationMetadata,
+    AIConversation, AIConversationId, ConversationStatus, ServerAIConversationMetadata,
 };
 use crate::ai::blocklist::agent_view::agent_view_bg_fill;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
@@ -1039,6 +1039,29 @@ impl TerminalView {
     ) -> Option<String> {
         self.selected_conversation_for_user_facing_chrome(ctx)
             .and_then(AIConversation::latest_user_query)
+    }
+
+    /// GH8642: returns the [`AIConversationId`] of the currently-selected conversation, if it is
+    /// the conversation we'd render in the tab/pane chrome (passive conversations and unnamed
+    /// non-AgentView conversations are filtered out by
+    /// [`Self::selected_conversation_for_user_facing_chrome`], matching how the rest of the
+    /// chrome already resolves "the conversation behind this terminal view"). Used by the
+    /// vertical-tabs rename surface to dispatch [`crate::workspace::WorkspaceAction::RenameConversation`]
+    /// for the right id without requiring callers to re-derive the filter.
+    pub fn selected_conversation_id_for_chrome(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<AIConversationId> {
+        self.selected_conversation_for_user_facing_chrome(ctx)
+            .map(AIConversation::id)
+    }
+
+    /// GH8642: whether the currently-selected chrome conversation has a user-set title. Threaded
+    /// through the vertical-tabs title-preference helper so a user-set title can never be
+    /// overridden by the latest-prompt setting (the spec's primary risk mitigation in PR #9746).
+    pub fn selected_conversation_has_user_set_title(&self, ctx: &AppContext) -> bool {
+        self.selected_conversation_for_user_facing_chrome(ctx)
+            .is_some_and(|conversation| conversation.user_set_title().is_some())
     }
 
     fn selected_cli_agent_title_for_chrome(&self, ctx: &AppContext) -> Option<String> {

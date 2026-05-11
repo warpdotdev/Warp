@@ -1,4 +1,4 @@
-use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
@@ -125,6 +125,17 @@ pub struct PaneNameMenuTarget {
     pub reset_label: &'static str,
 }
 
+/// GH8642: target for the conversation rename/reset entries in the
+/// vertical-tabs pane context menu. Resolved by the workspace before
+/// building the menu — [`PaneConversationMenuTarget::has_user_set_title`]
+/// gates the "Reset conversation name" item the same way `PaneNameMenuTarget`
+/// gates "Reset pane name".
+#[derive(Clone, Copy)]
+pub struct PaneConversationMenuTarget {
+    pub conversation_id: AIConversationId,
+    pub has_user_set_title: bool,
+}
+
 /// TabData struct holds the state of the given tab. It includes the pane group and mouse states
 /// used for closing the tab or tracking the mouse over the rendered tab.
 /// It has to be "stored" by some View to persist its state.
@@ -187,6 +198,22 @@ impl TabData {
         pane_name_target: Option<PaneNameMenuTarget>,
         ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
+        self.menu_items_with_pane_targets(index, tabs_len, pane_name_target, None, ctx)
+    }
+
+    /// GH8642: variant that additionally accepts a `PaneConversationMenuTarget`
+    /// so the vertical-tabs pane context menu can offer Rename / Reset for the
+    /// chrome conversation hosted in the right-clicked pane. The conversation
+    /// items are inserted alongside the pane-name items so all rename actions
+    /// for the pane are grouped together visually.
+    pub fn menu_items_with_pane_targets(
+        &self,
+        index: usize,
+        tabs_len: usize,
+        pane_name_target: Option<PaneNameMenuTarget>,
+        pane_conversation_target: Option<PaneConversationMenuTarget>,
+        ctx: &AppContext,
+    ) -> Vec<MenuItem<WorkspaceAction>> {
         let appearance = Appearance::as_ref(ctx);
         let terminal_colors = appearance.theme().terminal_colors().normal;
         let mut menu_items = vec![];
@@ -194,7 +221,13 @@ impl TabData {
         for section_items in [
             self.session_sharing_menu_items(index, ctx),
             self.copy_metadata_menu_items(pane_name_target, ctx),
-            self.modify_tab_menu_items(index, tabs_len, pane_name_target, ctx),
+            self.modify_tab_menu_items(
+                index,
+                tabs_len,
+                pane_name_target,
+                pane_conversation_target,
+                ctx,
+            ),
             self.close_tab_menu_items(index, tabs_len, ctx),
             Self::save_config_menu_items(index),
             self.color_option_menu_items(index, terminal_colors),
@@ -398,6 +431,7 @@ impl TabData {
         index: usize,
         tabs_len: usize,
         pane_name_target: Option<PaneNameMenuTarget>,
+        pane_conversation_target: Option<PaneConversationMenuTarget>,
         ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
         let mut menu_items = vec![];
@@ -420,6 +454,12 @@ impl TabData {
         }
         if let Some(pane_name_target) = pane_name_target {
             menu_items.extend(self.pane_name_menu_items(pane_name_target, ctx));
+        }
+        // GH8642: Rename / Reset conversation items live next to the pane
+        // rename items so they're visually grouped under the same "rename
+        // things in this pane" affordance.
+        if let Some(target) = pane_conversation_target {
+            menu_items.extend(Self::pane_conversation_menu_items(target));
         }
         // Don't show options that aren't relevant (moving end tabs, closing
         // other tabs when you don't have any others to close)
@@ -444,6 +484,30 @@ impl TabData {
                 })
                 .with_on_select_action(WorkspaceAction::MoveTabLeft(index))
                 .into_item(),
+            );
+        }
+        menu_items
+    }
+
+    /// GH8642: build the Rename / Reset Conversation menu items for the
+    /// vertical-tabs pane context menu. Reset is included only when the
+    /// conversation already has a user-set title; this matches
+    /// [`Self::pane_name_menu_items`].
+    fn pane_conversation_menu_items(
+        target: PaneConversationMenuTarget,
+    ) -> Vec<MenuItem<WorkspaceAction>> {
+        let mut menu_items = vec![MenuItemFields::new("Rename conversation")
+            .with_on_select_action(WorkspaceAction::RenameConversation {
+                conversation_id: target.conversation_id,
+            })
+            .into_item()];
+        if target.has_user_set_title {
+            menu_items.push(
+                MenuItemFields::new("Reset conversation name")
+                    .with_on_select_action(WorkspaceAction::ResetConversationName {
+                        conversation_id: target.conversation_id,
+                    })
+                    .into_item(),
             );
         }
         menu_items

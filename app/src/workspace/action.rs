@@ -117,6 +117,30 @@ pub enum WorkspaceAction {
     /// (see #9351). The context-menu path keeps using `RenamePane(locator)`.
     RenameActivePane,
     SetActiveTabName(String),
+    /// Begin renaming the given conversation: opens an inline editor seeded with the
+    /// conversation's effective title (user-set if any, else the auto-generated title).
+    /// Dispatched from a double-click on the agent-card title in vertical tabs or from a
+    /// `Rename conversation` menu item. The editor's Enter handler dispatches
+    /// [`Self::SetConversationUserTitle`] to commit; Escape clears editor state without
+    /// dispatching. The editor lives at the workspace level (alongside `tab_rename_editor`
+    /// / `pane_rename_editor`) and is wired up in phase 2d. See `specs/GH8642/`.
+    RenameConversation {
+        conversation_id: AIConversationId,
+    },
+    /// Clears the conversation's user-set title override and reverts to the auto-generated
+    /// title chain. Dispatched from a `Reset conversation name` menu item (only shown when
+    /// the conversation already has a user-set title). See `specs/GH8642/`.
+    ResetConversationName {
+        conversation_id: AIConversationId,
+    },
+    /// Persists a new user-set title for the conversation (or clears it when `title` is
+    /// `None` / whitespace-only). Dispatched on Enter / blur from the inline rename editor,
+    /// and is the single entry point both surfaces (vertical tabs and the conversation list)
+    /// converge on for actually committing a rename. See `specs/GH8642/`.
+    SetConversationUserTitle {
+        conversation_id: AIConversationId,
+        title: Option<String>,
+    },
     /// Sets the manual color override for the active tab.
     ///
     /// - `Color(_)` — apply that color.
@@ -744,6 +768,12 @@ impl WorkspaceAction {
             | RenameActiveTab
             | RenameActivePane
             | SetActiveTabName(_)
+            // GH8642: conversation rename mutates the conversation's persisted user-set title
+            // (via `BlocklistAIHistoryModel::set_conversation_user_title`), so it should be
+            // reflected in saved app state on the next checkpoint.
+            | RenameConversation { .. }
+            | ResetConversationName { .. }
+            | SetConversationUserTitle { .. }
             | SetActiveTabColor(_)
             | CloseTab(_)
             | CloseActiveTab

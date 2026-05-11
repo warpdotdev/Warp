@@ -5,6 +5,7 @@ use crate::ai::agent_conversations_model::{
 use crate::ai::conversation_status_ui::STATUS_ELEMENT_PADDING;
 use crate::appearance::Appearance;
 use crate::drive::sharing::dialog::SharingDialog;
+use crate::editor::EditorView;
 use crate::menu::Menu;
 use crate::ui_components::agent_icon::agent_conversation_entry_icon_variant;
 use crate::ui_components::icon_with_status::render_icon_with_status;
@@ -19,15 +20,17 @@ use warp_core::ui::theme::color::internal_colors;
 use warp_util::path::user_friendly_path;
 use warpui::elements::{
     AnchorPair, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
-    CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Flex, Highlight, Hoverable,
-    MainAxisAlignment, MainAxisSize, MouseInBehavior, MouseStateHandle, OffsetPositioning,
-    OffsetType, ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds,
-    PositioningAxis, Radius, SavePosition, Shrinkable, Stack, Text, XAxisAnchor, YAxisAnchor,
+    CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Fill, Flex, Highlight,
+    Hoverable, MainAxisAlignment, MainAxisSize, MouseInBehavior, MouseStateHandle,
+    OffsetPositioning, OffsetType, ParentAnchor, ParentElement, ParentOffsetBounds,
+    PositionedElementOffsetBounds, PositioningAxis, Radius, SavePosition, Shrinkable, Stack, Text,
+    XAxisAnchor, YAxisAnchor,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
 use warpui::text_layout::TextStyle;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
+use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, SingletonEntity, ViewHandle};
 
 /// Maximum length for tooltip text before truncation
@@ -93,6 +96,18 @@ pub struct ItemProps<'a> {
     pub is_share_dialog_open: bool,
     pub list_position_id: &'a str,
     pub tooltip_opens_right: bool,
+    /// GH8642: when `true`, this row is currently in inline-rename mode and the
+    /// title `Text` is replaced by [`Self::rename_editor`]. Click-to-open and
+    /// the kebab/tooltip overlays are suppressed while renaming so the editor
+    /// owns the row's interaction.
+    pub is_renaming: bool,
+    /// GH8642: shared single-line editor used to rename the conversation when
+    /// `is_renaming` is `true`. Only one row can be renaming at a time, and
+    /// its commit/cancel logic lives in `ConversationListView` (see
+    /// `handle_rename_editor_event`). The handle is always passed in (never
+    /// `Option`) so the editor's `MouseStateHandle`s and event subscriptions
+    /// stay stable across the renaming-state flip.
+    pub rename_editor: &'a ViewHandle<EditorView>,
 }
 
 pub struct StaticItemProps<'a> {
@@ -182,6 +197,8 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         is_share_dialog_open,
         list_position_id,
         tooltip_opens_right,
+        is_renaming,
+        rename_editor,
     } = props;
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
@@ -190,27 +207,45 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
     let font_size = appearance.ui_font_size();
 
     let title_font_size = font_size + 2.;
-    let mut title_text = Text::new_inline(
-        conversation.display.title.clone(),
-        font_family,
-        title_font_size,
-    )
-    .with_color(theme.main_text_color(theme.background()).into());
 
-    if let Some(indices) = highlight_indices {
-        if !indices.is_empty() {
-            let highlight = Highlight::new()
-                .with_properties(Properties::default().weight(Weight::Bold))
-                .with_text_style(
-                    TextStyle::new()
-                        .with_foreground_color(theme.main_text_color(theme.background()).into())
-                        .with_background_color(
-                            internal_colors::accent_overlay_3(theme).into_solid(),
-                        ),
-                );
-            title_text = title_text.with_single_highlight(highlight, indices.clone());
+    // GH8642: when the row is renaming, swap the title `Text` for a
+    // `TextInput` wrapping the shared rename editor. We keep the same icon +
+    // bottom row (subtext / timestamp) so the layout doesn't reflow during the
+    // state flip; only the title slot changes.
+    let title_slot: Box<dyn Element> = if is_renaming {
+        TextInput::new(
+            rename_editor.clone(),
+            UiComponentStyles::default()
+                .set_background(Fill::None)
+                .set_border_radius(CornerRadius::with_all(Radius::Pixels(0.)))
+                .set_border_width(0.),
+        )
+        .build()
+        .finish()
+    } else {
+        let mut title_text = Text::new_inline(
+            conversation.display.title.clone(),
+            font_family,
+            title_font_size,
+        )
+        .with_color(theme.main_text_color(theme.background()).into());
+
+        if let Some(indices) = highlight_indices {
+            if !indices.is_empty() {
+                let highlight = Highlight::new()
+                    .with_properties(Properties::default().weight(Weight::Bold))
+                    .with_text_style(
+                        TextStyle::new()
+                            .with_foreground_color(theme.main_text_color(theme.background()).into())
+                            .with_background_color(
+                                internal_colors::accent_overlay_3(theme).into_solid(),
+                            ),
+                    );
+                title_text = title_text.with_single_highlight(highlight, indices.clone());
+            }
         }
-    }
+        title_text.finish()
+    };
 
     let status_element_size = font_size + STATUS_ELEMENT_PADDING * 2.;
     let icon_element = render_icon_with_status(
@@ -227,7 +262,7 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(ICON_SPACING)
             .with_child(icon_element)
-            .with_child(Shrinkable::new(1.0, title_text.finish()).finish())
+            .with_child(Shrinkable::new(1.0, title_slot).finish())
             .finish(),
     )
     .finish();
@@ -282,6 +317,10 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
     let can_open = conversation.capabilities.can_open;
     let tooltip_text = truncate_from_end(&conversation.display.title, MAX_TOOLTIP_LENGTH);
     let overflow_button_state = state.overflow_button_state.clone();
+    // GH8642: while a row is renaming we suppress the kebab + tooltip overlays
+    // so the editor isn't covered by floating chrome. Captured up-front so the
+    // closure can `move` it without re-borrowing `is_renaming`.
+    let suppress_overlays = is_renaming;
     let hoverable = Hoverable::new(state.mouse_state.clone(), move |_| {
         let container = Container::new(row)
             .with_horizontal_padding(12.)
@@ -298,7 +337,9 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         let mut stack = Stack::new().with_child(container.finish());
 
         // We show the overflow menu button when the item is selected, or the overflow menu is already open.
-        if is_selected || !matches!(overflow_menu_display, OverflowMenuDisplay::Closed) {
+        if !suppress_overlays
+            && (is_selected || !matches!(overflow_menu_display, OverflowMenuDisplay::Closed))
+        {
             let button_style = UiComponentStyles::default()
                 .set_background(theme.surface_2().into())
                 .set_border_color(theme.surface_3().into());
@@ -337,7 +378,10 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         }
 
         // Hide the tooltip when the overflow menu is being shown so that they don't overlap.
-        if is_selected && matches!(overflow_menu_display, OverflowMenuDisplay::Closed) {
+        if !suppress_overlays
+            && is_selected
+            && matches!(overflow_menu_display, OverflowMenuDisplay::Closed)
+        {
             let tooltip = ui_builder.tool_tip(tooltip_text).build().finish();
             let (parent_anchor, child_anchor, offset_x) = if tooltip_opens_right {
                 (ParentAnchor::MiddleRight, ChildAnchor::MiddleLeft, 4.)
@@ -371,7 +415,33 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
     })
     .with_defer_events_to_children();
 
-    let hoverable_element = if can_open {
+    // GH8642: double-click on the row title region begins inline rename, but
+    // only for non-task, non-shared-viewer rows. Tasks are filtered out below
+    // by checking the id variant. Shared-viewer state is enforced view-side in
+    // `ConversationListView::start_rename` (defense in depth).
+    let allow_rename = matches!(conversation_id, AgentConversationEntryId::Conversation(_));
+    let rename_dispatch_id = match conversation_id {
+        AgentConversationEntryId::Conversation(id) => Some(id),
+        AgentConversationEntryId::AmbientRun(_) => None,
+    };
+    let hoverable = if allow_rename && !is_renaming {
+        if let Some(ai_conversation_id) = rename_dispatch_id {
+            hoverable.on_double_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(ConversationListViewAction::RenameConversation {
+                    conversation_id: ai_conversation_id,
+                });
+            })
+        } else {
+            hoverable
+        }
+    } else {
+        hoverable
+    };
+
+    // While renaming, the row's primary affordance is the editor itself.
+    // Suppress the row-wide click-to-open so a stray click in the editor's
+    // bounds doesn't navigate away mid-edit.
+    let hoverable_element = if can_open && !is_renaming {
         hoverable
             .with_cursor(Cursor::PointingHand)
             .on_click(move |ctx, _, _| {
