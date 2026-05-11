@@ -264,7 +264,7 @@ impl AuthSecretFtuxView {
         let mut editors = Vec::with_capacity(info.fields.len());
         for (field_idx, field) in info.fields.iter().enumerate() {
             let placeholder = field.placeholder.unwrap_or(field.label);
-            let editor = make_single_line_editor(Some(placeholder), !field.optional, ctx);
+            let editor = make_single_line_editor(Some(placeholder), field.sensitive, ctx);
             let editor_index = field_idx + 1;
             ctx.subscribe_to_view(&editor, move |me, _, event, ctx| {
                 me.handle_form_editor_nav(editor_index, event, ctx);
