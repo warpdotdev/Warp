@@ -36,7 +36,8 @@ use warpui::{
         ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
         Fill, Flex, Icon, MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor,
         ParentElement, PositionedElementOffsetBounds, PositioningAxis, Radius, ScrollStateHandle,
-        Scrollable, ScrollableElement, ScrollbarWidth, Stack, XAxisAnchor, YAxisAnchor,
+        ScrollTarget, ScrollToPositionMode, Scrollable, ScrollableElement, ScrollbarWidth, Stack,
+        XAxisAnchor, YAxisAnchor,
     },
     event::ModifiersState,
     fonts::{FallbackFontEvent, FallbackFontModel},
@@ -2738,6 +2739,17 @@ impl View for RichTextEditorView {
                     Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
                 col.add_child(header);
                 col.add_child(rich_text);
+                // The ClippedScrollable doesn't auto-follow the cursor
+                // like the normal Scrollable+ScrollableElement path does.
+                // Request a scroll-to-cursor on every render so the cursor
+                // stays visible after edits and cursor movements.
+                if focused {
+                    let cursor_id = render_state.as_ref(app).saved_positions().cursor_id();
+                    self.clipped_scroll_state.scroll_to_position(ScrollTarget {
+                        position_id: cursor_id,
+                        mode: ScrollToPositionMode::FullyIntoView,
+                    });
+                }
                 ClippedScrollable::vertical(
                     self.clipped_scroll_state.clone(),
                     col.finish(),
