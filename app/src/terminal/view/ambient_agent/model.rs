@@ -143,8 +143,6 @@ pub(crate) struct PendingHandoff {
     /// stashed here so `maybe_auto_submit_handoff` can consume it once
     /// the touched workspace and snapshot upload have settled.
     pub(crate) auto_submit: Option<PendingCloudLaunch>,
-    /// Explicit source environment selection. When set, touched-repo overlap must not override it.
-    pub(crate) explicit_environment_id: Option<SyncId>,
 }
 
 /// Status of the ambient agent run.
@@ -548,14 +546,7 @@ impl AmbientAgentViewModel {
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
     }
 
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    pub(crate) fn pending_handoff_has_explicit_environment(&self) -> bool {
-        self.pending_handoff
-            .as_ref()
-            .is_some_and(|handoff| handoff.explicit_environment_id.is_some())
-    }
-
-    /// Records the outcome of the async snapshot upload. The standard success
+    /// Records the outcome of the async snapshot upload.
     /// case is `Uploaded(token)`; `SkippedEmptyWorkspace` when the workspace
     /// had nothing to upload; `Failed` is set by `record_handoff_snapshot_upload_failed`.
     /// No-op when no handoff context is set.

@@ -3701,7 +3701,7 @@ impl Input {
     pub(crate) fn restore_cloud_handoff_draft(
         &mut self,
         launch: PendingCloudLaunch,
-        explicit_environment_id: Option<SyncId>,
+        environment_id: Option<SyncId>,
         ctx: &mut ViewContext<Self>,
     ) {
         self.activate_cloud_handoff_compose(ctx);
@@ -3713,7 +3713,7 @@ impl Input {
                 model.append_pending_attachments(vec![attachment], ctx);
             }
         });
-        if let Some(env_id) = explicit_environment_id {
+        if let Some(env_id) = environment_id {
             self.handoff_compose_state.update(ctx, |state, ctx| {
                 state.set_environment_id(Some(env_id), true, ctx);
             });
@@ -3990,10 +3990,11 @@ impl Input {
         }
 
         let attachments = self.collect_cloud_launch_attachments(ctx);
-        let explicit_environment_id = self
+        let environment_id = self
             .handoff_compose_state
             .as_ref(ctx)
-            .explicit_environment_id();
+            .selected_environment_id()
+            .cloned();
         let launch = PendingCloudLaunch {
             prompt,
             attachments,
@@ -4003,7 +4004,7 @@ impl Input {
 
         ctx.dispatch_typed_action_deferred(WorkspaceAction::OpenLocalToCloudHandoffPane {
             launch: Some(launch),
-            explicit_environment_id,
+            environment_id,
         });
         true
     }

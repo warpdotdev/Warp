@@ -495,7 +495,7 @@ pub enum WorkspaceAction {
         launch: Option<crate::ai::blocklist::handoff::PendingCloudLaunch>,
         #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
         launch: Option<()>,
-        explicit_environment_id: Option<crate::server::ids::SyncId>,
+        environment_id: Option<crate::server::ids::SyncId>,
     },
     /// Show the environment creation modal during `&` handoff compose when no
     /// environments exist.

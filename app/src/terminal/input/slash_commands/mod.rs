@@ -915,7 +915,7 @@ impl Input {
                     ctx.dispatch_typed_action_deferred(
                         WorkspaceAction::OpenLocalToCloudHandoffPane {
                             launch: Some(launch),
-                            explicit_environment_id: None,
+                            environment_id: None,
                         },
                     );
                 } else {
