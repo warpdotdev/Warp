@@ -1362,7 +1362,10 @@ fn launch_local_harness_child(
     ctx: &mut ViewContext<PaneGroup>,
 ) {
     let startup_directory = group.startup_path_for_new_session(Some(terminal_pane_id), ctx);
-    let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
+    let server_api_provider = ServerApiProvider::handle(ctx);
+    let server_api = server_api_provider.as_ref(ctx);
+    let ai_client = server_api.get_ai_client();
+    let harness_support_client = server_api.get_harness_support_client();
     let request_id = request.id;
     let request_name = request.name.clone();
     let parent_conversation_id = request.parent_conversation_id;
@@ -1384,6 +1387,7 @@ fn launch_local_harness_child(
                 shell_type,
                 startup_directory,
                 ai_client,
+                harness_support_client,
             )
             .await
         },
@@ -1394,6 +1398,7 @@ fn launch_local_harness_child(
                     env_vars,
                     run_id,
                     task_id,
+                    local_claude_harness_metadata,
                 } = launch;
                 if let Some(HiddenChildAgentConversation {
                     terminal_view: new_terminal_view,
@@ -1430,6 +1435,14 @@ fn launch_local_harness_child(
                             terminal_view_id,
                             ctx,
                         );
+                        if let Some(metadata) = local_claude_harness_metadata {
+                            history_model.set_local_claude_harness_metadata_for_conversation(
+                                conversation_id,
+                                metadata,
+                                terminal_view_id,
+                                ctx,
+                            );
+                        }
                     });
 
                     register_legacy_local_lifecycle_subscription(

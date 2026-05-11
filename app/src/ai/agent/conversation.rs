@@ -22,7 +22,7 @@ use chrono::{DateTime, Local, TimeZone};
 use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, path::PathBuf};
 use warp_cli::agent::Harness;
 
 use super::task_store::TaskStore;
@@ -119,6 +119,16 @@ pub enum RestoreConversationError {
 #[derive(thiserror::Error, Debug)]
 #[error("Subagent task not found")]
 pub struct SubagentTaskNotFound;
+/// Metadata needed to persist and update the transcript for a local Claude child harness.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalClaudeHarnessMetadata {
+    /// Harness-support external conversation id that owns the Claude transcript blob.
+    pub conversation_id: AIConversationId,
+    /// Claude Code session UUID passed to `claude --session-id` / `claude --resume`.
+    pub session_id: Uuid,
+    /// Local working directory used for Claude's transcript layout.
+    pub working_dir: PathBuf,
+}
 
 /// An Agent Mode conversation.
 #[derive(Debug, Clone)]
@@ -228,6 +238,11 @@ pub struct AIConversation {
     /// reporting. TaskStatusSyncModel skips status updates for these.
     is_remote_child: bool,
 
+    /// Metadata for direct local Claude child harness panes. The external
+    /// conversation id is also mirrored into `server_conversation_token` so it
+    /// round-trips through existing conversation persistence/indexing.
+    local_claude_harness_metadata: Option<LocalClaudeHarnessMetadata>,
+
     /// The last event sequence number observed from the v2 orchestration
     /// event log. Used on restore to resume event delivery without
     /// re-delivering already-processed events.
@@ -288,6 +303,7 @@ impl AIConversation {
             orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
+            local_claude_harness_metadata: None,
             last_event_sequence: None,
             orchestration_config: None,
             orchestration_status: OrchestrationConfigStatus::default(),
@@ -372,6 +388,7 @@ impl AIConversation {
             parent_conversation_id,
             is_remote_child,
             run_id,
+            local_claude_harness_metadata,
             autoexecute_override,
             last_event_sequence,
         ) = if let Some(data) = conversation_data {
@@ -399,6 +416,11 @@ impl AIConversation {
                 .and_then(|id| AIConversationId::try_from(id).ok());
             let is_remote_child = data.is_remote_child;
             let run_id = data.run_id;
+            let local_claude_harness_metadata = local_claude_harness_metadata_from_persisted(
+                server_conversation_token.as_ref(),
+                data.local_claude_session_id.as_deref(),
+                data.local_claude_working_dir.as_deref(),
+            );
             let autoexecute_override = if FeatureFlag::RememberFastForwardState.is_enabled() {
                 data.autoexecute_override
                     .map(Into::into)
@@ -420,6 +442,7 @@ impl AIConversation {
                 parent_conversation_id,
                 is_remote_child,
                 run_id,
+                local_claude_harness_metadata,
                 autoexecute_override,
                 last_event_sequence,
             )
@@ -435,6 +458,7 @@ impl AIConversation {
                 None,
                 None,
                 false,
+                None,
                 None,
                 AIConversationAutoexecuteMode::default(),
                 None,
@@ -481,6 +505,7 @@ impl AIConversation {
             orchestration_harness_type,
             parent_conversation_id,
             is_remote_child,
+            local_claude_harness_metadata,
             last_event_sequence,
             orchestration_config: None,
             orchestration_status: OrchestrationConfigStatus::default(),
@@ -776,6 +801,17 @@ impl AIConversation {
     /// This should only be called by session sharing viewer logic when linking forked conversations.
     pub(crate) fn set_server_conversation_token(&mut self, token: String) {
         self.server_conversation_token = Some(ServerConversationToken::new(token));
+    }
+
+    pub fn local_claude_harness_metadata(&self) -> Option<&LocalClaudeHarnessMetadata> {
+        self.local_claude_harness_metadata.as_ref()
+    }
+
+    pub fn set_local_claude_harness_metadata(&mut self, metadata: LocalClaudeHarnessMetadata) {
+        self.server_conversation_token = Some(ServerConversationToken::new(
+            metadata.conversation_id.to_string(),
+        ));
+        self.local_claude_harness_metadata = Some(metadata);
     }
 
     pub fn forked_from_server_conversation_token(&self) -> Option<&ServerConversationToken> {
@@ -2940,6 +2976,14 @@ impl AIConversation {
                 parent_conversation_id: self.parent_conversation_id.map(|id| id.to_string()),
                 is_remote_child: self.is_remote_child,
                 run_id: self.task_id.map(|id| id.to_string()),
+                local_claude_session_id: self
+                    .local_claude_harness_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.session_id.to_string()),
+                local_claude_working_dir: self
+                    .local_claude_harness_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.working_dir.to_string_lossy().to_string()),
                 autoexecute_override: Some(self.autoexecute_override.into()),
                 last_event_sequence: self.last_event_sequence,
             },
@@ -3439,6 +3483,26 @@ fn parse_orchestration_harness_type(value: &str) -> Harness {
     Harness::from_config_name(value)
         .or_else(|| Harness::parse_orchestration_harness(value))
         .unwrap_or(Harness::Unknown)
+}
+
+fn local_claude_harness_metadata_from_persisted(
+    server_conversation_token: Option<&ServerConversationToken>,
+    session_id: Option<&str>,
+    working_dir: Option<&str>,
+) -> Option<LocalClaudeHarnessMetadata> {
+    let conversation_id = server_conversation_token
+        .and_then(|token| AIConversationId::try_from(token.as_str().to_string()).ok())?;
+    let session_id = session_id.and_then(|id| Uuid::try_parse(id).ok())?;
+    let working_dir = working_dir
+        .map(str::trim)
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)?;
+
+    Some(LocalClaudeHarnessMetadata {
+        conversation_id,
+        session_id,
+        working_dir,
+    })
 }
 pub(super) fn update_todo_list_from_todo_op(
     todo_lists: &mut Vec<AIAgentTodoList>,

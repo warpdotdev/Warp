@@ -147,7 +147,7 @@ impl ThirdPartyHarness for ClaudeHarness {
 }
 
 /// Format slug sent to the server when creating a Claude Code conversation.
-const CLAUDE_CODE_FORMAT: &str = "claude_code_cli";
+pub(crate) const CLAUDE_CODE_FORMAT: &str = "claude_code_cli";
 /// Command used to exit claude.
 const CLAUDE_EXIT_COMMAND: &str = "/exit";
 
@@ -522,7 +522,7 @@ impl HarnessRunner for ClaudeHarnessRunner {
                 conversation_id,
                 block_id,
             ),
-            upload_transcript(
+            upload_claude_transcript(
                 client,
                 conversation_id,
                 session_id,
@@ -547,7 +547,7 @@ impl HarnessRunner for ClaudeHarnessRunner {
 }
 
 /// Upload the Claude Code session transcript to the server.
-async fn upload_transcript(
+pub(crate) async fn upload_claude_transcript(
     client: &dyn HarnessSupportClient,
     conversation_id: AIConversationId,
     session_id: Uuid,

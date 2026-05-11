@@ -1049,6 +1049,12 @@ pub struct AgentConversationData {
     /// come from SpawnAgentResponse once the local→cloud spawn path is wired.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
+    /// Claude Code session UUID for a local Claude child harness conversation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_claude_session_id: Option<String>,
+    /// Working directory for a local Claude child harness conversation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_claude_working_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub autoexecute_override: Option<PersistedAutoexecuteMode>,
     /// The last event sequence number from the v2 orchestration event log
@@ -1365,6 +1371,8 @@ mod tests {
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
+            local_claude_session_id: None,
+            local_claude_working_dir: None,
             autoexecute_override: None,
             last_event_sequence: Some(42),
         };
@@ -1400,12 +1408,45 @@ mod tests {
             parent_conversation_id: None,
             is_remote_child: true,
             run_id: None,
+            local_claude_session_id: None,
+            local_claude_working_dir: None,
             autoexecute_override: None,
             last_event_sequence: None,
         };
         let json = serde_json::to_string(&data).expect("serialize");
         let roundtripped: AgentConversationData = serde_json::from_str(&json).expect("deserialize");
         assert!(roundtripped.is_remote_child);
+    }
+    #[test]
+    fn agent_conversation_data_roundtrips_local_claude_child_metadata() {
+        let data = AgentConversationData {
+            server_conversation_token: Some("conversation-id".to_string()),
+            conversation_usage_metadata: None,
+            reverted_action_ids: None,
+            forked_from_server_conversation_token: None,
+            artifacts_json: None,
+            parent_agent_id: None,
+            agent_name: None,
+            orchestration_harness_type: Some("claude".to_string()),
+            parent_conversation_id: None,
+            is_remote_child: false,
+            run_id: None,
+            local_claude_session_id: Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
+            local_claude_working_dir: Some("/tmp/local-claude-child".to_string()),
+            autoexecute_override: None,
+            last_event_sequence: None,
+        };
+        let json = serde_json::to_string(&data).expect("serialize");
+        let roundtripped: AgentConversationData = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(
+            roundtripped.local_claude_session_id.as_deref(),
+            Some("550e8400-e29b-41d4-a716-446655440000")
+        );
+        assert_eq!(
+            roundtripped.local_claude_working_dir.as_deref(),
+            Some("/tmp/local-claude-child")
+        );
     }
 
     #[test]
@@ -1416,6 +1457,8 @@ mod tests {
         let data: AgentConversationData =
             serde_json::from_str(legacy_json).expect("legacy rows must deserialize");
         assert_eq!(data.last_event_sequence, None);
+        assert_eq!(data.local_claude_session_id, None);
+        assert_eq!(data.local_claude_working_dir, None);
         assert_eq!(data.orchestration_harness_type, None);
         assert!(!data.is_remote_child);
     }
@@ -1434,12 +1477,22 @@ mod tests {
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
+            local_claude_session_id: None,
+            local_claude_working_dir: None,
             autoexecute_override: None,
             last_event_sequence: None,
         };
         let json = serde_json::to_string(&data).expect("serialize");
         assert!(
             !json.contains("last_event_sequence"),
+            "None should be skipped in serialized output: {json}"
+        );
+        assert!(
+            !json.contains("local_claude_session_id"),
+            "None should be skipped in serialized output: {json}"
+        );
+        assert!(
+            !json.contains("local_claude_working_dir"),
             "None should be skipped in serialized output: {json}"
         );
     }

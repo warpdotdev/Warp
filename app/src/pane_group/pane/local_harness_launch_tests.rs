@@ -8,9 +8,13 @@ use super::{
     build_local_opencode_child_command, local_child_task_config, normalize_local_child_harness,
     prepare_local_harness_child_launch, validate_local_harness_shell,
 };
+use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent_sdk::driver::harness::claude_code::CLAUDE_CODE_FORMAT;
 use crate::ai::ambient_agents::task::HarnessConfig;
 use crate::server::server_api::ai::MockAIClient;
+use crate::server::server_api::harness_support::MockHarnessSupportClient;
 use crate::terminal::shell::ShellType;
+use uuid::Uuid;
 
 struct EnvVarGuard {
     key: &'static str,
@@ -123,10 +127,13 @@ fn validate_local_harness_shell_rejects_unsupported_shells() {
 
 #[test]
 fn build_local_claude_child_command_quotes_the_prompt() {
-    let command = build_local_claude_child_command("hello world");
+    let session_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440001").unwrap();
+    let command = build_local_claude_child_command("hello world", session_id);
 
-    assert!(command.starts_with("claude --session-id "));
-    assert!(command.ends_with(" --dangerously-skip-permissions 'hello world'"));
+    assert_eq!(
+        command,
+        format!("claude --session-id {session_id} --dangerously-skip-permissions 'hello world'")
+    );
 }
 
 #[test]
@@ -183,6 +190,7 @@ async fn prepare_local_codex_child_launch_does_not_rewrite_global_codex_state() 
         Some(ShellType::Zsh),
         Some(working_dir),
         Arc::new(ai_client),
+        Arc::new(MockHarnessSupportClient::new()),
     )
     .await
     .unwrap();
@@ -191,5 +199,77 @@ async fn prepare_local_codex_child_launch_does_not_rewrite_global_codex_state() 
         prepared.command,
         "codex --dangerously-bypass-approvals-and-sandbox 'hello world'"
     );
+    assert!(prepared.local_claude_harness_metadata.is_none());
     assert!(!fake_home.path().join(".codex").exists());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn prepare_local_claude_child_launch_creates_and_links_external_conversation() {
+    let fake_home = TempDir::new().unwrap();
+    let fake_bin_dir = TempDir::new().unwrap();
+    let working_dir = fake_home.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+    write_fake_cli(fake_bin_dir.path(), "claude");
+
+    let _home = EnvVarGuard::set("HOME", fake_home.path().as_os_str().to_os_string());
+    let _path = EnvVarGuard::set("PATH", fake_bin_dir.path().as_os_str().to_os_string());
+
+    let conversation_id =
+        AIConversationId::try_from("550e8400-e29b-41d4-a716-446655440001".to_string()).unwrap();
+    let task_id = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
+    let mut harness_support_client = MockHarnessSupportClient::new();
+    harness_support_client
+        .expect_create_external_conversation()
+        .times(1)
+        .returning(move |format| {
+            assert_eq!(format, CLAUDE_CODE_FORMAT);
+            Ok(conversation_id)
+        });
+
+    let mut ai_client = MockAIClient::new();
+    ai_client.expect_create_agent_task().times(1).returning(
+        move |prompt, environment_uid, parent_run_id, config| {
+            assert_eq!(prompt, "hello world");
+            assert_eq!(environment_uid, None);
+            assert_eq!(parent_run_id.as_deref(), Some("parent-run"));
+            assert_eq!(
+                config.and_then(|config| config.harness),
+                Some(HarnessConfig::from_harness_type(Harness::Claude))
+            );
+            Ok(task_id)
+        },
+    );
+    ai_client.expect_update_agent_task().times(1).returning(
+        move |updated_task_id, task_state, session_id, linked_conversation_id, status_message| {
+            assert_eq!(updated_task_id, task_id);
+            assert!(task_state.is_none());
+            assert!(session_id.is_none());
+            assert_eq!(linked_conversation_id, Some(conversation_id.to_string()));
+            assert!(status_message.is_none());
+            Ok(())
+        },
+    );
+
+    let prepared = prepare_local_harness_child_launch(
+        "hello world".to_string(),
+        "claude".to_string(),
+        Some("parent-run".to_string()),
+        Some(ShellType::Zsh),
+        Some(working_dir.clone()),
+        Arc::new(ai_client),
+        Arc::new(harness_support_client),
+    )
+    .await
+    .unwrap();
+
+    let metadata = prepared.local_claude_harness_metadata.as_ref().unwrap();
+    assert_eq!(metadata.conversation_id, conversation_id);
+    assert_eq!(metadata.working_dir, working_dir);
+    assert!(prepared.command.contains(&format!(
+        "claude --session-id {} --dangerously-skip-permissions",
+        metadata.session_id
+    )));
+    assert_eq!(prepared.task_id, task_id);
+    assert_eq!(prepared.run_id, task_id.to_string());
 }

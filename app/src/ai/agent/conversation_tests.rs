@@ -144,6 +144,33 @@ fn restored_conversation_uses_persisted_remote_child_marker() {
 }
 
 #[test]
+fn restored_conversation_uses_persisted_local_claude_harness_metadata() {
+    let conversation_id = "550e8400-e29b-41d4-a716-446655440001";
+    let session_id = "550e8400-e29b-41d4-a716-446655440000";
+    let conversation_data: AgentConversationData = serde_json::from_str(
+        r#"{
+            "server_conversation_token":"550e8400-e29b-41d4-a716-446655440001",
+            "local_claude_session_id":"550e8400-e29b-41d4-a716-446655440000",
+            "local_claude_working_dir":"/tmp/local-claude-child"
+        }"#,
+    )
+    .unwrap();
+
+    let conversation = restored_conversation(Some(conversation_data));
+    let metadata = conversation.local_claude_harness_metadata().unwrap();
+
+    assert_eq!(
+        metadata.conversation_id,
+        AIConversationId::try_from(conversation_id.to_string()).unwrap()
+    );
+    assert_eq!(metadata.session_id.to_string(), session_id);
+    assert_eq!(
+        metadata.working_dir,
+        std::path::PathBuf::from("/tmp/local-claude-child")
+    );
+}
+
+#[test]
 fn child_conversation_detection_uses_parent_agent_id() {
     let conversation_data: AgentConversationData = serde_json::from_str(
         r#"{"server_conversation_token":null,"parent_agent_id":"parent-run-id"}"#,

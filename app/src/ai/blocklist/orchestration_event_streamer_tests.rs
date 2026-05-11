@@ -145,6 +145,8 @@ fn ai_conversation_new_restored_preserves_last_event_sequence() {
         parent_conversation_id: None,
         is_remote_child: false,
         run_id: None,
+        local_claude_session_id: None,
+        local_claude_working_dir: None,
         autoexecute_override: None,
         last_event_sequence: Some(42),
     };

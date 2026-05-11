@@ -85,6 +85,8 @@ pub fn convert_conversation_data_to_ai_conversation(
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
+            local_claude_session_id: None,
+            local_claude_working_dir: None,
             autoexecute_override: None,
             last_event_sequence: None,
         },
@@ -106,6 +108,8 @@ pub fn convert_conversation_data_to_ai_conversation(
             // were spawned via the server API, the run_id is created at task
             // dispatch time; adding it here would avoid a round-trip to StreamInit.
             run_id: None,
+            local_claude_session_id: None,
+            local_claude_working_dir: None,
             autoexecute_override: None,
             last_event_sequence: None,
         },
