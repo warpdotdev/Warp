@@ -21,18 +21,6 @@ use warpui::r#async::executor;
 use crate::client::{ClientEvent, RemoteServerClient};
 use crate::manager::RemoteServerExitStatus;
 use crate::setup::{PreinstallCheckResult, RemotePlatform};
-use serde::Serialize;
-
-/// How the remote server binary was installed. Used for telemetry to
-/// distinguish direct remote downloads from client-side SCP uploads.
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InstallSource {
-    /// The remote host downloaded the binary directly from the CDN.
-    Server,
-    /// The client downloaded the binary locally and uploaded it via SCP.
-    Client,
-}
 
 /// Structured error for user-facing display in the SSH remote-server
 /// failed banner. Separates the always-visible body from an optional set of
@@ -222,9 +210,9 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// ([`RemoteServerManager::install_binary`]) is responsible for emitting
     /// [`SetupStateChanged`] and [`BinaryInstallComplete`].
     ///
-    /// Returns `Ok(method)` with the [`InstallSource`] used on success,
-    /// and `Err(_)` if the install failed (e.g. timeout or script error).
-    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<InstallSource, Error>> + Send>>;
+    /// Returns `Ok(())` if the install succeeded, and
+    /// `Err(_)` if the install failed (e.g. timeout or script error).
+    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
 
     /// Establish a new connection to the remote server.
     ///
