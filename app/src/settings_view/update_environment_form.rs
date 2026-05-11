@@ -2052,7 +2052,7 @@ impl UpdateEnvironmentForm {
             .finish();
         field.add_child(
             ConstrainedBox::new(row)
-                .with_width(DROPDOWN_MAX_WIDTH)
+                .with_max_width(DROPDOWN_MAX_WIDTH)
                 .finish(),
         );
         field.finish()
