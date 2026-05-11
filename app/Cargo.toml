@@ -467,7 +467,6 @@ default = [
     "agent_mode",
     "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",
-    "settings_import",
     "shared_with_me",
     "block_toolbelt_save_as_workflow",
     "session_sharing_acls",
@@ -756,7 +755,6 @@ richtext_multiselect = []
 runtime_feature_flags = []
 selectable_prompt = []
 settings_file = []
-settings_import = []
 sequential_storage = []
 session_sharing = []
 session_sharing_acls = []

@@ -5445,7 +5445,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::SettingsImportConfigFocused
             | Self::SettingsImportConfigParsed
             | Self::SettingsImportResetButtonClicked
-            | Self::ITermMultipleHotkeys => EnablementState::Flag(FeatureFlag::SettingsImport),
+            | Self::ITermMultipleHotkeys => EnablementState::Always,
             Self::ToggleIntelligentAutosuggestionsSetting | Self::AgentModePrediction => {
                 EnablementState::Always
             }
