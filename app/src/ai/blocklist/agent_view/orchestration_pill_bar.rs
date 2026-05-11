@@ -24,7 +24,9 @@ use warpui::elements::{
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::{Cursor, LineStyle};
-use warpui::text_layout::{ClipConfig, ClipDirection, ClipStyle, StyleAndFont, TextStyle, DEFAULT_TOP_BOTTOM_RATIO};
+use warpui::text_layout::{
+    ClipConfig, ClipDirection, ClipStyle, StyleAndFont, TextStyle, DEFAULT_TOP_BOTTOM_RATIO,
+};
 use warpui::{
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
