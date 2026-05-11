@@ -7,6 +7,14 @@ use warp_multi_agent_api as api;
 use super::get_supported_tools;
 
 fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool) -> RequestParams {
+    request_params(ask_user_question_enabled, 0.0, false)
+}
+
+fn request_params(
+    ask_user_question_enabled: bool,
+    context_window_usage: f32,
+    was_summarized: bool,
+) -> RequestParams {
     let model = LLMId::from("test-model");
 
     RequestParams {
@@ -25,6 +33,8 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         is_memory_enabled: false,
         warp_drive_context_enabled: false,
         context_window_limit: None,
+        context_window_usage,
+        was_summarized,
         mcp_context: None,
         planning_enabled: true,
         should_redact_secrets: false,
@@ -79,4 +89,28 @@ fn supported_tools_omit_upload_artifact_when_feature_flag_is_disabled() {
     let supported_tools = get_supported_tools(&params);
 
     assert!(!supported_tools.contains(&api::ToolType::UploadFileArtifact));
+}
+
+#[test]
+fn supported_tools_omit_suggest_new_conversation_before_context_threshold() {
+    let params = request_params(false, 0.49, false);
+    let supported_tools = get_supported_tools(&params);
+
+    assert!(!supported_tools.contains(&api::ToolType::SuggestNewConversation));
+}
+
+#[test]
+fn supported_tools_include_suggest_new_conversation_at_context_threshold() {
+    let params = request_params(false, 0.5, false);
+    let supported_tools = get_supported_tools(&params);
+
+    assert!(supported_tools.contains(&api::ToolType::SuggestNewConversation));
+}
+
+#[test]
+fn supported_tools_include_suggest_new_conversation_after_summarization() {
+    let params = request_params(false, 0.0, true);
+    let supported_tools = get_supported_tools(&params);
+
+    assert!(supported_tools.contains(&api::ToolType::SuggestNewConversation));
 }

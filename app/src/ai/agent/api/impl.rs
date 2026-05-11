@@ -9,6 +9,8 @@ use crate::server::server_api::ServerApi;
 
 use super::{convert_to::convert_input, ConvertToAPITypeError, RequestParams, ResponseStream};
 
+const SUGGEST_NEW_CONVERSATION_MIN_CONTEXT_WINDOW_USAGE: f32 = 0.5;
+
 pub async fn generate_multi_agent_output(
     server_api: Arc<ServerApi>,
     mut params: RequestParams,
@@ -160,7 +162,6 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
         api::ToolType::InitProject,
         api::ToolType::OpenCodeReview,
         api::ToolType::RunShellCommand,
-        api::ToolType::SuggestNewConversation,
         api::ToolType::Subagent,
         api::ToolType::WriteToLongRunningShellCommand,
         api::ToolType::ReadShellCommandOutput,
@@ -169,6 +170,10 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
         api::ToolType::EditDocuments,
         api::ToolType::SuggestPrompt,
     ];
+
+    if should_support_suggest_new_conversation(params) {
+        supported_tools.push(api::ToolType::SuggestNewConversation);
+    }
 
     if FeatureFlag::ConversationsAsContext.is_enabled() {
         supported_tools.push(api::ToolType::FetchConversation);
@@ -232,6 +237,11 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
     }
 
     supported_tools
+}
+
+fn should_support_suggest_new_conversation(params: &RequestParams) -> bool {
+    params.was_summarized
+        || params.context_window_usage >= SUGGEST_NEW_CONVERSATION_MIN_CONTEXT_WINDOW_USAGE
 }
 
 fn get_supported_cli_agent_tools(params: &RequestParams) -> Vec<api::ToolType> {

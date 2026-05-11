@@ -1960,6 +1960,8 @@ impl BlocklistAIController {
                     .cloned(),
                 ambient_agent_task_id: self.ambient_agent_task_id,
                 existing_suggestions: None,
+                context_window_usage: conversation.context_window_usage(),
+                was_summarized: conversation.was_summarized(),
             };
             (conversation_id, task_id, conversation_data)
         } else if !matches!(
@@ -1976,6 +1978,8 @@ impl BlocklistAIController {
                 forked_from_conversation_token: None,
                 ambient_agent_task_id: self.ambient_agent_task_id,
                 existing_suggestions: None,
+                context_window_usage: 0.0,
+                was_summarized: false,
             };
             (conversation_id, task_id, conversation_data)
         } else {
@@ -2213,6 +2217,16 @@ impl BlocklistAIController {
                 .as_ref(ctx)
                 .existing_suggestions_for_conversation(conversation_id)
                 .cloned(),
+            context_window_usage: history_model
+                .as_ref(ctx)
+                .conversation(&conversation_id)
+                .map(|conversation| conversation.context_window_usage())
+                .unwrap_or_default(),
+            was_summarized: history_model
+                .as_ref(ctx)
+                .conversation(&conversation_id)
+                .map(|conversation| conversation.was_summarized())
+                .unwrap_or_default(),
         };
 
         // Log an error if tool call results do not have corresponding tool calls in task context

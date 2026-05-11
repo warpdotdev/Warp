@@ -111,6 +111,8 @@ pub struct RequestParams {
     pub is_memory_enabled: bool,
     pub warp_drive_context_enabled: bool,
     pub context_window_limit: Option<u32>,
+    pub context_window_usage: f32,
+    pub was_summarized: bool,
     pub mcp_context: Option<MCPContext>,
     pub planning_enabled: bool,
     should_redact_secrets: bool,
@@ -151,6 +153,8 @@ pub struct ConversationData {
     pub forked_from_conversation_token: Option<ServerConversationToken>,
     pub ambient_agent_task_id: Option<AmbientAgentTaskId>,
     pub existing_suggestions: Option<Suggestions>,
+    pub context_window_usage: f32,
+    pub was_summarized: bool,
 }
 
 impl RequestParams {
@@ -309,6 +313,8 @@ impl RequestParams {
             tasks: conversation.tasks,
             existing_suggestions: conversation.existing_suggestions,
             context_window_limit,
+            context_window_usage: conversation.context_window_usage,
+            was_summarized: conversation.was_summarized,
             metadata,
             session_context,
             model: request_input.model_id.clone(),
