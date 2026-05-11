@@ -470,8 +470,6 @@ default = [
     "settings_import",
     "shared_with_me",
     "block_toolbelt_save_as_workflow",
-    "remove_alt_screen_padding",
-    "less_horizontal_terminal_padding",
     "session_sharing_acls",
     "external_agent_mode_context",
     "shell_selector",
