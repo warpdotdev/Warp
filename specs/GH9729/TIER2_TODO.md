@@ -128,7 +128,7 @@ Hard rules:
 | t2-9 | EXIF orientation (ICC deferred to t2-9-icc) | `3e694be` | [x] | [x] | [x] |
 | t2-FINAL | presubmit | `611ec2b` | [x] | — | — |
 | t2-10 | sync-`FailedToLoad` rewrite | `af7d5f5` | [x] | [x] | [x] |
-| t2-11 | zoom keys + visual indicator | (see commit msg) | [x] | [ ] | [ ] |
+| t2-11 | zoom keys + visual indicator | `9b51d44` | [x] | [x] | [x] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
@@ -233,6 +233,26 @@ here for an off-loop cleanup pass after the main tier-2 list lands.
   an Orientation=6 tag; (c) Small EXIF-tagged JPEGs now incur one
   extra re-encode round-trip (necessary for correctness — worth a
   code-comment note for future maintainers). — `reviews/tier2-t2-9-r1.md`.
+- **t2-11-r1.** Commit-message claim that `cmdorctrl-=` "covers both
+  `+` and `=` presses" is mechanically wrong. `Keystroke` derives
+  strict `Eq` across all five modifier booleans plus the key, so
+  `cmd-shift-=` (= literal `cmd-+` on a US layout) is a distinct
+  keystroke and won't match `cmdorctrl-=`. Compare
+  `app/src/util/bindings.rs:293` `IncreaseFontSize`, which registers
+  both `cmdorctrl-=` AND `shift-cmdorctrl-+`. The lightbox loses
+  the muscle-memory `cmd-+` zoom-in for the same posture as the
+  workspace-level zoom — defensible (matches `CustomAction::IncreaseZoom`
+  which is `cmdorctrl-=` only) but worth adding the shift variant
+  for keyboard ergonomics parity. — `reviews/tier2-t2-11-r1.md`.
+- **t2-11-r2.** (a) Add `use pathfinder_geometry::vector::Vector2F`
+  at the top of `lightbox_view.rs` so the deep path doesn't repeat
+  in the helper signature + 5 tests. (b) File a t3 follow-up for a
+  view-harness regression test that asserts bare `=`/`-`/`0`
+  keystrokes do NOT fire zoom (mirroring `image_preview_arm_builds_*`
+  at `view_test.rs:3029`) — the dispatch-layer constraint is too
+  easy to silently revert otherwise. (c) Backfill the real SHA
+  `9b51d44` into the tracker — same loop-hygiene pattern as t2-10. —
+  `reviews/tier2-t2-11-r2.md`.
 - **t2-10-r1.** (a) The t2-10 commit message claims `06-mislabeled.png`
   hits the synchronous-`FailedToLoad` path on the *first* `load_asset`
   call. R1 verified against `crates/warpui_core/src/assets/asset_cache.rs:320-326`
