@@ -2672,6 +2672,10 @@ impl View for RichTextEditorView {
         // children unconstrained height, so FillMaxHeight would expand to
         // infinity. Use GrowToMaxHeight instead so the element reports its
         // actual content height.
+        //
+        // NOTE: this override is coupled to the scroll-header layout below.
+        // If a future caller sets a custom VerticalExpansionBehavior AND
+        // uses scroll_header_view, this override will silently replace it.
         let vertical_expansion_behavior = if self.scroll_header_view.is_some() {
             VerticalExpansionBehavior::GrowToMaxHeight
         } else {
@@ -2708,14 +2712,20 @@ impl View for RichTextEditorView {
         // to propagate to the parent (used for embedded editors like comment chips).
         // When a scroll header is set, wrap it together with the rich text
         // in a column so both scroll as a single unit.
-        let main_content: Box<dyn Element> = match (self.disable_scrolling, self.scroll_header_view)
+        //
+        // ChildView::<Self> uses a phantom type parameter — the actual view
+        // (e.g. OrchestrationConfigBlockView) is resolved at runtime by
+        // entity ID, so the `Self` here is irrelevant.
+        let header_element = self.scroll_header_view.map(|header_id| {
+            Container::new(ChildView::<Self>::with_id(header_id).finish())
+                .with_horizontal_padding(8.)
+                .with_padding_top(8.)
+                .with_padding_bottom(12.)
+                .finish()
+        });
+        let main_content: Box<dyn Element> = match (self.disable_scrolling, header_element)
         {
-            (true, Some(header_id)) => {
-                let header = Container::new(ChildView::<Self>::with_id(header_id).finish())
-                    .with_horizontal_padding(8.)
-                    .with_padding_top(8.)
-                    .with_padding_bottom(12.)
-                    .finish();
+            (true, Some(header)) => {
                 let mut col =
                     Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
                 col.add_child(header);
@@ -2723,12 +2733,7 @@ impl View for RichTextEditorView {
                 col.finish()
             }
             (true, None) => rich_text,
-            (false, Some(header_id)) => {
-                let header = Container::new(ChildView::<Self>::with_id(header_id).finish())
-                    .with_horizontal_padding(8.)
-                    .with_padding_top(8.)
-                    .with_padding_bottom(12.)
-                    .finish();
+            (false, Some(header)) => {
                 let mut col =
                     Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
                 col.add_child(header);

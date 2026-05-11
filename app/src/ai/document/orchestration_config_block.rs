@@ -26,6 +26,7 @@ use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::BlocklistAIHistoryModel;
 use warp_core::ui::color::blend::Blend;
+use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::WarpTheme;
 
 /// Renders a pill-shaped toggle switch (36×18) matching the Figma mock.
@@ -44,7 +45,7 @@ fn render_pill_toggle(is_on: bool, theme: &WarpTheme) -> Box<dyn Element> {
     let track_bg = if is_on {
         theme.accent().into_solid()
     } else {
-        warp_core::ui::theme::color::internal_colors::fg_overlay_4(theme).into_solid()
+        internal_colors::fg_overlay_4(theme).into_solid()
     };
     let alignment = if is_on {
         MainAxisAlignment::End
@@ -411,8 +412,7 @@ impl View for OrchestrationConfigBlockView {
             // Expanded controls
             if self.details_expanded {
                 // Cloud / Local mode toggle (full width)
-                let active_seg_bg =
-                    warp_core::ui::theme::color::internal_colors::accent_overlay_2(theme);
+                let active_seg_bg = internal_colors::accent_overlay_2(theme);
                 column.add_child(
                     Container::new(oc::render_mode_toggle(
                         self.edit_state.execution_mode.is_remote(),
@@ -468,7 +468,7 @@ impl View for OrchestrationConfigBlockView {
         // ClippedScrollable which has no backing background.
         let accent_bg = theme
             .background()
-            .blend(&warp_core::ui::theme::color::internal_colors::accent_overlay_1(theme));
+            .blend(&internal_colors::accent_overlay_1(theme));
         Container::new(column.finish())
             .with_uniform_padding(12.)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
