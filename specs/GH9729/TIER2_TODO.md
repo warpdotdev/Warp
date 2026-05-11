@@ -237,7 +237,7 @@ Hard rules:
 | t2-12 | GUI zoom buttons + scroll-zoom | `65b2f56` | [x] | [x] | [x] |
 | t2-13 | toolbar polish + fix + button | `a655650` | [x] | [x] | [x] |
 | t2-14 | scrim opacity + toolbar prominence | `46f0a2e` | [x] | [x] | [x] |
-| t2-15 | adjacent icons + conditional reset | `6623e0e` | [x] | [ ] | [ ] |
+| t2-15 | adjacent icons + conditional reset | `6623e0e` | [x] | [x] | [x] |
 | t2-16 | Flex::row toolbar + logging | `ae67790` | [x] | [ ] | [ ] |
 | t2-17 | warn-level logs + tighter gaps | `dff6822` | [x] | [ ] | [ ] |
 | t2-18 | remove diagnostic logs | `45ccfe2` | [x] | [ ] | [ ] |
