@@ -15,6 +15,17 @@ use crate::{Component, Options as _, button};
 /// Padding between the scrim edge and the image.
 const SCRIM_PADDING: f32 = 48.;
 
+/// GH9729 §698 / t2-12: horizontal spacing between the three zoom
+/// toolbar buttons.
+const ZOOM_TOOLBAR_SPACING: f32 = 8.;
+
+/// GH9729 §698 / t2-12: scroll-delta magnitude below which a
+/// cmd+scroll event is treated as a no-op. Stops trackpad jitter at
+/// rest from triggering rapid-fire zoom steps. Empirically: macOS
+/// continuous-touch scroll events report values well below 1.0 at
+/// rest and above 1.0 during deliberate gestures.
+const SCROLL_ZOOM_DEAD_ZONE: f32 = 1.0;
+
 /// GH9729 §699: how much smaller the metadata strip is than the
 /// description. The metadata strip carries secondary information
 /// (dimensions, format, size) and should read as supporting detail,
@@ -105,7 +116,28 @@ pub struct Lightbox {
     close_button: button::Button,
     prev_button: button::Button,
     next_button: button::Button,
+    /// GH9729 §698 / t2-12: zoom-out button rendered in the lightbox
+    /// toolbar. Replaces the t2-11 keyboard bindings which didn't
+    /// dispatch in a Warp terminal context.
+    zoom_out_button: button::Button,
+    /// GH9729 §698 / t2-12: zoom-in button.
+    zoom_in_button: button::Button,
+    /// GH9729 §698 / t2-12: zoom-reset (100%) button.
+    zoom_reset_button: button::Button,
 }
+
+/// GH9729 §698 / t2-12: direction for a single zoom step in the
+/// lightbox. Mirrors `NavigationDirection` in shape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZoomDirection {
+    In,
+    Out,
+    Reset,
+}
+
+/// GH9729 §698 / t2-12: handler invoked when the user requests a zoom
+/// step via a toolbar button or scroll-wheel gesture.
+pub type ZoomHandler = Arc<dyn Fn(ZoomDirection, &mut EventContext, &AppContext)>;
 
 pub struct Params<'a> {
     /// The list of images to display.
@@ -176,6 +208,12 @@ pub struct Options {
     /// Handler to invoke when the user navigates between images.
     /// If `None`, navigation buttons are not shown.
     pub on_navigate: Option<NavigateHandler>,
+
+    /// GH9729 §698 / t2-12: handler invoked when the user clicks a
+    /// zoom button or scrolls (with cmd held) over the image. If
+    /// `None`, the zoom toolbar is not rendered and scroll-wheel
+    /// events fall through.
+    pub on_zoom: Option<ZoomHandler>,
 }
 
 impl crate::Options for Options {
@@ -183,6 +221,7 @@ impl crate::Options for Options {
         Self {
             dismiss_keystroke: None,
             on_navigate: None,
+            on_zoom: None,
         }
     }
 }
@@ -249,9 +288,39 @@ impl Component for Lightbox {
                     .with_max_height(native_size.y() * zoom)
                     .finish();
 
-                    EventHandler::new(image)
-                        .on_left_mouse_down(|_, _, _| DispatchEventResult::StopPropagation)
-                        .finish()
+                    // GH9729 §698 / t2-12: cmd+scroll-wheel zooms the
+                    // image when the caller supplied an `on_zoom`
+                    // handler. Plain scroll (no modifier) is left
+                    // un-consumed so trackpad-induced flicks don't
+                    // surprise the user — matches macOS Preview
+                    // convention. Reset isn't reachable via scroll;
+                    // that's a button-only action.
+                    let scroll_zoom = params.options.on_zoom.clone();
+                    let mut handler = EventHandler::new(image)
+                        .on_left_mouse_down(|_, _, _| DispatchEventResult::StopPropagation);
+                    if let Some(on_zoom) = scroll_zoom {
+                        handler = handler.on_scroll_wheel(move |ctx, app, delta, modifiers| {
+                            if !modifiers.cmd && !modifiers.ctrl {
+                                return DispatchEventResult::PropagateToParent;
+                            }
+                            // Vertical scroll convention: positive y is
+                            // "wheel up / push fingers up" → zoom in.
+                            // Treat tiny deltas as no-ops so resting
+                            // on a near-zero trackpad doesn't drift.
+                            let dy = delta.y();
+                            if dy.abs() < SCROLL_ZOOM_DEAD_ZONE {
+                                return DispatchEventResult::StopPropagation;
+                            }
+                            let direction = if dy > 0.0 {
+                                ZoomDirection::In
+                            } else {
+                                ZoomDirection::Out
+                            };
+                            on_zoom(direction, ctx, app);
+                            DispatchEventResult::StopPropagation
+                        });
+                    }
+                    handler.finish()
                 }
                 // Per-image load/decode failure: render a non-blocking error
                 // panel with the filename (description) on one line and the
@@ -402,6 +471,74 @@ impl Component for Lightbox {
                     ),
                 );
             }
+        }
+
+        // GH9729 §698 / t2-12: zoom toolbar in the bottom-left corner —
+        // three small icon buttons for zoom-out / reset / zoom-in.
+        // Only rendered when the caller supplied an `on_zoom` handler
+        // (so test surfaces and read-only previews can opt out).
+        if let Some(on_zoom) = params.options.on_zoom {
+            let on_zoom_out = on_zoom.clone();
+            let zoom_out_button = self.zoom_out_button.render(
+                appearance,
+                button::Params {
+                    content: button::Content::Icon(Icon::Minus),
+                    theme: &button::themes::Secondary,
+                    options: button::Options {
+                        size: button::Size::Small,
+                        on_click: Some(Box::new(move |ctx, app, _| {
+                            on_zoom_out(ZoomDirection::Out, ctx, app);
+                        })),
+                        ..button::Options::default(appearance)
+                    },
+                },
+            );
+            let on_zoom_reset = on_zoom.clone();
+            let zoom_reset_button = self.zoom_reset_button.render(
+                appearance,
+                button::Params {
+                    content: button::Content::Icon(Icon::Refresh),
+                    theme: &button::themes::Secondary,
+                    options: button::Options {
+                        size: button::Size::Small,
+                        on_click: Some(Box::new(move |ctx, app, _| {
+                            on_zoom_reset(ZoomDirection::Reset, ctx, app);
+                        })),
+                        ..button::Options::default(appearance)
+                    },
+                },
+            );
+            let on_zoom_in = on_zoom;
+            let zoom_in_button = self.zoom_in_button.render(
+                appearance,
+                button::Params {
+                    content: button::Content::Icon(Icon::Plus),
+                    theme: &button::themes::Secondary,
+                    options: button::Options {
+                        size: button::Size::Small,
+                        on_click: Some(Box::new(move |ctx, app, _| {
+                            on_zoom_in(ZoomDirection::In, ctx, app);
+                        })),
+                        ..button::Options::default(appearance)
+                    },
+                },
+            );
+
+            let toolbar = Flex::row()
+                .with_spacing(ZOOM_TOOLBAR_SPACING)
+                .with_child(zoom_out_button)
+                .with_child(zoom_reset_button)
+                .with_child(zoom_in_button)
+                .finish();
+            content.add_positioned_child(
+                toolbar,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(12., -12.),
+                    ParentOffsetBounds::Unbounded,
+                    ParentAnchor::BottomLeft,
+                    ChildAnchor::BottomLeft,
+                ),
+            );
         }
 
         content.finish()

@@ -75,6 +75,19 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-12.** GUI zoom controls. Manual test revealed
+       `cmdorctrl-=` from t2-11 does NOT shadow the workspace
+       font-zoom binding in practice — pressing cmd-= zooms the
+       terminal font behind the lightbox. R1-t2-11's theoretical
+       analysis was wrong (LightboxView likely doesn't actually
+       claim keyboard focus on open; escape/left/right work via a
+       different routing path that modifier-prefixed keys don't
+       take). Solution: drop the keyboard bindings entirely, add
+       three GUI buttons (zoom-out, reset, zoom-in) to the
+       lightbox toolbar, and add `cmd`+scroll-wheel zoom for power
+       users (cmd-modifier prevents accidental trackpad zoom;
+       matches macOS Preview convention). — supplements `tech.md`
+       §698.
 - [x] **t2-11.** Fix t2-7 zoom keybinding routing + add visual zoom
        indicator. `FixedBinding::new("=", ...)` / `"-"` / `"0"` never
        dispatch in a Warp terminal context because unmodified
@@ -129,6 +142,7 @@ Hard rules:
 | t2-FINAL | presubmit | `611ec2b` | [x] | — | — |
 | t2-10 | sync-`FailedToLoad` rewrite | `af7d5f5` | [x] | [x] | [x] |
 | t2-11 | zoom keys + visual indicator | `9b51d44` | [x] | [x] | [x] |
+| t2-12 | GUI zoom buttons + scroll-zoom | `65b2f56` | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not

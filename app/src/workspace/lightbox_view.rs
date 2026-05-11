@@ -23,23 +23,27 @@ pub fn init(app: &mut AppContext) {
             LightboxViewAction::NavigatePrevious,
             view_id.clone(),
         ),
-        FixedBinding::new("right", LightboxViewAction::NavigateNext, view_id.clone()),
-        // GH9729 §698 / t2-11: zoom keybindings.
+        FixedBinding::new("right", LightboxViewAction::NavigateNext, view_id),
+        // GH9729 §698 / t2-12: zoom is GUI-only.
         //
-        // IMPORTANT: must use modifier-prefixed keys. Unmodified character
-        // keys (bare "=" / "-" / "0") route to the terminal stdin layer
-        // before reaching the lightbox view's action dispatch, so they
-        // never fire. Only special keys (escape/left/right above) and
-        // modifier-prefixed keys reach view-scoped FixedBindings.
+        // t2-7 originally registered bare `=` / `-` / `0` keybindings;
+        // t2-11 rebound them to `cmdorctrl-=` / `--` / `-0` after a
+        // manual test surfaced that bare character keys never dispatch
+        // (they route to the terminal stdin layer). The t2-11 reroute
+        // ALSO failed in practice: while R1's theoretical analysis
+        // claimed view-scope shadowing would beat the workspace-level
+        // font-zoom binding, in reality pressing `cmd-=` with the
+        // lightbox open zooms the terminal font behind the scrim
+        // (likely because `LightboxView` doesn't actually claim
+        // keyboard focus on open — escape/left/right work via a
+        // different routing path that modifier-prefixed keys don't
+        // take).
         //
-        // `cmdorctrl-=` shadows the workspace-level font-zoom binding from
-        // `app/src/util/bindings.rs:296` while the LightboxView is focused
-        // — the more-specific view scope wins. When the lightbox dismisses,
-        // the binding lapses and cmd-+/-/0 resumes zooming the terminal
-        // font.
-        FixedBinding::new("cmdorctrl-=", LightboxViewAction::ZoomIn, view_id.clone()),
-        FixedBinding::new("cmdorctrl--", LightboxViewAction::ZoomOut, view_id.clone()),
-        FixedBinding::new("cmdorctrl-0", LightboxViewAction::ZoomReset, view_id),
+        // Zoom now lives entirely in mouse-driven UI: three toolbar
+        // buttons in `crates/ui_components/src/lightbox.rs` plus
+        // cmd+scroll-wheel on the image. The action dispatch is
+        // identical (`LightboxViewAction::ZoomIn`/`ZoomOut`/`ZoomReset`);
+        // only the trigger surface changed.
     ]);
 }
 
@@ -418,6 +422,20 @@ impl View for LightboxView {
                         }
                         lightbox::NavigationDirection::Next => {
                             ctx.dispatch_typed_action(LightboxViewAction::NavigateNext);
+                        }
+                    })),
+                    // GH9729 §698 / t2-12: route toolbar button clicks
+                    // and cmd+scroll-wheel events from the Lightbox
+                    // component back into our action dispatch.
+                    on_zoom: Some(Arc::new(|direction, ctx, _| match direction {
+                        lightbox::ZoomDirection::In => {
+                            ctx.dispatch_typed_action(LightboxViewAction::ZoomIn);
+                        }
+                        lightbox::ZoomDirection::Out => {
+                            ctx.dispatch_typed_action(LightboxViewAction::ZoomOut);
+                        }
+                        lightbox::ZoomDirection::Reset => {
+                            ctx.dispatch_typed_action(LightboxViewAction::ZoomReset);
                         }
                     })),
                 },

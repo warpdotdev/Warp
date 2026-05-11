@@ -567,6 +567,7 @@ impl RootView {
                 zoom_factor: 1.0,
                 metadata_line: None,
                 options: lightbox::Options {
+                    on_zoom: None,
                     dismiss_keystroke: Some(warpui::keymap::Keystroke {
                         key: "escape".to_string(),
                         ..Default::default()
@@ -603,6 +604,7 @@ impl RootView {
                 zoom_factor: 1.0,
                 metadata_line: None,
                 options: lightbox::Options {
+                    on_zoom: None,
                     dismiss_keystroke: Some(warpui::keymap::Keystroke {
                         key: "escape".to_string(),
                         ..Default::default()
