@@ -36,9 +36,7 @@ use crate::{
     },
     cloud_object::{GenericStringObjectFormat, JsonObjectType},
     drive::CloudObjectTypeAndId,
-    persistence::{
-        database_file_path_for_scope, establish_ro_connection, ModelEvent, PersistenceScope,
-    },
+    persistence::ModelEvent,
     send_telemetry_from_ctx,
     server::{
         cloud_objects::update_manager::UpdateManager, ids::SyncId, telemetry::TelemetryEvent,
@@ -160,6 +158,7 @@ fn error_to_user_message(error: &rmcp::RmcpError) -> String {
             }
             _ => format!("Service error: {}", err),
         },
+        _ => format!("Error: {}", error),
     }
 }
 
@@ -287,13 +286,15 @@ impl TemplatableMCPServerManager {
             _ => {}
         });
 
-        let database_connection = database_file_path_for_scope(&PersistenceScope::App)
-            .to_str()
-            .and_then(|db_url| {
-                establish_ro_connection(db_url)
-                    .ok()
-                    .map(|conn| Arc::new(Mutex::new(conn)))
-            });
+        let database_connection = crate::persistence::database_file_path_for_scope(
+            &crate::persistence::PersistenceScope::App,
+        )
+        .to_str()
+        .and_then(|db_url| {
+            crate::persistence::establish_ro_connection(db_url)
+                .ok()
+                .map(|conn| Arc::new(Mutex::new(conn)))
+        });
 
         let mut me = Self {
             cloud_templatable_mcp_servers: Default::default(),
@@ -1722,8 +1723,7 @@ impl TemplatableMCPServerManager {
     }
 }
 
-type ReqwestHttpTransport = rmcp::transport::StreamableHttpClientTransport<reqwest::Client>;
-type ReqwestSseTransport = rmcp::transport::SseClientTransport<reqwest::Client>;
+use crate::ai::mcp::http_client::ReqwestHttpTransport;
 
 /// Spawns a new MCP server from a given [`TransportType`].
 async fn spawn_server(
@@ -1855,7 +1855,7 @@ async fn spawn_server(
 
                     logger.log("[info] MCP: Using Streaming HTTP transport".to_string());
                     let transport = rmcp::transport::StreamableHttpClientTransport::with_client(
-                        client,
+                        crate::ai::mcp::http_client::McpHttpClient(client),
                         rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig::with_uri(
                             sse_server.url.clone(),
                         ),
@@ -1868,12 +1868,14 @@ async fn spawn_server(
                 }
                 Ok(Transport::Http(None)) => {
                     logger.log("[info] MCP: Using Streaming HTTP transport".to_string());
-                    let transport = if headers.is_empty() {
-                        rmcp::transport::StreamableHttpClientTransport::from_uri(
-                            sse_server.url.clone(),
-                        )
-                    } else {
-                        let client = build_client_with_headers(&headers)?;
+                    let transport = {
+                        let client = if headers.is_empty() {
+                            crate::ai::mcp::http_client::McpHttpClient::default()
+                        } else {
+                            crate::ai::mcp::http_client::McpHttpClient(build_client_with_headers(
+                                &headers,
+                            )?)
+                        };
                         rmcp::transport::StreamableHttpClientTransport::with_client(
                             client,
                             rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig::with_uri(
@@ -1887,44 +1889,22 @@ async fn spawn_server(
                     };
                     Ok(make_client_info().into_dyn().serve(transport).await?)
                 }
-                Ok(Transport::Sse(Some(client))) => {
-                    is_authenticated_transport = true;
-
-                    logger.log("[info] MCP: Using (legacy) SSE transport (due to preflight failing with a 404)".to_string());
-                    let transport = rmcp::transport::SseClientTransport::start_with_client(
-                        client,
-                        rmcp::transport::sse_client::SseClientConfig {
-                            sse_endpoint: sse_server.url.into(),
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .map_err(rmcp::RmcpError::transport_creation::<ReqwestSseTransport>)?;
-                    let transport = TransportLoggingWrapper {
-                        transport,
-                        logger: logger.clone(),
-                    };
-                    Ok(make_client_info().into_dyn().serve(transport).await?)
-                }
-                Ok(Transport::Sse(None)) => {
-                    logger.log("[info] MCP: Using (legacy) SSE transport (due to preflight failing with a 404)".to_string());
-                    let transport = if headers.is_empty() {
-                        rmcp::transport::SseClientTransport::start(sse_server.url.clone())
-                            .await
-                            .map_err(|e| {
-                                rmcp::RmcpError::transport_creation::<ReqwestSseTransport>(e)
-                            })?
-                    } else {
-                        let client = build_client_with_headers(&headers)?;
-                        rmcp::transport::SseClientTransport::start_with_client(
+                Ok(Transport::LegacySse) => {
+                    logger.log("[warn] MCP: Server only supports legacy SSE transport, which is no longer supported by this client. Attempting Streamable HTTP anyway.".to_string());
+                    let transport = {
+                        let client = if headers.is_empty() {
+                            crate::ai::mcp::http_client::McpHttpClient::default()
+                        } else {
+                            crate::ai::mcp::http_client::McpHttpClient(build_client_with_headers(
+                                &headers,
+                            )?)
+                        };
+                        rmcp::transport::StreamableHttpClientTransport::with_client(
                             client,
-                            rmcp::transport::sse_client::SseClientConfig {
-                                sse_endpoint: sse_server.url.clone().into(),
-                                ..Default::default()
-                            },
+                            rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig::with_uri(
+                                sse_server.url.clone(),
+                            ),
                         )
-                        .await
-                        .map_err(rmcp::RmcpError::transport_creation::<ReqwestSseTransport>)?
                     };
                     let transport = TransportLoggingWrapper {
                         transport,
@@ -1965,9 +1945,9 @@ async fn spawn_server(
 /// The transport to use for MCP.
 enum Transport {
     /// The HTTP transport, with an optional authenticated client.
-    Http(Option<rmcp::transport::auth::AuthClient<reqwest::Client>>),
-    /// The SSE transport, with an optional authenticated client.
-    Sse(Option<rmcp::transport::auth::AuthClient<reqwest::Client>>),
+    Http(Option<reqwest::Client>),
+    /// Legacy SSE transport (server responded with 404 to HTTP transport check).
+    LegacySse,
 }
 
 /// Determines which transport to use.
@@ -1990,7 +1970,7 @@ async fn determine_transport(
     }
     match send_initialize_request(url, headers, None).await? {
         StatusCode::OK => Ok(Transport::Http(None)),
-        StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED => Ok(Transport::Sse(None)),
+        StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED => Ok(Transport::LegacySse),
         StatusCode::UNAUTHORIZED => {
             if !FeatureFlag::McpOauth.is_enabled() {
                 return Err(rmcp::RmcpError::transport_creation::<ReqwestHttpTransport>(
@@ -2001,14 +1981,15 @@ async fn determine_transport(
             let spawner = auth_context.spawner.clone();
             // Go through the OAuth flow to get an authenticated client.
             // This will first attempt to use cached credentials before starting interactive OAuth.
-            let (client, did_require_login) = oauth::make_authenticated_client(url, auth_context)
-                .boxed()
-                .await
-                .map_err(rmcp::RmcpError::transport_creation::<ReqwestHttpTransport>)?;
-            let transport = match send_initialize_request(url, headers, Some(&client)).await? {
-                StatusCode::OK => Ok(Transport::Http(Some(client))),
+            let (auth_client, did_require_login) =
+                oauth::make_authenticated_client(url, auth_context)
+                    .boxed()
+                    .await
+                    .map_err(rmcp::RmcpError::transport_creation::<ReqwestHttpTransport>)?;
+            let transport = match send_initialize_request(url, headers, Some(&auth_client)).await? {
+                StatusCode::OK => Ok(Transport::Http(Some(auth_client.http_client.clone()))),
                 StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED => {
-                    Ok(Transport::Sse(Some(client)))
+                    Ok(Transport::Http(Some(auth_client.http_client.clone())))
                 }
                 other => Err(unexpected_error(other)),
             };
@@ -2078,19 +2059,15 @@ async fn send_initialize_request(
 ///
 /// This tells the MCP server who we are and what capabilities we have.
 fn make_client_info() -> rmcp::model::ClientInfo {
-    rmcp::model::ClientInfo {
-        protocol_version: Default::default(),
-        capabilities: Default::default(),
-        client_info: rmcp::model::Implementation {
-            name: warp_core::channel::ChannelState::app_id().to_string(),
-            version: warp_core::channel::ChannelState::app_version()
+    rmcp::model::ClientInfo::new(
+        Default::default(),
+        rmcp::model::Implementation::new(
+            warp_core::channel::ChannelState::app_id().to_string(),
+            warp_core::channel::ChannelState::app_version()
                 .map(|v| v.to_string())
                 .unwrap_or_default(),
-            title: None,
-            icons: None,
-            website_url: None,
-        },
-    }
+        ),
+    )
 }
 
 /// A wrapper around a [`rmcp::transport::Transport`] that logs all requests and responses.
