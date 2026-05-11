@@ -1,0 +1,66 @@
+en:
+  # ── Menu Bar ──
+  menu:
+    warp: "Warp"
+    file: "File"
+    edit: "Edit"
+    view: "View"
+    tab: "Tab"
+    ai: "AI"
+    blocks: "Blocks"
+    drive: "Drive"
+    window: "Window"
+    help: "Help"
+
+    new_window: "New Window"
+    new_tab: "New Tab"
+    preferences: "Preferences"
+    set_default_terminal: "Set Warp as Default Terminal"
+    log_out: "Log out"
+    open_recent: "Open Recent"
+
+    copy_on_select: "Copy on Select within the Terminal"
+    synchronize_inputs: "Synchronize Inputs"
+
+    toggle_mouse_reporting: "Toggle Mouse Reporting"
+    toggle_scroll_reporting: "Toggle Scroll Reporting"
+    toggle_focus_reporting: "Toggle Focus Reporting"
+    compact_mode: "Compact Mode"
+
+    show_init_block: "Show Initialization Block"
+    hide_init_block: "Hide Initialization Block"
+    show_ssh_blocks: "Show Warpified SSH Blocks"
+    hide_ssh_blocks: "Hide Warpified SSH Blocks"
+    export_settings_csv: "Export Default Settings as CSV to home dir"
+
+    manually_toggle_network: "Manually Toggle Network Status"
+    debug: "Debug"
+
+  # ── Tab Context Menu ──
+  tab:
+    rename: "Rename tab"
+    close: "Close tab"
+    close_other: "Close other tabs"
+    close_below: "Close Tabs Below"
+    close_right: "Close Tabs to the Right"
+    copy_link: "Copy link"
+    copy_title: "Copy tab title"
+    copy_pane_title: "Copy pane title"
+    copy_branch: "Copy branch"
+    copy_working_dir: "Copy working directory"
+    copy_pr_link: "Copy pull request link"
+
+  # ── Workspace / Toolbar ──
+  workspace:
+    settings: "Settings"
+    new_tab: "New Tab"
+    rename_pane: "Rename pane"
+    rename_active_pane: "Rename active pane"
+    rename_current_tab: "Rename the current tab"
+    rename_current_pane: "Rename the current pane"
+
+  # ── Common ──
+  common:
+    copy: "Copy"
+    paste: "Paste"
+    close: "Close"
