@@ -75,6 +75,20 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-10.** Fix `start_asset_load` synchronous-`FailedToLoad`
+       gap. The post-load rewrite callback installed by
+       `start_asset_load` only fires for the
+       `AssetState::Loading { handle }` branch; a synchronously-
+       resolved `FailedToLoad` (reachable after t2-4 made
+       `ImageType::try_from_bytes` return `Err` immediately for
+       mislabeled tiny files) silently falls through, leaving the
+       lightbox stuck on the loading spinner forever. Apply
+       `rewrite_image_for_load_state` inline against the initial
+       `load_asset` state, and only schedule the spawn for the
+       `Loading` arm. Add a unit test for the synchronous
+       `FailedToLoad` path. Surfaced by manual test of
+       `06-mislabeled.png` post t2-FINAL. — supplements `tech.md`
+       §182 / §695.
 - [x] **t2-FINAL.** Presubmit. `cargo fmt` applied (cosmetic-only:
        one `view_id` line collapse, one import reorder in
        `app/src/util/image.rs`). `cargo clippy --workspace --exclude
@@ -98,6 +112,7 @@ Hard rules:
 | t2-8 | status footer (dimensions only) | `d9cc0c3` | [x] | [x] | [x] |
 | t2-9 | EXIF orientation (ICC deferred to t2-9-icc) | `3e694be` | [x] | [x] | [x] |
 | t2-FINAL | presubmit | `611ec2b` | [x] | — | — |
+| t2-10 | sync-`FailedToLoad` rewrite | (see commit msg) | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not

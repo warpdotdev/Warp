@@ -175,15 +175,26 @@ impl LightboxView {
     /// Eagerly load a single asset and schedule a `ctx.notify()` when the
     /// fetch completes so the lightbox re-renders with the loaded image.
     ///
-    /// The spawn callback also re-queries the asset cache for the post-load
-    /// state and rewrites `self.params.images[index].source` to
-    /// `LightboxImageSource::Error` on `FailedToLoad` (which after the
-    /// §695 refactor also covers the previous `Loaded { Unrecognized }`
-    /// path: `try_from_bytes` now returns `Err("could not detect image
-    /// format")` for mislabeled bytes, and the asset cache stores that
-    /// as `FailedToLoad`). Without this, a load failure or a mislabeled
-    /// file would render a permanent spinner. See specs/GH9729/tech.md
-    /// §182 and §695.
+    /// `rewrite_image_for_load_state` is applied against the asset cache's
+    /// returned state on both the synchronous and asynchronous code paths:
+    ///
+    /// * **Synchronous path** (GH9729 §695 + t2-10): a tiny mislabeled file
+    ///   like a `.png` containing tarball bytes is so small the asset
+    ///   cache can deliver `FailedToLoad` inline on the first
+    ///   `load_asset` call — the §695 `Err("could not detect image
+    ///   format")` from `ImageType::try_from_bytes` is reached before
+    ///   any executor turn. The `when_loaded` future never fires for an
+    ///   already-failed entry, so without the inline rewrite the
+    ///   lightbox would render a permanent spinner. Apply the rewrite
+    ///   immediately and skip the spawn.
+    ///
+    /// * **Asynchronous path**: the load is still pending; spawn a
+    ///   callback that re-queries the cache once the future completes
+    ///   and applies the same rewrite. The callback also calls
+    ///   `ctx.notify()` so the lightbox repaints with the loaded image
+    ///   (or the rewritten Error variant).
+    ///
+    /// See specs/GH9729/tech.md §182 and §695.
     fn start_asset_load(
         &mut self,
         index: usize,
@@ -191,23 +202,49 @@ impl LightboxView {
         ctx: &mut ViewContext<Self>,
     ) {
         let asset_cache = AssetCache::as_ref(ctx);
-        if let AssetState::Loading { handle } =
-            asset_cache.load_asset::<ImageType>(asset_source.clone())
-        {
+        let state = asset_cache.load_asset::<ImageType>(asset_source.clone());
+
+        // GH9729 §695 / t2-10: apply the rewrite inline for any state
+        // the asset cache resolves synchronously. `rewrite_image_for_load_state`
+        // returns `None` for `Loading` and (post-§695) `Loaded`, so this
+        // is a no-op for the common path — it only fires for
+        // synchronously-`FailedToLoad`, which is the case the
+        // `Loading`-only spawn below cannot rescue.
+        if apply_rewrite_to_slot(&mut self.params.images, index, &state) {
+            return;
+        }
+
+        if let AssetState::Loading { handle } = state {
             if let Some(future) = handle.when_loaded(asset_cache) {
                 ctx.spawn(future, move |me, (), ctx| {
                     ctx.notify();
                     let asset_cache = AssetCache::as_ref(ctx);
                     let state = asset_cache.load_asset::<ImageType>(asset_source.clone());
-                    if let Some(new_source) = rewrite_image_for_load_state(&state) {
-                        if let Some(slot) = me.params.images.get_mut(index) {
-                            slot.source = new_source;
-                        }
-                    }
+                    apply_rewrite_to_slot(&mut me.params.images, index, &state);
                 });
             }
         }
     }
+}
+
+/// GH9729 §695 / t2-10: apply `rewrite_image_for_load_state` to the
+/// image at `index`, replacing its `source` if a rewrite is warranted.
+/// Returns `true` when the slot was mutated, `false` otherwise. Out-of-
+/// bounds indices are tolerated (return `false`) so callers don't have
+/// to pre-check the slice length.
+fn apply_rewrite_to_slot(
+    images: &mut [LightboxImage],
+    index: usize,
+    state: &AssetState<ImageType>,
+) -> bool {
+    let Some(new_source) = rewrite_image_for_load_state(state) else {
+        return false;
+    };
+    let Some(slot) = images.get_mut(index) else {
+        return false;
+    };
+    slot.source = new_source;
+    true
 }
 
 /// GH9729 §698: direction for a single zoom-step keystroke.
@@ -497,6 +534,85 @@ mod tests {
             z = super::step_zoom(z, super::ZoomDirection::Out);
         }
         assert_eq!(z, lightbox::MIN_ZOOM_FACTOR);
+    }
+
+    #[test]
+    fn apply_rewrite_to_slot_rewrites_synchronous_failed_to_load() {
+        // GH9729 t2-10: a synchronously-resolved `FailedToLoad` (reachable
+        // for tiny mislabeled files after t2-4 made `try_from_bytes`
+        // return `Err` immediately) must be rewritten to the `Error`
+        // variant inline — the `when_loaded` future never fires for an
+        // already-failed entry, so without this branch the lightbox
+        // would render a permanent spinner.
+        let mut images = vec![LightboxImage {
+            source: lightbox::LightboxImageSource::Resolved {
+                asset_source: warpui::assets::asset_cache::AssetSource::Bundled {
+                    path: "fake/bundled/path.png",
+                },
+            },
+            description: Some("filename.png".to_string()),
+        }];
+        let state: AssetState<ImageType> = AssetState::FailedToLoad(Rc::new(
+            anyhow::anyhow!("could not detect image format"),
+        ));
+
+        let mutated = super::apply_rewrite_to_slot(&mut images, 0, &state);
+
+        assert!(mutated, "synchronous FailedToLoad must mutate the slot");
+        match &images[0].source {
+            lightbox::LightboxImageSource::Error { message } => {
+                assert_eq!(message, "could not detect image format");
+            }
+            other => panic!("expected Error variant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_rewrite_to_slot_leaves_loading_state_alone() {
+        // The asynchronous-loading path must NOT trigger an inline
+        // rewrite — the spawn callback will run when the load completes
+        // and that's what's responsible for the post-load state. This
+        // test pins the contract so a future tweak to
+        // `rewrite_image_for_load_state` (e.g. adding a `Loading` arm)
+        // can't silently break the lightbox by mutating the slot
+        // mid-load.
+        let mut images = vec![LightboxImage {
+            source: lightbox::LightboxImageSource::Resolved {
+                asset_source: warpui::assets::asset_cache::AssetSource::Bundled {
+                    path: "fake/bundled/path.png",
+                },
+            },
+            description: None,
+        }];
+        // `AssetState::Evicted` is the cheapest non-Loading,
+        // non-FailedToLoad variant to construct in a unit test — it
+        // exercises the same "no rewrite" branch as `Loading`, which
+        // requires a real `LoadHandle`.
+        let state: AssetState<ImageType> = AssetState::Evicted;
+
+        let mutated = super::apply_rewrite_to_slot(&mut images, 0, &state);
+
+        assert!(!mutated, "non-failure states must leave the slot unchanged");
+        assert!(matches!(
+            images[0].source,
+            lightbox::LightboxImageSource::Resolved { .. }
+        ));
+    }
+
+    #[test]
+    fn apply_rewrite_to_slot_tolerates_out_of_bounds_index() {
+        // The caller in `start_asset_load` passes a captured index that
+        // could in principle be stale by the time the spawn callback
+        // fires (e.g., `update_params` shrinks the image list). The
+        // helper must not panic.
+        let mut images: Vec<LightboxImage> = vec![];
+        let state: AssetState<ImageType> = AssetState::FailedToLoad(Rc::new(
+            anyhow::anyhow!("could not detect image format"),
+        ));
+
+        let mutated = super::apply_rewrite_to_slot(&mut images, 5, &state);
+
+        assert!(!mutated, "out-of-bounds index must be a no-op, not a panic");
     }
 
     #[test]
