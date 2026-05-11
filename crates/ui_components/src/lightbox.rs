@@ -27,11 +27,17 @@ const SCRIM_PADDING: f32 = 48.;
 /// separately with a gap so nothing can overlap it (or vice-versa).
 const ZOOM_ICON_BUTTON_SLOT: f32 = 32.;
 
-/// GH9729 §698 / t2-15: extra horizontal gap between the icon
-/// cluster ([Minus][Plus]) and the optional "100%" reset label. The
-/// gap visually separates the persistent controls from the
-/// conditional state-reset control.
-const ZOOM_RESET_GAP_FROM_ICONS: f32 = 16.;
+/// GH9729 §698 / t2-17: small visible gap between [−] and [+]
+/// inside the icon cluster (user explicit feedback after t2-16's
+/// zero-spacing layout was too tight).
+const ZOOM_ICON_GAP: f32 = 6.;
+
+/// GH9729 §698 / t2-17: horizontal gap between the icon cluster
+/// ([−][+]) and the optional "100%" reset label. The gap visually
+/// separates the persistent controls from the conditional reset
+/// (reduced from t2-15's 16. after user feedback that the gap was
+/// too wide).
+const ZOOM_RESET_GAP_FROM_ICONS: f32 = 8.;
 
 /// GH9729 §698 / t2-13: inset for buttons anchored to a scrim corner
 /// (close button top-right, zoom toolbar bottom-left). One source of
@@ -530,7 +536,10 @@ impl Component for Lightbox {
                     options: button::Options {
                         size: button::Size::Small,
                         on_click: Some(Box::new(move |ctx, app, _| {
-                            log::debug!("GH9729 t2-16: zoom_out_button clicked");
+                            // GH9729 t2-17: warn-level so it surfaces at
+                            // default macOS log filtering. Diagnostic
+                            // only; remove once the + bug is closed.
+                            log::warn!("GH9729 t2-17 DIAG: zoom_out (−) on_click fired");
                             on_zoom_out(ZoomDirection::Out, ctx, app);
                         })),
                         ..button::Options::default(appearance)
@@ -546,7 +555,7 @@ impl Component for Lightbox {
                     options: button::Options {
                         size: button::Size::Small,
                         on_click: Some(Box::new(move |ctx, app, _| {
-                            log::debug!("GH9729 t2-16: zoom_in_button clicked");
+                            log::warn!("GH9729 t2-17 DIAG: zoom_in (+) on_click fired");
                             on_zoom_in(ZoomDirection::In, ctx, app);
                         })),
                         ..button::Options::default(appearance)
@@ -554,11 +563,12 @@ impl Component for Lightbox {
                 },
             );
 
-            // The two icon buttons sit in a precise-layout Flex::row
-            // with zero spacing. Centered cross-axis so the buttons
-            // align with the row's baseline.
+            // Small spacing between − and + so they have a visible gap
+            // (user explicit feedback after t2-16's zero-spacing
+            // layout). Still inside a Flex::row so Flex partitions
+            // hit-test space precisely between cells.
             let icon_cluster = Flex::row()
-                .with_spacing(0.0)
+                .with_spacing(ZOOM_ICON_GAP)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(zoom_out_button)
                 .with_child(zoom_in_button)
@@ -590,7 +600,9 @@ impl Component for Lightbox {
                         options: button::Options {
                             size: button::Size::Small,
                             on_click: Some(Box::new(move |ctx, app, _| {
-                                log::debug!("GH9729 t2-16: zoom_reset_button clicked");
+                                log::warn!(
+                                    "GH9729 t2-17 DIAG: zoom_reset (100%) on_click fired"
+                                );
                                 on_zoom_reset(ZoomDirection::Reset, ctx, app);
                             })),
                             ..button::Options::default(appearance)
