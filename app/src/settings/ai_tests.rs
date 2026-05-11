@@ -409,3 +409,34 @@ fn test_openrouter_key_enables_agent_default_for_oss_users() {
         });
     });
 }
+
+#[test]
+#[serial_test::serial]
+fn test_openrouter_key_respects_terminal_default_for_oss_users() {
+    let _channel_guard = TestChannelGuard::set_oss();
+
+    App::test((), |mut app| async move {
+        app.add_singleton_model(UserWorkspaces::default_mock);
+        initialize_settings_for_tests(&mut app);
+
+        app.update(|ctx| {
+            ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                manager.set_open_router_key(Some("sk-or-v1-test".into()), ctx);
+            });
+            AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings
+                    .default_session_mode_internal
+                    .set_value(DefaultSessionMode::Terminal, ctx));
+            });
+        });
+
+        app.read(|ctx| {
+            let settings = AISettings::as_ref(ctx);
+            assert!(settings.is_any_ai_enabled(ctx));
+            assert_eq!(
+                settings.default_session_mode(ctx),
+                DefaultSessionMode::Terminal
+            );
+        });
+    });
+}
