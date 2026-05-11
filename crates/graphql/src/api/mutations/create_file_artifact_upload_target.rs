@@ -41,6 +41,7 @@ pub struct CreateFileArtifactUploadTargetOutput {
 #[derive(cynic::QueryFragment, Debug)]
 pub struct FileArtifact {
     pub artifact_uid: cynic::Id,
+    pub stable_download_url: String,
     pub filepath: String,
     pub description: Option<String>,
     pub mime_type: String,

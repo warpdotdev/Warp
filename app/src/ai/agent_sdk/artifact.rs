@@ -2,12 +2,12 @@ use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 use serde::Serialize;
+use warp_cli::GlobalOptions;
 use warp_cli::agent::OutputFormat;
 use warp_cli::artifact::{
     ArtifactCommand, DownloadArtifactArgs, GetArtifactArgs, UploadArtifactArgs,
 };
-use warp_cli::GlobalOptions;
-use warpui::{platform::TerminationMode, AppContext, ModelContext, SingletonEntity};
+use warpui::{AppContext, ModelContext, SingletonEntity, platform::TerminationMode};
 
 use crate::ai::artifact_download::{download_artifact_bytes, download_destination};
 #[cfg(test)]
@@ -163,6 +163,7 @@ struct ArtifactMetadataOutput {
     artifact_type: String,
     created_at: String,
     download_url: String,
+    stable_download_url: String,
     expires_at: String,
     content_type: String,
     filepath: Option<String>,
@@ -178,6 +179,7 @@ impl ArtifactMetadataOutput {
             artifact_type: artifact.artifact_type().to_string(),
             created_at: artifact.created_at().to_rfc3339(),
             download_url: artifact.download_url().to_string(),
+            stable_download_url: artifact.stable_download_url().to_string(),
             expires_at: artifact.expires_at().to_rfc3339(),
             content_type: artifact.content_type().to_string(),
             filepath: artifact.filepath().map(ToString::to_string),
@@ -208,6 +210,7 @@ impl DownloadArtifactOutput {
 #[derive(Debug, Serialize)]
 struct UploadArtifactOutput {
     artifact_uid: String,
+    stable_download_url: String,
     filepath: String,
     description: Option<String>,
     mime_type: String,
@@ -244,6 +247,11 @@ fn write_get_output_to<W: std::io::Write>(
             )?;
             writeln!(&mut *output, "Created at: {}", output_record.created_at)?;
             writeln!(&mut *output, "Download URL: {}", output_record.download_url)?;
+            writeln!(
+                &mut *output,
+                "Stable download URL: {}",
+                output_record.stable_download_url
+            )?;
             writeln!(&mut *output, "Expires at: {}", output_record.expires_at)?;
             writeln!(&mut *output, "Content type: {}", output_record.content_type)?;
             if let Some(filepath) = output_record.filepath {
@@ -262,15 +270,16 @@ fn write_get_output_to<W: std::io::Write>(
         OutputFormat::Text => {
             writeln!(
                 &mut *output,
-                "Artifact UID\tArtifact type\tCreated at\tDownload URL\tExpires at\tContent type\tFilepath\tFilename\tDescription\tSize bytes"
+                "Artifact UID\tArtifact type\tCreated at\tDownload URL\tStable download URL\tExpires at\tContent type\tFilepath\tFilename\tDescription\tSize bytes"
             )?;
             writeln!(
                 &mut *output,
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                 output_record.artifact_uid,
                 output_record.artifact_type,
                 output_record.created_at,
                 output_record.download_url,
+                output_record.stable_download_url,
                 output_record.expires_at,
                 output_record.content_type,
                 output_record.filepath.unwrap_or_default(),
@@ -346,6 +355,7 @@ fn write_upload_output_to<W: std::io::Write>(
 ) -> Result<()> {
     let output_record = UploadArtifactOutput {
         artifact_uid: artifact.artifact.artifact_uid.clone(),
+        stable_download_url: artifact.artifact.stable_download_url.clone(),
         filepath: artifact.artifact.filepath.clone(),
         description: artifact.artifact.description.clone(),
         mime_type: artifact.artifact.mime_type.clone(),
@@ -361,6 +371,11 @@ fn write_upload_output_to<W: std::io::Write>(
         OutputFormat::Pretty => {
             writeln!(&mut *output, "Artifact uploaded")?;
             writeln!(&mut *output, "Artifact UID: {}", output_record.artifact_uid)?;
+            writeln!(
+                &mut *output,
+                "Stable download URL: {}",
+                output_record.stable_download_url
+            )?;
             writeln!(&mut *output, "Filepath: {}", output_record.filepath)?;
             writeln!(
                 &mut *output,
@@ -380,12 +395,13 @@ fn write_upload_output_to<W: std::io::Write>(
         OutputFormat::Text => {
             writeln!(
                 &mut *output,
-                "Artifact UID\tFilepath\tDescription\tMIME type\tSize bytes"
+                "Artifact UID\tStable download URL\tFilepath\tDescription\tMIME type\tSize bytes"
             )?;
             writeln!(
                 &mut *output,
-                "{}\t{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}\t{}",
                 output_record.artifact_uid,
+                output_record.stable_download_url,
                 output_record.filepath,
                 output_record.description.unwrap_or_default(),
                 output_record.mime_type,

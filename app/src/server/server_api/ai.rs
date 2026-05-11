@@ -15,9 +15,11 @@ use warp_core::channel::ChannelState;
 use warp_core::{features::FeatureFlag, report_error};
 use warp_multi_agent_api::ConversationData;
 
+use super::ServerApi;
 use super::auth::AuthClient;
 use super::harness_support::UploadTarget;
-use super::ServerApi;
+#[cfg(not(feature = "agent_mode_evals"))]
+use crate::ai::BonusGrant;
 use crate::ai::agent::conversation::{
     AIAgentConversationFormat, AIAgentHarness, AIAgentSerializedBlockFormat,
     ServerAIConversationMetadata,
@@ -29,8 +31,6 @@ use crate::ai::generate_code_review_content::api::{
 };
 #[cfg(feature = "agent_mode_evals")]
 use crate::ai::request_usage_model::RequestLimitInfo;
-#[cfg(not(feature = "agent_mode_evals"))]
-use crate::ai::BonusGrant;
 use crate::ai::{agent::api::ServerConversationToken, harness_availability::HarnessAvailability};
 use crate::persistence::model::ConversationUsageMetadata;
 use crate::terminal::model::block::SerializedBlock;
@@ -42,15 +42,16 @@ use crate::{
 };
 use crate::{
     ai::{
+        RequestUsageInfo,
         llms::{
             AvailableLLMs, DisableReason, LLMContextWindow, LLMInfo, LLMModelHost, LLMProvider,
             LLMSpec, LLMUsageMetadata, ModelsByFeature, RoutingHostConfig,
         },
-        RequestUsageInfo,
     },
     ai_assistant::{
+        AIGeneratedCommand, GenerateCommandsFromNaturalLanguageError,
         execution_context::WarpAiExecutionContext, requests::GenerateDialogueResult,
-        utils::TranscriptPart, AIGeneratedCommand, GenerateCommandsFromNaturalLanguageError,
+        utils::TranscriptPart,
     },
     drive::workflows::ai_assist::{GeneratedCommandMetadata, GeneratedCommandMetadataError},
     server::graphql::{
@@ -58,9 +59,8 @@ use crate::{
     },
 };
 use ai::index::full_source_code_embedding::{
-    self,
+    self, CodebaseContextConfig, ContentHash, EmbeddingConfig, NodeHash, RepoMetadata,
     store_client::{IntermediateNode, StoreClient},
-    CodebaseContextConfig, ContentHash, EmbeddingConfig, NodeHash, RepoMetadata,
 };
 use warp_graphql::client::Operation;
 #[cfg(not(feature = "agent_mode_evals"))]
@@ -153,8 +153,8 @@ use warp_graphql::{
 pub use crate::ai::agent::UserQueryMode;
 // Re-export ambient agent types for backwards compatibility
 pub use crate::ai::ambient_agents::{
-    task::{AttachmentInput, TaskAttachment},
     AgentConfigSnapshot, AgentSource, AmbientAgentTask, AmbientAgentTaskState, TaskStatusMessage,
+    task::{AttachmentInput, TaskAttachment},
 };
 
 const AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS: u64 = 30;
@@ -429,6 +429,19 @@ impl ArtifactDownloadResponse {
         }
     }
 
+    pub fn stable_download_url(&self) -> &str {
+        match self {
+            ArtifactDownloadResponse::Screenshot { data, .. } => data
+                .stable_download_url
+                .as_deref()
+                .unwrap_or(&data.download_url),
+            ArtifactDownloadResponse::File { data, .. } => data
+                .stable_download_url
+                .as_deref()
+                .unwrap_or(&data.download_url),
+        }
+    }
+
     pub fn expires_at(&self) -> DateTime<Utc> {
         match self {
             ArtifactDownloadResponse::Screenshot { data, .. } => data.expires_at,
@@ -482,6 +495,7 @@ pub struct ArtifactDownloadCommonFields {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ScreenshotArtifactResponseData {
     pub download_url: String,
+    pub stable_download_url: Option<String>,
     pub expires_at: DateTime<Utc>,
     pub content_type: String,
     pub description: Option<String>,
@@ -491,6 +505,7 @@ pub struct ScreenshotArtifactResponseData {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FileArtifactResponseData {
     pub download_url: String,
+    pub stable_download_url: Option<String>,
     pub expires_at: DateTime<Utc>,
     pub content_type: String,
     pub filepath: String,
@@ -563,6 +578,7 @@ pub struct CreateFileArtifactUploadRequest {
 #[derive(Debug, Clone)]
 pub struct FileArtifactRecord {
     pub artifact_uid: String,
+    pub stable_download_url: String,
     pub filepath: String,
     pub description: Option<String>,
     pub mime_type: String,
@@ -1115,6 +1131,7 @@ fn into_file_artifact_record(
 ) -> FileArtifactRecord {
     FileArtifactRecord {
         artifact_uid: artifact.artifact_uid.into_inner(),
+        stable_download_url: artifact.stable_download_url,
         filepath: artifact.filepath,
         description: artifact.description,
         mime_type: artifact.mime_type,
