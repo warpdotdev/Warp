@@ -5319,17 +5319,11 @@ impl TerminalView {
                 let should_add_ai_block = history_model
                     .as_ref(ctx)
                     .conversation(conversation_id)
-                    .and_then(|conversation| {
-                        // First try the exact task_id from the event. If not found
-                        // (e.g. because the optimistic root was upgraded to a
-                        // server-created task between emit and dispatch), fall back
-                        // to the conversation's current root task.
-                        conversation
-                            .get_task(task_id)
-                            .or_else(|| conversation.get_root_task())
-                    })
+                    .and_then(|conversation| conversation.get_task(task_id))
                     .is_some_and(blocklist_filter::should_show_task_in_blocklist);
                 if !should_add_ai_block {
+                    // Only add AI blocks to the blocklist for root task exchanges (normal Agent Mode)
+                    // and advice subagent exchanges (so advice tool calls/results are visible).
                     return;
                 }
 
