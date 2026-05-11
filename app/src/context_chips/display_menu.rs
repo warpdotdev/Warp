@@ -180,13 +180,33 @@ enum EnvironmentSidecarSide {
 ///
 /// When set, [`DisplayChipMenu`] calls the builder on every search-query
 /// change. If the builder returns `Some(item)` and no existing menu item
-/// already has the same trimmed name, the returned item is prepended to the
-/// filtered results so the user can act on the unmatched query (for example,
-/// "Create new branch <name>"). The builder itself is responsible for
-/// validating the query (e.g. rejecting empty / invalid inputs) and returning
-/// `None` when no synthetic item should be offered.
+/// already has the same name (compared ASCII case-insensitively), the
+/// returned item is prepended to the filtered results so the user can act on
+/// the unmatched query (for example, "Create new branch <name>"). The
+/// builder itself is responsible for validating the query (e.g. rejecting
+/// empty / invalid inputs) and returning `None` when no synthetic item
+/// should be offered.
 pub type CreateItemFromQueryFn =
     dyn Fn(&str) -> Option<Arc<dyn GenericMenuItem>> + Send + Sync + 'static;
+
+/// Returns whether `query` matches any of `item_names`, ignoring ASCII case.
+///
+/// Used by [`DisplayChipMenu::update_filtered_items`] to suppress the
+/// "create from query" affordance when an existing item already covers the
+/// query. The comparison is case-insensitive on purpose: case-insensitive
+/// filesystems (the default on macOS and Windows) treat refs like `main` and
+/// `Main` as the same branch, so offering "Create new branch \"Main\"" while
+/// `main` already exists would just hand the user a `branch already exists`
+/// failure from git.
+fn query_matches_existing_name<I, S>(item_names: I, query: &str) -> bool
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    item_names
+        .into_iter()
+        .any(|name| name.as_ref().eq_ignore_ascii_case(query))
+}
 
 pub struct DisplayChipMenu {
     list_state: UniformListState,
@@ -469,8 +489,10 @@ impl DisplayChipMenu {
         // switcher.
         if let Some(builder) = self.create_item_from_query.as_ref() {
             let trimmed = self.search_query.trim();
-            let already_matches_existing =
-                self.menu_items.iter().any(|item| item.name() == trimmed);
+            let already_matches_existing = query_matches_existing_name(
+                self.menu_items.iter().map(|item| item.name()),
+                trimmed,
+            );
             if !already_matches_existing {
                 if let Some(synthetic) = builder(trimmed) {
                     self.filtered_items.insert(
@@ -1479,5 +1501,40 @@ impl TypedActionView for DisplayChipMenu {
             }
             DisplayChipMenuAction::Close => self.close(ctx),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::query_matches_existing_name;
+
+    #[test]
+    fn query_matches_existing_name_is_ascii_case_insensitive() {
+        let names = ["main", "feature/Foo"];
+        assert!(query_matches_existing_name(names, "main"));
+        assert!(query_matches_existing_name(names, "Main"));
+        assert!(query_matches_existing_name(names, "MAIN"));
+        assert!(query_matches_existing_name(names, "feature/foo"));
+        assert!(query_matches_existing_name(names, "FEATURE/FOO"));
+    }
+
+    #[test]
+    fn query_matches_existing_name_returns_false_when_no_overlap() {
+        let names = ["main", "feature/foo"];
+        assert!(!query_matches_existing_name(names, "develop"));
+        assert!(!query_matches_existing_name(names, "feature/bar"));
+    }
+
+    #[test]
+    fn query_matches_existing_name_returns_false_for_empty_input() {
+        let names: [&str; 0] = [];
+        assert!(!query_matches_existing_name(names, "main"));
+    }
+
+    #[test]
+    fn query_matches_existing_name_works_with_owned_strings() {
+        let names = vec![String::from("main"), String::from("Develop")];
+        assert!(query_matches_existing_name(names.iter(), "Main"));
+        assert!(query_matches_existing_name(names.iter(), "develop"));
     }
 }
