@@ -338,7 +338,7 @@ impl AgentAssistedEnvironmentModal {
         if self.selected_repo_paths.is_empty() {
             col.add_child(
                 Text::new(
-                    "No repos selected yet",
+                    t!("environments.no_repos_selected").to_string(),
                     appearance.ui_font_family(),
                     appearance.ui_font_size() * 0.95,
                 )
@@ -509,7 +509,7 @@ impl AgentAssistedEnvironmentModal {
         if !has_any_available {
             col.add_child(
                 Text::new(
-                    "All locally indexed repos are already selected.",
+                    t!("environments.all_indexed_repos_selected").to_string(),
                     appearance.ui_font_family(),
                     appearance.ui_font_size() * 0.95,
                 )

@@ -614,7 +614,7 @@ impl View for InstallationModalBody {
                 .finish()
         } else {
             Text::new(
-                "No MCP server selected",
+                t!("mcp.no_server_selected").to_string(),
                 appearance.ui_font_family(),
                 appearance.ui_font_size(),
             )

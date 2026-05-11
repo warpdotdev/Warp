@@ -373,7 +373,7 @@ impl EnvVarCollectionView {
         // Add "Copy Link" to menu
         if let Some(link) = self.env_var_collection_link(ctx) {
             menu_items.push(
-                MenuItemFields::new("Copy link")
+                MenuItemFields::new(t!("drive.copy_link").to_string())
                     .with_on_select_action(EnvVarCollectionAction::CopyLink(link))
                     .with_icon(Icon::Link)
                     .into_item(),

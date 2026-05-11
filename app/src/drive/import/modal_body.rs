@@ -43,7 +43,6 @@ pub(super) const BASE_INDENT: f32 = 30.;
 
 const FILE_TYPE_DOCS_URL: &str =
     "https://docs.warp.dev/knowledge-and-collaboration/warp-drive#import-and-export";
-const SUPPORTED_FILE_TYPE_TEXT: &str = "md, yaml, yml";
 
 #[cfg(test)]
 #[path = "import_tests.rs"]
@@ -417,7 +416,7 @@ impl ImportModalBody {
 
         let supported_file_type = appearance
             .ui_builder()
-            .span(SUPPORTED_FILE_TYPE_TEXT)
+            .span(t!("drive.supported_import_file_types").to_string())
             .with_style(UiComponentStyles {
                 font_color: Some(
                     appearance

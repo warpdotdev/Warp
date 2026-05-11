@@ -1005,9 +1005,6 @@ pub(crate) fn render_settings_info_banner(
     .finish()
 }
 
-const WORKSPACE_OVERRIDE_TOOLTIP_TEXT: &str =
-    "This option is enforced by your organization's settings and cannot be customized.";
-
 pub struct InputListItem<SettingsPageAction: Action + Clone> {
     pub item: String,
     pub mouse_state_handle: MouseStateHandle,
@@ -1115,7 +1112,7 @@ fn render_workspace_override_row_tooltip(
         if state.is_hovered() {
             let tooltip = appearance
                 .ui_builder()
-                .tool_tip(WORKSPACE_OVERRIDE_TOOLTIP_TEXT.to_string())
+                .tool_tip(t!("settings.workspace_override_tooltip").to_string())
                 .build()
                 .finish();
             stack.add_positioned_child(
@@ -1612,7 +1609,11 @@ impl<V: warpui::View> PageType<V> {
                     if widget.should_render(app) {
                         if let Some(title) = title {
                             let col = Flex::column()
-                                .with_child(render_page_title(title, HEADER_FONT_SIZE, appearance))
+                                .with_child(render_page_title(
+                                    crate::i18n::t(title).as_ref(),
+                                    HEADER_FONT_SIZE,
+                                    appearance,
+                                ))
                                 .with_child(widget.render_widget(view, false, appearance, app));
                             page = col.finish();
                         } else {
@@ -1630,7 +1631,11 @@ impl<V: warpui::View> PageType<V> {
             } => {
                 let mut page = Flex::column();
                 if let Some(title) = title {
-                    page.add_child(render_page_title(title, HEADER_FONT_SIZE, appearance));
+                    page.add_child(render_page_title(
+                        crate::i18n::t(title).as_ref(),
+                        HEADER_FONT_SIZE,
+                        appearance,
+                    ));
                 }
                 for widget in widgets {
                     let highlighted =
@@ -1649,7 +1654,11 @@ impl<V: warpui::View> PageType<V> {
             } => {
                 let mut page = Flex::column();
                 if let Some(title) = title {
-                    page.add_child(render_page_title(title, HEADER_FONT_SIZE, appearance));
+                    page.add_child(render_page_title(
+                        crate::i18n::t(title).as_ref(),
+                        HEADER_FONT_SIZE,
+                        appearance,
+                    ));
                 }
                 let num_categories = categories.len();
                 for (i, category) in categories.into_iter().enumerate() {

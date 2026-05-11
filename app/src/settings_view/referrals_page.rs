@@ -42,21 +42,17 @@ use warpui::{
 
 const HEADER_FONT_SIZE: f32 = 18.;
 const HEADER_MARGIN_BOTTOM: f32 = 32.;
-const HEADER_TEXT: &str = "Invite a friend to Warp";
-const ANONYMOUS_USER_HEADER_TEXT: &str = "Sign up to participate in Warp's referral program";
 
 const INVITE_FIELD_LABEL_BOTTOM_MARGIN: f32 = 8.;
 
 const LINK_BOTTOM_MARGIN: f32 = 12.;
 const LINK_TEXT_PADDING: f32 = 10.;
 const LINK_CORNER_RADIUS: Radius = Radius::Pixels(4.);
-const LINK_ERROR_TEXT: &str = "Failed to load referral code.";
 
 const BUTTON_WIDTH: f32 = 98.;
 const BUTTON_HEIGHT: f32 = 36.;
 const BUTTON_LEFT_MARGIN: f32 = 8.;
 const BUTTON_FONT_SIZE: f32 = 12.;
-const LINK_BUTTON_TEXT: &str = "Copy link";
 const EMAIL_BUTTON_TEXT: &str = "Send";
 const EMAIL_BUTTON_SENDING_TEXT: &str = "Sending...";
 const LOADING_TEXT: &str = "Loading...";
@@ -87,8 +83,6 @@ const METER_TOP_MARGIN: f32 = 16.;
 const METER_RIGHT_MARGIN: f32 = 12.;
 
 const CLAIMED_REFERRALS_LABEL_HORIZONTAL_SPACING: f32 = 4.;
-const CLAIMED_REFERRALS_COUNT_LABEL_SINGULAR: &str = "Current referral";
-const CLAIMED_REFERRALS_COUNT_LABEL_PLURAL: &str = "Current referrals";
 const CLAIMED_REFERRALS_LABEL_WIDTH: f32 = 52.;
 const CLAIMED_REFERRALS_LABEL_FONT_SIZE: f32 = 14.;
 const CLAIMED_REFERRALS_COUNT_FONT_SIZE: f32 = 48.;
@@ -96,11 +90,8 @@ const CLAIMED_REFERRAL_COUNT_LEFT_MARGIN: f32 = 40.;
 
 const CLAIMED_REFERRAL_CLIP: usize = 999;
 
-const TERMS_LINK_TEXT: &str = "Certain restrictions apply.";
 const TERMS_URL: &str =
     "https://docs.warp.dev/support-and-community/community/refer-a-friend#referral-program-terms-and-conditions";
-const TERMS_CONTACT_TEXT: &str =
-    " If you have any questions about the referral program, please contact referrals@warp.dev.";
 
 enum ApiState {
     Loading,
@@ -223,7 +214,8 @@ impl ReferralsPageView {
             me.handle_editor_event(event, ctx);
         });
 
-        let page = PageType::new_monolith(ReferralsWidget::default(), Some(HEADER_TEXT), true);
+        let page =
+            PageType::new_monolith(ReferralsWidget::default(), Some("referrals.header"), true);
         Self {
             page,
             referrals_client,
@@ -527,7 +519,7 @@ impl ReferralsWidget {
         let (link_text, button_enabled) = match &view.api_state {
             ApiState::Ready { referral_info, .. } => (referral_info.url.clone(), true),
             ApiState::Loading => (LOADING_TEXT.into(), false),
-            ApiState::Failed => (LINK_ERROR_TEXT.into(), false),
+            ApiState::Failed => (t!("referrals.failed_load_code").to_string(), false),
         };
         let theme = appearance.theme();
 
@@ -563,7 +555,7 @@ impl ReferralsWidget {
                 )
                 .with_child(self.render_button(
                     button_enabled,
-                    LINK_BUTTON_TEXT,
+                    t!("drive.copy_link").as_ref(),
                     self.copy_link_mouse_state.clone(),
                     |ctx, _, _| ctx.dispatch_typed_action(ReferralsPageAction::CopyLink),
                     appearance,
@@ -669,7 +661,7 @@ impl ReferralsWidget {
                 Container::new(
                     appearance
                         .ui_builder()
-                        .span(ANONYMOUS_USER_HEADER_TEXT)
+                        .span(t!("referrals.anonymous_header").to_string())
                         .with_style(UiComponentStyles {
                             font_size: Some(HEADER_FONT_SIZE),
                             ..Default::default()
@@ -781,8 +773,8 @@ impl ReferralsWidget {
                     FormattedTextElement::new(
                         FormattedText::new([FormattedTextLine::Line(vec![
                             FormattedTextFragment::plain_text("*"),
-                            FormattedTextFragment::hyperlink(TERMS_LINK_TEXT, TERMS_URL),
-                            FormattedTextFragment::plain_text(TERMS_CONTACT_TEXT),
+                            FormattedTextFragment::hyperlink(t!("referrals.terms_link"), TERMS_URL),
+                            FormattedTextFragment::plain_text(t!("referrals.terms_contact")),
                         ])]),
                         12.,
                         appearance.ui_font_family(),
@@ -1064,8 +1056,8 @@ impl ReferralsWidget {
         };
 
         let current_referrals_label = match claimed_count {
-            1 => CLAIMED_REFERRALS_COUNT_LABEL_SINGULAR,
-            _ => CLAIMED_REFERRALS_COUNT_LABEL_PLURAL,
+            1 => t!("referrals.current_referral"),
+            _ => t!("referrals.current_referrals"),
         };
 
         Some(

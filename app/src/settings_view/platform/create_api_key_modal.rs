@@ -469,7 +469,7 @@ impl CreateApiKeyModal {
         };
 
         let info = Text::new(
-            "This secret key is shown only once. Copy and store it securely.",
+            t!("platform.secret_key_once").to_string(),
             appearance.ui_font_family(),
             LABEL_FONT_SIZE,
         )
@@ -699,7 +699,7 @@ impl View for CreateApiKeyModal {
 
                     if !self.is_loading_agents && available_agents.is_empty() {
                         let empty_text = Text::new(
-                            "No agents available. Create one first.",
+                            t!("platform.no_agents_available").to_string(),
                             appearance.ui_font_family(),
                             LABEL_FONT_SIZE,
                         )
@@ -808,7 +808,7 @@ impl TypedActionView for CreateApiKeyModal {
                 let window_id = ctx.window_id();
                 crate::ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = crate::view_components::DismissibleToast::success(
-                        "Secret key copied.".to_string(),
+                        t!("platform.secret_key_copied").to_string(),
                     );
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });

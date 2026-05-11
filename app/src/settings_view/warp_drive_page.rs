@@ -139,7 +139,7 @@ impl SettingsWidget for WarpDriveHeaderWidget {
 
         let message = Container::new(
             Text::new_inline(
-                "To use Warp Drive, please create an account.".to_string(),
+                t!("drive.create_account_to_use").to_string(),
                 appearance.ui_font_family(),
                 14.,
             )

@@ -190,7 +190,7 @@ impl View for AddRegexModal {
         let is_submit_enabled = !pattern_text.trim().is_empty() && is_valid_regex;
 
         let name_label = Text::new(
-            "Name (optional)",
+            t!("privacy.name_optional").to_string(),
             appearance.ui_font_family(),
             LABEL_FONT_SIZE,
         )
@@ -198,7 +198,7 @@ impl View for AddRegexModal {
         .finish();
 
         let regex_label = Text::new(
-            "Regex pattern",
+            t!("privacy.regex_pattern").to_string(),
             appearance.ui_font_family(),
             LABEL_FONT_SIZE,
         )
@@ -217,7 +217,7 @@ impl View for AddRegexModal {
                 ButtonVariant::Accent,
                 self.submit_button_mouse_state.clone(),
             )
-            .with_text_label("Add regex".to_string())
+            .with_text_label(t!("privacy.add_regex").to_string())
             .with_style(button_style);
 
         if !is_submit_enabled {
@@ -232,7 +232,7 @@ impl View for AddRegexModal {
                     1.,
                     Container::new(if !is_valid_regex && !pattern_text.trim().is_empty() {
                         Text::new(
-                            "Invalid regex",
+                            t!("privacy.invalid_regex").to_string(),
                             appearance.ui_font_family(),
                             LABEL_FONT_SIZE,
                         )

@@ -105,6 +105,7 @@ zh-CN:
     sign_up: "注册"
     billing_and_usage: "账单与用量"
     upgrade: "升级"
+    upgrade_plan: "升级计划"
     invite_a_friend: "邀请朋友"
     log_out: "退出登录"
     staging_api_call_failed: "Staging API 调用失败。你的 IP 地址是否发生变化？"
@@ -135,6 +136,11 @@ zh-CN:
     successfully_uninstalled_oz_command: "Oz 命令已卸载成功。"
     failed_uninstall_oz_command: "卸载 Oz 命令失败：{error}"
     notifications_permission_denied: "Warp 没有发送桌面通知的权限。"
+    no_settings_match: "没有匹配搜索的设置。"
+    no_settings_match_hint: "可以尝试使用不同关键词，或检查是否有拼写错误。"
+    open_settings_file: "打开设置文件"
+    workspace_override_tooltip: "此选项由你的组织设置强制执行，无法自定义。"
+    close_panel: "关闭面板"
     troubleshoot_notifications: "排查通知问题"
     view_changelog: "查看更新日志"
     warp_updated: "Warp 已更新！"
@@ -176,6 +182,10 @@ zh-CN:
     restart_and_update_now: "重启应用并立即更新"
     search_repos: "搜索仓库"
     search_tabs: "搜索标签页..."
+
+  openwarp_launch:
+    title: "Warp 现已开源"
+    description: "你和我们的社区可以通过 agent-first 工作流参与构建 Warp。"
 
   # ── 认证 ──
   auth:
@@ -224,6 +234,8 @@ zh-CN:
     premium_overages_disabled: "高级模型超额用量未启用"
     overage_toggle_description: "继续在套餐限制之外使用高级模型。用量会按 20 美元增量计费，最高不超过你的消费上限，剩余余额会在计划账单日收取。"
     overage_toggle_user_description: "请联系团队管理员启用超额用量，以获得更多 AI 用量。"
+    overage_limit_description: "达到此金额上限后，Warp 将阻止使用高级模型。该上限每月重置。"
+    overage_limit_note: "请注意，接近所选上限时产生的 AI 额度用量可能会超出几美元。"
     sort_a_to_z: "A 到 Z"
     sort_z_to_a: "Z 到 A"
     sort_usage_ascending: "用量升序"
@@ -280,6 +292,9 @@ zh-CN:
     seconds_to_complete: "秒后"
     press_new_keyboard_shortcut: "按下新的键盘快捷键"
     change_keybinding: "更改快捷键"
+    group_files_single_editor_pane: "将文件分组到单个编辑器面板"
+    group_files_single_editor_pane_description: "启用后，同一标签页中打开的任何文件都会自动分组到单个编辑器面板。"
+    grace_period_seconds: "宽限期（秒）"
     window_positions_wayland: "Wayland 上不会恢复窗口位置。"
     allowed_values_1_to_20: "允许值：1-20"
     warp_is_default_terminal: "Warp 是默认终端"
@@ -300,6 +315,9 @@ zh-CN:
     missing_repo: "缺少仓库？"
     configure_access_on_github: "在 GitHub 上配置访问权限"
     no_repositories_found: "未找到仓库"
+    no_repos_selected: "尚未选择仓库"
+    all_indexed_repos_selected: "所有本地已索引仓库都已选择。"
+    new_environment: "新建环境"
     no_matches: "没有匹配搜索的环境。"
     empty_title: "你还没有设置任何环境。"
     empty_subtitle: "选择环境设置方式："
@@ -312,6 +330,10 @@ zh-CN:
     create_theme: "创建主题"
     theme_name: "主题名称"
     background_color: "背景颜色"
+    create_new_theme_from_image: "从图片创建新主题"
+    delete_theme_description: "这将永久删除该主题。"
+    delete_theme: "删除主题"
+    delete_theme_confirm_title: "确定要删除这个主题吗？"
 
   node:
     install_nvm_title: "安装 nvm 以启用版本切换"
@@ -322,6 +344,7 @@ zh-CN:
   env_vars:
     education_text: "添加密钥或命令。Warp 永远不会存储外部密钥"
     invoke_error: "尝试调用环境变量时出错"
+    restore_from_trash: "从废纸篓恢复环境变量"
 
   prompt:
     edit_prompt: "编辑提示词"
@@ -334,8 +357,11 @@ zh-CN:
     directory_tab_colors_description: "根据你所在的目录或仓库自动为标签页着色。"
     uniform_padding_px: "统一内边距（px）"
     restart_for_macos_icon_style: "可能需要重启 Warp，MacOS 才会应用首选图标样式。"
+    add_directory: "+ 添加目录…"
+    add_directory_color: "添加目录颜色"
 
   mcp:
+    title: "MCP Servers"
     server_contains_secrets: "此 MCP server 包含密钥。请前往设置 > 隐私修改密钥遮盖设置。"
     no_server_specified: "未指定 MCP Server。"
     cannot_add_multiple_while_editing: "编辑单个 server 时无法添加多个 MCP server。"
@@ -346,20 +372,48 @@ zh-CN:
     list_description: "添加 MCP server 以扩展 Warp Agent 的能力。MCP server 通过标准化接口向 Agent 暴露数据源或工具，本质上类似插件。你可以添加自定义 server，或使用预设快速开始常见 server。这里也会显示与你共享的团队 server。"
     empty_state: "添加 MCP server 后，它会显示在这里。"
     no_search_results: "未找到搜索结果"
+    no_server_selected: "未选择 MCP server"
+    no_updates_available: "没有可用更新"
 
   platform:
     api_key_deleted: "API key 已删除"
     oz_cloud_api_keys: "Oz Cloud API Keys"
     no_api_keys: "没有 API Keys"
     create_key_description: "创建 key 以管理对 Warp 的外部访问"
+    secret_key_once: "此密钥只会显示一次。请复制并安全保存。"
+    no_agents_available: "没有可用 Agent。请先创建一个。"
+    secret_key_copied: "密钥已复制。"
 
   arguments:
     add_workflow_argument: "添加工作流参数"
     value_optional: "值（可选）"
     add_environment_variables: "添加环境变量"
 
+  referrals:
+    header: "邀请朋友使用 Warp"
+    anonymous_header: "注册以参与 Warp 推荐计划"
+    failed_load_code: "加载推荐码失败。"
+    cta: "与朋友和同事分享 Warp，赚取奖励"
+    current_referral: "当前推荐"
+    current_referrals: "当前推荐"
+    terms_link: "适用特定限制。"
+    terms_contact: " 如对推荐计划有任何疑问，请联系 referrals@warp.dev。"
+
+  keybindings:
+    search_placeholder: "按名称或按键搜索（例如 \"cmd d\"）"
+    shortcut_conflict_warning: "此快捷键与其他快捷键冲突"
+
+  warpify:
+    ssh_tmux_warpification_description: "tmux ssh wrapper 在很多默认 wrapper 不适用的情况下可用，但可能需要你点击按钮进行 warpify。对新标签页生效。"
+    ssh_extension_install_mode_description: "控制远程主机未安装 Warp SSH 扩展时的安装行为。"
+
+  workflows:
+    command_edited: "命令已编辑。"
+    to_cycle_parameters: "切换参数"
+
   # ── AI 助手 ──
   ai_assistant:
+    ask_warp_ai: "询问 Warp AI"
     close: "关闭 Warp AI"
     warp_agent: "Warp Agent"
     remote_session_org_policy: "当活动面板包含远程会话内容时，你的组织不允许使用 AI"
@@ -433,6 +487,13 @@ zh-CN:
     committing: "正在提交…"
     include_unstaged: "包含未暂存"
     commit_message: "提交信息"
+    outdated_comment_singular: "由于已过时，将省略 1 条评论。"
+    outdated_comment_plural: "由于已过时，将省略 {count} 条评论。"
+    included_commits: "包含的提交"
+    from_github: "来自 GitHub"
+    no_matches: "没有匹配项"
+    pr_successfully_created: "PR 已成功创建。"
+    code_review: "代码审查"
 
   code:
     code: "代码"
@@ -454,10 +515,17 @@ zh-CN:
     privacy_policy: "隐私政策"
     read_privacy_policy: "阅读 Warp 隐私政策"
     zero_data_retention_admin_tooltip: "你的管理员已为团队启用零数据保留。用户生成内容永远不会被收集。"
+    name_optional: "名称（可选）"
+    regex_pattern: "Regex 模式"
+    invalid_regex: "无效 regex"
+    add_regex: "添加 regex"
 
   # ── 上下文 ──
   context:
     view_pull_request: "查看 Pull Request"
+    change_git_branch: "切换 Git 分支"
+    change_working_directory: "切换工作目录"
+    working_directory: "工作目录"
 
   # ── Warp Drive ──
   drive:
@@ -474,6 +542,8 @@ zh-CN:
     copy_workflow_text: "复制工作流文本"
     copy_id: "复制 ID"
     copy_variables: "复制变量"
+    create_account_to_use: "要使用 Warp Drive，请先创建账号。"
+    supported_import_file_types: "md, yaml, yml"
     no_access: "无访问权限"
     only_people_invited: "仅受邀人员"
     anyone_with_link: "知道链接的任何人"
@@ -562,6 +632,7 @@ zh-CN:
     open_in_editor: "在编辑器中打开"
     copy_file_path: "复制文件路径"
     content_contains_secrets: "此笔记本无法保存，因为内容包含密钥"
+    title_contains_secrets: "此笔记本无法保存，因为标题包含密钥"
     restore_from_trash: "从废纸篓恢复笔记本"
     restore: "恢复"
     copy_to_personal_tooltip: "将笔记本内容复制到你的个人工作区"
@@ -570,6 +641,8 @@ zh-CN:
     copy_all: "全部复制"
     refresh_notebook: "刷新笔记本"
     refresh: "刷新"
+    insert_block: "插入区块"
+    apply_link: "应用链接"
     link_copied: "链接已复制到剪贴板"
 
   # ── 通用 ──

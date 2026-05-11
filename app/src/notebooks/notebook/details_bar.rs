@@ -137,7 +137,7 @@ impl DetailsBar {
             let ui_builder = appearance.ui_builder().clone();
             edit_button = edit_button.with_tooltip(move || {
                 ui_builder
-                    .tool_tip("Sign in to edit".to_string())
+                    .tool_tip(t!("drive.sign_in_to_edit").to_string())
                     .build()
                     .finish()
             });

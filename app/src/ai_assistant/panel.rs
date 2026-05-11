@@ -52,7 +52,7 @@ use super::transcript::{Transcript, TranscriptEvent};
 use super::utils::{render_prepared_response_button, render_request_limit_info, TranscriptPart};
 use super::{
     AskAIType, AI_ASSISTANT_FEATURE_NAME, AI_ASSISTANT_LOGO_COLOR, AI_ASSISTANT_SVG_PATH,
-    ASK_AI_ASSISTANT_TEXT, PROMPT_CHARACTER_LIMIT,
+    PROMPT_CHARACTER_LIMIT,
 };
 
 const INFO_ICON_SVG_PATH: &str = "bundled/svg/info.svg";
@@ -911,9 +911,13 @@ impl AIAssistantPanelView {
             )
             .with_child(
                 Container::new(
-                    Text::new_inline(ASK_AI_ASSISTANT_TEXT, appearance.ui_font_family(), 14.)
-                        .with_color(sub_text_color)
-                        .finish(),
+                    Text::new_inline(
+                        t!("ai_assistant.ask_warp_ai").to_string(),
+                        appearance.ui_font_family(),
+                        14.,
+                    )
+                    .with_color(sub_text_color)
+                    .finish(),
                 )
                 .with_margin_top(8.)
                 .finish(),

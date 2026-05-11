@@ -200,7 +200,7 @@ impl View for SpendingLimitModal {
         let theme = appearance.theme();
 
         let description_text = Text::new(
-            "Warp will prevent use of premium models when this dollar limit is reached. Resets on a monthly basis.",
+            t!("billing.overage_limit_description").to_string(),
             appearance.ui_font_family(),
             14.,
         )
@@ -208,7 +208,7 @@ impl View for SpendingLimitModal {
         .finish();
 
         let additional_note_text = Text::new(
-            "Note that AI credits made near your chosen limit may exceed it by a few dollars.",
+            t!("billing.overage_limit_note").to_string(),
             appearance.ui_font_family(),
             12.,
         )
