@@ -229,14 +229,15 @@ fn coerce_value_against_schema(value: &mut serde_json::Value, schema: &serde_jso
         }
     }
 
-    if let Some(branches) = schema
-        .get("oneOf")
-        .or_else(|| schema.get("anyOf"))
-        .or_else(|| schema.get("allOf"))
-        .and_then(|b| b.as_array())
-    {
-        for branch in branches {
-            coerce_value_against_schema(value, branch);
+    // Visit every combinator key independently — a schema may declare more than
+    // one of {oneOf, anyOf, allOf} at the same level, and we need to walk every
+    // branch in every present combinator. Coercion is monotonic, so visiting
+    // branches whose constraints don't match `value` is a safe no-op.
+    for combinator in ["oneOf", "anyOf", "allOf"] {
+        if let Some(branches) = schema.get(combinator).and_then(|b| b.as_array()) {
+            for branch in branches {
+                coerce_value_against_schema(value, branch);
+            }
         }
     }
 
@@ -244,6 +245,12 @@ fn coerce_value_against_schema(value: &mut serde_json::Value, schema: &serde_jso
         serde_json::Value::Object(map) => {
             let properties = schema.get("properties").and_then(|p| p.as_object());
             let additional = schema.get("additionalProperties");
+            // Per-key handling for the outer schema only. Per-branch handling
+            // for keys covered by `oneOf`/`anyOf`/`allOf` is reached through
+            // the top-level combinator recursion above: each branch is invoked
+            // with the full `value`, so the branch's own object handling runs
+            // and walks its `properties[k]`. Coercion is monotonic so the two
+            // passes stack safely.
             for (k, v) in map.iter_mut() {
                 if let Some(prop_schema) = properties.and_then(|p| p.get(k)) {
                     coerce_value_against_schema(v, prop_schema);

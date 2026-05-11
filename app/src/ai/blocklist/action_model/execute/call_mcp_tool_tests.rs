@@ -268,6 +268,46 @@ fn tuple_style_items_coerces_positional_schemas() {
 }
 
 #[test]
+fn multiple_combinators_at_same_level_are_all_traversed() {
+    // Regression for Oz review: a schema may declare more than one of
+    // {oneOf, anyOf, allOf} at the same level, and every combinator must be
+    // walked. Earlier, the walker used `.or_else` chain that stopped at the
+    // first present key.
+    let mut args = obj(json!({ "a": 1.0, "b": 2.0, "c": 3.0 }));
+    let schema = obj(json!({
+        "oneOf": [{ "properties": { "a": { "type": "integer" } } }],
+        "anyOf": [{ "properties": { "b": { "type": "integer" } } }],
+        "allOf": [{ "properties": { "c": { "type": "integer" } } }]
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["a"].as_i64(), Some(1));
+    assert_eq!(args["b"].as_i64(), Some(2));
+    assert_eq!(args["c"].as_i64(), Some(3));
+}
+
+#[test]
+fn one_of_with_multiple_branches_all_visited() {
+    // Regression for Oz review: every branch under a combinator must be
+    // visited, not just the first match. The same property name across
+    // branches with different types should still get the integer branch's
+    // coercion when applicable.
+    let mut args = obj(json!({ "v": 11.0 }));
+    let schema = obj(json!({
+        "oneOf": [
+            { "properties": { "v": { "type": "string" } } },
+            { "properties": { "v": { "type": "number" } } },
+            { "properties": { "v": { "type": "integer" } } }
+        ]
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["v"].as_i64(), Some(11));
+}
+
+#[test]
 fn already_integer_value_is_unchanged() {
     let mut args = obj(json!({ "x": 5 }));
     let schema = obj(json!({
