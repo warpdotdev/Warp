@@ -601,9 +601,9 @@ impl LoginSlideView {
 
         let cmd_enter = Keystroke::parse("cmdorctrl-enter").unwrap_or_default();
         let skip_label = if matches!(self.intention, OnboardingIntention::Terminal) {
-            "Disable Warp Drive"
+            t!("auth.disable_warp_drive").to_string()
         } else {
-            "Disable AI features"
+            t!("auth.disable_ai_features").to_string()
         };
         let skip_button = self.skip_button.render(
             appearance,
@@ -989,9 +989,9 @@ impl LoginSlideView {
             .finish();
 
         let cancel_label = if is_terminal {
-            "Enable Warp Drive"
+            t!("auth.enable_warp_drive").to_string()
         } else {
-            "Enable AI features"
+            t!("auth.enable_ai_features").to_string()
         };
         let login_button = self.dialog_login_button.render(
             appearance,

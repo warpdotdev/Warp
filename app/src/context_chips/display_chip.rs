@@ -1106,7 +1106,7 @@ impl DisplayChip {
             if state.is_hovered() {
                 let tool_tip = appearance
                     .ui_builder()
-                    .tool_tip("View pull request".to_string())
+                    .tool_tip(t!("context.view_pull_request").to_string())
                     .build()
                     .finish();
                 stack.add_positioned_overlay_child(tool_tip, udi_tooltip_positioning());

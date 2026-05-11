@@ -1,7 +1,33 @@
 // Suppress warnings about rustdoc style.
 #![allow(clippy::doc_lazy_continuation)]
 
-rust_i18n::i18n!("locales", fallback = "en");
+#[macro_export]
+macro_rules! t {
+    ($key:literal, $($name:ident = $value:expr),+ $(,)?) => {
+        match $crate::i18n::t($key) {
+            value if value == $key => std::borrow::Cow::Owned(format!($key)),
+            value => $crate::i18n::interpolate(
+                value.as_ref(),
+                &[$((stringify!($name), format!("{}", $value))),+],
+            ),
+        }
+    };
+    ($key:literal, $($name:ident),+ $(,)?) => {
+        match $crate::i18n::t($key) {
+            value if value == $key => std::borrow::Cow::Owned(format!($key)),
+            value => $crate::i18n::interpolate(
+                value.as_ref(),
+                &[$((stringify!($name), format!("{}", $name))),+],
+            ),
+        }
+    };
+    ($key:literal) => {
+        match $crate::i18n::t($key) {
+            value if value == $key => std::borrow::Cow::Owned(format!($key)),
+            value => value,
+        }
+    };
+}
 
 mod ai;
 mod alloc;
@@ -43,6 +69,7 @@ mod external_secrets;
 mod font_fallback;
 mod global_resource_handles;
 mod gpu_state;
+pub mod i18n;
 mod input_classifier;
 mod interval_timer;
 mod linear;
@@ -261,6 +288,7 @@ use referral_theme_status::ReferralThemeStatus;
 use rust_embed::RustEmbed;
 use server::server_api::ServerApiProvider;
 use settings::{ExtraMetaKeys, PrivacySettings};
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -579,7 +607,7 @@ fn apply_scroll_multiplier(event: &mut Event, app: &AppContext) {
 
 /// Runs the app. If a subcommand was requested, it'll be run instead of the main application.
 pub fn run() -> Result<()> {
-    init_locale();
+    i18n::init_locale();
 
     // Perform any necessary platform-specific initialization.
     platform::init();
@@ -2451,17 +2479,6 @@ fn init_logging_for_unit_tests_glue() {
 
 /// Mark all features which should be enabled on the current channel as enabled.
 /// This sets global feature flag state and should never be called in a unit test.
-fn init_locale() {
-    let locale = std::env::var("WARP_LANG")
-        .or_else(|_| std::env::var("LANG"))
-        .unwrap_or_default();
-    if locale.starts_with("zh") {
-        rust_i18n::set_locale("zh-CN");
-    } else {
-        rust_i18n::set_locale("en");
-    }
-}
-
 pub fn init_feature_flags() {
     for flag in enabled_features() {
         flag.set_enabled(true);
