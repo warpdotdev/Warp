@@ -30,7 +30,7 @@ Figma: none provided
 
 7. When the sub-setting is disabled (but the parent is enabled), the `&` prefix no longer triggers handoff compose mode. The `/handoff` slash command and footer chip remain available — only the keyboard shortcut is suppressed.
 
-8. When the parent handoff setting is disabled, the `&` sub-setting toggle is rendered in a disabled (non-interactive) state regardless of its stored value. Its stored value is preserved so re-enabling the parent restores the user's previous choice.
+8. When the parent handoff setting is disabled, the `&` sub-setting row is hidden entirely. Its stored value is preserved so re-enabling the parent restores the user's previous choice.
 
 ### Force-disabling handoff when prerequisites are missing
 

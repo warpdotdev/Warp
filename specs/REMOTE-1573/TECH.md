@@ -67,7 +67,7 @@ All four sites switch from the current `is_local_to_cloud_handoff_available()` c
 **`app/src/settings_view/ai_page.rs`**: Add a new `CloudHandoffWidget` struct implementing `SettingsWidget`, placed in the "Experimental" section near `CloudAgentComputerUseWidget`. Pattern:
 
 - `should_render`: return `true` when `OzHandoff` and `HandoffLocalCloud` flags are on. The widget handles the disabled state internally.
-- `render`: Compute force-disabled state from cloud-conversation-storage. When force-disabled, render the toggle as disabled with a tooltip. Beneath the parent toggle, render the `&` sub-toggle indented, disabled when parent is off.
+- `render`: Compute force-disabled state from cloud-conversation-storage. When force-disabled, render the toggle as disabled with a tooltip. Beneath the parent toggle, conditionally render the `&` sub-toggle only when the effective handoff value is true (hidden when parent is off).
 
 Follow the exact pattern of `AgentAttributionWidget` (line 6093) for org-forced-disabled toggles with tooltips, and `CloudAgentComputerUseWidget` (line 6191) for the overall section layout.
 
