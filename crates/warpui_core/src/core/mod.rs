@@ -666,5 +666,5 @@ impl<T> RequestState<T> {
 mod tests;
 
 #[cfg(test)]
-#[path = "zoom_test.rs"]
+#[path = "zoom_tests.rs"]
 mod zoom_tests;
