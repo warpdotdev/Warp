@@ -103,9 +103,17 @@ if [[ "$INSTALL_COMMON_SKILLS" -eq 1 ]]; then
   if [[ "${WARP_SKIP_COMMON_SKILLS_INSTALL:-}" = "1" ]]; then
     :
   elif [[ "$FORCE_COMMON_SKILLS" -eq 1 ]]; then
-    ./script/resolve_common_skills install_common_skills -- --repo-root "${REPO_ROOT}" "${COMMON_SKILLS_ARGS[@]}" --force --non-interactive
+    if [[ "${#COMMON_SKILLS_ARGS[@]}" -gt 0 ]]; then
+      ./script/resolve_common_skills install_common_skills -- --repo-root "${REPO_ROOT}" "${COMMON_SKILLS_ARGS[@]}" --force
+    else
+      ./script/resolve_common_skills install_common_skills -- --repo-root "${REPO_ROOT}" --force --prompt-for-target
+    fi
   else
-    ./script/resolve_common_skills install_common_skills -- --repo-root "${REPO_ROOT}" "${COMMON_SKILLS_ARGS[@]}" --if-needed --non-interactive --quiet
+    if [[ "${#COMMON_SKILLS_ARGS[@]}" -gt 0 ]]; then
+      ./script/resolve_common_skills install_common_skills -- --repo-root "${REPO_ROOT}" "${COMMON_SKILLS_ARGS[@]}" --if-needed --quiet
+    else
+      ./script/resolve_common_skills install_common_skills -- --repo-root "${REPO_ROOT}" --if-needed --prompt-for-target --quiet
+    fi
   fi
 fi
 

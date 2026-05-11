@@ -32,9 +32,9 @@ Common skills are consumed by agents across Warp development workflows. If they 
 
 11. Common-skills installation target selection is always explicit. The installer must not infer the target from an existing project-local or global install. A target is explicit only when the developer provides a project/global flag, sets the install-target environment variable, or answers an interactive prompt for the current command.
 
-12. When no project/global target is provided in an interactive command, bootstrap asks the developer where common skills should be installed. The prompt presents project-local and global options, recommends global for normal local development, and uses global only when the developer accepts the default for that prompt.
+12. When no project/global target is provided in an interactive command, bootstrap and run ask the developer where common skills should be installed. The prompt presents project-local and global options, recommends global for normal local development, and uses global only when the developer accepts the default for that prompt.
 
-13. When no project/global target is provided in a non-interactive command, the installer fails with an actionable error asking the developer or automation to choose project or global explicitly. The command should not hang in CI, automation, cloud setup, or non-interactive shell contexts.
+13. When no project/global target is provided and no interactive prompt is available, the installer fails with an actionable error asking the developer or automation to choose project or global explicitly. The command should not hang in CI, automation, cloud setup, or non-interactive shell contexts.
 
 14. Project-local installs and global installs are mutually exclusive for common skills. If common skills are detected in both the Warp checkout and the user's global skill directory, install and verification flows fail with an actionable error telling the developer to remove one copy before continuing. The error should suggest using `remove_common_skills --repo-root <warp-checkout>` to remove the project-local copy or `remove_common_skills --repo-root <warp-checkout> --global` to remove the global copy.
 
@@ -60,7 +60,7 @@ Common skills are consumed by agents across Warp development workflows. If they 
 
 25. If the developer declines the interactive upstream update prompt, the installer leaves `skills-lock.json` unchanged and continues normal setup from the existing lock. It may still prompt for the project/global target and restore missing or stale local skill contents to match the existing lock.
 
-26. Non-interactive flows never prompt to update `skills-lock.json` from upstream. `script/run`, CI, cloud setup, and direct installer invocations with `--non-interactive` use the current checkout lock as the source of truth and fail rather than hanging if required choices were not provided.
+26. Explicit non-interactive flows never prompt to update `skills-lock.json` from upstream. CI, cloud setup, and direct installer invocations with `--non-interactive` use the current checkout lock as the source of truth and fail rather than hanging if required choices were not provided. Local `script/run` behaves like bootstrap: it may prompt for upstream lock updates and project/global target selection when run from an interactive terminal.
 
 27. When new common-skill versions are pushed to `warpdotdev/common-skills`, a developer can also adopt them by manually updating the Warp checkout's common-skills lock. After the lock changes, the next successful `script/run`, `script/bootstrap`, or direct installer invocation updates project-local common skills or an unpinned/matching global install to match the new lock.
 
