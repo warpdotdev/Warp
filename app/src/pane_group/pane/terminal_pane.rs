@@ -1334,11 +1334,13 @@ fn launch_local_harness_child(
         .terminal_view_from_pane_id(parent_pane_id, ctx)
         .and_then(|terminal_view| terminal_view.as_ref(ctx).active_session_shell_type(ctx));
 
+    let model_id_for_harness_env = model_id.clone();
     let _ = ctx.spawn(
         async move {
             prepare_local_harness_child_launch(
                 prompt,
                 harness_type,
+                model_id_for_harness_env,
                 parent_run_id,
                 shell_type,
                 startup_directory,

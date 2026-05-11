@@ -104,6 +104,8 @@ use crate::ASSETS;
 
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
+#[cfg(feature = "local_fs")]
+use crate::persistence::{database_file_path_for_scope, establish_ro_connection, PersistenceScope};
 
 use crate::ai::attachment_utils::MAX_ATTACHMENT_SIZE_BYTES;
 use crate::ai::block_context::BlockContext;
@@ -3562,8 +3564,8 @@ impl Input {
         };
 
         #[cfg(feature = "local_fs")]
-        if let Some(db_url) = crate::persistence::database_file_path().to_str() {
-            if let Ok(conn) = crate::persistence::establish_ro_connection(db_url) {
+        if let Some(db_url) = database_file_path_for_scope(&PersistenceScope::App).to_str() {
+            if let Ok(conn) = establish_ro_connection(db_url) {
                 input.conn = Some(Arc::new(Mutex::new(conn)));
             }
         }

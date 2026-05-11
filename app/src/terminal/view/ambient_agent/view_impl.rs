@@ -326,6 +326,44 @@ impl TerminalView {
                     model.finish_setup_command_group(group_id, ctx);
                     model.set_setup_command_visibility(false, ctx);
                 });
+
+                // Hide the command for the CLI agent block.
+                if FeatureFlag::HarnessSessionHeader.is_enabled() {
+                    let cli_agent = ambient_agent_view_model
+                        .as_ref(ctx)
+                        .selected_third_party_cli_agent();
+                    let block_index = {
+                        let mut model = self.model.lock();
+                        if let Some(block) = model.block_list_mut().mut_block_from_id(block_id) {
+                            block.set_should_hide_command_grid(true);
+                        }
+                        model.block_list().block_index_for_id(block_id)
+                    };
+                    if let Some(block_index) = block_index {
+                        let header_view = ctx.add_typed_action_view(|_| {
+                            super::HarnessSessionHeader::new(block_id.clone(), cli_agent)
+                        });
+                        ctx.subscribe_to_view(&header_view, |me, _, event, _| {
+                            let super::HarnessSessionHeaderEvent::ToggleCommandGridVisibility(
+                                block_id,
+                            ) = event;
+                            let mut model = me.model.lock();
+                            if let Some(block) = model.block_list_mut().mut_block_from_id(block_id)
+                            {
+                                let hidden = block.should_hide_command_grid();
+                                block.set_should_hide_command_grid(!hidden);
+                            }
+                        });
+                        self.insert_rich_content(
+                            None,
+                            header_view,
+                            Some(RichContentMetadata::HarnessSessionHeader),
+                            RichContentInsertionPosition::BeforeBlockIndex(block_index),
+                            ctx,
+                        );
+                    }
+                }
+
                 // Force a fresh viewer size report to the sharer so the harness CLI (e.g.
                 // the claude TUI) starts at our terminal's actual dimensions instead of
                 // whatever the sandbox PTY was sized to during setup.

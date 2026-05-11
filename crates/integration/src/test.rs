@@ -3172,7 +3172,9 @@ pub fn test_block_based_snackbar_small_window() -> Builder {
             integration_testing::create_file_from_assets(
                 TEST_ONLY_ASSETS,
                 "small_window.sqlite",
-                &integration_testing::persistence::database_file_path(),
+                &integration_testing::persistence::database_file_path_for_scope(
+                    &integration_testing::persistence::PersistenceScope::App,
+                ),
             );
         })
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
