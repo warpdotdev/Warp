@@ -23,11 +23,7 @@ pub fn init(app: &mut AppContext) {
             LightboxViewAction::NavigatePrevious,
             view_id.clone(),
         ),
-        FixedBinding::new(
-            "right",
-            LightboxViewAction::NavigateNext,
-            view_id.clone(),
-        ),
+        FixedBinding::new("right", LightboxViewAction::NavigateNext, view_id.clone()),
         // GH9729 §698: zoom keybindings. `=` is the unmodified `+` key on
         // US-style keyboards (matches the workspace-level `cmdorctrl-=`
         // convention in `app/src/util/bindings.rs`); `shift-=` covers the
@@ -342,9 +338,8 @@ impl View for LightboxView {
                 // foreground-stat that v1 §694 explicitly avoids
                 // extending. See `TIER2_TODO::t2-8-r2` for the plumbing
                 // follow-up.
-                metadata_line: current_image_native_size.map(|size| {
-                    format!("{} × {} px", size.x() as i32, size.y() as i32)
-                }),
+                metadata_line: current_image_native_size
+                    .map(|size| format!("{} × {} px", size.x() as i32, size.y() as i32)),
                 options: lightbox::Options {
                     dismiss_keystroke: Keystroke::parse("escape").ok(),
                     on_navigate: Some(Arc::new(|direction, ctx, _| match direction {

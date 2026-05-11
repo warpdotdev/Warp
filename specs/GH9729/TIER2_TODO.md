@@ -75,10 +75,17 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
-- [ ] **t2-FINAL.** Presubmit (no R1/R2 rows): `cargo fmt`; `cargo clippy
-       --workspace --exclude command-signatures-v2 --all-targets --tests --
-       -D warnings`; `cargo nextest run --no-fail-fast --workspace
-       --exclude command-signatures-v2`.
+- [x] **t2-FINAL.** Presubmit. `cargo fmt` applied (cosmetic-only:
+       one `view_id` line collapse, one import reorder in
+       `app/src/util/image.rs`). `cargo clippy --workspace --exclude
+       command-signatures-v2 --all-targets --tests -- -D warnings`
+       clean. `cargo nextest run --no-fail-fast --workspace --exclude
+       command-signatures-v2` ran 5938 tests, 9 failures — all
+       pre-existing environmental tests identical to the v1 FINAL
+       pattern (SSH integration × 6, git tag display, settings
+       migration marker, plus one flaky `ui_tests::test_active_session_follows_focus`
+       that passed on rerun). None of the failures touch
+       image-preview code paths.
 
 ## Tracker
 
@@ -90,7 +97,7 @@ Hard rules:
 | t2-7 | zoom (pan deferred to t2-7-pan) | `6aee220` | [x] | [x] | [x] |
 | t2-8 | status footer (dimensions only) | `d9cc0c3` | [x] | [x] | [x] |
 | t2-9 | EXIF orientation (ICC deferred to t2-9-icc) | `3e694be` | [x] | [x] | [x] |
-| t2-FINAL | presubmit | | [ ] | — | — |
+| t2-FINAL | presubmit | `611ec2b` | [x] | — | — |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not
