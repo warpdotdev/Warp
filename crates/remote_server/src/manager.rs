@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::future::Future;
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -99,6 +98,33 @@ pub enum RemoteServerOperation {
     LoadRepoMetadataDirectory,
     IndexCodebase,
     DropCodebaseIndex,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum RemoteCodebaseIndexMutation {
+    Index,
+    Drop,
+}
+
+impl RemoteCodebaseIndexMutation {
+    fn operation(self) -> RemoteServerOperation {
+        match self {
+            Self::Index => RemoteServerOperation::IndexCodebase,
+            Self::Drop => RemoteServerOperation::DropCodebaseIndex,
+        }
+    }
+
+    async fn send(
+        self,
+        client: Arc<RemoteServerClient>,
+        repo_path: String,
+        auth_token: String,
+    ) -> Result<RemoteCodebaseIndexStatus, crate::client::ClientError> {
+        match self {
+            Self::Index => client.index_codebase(repo_path, auth_token).await,
+            Self::Drop => client.drop_codebase_index(repo_path, auth_token).await,
+        }
+    }
 }
 
 /// Classification of a remote server client error for telemetry.
@@ -1211,15 +1237,7 @@ impl RemoteServerManager {
         repo_path: String,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.mutate_codebase_index(
-            host_id,
-            repo_path,
-            RemoteServerOperation::IndexCodebase,
-            |client, repo_path, auth_token| async move {
-                client.index_codebase(repo_path, auth_token).await
-            },
-            ctx,
-        );
+        self.mutate_codebase_index(host_id, repo_path, RemoteCodebaseIndexMutation::Index, ctx);
     }
 
     /// Sends a `DropCodebaseIndex` request to a connected daemon for this host.
@@ -1229,30 +1247,17 @@ impl RemoteServerManager {
         repo_path: String,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.mutate_codebase_index(
-            host_id,
-            repo_path,
-            RemoteServerOperation::DropCodebaseIndex,
-            |client, repo_path, auth_token| async move {
-                client.drop_codebase_index(repo_path, auth_token).await
-            },
-            ctx,
-        );
+        self.mutate_codebase_index(host_id, repo_path, RemoteCodebaseIndexMutation::Drop, ctx);
     }
 
-    fn mutate_codebase_index<F, Fut>(
+    fn mutate_codebase_index(
         &mut self,
         host_id: HostId,
         repo_path: String,
-        operation: RemoteServerOperation,
-        request: F,
+        mutation: RemoteCodebaseIndexMutation,
         ctx: &mut ModelContext<Self>,
-    ) where
-        F: FnOnce(Arc<RemoteServerClient>, String, String) -> Fut + Send + 'static,
-        Fut: Future<Output = Result<RemoteCodebaseIndexStatus, crate::client::ClientError>>
-            + Send
-            + 'static,
-    {
+    ) {
+        let operation = mutation.operation();
         let Some((session_id, client, remote_identity_key)) =
             self.connected_session_for_host(&host_id)
         else {
@@ -1300,7 +1305,7 @@ impl RemoteServerManager {
                     return;
                 };
 
-                match request(client, repo_path, auth_token).await {
+                match mutation.send(client, repo_path, auth_token).await {
                     Ok(status) => {
                         log::info!(
                             "[Remote codebase indexing] Manager received codebase index mutation response: \
