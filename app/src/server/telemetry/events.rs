@@ -2818,6 +2818,11 @@ pub enum TelemetryEvent {
         error: Option<String>,
         remote_os: Option<String>,
         remote_arch: Option<String>,
+        /// Exit code of the SSH subprocess, if available.
+        /// Helps distinguish proxy crashes from transport failures.
+        exit_code: Option<i32>,
+        /// Whether the SSH subprocess was killed by a signal.
+        signal_killed: Option<bool>,
     },
     /// Emitted when an established remote server connection drops.
     RemoteServerDisconnection {
@@ -4175,11 +4180,15 @@ impl TelemetryEvent {
                 error,
                 remote_os,
                 remote_arch,
+                exit_code,
+                signal_killed,
             } => Some(json!({
                 "phase": phase,
                 "error": error,
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
+                "exit_code": exit_code,
+                "signal_killed": signal_killed,
             })),
             TelemetryEvent::RemoteServerDisconnection {
                 remote_os,
