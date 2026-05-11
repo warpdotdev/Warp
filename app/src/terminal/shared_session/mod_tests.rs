@@ -166,29 +166,30 @@ fn test_scrollback_serialization() {
         .expect("expected first scrollback block");
     let json: Value = serde_json::from_slice(&first_block.raw).expect("valid scrollback json");
 
-    // Capture the expected bytes from the model so we can assert exact JSON array contents.
+    // Capture the expected bytes from the model so we can assert exact base64 JSON contents.
     let completed_block = model.block_list().block_at(1.into()).unwrap();
     let expected: SerializedBlock = completed_block.into();
-
-    let expected_command: Vec<Value> = expected
-        .stylized_command
-        .iter()
-        .map(|&b| Value::from(b))
-        .collect();
-    let expected_output: Vec<Value> = expected
-        .stylized_output
-        .iter()
-        .map(|&b| Value::from(b))
-        .collect();
+    let expected_json: Value =
+        serde_json::from_slice(&expected.to_json().expect("serialize block to base64 json"))
+            .expect("valid expected block json");
 
     assert_eq!(
         json.get("stylized_command"),
-        Some(&Value::Array(expected_command)),
+        expected_json.get("stylized_command"),
     );
     assert_eq!(
         json.get("stylized_output"),
-        Some(&Value::Array(expected_output)),
+        expected_json.get("stylized_output"),
     );
+
+    assert!(matches!(
+        json.get("stylized_command"),
+        Some(Value::String(_))
+    ));
+    assert!(matches!(
+        json.get("stylized_output"),
+        Some(Value::String(_))
+    ));
 }
 
 #[test]

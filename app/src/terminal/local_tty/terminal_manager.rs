@@ -1535,9 +1535,11 @@ impl TerminalManager {
             } => {
                 log::warn!("Failed to create shared session: reason={reason:?}, cause={cause:?}");
 
-                model
-                    .lock()
-                    .set_shared_session_status(SharedSessionStatus::NotShared);
+                {
+                    let mut model = model.lock();
+                    model.set_shared_session_status(SharedSessionStatus::NotShared);
+                    model.clear_ordered_terminal_events_for_shared_session_tx();
+                }
 
                 Manager::handle(ctx).update(ctx, |manager, ctx| {
                     manager.share_failed(window_id, ctx);

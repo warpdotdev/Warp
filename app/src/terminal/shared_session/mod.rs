@@ -208,7 +208,7 @@ impl SharedSessionScrollbackType {
             })
             .filter_map(|block| {
                 let serialized_block: SerializedBlock = block.into();
-                let bytes = serde_json::to_vec(&serialized_block);
+                let bytes = serialized_block.to_json();
                 bytes.ok().map(|raw| ScrollbackBlock { raw })
             })
             .collect();
@@ -413,7 +413,7 @@ pub(crate) fn decode_scrollback(scrollback: &Scrollback) -> Vec<SerializedBlock>
     scrollback
         .blocks
         .iter()
-        .filter_map(|block| serde_json::from_slice(&block.raw).ok())
+        .filter_map(|block| SerializedBlock::from_json(&block.raw).ok())
         .collect()
 }
 
