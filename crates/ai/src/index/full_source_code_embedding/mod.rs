@@ -161,6 +161,28 @@ pub struct Fragment {
     location: FragmentLocation,
 }
 
+impl Fragment {
+    pub fn from_byte_range(
+        content: String,
+        content_hash: ContentHash,
+        absolute_path: PathBuf,
+        byte_range: Range<usize>,
+    ) -> Self {
+        Self {
+            content,
+            content_hash,
+            location: FragmentLocation {
+                absolute_path,
+                byte_range: ByteOffset::from(byte_range.start)..ByteOffset::from(byte_range.end),
+            },
+        }
+    }
+
+    pub fn content_hash(&self) -> &ContentHash {
+        &self.content_hash
+    }
+}
+
 impl From<Fragment> for warp_graphql::full_source_code_embedding::Fragment {
     fn from(val: Fragment) -> Self {
         Self {
