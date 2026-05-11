@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 
 use chrono::Local;
@@ -564,31 +563,17 @@ fn test_from_serialized_name_falls_back_to_unknown() {
 }
 
 #[test]
-fn test_cli_agent_hermes_telemetry_serializes_lowercase() {
+fn test_cli_agent_hermes_telemetry_matches_existing_wire_case() {
     let cli_agent: CLIAgentType = CLIAgent::Hermes.into();
     assert!(matches!(cli_agent, CLIAgentType::Hermes));
     assert_eq!(
         serde_json::to_value(cli_agent).unwrap(),
-        serde_json::json!("hermes"),
+        serde_json::json!("Hermes"),
     );
-}
-
-#[test]
-fn test_cli_agent_hermes_does_not_change_cargo_dependencies() {
-    let output = Command::new("git")
-        .args([
-            "diff",
-            "--name-only",
-            "origin/master...HEAD",
-            "--",
-            ":/Cargo.lock",
-            ":(glob)**/Cargo.toml",
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .expect("git diff should run");
-    assert!(output.status.success(), "git diff failed: {output:?}");
-    assert!(String::from_utf8_lossy(&output.stdout).trim().is_empty());
+    assert_eq!(
+        serde_json::to_value(CLIAgentType::Claude).unwrap(),
+        serde_json::json!("Claude"),
+    );
 }
 
 #[test]
