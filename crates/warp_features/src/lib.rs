@@ -311,6 +311,11 @@ pub enum FeatureFlag {
     /// Enables the natural language classification model.
     NLDClassifierModelEnabled,
 
+    /// Selects the v2 BERT-tiny ONNX classifier (`bert_tiny_v2.onnx`)
+    /// instead of the baseline (`bert_tiny.onnx`). Gated to dogfood
+    /// channels (Dev/Local) until the v2 model has been validated.
+    NLDOnnxModelV2Enabled,
+
     /// Enables the fast-forward autoexecute button
     FastForwardAutoexecuteButton,
 
@@ -895,6 +900,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::ContextLineReviewComments,
     FeatureFlag::RunGeneratorsWithCmdExe,
     FeatureFlag::NLDClassifierModelEnabled,
+    FeatureFlag::NLDOnnxModelV2Enabled,
     FeatureFlag::Projects,
     FeatureFlag::ProviderCommand,
     FeatureFlag::ArtifactCommand,

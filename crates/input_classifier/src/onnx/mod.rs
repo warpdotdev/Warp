@@ -22,9 +22,14 @@ use crate::{
 #[folder = "models/onnx"]
 struct Models;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Model {
+    /// The baseline BERT-tiny classifier (`bert_tiny.onnx`) shipped to all
+    /// users with the ONNX backend compiled in.
     BertTiny,
+    /// The v2 BERT-tiny classifier (`bert_tiny_v2.onnx`), gated behind the
+    /// `NLDOnnxModelV2Enabled` feature flag for dogfood rollout.
+    BertTinyV2,
 }
 
 impl Model {
@@ -38,13 +43,14 @@ impl Model {
 
     fn model_path(&self) -> &'static str {
         match self {
-            Model::BertTiny => "bert_tiny_v2.onnx",
+            Model::BertTiny => "bert_tiny.onnx",
+            Model::BertTinyV2 => "bert_tiny_v2.onnx",
         }
     }
 
     fn tokenizer_path(&self) -> &'static str {
         match self {
-            Model::BertTiny => "bert_tiny_tokenizer.json",
+            Model::BertTiny | Model::BertTinyV2 => "bert_tiny_tokenizer.json",
         }
     }
 }

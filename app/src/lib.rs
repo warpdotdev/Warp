@@ -2635,6 +2635,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ContextLineReviewComments,
         #[cfg(feature = "nld_fasttext_model")]
         FeatureFlag::NLDClassifierModelEnabled,
+        #[cfg(feature = "nld_onnx_model_v2")]
+        FeatureFlag::NLDOnnxModelV2Enabled,
         #[cfg(feature = "fast_forward_autoexecute_button")]
         FeatureFlag::FastForwardAutoexecuteButton,
         #[cfg(feature = "code_find_replace")]
