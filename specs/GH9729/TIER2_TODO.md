@@ -75,6 +75,20 @@ Hard rules:
        conversion). — `tech.md` §700
 - ~~**t2-10.** Visible thumbnail strip — **BLOCKED** on Tier 1 sibling
        navigation (`tech.md` §693). Out of scope for this loop.~~
+- [x] **t2-18.** Remove diagnostic logs. Log evidence (11 ZoomIn
+       dispatches from a t2-17 run) proved the + button works
+       perfectly — closure runs, action dispatches, `zoom_factor`
+       updates, footer percentage rises. The user's "nothing happens"
+       is the **t2-7-r1 gotcha** I documented and never fixed:
+       `ConstrainedBox::layout` tightens the constraint by parent's
+       max, so for any image already at fit-window size at zoom 1.0
+       (e.g., 1024x1024 in ~1404x800 area = height-bound at 800),
+       further zoom can't grow the rendered size. For SMALL images
+       (e.g., 200x200 SVG), zoom IS visible up to viewport-bound.
+       Proper fix is `t2-7-pan` (let image overflow viewport, clip
+       to scrim, drag-to-pan for navigation). — supplements
+       `tech.md` §698.
+- [x] **t2-17.** Bump diagnostic logs to warn, tighten gaps.
 - [x] **t2-16.** Flex::row toolbar + diagnostic logging. After t2-15
        the user reports `+` STILL doesn't fire. The bug persists
        across three layout strategies (Flex::row, individually-positioned
@@ -195,6 +209,8 @@ Hard rules:
 | t2-14 | scrim opacity + toolbar prominence | `46f0a2e` | [x] | [ ] | [ ] |
 | t2-15 | adjacent icons + conditional reset | `6623e0e` | [x] | [ ] | [ ] |
 | t2-16 | Flex::row toolbar + logging | `ae67790` | [x] | [ ] | [ ] |
+| t2-17 | warn-level logs + tighter gaps | `dff6822` | [x] | [ ] | [ ] |
+| t2-18 | remove diagnostic logs | `45ccfe2` | [x] | [ ] | [ ] |
 
 Tick `[x]` only after the corresponding artifact (commit for `Impl`, review
 file for `R1`/`R2`) exists and contains real content. Empty stubs do not

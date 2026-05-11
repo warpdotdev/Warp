@@ -536,10 +536,6 @@ impl Component for Lightbox {
                     options: button::Options {
                         size: button::Size::Small,
                         on_click: Some(Box::new(move |ctx, app, _| {
-                            // GH9729 t2-17: warn-level so it surfaces at
-                            // default macOS log filtering. Diagnostic
-                            // only; remove once the + bug is closed.
-                            log::warn!("GH9729 t2-17 DIAG: zoom_out (−) on_click fired");
                             on_zoom_out(ZoomDirection::Out, ctx, app);
                         })),
                         ..button::Options::default(appearance)
@@ -555,7 +551,6 @@ impl Component for Lightbox {
                     options: button::Options {
                         size: button::Size::Small,
                         on_click: Some(Box::new(move |ctx, app, _| {
-                            log::warn!("GH9729 t2-17 DIAG: zoom_in (+) on_click fired");
                             on_zoom_in(ZoomDirection::In, ctx, app);
                         })),
                         ..button::Options::default(appearance)
@@ -600,9 +595,6 @@ impl Component for Lightbox {
                         options: button::Options {
                             size: button::Size::Small,
                             on_click: Some(Box::new(move |ctx, app, _| {
-                                log::warn!(
-                                    "GH9729 t2-17 DIAG: zoom_reset (100%) on_click fired"
-                                );
                                 on_zoom_reset(ZoomDirection::Reset, ctx, app);
                             })),
                             ..button::Options::default(appearance)
