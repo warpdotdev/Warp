@@ -37,11 +37,14 @@ Environment variables:
 - `find . -name "*.wgsl" -exec wgslfmt --check {} +` - Check WGSL shader formatting
 
 ### Platform Setup
-- `./script/bootstrap` - Platform-specific setup (calls platform-specific bootstrap scripts)
+- `./script/bootstrap` - Platform-specific setup (calls platform-specific bootstrap scripts). Also verifies `git-lfs` is installed and runs `git lfs install --local && git lfs pull` so model binaries under `crates/input_classifier/models/**` are materialized in the working tree.
 - `./script/bootstrap --install-common-skills` - Platform setup plus common agent skill installation from `skills-lock.json`.
 - `./script/install_common_skills --if-needed` - Install or refresh shared agent skills from the standard `npx skills` project lock.
 - `./script/install_cargo_build_deps` - Install Cargo build dependencies
 - `./script/install_cargo_test_deps` - Install Cargo test dependencies
+
+#### Git LFS
+The input-classifier ONNX and fasttext model binaries are stored via Git LFS. If you clone the repo without git-lfs installed, those files will be ~130-byte pointer stubs and the app will fail to load the classifier. Install git-lfs (`brew install git-lfs` on macOS, `sudo apt-get install git-lfs` on Linux, `winget install GitHub.GitLFS` on Windows) and run `git lfs install && git lfs pull` once per checkout. `./script/bootstrap` automates this step.
 
 `skills-lock.json` is the standard project lock file managed by `npx skills`. `script/run` checks this lock before building and restores the checked-in project skills with the pinned `skills@1.5.6` CLI when the local install stamp is stale. To update the locked common skills, run `npx --yes skills@1.5.6 update -p -y` and commit the resulting `skills-lock.json` and `.agents/skills` changes.
 
