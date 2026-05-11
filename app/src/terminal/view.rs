@@ -23527,6 +23527,7 @@ impl TerminalView {
                     &conversation,
                     PRE_REWIND_PREFIX,
                     false, /* preserve_task_ids */
+                    None,
                     ctx,
                 ) {
                     log::warn!("Failed to save pre-rewind backup of conversation {conversation_id}: {e}");

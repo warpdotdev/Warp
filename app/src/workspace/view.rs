@@ -11732,6 +11732,7 @@ impl Workspace {
                         fork_from.exchange_id,
                         fork_from.fork_from_exact_exchange,
                         FORK_PREFIX,
+                        None,
                         ctx,
                     )
                 } else {
@@ -11739,6 +11740,7 @@ impl Workspace {
                         &source_conversation,
                         FORK_PREFIX,
                         false, /* preserve_task_ids */
+                        None,
                         ctx,
                     )
                 }
@@ -13204,8 +13206,15 @@ impl Workspace {
 
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         let source_conversation_id = source_token.as_str().to_string();
+        let title_for_fork = source_conversation
+            .title()
+            .map(|t| format!("{t} (Moved to cloud)"));
         ctx.spawn(
-            async move { ai_client.fork_conversation(source_conversation_id).await },
+            async move {
+                ai_client
+                    .fork_conversation(source_conversation_id, title_for_fork)
+                    .await
+            },
             move |me, result, ctx| match result {
                 Ok(response) => {
                     me.complete_local_to_cloud_handoff_open(
@@ -13245,8 +13254,17 @@ impl Workspace {
     ) {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         // Materialize the fork locally so the new pane can restore it.
+        let title_override = source_conversation
+            .title()
+            .map(|t| format!("{t} (Moved to cloud)"));
         let local_fork = match history_model.update(ctx, |history_model, ctx| {
-            history_model.fork_conversation(&source_conversation, FORK_PREFIX, true, ctx)
+            history_model.fork_conversation(
+                &source_conversation,
+                FORK_PREFIX,
+                true,
+                title_override.as_deref(),
+                ctx,
+            )
         }) {
             Ok(forked) => forked,
             Err(err) => {
@@ -13314,6 +13332,7 @@ impl Workspace {
         // Keep handoff state on the cloud model until snapshot prep and submit finish.
         let pending = PendingHandoff {
             forked_conversation_id: forked_conversation_id.clone(),
+            title: title_override,
             touched_workspace: None,
             snapshot_upload: SnapshotUploadStatus::Pending,
             submission_state: HandoffSubmissionState::Idle,
