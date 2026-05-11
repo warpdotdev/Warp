@@ -7062,6 +7062,15 @@ impl SettingsWidget for ApiKeysWidget {
         // Provider key editors (always visible)
         column.add_child(self.render_provider_key_editors(appearance, is_enabled, app));
 
+        // Warp credit fallback toggle (shown when BYO is enabled)
+        if is_byo_enabled {
+            column.add_child(
+                Container::new(self.render_can_use_warp_credits_with_byok_toggle(view, app))
+                    .with_margin_top(16.)
+                    .finish(),
+            );
+        }
+
         // Upgrade CTA if BYOK not enabled
         if !is_byo_enabled {
             let auth_state = AuthStateProvider::as_ref(app).get();
@@ -7138,6 +7147,7 @@ impl SettingsWidget for ApiKeysWidget {
 
             column.add_child(Container::new(upgrade_text_element.finish()).finish());
         }
+
         // Custom endpoints sub-label + list (only when flag on and endpoints non-empty)
         if custom_inference_flag_on {
             let endpoints = &ApiKeyManager::as_ref(app).keys().custom_endpoints;
