@@ -176,26 +176,109 @@ pub(crate) fn coerce_integer_args(
     args: &mut serde_json::Map<String, serde_json::Value>,
     input_schema: &serde_json::Map<String, serde_json::Value>,
 ) {
-    let Some(properties) = input_schema.get("properties").and_then(|p| p.as_object()) else {
-        return;
-    };
+    let schema = serde_json::Value::Object(input_schema.clone());
+    let mut value = serde_json::Value::Object(std::mem::take(args));
+    coerce_integer_value(&mut value, &schema, &schema, &mut Vec::new());
 
-    for (key, prop_def) in properties {
-        let is_integer = prop_def.get("type").and_then(|t| t.as_str()) == Some("integer");
-        if !is_integer {
-            continue;
-        }
-        let Some(serde_json::Value::Number(n)) = args.get_mut(key) else {
-            continue;
-        };
-        let Some(f) = n.as_f64() else { continue };
-        if f.fract() != 0.0 {
-            continue;
-        }
-        if let Ok(i) = i64::try_from(f as i128) {
-            *n = serde_json::Number::from(i);
+    if let serde_json::Value::Object(coerced_args) = value {
+        *args = coerced_args;
+    }
+}
+
+fn coerce_integer_value(
+    value: &mut serde_json::Value,
+    schema: &serde_json::Value,
+    root_schema: &serde_json::Value,
+    ref_stack: &mut Vec<String>,
+) {
+    if let Some(ref_path) = schema.get("$ref").and_then(|ref_path| ref_path.as_str()) {
+        if ref_path.starts_with('#') && !ref_stack.iter().any(|seen| seen == ref_path) {
+            ref_stack.push(ref_path.to_string());
+            if let Some(resolved_schema) =
+                root_schema.pointer(ref_path.strip_prefix('#').unwrap_or_default())
+            {
+                coerce_integer_value(value, resolved_schema, root_schema, ref_stack);
+            }
+            ref_stack.pop();
         }
     }
+
+    for keyword in ["allOf", "anyOf", "oneOf"] {
+        if let Some(schemas) = schema.get(keyword).and_then(|schemas| schemas.as_array()) {
+            for nested_schema in schemas {
+                coerce_integer_value(value, nested_schema, root_schema, ref_stack);
+            }
+        }
+    }
+
+    if schema_declares_integer(schema) {
+        coerce_number_to_integer(value);
+    }
+
+    match value {
+        serde_json::Value::Object(object) => {
+            if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
+                for (key, property_schema) in properties {
+                    if let Some(property_value) = object.get_mut(key) {
+                        coerce_integer_value(
+                            property_value,
+                            property_schema,
+                            root_schema,
+                            ref_stack,
+                        );
+                    }
+                }
+            }
+
+            if let Some(additional_properties) = schema.get("additionalProperties") {
+                if additional_properties.is_object() {
+                    for property_value in object.values_mut() {
+                        coerce_integer_value(
+                            property_value,
+                            additional_properties,
+                            root_schema,
+                            ref_stack,
+                        );
+                    }
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            if let Some(items_schema) = schema.get("items") {
+                for item in items {
+                    coerce_integer_value(item, items_schema, root_schema, ref_stack);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn schema_declares_integer(schema: &serde_json::Value) -> bool {
+    match schema.get("type") {
+        Some(serde_json::Value::String(schema_type)) => schema_type == "integer",
+        Some(serde_json::Value::Array(schema_types)) => schema_types
+            .iter()
+            .any(|schema_type| schema_type.as_str() == Some("integer")),
+        _ => false,
+    }
+}
+
+fn coerce_number_to_integer(value: &mut serde_json::Value) {
+    let serde_json::Value::Number(number) = value else {
+        return;
+    };
+    let Some(float) = number.as_f64() else {
+        return;
+    };
+    if !float.is_finite() || float.fract() != 0.0 {
+        return;
+    }
+    if float < i64::MIN as f64 || float > i64::MAX as f64 {
+        return;
+    }
+
+    *number = serde_json::Number::from(float as i64);
 }
 
 #[cfg(test)]
