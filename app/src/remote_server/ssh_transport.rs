@@ -205,11 +205,8 @@ impl RemoteTransport for SshTransport {
                     result: Ok(()),
                 },
                 Err(server_err) => {
-                    let should_try_scp = matches!(
-                        server_err,
-                        Error::ScriptFailed { exit_code, .. }
-                            if exit_code == remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE
-                    );
+                    let should_try_scp = !should_skip_scp_fallback(&server_err);
+
                     if should_try_scp {
                         log::info!("Remote server has no curl/wget, falling back to SCP upload");
                         match scp_install_fallback(&socket_path).await {
@@ -314,6 +311,12 @@ impl RemoteTransport for SshTransport {
             None => true,
         }
     }
+}
+
+/// Exit codes where SCP fallback would not help because the failure
+/// is on the remote host itself (not a network/download issue).
+fn should_skip_scp_fallback(error: &Error) -> bool {
+    matches!(error, Error::ScriptFailed { exit_code , .. }     if *exit_code == remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE)
 }
 
 /// Runs the install script on the remote host to download and install

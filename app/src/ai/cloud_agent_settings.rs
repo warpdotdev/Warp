@@ -24,6 +24,34 @@ define_settings_group!(CloudAgentSettings, settings: [
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Never,
         private: true,
+    },
+    last_selected_harness: LastSelectedHarness {
+        type: Option<String>,
+        default: None,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: true,
+    },
+    last_selected_host: LastSelectedHost {
+        type: Option<String>,
+        default: None,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: true,
+    },
+    last_selected_harness_model: LastSelectedHarnessModel {
+        type: HashMap<String, String>,
+        default: HashMap::new(),
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: true,
+    },
+    last_selected_auth_secret: LastSelectedAuthSecret {
+        type: HashMap<String, String>,
+        default: HashMap::new(),
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: true,
     }
 ]);
 

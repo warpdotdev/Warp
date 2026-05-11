@@ -6359,6 +6359,10 @@ impl Input {
             }
             AISettingsChangedEvent::AIAutoDetectionEnabled { .. }
             | AISettingsChangedEvent::NLDInTerminalEnabled { .. } => {
+                // NLD is irrelevant in cloud mode v2 — the input is always AI.
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    return;
+                }
                 // The input model handles updating the lock state via its own subscription.
                 // If NLD is now enabled for the current context and the buffer is non-empty,
                 // trigger autodetection on the current buffer contents.
@@ -9413,31 +9417,36 @@ impl Input {
                     .as_ref(ctx)
                     .is_inline_menu_open();
 
-                let should_run_ai_input_detection = match edit_origin {
-                    // Edits made by the local user should trigger autodetection, if
-                    // it is enabled.
-                    EditOrigin::UserInitiated
-                    | EditOrigin::UserTyped
-                    | EditOrigin::SyncedTerminalInput => {
-                        !is_inline_menu_open
-                            && self
-                                .ai_input_model
-                                .as_ref(ctx)
-                                .should_run_input_autodetection(ctx)
+                // NLD autodetection is irrelevant in cloud mode v2 — the input is always AI.
+                let should_run_ai_input_detection = if self.is_cloud_mode_input_v2_composing(ctx) {
+                    false
+                } else {
+                    match edit_origin {
+                        // Edits made by the local user should trigger autodetection, if
+                        // it is enabled.
+                        EditOrigin::UserInitiated
+                        | EditOrigin::UserTyped
+                        | EditOrigin::SyncedTerminalInput => {
+                            !is_inline_menu_open
+                                && self
+                                    .ai_input_model
+                                    .as_ref(ctx)
+                                    .should_run_input_autodetection(ctx)
+                        }
+                        // Remote edits from shared session viewers should trigger autodetection
+                        // on the sharer's side, so that the sharer's input mode adjusts as viewers type.
+                        EditOrigin::RemoteEdit => {
+                            let is_sharer = self.model.lock().shared_session_status().is_sharer();
+                            !is_inline_menu_open
+                                && is_sharer
+                                && self
+                                    .ai_input_model
+                                    .as_ref(ctx)
+                                    .should_run_input_autodetection(ctx)
+                        }
+                        // System edits should never trigger autodetection.
+                        EditOrigin::SystemEdit => false,
                     }
-                    // Remote edits from shared session viewers should trigger autodetection
-                    // on the sharer's side, so that the sharer's input mode adjusts as viewers type.
-                    EditOrigin::RemoteEdit => {
-                        let is_sharer = self.model.lock().shared_session_status().is_sharer();
-                        !is_inline_menu_open
-                            && is_sharer
-                            && self
-                                .ai_input_model
-                                .as_ref(ctx)
-                                .should_run_input_autodetection(ctx)
-                    }
-                    // System edits should never trigger autodetection.
-                    EditOrigin::SystemEdit => false,
                 };
 
                 // Abort any autodetection work on the old buffer state.

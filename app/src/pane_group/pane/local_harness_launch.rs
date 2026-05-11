@@ -3,7 +3,10 @@ use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::Arc};
 use crate::ai::{
     agent_sdk::{
         driver::{
-            harness::{claude_code::prepare_claude_environment_config, harness_kind, HarnessKind},
+            harness::{
+                claude_code::prepare_claude_environment_config, harness_kind,
+                harness_model_env_vars, HarnessKind,
+            },
             AgentDriverError,
         },
         task_env_vars, validate_cli_installed,
@@ -77,6 +80,7 @@ fn local_child_task_config(harness: Harness) -> Option<AgentConfigSnapshot> {
 pub(super) async fn prepare_local_harness_child_launch(
     prompt: String,
     harness_type: String,
+    model_id: Option<String>,
     parent_run_id: Option<String>,
     shell_type: Option<ShellType>,
     startup_directory: Option<PathBuf>,
@@ -169,9 +173,15 @@ pub(super) async fn prepare_local_harness_child_launch(
             )
         })?;
 
+    let mut env_vars = task_env_vars(Some(&task_id), parent_run_id.as_deref(), harness);
+    // Propagate the selected model to Claude Code via ANTHROPIC_MODEL.
+    // Codex local children never receive a model override — the UI
+    // ensures model_id is empty for local Codex.
+    env_vars.extend(harness_model_env_vars(harness, model_id.as_deref()));
+
     Ok(PreparedLocalHarnessLaunch {
         command,
-        env_vars: task_env_vars(Some(&task_id), parent_run_id.as_deref(), harness),
+        env_vars,
         run_id: task_id.to_string(),
         task_id,
     })

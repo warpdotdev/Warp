@@ -68,7 +68,7 @@ else
   url="{download_base_url}?package=tar&os=$os_name&arch=$arch_name&channel={channel}{version_query}"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fSL "$url" -o "$tmpdir/oz.tar.gz"
+    curl -fSL --connect-timeout 15 "$url" -o "$tmpdir/oz.tar.gz"
   elif command -v wget >/dev/null 2>&1; then
     wget -q -O "$tmpdir/oz.tar.gz" "$url"
   else
