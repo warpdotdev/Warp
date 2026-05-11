@@ -30,13 +30,12 @@ use warp_core::safe_anyhow;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use super::{
-    CodebaseFragmentMetadata, CodebaseIndex, ContentHash, EmbeddingConfig,
-    Error as CodebaseIndexError, NodeHash, SyncedIndexMetadata,
     codebase_index::{CodebaseIndexEvent, RetrievalID, SyncProgress},
     fragment_metadata::FragmentMetadata,
     priority_queue::{BuildQueue, Priority},
     snapshot::*,
     store_client::StoreClient,
+    CodebaseIndex, EmbeddingConfig, Error as CodebaseIndexError, NodeHash,
 };
 
 use crate::{
@@ -889,32 +888,6 @@ impl CodebaseIndexManager {
 
     #[cfg(not(feature = "local_fs"))]
     pub fn try_manual_resync_codebase(&self, _repo_path: &Path, _ctx: &mut ModelContext<Self>) {}
-
-    pub fn synced_index_metadata_for_path<'a>(
-        &'a self,
-        root_path: &Path,
-        app: &'a AppContext,
-    ) -> Option<SyncedIndexMetadata> {
-        let root_path = dunce::canonicalize(root_path).unwrap_or_else(|_| root_path.to_path_buf());
-        self.codebase_indices
-            .get(&root_path)
-            .and_then(|codebase_index| codebase_index.as_ref(app).synced_index_metadata())
-    }
-
-    pub fn fragment_metadata_for_hashes(
-        &self,
-        root_path: &Path,
-        hashes: &[ContentHash],
-        app: &AppContext,
-    ) -> Result<Vec<CodebaseFragmentMetadata>, RetrieveFileError> {
-        let Ok((codebase_index, _)) = self.get_codebase_index_internal(root_path) else {
-            return Err(RetrieveFileError::IndexNotFound);
-        };
-
-        Ok(codebase_index
-            .as_ref(app)
-            .fragment_metadata_for_hashes(hashes))
-    }
 
     pub fn retrieve_relevant_files(
         &self,

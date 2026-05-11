@@ -1,30 +1,29 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::codebase_index_proto::{
-    RemoteCodebaseIndexStatus, proto_to_codebase_index_status_updated,
-    proto_to_codebase_index_statuses_snapshot,
+    proto_to_codebase_index_status_updated, proto_to_codebase_index_statuses_snapshot,
+    RemoteCodebaseIndexStatus,
 };
 use dashmap::DashMap;
 use futures::channel::oneshot;
 use futures::io::{AsyncRead, AsyncWrite};
-use warpui::r#async::{FutureExt as _, executor};
+use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
     client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
     DeleteFile, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex,
-    ErrorCode, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse, IndexCodebase,
-    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
+    ErrorCode, IndexCodebase, Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
     NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
     ReadFileContextResponse, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
     SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
-use warp_core::{SessionId, safe_error, safe_warn};
+use warp_core::{safe_error, safe_warn, SessionId};
 use warpui::r#async::TransportStream;
 
 /// Default request timeout (2 minutes).
@@ -337,37 +336,6 @@ impl RemoteServerClient {
         }
     }
 
-    /// Maps backend content hashes to server-local fragment metadata for a synced repo snapshot.
-    pub async fn get_fragment_metadata_from_hash(
-        &self,
-        repo_path: String,
-        root_hash: String,
-        content_hashes: Vec<String>,
-    ) -> Result<GetFragmentMetadataFromHashResponse, ClientError> {
-        let request_id = RequestId::new();
-        let msg = ClientMessage {
-            request_id: request_id.to_string(),
-            message: Some(client_message::Message::GetFragmentMetadataFromHash(
-                GetFragmentMetadataFromHash {
-                    repo_path,
-                    root_hash,
-                    content_hashes,
-                },
-            )),
-        };
-
-        let response = self.send_request(request_id, msg).await?;
-
-        match response.message {
-            Some(server_message::Message::GetFragmentMetadataFromHashResponse(resp)) => Ok(resp),
-            other => {
-                log::error!(
-                    "Unexpected response variant for GetFragmentMetadataFromHash: {other:?}"
-                );
-                Err(ClientError::UnexpectedResponse)
-            }
-        }
-    }
     /// Sends an `Authenticate` notification to rotate the daemon-wide
     /// credential after initialization.
     pub fn authenticate(&self, auth_token: &str) {
@@ -913,8 +881,8 @@ pub fn spawn_stderr_forwarder(
     stderr: impl AsyncRead + TransportStream,
     executor: &executor::Background,
 ) {
-    use futures::StreamExt;
     use futures::io::AsyncBufReadExt;
+    use futures::StreamExt;
 
     executor
         .spawn(async move {

@@ -36,7 +36,6 @@ message ClientMessage {
     DiscardFilesRequest discard_files = 20;
     IndexCodebase index_codebase = 21;
     DropCodebaseIndex drop_codebase_index = 22;
-    GetFragmentMetadataFromHash get_fragment_metadata_from_hash = 23;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -67,7 +66,6 @@ message ServerMessage {
     DiffStateFileDelta diff_state_file_delta = 21;
     DiscardFilesResponse discard_files_response = 22;
     BufferConflictDetected buffer_conflict_detected = 23;
-    GetFragmentMetadataFromHashResponse get_fragment_metadata_from_hash_response = 24;
   }
 }
 
@@ -343,31 +341,6 @@ message DropCodebaseIndex {
   string auth_token = 2;
 }
 
-message GetFragmentMetadataFromHash {
-  string repo_path = 1;
-  string root_hash = 2;
-  repeated string content_hashes = 3;
-}
-
-message FragmentMetadata {
-  string content_hash = 1;
-  string path = 2;
-  uint32 start_line = 3;
-  uint32 end_line = 4;
-  uint64 byte_start = 5;
-  uint64 byte_end = 6;
-}
-
-message MissingFragmentMetadata {
-  string content_hash = 1;
-  FileOperationError error = 2;
-}
-
-message GetFragmentMetadataFromHashResponse {
-  repeated FragmentMetadata fragments = 1;
-  repeated MissingFragmentMetadata missing_hashes = 2;
-}
-
 enum CodebaseIndexStatusState {
   CODEBASE_INDEX_STATUS_STATE_UNSPECIFIED = 0;
   CODEBASE_INDEX_STATUS_STATE_NOT_ENABLED = 1;
@@ -384,12 +357,6 @@ message CodebaseIndexStatus {
   string repo_path = 1;
   CodebaseIndexStatusState state = 2;
   optional uint64 last_updated_epoch_millis = 3;
-  optional uint64 progress_completed = 4;
-  optional uint64 progress_total = 5;
-  optional string failure_message = 6;
-  optional string root_hash = 7;
-  optional string embedding_model = 8;
-  optional uint32 embedding_dimensions = 9;
 }
 
 message CodebaseIndexStatusesSnapshot {

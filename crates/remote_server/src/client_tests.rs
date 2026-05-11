@@ -2,11 +2,9 @@ use futures::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::proto::{
-    ClientMessage, CodebaseIndexStatus, CodebaseIndexStatusState, CodebaseIndexStatusUpdated,
-    CodebaseIndexStatusesSnapshot, ErrorCode, FileOperationError, FragmentMetadata,
-    GetFragmentMetadataFromHashResponse, InitializeResponse, MissingFragmentMetadata,
-    RunCommandResponse, RunCommandSuccess, ServerMessage, client_message, run_command_response,
-    server_message,
+    client_message, run_command_response, server_message, ClientMessage, CodebaseIndexStatus,
+    CodebaseIndexStatusState, CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, ErrorCode,
+    InitializeResponse, RunCommandResponse, RunCommandSuccess, ServerMessage,
 };
 use crate::protocol;
 use warp_core::SessionId;
@@ -45,12 +43,6 @@ fn not_enabled_codebase_status(repo_path: &str) -> CodebaseIndexStatus {
         repo_path: repo_path.to_string(),
         state: CodebaseIndexStatusState::NotEnabled.into(),
         last_updated_epoch_millis: Some(123),
-        progress_completed: None,
-        progress_total: None,
-        failure_message: None,
-        root_hash: None,
-        embedding_model: None,
-        embedding_dimensions: None,
     }
 }
 
@@ -216,52 +208,6 @@ async fn initialize_sends_auth_token_when_provided() {
         )
         .await
         .unwrap();
-}
-
-#[tokio::test]
-async fn get_fragment_metadata_from_hash_round_trip() {
-    let (client, _disconnect_rx, _executor) = setup_mock_client(|msg| {
-        match &msg.message {
-            Some(client_message::Message::GetFragmentMetadataFromHash(request)) => {
-                assert_eq!(request.repo_path, "/repo");
-                assert_eq!(request.root_hash, "root-hash");
-                assert_eq!(request.content_hashes, vec!["found-hash", "missing-hash"]);
-            }
-            other => panic!("Expected GetFragmentMetadataFromHash, got {other:?}"),
-        }
-        server_message::Message::GetFragmentMetadataFromHashResponse(
-            GetFragmentMetadataFromHashResponse {
-                fragments: vec![FragmentMetadata {
-                    content_hash: "found-hash".to_string(),
-                    path: "/repo/src/lib.rs".to_string(),
-                    start_line: 1,
-                    end_line: 3,
-                    byte_start: 0,
-                    byte_end: 42,
-                }],
-                missing_hashes: vec![MissingFragmentMetadata {
-                    content_hash: "missing-hash".to_string(),
-                    error: Some(FileOperationError {
-                        message: "missing".to_string(),
-                    }),
-                }],
-            },
-        )
-    });
-
-    let response = client
-        .get_fragment_metadata_from_hash(
-            "/repo".to_string(),
-            "root-hash".to_string(),
-            vec!["found-hash".to_string(), "missing-hash".to_string()],
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.fragments.len(), 1);
-    assert_eq!(response.fragments[0].content_hash, "found-hash");
-    assert_eq!(response.missing_hashes.len(), 1);
-    assert_eq!(response.missing_hashes[0].content_hash, "missing-hash");
 }
 
 #[tokio::test]

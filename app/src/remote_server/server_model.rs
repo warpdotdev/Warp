@@ -5,24 +5,18 @@ use repo_metadata::{RepoMetadataEvent, RepoMetadataModel, RepositoryIdentifier};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use warp_core::SessionId;
 use warp_core::channel::ChannelState;
 use warp_core::safe_error;
+use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
 use warpui::platform::TerminationMode;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
-use ::ai::index::full_source_code_embedding::manager::{
-    CodebaseIndexFinishedStatus, CodebaseIndexManager, CodebaseIndexManagerEvent,
-};
-use ::ai::index::full_source_code_embedding::{
-    ContentHash, EmbeddingConfig, NodeHash, SyncProgress,
-};
+use ::ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 use warp_files::{FileModel, FileModelEvent};
 use warp_util::content_version::ContentVersion;
 use warp_util::file::FileId;
@@ -39,13 +33,12 @@ use super::proto::{
     CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
     DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess, DropCodebaseIndex, ErrorCode,
     ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, GetDiffStateResponse,
-    FragmentMetadata, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse,
-    IndexCodebase, Initialize, InitializeResponse, MissingFragmentMetadata, NavigatedToDirectory,
-    NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
-    ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
-    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
-    ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
+    IndexCodebase, Initialize, InitializeResponse, NavigatedToDirectory,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
+    ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, RunCommandError,
+    RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
+    SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit,
+    WriteFile, WriteFileResponse, WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -58,7 +51,7 @@ pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 
 pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
 use crate::ai::agent::FileLocations;
-use crate::ai::blocklist::{ReadFileContextResult, read_local_file_context};
+use crate::ai::blocklist::{read_local_file_context, ReadFileContextResult};
 use crate::auth::auth_state::{AuthState, AuthStateProvider};
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,
@@ -198,8 +191,6 @@ pub struct ServerModel {
     buffers: ServerBufferTracker,
     /// Manages per-(repo, mode) diff state models and per-connection subscriptions.
     diff_states: ModelHandle<RemoteDiffStateManager>,
-    /// Minimal in-memory remote codebase index status map for the daemon E2E path.
-    codebase_index_statuses: HashMap<PathBuf, CodebaseIndexStatus>,
 }
 
 impl Entity for ServerModel {
@@ -227,7 +218,6 @@ impl ServerModel {
             auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             buffers: ServerBufferTracker::new(),
             diff_states: ctx.add_model(|_| RemoteDiffStateManager::new()),
-            codebase_index_statuses: HashMap::new(),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -539,19 +529,6 @@ impl ServerModel {
                 me.handle_diff_state_update(dispatch);
             });
         }
-        {
-            let codebase_index_manager = CodebaseIndexManager::handle(ctx);
-            ctx.subscribe_to_model(&codebase_index_manager, |me, event, ctx| match event {
-                CodebaseIndexManagerEvent::SyncStateUpdated
-                | CodebaseIndexManagerEvent::IndexMetadataUpdated { .. }
-                | CodebaseIndexManagerEvent::NewIndexCreated => {
-                    me.push_current_codebase_index_statuses(ctx);
-                }
-                CodebaseIndexManagerEvent::RetrievalRequestCompleted { .. }
-                | CodebaseIndexManagerEvent::RetrievalRequestFailed { .. }
-                | CodebaseIndexManagerEvent::RemoveExpiredIndexMetadata { .. } => {}
-            });
-        }
         // Start the grace timer immediately so the daemon exits if no proxy
         // connects within GRACE_PERIOD. In practice the spawning proxy connects
         // within milliseconds, so the risk of premature shutdown is negligible;
@@ -719,9 +696,6 @@ impl ServerModel {
             Some(client_message::Message::DropCodebaseIndex(msg)) => {
                 self.handle_drop_codebase_index(msg, &request_id, conn_id, ctx)
             }
-            Some(client_message::Message::GetFragmentMetadataFromHash(msg)) => {
-                self.handle_get_fragment_metadata_from_hash(msg, &request_id, conn_id, ctx)
-            }
             None => {
                 log::warn!(
                     "Received ClientMessage with no message variant (request_id={request_id})"
@@ -740,7 +714,7 @@ impl ServerModel {
                     Some(&request_id),
                     server_message::Message::InitializeResponse(response),
                 );
-                self.push_codebase_index_statuses_snapshot(conn_id, ctx);
+                self.push_codebase_index_statuses_snapshot(conn_id);
             }
             HandlerOutcome::Sync(message) => {
                 self.send_server_message(Some(conn_id), Some(&request_id), message);
@@ -755,17 +729,11 @@ impl ServerModel {
         }
     }
 
-    fn push_codebase_index_statuses_snapshot(
-        &mut self,
-        conn_id: ConnectionId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.refresh_current_codebase_index_statuses(ctx);
+    fn push_codebase_index_statuses_snapshot(&self, conn_id: ConnectionId) {
         let snapshot = self.codebase_index_statuses_snapshot();
         let status_count = snapshot.statuses.len();
         log::info!(
-            "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: \
-             conn_id={conn_id} bootstrap_status_count={status_count} source=in_memory"
+            "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: conn_id={conn_id} bootstrap_status_count={status_count}"
         );
         self.send_server_message(
             Some(conn_id),
@@ -775,13 +743,9 @@ impl ServerModel {
     }
 
     fn codebase_index_statuses_snapshot(&self) -> CodebaseIndexStatusesSnapshot {
-        let mut statuses = self
-            .codebase_index_statuses
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-        statuses.sort_by(|a, b| a.repo_path.cmp(&b.repo_path));
-        CodebaseIndexStatusesSnapshot { statuses }
+        CodebaseIndexStatusesSnapshot {
+            statuses: Vec::new(),
+        }
     }
 
     fn handle_index_codebase(
@@ -797,17 +761,11 @@ impl ServerModel {
         } = msg;
         let repo_path_for_log = repo_path.clone();
         if auth_token.is_empty() {
-            let status = failed_codebase_index_status(
-                repo_path,
-                "Missing authentication credentials for remote codebase indexing".to_string(),
-            );
-            self.upsert_codebase_index_status_from_proto(status.clone());
-            self.broadcast_codebase_index_status(status.clone());
-            return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-                CodebaseIndexStatusUpdated {
-                    status: Some(status),
-                },
-            ));
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: "Missing authentication credentials for remote codebase indexing"
+                    .to_string(),
+            }));
         }
 
         self.auth_state.set_remote_server_bearer_token(auth_token);
@@ -815,38 +773,29 @@ impl ServerModel {
         let repo_path = match canonicalize_repo_path(&repo_path) {
             Ok(repo_path) => repo_path,
             Err(error) => {
-                let status = failed_codebase_index_status(repo_path, error);
-                self.upsert_codebase_index_status_from_proto(status.clone());
-                self.broadcast_codebase_index_status(status.clone());
-                return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-                    CodebaseIndexStatusUpdated {
-                        status: Some(status),
-                    },
-                ));
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: error,
+                }));
             }
         };
         log::info!(
-            "[Remote codebase indexing] Daemon handling IndexCodebase: \
-             request_id={request_id} conn_id={conn_id} repo_path={} state={:?}",
-            repo_path_for_log,
-            CodebaseIndexStatusState::Queued
+            "[Remote codebase indexing] Daemon handling IndexCodebase: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
         );
-
-        let status = queued_codebase_index_status(repo_path.to_string_lossy().to_string());
-        self.upsert_codebase_index_status(repo_path.clone(), status.clone());
-        self.broadcast_codebase_index_status(status.clone());
 
         CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
             if manager.root_path_for_codebase(&repo_path).is_some() {
                 manager.try_manual_resync_codebase(&repo_path, ctx);
             } else {
-                manager.index_directory(repo_path, ctx);
+                manager.index_directory(repo_path.clone(), ctx);
             }
         });
 
         HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
             CodebaseIndexStatusUpdated {
-                status: Some(status),
+                status: Some(queued_codebase_index_status(
+                    repo_path.to_string_lossy().to_string(),
+                )),
             },
         ))
     }
@@ -863,70 +812,16 @@ impl ServerModel {
             auth_token,
         } = msg;
         if auth_token.is_empty() {
-            let status = failed_codebase_index_status(
-                repo_path,
-                "Missing authentication credentials for remote codebase index removal".to_string(),
-            );
-            self.upsert_codebase_index_status_from_proto(status.clone());
-            self.broadcast_codebase_index_status(status.clone());
-            return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-                CodebaseIndexStatusUpdated {
-                    status: Some(status),
-                },
-            ));
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: "Missing authentication credentials for remote codebase index removal"
+                    .to_string(),
+            }));
         }
 
         self.auth_state.set_remote_server_bearer_token(auth_token);
 
         let repo_path = match canonicalize_repo_path(&repo_path) {
-            Ok(repo_path) => repo_path,
-            Err(error) => {
-                let status = failed_codebase_index_status(repo_path, error);
-                self.upsert_codebase_index_status_from_proto(status.clone());
-                self.broadcast_codebase_index_status(status.clone());
-                return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-                    CodebaseIndexStatusUpdated {
-                        status: Some(status),
-                    },
-                ));
-            }
-        };
-        log::info!(
-            "[Remote codebase indexing] Daemon handling DropCodebaseIndex: \
-             request_id={request_id} conn_id={conn_id} repo_path={} state={:?}",
-            repo_path.display(),
-            CodebaseIndexStatusState::Disabled
-        );
-        CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.drop_index(repo_path.clone(), ctx);
-        });
-
-        let status = disabled_codebase_index_status(repo_path.to_string_lossy().to_string());
-        self.upsert_codebase_index_status(repo_path, status.clone());
-        self.broadcast_codebase_index_status(status.clone());
-
-        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-            CodebaseIndexStatusUpdated {
-                status: Some(status),
-            },
-        ))
-    }
-
-    fn handle_get_fragment_metadata_from_hash(
-        &mut self,
-        msg: GetFragmentMetadataFromHash,
-        request_id: &RequestId,
-        conn_id: ConnectionId,
-        ctx: &mut ModelContext<Self>,
-    ) -> HandlerOutcome {
-        log::info!(
-            "[Remote codebase indexing] Daemon handling GetFragmentMetadataFromHash: \
-             request_id={request_id} conn_id={conn_id} repo_path={} hash_count={}",
-            msg.repo_path,
-            msg.content_hashes.len()
-        );
-
-        let repo_path = match canonicalize_repo_path(&msg.repo_path) {
             Ok(repo_path) => repo_path,
             Err(error) => {
                 return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
@@ -935,221 +830,21 @@ impl ServerModel {
                 }));
             }
         };
-
-        let requested_root_hash = match NodeHash::from_str(&msg.root_hash) {
-            Ok(root_hash) => root_hash,
-            Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: format!("Invalid root_hash: {error}"),
-                }));
-            }
-        };
-
-        let current_status = self.codebase_index_status_from_manager(&repo_path, ctx);
-        let Some(current_status) = current_status else {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: format!(
-                    "No ready or stale codebase index for repo {}",
-                    repo_path.display()
-                ),
-            }));
-        };
-        if current_status.state != CodebaseIndexStatusState::Ready as i32
-            && current_status.state != CodebaseIndexStatusState::Stale as i32
-        {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: format!(
-                    "Codebase index for repo {} is not ready for metadata lookup",
-                    repo_path.display()
-                ),
-            }));
-        }
-
-        let current_metadata = CodebaseIndexManager::handle(ctx)
-            .as_ref(ctx)
-            .synced_index_metadata_for_path(&repo_path, ctx);
-        let Some(current_metadata) = current_metadata else {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: format!(
-                    "No ready or stale codebase index for repo {}",
-                    repo_path.display()
-                ),
-            }));
-        };
-        if current_metadata.root_hash != requested_root_hash {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: "Requested root_hash does not match the repo's ready index".to_string(),
-            }));
-        }
-
-        let mut requested_hashes = Vec::with_capacity(msg.content_hashes.len());
-        for content_hash in &msg.content_hashes {
-            match ContentHash::from_str(content_hash) {
-                Ok(hash) => requested_hashes.push(hash),
-                Err(error) => {
-                    return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                        code: ErrorCode::InvalidRequest.into(),
-                        message: format!("Invalid content hash {content_hash}: {error}"),
-                    }));
-                }
-            }
-        }
-
-        let fragment_metadatas = match CodebaseIndexManager::handle(ctx)
-            .as_ref(ctx)
-            .fragment_metadata_for_hashes(&repo_path, &requested_hashes, ctx)
-        {
-            Ok(fragment_metadatas) => fragment_metadatas,
-            Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: format!("Failed to map fragment metadata: {error}"),
-                }));
-            }
-        };
-
-        let found_hashes = fragment_metadatas
-            .iter()
-            .map(|metadata| metadata.content_hash.to_string())
-            .collect::<HashSet<_>>();
-        let fragments = fragment_metadatas
-            .into_iter()
-            .map(|metadata| FragmentMetadata {
-                content_hash: metadata.content_hash.to_string(),
-                path: metadata.absolute_path.to_string_lossy().to_string(),
-                start_line: metadata.start_line as u32,
-                end_line: metadata.end_line as u32,
-                byte_start: metadata.byte_start as u64,
-                byte_end: metadata.byte_end as u64,
-            })
-            .collect();
-        let missing_hashes = msg
-            .content_hashes
-            .into_iter()
-            .filter(|content_hash| !found_hashes.contains(content_hash))
-            .map(|content_hash| MissingFragmentMetadata {
-                content_hash,
-                error: Some(FileOperationError {
-                    message: "Content hash is not present in the ready repo snapshot".to_string(),
-                }),
-            })
-            .collect();
-
-        HandlerOutcome::Sync(
-            server_message::Message::GetFragmentMetadataFromHashResponse(
-                GetFragmentMetadataFromHashResponse {
-                    fragments,
-                    missing_hashes,
-                },
-            ),
-        )
-    }
-
-    fn refresh_current_codebase_index_statuses(&mut self, ctx: &mut ModelContext<Self>) {
-        let paths = CodebaseIndexManager::handle(ctx)
-            .as_ref(ctx)
-            .get_codebase_paths()
-            .cloned()
-            .collect::<Vec<_>>();
-        for path in paths {
-            if let Some(status) = self.codebase_index_status_from_manager(&path, ctx) {
-                self.upsert_codebase_index_status(path, status);
-            }
-        }
-    }
-
-    fn push_current_codebase_index_statuses(&mut self, ctx: &mut ModelContext<Self>) {
-        let paths = CodebaseIndexManager::handle(ctx)
-            .as_ref(ctx)
-            .get_codebase_paths()
-            .cloned()
-            .collect::<Vec<_>>();
-        for path in paths {
-            if let Some(status) = self.codebase_index_status_from_manager(&path, ctx) {
-                self.upsert_codebase_index_status(path, status.clone());
-                self.broadcast_codebase_index_status(status);
-            }
-        }
-    }
-
-    fn codebase_index_status_from_manager(
-        &self,
-        repo_path: &Path,
-        ctx: &mut ModelContext<Self>,
-    ) -> Option<CodebaseIndexStatus> {
-        let manager = CodebaseIndexManager::handle(ctx);
-        let status = manager
-            .as_ref(ctx)
-            .get_codebase_index_status_for_path(repo_path, ctx)?;
-        let synced_metadata = manager
-            .as_ref(ctx)
-            .synced_index_metadata_for_path(repo_path, ctx);
-
-        let (root_hash, embedding_model, embedding_dimensions) =
-            synced_metadata.map_or((None, None, None), |metadata| {
-                let (model, dimensions) = embedding_config_proto_fields(metadata.embedding_config);
-                (
-                    Some(metadata.root_hash.to_string()),
-                    Some(model.to_string()),
-                    Some(dimensions),
-                )
-            });
-
-        let (state, failure_message) = if status.has_pending() {
-            if status.has_synced_version() {
-                (CodebaseIndexStatusState::Stale, None)
-            } else {
-                (CodebaseIndexStatusState::Indexing, None)
-            }
-        } else {
-            match status.last_sync_result() {
-                Some(CodebaseIndexFinishedStatus::Completed) => {
-                    (CodebaseIndexStatusState::Ready, None)
-                }
-                Some(CodebaseIndexFinishedStatus::Failed(error)) => {
-                    (CodebaseIndexStatusState::Failed, Some(error.to_string()))
-                }
-                None => (CodebaseIndexStatusState::Queued, None),
-            }
-        };
-
-        let (progress_completed, progress_total) = progress_proto_fields(status.sync_progress());
-        Some(CodebaseIndexStatus {
-            repo_path: repo_path.to_string_lossy().to_string(),
-            state: state.into(),
-            last_updated_epoch_millis: Some(current_epoch_millis()),
-            progress_completed,
-            progress_total,
-            failure_message,
-            root_hash,
-            embedding_model,
-            embedding_dimensions,
-        })
-    }
-
-    fn upsert_codebase_index_status(&mut self, repo_path: PathBuf, status: CodebaseIndexStatus) {
-        self.codebase_index_statuses.insert(repo_path, status);
-    }
-
-    fn upsert_codebase_index_status_from_proto(&mut self, status: CodebaseIndexStatus) {
-        let repo_path = dunce::canonicalize(Path::new(&status.repo_path))
-            .unwrap_or_else(|_| PathBuf::from(&status.repo_path));
-        self.upsert_codebase_index_status(repo_path, status);
-    }
-
-    fn broadcast_codebase_index_status(&self, status: CodebaseIndexStatus) {
-        self.send_server_message(
-            None,
-            None,
-            server_message::Message::CodebaseIndexStatusUpdated(CodebaseIndexStatusUpdated {
-                status: Some(status),
-            }),
+        log::info!(
+            "[Remote codebase indexing] Daemon handling DropCodebaseIndex: request_id={request_id} conn_id={conn_id} repo_path={}",
+            repo_path.display()
         );
+        CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.drop_index(repo_path.clone(), ctx);
+        });
+
+        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+            CodebaseIndexStatusUpdated {
+                status: Some(disabled_codebase_index_status(
+                    repo_path.to_string_lossy().to_string(),
+                )),
+            },
+        ))
     }
 
     /// Routes a server message to its destination.
@@ -2403,13 +2098,6 @@ fn disabled_codebase_index_status(repo_path: String) -> CodebaseIndexStatus {
     base_codebase_index_status(repo_path, CodebaseIndexStatusState::Disabled)
 }
 
-fn failed_codebase_index_status(repo_path: String, failure_message: String) -> CodebaseIndexStatus {
-    CodebaseIndexStatus {
-        failure_message: Some(failure_message),
-        ..base_codebase_index_status(repo_path, CodebaseIndexStatusState::Failed)
-    }
-}
-
 fn base_codebase_index_status(
     repo_path: String,
     state: CodebaseIndexStatusState,
@@ -2418,32 +2106,6 @@ fn base_codebase_index_status(
         repo_path,
         state: state.into(),
         last_updated_epoch_millis: Some(current_epoch_millis()),
-        progress_completed: None,
-        progress_total: None,
-        failure_message: None,
-        root_hash: None,
-        embedding_model: None,
-        embedding_dimensions: None,
-    }
-}
-
-fn embedding_config_proto_fields(config: EmbeddingConfig) -> (&'static str, u32) {
-    match config {
-        EmbeddingConfig::OpenAiTextSmall3_256 => ("OPENAI_TEXT_SMALL_3_256", 256),
-        EmbeddingConfig::VoyageCode3_512 => ("VOYAGE_CODE_3_512", 512),
-        EmbeddingConfig::Voyage3_5_Lite_512 => ("VOYAGE_3_5_LITE_512", 512),
-        EmbeddingConfig::Voyage3_5_512 => ("VOYAGE_3_5_512", 512),
-    }
-}
-
-fn progress_proto_fields(progress: Option<&SyncProgress>) -> (Option<u64>, Option<u64>) {
-    match progress {
-        Some(SyncProgress::Discovering { total_nodes }) => (Some(0), Some(*total_nodes as u64)),
-        Some(SyncProgress::Syncing {
-            completed_nodes,
-            total_nodes,
-        }) => (Some(*completed_nodes as u64), Some(*total_nodes as u64)),
-        None => (None, None),
     }
 }
 

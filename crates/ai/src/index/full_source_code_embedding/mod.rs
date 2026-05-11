@@ -148,22 +148,6 @@ pub struct CodebaseContextConfig {
     pub embedding_cadence: Duration,
 }
 
-#[derive(Clone, Debug)]
-pub struct SyncedIndexMetadata {
-    pub root_hash: NodeHash,
-    pub embedding_config: EmbeddingConfig,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CodebaseFragmentMetadata {
-    pub content_hash: ContentHash,
-    pub absolute_path: PathBuf,
-    pub start_line: usize,
-    pub end_line: usize,
-    pub byte_start: usize,
-    pub byte_end: usize,
-}
-
 #[derive(Clone)]
 pub struct FragmentLocation {
     absolute_path: PathBuf,
