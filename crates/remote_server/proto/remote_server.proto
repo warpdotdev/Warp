@@ -34,9 +34,9 @@ message ClientMessage {
     GetDiffState get_diff_state = 18;
     UnsubscribeDiffState unsubscribe_diff_state = 19;
     DiscardFilesRequest discard_files = 20;
-    ListCodebaseIndexStatuses list_codebase_index_statuses = 21;
-    IndexCodebase index_codebase = 22;
-    DropCodebaseIndex drop_codebase_index = 23;
+    IndexCodebase index_codebase = 21;
+    DropCodebaseIndex drop_codebase_index = 22;
+    GetFragmentMetadataFromHash get_fragment_metadata_from_hash = 23;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -67,6 +67,7 @@ message ServerMessage {
     DiffStateFileDelta diff_state_file_delta = 21;
     DiscardFilesResponse discard_files_response = 22;
     BufferConflictDetected buffer_conflict_detected = 23;
+    GetFragmentMetadataFromHashResponse get_fragment_metadata_from_hash_response = 24;
   }
 }
 
@@ -331,7 +332,6 @@ message FileContextProto {
 }
 
 // ── Remote codebase indexing status ───────────────────────────────
-message ListCodebaseIndexStatuses {}
 
 message IndexCodebase {
   string repo_path = 1;
@@ -341,6 +341,31 @@ message IndexCodebase {
 message DropCodebaseIndex {
   string repo_path = 1;
   string auth_token = 2;
+}
+
+message GetFragmentMetadataFromHash {
+  string repo_path = 1;
+  string root_hash = 2;
+  repeated string content_hashes = 3;
+}
+
+message FragmentMetadata {
+  string content_hash = 1;
+  string path = 2;
+  uint32 start_line = 3;
+  uint32 end_line = 4;
+  uint64 byte_start = 5;
+  uint64 byte_end = 6;
+}
+
+message MissingFragmentMetadata {
+  string content_hash = 1;
+  FileOperationError error = 2;
+}
+
+message GetFragmentMetadataFromHashResponse {
+  repeated FragmentMetadata fragments = 1;
+  repeated MissingFragmentMetadata missing_hashes = 2;
 }
 
 enum CodebaseIndexStatusState {

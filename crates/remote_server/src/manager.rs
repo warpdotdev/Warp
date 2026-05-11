@@ -97,7 +97,6 @@ pub enum RemoteServerInitPhase {
 pub enum RemoteServerOperation {
     NavigateToDirectory,
     LoadRepoMetadataDirectory,
-    ListCodebaseIndexStatuses,
     IndexCodebase,
     DropCodebaseIndex,
 }
@@ -1203,64 +1202,6 @@ impl RemoteServerManager {
             };
             Some((*session_id, client.clone(), identity_key.clone()))
         })
-    }
-
-    /// Requests a bulk remote codebase-index status resync for a connected host.
-    pub fn refresh_codebase_index_statuses(
-        &mut self,
-        host_id: HostId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let Some((session_id, client, remote_identity_key)) =
-            self.connected_session_for_host(&host_id)
-        else {
-            log::warn!(
-                "Remote server refresh_codebase_index_statuses: no connected client host={host_id}"
-            );
-            return;
-        };
-        log::info!(
-            "[Remote codebase indexing] Manager requesting status refresh: \
-             host={host_id} session={session_id:?} remote_identity_key={remote_identity_key}"
-        );
-
-        let spawner = self.spawner.clone();
-        ctx.background_executor()
-            .spawn(async move {
-                match client.list_codebase_index_statuses().await {
-                    Ok(statuses) => {
-                        log::info!(
-                            "[Remote codebase indexing] Manager received status refresh: \
-                             host={host_id} session={session_id:?} \
-                             remote_identity_key={remote_identity_key} status_count={}",
-                            statuses.len()
-                        );
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
-                                    remote_identity_key,
-                                    host_id,
-                                    statuses,
-                                });
-                            })
-                            .await;
-                    }
-                    Err(e) => {
-                        log::warn!("Remote server list_codebase_index_statuses failed: session={session_id:?} error={e}");
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation: RemoteServerOperation::ListCodebaseIndexStatuses,
-                                    error_kind,
-                                });
-                            })
-                            .await;
-                    }
-                }
-            })
-            .detach();
     }
 
     /// Sends an `IndexCodebase` request to a connected daemon for this host.

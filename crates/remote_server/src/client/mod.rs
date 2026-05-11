@@ -16,10 +16,10 @@ use warpui::r#async::{executor, FutureExt as _};
 use crate::proto::{
     client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
     DeleteFile, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex,
-    ErrorCode, IndexCodebase, Initialize, InitializeResponse, ListCodebaseIndexStatuses,
-    LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse, RunCommandRequest,
-    RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
+    ErrorCode, IndexCodebase, Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
+    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
+    SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
@@ -244,44 +244,6 @@ impl RemoteServerClient {
                 safe_error!(
                     safe: ("Remote server unexpected response for Initialize"),
                     full: ("Remote server unexpected response for Initialize: response={other:?}")
-                );
-                Err(ClientError::UnexpectedResponse)
-            }
-        }
-    }
-
-    /// Sends a `ListCodebaseIndexStatuses` request and awaits the status snapshot response.
-    pub async fn list_codebase_index_statuses(
-        &self,
-    ) -> Result<Vec<RemoteCodebaseIndexStatus>, ClientError> {
-        let request_id = RequestId::new();
-        let msg = ClientMessage {
-            request_id: request_id.to_string(),
-            message: Some(client_message::Message::ListCodebaseIndexStatuses(
-                ListCodebaseIndexStatuses {},
-            )),
-        };
-        log::info!(
-            "[Remote codebase indexing] Client sending ListCodebaseIndexStatuses: \
-             request_id={request_id}"
-        );
-
-        let response = self.send_request(request_id, msg).await?;
-
-        match response.message {
-            Some(server_message::Message::CodebaseIndexStatusesSnapshot(snapshot)) => {
-                let statuses = proto_to_codebase_index_statuses_snapshot(&snapshot);
-                log::info!(
-                    "[Remote codebase indexing] Client received ListCodebaseIndexStatuses \
-                     response: status_count={}",
-                    statuses.len()
-                );
-                Ok(statuses)
-            }
-            other => {
-                safe_error!(
-                    safe: ("Remote server unexpected response for ListCodebaseIndexStatuses"),
-                    full: ("Remote server unexpected response for ListCodebaseIndexStatuses: response={other:?}")
                 );
                 Err(ClientError::UnexpectedResponse)
             }
