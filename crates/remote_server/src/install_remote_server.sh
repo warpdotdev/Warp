@@ -9,7 +9,6 @@
 #   {version_query}             — e.g. &version=v0.2026... (empty when no release tag)
 #   {version_suffix}            — e.g. -v0.2026...        (empty when no release tag)
 #   {no_http_client_exit_code}  — exit code when neither curl nor wget is available
-#   {no_tar_exit_code}          — exit code when tar is not available
 #   {staging_tarball_path}      — path to a pre-uploaded tarball (SCP fallback; empty normally)
 set -e
 
@@ -56,7 +55,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-command -v tar >/dev/null 2>&1 || { echo "error: tar is not available" >&2; exit {no_tar_exit_code}; }
+command -v tar >/dev/null 2>&1 || { echo "error: tar is not available — please install tar and try again" >&2; exit 1; }
 
 staging_tarball_path="{staging_tarball_path}"
 if [ -n "$staging_tarball_path" ]; then

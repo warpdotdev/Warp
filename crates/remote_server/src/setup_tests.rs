@@ -340,25 +340,6 @@ fn parse_uname_unsupported_armv7l() {
 }
 
 #[test]
-fn install_script_contains_no_tar_exit_code() {
-    let script = install_script(None);
-    // The template placeholder {no_tar_exit_code} should be replaced with
-    // the numeric value of NO_TAR_EXIT_CODE.
-    let expected = format!("exit {}", NO_TAR_EXIT_CODE);
-    assert!(
-        script.contains(&expected),
-        "install script should contain 'exit {val}' for NO_TAR_EXIT_CODE, \
-         but it was not found. Searched for: {expected}",
-        val = NO_TAR_EXIT_CODE,
-    );
-    // The raw placeholder must not survive substitution.
-    assert!(
-        !script.contains("{no_tar_exit_code}"),
-        "install script still contains the raw {{no_tar_exit_code}} placeholder",
-    );
-}
-
-#[test]
 fn install_script_contains_tar_pre_check() {
     let script = install_script(None);
     assert!(
