@@ -306,23 +306,31 @@ impl CustomEndpointModal {
     }
 
     pub fn on_close(&mut self, ctx: &mut ViewContext<Self>) {
+        eprintln!("[CLOSE_DEBUG 7] on_close() called, clearing {} model rows", self.model_rows.len());
+        eprintln!("[CLOSE_DEBUG 8] Clearing endpoint_name_editor");
         self.endpoint_name_editor.update(ctx, |editor, ctx| {
             editor.clear_buffer_and_reset_undo_stack(ctx);
         });
+        eprintln!("[CLOSE_DEBUG 9] Cleared endpoint_name_editor, clearing endpoint_url_editor");
         self.endpoint_url_editor.update(ctx, |editor, ctx| {
             editor.clear_buffer_and_reset_undo_stack(ctx);
         });
+        eprintln!("[CLOSE_DEBUG 10] Cleared endpoint_url_editor, clearing api_key_editor");
         self.api_key_editor.update(ctx, |editor, ctx| {
             editor.clear_buffer_and_reset_undo_stack(ctx);
         });
-        for row in &self.model_rows {
+        eprintln!("[CLOSE_DEBUG 11] Cleared api_key_editor, clearing model rows");
+        for (i, row) in self.model_rows.iter().enumerate() {
+            eprintln!("[CLOSE_DEBUG 12] Clearing model row {} name_editor", i);
             row.name_editor.update(ctx, |editor, ctx| {
                 editor.clear_buffer_and_reset_undo_stack(ctx);
             });
+            eprintln!("[CLOSE_DEBUG 13] Clearing model row {} alias_editor", i);
             row.alias_editor.update(ctx, |editor, ctx| {
                 editor.clear_buffer_and_reset_undo_stack(ctx);
             });
         }
+        eprintln!("[CLOSE_DEBUG 14] on_close() finished");
     }
 
     fn save(&mut self, ctx: &mut ViewContext<Self>) {
@@ -363,7 +371,9 @@ impl CustomEndpointModal {
     }
 
     fn cancel(&mut self, ctx: &mut ViewContext<Self>) {
+        eprintln!("[CLOSE_DEBUG 2] cancel() called, emitting Close event");
         ctx.emit(CustomEndpointModalEvent::Close);
+        eprintln!("[CLOSE_DEBUG 3] Close event emitted");
     }
 
     fn add_model(&mut self, ctx: &mut ViewContext<Self>) {
@@ -813,6 +823,7 @@ impl TypedActionView for CustomEndpointModal {
     type Action = CustomEndpointModalAction;
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
+        eprintln!("[CLOSE_DEBUG 1] handle_action received: {:?}", action);
         match action {
             CustomEndpointModalAction::Cancel => self.cancel(ctx),
             CustomEndpointModalAction::Save => self.save(ctx),
@@ -873,11 +884,14 @@ impl CustomEndpointModalViewState {
     }
 
     pub fn close<T: View>(&mut self, ctx: &mut ViewContext<T>) {
+        eprintln!("[CLOSE_DEBUG 5] CustomEndpointModalViewState::close() called");
         self.state.close();
+        eprintln!("[CLOSE_DEBUG 6] state.close() finished, calling on_close");
         self.state.view.update(ctx, |modal, ctx| {
             modal.body().update(ctx, |body, ctx| {
                 body.on_close(ctx);
             });
         });
+        eprintln!("[CLOSE_DEBUG 15] CustomEndpointModalViewState::close() finished");
     }
 }

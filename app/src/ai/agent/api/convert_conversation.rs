@@ -439,7 +439,7 @@ impl ConvertToExchanges for &api::Task {
                         | api::message::system_query::Type::SummarizeConversation(_)
                         // HandoffRehydration is injected by the server for agent-only
                         // context; the client must never render it as user input.
-                        | api::message::system_query::Type::HandoffRehydration(_) => false,
+                        => false,
                     }
                 }
                 api::message::Message::ToolCallResult(tool_call_result) => {

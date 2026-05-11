@@ -1375,6 +1375,7 @@ impl AISettingsPageView {
             ActionButton::new("+ Add custom model", SecondaryTheme)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
+                    eprintln!("[OPEN_DEBUG 1] \"+ Add custom model\" button clicked, dispatching OpenAddCustomEndpointModal");
                     ctx.dispatch_typed_action(AISettingsPageAction::OpenAddCustomEndpointModal);
                 })
         });
@@ -1598,6 +1599,7 @@ impl AISettingsPageView {
                         .with_icon(Icon::Pencil)
                         .with_size(ButtonSize::Small)
                         .on_click(move |ctx| {
+                            eprintln!("[EDIT_DEBUG 1] \"Edit\" button clicked for index {index}, dispatching OpenEditCustomEndpointModal");
                             ctx.dispatch_typed_action(
                                 AISettingsPageAction::OpenEditCustomEndpointModal(index),
                             );
@@ -1612,6 +1614,7 @@ impl AISettingsPageView {
     }
 
     fn show_add_custom_endpoint_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        eprintln!("[OPEN_DEBUG 3] show_add_custom_endpoint_modal() called");
         self.remove_custom_endpoint_confirmation_dialog
             .update(ctx, |dialog, ctx| {
                 dialog.hide(ctx);
@@ -1622,16 +1625,19 @@ impl AISettingsPageView {
             .set_title(Some("Add custom endpoint".to_string()), ctx);
         self.custom_endpoint_modal_state.prefill(None, None, ctx);
         self.custom_endpoint_modal_state.open(ctx);
+        eprintln!("[OPEN_DEBUG 3.1] show_add_custom_endpoint_modal() modal opened, calling ctx.notify()");
         ctx.notify();
     }
 
     fn show_edit_custom_endpoint_modal(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        eprintln!("[EDIT_DEBUG 3] show_edit_custom_endpoint_modal() called for index {index}");
         let endpoint = ApiKeyManager::as_ref(ctx)
             .keys()
             .custom_endpoints
             .get(index)
             .cloned();
         if endpoint.is_none() {
+            eprintln!("[EDIT_DEBUG 3.1] show_edit_custom_endpoint_modal() endpoint not found, returning early");
             return;
         }
 
@@ -1646,12 +1652,16 @@ impl AISettingsPageView {
         self.custom_endpoint_modal_state
             .prefill(endpoint.as_ref(), Some(index), ctx);
         self.custom_endpoint_modal_state.open(ctx);
+        eprintln!("[EDIT_DEBUG 3.2] show_edit_custom_endpoint_modal() modal opened, calling ctx.notify()");
         ctx.notify();
     }
 
     fn hide_custom_endpoint_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        eprintln!("[CLOSE_DEBUG 4] hide_custom_endpoint_modal() called");
         self.custom_endpoint_modal_state.close(ctx);
+        eprintln!("[CLOSE_DEBUG 16] modal_state.close() returned, calling ctx.notify()");
         ctx.notify();
+        eprintln!("[CLOSE_DEBUG 17] hide_custom_endpoint_modal() finished");
     }
 
     fn handle_custom_endpoint_modal_close_event(
@@ -1659,6 +1669,7 @@ impl AISettingsPageView {
         event: &ModalEvent,
         ctx: &mut ViewContext<Self>,
     ) {
+        eprintln!("[CLOSE_DEBUG 3.5] handle_custom_endpoint_modal_close_event: {:?}", event);
         match event {
             ModalEvent::Close => {
                 self.hide_custom_endpoint_modal(ctx);
@@ -1671,6 +1682,7 @@ impl AISettingsPageView {
         event: &CustomEndpointModalEvent,
         ctx: &mut ViewContext<Self>,
     ) {
+        eprintln!("[CLOSE_DEBUG 3.6] handle_custom_endpoint_modal_event: {:?}", event);
         match event {
             CustomEndpointModalEvent::Close => {
                 self.hide_custom_endpoint_modal(ctx);
@@ -3376,9 +3388,11 @@ impl TypedActionView for AISettingsPageView {
             }
 
             AISettingsPageAction::OpenAddCustomEndpointModal => {
+                eprintln!("[OPEN_DEBUG 2] handle_action: OpenAddCustomEndpointModal");
                 self.show_add_custom_endpoint_modal(ctx);
             }
             AISettingsPageAction::OpenEditCustomEndpointModal(index) => {
+                eprintln!("[EDIT_DEBUG 2] handle_action: OpenEditCustomEndpointModal({index})");
                 self.show_edit_custom_endpoint_modal(*index, ctx);
             }
 
@@ -7062,6 +7076,31 @@ impl SettingsWidget for ApiKeysWidget {
         // Provider key editors (always visible)
         column.add_child(self.render_provider_key_editors(appearance, is_enabled, app));
 
+        // Custom endpoints sub-label + list (only when flag on and endpoints non-empty)
+        if custom_inference_flag_on {
+            let endpoints = &ApiKeyManager::as_ref(app).keys().custom_endpoints;
+            if !endpoints.is_empty() {
+                column.add_child(
+                    Container::new(
+                        Text::new_inline(
+                            "Custom endpoints",
+                            appearance.ui_font_family(),
+                            CONTENT_FONT_SIZE,
+                        )
+                        .with_color(styles::header_font_color(is_enabled, app).into())
+                        .with_style(Properties::default().weight(Weight::Semibold))
+                        .finish(),
+                    )
+                    .with_margin_top(16.)
+                    .with_margin_bottom(8.)
+                    .finish(),
+                );
+                column.add_child(
+                    self.render_custom_endpoints_list(view, appearance, is_enabled, app),
+                );
+            }
+        }
+
         // Warp credit fallback toggle (shown when BYO is enabled)
         if is_byo_enabled {
             column.add_child(
@@ -7146,31 +7185,6 @@ impl SettingsWidget for ApiKeysWidget {
             });
 
             column.add_child(Container::new(upgrade_text_element.finish()).finish());
-        }
-
-        // Custom endpoints sub-label + list (only when flag on and endpoints non-empty)
-        if custom_inference_flag_on {
-            let endpoints = &ApiKeyManager::as_ref(app).keys().custom_endpoints;
-            if !endpoints.is_empty() {
-                column.add_child(
-                    Container::new(
-                        Text::new_inline(
-                            "Custom endpoints",
-                            appearance.ui_font_family(),
-                            CONTENT_FONT_SIZE,
-                        )
-                        .with_color(styles::header_font_color(is_enabled, app).into())
-                        .with_style(Properties::default().weight(Weight::Semibold))
-                        .finish(),
-                    )
-                    .with_margin_top(16.)
-                    .with_margin_bottom(8.)
-                    .finish(),
-                );
-                column.add_child(
-                    self.render_custom_endpoints_list(view, appearance, is_enabled, app),
-                );
-            }
         }
 
         column.finish()
