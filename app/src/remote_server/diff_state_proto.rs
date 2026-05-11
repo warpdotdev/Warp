@@ -19,6 +19,21 @@ use crate::util::git::{Commit, PrInfo};
 
 // ── Proto → Rust (for incoming client messages) ────────────────────
 
+/// Rejects empty, absolute, and parent-traversal (`..`) paths.
+fn validate_relative_path(path: &str) -> Result<(), String> {
+    let p = Path::new(path);
+    if p.as_os_str().is_empty()
+        || p.is_absolute()
+        || p.components().any(|c| c == std::path::Component::ParentDir)
+    {
+        return Err(format!(
+            "rejecting path with traversal or absolute component: {}",
+            p.display()
+        ));
+    }
+    Ok(())
+}
+
 impl From<&proto::DiffMode> for DiffMode {
     fn from(proto_mode: &proto::DiffMode) -> Self {
         match &proto_mode.mode {
@@ -55,27 +70,26 @@ impl TryFrom<&proto::FileStatusInfo> for FileStatusInfo {
     type Error = String;
 
     fn try_from(proto_info: &proto::FileStatusInfo) -> Result<Self, Self::Error> {
-        let path = PathBuf::from(&proto_info.path);
-        // Reject empty, absolute paths and path traversal (".." components)
-        // to prevent destructive operations outside the repo root.
-        if path.as_os_str().is_empty()
-            || path.is_absolute()
-            || path
-                .components()
-                .any(|c| c == std::path::Component::ParentDir)
-        {
-            return Err(format!(
-                "rejecting path with traversal or absolute component: {}",
-                path.display()
-            ));
+        validate_relative_path(&proto_info.path)?;
+
+        let status: GitFileStatus = proto_info
+            .status
+            .as_ref()
+            .map(GitFileStatus::from)
+            .unwrap_or(GitFileStatus::Modified);
+
+        // Validate old_path in Renamed/Copied variants — these also flow
+        // into git restore/checkout commands during discard.
+        match &status {
+            GitFileStatus::Renamed { old_path } | GitFileStatus::Copied { old_path } => {
+                validate_relative_path(old_path)?;
+            }
+            _ => {}
         }
+
         Ok(FileStatusInfo {
-            path,
-            status: proto_info
-                .status
-                .as_ref()
-                .map(GitFileStatus::from)
-                .unwrap_or(GitFileStatus::Modified),
+            path: PathBuf::from(&proto_info.path),
+            status,
         })
     }
 }
