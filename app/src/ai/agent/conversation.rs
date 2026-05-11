@@ -3111,10 +3111,12 @@ impl AIConversation {
             })
             .collect();
 
+        let mut seen_command_ids = HashSet::new();
         self.extract_command_blocks_from_messages(
             &api_task.messages,
             &message_id_to_exchange,
             &mut command_blocks,
+            &mut seen_command_ids,
         );
 
         command_blocks
@@ -3129,6 +3131,7 @@ impl AIConversation {
         messages: &[api::Message],
         message_id_to_exchange: &HashMap<&str, &AIAgentExchange>,
         command_blocks: &mut Vec<CommandBlockInfo>,
+        seen_command_ids: &mut HashSet<String>,
     ) {
         // Build a map from tool_call_id to (RunShellCommandResult, result_message_id, result_proto_timestamp)
         // for efficient lookup within this message set.
@@ -3172,6 +3175,7 @@ impl AIConversation {
                                     &subtask_source.messages,
                                     message_id_to_exchange,
                                     command_blocks,
+                                    seen_command_ids,
                                 );
                             }
                         }
@@ -3196,10 +3200,16 @@ impl AIConversation {
                             api::ShellCommandFinished {
                                 output: command_output,
                                 exit_code,
-                                ..
+                                command_id: finished_command_id,
                             },
                         )) = &cmd_result.result
                         {
+                            // Track the command_id so attachment/context blocks for the
+                            // same command are skipped (RunShellCommand blocks have
+                            // better timestamps).
+                            if !finished_command_id.is_empty() {
+                                seen_command_ids.insert(finished_command_id.clone());
+                            }
                             log::info!("Found run shell command result for tool call {tool_call_id:?} {command:?}");
                             // start_ts: tool call message's proto timestamp.
                             // This should always be populated.
@@ -3277,6 +3287,13 @@ impl AIConversation {
             for attachment in attachments {
                 // Attachments have ExecutedShellCommand in their value oneof.
                 if let Some(api::attachment::Value::ExecutedShellCommand(cmd)) = &attachment.value {
+                    // Skip if we've already seen this command_id (e.g. from a
+                    // RunShellCommand tool call or a duplicate attachment).
+                    if !cmd.command_id.is_empty()
+                        && !seen_command_ids.insert(cmd.command_id.clone())
+                    {
+                        continue;
+                    }
                     let start_ts = cmd
                         .started_ts
                         .as_ref()
@@ -3312,6 +3329,12 @@ impl AIConversation {
                 #[allow(deprecated)]
                 for executed_shell_command in &context.executed_shell_commands {
                     if !executed_shell_command.command.is_empty() {
+                        // Skip if we've already seen this command_id.
+                        if !executed_shell_command.command_id.is_empty()
+                            && !seen_command_ids.insert(executed_shell_command.command_id.clone())
+                        {
+                            continue;
+                        }
                         let start_ts = executed_shell_command
                             .started_ts
                             .as_ref()
@@ -3348,7 +3371,11 @@ impl AIConversation {
 
         // Extract all command blocks from the task messages
         let command_blocks = self.extract_command_blocks();
-        log::info!("Extracted {} command blocks for conversation {}", command_blocks.len(), self.id());
+        log::info!(
+            "Extracted {} command blocks for conversation {}",
+            command_blocks.len(),
+            self.id()
+        );
 
         // Build a map from message ID to exchange for quick lookup
         let mut message_id_to_exchange: HashMap<&str, &AIAgentExchange> = HashMap::new();

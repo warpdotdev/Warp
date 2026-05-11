@@ -1296,16 +1296,19 @@ fn command_block_indices_for_exchanges<'a>(
         // the exchange timestamp (everything earlier is also <=).
         let mut best: Option<(BlockIndex, DateTime<Local>)> = None;
         for &(idx, ts) in command_blocks.iter().rev() {
-            if ts > exchange_timestamp {
-                // This block is after the exchange; remember it if it's the
-                // earliest such block we've seen.
+            if ts >= exchange_timestamp {
+                // This block is at or after the exchange; remember it if it's
+                // the earliest such block we've seen. We use >= because a
+                // command block's start_ts comes from the tool call message
+                // timestamp, which is in the same exchange whose start_time
+                // we're comparing against.
                 if best.is_none_or(|(_, best_ts)| ts < best_ts) {
                     best = Some((idx, ts));
                 }
             } else {
-                // We've reached a block at or before the exchange timestamp.
+                // We've reached a block before the exchange timestamp.
                 // Since the prefix of the blocklist is sorted, all earlier
-                // blocks are also <= exchange_timestamp, so we can stop.
+                // blocks are also < exchange_timestamp, so we can stop.
                 break;
             }
         }
@@ -1315,4 +1318,3 @@ fn command_block_indices_for_exchanges<'a>(
 
     result
 }
-
