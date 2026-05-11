@@ -192,6 +192,7 @@ pub struct RunAgentsRequest {
     pub harness_type: String,
     pub execution_mode: RunAgentsExecutionMode,
     pub agent_run_configs: Vec<RunAgentsAgentRunConfig>,
+    pub plan_id: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

@@ -107,6 +107,7 @@ impl OrchestrationControlAction for OrchestrationConfigBlockAction {
 
 pub struct OrchestrationConfigBlockView {
     conversation_id: AIConversationId,
+    plan_id: String,
     edit_state: OrchestrationEditState,
     pickers: OrchestrationPickerHandles<OrchestrationConfigBlockAction>,
     is_approved: bool,
@@ -120,20 +121,22 @@ pub struct OrchestrationConfigBlockView {
 }
 
 impl OrchestrationConfigBlockView {
-    pub fn new_with_conversation_id(
+    pub fn new(
         conversation_id: AIConversationId,
+        plan_id: String,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let history = BlocklistAIHistoryModel::as_ref(ctx);
         let (edit_state, is_approved) = history
             .conversation(&conversation_id)
             .and_then(|conv| {
-                conv.orchestration_config().map(|config| {
-                    (
-                        OrchestrationEditState::from_orchestration_config(config),
-                        conv.orchestration_status().is_approved(),
-                    )
-                })
+                conv.orchestration_config_for_plan(&plan_id)
+                    .map(|(config, status)| {
+                        (
+                            OrchestrationEditState::from_orchestration_config(config),
+                            status.is_approved(),
+                        )
+                    })
             })
             .unwrap_or_else(|| {
                 (
@@ -194,6 +197,7 @@ impl OrchestrationConfigBlockView {
 
         let mut view = Self {
             conversation_id,
+            plan_id,
             edit_state,
             pickers: OrchestrationPickerHandles::default(),
             is_approved,
@@ -212,9 +216,9 @@ impl OrchestrationConfigBlockView {
     fn refresh_from_model(&mut self, ctx: &mut ViewContext<Self>) {
         let history = BlocklistAIHistoryModel::as_ref(ctx);
         if let Some(conv) = history.conversation(&self.conversation_id) {
-            if let Some(config) = conv.orchestration_config() {
+            if let Some((config, status)) = conv.orchestration_config_for_plan(&self.plan_id) {
                 self.edit_state = OrchestrationEditState::from_orchestration_config(config);
-                self.is_approved = conv.orchestration_status().is_approved();
+                self.is_approved = status.is_approved();
                 if self.pickers_initialized {
                     oc::repopulate_all_pickers(&mut self.edit_state, &self.pickers, ctx);
                 }
@@ -288,13 +292,9 @@ impl OrchestrationConfigBlockView {
             OrchestrationConfigStatus::Disapproved
         };
         let conversation_id = self.conversation_id;
-        // Preserve the existing plan_id from the conversation so we don't
-        // clobber it when the user only edits config fields.
-        let plan_id = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&conversation_id)
-            .and_then(|conv| conv.orchestration_plan_id().map(str::to_string));
+        let plan_id = self.plan_id.clone();
         AIDocumentModel::handle(ctx).update(ctx, |model, ctx| {
-            model.set_orchestration_config(conversation_id, config, status, plan_id, ctx);
+            model.set_orchestration_config_for_plan(conversation_id, plan_id, config, status, ctx);
         });
     }
 }

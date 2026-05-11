@@ -90,6 +90,8 @@ pub struct RunAgentsEditState {
     pub summary: String,
     /// Run-wide skills propagated to each child at dispatch.
     pub skills: Vec<SkillReference>,
+    /// The plan that this RunAgents call is executing for.
+    pub plan_id: String,
 }
 
 impl RunAgentsEditState {
@@ -104,6 +106,7 @@ impl RunAgentsEditState {
             base_prompt: req.base_prompt.clone(),
             summary: req.summary.clone(),
             skills: req.skills.clone(),
+            plan_id: req.plan_id.clone(),
         }
     }
 
@@ -116,6 +119,7 @@ impl RunAgentsEditState {
             harness_type: self.orch.harness_type.clone(),
             execution_mode: self.orch.execution_mode.clone(),
             agent_run_configs: self.agent_run_configs.clone(),
+            plan_id: self.plan_id.clone(),
         }
     }
 }
