@@ -54,6 +54,7 @@ use crate::{
         line::EditorLineLocation,
         view::{CodeEditorViewAction, SavedComment},
     },
+    settings::CodeEditorLineNumberMode,
     view_components::action_button::{ActionButtonTheme, SecondaryTheme},
 };
 use warp_core::features::FeatureFlag;
@@ -367,8 +368,124 @@ pub struct LineNumberConfig {
     pub text_color: ColorU,
     pub highlight_text_color: ColorU,
     pub starting_line_number: Option<usize>,
+    pub mode: CodeEditorLineNumberMode,
+    pub active_line_number: Option<LineCount>,
 }
 
+impl LineNumberConfig {
+    fn display_line_number(
+        &self,
+        line_count: LineCount,
+        active_line_number: Option<LineCount>,
+    ) -> usize {
+        display_line_number(
+            self.mode,
+            self.starting_line_number,
+            line_count,
+            active_line_number,
+        )
+    }
+}
+
+fn display_line_number(
+    mode: CodeEditorLineNumberMode,
+    starting_line_number: Option<usize>,
+    line_count: LineCount,
+    active_line_number: Option<LineCount>,
+) -> usize {
+    let absolute_line_number = line_count.as_usize() + starting_line_number.unwrap_or(1);
+    match mode {
+        CodeEditorLineNumberMode::Absolute => absolute_line_number,
+        CodeEditorLineNumberMode::Relative => {
+            let Some(active_line_number) = active_line_number else {
+                return absolute_line_number;
+            };
+
+            if active_line_number == line_count {
+                absolute_line_number
+            } else {
+                active_line_number
+                    .as_usize()
+                    .abs_diff(line_count.as_usize())
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn absolute_line_numbers_use_starting_line_number() {
+        assert_eq!(
+            display_line_number(
+                CodeEditorLineNumberMode::Absolute,
+                Some(10),
+                LineCount::from(0),
+                Some(LineCount::from(4)),
+            ),
+            10,
+        );
+        assert_eq!(
+            display_line_number(
+                CodeEditorLineNumberMode::Absolute,
+                Some(10),
+                LineCount::from(4),
+                Some(LineCount::from(0)),
+            ),
+            14,
+        );
+    }
+
+    #[test]
+    fn relative_line_numbers_show_absolute_number_on_active_line() {
+        assert_eq!(
+            display_line_number(
+                CodeEditorLineNumberMode::Relative,
+                None,
+                LineCount::from(4),
+                Some(LineCount::from(4)),
+            ),
+            5,
+        );
+    }
+
+    #[test]
+    fn relative_line_numbers_show_distance_from_active_line() {
+        assert_eq!(
+            display_line_number(
+                CodeEditorLineNumberMode::Relative,
+                None,
+                LineCount::from(1),
+                Some(LineCount::from(4)),
+            ),
+            3,
+        );
+        assert_eq!(
+            display_line_number(
+                CodeEditorLineNumberMode::Relative,
+                None,
+                LineCount::from(8),
+                Some(LineCount::from(4)),
+            ),
+            4,
+        );
+    }
+
+    #[test]
+    fn relative_line_numbers_fall_back_to_absolute_without_active_line() {
+        assert_eq!(
+            display_line_number(
+                CodeEditorLineNumberMode::Relative,
+                Some(10),
+                LineCount::from(4),
+                None,
+            ),
+            14,
+        );
+    }
+}
 struct CommentBox {
     line_highlight_element: Box<dyn Element>,
     line: EditorLineLocation,
@@ -567,6 +684,27 @@ impl<V: EditorView> EditorWrapper<V> {
             .cloned()
     }
 
+    fn active_line_number_for_gutter_line(
+        &self,
+        line_count: LineCount,
+        line_number_config: &LineNumberConfig,
+    ) -> Option<LineCount> {
+        if line_number_config.mode == CodeEditorLineNumberMode::Absolute {
+            return None;
+        }
+
+        match &self.diff_navigation_state {
+            DiffNavigationState::Collapsed => line_number_config.active_line_number,
+            DiffNavigationState::Expanded => None,
+            DiffNavigationState::Focused(_) => self
+                .focused_diff_line_range
+                .as_ref()
+                .is_some_and(|range| range.contains(&line_count))
+                .then_some(line_number_config.active_line_number)
+                .flatten(),
+        }
+    }
+
     /// Returning **no** gutter means the gutter shouldn't be rendered at all.
     /// Returning an **empty** gutter means the gutter should be rendered with no contents.
     fn gutter_elements(&self, app: &AppContext) -> Option<Vec<GutterElement>> {
@@ -602,8 +740,10 @@ impl<V: EditorView> EditorWrapper<V> {
             let diff_hunk = self.diff_status.diff_hunk(line_count, appearance);
             let is_removal = matches!(diff_hunk, Some(DiffHunkDisplay::Remove(_)));
 
+            let active_line_number =
+                self.active_line_number_for_gutter_line(line_count, line_number_config);
             let current_line =
-                line_count.as_usize() + line_number_config.starting_line_number.unwrap_or(1);
+                line_number_config.display_line_number(line_count, active_line_number);
 
             // If the block is temporary, don't render line number.
             // Currently, all temporary blocks are removal hunks, either from a deleted section,

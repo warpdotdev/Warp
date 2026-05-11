@@ -29,6 +29,7 @@ use crate::{
     settings::{AppEditorSettings, FontSettings},
     view_components::find::FindDirection,
 };
+use ::settings::Setting as _;
 use ai::diff_validation::DiffDelta;
 use lazy_static::lazy_static;
 use num_traits::SaturatingSub;
@@ -309,6 +310,7 @@ impl CodeEditorView {
         ctx.subscribe_to_model(&font_settings_handle, |me, _, _, ctx| {
             me.handle_appearance_or_font_change(ctx);
         });
+        ctx.subscribe_to_model(&AppEditorSettings::handle(ctx), |_, _, _, ctx| ctx.notify());
 
         let model = ctx.add_model(|ctx| {
             CodeEditorModel::new(
@@ -1204,16 +1206,29 @@ impl CodeEditorView {
         let appearance = Appearance::as_ref(ctx);
         let theme = appearance.theme();
         if self.display_options.show_line_numbers {
+            let editor_settings = AppEditorSettings::as_ref(ctx);
             Some(LineNumberConfig {
                 font_family: appearance.monospace_font_family(),
                 font_size: appearance.monospace_font_size(),
                 text_color: theme.sub_text_color(theme.background()).into(),
                 highlight_text_color: theme.main_text_color(theme.background()).into(),
                 starting_line_number: self.display_options.starting_line_number,
+                mode: *editor_settings.code_editor_line_number_mode.value(),
+                active_line_number: self.active_line_number_for_line_numbers(ctx),
             })
         } else {
             None
         }
+    }
+
+    fn active_line_number_for_line_numbers(&self, ctx: &AppContext) -> Option<LineCount> {
+        let model = self.model.as_ref(ctx);
+        let selection = *model.selections(ctx).first();
+        let buffer_handle = model.content();
+        let buffer = buffer_handle.as_ref(ctx);
+        let point = selection.head.to_buffer_point(buffer);
+
+        Some(LineCount::from(point.row.saturating_sub(1) as usize))
     }
 
     fn run_find(&mut self, query: &str, ctx: &mut ViewContext<Self>) {
@@ -1241,6 +1256,7 @@ impl CodeEditorView {
                 self.reset_for_editing_change();
                 self.vim_maybe_enforce_cursor_line_cap(ctx);
                 ctx.emit(CodeEditorEvent::SelectionChanged);
+                ctx.notify();
             }
             CodeEditorModelEvent::ContentChanged { origin } => {
                 if origin.from_user() {
