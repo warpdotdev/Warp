@@ -1622,7 +1622,7 @@ impl UsageWidget {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn render_addon_credits_panel(
+    pub(super) fn render_addon_credits_panel(
         &self,
         selected_topup_denomination: usize,
         workspace: &Workspace,
