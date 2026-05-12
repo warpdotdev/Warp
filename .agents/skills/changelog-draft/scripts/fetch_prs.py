@@ -21,6 +21,12 @@ MARKER_RE = re.compile(
     re.MULTILINE,
 )
 
+# Matches issue-closing keywords: Fixes #123, Closes #456, Resolves #789
+LINKED_ISSUE_RE = re.compile(
+    r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)",
+    re.IGNORECASE,
+)
+
 
 def run(cmd: list[str], *, check: bool = True) -> str:
     result = subprocess.run(cmd, capture_output=True, text=True, check=check)
@@ -68,6 +74,13 @@ def fetch_pr_data(repo: str, pr_number: int) -> dict | None:
         return json.loads(raw)
     except json.JSONDecodeError:
         return None
+
+
+def extract_linked_issues(body: str) -> list[int]:
+    """Extract issue numbers from closing keywords in a PR body."""
+    if not body:
+        return []
+    return sorted(set(int(m.group(1)) for m in LINKED_ISSUE_RE.finditer(body)))
 
 
 def extract_markers(body: str) -> list[dict]:
@@ -130,6 +143,7 @@ def main() -> None:
 
         body = data.get("body", "") or ""
         explicit_entries = extract_markers(body)
+        linked_issues = extract_linked_issues(body)
 
         file_paths = []
         for f in data.get("files", []) or []:
@@ -145,6 +159,7 @@ def main() -> None:
                 "labels": label_names,
                 "merged_at": data.get("mergedAt", ""),
                 "explicit_entries": explicit_entries,
+                "linked_issues": linked_issues,
                 "changed_files": file_paths,
             }
         )

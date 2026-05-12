@@ -60,6 +60,7 @@ The script outputs JSON to stdout with this structure:
       "explicit_entries": [
         { "category": "NEW-FEATURE", "text": "Added dark mode" }
       ],
+      "linked_issues": [5678],
       "changed_files": ["app/src/ai/agent.rs", "crates/warp_features/src/lib.rs"]
     }
   ]
@@ -104,7 +105,33 @@ Output JSON:
 }
 ```
 
-### Step 5 — Classify unmarked PRs
+### Step 5 — Fetch issue reporters
+
+Collect all unique `linked_issues` from Step 2 and fetch the original reporter for each:
+
+```bash
+python3 .agents/skills/changelog-draft/scripts/fetch_issue_reporters.py \
+  --repo warpdotdev/warp \
+  --issues 5678,9012
+```
+
+Output JSON:
+```json
+{
+  "issue_reporters": [
+    {
+      "issue_number": 5678,
+      "title": "Crash when opening large file",
+      "reporter": "community-user",
+      "url": "https://github.com/warpdotdev/warp/issues/5678"
+    }
+  ]
+}
+```
+
+Only include reporters who are **not** internal contributors (cross-reference with Step 3). These reporters will be credited in the "Community" section of the changelog.
+
+### Step 6 — Classify unmarked PRs
 
 For each PR that has no explicit `CHANGELOG-*` entries, decide whether to include it and under which category.
 
@@ -135,22 +162,22 @@ For each unmarked PR, produce a classification:
 
 **Unknown contributors:** Authors in the `unknown` bucket (org membership check failed due to auth) should be treated conservatively — do not attribute them as external. Note them in the output for manual verification.
 
-### Step 6 — Assemble the draft
+### Step 7 — Assemble the draft
 
-Combine explicit entries (Step 2) and inferred entries (Step 5) into the final report. Group by category in this order:
+Combine explicit entries (Step 2) and inferred entries (Step 6) into the final report. Group by category in this order:
 
 1. `NEW-FEATURE` — New Features
 2. `IMPROVEMENT` — Improvements
 3. `BUG-FIX` — Bug Fixes
 4. `OZ` — Oz Updates
 
-PRs marked with `CHANGELOG-NONE` are explicitly opted out and should appear in the skipped section with reason "opted out".
+PRs marked with `CHANGELOG-NONE` are explicitly opted out and must never appear in the changelog markdown.
 
-### Step 7 — Write output files
+### Step 8 — Write output files
 
 Write two files to `output_dir`:
 
-**`changelog-draft.md`** — Human-reviewable markdown:
+**`changelog-draft.md`** — Human-reviewable markdown, ready for Slack/Notion:
 
 ```markdown
 # Changelog Draft
@@ -170,24 +197,18 @@ Write two files to `output_dir`:
 ## Oz Updates
 - Improved agent memory ([#1237](https://github.com/warpdotdev/warp/pull/1237))
 
----
+## Community
+### Contributors
+- @contributor1 — [#1234](https://github.com/warpdotdev/warp/pull/1234)  ✨
 
-## Needs Review
-These entries have low confidence or are behind feature flags:
-- [ ] ([#1238](https://github.com/warpdotdev/warp/pull/1238)) "Some change" — confidence: low, reason: ambiguous scope
-
-## Skipped PRs
-| PR | Author | Reason |
-|----|--------|--------|
-| [#1239](https://github.com/warpdotdev/warp/pull/1239) | dependabot | bot |
-| [#1240](https://github.com/warpdotdev/warp/pull/1240) | internal-dev | CI/test only |
-| [#1241](https://github.com/warpdotdev/warp/pull/1241) | internal-dev | opted out (CHANGELOG-NONE) |
-
-## External Contributors
-- @contributor1 — [#1234](https://github.com/warpdotdev/warp/pull/1234)
+### Issue Reporters
+Thanks to the community members who reported issues fixed in this release:
+- @reporter1 — [#5678](https://github.com/warpdotdev/warp/issues/5678) "Crash when opening large file"
 ```
 
-**`changelog-draft.json`** — Machine-readable audit artifact:
+The markdown draft must **not** include "Needs Review" or "Skipped PRs" sections — those are internal details that belong only in the JSON audit artifact.
+
+**`changelog-draft.json`** — Machine-readable audit artifact (internal only):
 
 ```json
 {
@@ -208,9 +229,12 @@ These entries have low confidence or are behind feature flags:
     }
   ],
   "skipped": [...],
-  "needs_review": [...]
+  "needs_review": [...],
+  "issue_reporters": [...]
 }
 ```
+
+The JSON artifact retains `skipped`, `needs_review`, and `issue_reporters` for audit purposes — every PR in the range must appear in either `entries`, `skipped`, or `needs_review`.
 
 ## Constraints
 
