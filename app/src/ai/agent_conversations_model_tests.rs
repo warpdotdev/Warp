@@ -1382,6 +1382,70 @@ fn test_server_token_assignment_updates_copy_link_resolution() {
 }
 
 #[test]
+fn test_resolve_open_action_reopens_ambient_session_after_terminal_unregister() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let session_id = make_uuid(8205);
+        let mut task = create_test_task(&make_uuid(8206), "user-a", now);
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_id = Some(session_id.clone());
+        task.session_link = Some("https://example.com/session".to_string());
+        task.is_sandbox_running = true;
+        let task_id = task.task_id;
+        let terminal_view_id = EntityId::new();
+
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.tasks.insert(task_id, task);
+            model
+        });
+        ActiveAgentViewsModel::handle(&app).update(&mut app, |model, ctx| {
+            model.register_ambient_session(terminal_view_id, task_id, ctx);
+        });
+
+        app.update(|ctx| {
+            let action = AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                None,
+                ctx,
+            );
+
+            assert!(matches!(
+                action,
+                Some(WorkspaceAction::FocusTerminalViewInWorkspace { terminal_view_id: id })
+                    if id == terminal_view_id
+            ));
+        });
+
+        ActiveAgentViewsModel::handle(&app).update(&mut app, |model, ctx| {
+            model.unregister_ambient_session(terminal_view_id, ctx);
+        });
+
+        app.update(|ctx| {
+            let action = AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                None,
+                ctx,
+            );
+
+            assert!(matches!(
+                action,
+                Some(WorkspaceAction::OpenAmbientAgentSession {
+                    session_id: resolved_session_id,
+                    task_id: resolved_task_id,
+                }) if resolved_session_id.to_string() == session_id && resolved_task_id == task_id
+            ));
+        });
+    });
+}
+
+#[test]
 fn test_resolve_copy_link_uses_attached_synced_conversation_for_task_without_token() {
     App::test((), |mut app| async move {
         let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
