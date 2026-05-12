@@ -105,7 +105,7 @@ displayed value and whether thresholds apply.
 
 | Plan / account state | Segment glyph / text | Color tokens | Tooltip | Click action |
 |---|---|---|---|---|
-| Unlimited plan (`is_unlimited == true`) | `∞` glyph (or "Unlimited" if locale lacks the glyph) | Default fg; thresholds NOT applied | "Unlimited plan · current monthly billing usage: $X" if a USD figure is exposed by the existing billing source, else "Unlimited plan" | Open Settings → Billing & Usage |
+| Unlimited plan (`is_unlimited == true`) | `∞` glyph (or "Unlimited" if locale lacks the glyph) | Default fg; thresholds NOT applied | "Unlimited plan" — **no USD figure, no monthly spend, no invoice amount, no credit-burn rate**. The unlimited tooltip is intentionally degenerate; any financial figure belongs to the sibling USD-spend spec (#10224), not this chip. See "Unlimited tooltip — financial-data exclusion" below for the full prohibition. | Open Settings → Billing & Usage |
 | Usage-based / metered (`is_unlimited == false`, no add-ons) | `<used>/<allowance>` (integers) | Per data-state table thresholds | "<scope> · Monthly allowance · resets <date>" | Open Settings → Billing & Usage |
 | Add-on credits on top of base allowance (one or more add-ons returned) | `<used>/<base>+<addon_total>` (e.g. `89/2500+750`) | Thresholds computed against `(base + addon_total)` | See B1a.iii | Open Settings → Billing & Usage |
 | Enterprise plan with contract limit | `<used>/<allowance>` | Same thresholds as metered | "<scope> · Enterprise · resets <date>" | Open Settings → Billing & Usage |
@@ -113,6 +113,39 @@ displayed value and whether thresholds apply.
 | Delinquent (account past due) | `!` glyph | Danger fg | "Account past due" | Open Settings → Billing & Usage → Payment |
 | Restricted (admin-disabled) | Lock glyph | Default fg | "Restricted by admin" | Open Settings → Billing & Usage (informational) |
 | Signed-out / no billing context | Segment hidden | n/a | n/a | n/a |
+
+##### Unlimited tooltip — financial-data exclusion
+
+This chip is scoped to **credit-count display only**. Even when
+`is_unlimited == true` causes the credit count to be absent, the
+chip MUST NOT compensate by surfacing a USD / financial figure.
+Concretely, the Unlimited-plan tooltip:
+
+- MUST render the literal string "Unlimited plan" (or its
+  localized equivalent) and nothing else.
+- MUST NOT include a current-period USD spend, a monthly USD
+  amount, an invoice total, a credit-burn rate, a per-day cost,
+  a projected monthly cost, an estimated-overage figure, or any
+  other dollar/currency amount — regardless of whether the
+  upstream billing source exposes such a value.
+- MUST NOT include the count of agent turns, tokens, or any
+  other surrogate that could be reverse-engineered into a
+  financial figure.
+- MUST NOT vary by plan tier name; "Unlimited Pro", "Unlimited
+  Team", and any other unlimited variant all render the same
+  degenerate "Unlimited plan" tooltip.
+- Justification: the chip lives in always-visible chrome (visible
+  in screenshares, screenshots, screen recordings, and screen-
+  sharing during pair work). Surfacing a monthly USD figure here
+  would create an always-visible financial-data exposure outside
+  the user's control. Any USD display belongs to the sibling
+  USD-spend spec (#10224), which owns its own opt-in surface,
+  threshold logic, and exposure model.
+- Click action remains "Open Settings → Billing & Usage" so users
+  who want to see USD figures find them in Settings.
+- This exclusion is asserted in tests T1 and T9 (unlimited row
+  coverage) and in T12 (no financial fields in any segment-owned
+  payload).
 
 #### B1a.iii Multiple add-on pools
 
@@ -227,21 +260,73 @@ attached to the current scope (verified field:
   `refresh_request_usage_async` (auth state changes, post agent
   turn, manual settings refresh). The status-bar chip does NOT
   add a new refresh trigger.
-- Stale display: when `last_update_time` is older than 30s the
-  chip switches to the "Stale" row of B1a.i. After ≥5 min of
-  consecutive failed/missing updates the chip switches to the
-  "Failed" row of B1a.i (segment hidden); display resumes once
-  `RequestUsageUpdated` fires successfully. Hide-on-failure is
-  computed from `AIRequestUsageModel::last_update_time()`, not
-  from a per-segment counter.
+- **Stale and failed state — two distinct signals.** `last_update_time`
+  alone is insufficient to distinguish "stale because no fetch has
+  been attempted recently" from "stale because every recent fetch
+  attempt has failed". This spec therefore requires TWO signals on
+  `AIRequestUsageModel`, both upstream-owned:
+  1. `last_update_time: Option<Instant>` — the timestamp of the
+     most recent **successful** fetch (already present, see
+     `app/src/ai/request_usage_model.rs`).
+  2. `last_fetch_failed_at: Option<Instant>` — the timestamp of the
+     most recent **failed** fetch attempt. Set whenever
+     `refresh_request_usage_async` resolves to an error; cleared
+     whenever it resolves to success. If this field does not yet
+     exist on `AIRequestUsageModel`, this spec authorizes adding
+     it on the upstream model (the same upstream that already owns
+     `last_update_time`); the field is read by the segment, never
+     written by it.
+  The segment then computes its display row deterministically:
+  - **Stale row (B1a.i).** Render when
+    `now - last_update_time > 30s` AND
+    `last_fetch_failed_at` is None OR
+    `last_fetch_failed_at < now - 5min`. Intuition: data is older
+    than 30s but the chip has no positive evidence of repeated
+    recent failure — show the stale dot and the last-known value.
+  - **Failed row (B1a.i, segment hidden).** Render when
+    `last_fetch_failed_at` is Some AND
+    `now - last_fetch_failed_at <= 5min` AND
+    (`last_update_time` is None OR
+     `last_update_time < last_fetch_failed_at - 5min`). Intuition:
+    at least one failure has occurred and no successful fetch has
+    landed for at least 5 minutes — hide.
+  - **Recovery.** A successful `RequestUsageUpdated` event clears
+    `last_fetch_failed_at`, advances `last_update_time`, and the
+    segment leaves both Stale and Failed states on the next render
+    tick.
+  Both signals are computed from upstream model state; the segment
+  itself maintains NO timers, NO failure counters, and NO retry
+  loops of its own. The "consecutive failures" language in earlier
+  drafts is replaced by the timestamp-pair test above, which is
+  what the implementation actually evaluates.
 
 ### B3. Scope (workspace selector)
 
 - The segment follows the current workspace-billing-context
   selector (the same selector that drives the Billing pane).
-- When the user switches workspace scope (e.g. "Personal" → "Acme
-  Workspace"), the segment refetches and re-renders within the
-  ≤2s debounce window.
+- **Refresh ownership on workspace-scope change.** When the user
+  switches workspace scope (e.g. "Personal" → "Acme Workspace"),
+  the segment itself does NOT trigger a fetch. The
+  workspace-billing-context resolver is the existing call site
+  that invokes `AIRequestUsageModel::refresh_request_usage_async`
+  on scope change (one of the "auth state changes / existing
+  refresh triggers" enumerated in B2). The segment listens for
+  the subsequent `RequestUsageUpdated` event and re-renders
+  within ≤2s of that event, matching the per-process single-fetch
+  invariant. If `AIRequestUsageModel`'s current implementation
+  does not already refresh on workspace-billing-context change,
+  this spec authorizes adding that refresh call inside the
+  existing workspace-billing-context resolver — NOT inside the
+  segment. The segment remains the strict observer defined in
+  B2, with no fetch / no polling / no GraphQL client of its own,
+  even on scope change. This is the same passive-observer rule
+  that applies to agent-turn completion in B2; B3 is consistent
+  with B2.
+- During the brief window between the scope change firing and
+  the next `RequestUsageUpdated` event landing, the segment
+  hides (or shows the Loading row of B1a.i if a cached value
+  for the new scope is available) rather than flashing the
+  previous scope's numbers (see B3a authorization & redaction).
 - Tooltip shows scope name + allowance period, e.g.:
   `Acme Workspace · Monthly allowance · resets Dec 1`.
 
@@ -432,34 +517,80 @@ module to keep the no-extra-pipeline invariant intact.
 
 - T1. Segment formatting: numeric values, threshold colors at
   79/80/94/95/100 percent, unlimited rendering, indeterminate
-  rendering.
+  rendering. **Unlimited row sub-assertion:** with
+  `is_unlimited == true`, the tooltip string equals "Unlimited
+  plan" exactly (or its localized equivalent) and contains NO
+  `$`, NO digit followed by a currency code, NO "USD", NO
+  "month", NO "spend", and NO "$/day"-shaped substring.
 - T2. Fetch debounce: rapid agent-turn completions coalesce into
-  a single fetch within 2s.
+  a single fetch within 2s. The segment itself MUST NOT call
+  `refresh_request_usage_async` during this test — only the
+  pre-existing upstream callers do.
 - T3. Stale-on-error: fetch failure retains last value and
-  surfaces stale indicator in tooltip.
-- T4. Stale-then-hidden timing: after ≥30s without a successful
-  update the segment renders the Stale row of B1a.i; after ≥5 min
-  of consecutive failures the segment hides (Failed row); one
-  successful `RequestUsageUpdated` event restores the live render.
+  surfaces stale indicator in tooltip. Asserted by setting
+  `last_fetch_failed_at = now` on `AIRequestUsageModel` (with
+  `last_update_time` still in the recent past, ≤30s ago); the
+  segment renders the Stale row of B1a.i with the cached value
+  intact.
+- T4. **Stale-then-hidden timing — timestamp-pair driven.**
+  Drive the segment state by manipulating
+  `AIRequestUsageModel`'s `last_update_time` and
+  `last_fetch_failed_at` fields (the segment owns no timer):
+  - Set `last_update_time = now - 31s`,
+    `last_fetch_failed_at = None` → assert Stale row renders.
+  - Set `last_update_time = now - 6min`,
+    `last_fetch_failed_at = now - 30s` → assert Failed row
+    renders (segment hidden) per the B2 timestamp-pair test.
+  - Fire one successful `RequestUsageUpdated` that updates
+    `last_update_time = now` and clears `last_fetch_failed_at`
+    → assert live render restored within one tick.
+  The test MUST NOT rely on a per-segment failure counter; the
+  segment exposes none.
 - T5. Click routing: click navigates to Settings → Billing &
   Usage scoped to the current workspace.
-- T6. Workspace-scope switch updates the segment within 2s and
-  the tooltip shows the new scope name.
+- T6. Workspace-scope switch updates the segment within 2s of
+  the next `RequestUsageUpdated` event firing (segment does NOT
+  initiate the fetch — the workspace-billing-context resolver
+  does, per B3). The tooltip shows the new scope name. During
+  the in-between window the segment hides or renders the Loading
+  row, never flashing the previous scope's numbers.
 - T7. Toggle off (`show_ai_credits = false`) prevents rendering
-  AND prevents subscription to billing fetches (no extra network
-  cost when opted out).
+  AND prevents `RequestUsageUpdated` subscription registration
+  from segment-owned code (no new model-event listener attached
+  when opted out). The segment never opens a billing fetch, with
+  or without the toggle on — that is asserted in T10.
 - T8. Right-click context menu hides the segment and persists the
   setting flip.
 - T9. Display-state matrix: each row of B1a renders the exact
   glyph/text and color token specified — covers unlimited,
   metered, add-on, enterprise-with-limit, enterprise-no-limit,
   delinquent, restricted, missing-allowance, indeterminate, and
-  signed-out.
-- T10. Shared subscription ref-count: spawning N≥2 segments
-  results in exactly one underlying billing subscription; the
-  last segment removed disposes the subscription. Verified by
-  asserting the fetch counter increments at the same cadence as
-  N=1.
+  signed-out. Unlimited-row sub-assertion is the same as T1's
+  "no USD / no spend / no currency / no time-rate" prohibition.
+- T10. **Single fetch, N model-event listeners.** The
+  per-process single-fetch invariant in B2 is asserted directly,
+  matching the model-event observer pattern defined elsewhere
+  in this spec (NOT a ref-counted "billing subscription"). The
+  test asserts:
+  - Spawning N≥2 segments registers exactly N
+    `RequestUsageUpdated` model-event listeners on the singleton
+    `AIRequestUsageModel`. These are observer listeners, not
+    fetch handles. There is no shared "subscription handle"
+    being ref-counted on or off.
+  - The underlying GraphQL fetch counter (the call count of
+    `refresh_request_usage_async`) is unchanged from the N=1
+    baseline regardless of how many segments exist. The chip's
+    presence MUST NOT add any fetches.
+  - Closing all but one segment leaves the singleton's fetch
+    cadence and `RequestUsageUpdated` emission cadence
+    unchanged. Closing the last segment removes the final
+    `RequestUsageUpdated` listener but DOES NOT dispose any
+    fetch — `AIRequestUsageModel` keeps running for the rest of
+    the app (Billing pane, buy-credits banner, etc.).
+  - There is no segment-owned billing-subscription object to
+    dispose. The earlier "shared billing subscription
+    ref-counted to last segment removed" language is replaced
+    by this observer-only assertion.
 - T11. Authorization gating: a user without billing-view
   permission for the active workspace never sees the segment,
   even with `status_bar.show_ai_credits = true`. Switching from a
@@ -468,7 +599,8 @@ module to keep the no-extra-pipeline invariant intact.
 - T12. Telemetry shape: assert click telemetry payload is exactly
   `{ event: "status_bar.segment_clicked", segment: "ai_credits" }`
   — no `used`, `allowance`, `scope_name`, `workspace_id`,
-  `plan_tier`, or `reset_at` fields.
+  `plan_tier`, `reset_at`, `usd_amount`, `monthly_spend`, or any
+  currency / financial field.
 
 ## Resolved questions (V1 decisions)
 
