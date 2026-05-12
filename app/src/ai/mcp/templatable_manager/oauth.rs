@@ -5,7 +5,7 @@ use oauth2::{RefreshToken, TokenResponse as _};
 use rmcp::transport::{
     auth::{
         AuthClient, AuthorizationManager, CredentialStore, InMemoryCredentialStore,
-        OAuthClientConfig, OAuthState, OAuthTokenResponse, StoredCredentials,
+        OAuthClientConfig, OAuthState, StoredCredentials,
     },
     AuthError, AuthorizationSession,
 };
@@ -244,7 +244,7 @@ pub async fn make_authenticated_client(
 
     // If we have a valid access token (or successfully refreshed a valid refresh token),
     // we're already authorized and good to go.
-    if let Ok(_) = auth_manager.get_access_token().await {
+    if auth_manager.get_access_token().await.is_ok() {
         if let (Some(client_id), Some(client_secret)) = (client_id, client_secret) {
             auth_manager.configure_client(
                 OAuthClientConfig::new(client_id, redirect_uri.clone())
@@ -507,6 +507,8 @@ pub(crate) fn write_to_secure_storage<T: Serialize>(
 
 #[cfg(test)]
 mod tests {
+    use rmcp::transport::auth::OAuthTokenResponse;
+
     use super::*;
 
     /// Builds a minimal `OAuthTokenResponse` for tests, optionally with a refresh token.
