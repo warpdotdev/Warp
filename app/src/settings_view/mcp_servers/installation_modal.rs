@@ -9,12 +9,15 @@ use crate::settings_view::mcp_servers::style::{
     INSTALLATION_MODAL_INPUT_VERTICAL_SPACING, INSTALLATION_MODAL_LABEL_VERTICAL_SPACING,
     INSTALLATION_MODAL_PADDING, INSTALLATION_MODAL_TITLE_VERTICAL_SPACING,
 };
+use crate::view_components::action_button::{
+    ActionButton, KeystrokeSource, NakedTheme, PrimaryTheme,
+};
 use crate::view_components::dropdown::{Dropdown, DropdownItem};
 use markdown_parser::parse_markdown;
 use warpui::elements::Shrinkable;
 use warpui::fonts::{Properties, Weight};
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use warpui::keymap::Keystroke;
+use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::{
     elements::{
         Align, Border, ChildView, ConstrainedBox, Container, CrossAxisAlignment, Empty, Flex,
@@ -34,9 +37,7 @@ use crate::ui_components::{
 };
 use warpui::elements::{CornerRadius, Padding, Radius};
 
-use warp_core::ui::{
-    color::coloru_with_opacity, external_product_icon::ExternalProductIcon, icons::Icon,
-};
+use warp_core::ui::{external_product_icon::ExternalProductIcon, icons::Icon};
 
 pub enum InstallationModalBodyEvent {
     Cancel,
@@ -71,26 +72,47 @@ pub struct InstallationModalBody {
     templatable_mcp_server: Option<TemplatableMCPServer>,
     instructions_in_markdown: Option<String>,
     variable_inputs: HashMap<String, VariableInput>,
-    cancel_mouse_state: MouseStateHandle,
-    install_mouse_state: MouseStateHandle,
+    cancel_button: ViewHandle<ActionButton>,
+    install_button: ViewHandle<ActionButton>,
     close_button_mouse_state: MouseStateHandle,
     is_shared: bool,
 }
 
-impl Default for InstallationModalBody {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl InstallationModalBody {
-    pub fn new() -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
+        // Cancel and Install both delegate to the existing typed-action
+        // handler so the modal-level routing (event emission, error
+        // surfacing) is unchanged. The Install button shows the Enter
+        // keybinding as a visual hint via `ActionButton`'s built-in
+        // keystroke rendering, replacing the prior hand-rolled `↩` icon.
+        // The hint does not register a keystroke handler — Enter is
+        // dispatched by the focused input editor through
+        // `handle_editor_event` below — so adding it here cannot cause a
+        // double-fire of `InstallationModalBodyAction::Install`. Theming
+        // (accent background, contrast-aware label color) is now driven
+        // entirely by `PrimaryTheme`, which fixes #10517 by deferring to
+        // the same accent-button color lookup the rest of the app uses.
+        let cancel_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("Cancel", NakedTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(InstallationModalBodyAction::Cancel);
+            })
+        });
+
+        let enter_keystroke = Keystroke::parse("enter").expect("valid keystroke");
+        let install_button = ctx.add_typed_action_view(|ctx| {
+            ActionButton::new("Install", PrimaryTheme)
+                .with_keybinding(KeystrokeSource::Fixed(enter_keystroke), ctx)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(InstallationModalBodyAction::Install);
+                })
+        });
+
         Self {
             templatable_mcp_server: None,
             instructions_in_markdown: None,
             variable_inputs: HashMap::new(),
-            cancel_mouse_state: Default::default(),
-            install_mouse_state: Default::default(),
+            cancel_button,
+            install_button,
             close_button_mouse_state: Default::default(),
             is_shared: false,
         }
@@ -440,96 +462,23 @@ impl InstallationModalBody {
             .finish()
     }
 
-    fn render_action_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let cancel_button = appearance
-            .ui_builder()
-            .button(ButtonVariant::Text, self.cancel_mouse_state.clone())
-            .with_text_label("Cancel".into())
-            .with_style(UiComponentStyles {
-                font_weight: Some(Weight::Bold),
-                font_color: Some(appearance.theme().active_ui_text_color().into()),
-                ..Default::default()
-            })
-            .with_hovered_styles(UiComponentStyles {
-                font_color: Some(appearance.theme().disabled_ui_text_color().into()),
-                ..Default::default()
-            })
-            .build()
-            .with_cursor(Cursor::PointingHand)
-            .on_click(|ctx, _, _| ctx.dispatch_typed_action(InstallationModalBodyAction::Cancel))
-            .finish();
-
-        // The icon and label sit on the accent-button background, so colors
-        // must be picked for contrast against that background rather than the
-        // surrounding surface — see issue #10517.
-        let accent_label_color = appearance
-            .theme()
-            .main_text_color(appearance.theme().accent_button_color());
-
-        let corner_down_left_icon = Container::new(
-            ConstrainedBox::new(
-                Icon::CornerDownLeft
-                    .to_warpui_icon(accent_label_color)
-                    .finish(),
-            )
-            .with_width(appearance.monospace_font_size())
-            .with_height(appearance.monospace_font_size())
-            .finish(),
-        )
-        .with_uniform_padding(2.)
-        .with_border(Border::all(1.).with_border_fill(coloru_with_opacity(
-            accent_label_color.into(),
-            60,
-        )))
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-        .finish();
-
-        let install_button_label = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(
-                Text::new_inline(
-                    "Install",
-                    appearance.ui_font_family(),
-                    appearance.ui_font_size(),
-                )
-                .with_color(accent_label_color.into())
-                .with_style(Properties::default().weight(Weight::Bold))
-                .finish(),
-            )
-            .with_child(
-                Container::new(corner_down_left_icon)
-                    .with_margin_left(8.)
-                    .finish(),
-            )
-            .finish();
-
-        let install_button = appearance
-            .ui_builder()
-            .button(ButtonVariant::Accent, self.install_mouse_state.clone())
-            .with_custom_label(install_button_label)
-            .with_style(UiComponentStyles {
-                padding: Some(Coords::uniform(5.).left(10.).right(10.)),
-                ..Default::default()
-            })
-            .build()
-            .with_cursor(Cursor::PointingHand)
-            .on_click(|ctx, _, _| ctx.dispatch_typed_action(InstallationModalBodyAction::Install))
-            .finish();
-
+    fn render_action_buttons(&self) -> Box<dyn Element> {
+        // Buttons own their own theming via `ActionButton` — see `new()` for
+        // construction and the rationale for this refactor (issue #10517).
         Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(
-                Container::new(cancel_button)
+                Container::new(ChildView::new(&self.cancel_button).finish())
                     .with_margin_right(INSTALLATION_MODAL_BUTTON_GAP)
                     .finish(),
             )
-            .with_child(Container::new(install_button).finish())
+            .with_child(Container::new(ChildView::new(&self.install_button).finish()).finish())
             .finish()
     }
 
     fn render_buttons_row(&self, appearance: &Appearance) -> Box<dyn Element> {
         let source_indicator = Self::render_source_indicator(self.is_shared, appearance);
-        let action_buttons = self.render_action_buttons(appearance);
+        let action_buttons = self.render_action_buttons();
 
         let spacer = Shrinkable::new(1., Container::new(Empty::new().finish()).finish()).finish();
 
