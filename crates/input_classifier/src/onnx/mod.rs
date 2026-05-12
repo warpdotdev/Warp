@@ -24,11 +24,7 @@ struct Models;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Model {
-    /// The original BERT-tiny classifier (`bert_tiny_v1.onnx`) shipped to all
-    /// users with the ONNX backend compiled in via `nld_classifier_v1`.
     BertTinyV1,
-    /// The retrained BERT-tiny v2 classifier (`bert_tiny_v2.onnx`), gated
-    /// behind the `nld_classifier_v2` feature (currently dogfood-only).
     BertTinyV2,
 }
 
@@ -50,8 +46,6 @@ impl Model {
 
     fn tokenizer_path(&self) -> &'static str {
         match self {
-            // The v2 model uses the same tokenizer as v1 (retraining did not
-            // change the vocabulary).
             Model::BertTinyV1 | Model::BertTinyV2 => "bert_tiny_tokenizer.json",
         }
     }
