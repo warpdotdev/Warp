@@ -529,9 +529,9 @@ impl RunAgentsCardView {
                 if self.state.orch.harness_type.is_empty() {
                     self.state.orch.harness_type = config.harness_type.clone();
                 }
-                self.state.orch.resolve_execution_mode_from_config(
-                    &config.execution_mode,
-                );
+                self.state
+                    .orch
+                    .resolve_execution_mode_from_config(&config.execution_mode);
             }
             // Re-evaluate denied status with the refreshed config.
             self.is_denied = compute_is_denied(self.is_denied, &self.active_config);
