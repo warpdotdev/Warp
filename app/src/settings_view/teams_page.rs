@@ -1903,7 +1903,7 @@ impl TeamsWidget {
             }
         };
         let body_prefix = if is_over_cap {
-            "You've exceeded your plan's member limit. Existing members keep their access, but you won't be able to add new members."
+            "You've exceeded your plan's member limit. Existing team members keep their access, but you won't be able to add new members."
         } else {
             "You've reached your plan's member limit."
         };
@@ -2971,7 +2971,7 @@ impl TeamsWidget {
         }
     }
 
-    /// "Want to grow your team? <Upgrade>." — routes through self-serve upgrade.
+    /// "Want to grow your team? <Upgrade>" — routes through self-serve upgrade.
     fn render_outgrow_upgrade_line(
         &self,
         team_uid: ServerId,
@@ -2991,18 +2991,16 @@ impl TeamsWidget {
             .soft_wrap(false)
             .build()
             .finish();
-        let suffix = self.render_sub_text(".".to_string(), appearance, None);
 
         Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
             .with_child(prefix)
             .with_child(link)
-            .with_child(suffix)
             .finish()
     }
 
-    /// "Want to grow your team? <Contact sales@warp.dev>." — opens a mailto.
+    /// "Want to grow your team? <Contact sales@warp.dev>" — opens a mailto.
     fn render_outgrow_contact_sales_line(&self, appearance: &Appearance) -> Box<dyn Element> {
         let prefix = self.render_sub_text("Want to grow your team? ".to_string(), appearance, None);
         let link = appearance
@@ -3018,14 +3016,12 @@ impl TeamsWidget {
             .soft_wrap(false)
             .build()
             .finish();
-        let suffix = self.render_sub_text(".".to_string(), appearance, None);
 
         Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
             .with_child(prefix)
             .with_child(link)
-            .with_child(suffix)
             .finish()
     }
 
