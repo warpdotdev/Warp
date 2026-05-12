@@ -396,6 +396,10 @@ pub enum FeatureFlag {
     /// Enables the prompt chip that displays the GitHub PR for the current branch.
     GithubPrPromptChip,
 
+    /// Enables richer PR metadata (title, state, reviewers) on the vertical-tab
+    /// PR badge. Tracks [warpdotdev/warp#10566].
+    GithubPrRichMetadata,
+
     /// A button on the homepage for easily creating new projects.
     CreateProjectFlow,
 

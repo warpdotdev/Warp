@@ -520,6 +520,17 @@ define_settings_group!(TabSettings, settings: [
         toml_path: "appearance.vertical_tabs.show_pr_link",
         description: "Whether to show PR links on vertical tabs.",
     },
+    // Title is gated on the PR link badge being shown — there is no useful
+    // place to render it otherwise. The badge call site checks both settings.
+    vertical_tabs_show_pr_title: VerticalTabsShowPrTitle {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "appearance.vertical_tabs.show_pr_title",
+        description: "Whether to show the PR title alongside the PR number on vertical tabs.",
+    },
     vertical_tabs_show_diff_stats: VerticalTabsShowDiffStats {
         type: bool,
         default: true,

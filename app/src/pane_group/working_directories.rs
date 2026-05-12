@@ -224,6 +224,17 @@ impl WorkingDirectoriesModel {
             .and_then(|roots| roots.get(root_path).copied())
     }
 
+    /// Read-only lookup of an existing `DiffStateModel` for a repository, if
+    /// one has been created. Unlike [`get_or_create_diff_state_model`] this
+    /// never instantiates a new model — useful from render paths that have
+    /// only `&AppContext`.
+    pub fn diff_state_model_for(
+        &self,
+        key: &BufferLocation,
+    ) -> Option<ModelHandle<DiffStateModel>> {
+        self.diff_state_models.get(key).cloned()
+    }
+
     /// Get or create a DiffStateModel for a specific repository.
     /// If the model doesn't exist, it will be created.
     pub fn get_or_create_diff_state_model(

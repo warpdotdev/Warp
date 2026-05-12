@@ -3531,6 +3531,7 @@ impl Workspace {
                 ..
             }
             | TabSettingsChangedEvent::VerticalTabsShowPrLink { .. }
+            | TabSettingsChangedEvent::VerticalTabsShowPrTitle { .. }
             | TabSettingsChangedEvent::VerticalTabsShowDiffStats { .. } => {
                 ctx.notify();
             }

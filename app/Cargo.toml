@@ -601,6 +601,7 @@ default = [
     "kitty_keyboard_protocol",
     "inline_menu_headers",
     "github_pr_prompt_chip",
+    "github_pr_rich_metadata",
     "conversations_as_context",
     "markdown_tables",
     "markdown_mermaid",
@@ -665,6 +666,7 @@ welcome_tab = []
 get_started_tab = []
 code_mode_chip = []
 github_pr_prompt_chip = []
+github_pr_rich_metadata = []
 create_project_flow = []
 agent_mode_evals = [
     "integration_tests",

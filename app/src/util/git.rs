@@ -742,11 +742,95 @@ pub async fn run_push(_repo_path: &Path, _branch: &str, _path_env: Option<&str>)
 
 // ── gh CLI helpers ───────────────────────────────────────────────────────────
 
-/// PR information returned by `gh pr view`.
+/// PR information returned by `gh pr view`. Optional fields are populated when
+/// `gh pr view --json …` returns the corresponding key; older callers and
+/// degraded paths (e.g. `create_pr` parsing only a URL) leave them `None`.
 #[derive(Debug, Clone)]
 pub struct PrInfo {
     pub number: u64,
     pub url: String,
+    pub title: Option<String>,
+    pub state: Option<PrState>,
+    pub review_decision: Option<PrReviewDecision>,
+    /// Full reviewer list; rendering code is responsible for any visible cap.
+    pub reviewers: Vec<PrReviewer>,
+    pub merge_state: Option<PrMergeState>,
+    pub checks: Option<PrCheckSummary>,
+}
+
+impl PrInfo {
+    /// Minimal `PrInfo` carrying only the number+URL. Used by code paths that
+    /// don't have the richer `gh pr view --json` payload (e.g. `create_pr`,
+    /// which only parses the printed URL).
+    pub fn minimal(number: u64, url: String) -> Self {
+        Self {
+            number,
+            url,
+            title: None,
+            state: None,
+            review_decision: None,
+            reviewers: Vec::new(),
+            merge_state: None,
+            checks: None,
+        }
+    }
+}
+
+/// Overall lifecycle state of a pull request. `Draft` is folded in from the
+/// `isDraft` boolean alongside the `state` string returned by `gh`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrState {
+    Open,
+    Draft,
+    Merged,
+    Closed,
+}
+
+/// Aggregate review decision reported by GitHub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrReviewDecision {
+    Approved,
+    ChangesRequested,
+    ReviewRequired,
+}
+
+/// State of an individual reviewer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrReviewState {
+    Approved,
+    ChangesRequested,
+    Commented,
+    Requested,
+    Pending,
+    Dismissed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrReviewer {
+    pub login: String,
+    pub state: PrReviewState,
+}
+
+/// Mergeability state from `mergeStateStatus`. Captured now so a later
+/// CI/merge-status surface can read it without a cache-shape migration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrMergeState {
+    Clean,
+    Dirty,
+    Blocked,
+    Behind,
+    HasHooks,
+    Unstable,
+    Unknown,
+}
+
+/// Roll-up of CI checks from `statusCheckRollup`. Captured for future use; PR 1
+/// and PR 2 do not render this.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PrCheckSummary {
+    pub passing: u32,
+    pub failing: u32,
+    pub pending: u32,
 }
 
 /// Runs a `gh` CLI command and returns stdout on success. `path_env`, when
@@ -788,23 +872,32 @@ async fn run_gh_command(repo_path: &Path, args: &[&str], path_env: Option<&str>)
     }
 }
 
+/// JSON fields requested from `gh pr view` for the rich-metadata PR info
+/// (title, state, review decision, reviewers, mergeability, CI checks).
+/// `mergeStateStatus` and `statusCheckRollup` are captured even though PR 1 /
+/// PR 2 don't render them, so a follow-up CI/merge-status surface doesn't need
+/// a second cache-shape migration.
+#[cfg(feature = "local_fs")]
+const GH_PR_VIEW_JSON_FIELDS: &str =
+    "number,url,title,state,isDraft,reviewDecision,reviewRequests,latestReviews,\
+     mergeStateStatus,statusCheckRollup";
+
 /// Looks up the PR for the current branch via `gh pr view`.
 /// Returns `Ok(None)` if there is simply no PR for this branch.
 /// Returns `Err` for real failures (auth, network, gh not installed).
 #[cfg(feature = "local_fs")]
 pub async fn get_pr_for_branch(repo_path: &Path, path_env: Option<&str>) -> Result<Option<PrInfo>> {
-    match run_gh_command(repo_path, &["pr", "view", "--json", "number,url"], path_env).await {
+    match run_gh_command(
+        repo_path,
+        &["pr", "view", "--json", GH_PR_VIEW_JSON_FIELDS],
+        path_env,
+    )
+    .await
+    {
         Ok(stdout) => {
             let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
                 .map_err(|e| anyhow!("Failed to parse gh output: {e}"))?;
-            let number = parsed["number"]
-                .as_u64()
-                .ok_or_else(|| anyhow!("Missing 'number' in gh output"))?;
-            let url = parsed["url"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing 'url' in gh output"))?
-                .to_string();
-            Ok(Some(PrInfo { number, url }))
+            Ok(Some(parse_pr_info(&parsed)?))
         }
         Err(e) => {
             let msg = e.to_string();
@@ -815,6 +908,165 @@ pub async fn get_pr_for_branch(repo_path: &Path, path_env: Option<&str>) -> Resu
             }
         }
     }
+}
+
+/// Pure parser for the `gh pr view --json …` payload. Pulled out of the
+/// network path so tests can exercise field handling without spawning `gh`.
+/// `number` and `url` are required; everything else is optional and degrades
+/// to `None` / empty when missing or malformed.
+pub fn parse_pr_info(json: &serde_json::Value) -> Result<PrInfo> {
+    let number = json["number"]
+        .as_u64()
+        .ok_or_else(|| anyhow!("Missing 'number' in gh output"))?;
+    let url = json["url"]
+        .as_str()
+        .ok_or_else(|| anyhow!("Missing 'url' in gh output"))?
+        .to_string();
+
+    let title = json["title"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    let is_draft = json["isDraft"].as_bool().unwrap_or(false);
+    let state = parse_pr_state(json["state"].as_str(), is_draft);
+    let review_decision = parse_review_decision(json["reviewDecision"].as_str());
+    let reviewers = parse_reviewers(&json["reviewRequests"], &json["latestReviews"]);
+    let merge_state = parse_merge_state(json["mergeStateStatus"].as_str());
+    let checks = parse_check_rollup(&json["statusCheckRollup"]);
+
+    Ok(PrInfo {
+        number,
+        url,
+        title,
+        state,
+        review_decision,
+        reviewers,
+        merge_state,
+        checks,
+    })
+}
+
+fn parse_pr_state(raw: Option<&str>, is_draft: bool) -> Option<PrState> {
+    let s = raw?.trim();
+    if s.is_empty() {
+        return None;
+    }
+    Some(match s.to_ascii_uppercase().as_str() {
+        "OPEN" if is_draft => PrState::Draft,
+        "OPEN" => PrState::Open,
+        "MERGED" => PrState::Merged,
+        "CLOSED" => PrState::Closed,
+        _ => return None,
+    })
+}
+
+fn parse_review_decision(raw: Option<&str>) -> Option<PrReviewDecision> {
+    match raw?.to_ascii_uppercase().as_str() {
+        "APPROVED" => Some(PrReviewDecision::Approved),
+        "CHANGES_REQUESTED" => Some(PrReviewDecision::ChangesRequested),
+        "REVIEW_REQUIRED" => Some(PrReviewDecision::ReviewRequired),
+        _ => None,
+    }
+}
+
+/// Build the unified reviewer list from `reviewRequests` (still-pending
+/// invitations) and `latestReviews` (most recent review per reviewer). When a
+/// login appears in both, the actual review state wins over the pending
+/// request.
+fn parse_reviewers(
+    review_requests: &serde_json::Value,
+    latest_reviews: &serde_json::Value,
+) -> Vec<PrReviewer> {
+    let mut out: Vec<PrReviewer> = Vec::new();
+
+    if let Some(arr) = review_requests.as_array() {
+        for entry in arr {
+            let Some(login) = reviewer_login(entry) else {
+                continue;
+            };
+            if out.iter().any(|r| r.login == login) {
+                continue;
+            }
+            out.push(PrReviewer {
+                login,
+                state: PrReviewState::Requested,
+            });
+        }
+    }
+
+    if let Some(arr) = latest_reviews.as_array() {
+        for entry in arr {
+            let Some(login) = reviewer_login(&entry["author"]).or_else(|| reviewer_login(entry))
+            else {
+                continue;
+            };
+            let state = match entry["state"].as_str().unwrap_or("").to_ascii_uppercase().as_str() {
+                "APPROVED" => PrReviewState::Approved,
+                "CHANGES_REQUESTED" => PrReviewState::ChangesRequested,
+                "COMMENTED" => PrReviewState::Commented,
+                "DISMISSED" => PrReviewState::Dismissed,
+                "PENDING" => PrReviewState::Pending,
+                _ => continue,
+            };
+            if let Some(existing) = out.iter_mut().find(|r| r.login == login) {
+                existing.state = state;
+            } else {
+                out.push(PrReviewer { login, state });
+            }
+        }
+    }
+
+    out
+}
+
+fn reviewer_login(value: &serde_json::Value) -> Option<String> {
+    let s = value["login"].as_str().or_else(|| value.as_str())?.trim();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}
+
+fn parse_merge_state(raw: Option<&str>) -> Option<PrMergeState> {
+    match raw?.to_ascii_uppercase().as_str() {
+        "CLEAN" => Some(PrMergeState::Clean),
+        "DIRTY" => Some(PrMergeState::Dirty),
+        "BLOCKED" => Some(PrMergeState::Blocked),
+        "BEHIND" => Some(PrMergeState::Behind),
+        "HAS_HOOKS" => Some(PrMergeState::HasHooks),
+        "UNSTABLE" => Some(PrMergeState::Unstable),
+        "UNKNOWN" => Some(PrMergeState::Unknown),
+        _ => None,
+    }
+}
+
+fn parse_check_rollup(value: &serde_json::Value) -> Option<PrCheckSummary> {
+    let arr = value.as_array()?;
+    if arr.is_empty() {
+        return None;
+    }
+    let mut summary = PrCheckSummary::default();
+    for entry in arr {
+        let conclusion = entry["conclusion"]
+            .as_str()
+            .or_else(|| entry["state"].as_str())
+            .unwrap_or("")
+            .to_ascii_uppercase();
+        match conclusion.as_str() {
+            "SUCCESS" | "NEUTRAL" | "SKIPPED" => summary.passing += 1,
+            "FAILURE" | "TIMED_OUT" | "ACTION_REQUIRED" | "STARTUP_FAILURE" | "CANCELLED" => {
+                summary.failing += 1
+            }
+            "" | "PENDING" | "QUEUED" | "IN_PROGRESS" | "WAITING" | "EXPECTED" => {
+                summary.pending += 1
+            }
+            _ => summary.pending += 1,
+        }
+    }
+    Some(summary)
 }
 
 #[cfg(not(feature = "local_fs"))]
@@ -917,7 +1169,7 @@ pub async fn create_pr(
         .next()
         .and_then(|s| s.parse::<u64>().ok())
         .ok_or_else(|| anyhow!("Could not parse PR number from URL: {url}"))?;
-    Ok(PrInfo { number, url })
+    Ok(PrInfo::minimal(number, url))
 }
 
 /// Trims an AI-generated PR title to a single line and caps its length.
