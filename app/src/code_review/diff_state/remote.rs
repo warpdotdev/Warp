@@ -116,35 +116,61 @@ impl RemoteDiffStateModel {
         event: &RemoteServerManagerEvent,
         ctx: &mut ModelContext<Self>,
     ) {
-        match event {
+        let diff_subscription = match event {
             RemoteServerManagerEvent::DiffStateSnapshotReceived {
                 host_id,
                 repo_path,
                 mode,
-                snapshot,
-            } if self.matches_subscription(host_id, repo_path, mode) => {
-                self.apply_snapshot(snapshot, ctx);
+                ..
             }
-            RemoteServerManagerEvent::DiffStateMetadataUpdateReceived {
+            | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived {
                 host_id,
                 repo_path,
                 mode,
-                update,
-            } if self.matches_subscription(host_id, repo_path, mode) => {
+                ..
+            }
+            | RemoteServerManagerEvent::DiffStateFileDeltaReceived {
+                host_id,
+                repo_path,
+                mode,
+                ..
+            } => Some((host_id, repo_path, mode)),
+            _ => None,
+        };
+        if let Some((host_id, repo_path, mode)) = diff_subscription {
+            if &self.host_id != host_id
+                || &self.repo_path != repo_path
+                || proto::DiffMode::from(&self.mode) != *mode
+            {
+                return;
+            }
+        }
+        match event {
+            RemoteServerManagerEvent::DiffStateSnapshotReceived { snapshot, .. } => {
+                self.apply_snapshot(snapshot, ctx);
+            }
+            RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { update, .. } => {
                 if let Some(metadata) = &update.metadata {
                     self.apply_metadata_update(metadata, ctx);
                 }
             }
-            RemoteServerManagerEvent::DiffStateFileDeltaReceived {
-                host_id,
-                repo_path,
-                mode,
-                delta,
-            } if self.matches_subscription(host_id, repo_path, mode) => {
+            RemoteServerManagerEvent::DiffStateFileDeltaReceived { delta, .. } => {
                 self.apply_file_delta(delta, ctx);
             }
 
             // ── Reconnection handling ─────────────────────────────────
+
+            // The same transport session recovered with a fresh client
+            // connection. The server-side subscription was tied to the old
+            // connection, so re-send the repo/mode subscription through the
+            // recovered session.
+            RemoteServerManagerEvent::SessionReconnected {
+                session_id,
+                host_id,
+                ..
+            } if host_id == &self.host_id && self.session_id == Some(*session_id) => {
+                self.resubscribe(*session_id, ctx);
+            }
 
             // The transport session that established this subscription died.
             // Since diff state is host-scoped, another connected session to
@@ -166,6 +192,15 @@ impl RemoteDiffStateModel {
                 }
             }
 
+            // Reconnectable drops emit HostDisconnected before the reconnect
+            // completes, but they do not emit SessionDisconnected unless all
+            // reconnect attempts fail. Clear the stale subscription session so
+            // HostConnected can re-establish it on the fresh connection.
+            RemoteServerManagerEvent::HostDisconnected { host_id } if host_id == &self.host_id => {
+                self.session_id = None;
+                self.state = InternalRemoteDiffState::Disconnected;
+                ctx.emit(DiffStateModelEvent::ConnectionLost);
+            }
             // Host came back after being fully down. Re-subscribe.
             RemoteServerManagerEvent::HostConnected { host_id }
                 if host_id == &self.host_id && self.session_id.is_none() =>
@@ -177,18 +212,6 @@ impl RemoteDiffStateModel {
 
             _ => {}
         }
-    }
-
-    /// Returns true if the event is for this model's (host_id, repo_path, mode).
-    fn matches_subscription(
-        &self,
-        host_id: &HostId,
-        repo_path: &StandardizedPath,
-        mode: &proto::DiffMode,
-    ) -> bool {
-        &self.host_id == host_id
-            && &self.repo_path == repo_path
-            && proto::DiffMode::from(&self.mode) == *mode
     }
 
     // ── Re-subscription ───────────────────────────────────────────────

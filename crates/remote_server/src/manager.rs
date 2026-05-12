@@ -13,8 +13,8 @@ use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
 use crate::proto::{
-    DiffMode, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, FileStatusInfo,
-    TextEdit,
+    diff_state, get_diff_state_response, DiffMode, DiffState, DiffStateErrorValue,
+    DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, FileStatusInfo, TextEdit,
 };
 use crate::repo_metadata_proto::proto_load_repo_metadata_directory_response_to_update;
 use crate::setup::PreinstallCheckResult;
@@ -1552,46 +1552,64 @@ impl RemoteServerManager {
         let spawner = self.spawner.clone();
         ctx.background_executor()
             .spawn(async move {
+                let error_snapshot = |message: String| DiffStateSnapshot {
+                    repo_path: repo_path_for_event.to_string(),
+                    mode: Some(mode_for_event.clone()),
+                    metadata: None,
+                    state: Some(DiffState {
+                        state: Some(diff_state::State::Error(DiffStateErrorValue { message })),
+                    }),
+                    diffs: None,
+                };
                 match client.get_diff_state(&repo_path, mode).await {
                     Ok(resp) => match resp.result {
-                        Some(crate::proto::get_diff_state_response::Result::Snapshot(snapshot)) => {
+                        Some(get_diff_state_response::Result::Snapshot(snapshot)) => {
+                            let event_repo_path = repo_path_for_event.clone();
+                            let event_mode = mode_for_event.clone();
                             let _ = spawner
                                 .spawn(move |_me, ctx| {
                                     ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
                                         host_id,
-                                        repo_path: repo_path_for_event,
-                                        mode: mode_for_event,
+                                        repo_path: event_repo_path,
+                                        mode: event_mode,
                                         snapshot,
                                     });
                                 })
                                 .await;
                         }
-                        Some(crate::proto::get_diff_state_response::Result::Error(e)) => {
+                        Some(get_diff_state_response::Result::Error(e)) => {
                             log::warn!("Remote server get_diff_state error: {}", e.message);
-                            let snapshot = DiffStateSnapshot {
-                                repo_path: repo_path_for_event.to_string(),
-                                mode: Some(mode_for_event.clone()),
-                                metadata: None,
-                                state: Some(crate::proto::DiffState {
-                                    state: Some(crate::proto::diff_state::State::Error(
-                                        crate::proto::DiffStateErrorValue { message: e.message },
-                                    )),
-                                }),
-                                diffs: None,
-                            };
+                            let snapshot = error_snapshot(e.message);
+                            let event_repo_path = repo_path_for_event.clone();
+                            let event_mode = mode_for_event.clone();
                             let _ = spawner
                                 .spawn(move |_me, ctx| {
                                     ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
                                         host_id,
-                                        repo_path: repo_path_for_event,
-                                        mode: mode_for_event,
+                                        repo_path: event_repo_path,
+                                        mode: event_mode,
                                         snapshot,
                                     });
                                 })
                                 .await;
                         }
                         None => {
-                            log::warn!("Empty GetDiffStateResponse");
+                            let message =
+                                "Remote server returned an empty GetDiffStateResponse".to_string();
+                            log::warn!("{message}");
+                            let snapshot = error_snapshot(message);
+                            let event_repo_path = repo_path_for_event.clone();
+                            let event_mode = mode_for_event.clone();
+                            let _ = spawner
+                                .spawn(move |_me, ctx| {
+                                    ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
+                                        host_id,
+                                        repo_path: event_repo_path,
+                                        mode: event_mode,
+                                        snapshot,
+                                    });
+                                })
+                                .await;
                         }
                     },
                     Err(e) => {

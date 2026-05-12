@@ -2869,7 +2869,6 @@ impl Workspace {
         // because the handshake was still in progress).
         #[cfg(feature = "local_fs")]
         if FeatureFlag::SshRemoteServer.is_enabled() {
-            let working_directories_model = working_directories_model.clone();
             ctx.subscribe_to_model(
                 &RemoteServerManager::handle(ctx),
                 move |me, _handle, event, ctx| match event {
@@ -2880,11 +2879,6 @@ impl Workspace {
                         if state.is_failed() =>
                     {
                         me.update_active_session(ctx);
-                    }
-                    RemoteServerManagerEvent::HostDisconnected { host_id } => {
-                        working_directories_model.update(ctx, |model, ctx| {
-                            model.handle_host_disconnected(host_id, ctx);
-                        });
                     }
                     _ => {}
                 },

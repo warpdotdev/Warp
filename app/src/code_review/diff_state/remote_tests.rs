@@ -1,7 +1,10 @@
+use remote_server::manager::RemoteServerManagerEvent;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use remote_server::proto;
+use remote_server::HostId;
+use warp_core::SessionId;
 
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::code_review::diff_state::{
@@ -276,6 +279,55 @@ fn apply_snapshot_error_stores_message() {
     });
 }
 
+// ── Reconnection handling ───────────────────────────────────────────
+
+#[test]
+fn host_disconnected_clears_subscription_session() {
+    warpui::App::test((), |mut app| async move {
+        let handle = app.add_model(|_ctx| {
+            let mut model = RemoteDiffStateModel::new_for_test(
+                DiffMode::Head,
+                InternalRemoteDiffState::Loading,
+                None,
+            );
+            model.session_id = Some(SessionId::from(42));
+            model
+        });
+        let connection_lost_count = Arc::new(Mutex::new(0));
+        {
+            let connection_lost_count = connection_lost_count.clone();
+            app.update(|ctx| {
+                ctx.subscribe_to_model(&handle, move |_, event, _| {
+                    if matches!(event, DiffStateModelEvent::ConnectionLost) {
+                        *connection_lost_count
+                            .lock()
+                            .expect("connection lost count mutex should not be poisoned") += 1;
+                    }
+                });
+            });
+        }
+
+        handle.update(&mut app, |m, ctx| {
+            m.handle_manager_event(
+                &RemoteServerManagerEvent::HostDisconnected {
+                    host_id: HostId::new("test-host".to_string()),
+                },
+                ctx,
+            );
+        });
+
+        handle.read(&app, |m, _| {
+            assert_eq!(m.session_id, None);
+            assert!(matches!(m.get(), DiffState::Disconnected));
+        });
+        assert_eq!(
+            *connection_lost_count
+                .lock()
+                .expect("connection lost count mutex should not be poisoned"),
+            1
+        );
+    });
+}
 // ── apply_metadata_update ───────────────────────────────────────────
 
 #[test]

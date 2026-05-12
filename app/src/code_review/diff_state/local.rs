@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+#[cfg(feature = "local_fs")]
 use warp_util::standardized_path::StandardizedPath;
 
 cfg_if::cfg_if! {
