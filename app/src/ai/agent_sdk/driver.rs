@@ -651,6 +651,45 @@ impl AgentDriver {
         })
     }
 
+    /// Minimal constructor for unit tests that need a live `AgentDriver` model to call
+    /// methods on (e.g. `load_environment_skills`, `load_global_skills`) without
+    /// bootstrapping a full agent run.
+    ///
+    /// The caller is responsible for creating the `TerminalDriver` handle beforehand
+    /// (e.g. via `TerminalDriver::create_from_existing_view`) and for registering all
+    /// required singleton models before constructing the driver.
+    #[cfg(test)]
+    pub(crate) fn new_for_test(
+        working_dir: PathBuf,
+        terminal_driver: ModelHandle<terminal::TerminalDriver>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        ctx.subscribe_to_model(&terminal_driver, |me, event, ctx| {
+            me.handle_terminal_driver_event(event, ctx);
+        });
+        Self {
+            terminal_driver,
+            working_dir,
+            secrets: Arc::new(HashMap::new()),
+            resolved_env_vars: Arc::new(HashMap::new()),
+            output_format: OutputFormat::default(),
+            task_id: None,
+            harness: None,
+            idle_on_complete: None,
+            restored_conversation_id: None,
+            resume_payload: None,
+            cloud_providers: Vec::new(),
+            environment: None,
+            snapshot_disabled: false,
+            snapshot_upload_timeout: snapshot::DEFAULT_SNAPSHOT_UPLOAD_TIMEOUT,
+            snapshot_script_timeout: snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT,
+            run_conversation_id: None,
+            parent_run_id: None,
+            third_party_harness_model_id: None,
+            snapshot_file_writer: None,
+        }
+    }
+
     /// Pair to the registration in `new` / `execute_run`. No-op when
     /// nothing was registered.
     fn unregister_streamer_consumer(&self, ctx: &mut ModelContext<Self>) {
