@@ -3253,10 +3253,9 @@ impl AIConversation {
                                 .as_ref()
                                 .map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos))
                                 .or_else(|| {
-                                    message
-                                        .timestamp
-                                        .as_ref()
-                                        .map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos))
+                                    message.timestamp.as_ref().map(|ts| {
+                                        proto_timestamp_to_local_datetime(ts.seconds, ts.nanos)
+                                    })
                                 });
                             if start_ts.is_none() {
                                 log::error!(

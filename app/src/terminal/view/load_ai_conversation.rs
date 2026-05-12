@@ -892,7 +892,7 @@ impl TerminalView {
     }
 
     /// Process code diffs from AI output messages and apply them to the AI block for rendering.
-    /// Command blocks should already exist in the blocklist (extracted via 
+    /// Command blocks should already exist in the blocklist (extracted via
     /// `conversation.to_serialized_blocklist_items`) before AI blocks are created.
     fn process_restored_outputs(
         &mut self,
@@ -901,19 +901,17 @@ impl TerminalView {
         ctx: &mut ViewContext<AIBlock>,
     ) {
         for message in &output.messages {
-            match message {
-                AIAgentOutputMessage {
-                    message:
-                        AIAgentOutputMessageType::Action(AIAgentAction {
-                            action: AIAgentActionType::RequestFileEdits { file_edits, .. },
-                            id,
-                            ..
-                        }),
-                    ..
-                } => {
-                    ai_block.set_restored_file_edits(id, file_edits.clone(), ctx);
-                }
-                _ => {}
+            if let AIAgentOutputMessage {
+                message:
+                    AIAgentOutputMessageType::Action(AIAgentAction {
+                        action: AIAgentActionType::RequestFileEdits { file_edits, .. },
+                        id,
+                        ..
+                    }),
+                ..
+            } = message
+            {
+                ai_block.set_restored_file_edits(id, file_edits.clone(), ctx);
             }
         }
     }
@@ -1069,11 +1067,7 @@ impl TerminalView {
             // Process code diffs for the AI block
             let ai_block_handle = restored_block_view_handle.clone();
             ai_block_handle.update(ctx, |ai_block, block_ctx| {
-                self.process_restored_outputs(
-                    ai_block,
-                    &output.get(),
-                    block_ctx,
-                );
+                self.process_restored_outputs(ai_block, &output.get(), block_ctx);
             });
         }
 
