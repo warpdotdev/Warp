@@ -75,8 +75,38 @@ Resolution order (matches what the file tree uses; first match wins):
      for the line variant) with the B4 toasts.
    - `editor.copy_absolute_path` is unaffected.
 
-The resolved project root is cached per workspace and invalidated when the
-active workspace changes or the workspace folder moves.
+The resolved project root is cached per workspace. Cache invalidation rules
+(any one of these invalidates the entry):
+
+1. The active workspace changes (different workspace folder selected).
+2. The workspace folder moves or is renamed on disk.
+3. **Git metadata changes that could shift the toplevel**, even without a
+   workspace switch. Specifically: any filesystem event on the workspace
+   folder's parent chain that adds, removes, replaces, or modifies a
+   `.git` entry (file OR directory). The implementation MUST watch the
+   workspace folder and every ancestor up to the filesystem root for:
+   - creation of a `.git` file or directory (`git init` in any ancestor;
+     adding a submodule that creates a `.git` file in the workspace);
+   - deletion of a `.git` entry (rm -rf of a parent repo);
+   - replacement of `.git` (directory → gitdir file or vice versa, e.g.,
+     adding/removing a submodule worktree, switching to a `git
+     worktree`-managed checkout);
+   - modification of a `.git` *file*'s contents (the `gitdir:` pointer
+     changing destination).
+4. An explicit "refresh project root" action (if exposed), or workspace
+   reload.
+
+Note 4. is sufficient even without filesystem watching: a user who runs
+`git init` in their workspace and then immediately invokes
+`editor.copy_relative_path` may see one stale resolution; the next
+workspace reload or focus event MUST re-resolve. Implementations SHOULD
+prefer event-driven invalidation (rule 3) over polling. TTL-based
+invalidation is acceptable as a fallback only with TTL ≤ 5 seconds and
+MUST be combined with rule 3 in the supported case.
+
+Cached entries are keyed by the canonical (post-`canonicalize`) workspace
+folder path so that a workspace folder reached via a different symlink
+does not produce a stale hit.
 
 Edge case — symlinks: both the resolved project root (whichever of #1 or
 #2 applied) and the editor file path are canonicalized (resolved through
@@ -130,19 +160,24 @@ All three actions are visible in the Command Palette UNCONDITIONALLY (independen
 `editor.copy_path_with_line` produces a deterministic clipboard string for a given cursor/selection state. The contract:
 
 - **Line numbering**: 1-based — the first line is line `1`. This matches universal editor convention (vim, VS Code, IntelliJ).
-- **Column numbering**: 1-based — the first column is column `1`. Columns count **Unicode extended grapheme clusters** (per UAX #29 GraphemeBreakProperty), NOT bytes and NOT raw codepoints. `<path>:N:K` always points to the K-th grapheme cluster of line N. Concretely:
-  - A single ASCII character is one column.
-  - A multi-byte UTF-8 character (e.g., `日`) is one column.
-  - A base codepoint plus combining marks (e.g., `é` written as `e` + U+0301) is **one** column at the base — combining marks do NOT advance the column counter.
-  - An emoji ZWJ sequence (e.g., 👨‍👩‍👧) is one column.
+- **Column numbering**: 1-based — the first column is column `1`. Columns are **grapheme-cluster INSERTION POSITIONS**, not grapheme cells. A cursor is an insertion point that lives BETWEEN graphemes (or at line start/end), so column K means "the cursor is positioned such that the next inserted text would become the K-th grapheme of line N". Equivalently: column K = (number of grapheme clusters to the LEFT of the cursor on line N) + 1. Grapheme cluster boundaries follow UAX #29 GraphemeBreakProperty; counting is NOT by bytes and NOT by raw codepoints. Concretely:
+  - A cursor at the very start of a line (before any character) is column `1`.
+  - A cursor immediately after the first ASCII character is column `2`.
+  - A cursor immediately after a multi-byte UTF-8 character (e.g., `日`) is column `2`.
+  - A cursor positioned in the middle of a multi-codepoint grapheme (e.g., between `e` and the combining `U+0301` of `é`) is NOT a valid insertion position; the editor MUST snap such cursors to the nearest grapheme boundary (the cluster's leading edge for leftward moves, trailing edge for rightward moves) before the column is read. The clipboard column always reflects the snapped position.
+  - A cursor immediately after an emoji ZWJ sequence (e.g., 👨‍👩‍👧) is one column past the start of that sequence.
   - Tabs (`\t`) count as one column. Width-aware tab expansion is NOT performed.
-  - This single grapheme-cluster model supersedes any earlier wording that said "codepoints" — the prior phrasing is replaced by this one.
-- **When column is included** — driven by an explicit per-document boolean **`HasExplicitColumn`** that the editor maintains for each cursor position. The clipboard suffix is emitted iff `HasExplicitColumn == true`. The flag transitions are deterministic and source-of-input agnostic; provenance is not tracked at copy time:
+- **End-of-line cursor**: a cursor positioned past the last grapheme of line N (i.e., the "after the last character" insertion point, often produced by `End` or by typing through to line end) reports column `G + 1`, where `G` is the count of grapheme clusters on line N. For an empty line, `G = 0` and end-of-line column is `1` — identical to start-of-line, which is correct because both positions are the same insertion point. The clipboard suffix never points past `G + 1`; cursors logically "on the newline" are reported as end-of-line of the line they visually occupy, never as column `1` of line `N + 1`.
+- This single grapheme-cluster-insertion-position model supersedes any earlier wording that said "codepoints" or that treated the column as the index of a grapheme cell — the prior phrasing is replaced by this one.
+- **When column is included** — driven by an explicit **per-cursor** boolean **`HasExplicitColumn`** that the editor maintains for **each individual cursor** (one flag per cursor, NOT one flag per document). When the editor has a single cursor, "the cursor's flag" is unambiguous. The clipboard suffix is emitted iff the relevant cursor's flag is `true`. Any earlier wording that called this a "per-document" flag is **superseded** — it is per-cursor. The flag transitions are deterministic and source-of-input agnostic; provenance is not tracked at copy time:
   - `HasExplicitColumn := true` on: mouse click placing the cursor; horizontal arrow keys (Left/Right); Home/End; click-drag selection drop; programmatic positioning that supplied a column; type-edit that advances the column on the same line.
   - `HasExplicitColumn := false` on: a "go to line N" command that did not supply a column; opening a file (cursor restored to line 1, col 1 with no column intent); vertical arrow keys (Up/Down) that traveled across lines using the editor's "preferred column" memory without a fresh horizontal action since the last vertical move.
   - The previous wording listed "cursor at start of line (col 1)" and "cursor at end of line" as triggers for omitting the column. That wording was ambiguous because a deliberate click on col 1 and a fresh-from-go-to-line cursor at col 1 are indistinguishable by position alone. It is **superseded** by `HasExplicitColumn`: position alone never controls the suffix; only the boolean does.
-- **No selection**: the active cursor's line and `HasExplicitColumn` apply.
-- **Active selection**: the line and `HasExplicitColumn` of the SELECTION ANCHOR (where the selection began) apply — not the caret's. Reverse selections (anchor below caret) still use the anchor.
+- **Single cursor, no selection**: the cursor's line and its `HasExplicitColumn` apply.
+- **Single cursor with active selection**: the line and `HasExplicitColumn` of the SELECTION ANCHOR (where the selection began) apply — not the caret's. Reverse selections (anchor below caret) still use the anchor. The selection anchor carries its own `HasExplicitColumn` (snapshot of the cursor flag at the moment the selection started; horizontal/vertical motion of the caret during selection extension does NOT mutate the anchor's flag).
+- **Multi-cursor (multiple cursors, no selections)**: there is a single distinguished **PRIMARY CURSOR** — by convention the cursor most recently created or the first cursor in document order if none has been distinguished. The primary cursor's line and its `HasExplicitColumn` are used; secondary cursors are IGNORED for the purposes of this action. The clipboard receives exactly ONE path string regardless of cursor count. Each cursor maintains its own flag; the action reads only the primary's. A toast `Copied: <truncated path>` is emitted exactly once.
+- **Multi-cursor with selections** (multiple simultaneous selections, e.g., from "Add Selection to Next Find Match" / column selection): the PRIMARY SELECTION's anchor line and that anchor's `HasExplicitColumn` are used. The primary selection is the selection associated with the primary cursor (same convention as above). All other selections are ignored. The clipboard receives exactly ONE path string; no newline-joined or comma-joined multi-line/multi-column variant is produced by this action.
+- **Mixed multi-cursor (some with selections, some without)**: the primary cursor's state alone is consulted — if the primary has a selection, its anchor is used; otherwise the primary cursor's position is used. Other cursors are still ignored.
 - **Output forms**: emit `<path>:<line>:<col>` when `HasExplicitColumn == true`, otherwise `<path>:<line>`. Both forms are valid outputs of the same action; which form is emitted is fully determined by `HasExplicitColumn` at invocation time.
 
 ## Settings / API surface
@@ -166,7 +201,7 @@ Bound-shortcut path:
 - A3. A file opened from outside the project root falls back to absolute path with the B4 toast (`copy_relative_path` and `copy_path_with_line`).
 - A4. With no file open, each action is a no-op and surfaces the B3 toast.
 - A5. Copied paths use the OS-native separator.
-- A6. `editor.copy_path_with_line` includes the column suffix iff the editor's per-cursor `HasExplicitColumn` flag (B9) is `true`; otherwise it emits `<path>:N` only. When a selection is active, the anchor's flag and line/column are used. Columns are 1-based grapheme-cluster indices (UAX #29).
+- A6. `editor.copy_path_with_line` includes the column suffix iff the editor's per-cursor `HasExplicitColumn` flag (B9) is `true`; otherwise it emits `<path>:N` only. When a selection is active, the anchor's flag and line/column are used. With multiple cursors or selections, only the PRIMARY cursor/selection is consulted. Columns are 1-based grapheme-cluster INSERTION positions per UAX #29; an end-of-line cursor on a line with `G` graphemes reports column `G + 1`.
 - A7. All three actions appear in the Command Palette without requiring a binding.
 
 Outside-project + line/column path:
@@ -224,6 +259,21 @@ Project-root resolution branches (B2):
 - T_root_symlink_canonicalization_inside. Project root is `/Users/u/proj` (canonical) and the editor opens `/Users/u/proj/src/x.ts` via the symlink path `/Users/u/link-to-proj/src/x.ts`. After canonicalizing both root and file path, the file is inside the project; `editor.copy_relative_path` produces `src/x.ts` (relative path computed from canonicalized paths, not from the symlink path that opened the file).
 - T_root_symlink_canonicalization_outside. The editor opens `/Users/u/proj/external` which is a symlink whose canonical target is `/Users/u/elsewhere/external`. After canonicalization, the file is outside the project root; `editor.copy_relative_path` falls back to the canonical absolute path `/Users/u/elsewhere/external` with the B4 toast.
 - T_root_symlink_canonicalization_failure. Editor opens a dangling symlink (`/Users/u/proj/broken` → missing target). Canonicalization fails; the action treats the file as outside the project root per B2 and falls back per B4 with the absolute (uncanonicalized) symlink path. No panic, no silent success.
+
+Cache invalidation on git metadata changes (B2 cache rules):
+
+- T_cache_invalidated_on_git_init. Active workspace `/Users/u/notes` has no git repo; first `copy_relative_path` invocation resolves the workspace folder as project root. Run `git init` in that folder. After the cache-invalidation event (FS watch event for `.git` creation OR a workspace reload), the next `copy_relative_path` resolves the new git toplevel as the project root and produces paths relative to it.
+- T_cache_invalidated_on_git_rm. Active workspace inside a git repo; project root resolves to the git toplevel. The user deletes `.git/`. After invalidation, the next `copy_relative_path` falls back to the workspace folder per B2.2.
+- T_cache_invalidated_on_gitdir_flip. Workspace is a worktree managed by `git worktree`; `.git` is a file with a `gitdir:` pointer. The user edits the pointer to a different gitdir (or `git worktree move`s the worktree). After invalidation, the next `copy_relative_path` resolves the new toplevel rather than the cached stale one.
+
+Cursor / multi-cursor / end-of-line column behavior (B9):
+
+- T_end_of_line_column. Line N contains `hello` (5 graphemes). Cursor at the end-of-line insertion point with `HasExplicitColumn = true` (set by pressing End) → output is `<path>:N:6`. No reference to column `1` of line `N + 1`.
+- T_empty_line_column. Line N is empty (`G = 0`). Cursor on that line with `HasExplicitColumn = true` → output is `<path>:N:1`.
+- T_mid_grapheme_snaps. Programmatic cursor placement targets the byte index between `e` and `U+0301` of `é`. The editor snaps to the cluster boundary BEFORE reading the column; output is the snapped column, not an off-boundary index.
+- T_multi_cursor_uses_primary. Two cursors on lines 3 (column 4, `HasExplicitColumn = true`) and 10 (column 2, `HasExplicitColumn = false`). Primary is the line-3 cursor → output is `<path>:3:4`. Exactly one path is written; secondary cursor is ignored. Exactly one toast surfaces.
+- T_multi_selection_uses_primary_anchor. Two selections; primary selection's anchor is at line 5 column 3 (`HasExplicitColumn = true`); secondary selection's anchor is at line 20 column 1. Output is `<path>:5:3`. Secondary selection is ignored.
+- T_multi_cursor_mixed_no_join. One cursor without selection at line 2 (primary, `HasExplicitColumn = false`), one selection elsewhere at line 8 column 5. Output is `<path>:2` (primary cursor's position; primary has no selection so its anchor is irrelevant; secondary is ignored). The clipboard does not contain a multi-line/multi-column joined string.
 
 ## Open Questions
 
