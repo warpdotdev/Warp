@@ -51,6 +51,52 @@ window/workspace.
   indicator hides entirely rather than displaying a zero or
   ambiguous value.
 
+### Scope-change state taxonomy (resolves the B6/B6.1 conflict)
+
+The reviewer flagged that "hide immediately on workspace switching"
+(B6 / A3a / "Hide-on-unresolved-scope") contradicts "show loading
+placeholder during scope change" (B6.1). Both rules are correct but
+they address different states. This subsection pins the taxonomy so
+the conflict is resolved explicitly:
+
+| State | Trigger | Active scope identifier | Chip behavior | Authoritative rule |
+|---|---|---|---|---|
+| **S-resolved-old** | Steady state on scope A | `Some(A)` | "$X · 7-day spend" for A | B2 / A2 |
+| **S-changing** | User selects scope B; commit in flight | `Some(B)` (committed synchronously) | Loading placeholder "— · 7-day spend"; tooltip names B | B6.1 |
+| **S-fetched-new** | First successful fetch for B lands | `Some(B)` | "$Y · 7-day spend" for B | B2 / A2 |
+| **S-unresolved** | No billing scope (signed out, BYOK-no-credit, scope resolver returned `None`, or scope-resolution error) | `None` | Hidden (slot empty) | B6 / A3a / "Hide-on-unresolved-scope" |
+| **S-prolonged-failure** | ≥5 min consecutive failed fetches for the active scope | `Some(B)` | Hidden | B6 / A3c |
+
+**The distinguishing rule.** The scope identifier is binary: it is
+either `Some(scope_id)` or `None`. The chip hides if and only if
+the active scope identifier is `None` (S-unresolved) or the
+prolonged-failure threshold has fired (S-prolonged-failure).
+**Workspace switching is split into two sub-states:**
+
+- The instant the user clicks a different workspace in the selector
+  and the new scope identifier `B` is computed: the active scope
+  identifier transitions atomically from `A` to `B` (never to
+  `None`). The chip enters S-changing with the loading placeholder
+  per B6.1.
+- If, during the switch, the scope resolver cannot produce a
+  scope identifier for the new selection at all (e.g., the
+  workspace exists in the selector but has no billing context
+  configured, or the API call to resolve the scope fails), the
+  active scope identifier becomes `None` and the chip enters
+  S-unresolved (hidden) per B6 / A3a.
+
+The phrase "workspace switching mid-flight" in B6 and the
+"Hide-on-unresolved-scope" section is hereby clarified to mean
+**only** the case where the scope identifier is `None`. The case
+where the scope identifier is `Some(B)` but no value for B has yet
+been fetched is S-changing and uses the loading placeholder, not
+hiding. The same clarification applies to A3a; the row below
+restates A3a's precondition in those terms.
+
+This taxonomy is asserted by `T_scope_state_table` (Test plan)
+which drives each state from a synthesized fixture and asserts the
+matching chip rendering.
+
 ### Cross-scope leak prevention
 
 Billing spend and workspace scope names are sensitive account data:
@@ -215,9 +261,20 @@ would hide before its next legitimate refresh attempt.
 - A1. Setting OFF: no status-bar entry, layout pixel-equivalent.
 - A2. Setting ON, billing data available: shows
   "$XX.XX · 7-day spend" with hover tooltip and click-through.
-- A3a. Setting ON, billing unresolved (signed out, workspace
-  switching mid-flight, BYOK without credit accounting): status-bar
-  slot is empty immediately.
+- A3a. Setting ON, **active scope identifier is `None`** (signed
+  out, BYOK without credit accounting, scope resolver returned
+  `None` for the active workspace, or scope-resolution error during
+  a switch): status-bar slot is empty immediately. This is the
+  S-unresolved state from the "Scope-change state taxonomy"
+  subsection. The case where the active scope identifier is
+  `Some(B)` but the value for B has not yet been fetched (the
+  S-changing state during a successful workspace switch) is
+  covered by A3a-loading below, not by this hide rule.
+- A3a-loading. Setting ON, **active scope identifier is `Some(B)`
+  but no successful fetch for B yet**: chip renders the loading
+  placeholder "— · 7-day spend" per B6.1 with the tooltip naming
+  B. This is the S-changing state. Persisting past 5 minutes
+  promotes to A3c (hide on prolonged failure).
 - A3b. Setting ON, ≥30 s since most recent successful fetch (transient
   failures continuing): chip remains visible with last-known value;
   tooltip shows "Updated Xs ago — couldn't refresh".
@@ -307,10 +364,48 @@ status-bar collapse logic — no new threshold values are introduced.
 - T5c. Hidden-after-5min: with the same fault-injecting client, the
   chip is hidden by t+5 min 5 s, and reappears within ≤2 s of the
   next successful fetch.
-- T5d. Backoff schedule: assert retry attempts occur at +5 s, +10 s,
-  +20 s, +40 s, +80 s, +80 s, ... after the first failure (cap at
-  80 s) and that the schedule resets to the 60 s success cadence on
-  recovery.
+- T5d. Backoff schedule — distinguishes **interval-between-attempts**
+  from absolute timestamps.
+
+  Let `t_fail_1` be the wall-clock time the first refresh failure
+  is observed. The failure-retry timer schedules subsequent attempts
+  by **interval** (delay since the previous attempt finished), not
+  by absolute time relative to `t_fail_1`. The intervals are the
+  exponential backoff sequence from "Refresh vs failure-retry
+  timers": **5 s, 10 s, 20 s, 40 s, 80 s, 80 s, ... (capped at
+  80 s)**.
+
+  The test asserts the **interval** between each pair of
+  consecutive attempts:
+
+  | Attempt # | Interval since previous attempt | Cumulative wall-clock from `t_fail_1` (informational only) |
+  |---|---|---|
+  | retry 1 | 5 s after `t_fail_1` | `t_fail_1 + 5 s` |
+  | retry 2 | 10 s after retry 1 | `t_fail_1 + 15 s` |
+  | retry 3 | 20 s after retry 2 | `t_fail_1 + 35 s` |
+  | retry 4 | 40 s after retry 3 | `t_fail_1 + 75 s` |
+  | retry 5 | 80 s after retry 4 | `t_fail_1 + 155 s` |
+  | retry 6+ | 80 s after the previous attempt (capped) | `+80 s` each |
+
+  Assertions:
+  1. `interval(retry_n, retry_{n+1})` matches the sequence above
+     (±50 ms scheduler tolerance, asserted against a virtual /
+     mocked clock so the test does not actually sleep).
+  2. On recovery (any retry succeeds), the failure-retry timer is
+     cancelled and the refresh timer resumes its **60 s interval**
+     from the success timestamp — NOT from `t_fail_1` or any
+     earlier wall-clock anchor.
+  3. The "cumulative wall-clock" column is informational only and
+     is NOT used as an absolute-timestamp assertion. Wall-clock
+     drift across retries (e.g., a slow scheduler tick) must not
+     fail the test; only the consecutive-interval assertion may
+     fail it.
+
+  Rationale: an earlier wording confused intervals with absolute
+  timestamps, which would make the test brittle under realistic
+  scheduler jitter. The interval-based contract is what the
+  implementation actually owns; absolute timestamps are derived
+  data.
 - T6. Refresh timing: a simulated agent-turn-completion event
   causes the indicator to reflect the new value within 2 seconds.
 - T7. Tooltip totals (full B4 coverage): tooltip renders ALL of:
@@ -332,6 +427,26 @@ status-bar collapse logic — no new threshold values are introduced.
   a successful one keeps the chip's value visible (within the 30 s
   staleness window the tooltip does not yet add the "stale"
   annotation; the annotation appears only past 30 s).
+- T_scope_state_table. Drive each of the five rows in the
+  "Scope-change state taxonomy" table (S-resolved-old, S-changing,
+  S-fetched-new, S-unresolved, S-prolonged-failure) from a
+  synthesized fixture and assert the chip rendering matches the
+  table:
+  - S-resolved-old: scope `A`, cached value `$12.34` → chip shows
+    `"$12.34 · 7-day spend"` with tooltip naming `A`.
+  - S-changing: switch from `A` to `B`, no fetch yet for `B` → chip
+    shows placeholder `"— · 7-day spend"` with tooltip naming `B`.
+    Asserts NO frame contains `$12.34` together with `B`'s
+    tooltip label (the security-critical no-leak rule).
+  - S-fetched-new: first successful fetch for `B` lands with value
+    `$5.67` → chip transitions to `"$5.67 · 7-day spend"` with
+    tooltip naming `B`.
+  - S-unresolved: scope resolver returns `None` (signed-out
+    fixture, BYOK-no-credit fixture, scope-resolution error
+    fixture — three sub-cases) → chip is hidden (slot empty).
+  - S-prolonged-failure: scope `B` with 5 min of continuous failed
+    fetches → chip is hidden; first success after that re-shows
+    the chip within ≤2 s.
 - T9a. Multi-scope synchronous clear (security-critical): switching
   the workspace selector from "Personal" ($12.34) to "Acme
   Workspace" results in the chip showing the loading placeholder
@@ -363,6 +478,62 @@ status-bar collapse logic — no new threshold values are introduced.
   `usage_rolling_7d_usd` causes the chip to hide (treated as
   unavailable) and surfaces a single warn-level log entry — does
   not crash, does not synthesize a client-side value.
+
+  **Redaction contract for the warn log (security-relevant).** The
+  warn-level log entry is the only log emitted by the indicator on
+  the missing-field path. Its payload is restricted to the
+  following non-sensitive fields, and the test asserts both
+  (a) the presence of these fields and (b) the **absence** of
+  every banned field:
+
+  Permitted fields in the log entry:
+
+  - A static event identifier (e.g., `"billing_usage_field_missing"`).
+  - A static missing-field name (the literal string
+    `"usage_rolling_7d_usd"`) — this is a code constant, not user
+    data.
+  - A scope-kind enum tag, with only the constant values
+    `"personal"`, `"workspace"`, or `"unknown"`. NEVER the workspace
+    name, workspace ID, or any other scope-identifying string.
+  - A boolean `chip_hidden: true`.
+
+  Banned fields (explicitly asserted as absent by `T_log_redaction`):
+
+  1. Any raw billing payload bytes, JSON snippets, or fragments of
+     the response body.
+  2. Any dollar amount, in any field (current month, 7-day, per-day
+     buckets, or otherwise) — even from sibling fields that happen
+     to be populated.
+  3. Any scope name string (e.g., the literal `"Acme Workspace"`),
+     scope display name, organization name, or workspace slug.
+  4. Any scope identifier (`BillingScopeId`, workspace UUID, team
+     ID) other than the three-value `scope_kind` enum above.
+  5. Any user identifier (user ID, email, account ID) or auth
+     token / session token fragment.
+  6. Any free-form `message` string built from the response (the
+     log uses a static format string only).
+
+  **Assertion mechanism for `T_log_redaction`:** the test installs a
+  capturing log subscriber, runs the missing-field path against a
+  response fixture populated with sentinel values (workspace name
+  `"SENTINEL_WS"`, dollar amount `99999.99`, user email
+  `"sentinel@example.com"`, scope id `"SENTINEL_SCOPE_ID"`), then
+  asserts:
+
+  1. Exactly one warn-level entry is emitted.
+  2. The entry's serialized form (string-formatted plus structured
+     fields) contains the permitted fields above.
+  3. The entry's serialized form contains NONE of the sentinel
+     values — confirming the redaction is structural (the code
+     never reaches for those values) rather than just regex-based.
+
+  Rationale: billing data is account-sensitive, and a warn-level log
+  on a server-trace pipeline is a realistic exfiltration vector if
+  the log message naively interpolates response fields. The
+  structural redaction above (static format string + small
+  enum-typed scope kind) keeps the log useful for debugging without
+  ever forwarding raw billing payloads, dollar amounts, or scope
+  names to logs.
 
 ## Open questions
 
