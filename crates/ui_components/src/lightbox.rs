@@ -9,12 +9,13 @@ use warpui::{
     assets::asset_cache::AssetSource,
     elements::{
         CacheOption, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
-        DispatchEventResult, Dismiss, EventHandler, Fill, Image, Point, ScrollbarWidth, Shrinkable,
+        DispatchEventResult, Dismiss, EventHandler, Fill, Image, Point, ScrollbarWidth,
+        Shrinkable,
     },
     event::{DispatchedEvent, Event, ModifiersState},
     keymap::Keystroke,
     prelude::{stack::*, *},
-    scene::Border,
+    scene::{Border, CornerRadius, Radius},
 };
 
 use crate::{Component, Options as _, button};
@@ -22,33 +23,10 @@ use crate::{Component, Options as _, button};
 /// Padding between the scrim edge and the image.
 const SCRIM_PADDING: f32 = 48.;
 
-/// GH9729 §698 / t2-15: horizontal slot width for each Size::Small
-/// zoom icon button (Minus / Plus). Sized to give the two icons a
-/// tight visual cluster (button is ~24 px square + a small gap).
-///
-/// t2-13 used a single 56-px slot for all three buttons including
-/// the "100%" label; this failed for the rightmost slot because the
-/// label button rendered wider than the slot and overlapped the `+`
-/// button's hit area. t2-15 splits the slot constants: icon buttons
-/// get their own narrow slot, the label button is positioned
-/// separately with a gap so nothing can overlap it (or vice-versa).
-const ZOOM_ICON_BUTTON_SLOT: f32 = 32.;
-
-/// GH9729 §698 / t2-17: small visible gap between [−] and [+]
-/// inside the icon cluster (user explicit feedback after t2-16's
-/// zero-spacing layout was too tight).
-const ZOOM_ICON_GAP: f32 = 6.;
-
-/// GH9729 §698 / t2-17: horizontal gap between the icon cluster
-/// ([−][+]) and the optional "100%" reset label. The gap visually
-/// separates the persistent controls from the conditional reset
-/// (reduced from t2-15's 16. after user feedback that the gap was
-/// too wide).
-const ZOOM_RESET_GAP_FROM_ICONS: f32 = 8.;
-
-/// GH9729 §698 / t2-13: inset for buttons anchored to a scrim corner
-/// (close button top-right, zoom toolbar bottom-left). One source of
-/// truth so the corners stay symmetric.
+/// GH9729 §698 / t2-13: inset for buttons anchored to a scrim
+/// corner. The close button still uses this for its top-right offset;
+/// the zoom toolbar moved to a bottom-center pill (see ZOOM_PILL_*
+/// constants below) so it no longer reads from this value.
 const SCRIM_BUTTON_INSET: f32 = 12.;
 
 /// GH9729 §698 / t2-12: scroll-delta magnitude below which a
@@ -61,22 +39,53 @@ const SCROLL_ZOOM_DEAD_ZONE: f32 = 1.0;
 /// GH9729 (post-tier2): vertical thumbnail-rail constants. Side rail
 /// shown when the lightbox is opened with > 1 sibling images so the
 /// user can hop between them by clicking; aligns with Warp's vertical-
-/// tabs UX direction (user feedback: "on the side is better since that
-/// allows for a natural scroll and warp recently introduced vertical
-/// tab layout").
+/// tabs UX direction.
 ///
-/// The rail consumes width on the left of the scrim's content area
-/// (the image still centers in the *remaining* viewport). Sized so a
-/// 72-px square thumbnail fits with ~12 px padding either side, plus
-/// room for the highlight border.
-const RAIL_WIDTH: f32 = 96.;
-const RAIL_THUMB_SIZE: f32 = 72.;
-const RAIL_THUMB_SPACING: f32 = 8.;
-const RAIL_OUTER_PADDING: f32 = 12.;
-const RAIL_HIGHLIGHT_BORDER_WIDTH: f32 = 2.;
+/// Sizing decisions (UX revision after first manual review):
+/// * Rail is **flush to the left edge of the scrim** — the scrim's
+///   uniform padding only applies inside the right cell so the image
+///   stays nicely inset, but the rail itself hugs the viewport edge
+///   the way macOS Preview / Mail.app sidebars do.
+/// * 64 px thumbs (down from 72) give a tighter, denser list — more
+///   siblings visible per viewport without scrolling.
+/// * 6 px inter-thumb spacing (down from 8) — native sidebars feel
+///   tight; loose spacing reads as "this is not a list".
+/// * 12 px horizontal padding inside the rail, computed so the
+///   centering slack on either side of a 64-px thumb in an 88-px-wide
+///   rail is exactly 12 px — symmetric without a separate centering
+///   gap on top of the padding.
+const RAIL_WIDTH: f32 = 88.;
+const RAIL_THUMB_SIZE: f32 = 64.;
+const RAIL_THUMB_SPACING: f32 = 6.;
+const RAIL_OUTER_PADDING_VERTICAL: f32 = 16.;
+/// Width of the soft-fill background behind the currently-selected
+/// thumbnail; sits 4 px wider on each side than the thumb itself so
+/// the highlight reads as a "pill behind the thumb" (macOS Mail
+/// convention) rather than a hard outline.
+const RAIL_HIGHLIGHT_INSET: f32 = 4.;
+const RAIL_HIGHLIGHT_CORNER_RADIUS: f32 = 8.;
+const RAIL_HIGHLIGHT_RING_WIDTH: f32 = 2.;
+/// 1 px hairline on the rail's right edge, separating it from the
+/// image canvas without being a heavy visual line.
+const RAIL_DIVIDER_WIDTH: f32 = 1.;
 /// Single rail row's effective height: thumb + spacing between rows.
 /// Used by the view-side scroll-to-current helper.
 pub const RAIL_ROW_PITCH: f32 = RAIL_THUMB_SIZE + RAIL_THUMB_SPACING;
+
+/// GH9729 (post-tier2): zoom-pill constants. Replaces the previous
+/// separate-button toolbar that sat in the bottom-left corner under
+/// the rail. The pill is a single rounded translucent container in
+/// the bottom-center of the scrim, holding the zoom-out, optional
+/// 100%, and zoom-in buttons in a tight Flex::row.
+///
+/// Bottom-center placement is the Photos.app / Preview multi-image
+/// convention; it sidesteps the bottom-LEFT crowding under the rail
+/// AND the bottom-RIGHT crowding next to the close button.
+const ZOOM_PILL_HORIZONTAL_PADDING: f32 = 8.;
+const ZOOM_PILL_VERTICAL_PADDING: f32 = 4.;
+const ZOOM_PILL_CORNER_RADIUS: f32 = 14.;
+const ZOOM_PILL_BUTTON_GAP: f32 = 4.;
+const ZOOM_PILL_BOTTOM_INSET: f32 = 16.;
 
 /// GH9729 §698 / t2-19: a viewport that lets its child render at any
 /// size (potentially larger than the viewport itself), centers it, and
@@ -759,14 +768,22 @@ impl Component for Lightbox {
 
         let centered_content = Align::new(content_with_description).finish();
 
-        // GH9729 (post-tier2): if the caller supplied a thumbnail rail
-        // AND we have more than one image, splice a vertical rail in on
-        // the left of the centered content via a Flex::row. The rail
-        // and the image area both live inside the Dismiss scope so the
-        // scrim-click dismiss only fires for clicks on the dark space
-        // outside both regions.
+        // GH9729 (post-tier2): when the rail is shown, the scrim is laid
+        // out as a Flex::row [rail | padded image area]:
+        //
+        //   * the rail hugs the LEFT EDGE of the scrim with no padding
+        //     before it (the standard sidebar-flush-left pattern from
+        //     macOS Preview / Mail / Finder column view)
+        //   * the right cell carries the full SCRIM_PADDING so the
+        //     image stays nicely inset, the metadata strip doesn't
+        //     touch the rail's divider, and the close button still
+        //     anchors to its natural corner
+        //
+        // Without the rail, the layout is identical to v1 — uniform
+        // SCRIM_PADDING and a centred image — so the artifacts /
+        // screenshots Lightbox call sites are unchanged.
         let show_rail = params.thumbnail_rail.is_some() && image_count > 1;
-        let scrim_content: Box<dyn Element> =
+        let (scrim_content, scrim_uniform_padding): (Box<dyn Element>, f32) =
             match (params.thumbnail_rail, show_rail) {
                 (Some(rail), true) => {
                     let rail_element = build_thumbnail_rail(
@@ -776,13 +793,20 @@ impl Component for Lightbox {
                         params.animation_start_time,
                         rail,
                     );
-                    Flex::row()
+                    let image_cell = Container::new(centered_content)
+                        .with_uniform_padding(SCRIM_PADDING)
+                        .finish();
+                    let row = Flex::row()
                         .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                         .with_child(rail_element)
-                        .with_child(Shrinkable::new(1.0, centered_content).finish())
-                        .finish()
+                        .with_child(Shrinkable::new(1.0, image_cell).finish())
+                        .finish();
+                    // Rail provides its own internal padding; the scrim
+                    // container needs ZERO outer padding so the rail
+                    // can hug the viewport edge.
+                    (row, 0.0)
                 }
-                _ => centered_content,
+                _ => (centered_content, SCRIM_PADDING),
             };
 
         let scrim = Container::new(
@@ -792,7 +816,7 @@ impl Component for Lightbox {
                 .finish(),
         )
         .with_background_color(scrim_color())
-        .with_uniform_padding(SCRIM_PADDING)
+        .with_uniform_padding(scrim_uniform_padding)
         .finish();
 
         // Stack the scrim, close button, and optional navigation arrows.
@@ -873,26 +897,21 @@ impl Component for Lightbox {
             }
         }
 
-        // GH9729 §698 / t2-16: zoom toolbar layout. Wrap zoom-out +
-        // zoom-in in `Flex::row` with zero spacing so the row
-        // partitions its bounding rect precisely between children —
-        // no possibility of hit-area overlap. The whole row is added
-        // as ONE positioned child.
+        // GH9729 (post-tier2): zoom controls live in a single rounded
+        // pill anchored to the bottom-CENTER of the scrim. Replaces
+        // the previous bottom-LEFT cluster of separately-positioned
+        // buttons (which competed visually with the rail and felt
+        // chunky per UX review).
         //
-        // Theory for the persistent `+` bug across t2-12/13/15:
-        // separate `add_positioned_child` siblings each report their
-        // own bbox to the Stack including the button's interactive
-        // padding (hover hit-area beyond visual edge). Stack
-        // dispatches first-added-first, so `−`'s extended hit-area
-        // claimed clicks intended for `+`. The user's "gap" complaint
-        // was the visible evidence of this padding extending into the
-        // gap. Flex::row partitions the row's bbox precisely between
-        // its children, eliminating the overlap regardless of button
-        // padding.
+        // The pill contains `[−]  [+]` and conditionally `[100%]`
+        // when zoom != 1.0, all inside one Container with a soft
+        // dark fill and rounded corners. Photos.app and Preview both
+        // use a centered bottom toolbar for this kind of transient
+        // control.
         //
-        // Diagnostic logging is included; if `+` STILL fails after
-        // this commit, the log will show whether the click is
-        // arriving at the closure at all (and which closure).
+        // The Flex::row inside the pill still partitions hit-test
+        // space cleanly between its children, preserving the
+        // overlap-resistance that the t2-16 refactor introduced.
         if let Some(on_zoom) = params.options.on_zoom {
             let zoom = params.zoom_factor;
             let on_zoom_out = on_zoom.clone();
@@ -926,35 +945,15 @@ impl Component for Lightbox {
                 },
             );
 
-            // Small spacing between − and + so they have a visible gap
-            // (user explicit feedback after t2-16's zero-spacing
-            // layout). Still inside a Flex::row so Flex partitions
-            // hit-test space precisely between cells.
-            let icon_cluster = Flex::row()
-                .with_spacing(ZOOM_ICON_GAP)
+            // Build the Flex::row with [−][optional 100%][+]. The
+            // reset button only appears when the image is NOT at
+            // native zoom (the t2-15 "hide when no-op" decision).
+            let mut pill_row = Flex::row()
+                .with_spacing(ZOOM_PILL_BUTTON_GAP)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(zoom_out_button)
-                .with_child(zoom_in_button)
-                .finish();
-            content.add_positioned_child(
-                icon_cluster,
-                OffsetPositioning::offset_from_parent(
-                    vec2f(SCRIM_BUTTON_INSET, -SCRIM_BUTTON_INSET),
-                    ParentOffsetBounds::Unbounded,
-                    ParentAnchor::BottomLeft,
-                    ChildAnchor::BottomLeft,
-                ),
-            );
-
-            // Reset only renders when the image is NOT at native zoom.
-            // Positioned as its own separate positioned child to the
-            // right of the icon cluster, with a visible gap. Since the
-            // icon cluster width depends on button rendering and we
-            // can't measure it from here, the reset's offset is
-            // estimated from `ZOOM_ICON_BUTTON_SLOT * 2 +
-            // ZOOM_RESET_GAP_FROM_ICONS`.
+                .with_child(zoom_out_button);
             if zoom != 1.0 {
-                let on_zoom_reset = on_zoom;
+                let on_zoom_reset = on_zoom.clone();
                 let zoom_reset_button = self.zoom_reset_button.render(
                     appearance,
                     button::Params {
@@ -969,21 +968,28 @@ impl Component for Lightbox {
                         },
                     },
                 );
-                content.add_positioned_child(
-                    zoom_reset_button,
-                    OffsetPositioning::offset_from_parent(
-                        vec2f(
-                            SCRIM_BUTTON_INSET
-                                + 2. * ZOOM_ICON_BUTTON_SLOT
-                                + ZOOM_RESET_GAP_FROM_ICONS,
-                            -SCRIM_BUTTON_INSET,
-                        ),
-                        ParentOffsetBounds::Unbounded,
-                        ParentAnchor::BottomLeft,
-                        ChildAnchor::BottomLeft,
-                    ),
-                );
+                pill_row = pill_row.with_child(zoom_reset_button);
             }
+            pill_row = pill_row.with_child(zoom_in_button);
+
+            let pill = Container::new(pill_row.finish())
+                .with_background_color(zoom_pill_background_color())
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                    ZOOM_PILL_CORNER_RADIUS,
+                )))
+                .with_horizontal_padding(ZOOM_PILL_HORIZONTAL_PADDING)
+                .with_vertical_padding(ZOOM_PILL_VERTICAL_PADDING)
+                .finish();
+
+            content.add_positioned_child(
+                pill,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0., -ZOOM_PILL_BOTTOM_INSET),
+                    ParentOffsetBounds::Unbounded,
+                    ParentAnchor::BottomMiddle,
+                    ChildAnchor::BottomMiddle,
+                ),
+            );
         }
 
         content.finish()
@@ -1041,20 +1047,24 @@ fn build_thumbnail_rail(
         column = column.with_child(thumbnail);
     }
 
-    let column_element = column.finish();
+    // Vertical breathing room inside the rail so the first and last
+    // thumb don't touch the top/bottom edges of the scrim.
+    let padded_column = Container::new(column.finish())
+        .with_vertical_padding(RAIL_OUTER_PADDING_VERTICAL)
+        .finish();
 
-    // GH9729 (post-tier2): wrap in a vertical scrollable so long sibling
-    // lists scroll inside the rail rather than overflowing the scrim.
-    // Use the caller-supplied scroll-state handle so position survives
-    // re-renders (the column above is rebuilt every render() and any
+    // Wrap in a vertical scrollable so long sibling lists scroll
+    // inside the rail rather than overflowing the scrim. The
+    // caller-supplied scroll-state handle survives the per-render
+    // rebuild of this element (rail is rebuilt every `render()`; any
     // per-element scroll state would reset on `ctx.notify()`).
     //
-    // Scrollbar fill colours: a faintly-white thumb against transparent
-    // track keeps the scrollbar legible against the dark scrim without
-    // competing with the close button / metadata text for attention.
+    // Scrollbar styling: a faintly-white thumb against a transparent
+    // track keeps it legible on the dark scrim without competing
+    // with the close button or metadata text.
     let scrollable = ClippedScrollable::vertical(
         rail.scroll_state,
-        column_element,
+        padded_column,
         ScrollbarWidth::Auto,
         Fill::Solid(ColorU::new(255, 255, 255, 64)),
         Fill::Solid(ColorU::new(255, 255, 255, 128)),
@@ -1062,17 +1072,31 @@ fn build_thumbnail_rail(
     )
     .finish();
 
-    // Constrain rail to its fixed width AND let it stretch full-height
-    // of the scrim's centred content area; pad horizontally so the
-    // thumbnails don't kiss the scrim edge.
-    ConstrainedBox::new(
-        Container::new(scrollable)
-            .with_horizontal_padding(RAIL_OUTER_PADDING)
-            .finish(),
-    )
-    .with_max_width(RAIL_WIDTH + 2. * RAIL_OUTER_PADDING)
-    .with_min_width(RAIL_WIDTH + 2. * RAIL_OUTER_PADDING)
-    .finish()
+    // The rail itself: a faintly-lighter background than the scrim
+    // (so the panel reads as a distinct region without competing
+    // with the image) plus a 1 px hairline on the right edge
+    // separating rail from canvas — the macOS Mail / Finder
+    // column-view convention.
+    let panel = Container::new(scrollable)
+        .with_background_color(rail_background_color())
+        .with_border(Border {
+            width: RAIL_DIVIDER_WIDTH,
+            color: Fill::Solid(rail_divider_color()),
+            top: false,
+            left: false,
+            bottom: false,
+            right: true,
+            dash: None,
+        })
+        .finish();
+
+    // Fixed width — the rail isn't allowed to grow into the image
+    // canvas, and the centred-content Flex cell to its right takes
+    // all remaining space.
+    ConstrainedBox::new(panel)
+        .with_max_width(RAIL_WIDTH)
+        .with_min_width(RAIL_WIDTH)
+        .finish()
 }
 
 /// GH9729 (post-tier2): build one clickable thumbnail cell. The image
@@ -1086,9 +1110,13 @@ fn build_thumbnail_rail(
 /// synchronised on open, which makes the rail useful as a live
 /// directory preview rather than a wall of arbitrary first frames.
 ///
-/// Current-entry highlight: a coloured `Border` outline. Non-current
-/// entries get the same border at 0 alpha so layout doesn't shift
-/// between the two states.
+/// Current-entry highlight (UX revision after first manual review):
+/// a soft accent-blue **filled rounded-rect background** sitting 4 px
+/// wider than the thumb on every side (the macOS Mail "pill behind
+/// the selected row" convention), PLUS a 2 px accent-blue ring around
+/// the thumb itself for a crisp definition edge. Non-current entries
+/// reserve the same outer space at 0 alpha so layout doesn't shift
+/// on selection change.
 fn build_thumbnail_cell(
     appearance: &Appearance,
     image: &LightboxImage,
@@ -1130,16 +1158,15 @@ fn build_thumbnail_cell(
         }
     };
 
-    // Highlight the current entry with a coloured border. Non-current
-    // entries get the same border at 0 alpha so the layout doesn't
-    // shift between current and not-current (the border reserves
-    // `RAIL_HIGHLIGHT_BORDER_WIDTH` px in either case).
-    let border = Border {
-        width: RAIL_HIGHLIGHT_BORDER_WIDTH,
+    // Fixed-size square for the thumb itself. The 2 px ring lives on
+    // this container so it traces the thumb's exact edges (vs. the
+    // outer pill, which is intentionally wider).
+    let ring = Border {
+        width: RAIL_HIGHLIGHT_RING_WIDTH,
         color: Fill::Solid(if is_current {
-            ColorU::new(255, 255, 255, 255)
+            rail_accent_color()
         } else {
-            ColorU::new(255, 255, 255, 0)
+            ColorU::new(0, 0, 0, 0)
         }),
         top: true,
         left: true,
@@ -1147,22 +1174,79 @@ fn build_thumbnail_cell(
         right: true,
         dash: None,
     };
-
-    let sized = ConstrainedBox::new(inner)
+    let ringed_thumb = ConstrainedBox::new(Container::new(inner).with_border(ring).finish())
         .with_max_width(RAIL_THUMB_SIZE)
         .with_min_width(RAIL_THUMB_SIZE)
         .with_max_height(RAIL_THUMB_SIZE)
         .with_min_height(RAIL_THUMB_SIZE)
         .finish();
 
-    let bordered = Container::new(sized).with_border(border).finish();
+    // Soft "pill behind the thumb" highlight. Sized RAIL_HIGHLIGHT_INSET
+    // px larger than the thumb on every side; rounded corners; soft
+    // accent-blue fill at low alpha. Non-current entries get the
+    // same dimensions with a transparent fill so layout doesn't
+    // shift between selection states (the cell's bounding box never
+    // changes).
+    let pill_fill = if is_current {
+        rail_accent_fill_color()
+    } else {
+        ColorU::new(0, 0, 0, 0)
+    };
+    let pill = Container::new(Align::new(ringed_thumb).finish())
+        .with_background_color(pill_fill)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+            RAIL_HIGHLIGHT_CORNER_RADIUS,
+        )))
+        .finish();
+    let pill_sized = ConstrainedBox::new(pill)
+        .with_max_width(RAIL_THUMB_SIZE + 2. * RAIL_HIGHLIGHT_INSET)
+        .with_min_width(RAIL_THUMB_SIZE + 2. * RAIL_HIGHLIGHT_INSET)
+        .with_max_height(RAIL_THUMB_SIZE + 2. * RAIL_HIGHLIGHT_INSET)
+        .with_min_height(RAIL_THUMB_SIZE + 2. * RAIL_HIGHLIGHT_INSET)
+        .finish();
 
     Box::new(
-        EventHandler::new(bordered).on_left_mouse_down(move |ctx, app, _position| {
+        EventHandler::new(pill_sized).on_left_mouse_down(move |ctx, app, _position| {
             on_select(index, ctx, app);
             DispatchEventResult::StopPropagation
         }),
     )
+}
+
+/// GH9729 (post-tier2): faintly-lighter background for the rail
+/// panel, so the rail reads as a distinct region without competing
+/// with the image. Equivalent to ~6 % opacity white on top of the
+/// near-opaque black scrim.
+fn rail_background_color() -> ColorU {
+    ColorU::new(255, 255, 255, 16)
+}
+
+/// GH9729 (post-tier2): 1 px hairline divider on the rail's right
+/// edge. ~12 % opacity white — visible against the rail's tinted
+/// background but not loud.
+fn rail_divider_color() -> ColorU {
+    ColorU::new(255, 255, 255, 30)
+}
+
+/// GH9729 (post-tier2): selection accent — macOS-system-blue-ish.
+/// Used at full alpha for the 2 px ring around the current thumb.
+fn rail_accent_color() -> ColorU {
+    ColorU::new(80, 160, 255, 235)
+}
+
+/// GH9729 (post-tier2): selection accent at low alpha for the
+/// rounded-rect fill BEHIND the current thumb. The mail-style
+/// "pill behind the row" treatment.
+fn rail_accent_fill_color() -> ColorU {
+    ColorU::new(80, 160, 255, 60)
+}
+
+/// GH9729 (post-tier2): semi-transparent dark background for the
+/// compact zoom pill at the bottom-center of the scrim. Subtly
+/// darker than the rail panel so the pill reads as a focused
+/// control surface, not part of the rail family.
+fn zoom_pill_background_color() -> ColorU {
+    ColorU::new(0, 0, 0, 140)
 }
 
 fn lightbox_text_size(appearance: &Appearance) -> f32 {
