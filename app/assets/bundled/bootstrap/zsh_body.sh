@@ -22,7 +22,7 @@ if [[ -z $WARP_BOOTSTRAPPED ]]; then
   DCS_JSON_MARKER="d"
 
   # Byte sequence used to signal the end of a DCS (7-bit ST: ESC \).
-  DCS_END="$(printf '\e\\')"
+  DCS_END="$(printf '\x1b\x5c')"
 
   # OSC used to mark the start of in-band command output.
   #
