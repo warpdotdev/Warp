@@ -14,13 +14,14 @@ use futures::io::{AsyncRead, AsyncWrite};
 use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
-    client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
-    DeleteFile, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex,
-    ErrorCode, FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash,
-    GetFragmentMetadataFromHashResponse, IndexCodebase, Initialize, InitializeResponse,
-    LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse, RunCommandRequest,
-    RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
+    client_message, get_fragment_metadata_from_hash_response, server_message, Abort, Authenticate,
+    BufferEdit, ClientMessage, CloseBuffer, DeleteFile, DiffStateFileDelta,
+    DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex, ErrorCode,
+    FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashSuccess,
+    IndexCodebase, Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
+    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
+    SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
@@ -349,7 +350,7 @@ impl RemoteServerClient {
         repo_path: String,
         root_hash: String,
         content_hashes: Vec<String>,
-    ) -> Result<GetFragmentMetadataFromHashResponse, ClientError> {
+    ) -> Result<GetFragmentMetadataFromHashSuccess, ClientError> {
         let request_id = RequestId::new();
         let msg = ClientMessage {
             request_id: request_id.to_string(),
@@ -366,15 +367,20 @@ impl RemoteServerClient {
 
         match response.message {
             Some(server_message::Message::GetFragmentMetadataFromHashResponse(resp)) => {
-                if let Some(error) = resp.error.as_ref() {
-                    let code = FragmentMetadataLookupErrorCode::try_from(error.code)
-                        .unwrap_or(FragmentMetadataLookupErrorCode::Unspecified);
-                    return Err(ClientError::FragmentMetadataLookup {
-                        code,
-                        message: error.message.clone(),
-                    });
+                match resp.result {
+                    Some(get_fragment_metadata_from_hash_response::Result::Success(success)) => {
+                        Ok(success)
+                    }
+                    Some(get_fragment_metadata_from_hash_response::Result::Error(error)) => {
+                        let code = FragmentMetadataLookupErrorCode::try_from(error.code)
+                            .unwrap_or(FragmentMetadataLookupErrorCode::Unspecified);
+                        Err(ClientError::FragmentMetadataLookup {
+                            code,
+                            message: error.message,
+                        })
+                    }
+                    None => Err(ClientError::UnexpectedResponse),
                 }
-                Ok(resp)
             }
             other => {
                 log::error!(

@@ -36,6 +36,7 @@ use super::diff_state_tracker::{
 };
 use super::proto::{
     client_message, delete_file_response, discard_files_response, get_diff_state_response,
+    get_fragment_metadata_from_hash_response,
     resolve_conflict_response, run_command_response, save_buffer_response, server_message,
     write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush, ClientMessage,
     CloseBuffer, CodebaseIndexStatusState, CodebaseIndexStatusUpdated,
@@ -45,12 +46,13 @@ use super::proto::{
     FragmentMetadata as ProtoFragmentMetadata,
     FragmentMetadataLookupError as ProtoFragmentMetadataLookupError,
     FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash,
-    GetFragmentMetadataFromHashResponse, IndexCodebase, Initialize, InitializeResponse,
-    MissingFragmentMetadata, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
-    ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
-    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
-    ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
+    GetFragmentMetadataFromHashResponse, GetFragmentMetadataFromHashSuccess, IndexCodebase,
+    Initialize, InitializeResponse, MissingFragmentMetadata, NavigatedToDirectory,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
+    ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, RunCommandError,
+    RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
+    SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
+    WriteFileResponse, WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -1057,9 +1059,12 @@ impl ServerModel {
         HandlerOutcome::Sync(
             server_message::Message::GetFragmentMetadataFromHashResponse(
                 GetFragmentMetadataFromHashResponse {
-                    fragments,
-                    missing_hashes,
-                    error: None,
+                    result: Some(get_fragment_metadata_from_hash_response::Result::Success(
+                        GetFragmentMetadataFromHashSuccess {
+                            fragments,
+                            missing_hashes,
+                        },
+                    )),
                 },
             ),
         )
@@ -2393,13 +2398,13 @@ fn fragment_metadata_lookup_error_response(
     HandlerOutcome::Sync(
         server_message::Message::GetFragmentMetadataFromHashResponse(
             GetFragmentMetadataFromHashResponse {
-                fragments: vec![],
-                missing_hashes: vec![],
-                error: Some(ProtoFragmentMetadataLookupError {
-                    code: code.into(),
-                    message,
-                    current_root_hash,
-                }),
+                result: Some(get_fragment_metadata_from_hash_response::Result::Error(
+                    ProtoFragmentMetadataLookupError {
+                        code: code.into(),
+                        message,
+                        current_root_hash,
+                    },
+                )),
             },
         ),
     )

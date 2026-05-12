@@ -376,11 +376,16 @@ message FragmentMetadataLookupError {
   string message = 2;
   optional string current_root_hash = 3;
 }
-
-message GetFragmentMetadataFromHashResponse {
+message GetFragmentMetadataFromHashSuccess {
   repeated FragmentMetadata fragments = 1;
   repeated MissingFragmentMetadata missing_hashes = 2;
-  optional FragmentMetadataLookupError error = 3;
+}
+
+message GetFragmentMetadataFromHashResponse {
+  oneof result {
+    GetFragmentMetadataFromHashSuccess success = 1;
+    FragmentMetadataLookupError error = 2;
+  }
 }
 
 enum CodebaseIndexStatusState {
