@@ -519,6 +519,20 @@ impl RunAgentsCardView {
                     conv.orchestration_config_for_plan(&self.state.plan_id)
                         .map(|(c, s)| (c.clone(), s))
                 });
+            // Resolve empty/default state fields from the config so the
+            // dispatched request carries concrete values rather than
+            // relying on server-side inheritance.
+            if let Some((config, _)) = &self.active_config {
+                if self.state.orch.model_id.is_empty() {
+                    self.state.orch.model_id = config.model_id.clone();
+                }
+                if self.state.orch.harness_type.is_empty() {
+                    self.state.orch.harness_type = config.harness_type.clone();
+                }
+                self.state.orch.resolve_execution_mode_from_config(
+                    &config.execution_mode,
+                );
+            }
             // Re-evaluate denied status with the refreshed config.
             self.is_denied = compute_is_denied(self.is_denied, &self.active_config);
         }
