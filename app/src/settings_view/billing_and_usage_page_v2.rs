@@ -89,6 +89,10 @@ const RESTRICTED_BILLING_USAGE_WARNING_STRING: &str =
 
 const HEADER_FONT_SIZE: f32 = 16.;
 
+const CARD_BORDER_COLOR: ColorU = ColorU::new(43, 43, 43, 255);
+const BASE_CREDITS_DOT_COLOR: ColorU = ColorU::new(0, 194, 255, 255);
+const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU::new(255, 165, 100, 255);
+
 #[derive(Default)]
 struct PlanSectionMouseStates {
     anonymous_user_sign_up_button: MouseStateHandle,
@@ -644,10 +648,6 @@ impl BillingAndUsagePageV2View {
             return None;
         }
 
-        let border_color: ColorU = ColorU::new(43, 43, 43, 255);
-        let dot_teal: ColorU = ColorU::new(0, 194, 255, 255);
-        let dot_orange: ColorU = ColorU::new(255, 165, 100, 255);
-
         let mut cards_row = Flex::row()
             .with_spacing(8.)
             .with_main_axis_size(MainAxisSize::Max);
@@ -662,7 +662,7 @@ impl BillingAndUsagePageV2View {
             cards_row.add_child(
                 Expanded::new(
                     1.,
-                    render_balance_card(appearance, dot_teal, "Base credits", &reset_str, base_remaining, border_color),
+                    render_balance_card(appearance, BASE_CREDITS_DOT_COLOR, "Base credits", &reset_str, base_remaining, CARD_BORDER_COLOR),
                 ).finish(),
             );
         }
@@ -674,7 +674,7 @@ impl BillingAndUsagePageV2View {
             cards_row.add_child(
                 Expanded::new(
                     1.,
-                    render_balance_card(appearance, dot_orange, "Personal credits", &personal_expiry, personal_balance, border_color),
+                    render_balance_card(appearance, BONUS_CREDITS_DOT_COLOR, "Personal credits", &personal_expiry, personal_balance, CARD_BORDER_COLOR),
                 ).finish(),
             );
         }
@@ -689,7 +689,7 @@ impl BillingAndUsagePageV2View {
             cards_row.add_child(
                 Expanded::new(
                     1.,
-                    render_balance_card(appearance, dot_orange, "Team credits", &team_expiry, team_balance, border_color),
+                    render_balance_card(appearance, BONUS_CREDITS_DOT_COLOR, "Team credits", &team_expiry, team_balance, CARD_BORDER_COLOR),
                 ).finish(),
             );
         }
@@ -1345,10 +1345,15 @@ impl TypedActionView for BillingAndUsagePageV2View {
     type Action = BillingAndUsagePageAction;
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
+        let is_login_gated = matches!(
+            action,
+            BillingAndUsagePageAction::Upgrade { .. }
+                | BillingAndUsagePageAction::GenerateStripeBillingPortalLink { .. },
+        );
         if AuthStateProvider::as_ref(ctx)
             .get()
             .is_anonymous_or_logged_out()
-            && is_blocked_for_anonymous_user(action)
+            && is_login_gated
         {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
                 auth_manager.attempt_login_gated_feature(
@@ -1540,7 +1545,7 @@ fn render_balance_card(
     let theme = appearance.theme();
     let sub_color = blended_colors::text_sub(theme, theme.background());
 
-    let dot = ConstrainedBox::new(
+    let status_dot = ConstrainedBox::new(
         Container::new(Empty::new().finish())
             .with_background_color(dot_color)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
@@ -1550,12 +1555,12 @@ fn render_balance_card(
     .with_height(8.)
     .finish();
 
-    let lbl = Text::new_inline(label.to_string(), appearance.ui_font_family(), 12.)
+    let label_text = Text::new_inline(label.to_string(), appearance.ui_font_family(), 12.)
         .with_color(sub_color)
         .with_style(Properties::default().weight(Weight::Semibold))
         .finish();
 
-    let dt = Clipped::new(
+    let date_text = Clipped::new(
         Text::new_inline(date.to_string(), appearance.ui_font_family(), 10.)
             .with_color(sub_color)
             .finish(),
@@ -1563,19 +1568,19 @@ fn render_balance_card(
     .finish();
 
     let header = Flex::row()
-        .with_child(dot)
+        .with_child(status_dot)
         .with_child(
-            Container::new(Shrinkable::new(1., lbl).finish())
+            Container::new(Shrinkable::new(1., label_text).finish())
                 .with_margin_left(8.)
                 .with_margin_right(8.)
                 .finish(),
         )
-        .with_child(Shrinkable::new(1., Align::new(dt).right().finish()).finish())
+        .with_child(Shrinkable::new(1., Align::new(date_text).right().finish()).finish())
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
         .with_main_axis_size(MainAxisSize::Max)
         .finish();
 
-    let val = Text::new_inline(
+    let credit_count = Text::new_inline(
         remaining.separate_with_commas(),
         appearance.ui_font_family(),
         24.,
@@ -1584,14 +1589,14 @@ fn render_balance_card(
     .with_style(Properties::default().weight(Weight::Semibold))
     .finish();
 
-    let rem = Text::new_inline("remaining", appearance.ui_font_family(), 14.)
+    let remaining_label = Text::new_inline("remaining", appearance.ui_font_family(), 14.)
         .with_color(sub_color)
         .finish();
 
-    let val_row = Flex::row()
-        .with_child(val)
+    let value_row = Flex::row()
+        .with_child(credit_count)
         .with_child(
-            Container::new(rem)
+            Container::new(remaining_label)
                 .with_margin_left(4.)
                 .with_padding_bottom(1.)
                 .finish(),
@@ -1601,7 +1606,7 @@ fn render_balance_card(
     Container::new(
         Flex::column()
             .with_child(header)
-            .with_child(val_row.finish())
+            .with_child(value_row.finish())
             .with_spacing(8.)
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .finish(),
@@ -1639,14 +1644,6 @@ fn uniform_grant_expiry(
     } else {
         String::new()
     }
-}
-
-fn is_blocked_for_anonymous_user(action: &BillingAndUsagePageAction) -> bool {
-    matches!(
-        action,
-        BillingAndUsagePageAction::Upgrade { .. }
-            | BillingAndUsagePageAction::GenerateStripeBillingPortalLink { .. },
-    )
 }
 
 impl From<warpui::ViewHandle<BillingAndUsagePageV2View>> for SettingsPageViewHandle {
