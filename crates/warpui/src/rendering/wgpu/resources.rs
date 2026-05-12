@@ -19,8 +19,8 @@ use thiserror::Error;
 use version_compare::Version;
 use warpui_core::rendering::{GPUBackend, GPUDeviceInfo, GPUDeviceType};
 use wgpu::{
-    Adapter, Backend, CompositeAlphaMode, CurrentSurfaceTexture, Device, DeviceType,
-    DownlevelFlags, PresentMode, Queue, Surface, SurfaceConfiguration,
+    Adapter, Backend, CompositeAlphaMode, CurrentSurfaceTexture, Device, DeviceType, PresentMode,
+    Queue, Surface, SurfaceConfiguration,
 };
 
 /// A mostly-arbitrary value to use as the height/width of a surface when
@@ -105,8 +105,10 @@ impl Resources {
             let adapter_info = adapter.get_info();
 
             log::info!(
-                "Using {} for rendering new window.",
-                describe_adapter(&adapter_info)
+                "Using {:?} {:?} ({}) for rendering new window.",
+                adapter_info.backend,
+                adapter_info.device_type,
+                adapter_info.name,
             );
 
             on_gpu_device_selected(device_info_from_adapter_info(adapter_info));
@@ -207,11 +209,6 @@ impl Resources {
             }
         }
     }
-}
-
-/// Returns a short human-readable description of an adapter for log messages.
-fn describe_adapter(info: &wgpu::AdapterInfo) -> String {
-    format!("{:?} {:?} ({})", info.backend, info.device_type, info.name)
 }
 
 fn device_info_from_adapter_info(adapter_info: wgpu::AdapterInfo) -> GPUDeviceInfo {
@@ -594,24 +591,6 @@ async fn initialize_device(
         "Verifying adapter \"{}\" is valid...",
         adapter.get_info().name
     );
-
-    // Pre-flight check for Vulkan adapters: skip those missing FULL_DRAW_INDEX_UINT32 as we've seen
-    // flickering and crashing:
-    // https://github.com/warpdotdev/warp/issues/10618
-    // https://github.com/warpdotdev/warp/issues/4879
-    let adapter_info = adapter.get_info();
-    if adapter_info.backend == wgpu::Backend::Vulkan
-        && !adapter
-            .get_downlevel_capabilities()
-            .flags
-            .contains(DownlevelFlags::FULL_DRAW_INDEX_UINT32)
-    {
-        log::warn!(
-            "Skipping adapter {}: missing required downlevel flag FULL_DRAW_INDEX_UINT32",
-            describe_adapter(&adapter_info),
-        );
-        return None;
-    }
 
     // `Limits::downlevel_webgl2_defaults` gives very conservative defaults. We want to keep these
     // limits low in order to make sure we remain compatible with lower-end devices. One exception
