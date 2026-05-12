@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use anyhow::{anyhow, bail};
 use oauth2::{RefreshToken, TokenResponse as _};
 use rmcp::transport::{
-    AuthError, AuthorizationSession, auth::{
-        AuthClient, AuthorizationManager, CredentialStore, InMemoryCredentialStore, OAuthClientConfig, OAuthState, OAuthTokenResponse, StoredCredentials
-    }
+    auth::{
+        AuthClient, AuthorizationManager, CredentialStore, InMemoryCredentialStore,
+        OAuthClientConfig, OAuthState, OAuthTokenResponse, StoredCredentials,
+    },
+    AuthError, AuthorizationSession,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
