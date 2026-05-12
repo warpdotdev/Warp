@@ -267,7 +267,19 @@ impl OrchestrationConfigBlockView {
             RunAgentsExecutionMode::Remote { environment_id, .. } => environment_id.as_str(),
             RunAgentsExecutionMode::Local => "",
         };
-        let env_handle = oc::create_environment_picker(initial_env, &styles, ctx);
+        // When restoring a Remote config with no environment, resolve
+        // a default so the picker isn't blank.
+        let initial_env = if initial_env.is_empty() && self.edit_state.execution_mode.is_remote() {
+            if let Some(default_env) = oc::resolve_default_environment_id(ctx) {
+                self.edit_state.set_environment_id(default_env.clone());
+                default_env
+            } else {
+                String::new()
+            }
+        } else {
+            initial_env.to_string()
+        };
+        let env_handle = oc::create_environment_picker(&initial_env, &styles, ctx);
         env_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
         self.pickers.environment_picker = Some(env_handle);
 
@@ -531,6 +543,7 @@ impl TypedActionView for OrchestrationConfigBlockView {
             }
             OrchestrationConfigBlockAction::EnvironmentChanged { environment_id } => {
                 self.edit_state.set_environment_id(environment_id.clone());
+                oc::persist_environment_selection(environment_id, ctx);
                 self.apply_field_change(ctx);
                 ctx.notify();
             }

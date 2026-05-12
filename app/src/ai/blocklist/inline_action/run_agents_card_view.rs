@@ -244,6 +244,49 @@ fn is_opencode_on_remote(request: &RunAgentsRequest) -> bool {
     ) && request.harness_type.eq_ignore_ascii_case("opencode")
 }
 
+/// Resolves UI-only interactive defaults on edit state that has
+/// already had config-inherited fields resolved. These defaults are
+/// for the picker display and should NOT run before auto-launch
+/// matching.
+///
+/// 1. Defaults the Oz model to the conversation's base model.
+/// 2. Defaults Remote worker_host to "warp".
+/// 3. Defaults a Remote environment from settings / recency.
+fn resolve_interactive_defaults(
+    state: &mut RunAgentsEditState,
+    block_model: &dyn AIBlockModel<View = AIBlock>,
+    ctx: &AppContext,
+) {
+    if state.orch.model_id.is_empty() {
+        let harness =
+            warp_cli::agent::Harness::parse_orchestration_harness(&state.orch.harness_type);
+        if matches!(harness, Some(warp_cli::agent::Harness::Oz) | None) {
+            if let Some(base) = block_model.base_model(ctx).map(|id| id.to_string()) {
+                state.orch.model_id = base;
+            }
+        }
+    }
+    if let RunAgentsExecutionMode::Remote {
+        environment_id,
+        worker_host,
+        ..
+    } = &state.orch.execution_mode
+    {
+        let needs_host = worker_host.is_empty();
+        let needs_env = environment_id.is_empty();
+        if needs_host {
+            state
+                .orch
+                .set_worker_host(oc::ORCHESTRATION_WARP_WORKER_HOST.to_string());
+        }
+        if needs_env {
+            if let Some(default_env) = oc::resolve_default_environment_id(ctx) {
+                state.orch.set_environment_id(default_env);
+            }
+        }
+    }
+}
+
 impl RunAgentsCardView {
     pub fn new(
         action_id: AIAgentActionId,
@@ -277,27 +320,19 @@ impl RunAgentsCardView {
         let is_denied = compute_is_denied(is_denied, &active_config);
 
         let mut state = RunAgentsEditState::from_request(request);
-        // When the LLM omits harness/model to inherit from the active
-        // config, resolve empty fields so the card shows the intended
-        // settings rather than defaults.
+        // Resolve config-inherited fields first — the auto-launch
+        // check and dispatched request both need concrete values.
         if let Some((config, status)) = &active_config {
             if status.is_approved() {
                 state.orch.resolve_from_config(config);
             }
         }
-        // For Oz (or empty harness), default to the conversation's base
-        // model so the picker shows e.g. "auto (genius)" instead of the
-        // system default.
-        if state.orch.model_id.is_empty() {
-            let harness =
-                warp_cli::agent::Harness::parse_orchestration_harness(&state.orch.harness_type);
-            if matches!(harness, Some(warp_cli::agent::Harness::Oz) | None) {
-                if let Some(base) = block_model.base_model(ctx).map(|id| id.to_string()) {
-                    state.orch.model_id = base;
-                }
-            }
-        }
+        // Check auto-launch BEFORE applying interactive defaults.
+        // Interactive defaults (environment, host, model fallback)
+        // are for the UI pickers and would cause a false mismatch
+        // against the approved config.
         let auto_launched = should_auto_launch(false, is_denied, false, &state, &active_config);
+        resolve_interactive_defaults(&mut state, &*block_model, ctx);
 
         let reject_keystroke = CTRL_C_KEYSTROKE.clone();
         let accept_keystroke = ENTER_KEYSTROKE.clone();
@@ -468,21 +503,12 @@ impl RunAgentsCardView {
             return;
         }
         let mut new_state = RunAgentsEditState::from_request(request);
-        // Resolve empty fields from the active config (same as in new()).
         if let Some((config, status)) = &self.active_config {
             if status.is_approved() {
                 new_state.orch.resolve_from_config(config);
             }
         }
-        if new_state.orch.model_id.is_empty() {
-            let harness =
-                warp_cli::agent::Harness::parse_orchestration_harness(&new_state.orch.harness_type);
-            if matches!(harness, Some(warp_cli::agent::Harness::Oz) | None) {
-                if let Some(base) = self.block_model.base_model(ctx).map(|id| id.to_string()) {
-                    new_state.orch.model_id = base;
-                }
-            }
-        }
+        resolve_interactive_defaults(&mut new_state, &*self.block_model, ctx);
         if self.state != new_state {
             let harness_or_model_changed = self.state.orch.harness_type
                 != new_state.orch.harness_type
@@ -519,19 +545,15 @@ impl RunAgentsCardView {
                     conv.orchestration_config_for_plan(&self.state.plan_id)
                         .map(|(c, s)| (c.clone(), s))
                 });
-            // Resolve empty/default state fields from the config so the
-            // dispatched request carries concrete values rather than
-            // relying on server-side inheritance.
-            if let Some((config, _)) = &self.active_config {
-                if self.state.orch.model_id.is_empty() {
-                    self.state.orch.model_id = config.model_id.clone();
+            // Resolve empty/default state fields from the config so
+            // the dispatched request carries concrete values and the
+            // auto-launch match succeeds. Uses the same
+            // resolve_from_config as new() — including Local→Remote
+            // promotion when the config is Remote.
+            if let Some((config, status)) = &self.active_config {
+                if status.is_approved() {
+                    self.state.orch.resolve_from_config(config);
                 }
-                if self.state.orch.harness_type.is_empty() {
-                    self.state.orch.harness_type = config.harness_type.clone();
-                }
-                self.state
-                    .orch
-                    .resolve_execution_mode_from_config(&config.execution_mode);
             }
             // Re-evaluate denied status with the refreshed config.
             self.is_denied = compute_is_denied(self.is_denied, &self.active_config);
@@ -862,6 +884,7 @@ impl TypedActionView for RunAgentsCardView {
             }
             RunAgentsCardViewAction::EnvironmentChanged { environment_id } => {
                 self.state.orch.set_environment_id(environment_id.clone());
+                oc::persist_environment_selection(environment_id, ctx);
                 ctx.notify();
             }
             RunAgentsCardViewAction::WorkerHostChanged { worker_host } => {

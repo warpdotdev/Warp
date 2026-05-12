@@ -2578,20 +2578,24 @@ impl AIConversation {
                 if let Some(api::message::Message::OrchestrationConfigSnapshot(snapshot)) =
                     &message.message
                 {
-                    let config = snapshot
-                        .config
-                        .as_ref()
-                        .map(OrchestrationConfig::from_proto);
-                    let status = OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());
-                    let plan_id = if snapshot.plan_id.is_empty() {
-                        None
-                    } else {
-                        Some(snapshot.plan_id.clone())
-                    };
-                    if self.set_orchestration_config(config, status, plan_id) {
-                        ctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
-                            conversation_id: self.id,
-                        });
+                    if !snapshot.plan_id.is_empty() {
+                        if let Some(config) = snapshot
+                            .config
+                            .as_ref()
+                            .map(OrchestrationConfig::from_proto)
+                        {
+                            let status =
+                                OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());
+                            if self.set_orchestration_config_for_plan(
+                                snapshot.plan_id.clone(),
+                                config,
+                                status,
+                            ) {
+                                ctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                                    conversation_id: self.id,
+                                });
+                            }
+                        }
                     }
                 }
 
