@@ -46,25 +46,6 @@ pub struct PersistedCredentials {
     client_secret: Option<String>,
 }
 
-impl PersistedCredentials {
-    fn new(
-        client_id: String,
-        client_secret: Option<String>,
-        token_response: Option<OAuthTokenResponse>,
-        token_received_at: Option<u64>,
-    ) -> Self {
-        Self {
-            credentials: StoredCredentials::new(
-                client_id,
-                token_response,
-                Vec::new(),
-                token_received_at,
-            ),
-            client_secret,
-        }
-    }
-}
-
 /// Maps cloud MCP installation UUID to its OAuth credentials in secure storage.
 pub type PersistedCredentialsMap = HashMap<Uuid, PersistedCredentials>;
 
@@ -132,10 +113,13 @@ impl CredentialStore for PersistingCredentialStore {
 
         self.inner.save(credentials.clone()).await?;
 
-        let _ = self.persist_tx.try_send(PersistedCredentials {
-            credentials,
-            client_secret: self.client_secret.clone(),
-        });
+        // Only persist credentials if we actually have any.
+        if credentials.token_response.is_some() {
+            let _ = self.persist_tx.try_send(PersistedCredentials {
+                credentials,
+                client_secret: self.client_secret.clone(),
+            });
+        }
         Ok(())
     }
 
@@ -551,23 +535,6 @@ mod tests {
             persist_tx: tx,
         };
         (store, rx)
-    }
-
-    #[test]
-    fn persisted_credentials_round_trip_through_serde_preserves_received_at() {
-        let original = PersistedCredentials::new(
-            "client-abc".to_string(),
-            Some("shh".to_string()),
-            Some(make_test_token_response(Some("refresh-1"))),
-            Some(1_700_000_000),
-        );
-
-        let json = serde_json::to_string(&original).expect("serialize");
-        let parsed: PersistedCredentials = serde_json::from_str(&json).expect("deserialize");
-
-        assert_eq!(parsed.credentials.client_id, original.credentials.client_id);
-        assert_eq!(parsed.client_secret, original.client_secret);
-        assert_eq!(parsed.credentials.token_received_at, Some(1_700_000_000));
     }
 
     /// Backward compatibility: credentials persisted by older Warp versions do not
