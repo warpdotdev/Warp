@@ -10,8 +10,10 @@ use ai::agent::action_result::{
     RunAgentsAgentOutcome, RunAgentsAgentOutcomeKind, RunAgentsLaunchedExecutionMode,
     RunAgentsResult,
 };
-use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationExecutionMode};
+use ai::agent::orchestration_config::OrchestrationConfig;
 use ai::skills::SkillReference;
+
+use crate::ai::blocklist::inline_action::orchestration_controls::OrchestrationEditState;
 use futures::{future::BoxFuture, FutureExt};
 use warp_core::execution_mode::AppExecutionMode;
 use warpui::{Entity, ModelContext, ModelHandle};
@@ -262,7 +264,7 @@ impl RunAgentsExecutor {
         // When auto-executing (autonomous/CLI-driver mode), the confirmation
         // card is bypassed. Replicate its policy/normalization here:
         // 1. Deny if the orchestration config is explicitly disapproved.
-        // 2. Resolve empty model/harness/execution_mode from the approved config.
+        // 2. Override model/harness/execution_mode from the approved config.
         if AppExecutionMode::as_ref(ctx).is_autonomous() {
             if let Some(conversation) =
                 BlocklistAIHistoryModel::as_ref(ctx).conversation(&parent_conversation_id)
@@ -319,29 +321,19 @@ enum ChildSlot {
     Pending(async_channel::Receiver<StartAgentOutcome>),
 }
 
-/// Resolves empty fields on a `RunAgentsRequest` from an approved
-/// orchestration config — the same normalization the confirmation card
-/// applies via `OrchestrationEditState::resolve_from_config`.
+/// Unconditionally overrides run-wide fields on a `RunAgentsRequest`
+/// from the approved orchestration config, delegating to
+/// `OrchestrationEditState::override_from_approved_config`.
 fn resolve_request_from_config(request: &mut RunAgentsRequest, config: &OrchestrationConfig) {
-    if request.harness_type.is_empty() && !config.harness_type.is_empty() {
-        request.harness_type = config.harness_type.clone();
-    }
-    if request.model_id.is_empty() && !config.model_id.is_empty() {
-        request.model_id = config.model_id.clone();
-    }
-    if !request.execution_mode.is_remote() && config.execution_mode.is_remote() {
-        if let OrchestrationExecutionMode::Remote {
-            environment_id,
-            worker_host,
-        } = &config.execution_mode
-        {
-            request.execution_mode = RunAgentsExecutionMode::Remote {
-                environment_id: environment_id.clone(),
-                worker_host: worker_host.clone(),
-                computer_use_enabled: false,
-            };
-        }
-    }
+    let mut edit_state = OrchestrationEditState::from_run_agents_fields(
+        &request.model_id,
+        &request.harness_type,
+        &request.execution_mode,
+    );
+    edit_state.override_from_approved_config(config);
+    request.model_id = edit_state.model_id;
+    request.harness_type = edit_state.harness_type;
+    request.execution_mode = edit_state.execution_mode;
 }
 
 /// Defence-in-depth validation; mirrors the card view's

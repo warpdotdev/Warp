@@ -26,10 +26,12 @@ use warpui::{
     SingletonEntity, SizeConstraint, View, ViewContext, ViewHandle,
 };
 
+use settings::Setting;
 use warp_cli::agent::Harness;
 use warp_core::channel::{Channel, ChannelState};
 use warp_core::ui::theme::Fill;
 
+use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
 use crate::ai::harness_availability::HarnessAvailabilityModel;
@@ -149,33 +151,6 @@ impl OrchestrationEditState {
         }
     }
 
-    /// Fills empty execution-mode fields from the given config.
-    /// If both sides are `Remote`, inherits empty `environment_id` and
-    /// `worker_host` from the config. If the state is `Local` while the
-    /// config is `Remote` (or vice-versa), does nothing — variant
-    /// mismatches are intentional.
-    pub fn resolve_execution_mode_from_config(&mut self, config_mode: &OrchestrationExecutionMode) {
-        if let (
-            RunAgentsExecutionMode::Remote {
-                environment_id,
-                worker_host,
-                ..
-            },
-            OrchestrationExecutionMode::Remote {
-                environment_id: cfg_env,
-                worker_host: cfg_host,
-            },
-        ) = (&mut self.execution_mode, config_mode)
-        {
-            if environment_id.is_empty() {
-                *environment_id = cfg_env.clone();
-            }
-            if worker_host.is_empty() {
-                *worker_host = cfg_host.clone();
-            }
-        }
-    }
-
     /// Returns `Some(reason)` if Accept / Apply must be disabled.
     /// Only hard block: OpenCode + Cloud.
     pub fn accept_disabled_reason(&self) -> Option<&'static str> {
@@ -205,6 +180,42 @@ impl OrchestrationEditState {
         }
         if !self.execution_mode.is_remote() && config.execution_mode.is_remote() {
             self.execution_mode = Self::from_orchestration_config(config).execution_mode;
+        }
+    }
+
+    /// Unconditionally overrides model, harness, and execution mode
+    /// from the approved orchestration config. The plan config is the
+    /// user-approved source of truth — the LLM's run_agents call may
+    /// omit or set these differently, but the config always wins.
+    ///
+    /// `computer_use_enabled` is preserved from the current state when
+    /// both sides are Remote, since it is a per-call flag set by the LLM.
+    pub fn override_from_approved_config(&mut self, config: &OrchestrationConfig) {
+        self.model_id = config.model_id.clone();
+        self.harness_type = config.harness_type.clone();
+
+        let preserve_computer_use = match (&self.execution_mode, &config.execution_mode) {
+            (
+                RunAgentsExecutionMode::Remote {
+                    computer_use_enabled,
+                    ..
+                },
+                OrchestrationExecutionMode::Remote { .. },
+            ) => Some(*computer_use_enabled),
+            _ => None,
+        };
+
+        self.execution_mode = Self::from_orchestration_config(config).execution_mode;
+
+        if let (
+            Some(cue),
+            RunAgentsExecutionMode::Remote {
+                computer_use_enabled,
+                ..
+            },
+        ) = (preserve_computer_use, &mut self.execution_mode)
+        {
+            *computer_use_enabled = cue;
         }
     }
 
@@ -648,6 +659,57 @@ pub fn harness_save_key(harness_type: &str) -> &str {
     }
 }
 
+// ── Default environment resolution ──────────────────────────────────
+
+/// Resolves a default environment ID using the same logic as the
+/// `/cloud-agent` environment selector: first tries the user's
+/// last-selected environment from settings, then falls back to the
+/// most recently used environment.
+pub fn resolve_default_environment_id(ctx: &AppContext) -> Option<String> {
+    if let Some(env_id) = *CloudAgentSettings::as_ref(ctx)
+        .last_selected_environment_id
+        .value()
+    {
+        if CloudAmbientAgentEnvironment::get_by_id(&env_id, ctx).is_some() {
+            return Some(env_id.uid());
+        }
+    }
+    let mut envs = CloudAmbientAgentEnvironment::get_all(ctx);
+    envs.sort_by(|a, b| {
+        b.metadata
+            .last_task_run_ts
+            .cmp(&a.metadata.last_task_run_ts)
+            .then_with(|| {
+                a.model()
+                    .string_model
+                    .name
+                    .cmp(&b.model().string_model.name)
+            })
+    });
+    envs.first().map(|e| e.id.uid())
+}
+
+/// Persists the user's environment selection to settings so it can
+/// be restored as the default next time. Shared by both the plan
+/// card and confirmation card `EnvironmentChanged` handlers.
+pub fn persist_environment_selection<V: View>(environment_id: &str, ctx: &mut ViewContext<V>) {
+    if environment_id.is_empty() {
+        return;
+    }
+    let all_envs = CloudAmbientAgentEnvironment::get_all(ctx);
+    if let Some(env) = all_envs.iter().find(|e| e.id.uid() == environment_id) {
+        let sync_id = env.id;
+        CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+            if let Err(e) = settings
+                .last_selected_environment_id
+                .set_value(Some(sync_id), ctx)
+            {
+                log::warn!("Failed to persist environment selection: {e:?}");
+            }
+        });
+    }
+}
+
 // ── Shared action helpers ───────────────────────────────────────────
 
 /// Handles a harness change for both card views: saves the current
@@ -705,6 +767,17 @@ pub fn apply_execution_mode_change<A: OrchestrationControlAction, V: View>(
     ctx: &mut ViewContext<V>,
 ) {
     state.toggle_execution_mode_to_remote(is_remote);
+    // When switching to Cloud with no environment set, pre-fill with
+    // the user's last-selected or most recently used environment.
+    if is_remote {
+        if let RunAgentsExecutionMode::Remote { environment_id, .. } = &state.execution_mode {
+            if environment_id.is_empty() {
+                if let Some(default_env) = resolve_default_environment_id(ctx) {
+                    state.set_environment_id(default_env);
+                }
+            }
+        }
+    }
     let is_local = !state.execution_mode.is_remote();
     if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
         let reset_id = fallback_base_model_id(ctx)

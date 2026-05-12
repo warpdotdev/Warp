@@ -7,9 +7,7 @@ use std::collections::HashMap;
 
 use ai::agent::action::{RunAgentsAgentRunConfig, RunAgentsExecutionMode, RunAgentsRequest};
 use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
-use ai::agent::orchestration_config::{
-    matches_active_config, OrchestrationConfig, OrchestrationConfigStatus,
-};
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::BlocklistAIHistoryModel;
@@ -176,8 +174,8 @@ pub struct RunAgentsCardView {
     state: RunAgentsEditState,
     handles: RunAgentsCardHandles,
     spawning: Option<RunAgentsSpawningSnapshot>,
-    /// Set when the active config was approved and matched the request,
-    /// causing immediate dispatch without user confirmation.
+    /// Set when an approved plan config triggered immediate dispatch
+    /// without user confirmation.
     auto_launched: bool,
     /// Set when the action has a `RunAgentsResult::Denied` result in
     /// history (e.g. orchestration was disabled at dispatch time).
@@ -197,30 +195,6 @@ pub struct RunAgentsCardView {
     /// UI-only per-harness model memory so switching harnesses preserves
     /// the user's previous model selection for each harness.
     saved_model_per_harness: HashMap<String, String>,
-}
-
-/// Returns `true` when the conditions for auto-launching are met.
-///
-/// Extracted from `try_auto_launch_on_stream_complete` so the
-/// decision logic can be unit-tested without constructing a full
-/// `RunAgentsCardView`.
-pub(crate) fn should_auto_launch(
-    auto_launched: bool,
-    is_denied: bool,
-    is_spawning: bool,
-    state: &RunAgentsEditState,
-    active_config: &Option<(OrchestrationConfig, OrchestrationConfigStatus)>,
-) -> bool {
-    if auto_launched || is_denied || is_spawning || state.agent_run_configs.is_empty() {
-        return false;
-    }
-    match active_config {
-        Some((config, status)) => {
-            let request = state.to_request();
-            status.is_approved() && matches_active_config(&request, config)
-        }
-        None => false,
-    }
 }
 
 /// Computes the `is_denied` flag at construction time.
@@ -243,6 +217,49 @@ fn is_opencode_on_remote(request: &RunAgentsRequest) -> bool {
         request.execution_mode,
         RunAgentsExecutionMode::Remote { .. }
     ) && request.harness_type.eq_ignore_ascii_case("opencode")
+}
+
+/// Resolves UI-only interactive defaults on edit state that has
+/// already had config-inherited fields resolved. These defaults are
+/// for the picker display and should NOT run before auto-launch
+/// matching.
+///
+/// 1. Defaults the Oz model to the conversation's base model.
+/// 2. Defaults Remote worker_host to "warp".
+/// 3. Defaults a Remote environment from settings / recency.
+fn resolve_interactive_defaults(
+    state: &mut RunAgentsEditState,
+    block_model: &dyn AIBlockModel<View = AIBlock>,
+    ctx: &AppContext,
+) {
+    if state.orch.model_id.is_empty() {
+        let harness =
+            warp_cli::agent::Harness::parse_orchestration_harness(&state.orch.harness_type);
+        if matches!(harness, Some(warp_cli::agent::Harness::Oz) | None) {
+            if let Some(base) = block_model.base_model(ctx).map(|id| id.to_string()) {
+                state.orch.model_id = base;
+            }
+        }
+    }
+    if let RunAgentsExecutionMode::Remote {
+        environment_id,
+        worker_host,
+        ..
+    } = &state.orch.execution_mode
+    {
+        let needs_host = worker_host.is_empty();
+        let needs_env = environment_id.is_empty();
+        if needs_host {
+            state
+                .orch
+                .set_worker_host(oc::ORCHESTRATION_WARP_WORKER_HOST.to_string());
+        }
+        if needs_env {
+            if let Some(default_env) = oc::resolve_default_environment_id(ctx) {
+                state.orch.set_environment_id(default_env);
+            }
+        }
+    }
 }
 
 impl RunAgentsCardView {
@@ -268,37 +285,15 @@ impl RunAgentsCardView {
             false
         };
 
-        // Auto-launch when the active config is approved and matches
-        // the request — skip the confirmation card entirely.
-        // The active_config is now conversation-scoped so cross-conversation
-        // leakage is no longer possible.
-        // Also treat the action as denied when the config is explicitly
+        // Treat the action as denied when the config is explicitly
         // disapproved — the card will auto-deny via the subscription
         // once the action becomes blocked.
         let is_denied = compute_is_denied(is_denied, &active_config);
 
-        let mut state = RunAgentsEditState::from_request(request);
-        // When the LLM omits harness/model to inherit from the active
-        // config, resolve empty fields so the card shows the intended
-        // settings rather than defaults.
-        if let Some((config, status)) = &active_config {
-            if status.is_approved() {
-                state.orch.resolve_from_config(config);
-            }
-        }
-        // For Oz (or empty harness), default to the conversation's base
-        // model so the picker shows e.g. "auto (genius)" instead of the
-        // system default.
-        if state.orch.model_id.is_empty() {
-            let harness =
-                warp_cli::agent::Harness::parse_orchestration_harness(&state.orch.harness_type);
-            if matches!(harness, Some(warp_cli::agent::Harness::Oz) | None) {
-                if let Some(base) = block_model.base_model(ctx).map(|id| id.to_string()) {
-                    state.orch.model_id = base;
-                }
-            }
-        }
-        let auto_launched = should_auto_launch(false, is_denied, false, &state, &active_config);
+        // Auto-launch is deferred to try_auto_launch_on_stream_complete
+        // (called after streaming finishes and agent_run_configs is populated).
+        let state = RunAgentsEditState::from_request(request);
+        let auto_launched = false;
 
         let reject_keystroke = CTRL_C_KEYSTROKE.clone();
         let accept_keystroke = ENTER_KEYSTROKE.clone();
@@ -521,38 +516,37 @@ impl RunAgentsCardView {
                     conv.orchestration_config_for_plan(&self.state.plan_id)
                         .map(|(c, s)| (c.clone(), s))
                 });
-            // Resolve empty/default state fields from the config so the
-            // dispatched request carries concrete values rather than
-            // relying on server-side inheritance.
-            if let Some((config, _)) = &self.active_config {
-                if self.state.orch.model_id.is_empty() {
-                    self.state.orch.model_id = config.model_id.clone();
-                }
-                if self.state.orch.harness_type.is_empty() {
-                    self.state.orch.harness_type = config.harness_type.clone();
-                }
-                self.state
-                    .orch
-                    .resolve_execution_mode_from_config(&config.execution_mode);
-            }
             // Re-evaluate denied status with the refreshed config.
             self.is_denied = compute_is_denied(self.is_denied, &self.active_config);
         }
+        // If there's an approved config for this plan, the user has
+        // already approved these settings — auto-launch without
+        // needing to match individual fields.
+        if let Some((config, status)) = &self.active_config {
+            if status.is_approved()
+                && !self.auto_launched
+                && !self.is_denied
+                && self.spawning.is_none()
+                && !self.state.agent_run_configs.is_empty()
+            {
+                self.state.orch.override_from_approved_config(config);
 
-        if should_auto_launch(
-            self.auto_launched,
-            self.is_denied,
-            self.spawning.is_some(),
-            &self.state,
-            &self.active_config,
-        ) {
-            self.auto_launched = true;
-            // Don't call execute_run_agents here — the action
-            // hasn't been queued as Blocked yet. The subscription
-            // on ActionBlockedOnUserConfirmation will dispatch it
-            // once the action model is ready.
-            ctx.notify();
+                self.auto_launched = true;
+                ctx.notify();
+                return;
+            }
         }
+
+        // No approved config — the confirmation card will be shown.
+        // Resolve from config (if any) then apply interactive defaults
+        // so the pickers display sensible values.
+        if let Some((config, status)) = &self.active_config {
+            if status.is_approved() {
+                self.state.orch.resolve_from_config(config);
+            }
+        }
+        resolve_interactive_defaults(&mut self.state, &*self.block_model, ctx);
+        oc::repopulate_all_pickers(&mut self.state.orch, &self.handles.pickers, ctx);
     }
 
     /// Validates and dispatches the resolved request.
@@ -864,6 +858,7 @@ impl TypedActionView for RunAgentsCardView {
             }
             RunAgentsCardViewAction::EnvironmentChanged { environment_id } => {
                 self.state.orch.set_environment_id(environment_id.clone());
+                oc::persist_environment_selection(environment_id, ctx);
                 ctx.notify();
             }
             RunAgentsCardViewAction::WorkerHostChanged { worker_host } => {
