@@ -1,5 +1,33 @@
 // Onboarding library crate
 
+#[macro_export]
+macro_rules! t {
+    ($key:literal, $($name:ident = $value:expr),+ $(,)?) => {
+        match warp_i18n::t($key) {
+            value if value == $key => std::borrow::Cow::Owned(format!($key)),
+            value => warp_i18n::interpolate(
+                value.as_ref(),
+                &[$((stringify!($name), format!("{}", $value))),+],
+            ),
+        }
+    };
+    ($key:literal, $($name:ident),+ $(,)?) => {
+        match warp_i18n::t($key) {
+            value if value == $key => std::borrow::Cow::Owned(format!($key)),
+            value => warp_i18n::interpolate(
+                value.as_ref(),
+                &[$((stringify!($name), format!("{}", $name))),+],
+            ),
+        }
+    };
+    ($key:literal) => {
+        match warp_i18n::t($key) {
+            value if value == $key => std::borrow::Cow::Owned(format!($key)),
+            value => value,
+        }
+    };
+}
+
 mod agent_onboarding_view;
 pub mod callout;
 mod model;

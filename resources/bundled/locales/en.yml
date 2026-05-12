@@ -645,6 +645,48 @@ en:
     apply_link: "Apply link"
     link_copied: "Link copied to clipboard"
 
+  # ── Onboarding ──
+  onboarding:
+    welcome_title: "Welcome to Warp"
+    back: "Back"
+    next: "Next"
+    skip: "Skip"
+    get_started: "Get started"
+    get_warping: "Get Warping"
+    enabled: "Enabled"
+    disabled: "Disabled"
+    intro:
+      subtitle: "A modern terminal with state of the art agents built in."
+      already_have_account: "Already have an account? "
+      log_in: "Log in"
+    intention:
+      subtitle: "How do you want to work?"
+      agent_title: "Build faster with AI agents"
+      agent_description: "An agent-first experience with best in class terminal support. Get terminal and agent driven development AI features like:"
+      terminal_title: "Just use the terminal"
+      no_ai_features: "No AI features"
+      terminal_description: "A modern terminal optimized for speed, context, and control without AI."
+    features:
+      warp_agents: "Warp agents"
+      oz_cloud_agents: "Oz cloud agents platform"
+      next_command_predictions: "Next command predictions"
+      prompt_suggestions: "Prompt suggestions"
+      codebase_context: "Codebase context"
+      remote_control: "Remote control with Claude Code, Codex, and other agents"
+      agents_over_ssh: "Agents over SSH"
+    customize:
+      title: "Customize your Warp"
+      subtitle: "Tailor your features and UI to your working style."
+      tab_styling: "Tab styling"
+      vertical: "Vertical"
+      horizontal: "Horizontal"
+      tools_panel: "Tools panel"
+      code_review: "Code review"
+      conversation_history: "Conversation history"
+      file_explorer: "File explorer"
+      global_file_search: "Global file search"
+      warp_drive: "Warp Drive"
+
   # ── Common ──
   common:
     show: "Show"

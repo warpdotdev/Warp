@@ -5,9 +5,12 @@ import re
 from collections import Counter
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_SRC = ROOT / "app" / "src"
+ONBOARDING_SRC = ROOT / "crates" / "onboarding" / "src"
 LOCALE_DIR = ROOT / "resources" / "bundled" / "locales"
 
 UI_TARGETS = (
@@ -28,6 +31,13 @@ UI_TARGETS = (
     "workflows/",
     "workspace/view.rs",
     "workspace/view/",
+)
+
+ONBOARDING_UI_TARGETS = (
+    "agent_onboarding_view.rs",
+    "slides/intro_slide.rs",
+    "slides/intention_slide.rs",
+    "slides/customize_slide.rs",
 )
 
 CALL_WITH_LABEL_RE = re.compile(
@@ -78,11 +88,11 @@ LOCALE_KEY_RE = re.compile(r'^    ([A-Za-z0-9_]+):\s*"')
 
 
 def rust_files():
-    return sorted(APP_SRC.rglob("*.rs"))
+    return sorted([*APP_SRC.rglob("*.rs"), *ONBOARDING_SRC.rglob("*.rs")])
 
 
 def is_test_file(path: Path) -> bool:
-    parts = path.relative_to(APP_SRC).parts
+    parts = path.relative_to(source_root(path)).parts
     return (
         any(part in {"tests", "testing", "integration_testing"} for part in parts)
         or path.name.endswith("_tests.rs")
@@ -94,8 +104,21 @@ def is_test_file(path: Path) -> bool:
 def is_ui_target(path: Path) -> bool:
     if is_test_file(path):
         return False
-    rel = path.relative_to(APP_SRC).as_posix()
-    return any(rel == target or rel.startswith(target) for target in UI_TARGETS)
+    root = source_root(path)
+    rel = path.relative_to(root).as_posix()
+    if root == APP_SRC:
+        return any(rel == target or rel.startswith(target) for target in UI_TARGETS)
+    if root == ONBOARDING_SRC:
+        return any(rel == target or rel.startswith(target) for target in ONBOARDING_UI_TARGETS)
+    return False
+
+
+def source_root(path: Path) -> Path:
+    if path.is_relative_to(APP_SRC):
+        return APP_SRC
+    if path.is_relative_to(ONBOARDING_SRC):
+        return ONBOARDING_SRC
+    return ROOT
 
 
 def unescape_sample(value: str) -> str:
@@ -123,15 +146,18 @@ def looks_internal(value: str) -> bool:
 
 def locale_keys(path: Path):
     keys = set()
-    section = None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        section_match = LOCALE_SECTION_RE.match(line)
-        if section_match:
-            section = section_match.group(1)
-            continue
-        key_match = LOCALE_KEY_RE.match(line)
-        if section and key_match:
-            keys.add(f"{section}.{key_match.group(1)}")
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    def visit(prefix, value):
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                next_prefix = f"{prefix}.{key}" if prefix else str(key)
+                visit(next_prefix, nested)
+        elif isinstance(value, str) and prefix:
+            keys.add(prefix)
+
+    for locale_values in data.values():
+        visit("", locale_values)
     return keys
 
 
