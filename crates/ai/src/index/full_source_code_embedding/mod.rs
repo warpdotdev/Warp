@@ -9,7 +9,11 @@ mod snapshot;
 pub mod store_client;
 mod sync_client;
 
-use std::{ops::Range, path::PathBuf, time::Duration};
+use std::{
+    ops::Range,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 pub use sync_client::SyncTask;
 
 pub use codebase_index::{CodebaseIndex, RetrievalID, SyncProgress};
@@ -180,6 +184,14 @@ impl Fragment {
 
     pub fn content_hash(&self) -> &ContentHash {
         &self.content_hash
+    }
+
+    pub fn absolute_path(&self) -> &Path {
+        &self.location.absolute_path
+    }
+
+    pub fn byte_range(&self) -> Range<usize> {
+        self.location.byte_range.start.as_usize()..self.location.byte_range.end.as_usize()
     }
 }
 
