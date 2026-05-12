@@ -86,7 +86,7 @@ impl TerminalView {
     }
 
     // Enters the agent view for a restored CLI agent transcript, setting the title using the
-	// restored CLI conversation metadata if we have it.
+    // restored CLI conversation metadata if we have it.
     pub(crate) fn enter_agent_view_for_restored_cli_agent(
         &mut self,
         fallback_title: String,
