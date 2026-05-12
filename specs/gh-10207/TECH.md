@@ -29,11 +29,15 @@ the visible result should be "the folder expands" rather than "the folder
 expands plus a banner." A broader "always-lazy file tree" exploration is
 tracked internally as a follow-up.
 
-Out of scope but worth flagging: `ai::project_context::model`
+Out of scope: repo-local skill discovery
+(`app/src/ai/skills/file_watchers/`) silently drops skills in degraded
+mode because it queries the metadata tree, and `ai::project_context::model`
 (`crates/ai/src/project_context/model.rs:298`), `warp::ai::outline::native`,
 and `ai::index::full_source_code_embedding` each call `Entry::build_tree`
-independently and hit the same hard limit. They are tracked separately and
-this spec does not change their behavior.
+independently and hit the same hard limit. Per @moirahuang
+([comment](https://github.com/warpdotdev/warp/pull/10490#issuecomment-4427103160)),
+those surfaces will be addressed holistically in follow-up work; this
+spec is strictly scoped to the file tree.
 
 ## Proposed changes
 
@@ -64,40 +68,6 @@ already get for unreadable repo roots and is outside the scope of #10207.
 
 No new event, no new state on `FileTreeState`, no UI plumbing in the view.
 
-### Skill discovery in degraded mode
-
-The skill watcher (`app/src/ai/skills/file_watchers/skill_watcher.rs`)
-discovers repo-local skills (`<repo>/.agents/skills/...`,
-`<repo>/.claude/skills/...`, etc.) by querying the metadata tree for
-directories ending in known skill provider paths
-(`find_skill_directories_in_tree`, `app/src/ai/skills/file_watchers/utils.rs:20-56`).
-In degraded mode the tree only knows about depth-1 entries, so
-`<provider>/skills` (two levels under the repo root) is invisible and the
-skills are silently dropped — visible in the AI panel, not the file tree,
-but still a user-facing regression in our repro.
-
-Fix: add a sibling probe `find_top_level_skill_directories_in_filesystem`
-(`utils.rs`) that walks `SKILL_PROVIDER_DEFINITIONS` and returns
-`<repo>/<provider.skills_path>` for the entries that exist on disk,
-honoring `gitignores_for_directory(repo_path)` + `matches_gitignores` so it
-matches the tree-based path's gitignore semantics (the tree uses
-`get_repo_contents` with `include_ignored = false`).
-
-Wire it via the existing two skill-discovery entry points:
-
-- Async: `SkillWatcher::new_internal`'s `RepositoryUpdated` handler. Change
-  `scan_repository_for_skills` (`skill_watcher.rs:259-268`) to combine the
-  tree-based result with the filesystem probe and dedupe via a
-  `HashSet<PathBuf>` before passing to `spawn_read_skills_from_directories`.
-  Works for both normal and degraded repos.
-- Sync: `SkillWatcher::read_skills_for_repos` (`skill_watcher.rs:77-94`,
-  cloud-environment entry point) does the same combine-and-dedupe.
-
-Nested provider paths (`<repo>/sub/.agents/skills`) under unloaded
-subtrees are still picked up later by the repository file watcher when the
-user expands `sub`, so the probe intentionally only covers top-level
-provider paths.
-
 ## Testing and validation
 
 - Unit (regression for the original empty-tree bug): drive
@@ -111,15 +81,8 @@ provider paths.
   the repo root*. Without the unquoted retry the fallback reproduces the
   original bug. With `remaining_file_quota = None` the test asserts
   `Indexed` with all top-level files present.
-- Unit (skill probe gitignore): `.gitignore` excluding `.claude/skills`
-  plus a populated `.claude/skills/foo/SKILL.md`; assert the probe
-  returns empty.
-- Unit (skill probe dedupe): `read_skills_for_repos` and
-  `scan_repository_for_skills` produce the same skills regardless of
-  whether the tree already contained the provider path.
 - Manual: use the existing fixture at
-  `~/code-fixtures/warp-10207-large-repo` (150,001 files +
-  `.agents/skills/example-skill/SKILL.md`). Build with
+  `~/code-fixtures/warp-10207-large-repo` (150,001 files). Build with
   `./script/run --dont-open` and `open -a target/debug/bundle/osx/WarpOss.app
   ~/code-fixtures/warp-10207-large-repo`. Verify:
   1. `~/Library/Logs/warp-oss.log` contains the "indexed in degraded
@@ -127,7 +90,6 @@ provider paths.
      non-error).
   2. `.agents`, `src`, etc. expand and show their contents.
   3. **No toast, no banner.** UI should look like any other repo.
-  4. The agent panel lists `example-skill`.
 
 ## Risks and mitigations
 
@@ -135,21 +97,13 @@ provider paths.
   call already happens today for any indexed repo; this PR does not
   change the watcher footprint. If users report watcher CPU/memory
   issues, a follow-up could prune the watch to actually-loaded subtrees.
-- **Discovery for nested provider paths in degraded repos.** The
-  filesystem probe only checks `<repo>/<provider>/skills`. Nested
-  occurrences (`<repo>/sub/.agents/skills`) are picked up later by the
-  repository file watcher when their subtrees are loaded. Acceptable: the
-  watcher catches later additions, and root-level provider paths are the
-  predominant layout.
-- **Silent degradation.** The team's explicit position is that the file
-  tree experience should not change, so there is no UI signal that the
-  repo is in degraded mode. This means AI features that depend on the
-  tree (project rules, outline, codebase index) may behave as if the
-  repo is smaller than it is. Those consumers each handle the limit on
-  their own and are out of scope here; their own status surfaces (e.g.
-  the "Codebase too large" status in AI settings,
-  `settings_view/code_page.rs:1520-1539`) remain the place where users
-  see the codebase-level signal.
+- **Silent degradation for non-file-tree surfaces.** The team's explicit
+  position is that the file tree experience should not change, so there
+  is no UI signal here that the repo is in degraded mode. Repo-local
+  skill discovery, project rules, outline, and codebase indexing each
+  hit the same limit on their own and will go silent or partially
+  silent in degraded mode. They are explicitly out of scope for this
+  spec and will be addressed holistically in follow-up work.
 
 ## Follow-ups
 
@@ -163,7 +117,7 @@ provider paths.
   `RepoMetadataTelemetryEvent::BuildTreeFailed { error: "ExceededMaxFileLimit" }`
   at `local_model.rs:1001` already covers the trigger side; pair it with
   a success counter on the fallback retry.
-- Apply the same fallback / probe pattern to `ai::project_context::model`,
-  `ai::outline::native`, and `ai::index::full_source_code_embedding`, or
-  let the existing "Codebase too large" status remain the one place users
-  see degraded-mode messaging.
+- Holistic handling of degraded-mode behavior for repo-local skill
+  discovery, `ai::project_context::model`, `ai::outline::native`, and
+  `ai::index::full_source_code_embedding`. Tracked separately by
+  @moirahuang.
