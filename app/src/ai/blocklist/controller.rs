@@ -662,6 +662,9 @@ impl BlocklistAIController {
         }
 
         let (query, user_query_mode) = extract_user_query_mode(query);
+        if query.trim().is_empty() {
+            return;
+        }
 
         let should_prepend_finished_action_results = matches!(
             input_query.input_query,
