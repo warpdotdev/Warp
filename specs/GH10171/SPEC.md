@@ -14,6 +14,24 @@ open is a trust hazard. The spec must define a consent model so
 that imported / shared configs cannot escalate autonomy without a
 visible user gate.
 
+## Security threat model and mitigations
+
+This section maps the four standing concerns from oz-for-oss
+review onto the binding clauses in the rest of the spec, so the
+reviewer can verify coverage at a glance.
+
+| # | Threat | Concrete mitigation in this spec |
+| - | ------ | -------------------------------- |
+| S1 | An attacker ships a deceptive imported tab config whose `prompt` or `commands` field contains ANSI control sequences, OSC 8 hyperlinks, bidi overrides, or zero-width characters that hide what would actually run. | B-CONSENT-INERT enumerates an explicit inert rendering contract: HTML-escaped, ANSI surfaced as visible escaped glyphs, bidi/RTL controls replaced with visible placeholders, zero-width and confusable characters surfaced as visible placeholders, control characters rendered as escape sequences, whitespace preserved, no click handlers, no execution, read-only typography. T-CONSENT-INERT-ANSI / T-CONSENT-INERT-BIDI / T-CONSENT-INERT-ZWSP enforce this in tests. |
+| S2 | An attacker tricks a user into trusting a config from the settings row without ever showing the user the prompt + commands. | B-TRUST-UPGRADE-DISCLOSURE requires a modal Trust-review dialog presenting the SAME B-CONSENT-CONTENT verbatim payload (rendered inert per B-CONSENT-INERT) before any sidecar write from the settings path. B-TRUST-UPGRADE-NO-BYPASS forbids ANY other code path from writing `"trusted"` to the sidecar without first showing one of the two qualifying disclosure surfaces (consent card or Trust-review modal) in the same atomic UI interaction. |
+| S3 | A multi-pane imported config smuggles a high-trust pane past consent by fronting an innocuous pane and getting `[Cancel]` only on the obvious one. | B-CANCEL-MULTIPANE makes `[Cancel]` on ANY pane cancel the ENTIRE tab-config open (all-or-nothing). B-CONSENT-MULTIPANE-STATE defines the four legal per-pane resolved states and forbids partial commits. B-CONSENT-MULTIPANE-NO-LEAK forbids any observable side effect (process spawn, env injection, sidecar write) until the whole open commits. A-CANCEL-MULTIPANE and T-CONSENT-MULTIPANE-CANCEL enforce this. |
+| S4 | "Session-scoped consent" memory would let a user grant consent once and then accept follow-up opens silently, conflicting with the imported-until-trusted model. | B-CONSENT-EVERY-OPEN deletes the concept of session-scoped consent entirely: imported configs show the consent card on EVERY open within the same session, after close/reopen, and across sessions. The only durable shortcut is `(path_hash, content_hash)` trust in the local sidecar via B-TRUST-UPGRADE / B-TRUST-UPGRADE-DISCLOSURE. A-CONSENT-EVERY-OPEN and T-CONSENT-EVERY-OPEN enforce this. |
+
+These mitigations are normative; an implementation that
+satisfies all acceptance criteria below will close S1–S4. Any
+change to the spec that weakens one of S1–S4 MUST also update
+this table to make the regression explicit.
+
 ## Behavior contract
 
 ### Schema and lookup
@@ -145,16 +163,17 @@ visible user gate.
   Trust is one-time, per file content, and does NOT cascade to
   other tab configs.
 - B-TRUST-UPGRADE-DISCLOSURE. **Trust promotion from settings
-  requires the same verbatim disclosure as the consent card.**
-  When the user clicks "Trust this tab config" from the Tab
-  Configs settings row (i.e., NOT inside the consent-card flow),
-  the app MUST present a modal "Trust review" dialog before
-  writing the trusted entry to the sidecar. The dialog displays
-  the SAME verbatim content enumerated in B-CONSENT-CONTENT
-  (profile, autonomy level, initial prompt rendered inert per
-  B-CONSENT-INERT, full `commands` array rendered inert per
-  B-CONSENT-INERT, all other open-time agent inputs, and the
-  source file path) and offers exactly two actions:
+  requires the same verbatim disclosure as the consent card —
+  no exceptions, no bypass.** When the user clicks "Trust this
+  tab config" from the Tab Configs settings row (i.e., NOT
+  inside the consent-card flow), the app MUST present a modal
+  "Trust review" dialog before writing the trusted entry to the
+  sidecar. The dialog displays the SAME verbatim content
+  enumerated in B-CONSENT-CONTENT (profile, autonomy level,
+  initial prompt rendered inert per B-CONSENT-INERT, full
+  `commands` array rendered inert per B-CONSENT-INERT, all
+  other open-time agent inputs, and the source file path) and
+  offers exactly two actions:
   1. `[Trust this tab config]` — writes the
      `(path_hash, content_hash)` entry to the sidecar.
   2. `[Cancel]` — leaves trust state unchanged.
@@ -163,6 +182,24 @@ visible user gate.
   open-time inputs. Sidecar writes from settings are FORBIDDEN
   unless this disclosure dialog has been shown and accepted in
   the same user action.
+- B-TRUST-UPGRADE-NO-BYPASS. **Every code path that writes a
+  `"trusted"` value to the sidecar MUST first have shown the
+  user the B-CONSENT-CONTENT verbatim disclosure (rendered
+  inert per B-CONSENT-INERT) AND received an explicit
+  affirmative action by the user in the SAME atomic UI
+  interaction.** The two and only two qualifying paths are:
+  (a) the consent card itself (B-CONSENT-ACTIONS option 1 +
+  "Trust this tab config" checkbox, subject to
+  B-CONSENT-MULTIPANE-PROMOTE deferral), and (b) the
+  Trust-review modal opened from the settings row
+  (B-TRUST-UPGRADE-DISCLOSURE). Any other surface that wants
+  to offer a "trust this config" affordance — keyboard
+  shortcut, command palette, context menu, programmatic API,
+  CLI flag — MUST route through one of these two disclosure
+  surfaces. There is no "quick trust" path, no "trust without
+  preview" path, and no batch-trust path. A future feature
+  that adds such a surface without disclosure is a security
+  regression and MUST be rejected in review.
 
 ### Consent card (imported configs)
 
@@ -314,6 +351,39 @@ visible user gate.
   the checkbox was checked, no sidecar entry is written. (The
   user can still trust the file later from the settings row
   via B-TRUST-UPGRADE-DISCLOSURE.)
+- B-CONSENT-MULTIPANE-STATE. **Per-pane consent state during
+  multi-pane resolution.** While the user is stepping through
+  consent cards 1..N for a multi-pane imported tab-config
+  open, each pane has exactly one of these resolved states:
+  - `Pending` — its consent card has not been shown yet
+    (panes after the currently displayed card).
+  - `OpenWithProfile` — user chose `[Open with profile]` on
+    that pane's card; the pane's profile binding and
+    open-time inputs are queued for dispatch IF the whole
+    open commits.
+  - `OpenWithDefault` — user chose `[Open with default
+    profile]` on that pane's card; the pane will open under
+    the default profile with all open-time agent input
+    cleared (per B-CANCEL-DEFAULT).
+  - `CancelledAll` — user chose `[Cancel]` on that pane's
+    card; per B-CANCEL-MULTIPANE this terminates the entire
+    tab-config open immediately. No further consent cards
+    are shown; all queued state from earlier panes is
+    discarded. The tab-config open is rolled back as a
+    whole.
+  An open commits only when every consent-gated pane has
+  reached `OpenWithProfile` or `OpenWithDefault`. There is
+  no third "skip pane" or "partial open" state.
+- B-CONSENT-MULTIPANE-NO-LEAK. Until the open commits, NO
+  side effect from any pane is observable: no agent process
+  spawned, no working directory created, no env var
+  injection, no sidecar trust write, no shell history
+  pollution. If `CancelledAll` occurs, the dispatcher state
+  is wiped as if the open never started. This includes panes
+  that did NOT require a consent gate (default-profile +
+  no-input panes), which sit in pending-tab-open state
+  during multi-pane consent resolution per
+  B-CONSENT-MULTIPANE step 3.
 
 ### Cancel and "default profile" paths
 
