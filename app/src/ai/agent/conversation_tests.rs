@@ -157,6 +157,15 @@ fn child_conversation_detection_uses_parent_agent_id() {
 }
 
 #[test]
+fn cli_agent_transcript_vehicle_is_excluded_from_navigation() {
+    let mut conversation = AIConversation::new(false);
+
+    conversation.mark_as_cli_agent_transcript();
+
+    assert!(conversation.should_exclude_from_navigation());
+}
+
+#[test]
 fn restored_conversation_defaults_unknown_persisted_autoexecute_override() {
     let _flag = FeatureFlag::RememberFastForwardState.override_enabled(true);
     let conversation_data: AgentConversationData = serde_json::from_str(

@@ -93,19 +93,17 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) -> Option<AIConversationId> {
         let origin = AgentViewEntryOrigin::ThirdPartyCloudAgent;
-        let conversation_id = BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
-            let conversation_id = history.start_new_conversation(self.view_id, false, false, ctx);
-            let title = fallback_title.trim();
-            if !title.is_empty() {
-                if let Some(conversation) = history.conversation_mut(&conversation_id) {
-                    conversation.set_fallback_display_title(title.to_owned());
-                }
-            }
-            conversation_id
-        });
 
-        match self.try_enter_agent_view(None, origin, Some(conversation_id), ctx) {
+        match self.try_enter_agent_view(None, origin, None, ctx) {
             Ok(conversation_id) => {
+                let title = fallback_title.trim();
+                if !title.is_empty() {
+                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
+                        if let Some(conversation) = history.conversation_mut(&conversation_id) {
+                            conversation.set_fallback_display_title(title.to_owned());
+                        }
+                    });
+                }
                 self.redetermine_global_focus(ctx);
                 Some(conversation_id)
             }
