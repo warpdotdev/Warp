@@ -3181,7 +3181,16 @@ impl AIBlock {
                 // We only care about expansion state updates when the command
                 // is running or finished (i.e. when it has a block).
                 let action_status = self.action_model.as_ref(ctx).get_action_status(action_id);
-                if !action_status.is_some_and(|a| a.is_running() || a.is_done()) {
+                let has_finished_command_block = {
+                    let terminal_model = self.terminal_model.lock();
+                    terminal_model
+                        .block_list()
+                        .block_for_ai_action_id(action_id)
+                        .is_some_and(|block| block.finished())
+                };
+                if !has_finished_command_block
+                    && !action_status.is_some_and(|a| a.is_running() || a.is_done())
+                {
                     return;
                 }
 

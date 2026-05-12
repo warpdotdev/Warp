@@ -1089,6 +1089,11 @@ impl RequestedCommandView {
                             appearance.theme().surface_2(),
                         ));
                     }
+                } else if requested_command_block.is_some_and(|block| block.finished()) {
+                    // If a finished command block exists but there's no action status,
+                    // treat the same as a finished command (normal text styling).
+                    title = self.get_header_title_text().into();
+                    font_override = Some(appearance.monospace_font_family());
                 } else {
                     // If there is no action status and response is not streaming, it was cancelled
                     // mid-flight.
@@ -1264,7 +1269,15 @@ impl RequestedCommandView {
                     ));
                 }
             }
-            _ => (),
+            _ => {
+                // Even without a known action status, if a finished command block exists
+                // for this action, the command ran and the header should be expandable.
+                if requested_command_block.is_some_and(|block| block.finished()) {
+                    config = config.with_interaction_mode(InteractionMode::ManuallyExpandable(
+                        self.get_expansion_config(requested_command_block, app),
+                    ));
+                }
+            }
         };
 
         config.render(app)
