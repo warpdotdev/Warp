@@ -173,7 +173,11 @@ pub(super) async fn handle_daemon_connection(
                     log::warn!("Daemon: skipping malformed message from conn {conn_id}: {e}");
                 }
                 Err(e) => {
-                    log::error!("Daemon: fatal read error from conn {conn_id}: {e}");
+                    if is_disconnect_error(&e) {
+                        log::warn!("Daemon: read error from conn {conn_id} (client disconnected): {e}");
+                    } else {
+                        log::error!("Daemon: fatal read error from conn {conn_id}: {e}");
+                    }
                     break;
                 }
             }
@@ -194,7 +198,11 @@ pub(super) async fn handle_daemon_connection(
     while let Ok(msg) = conn_rx.recv().await {
         if let Err(e) = remote_server::protocol::write_server_message(&mut writer, &msg).await {
             if !e.is_write_recoverable() {
-                log::error!("Daemon: write error on conn {conn_id}: {e}");
+                if is_disconnect_protocol_error(&e) {
+                    log::warn!("Daemon: write error on conn {conn_id} (client disconnected): {e}");
+                } else {
+                    log::error!("Daemon: write error on conn {conn_id}: {e}");
+                }
                 break;
             }
             // Recoverable write error (e.g. MessageTooLarge): nothing was
@@ -231,7 +239,11 @@ pub(super) async fn handle_daemon_connection(
         // Flush after every message so responses reach the proxy without
         // waiting for the BufWriter's internal buffer to fill up.
         if let Err(e) = writer.flush().await {
-            log::error!("Daemon: flush error on conn {conn_id}: {e}");
+            if is_disconnect_io_error(&e) {
+                log::warn!("Daemon: flush error on conn {conn_id} (client disconnected): {e}");
+            } else {
+                log::error!("Daemon: flush error on conn {conn_id}: {e}");
+            }
             break;
         }
     }
@@ -245,4 +257,27 @@ pub(super) async fn handle_daemon_connection(
             me.deregister_connection(conn_id, ctx);
         })
         .await;
+}
+
+/// Returns `true` if the IO error represents a normal client disconnect.
+fn is_disconnect_io_error(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+    )
+}
+
+/// Returns `true` if the `ProtocolError` wraps a disconnect IO error.
+fn is_disconnect_error(e: &remote_server::protocol::ProtocolError) -> bool {
+    match e {
+        remote_server::protocol::ProtocolError::Io(io_err) => is_disconnect_io_error(io_err),
+        _ => false,
+    }
+}
+
+/// Alias for [`is_disconnect_error`] — used in the write path for clarity.
+fn is_disconnect_protocol_error(e: &remote_server::protocol::ProtocolError) -> bool {
+    is_disconnect_error(e)
 }
