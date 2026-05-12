@@ -47,13 +47,28 @@ execute_from_dir() {
 
 execute_from_remote() {
   local raw_url="${RAW_BASE_URL%/}/${SCRIPT_NAME}"
+  local temp_script=""
+  local status=0
 
   if ! command -v curl >/dev/null 2>&1; then
     echo "error: curl is required to fetch ${raw_url}" >&2
     return 1
   fi
-
-  curl -fsSL "${raw_url}" | bash -s -- "$@"
+  temp_script="$(mktemp "${TMPDIR:-/tmp}/common-skills-script.XXXXXX")"
+  if curl -fsSL "${raw_url}" -o "${temp_script}"; then
+    :
+  else
+    status=$?
+    rm -f "${temp_script}"
+    return "${status}"
+  fi
+  if bash "${temp_script}" "$@"; then
+    status=0
+  else
+    status=$?
+  fi
+  rm -f "${temp_script}"
+  return "${status}"
 }
 
 if [[ $# -lt 1 ]]; then
