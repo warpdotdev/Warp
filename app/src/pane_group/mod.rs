@@ -5570,6 +5570,7 @@ impl PaneGroup {
                     self.cleanup_closed_pane(pane_id, ctx);
                     return false;
                 }
+                self.restore_missing_child_agent_panes_for_terminal_pane_if_needed(pane_id, ctx);
 
                 self.focus_pane_and_record_in_history(pane_id, ctx);
 
