@@ -29,7 +29,7 @@ pub fn run(
     }
 
     // Store the run ID so that it's included on all server requests, along with a workload token.
-    let task_id = set_ambient_task_context_from_run_id(ctx, &args.run_id)?;
+    let task_id = set_ambient_task_context_from_run_id(&args.run_id)?;
     let runner = ctx.add_singleton_model(|_| HarnessSupportRunner);
 
     match args.command {

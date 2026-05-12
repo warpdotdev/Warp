@@ -10,7 +10,7 @@ use crate::ai::llms::{
 
 // Re-export ambient agent types for backwards compatibility
 pub use crate::ai::ambient_agents::{
-    task::AttachmentInput, AgentConfigSnapshot, AgentSource, TaskStatusMessage,
+    task::AttachmentInput, AgentConfigSnapshot, TaskStatusMessage,
 };
 
 /// JSON payload sent to the public `POST /agent/run` API.

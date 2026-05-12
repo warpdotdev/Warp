@@ -17,7 +17,6 @@ use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::Owner;
-use crate::server::server_api::ServerApiProvider;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
@@ -60,14 +59,9 @@ pub(super) fn parse_ambient_task_id(
 }
 
 pub(super) fn set_ambient_task_context_from_run_id(
-    ctx: &AppContext,
     run_id: &str,
 ) -> anyhow::Result<AmbientAgentTaskId> {
     let task_id = parse_ambient_task_id(run_id, "Invalid run ID")?;
-    ServerApiProvider::handle(ctx)
-        .as_ref(ctx)
-        .get_local_client()
-        .set_ambient_agent_task_id(Some(task_id));
     Ok(task_id)
 }
 

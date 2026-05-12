@@ -13,7 +13,6 @@ pub(crate) mod presigned_upload;
 // OpenWarp(Wave 3-2):`team` / `workspace` 两个 client trait 与 impl 已物理删,
 // 在 app/ 外 0 消费,UserWorkspaces / TeamUpdateManager 已在 Phase 5 本地化为 no-op。
 
-use crate::ai::ambient_agents::AmbientAgentTaskId;
 use warpui::ModelContext;
 
 // OpenWarp Wave 5-3:原 `AMBIENT_WORKLOAD_TOKEN_HEADER` 随 `generate_multi_agent_output` 云端
@@ -26,7 +25,6 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset};
 use instant::Instant;
-use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
@@ -304,61 +302,6 @@ pub enum TranscribeError {
     Other(#[from] anyhow::Error),
 }
 
-/// OpenWarp 仍保留的本地 server API 窄接口:
-/// - 复用长生命周期 HTTP client
-/// - 管理 ambient task header 上下文
-///
-/// 这两项被 BYOP/本地 harness 继续使用,但不再向调用方暴露整颗云 RPC 壳。
-pub trait LocalServerApiClient: 'static + Send + Sync {
-    fn set_ambient_agent_task_id(&self, task_id: Option<AmbientAgentTaskId>);
-    fn http_client(&self) -> &http_client::Client;
-}
-
-impl<T> LocalServerApiClient for Arc<T>
-where
-    T: LocalServerApiClient + ?Sized,
-{
-    fn set_ambient_agent_task_id(&self, task_id: Option<AmbientAgentTaskId>) {
-        self.as_ref().set_ambient_agent_task_id(task_id);
-    }
-
-    fn http_client(&self) -> &http_client::Client {
-        self.as_ref().http_client()
-    }
-}
-
-struct OpenWarpLocalServerApiClient {
-    client: http_client::Client,
-    ambient_agent_task_id: RwLock<Option<AmbientAgentTaskId>>,
-}
-
-impl OpenWarpLocalServerApiClient {
-    fn new(_agent_source: Option<ai::AgentSource>) -> Self {
-        Self {
-            client: http_client::Client::new(),
-            ambient_agent_task_id: RwLock::new(None),
-        }
-    }
-
-    #[cfg(test)]
-    fn new_for_test() -> Self {
-        Self {
-            client: http_client::Client::new_for_test(),
-            ambient_agent_task_id: RwLock::new(None),
-        }
-    }
-}
-
-impl LocalServerApiClient for OpenWarpLocalServerApiClient {
-    fn set_ambient_agent_task_id(&self, task_id: Option<AmbientAgentTaskId>) {
-        *self.ambient_agent_task_id.write() = task_id;
-    }
-
-    fn http_client(&self) -> &http_client::Client {
-        &self.client
-    }
-}
-
 /// OpenWarp 下仍需保留的本地 agent 事件流入口。
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
@@ -388,16 +331,14 @@ impl AgentEventStreamClient for DisabledAgentEventStreamClient {
 
 /// A singleton entity that provides access to the few server-facing facades still retained in OpenWarp.
 pub struct ServerApiProvider {
-    local_client: Arc<OpenWarpLocalServerApiClient>,
     harness_support_client: Arc<harness_support::DisabledHarnessSupportClient>,
     agent_event_stream_client: Arc<DisabledAgentEventStreamClient>,
 }
 
 impl ServerApiProvider {
     /// Constructs a new ServerApiProvider.
-    pub fn new(agent_source: Option<ai::AgentSource>) -> Self {
+    pub fn new() -> Self {
         Self {
-            local_client: Arc::new(OpenWarpLocalServerApiClient::new(agent_source)),
             harness_support_client: Arc::new(harness_support::DisabledHarnessSupportClient::new()),
             agent_event_stream_client: Arc::new(DisabledAgentEventStreamClient),
         }
@@ -420,18 +361,11 @@ impl ServerApiProvider {
     #[cfg(test)]
     pub fn new_for_test() -> Self {
         Self {
-            local_client: Arc::new(OpenWarpLocalServerApiClient::new_for_test()),
             harness_support_client: Arc::new(
                 harness_support::DisabledHarnessSupportClient::new_for_test(),
             ),
             agent_event_stream_client: Arc::new(DisabledAgentEventStreamClient),
         }
-    }
-
-    /// 返回 BYOP/本地 harness 仍需的最小本地接口:
-    /// ambient task header 上下文 + 共享 HTTP client。
-    pub fn get_local_client(&self) -> Arc<dyn LocalServerApiClient> {
-        self.local_client.clone()
     }
 
     /// 兼容仍未迁出的本地 transport 调用点。新增代码应优先使用窄接口。

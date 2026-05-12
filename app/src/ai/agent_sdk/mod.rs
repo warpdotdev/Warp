@@ -659,14 +659,13 @@ impl AgentDriverRunner {
         // Extract variables we want to use later before moving args into the closure
         let task_id_str = args.task_id.clone();
         let prompt = args.prompt_arg.to_prompt();
-        let skill = args.skill.clone();
 
         // Build the AgentConfigSnapshot, Task, and AgentDriverOptions
         let prompt_clone = prompt.clone();
-        let (merged_config, task, mut driver_options) = foreground
+        let (task, mut driver_options) = foreground
             .spawn(move |_, ctx| -> anyhow::Result<_> {
-                let (merged_config, task) =
-                    build_merged_config_and_task(&args, &resolved_skill, &prompt_clone, ctx)?;
+                let task =
+                    build_merged_config_and_task(&args, &resolved_skill, &prompt_clone, ctx)?.1;
 
                 let task_id = args.task_id.as_ref().and_then(|s| s.parse().ok());
                 let should_share = (args.share.is_shared() || args.task_id.is_some())
@@ -692,7 +691,7 @@ impl AgentDriverRunner {
                         .map(|duration| duration.into()),
                 };
 
-                Ok((merged_config, task, driver_options))
+                Ok((task, driver_options))
             })
             .await?
             .map_err(AgentDriverError::ConfigBuildFailed)?;
@@ -704,58 +703,27 @@ impl AgentDriverRunner {
             Self::fetch_secrets_and_task_metadata(foreground, task_id_str, &mut driver_options)
                 .await?
         } else {
-            // Extract the prompt text that we'll pass up to the server when we create the task.
-            let prompt_for_task_creation = match &prompt {
-                Some(Prompt::PlainText(text)) => text.clone(),
-                Some(Prompt::SavedPrompt(id)) => format!("Saved prompt ({id})"),
-                None => skill
-                    .as_ref()
-                    .map(|s| format!("/{}", s.skill_identifier))
-                    // If we get to this point and we don't have a prompt, saved prompt, or skill,
-                    // error. `clap` should have handled this when parsing args already.
-                    .ok_or(AgentDriverError::InvalidRuntimeState)?,
-            };
-
-            Self::initialize_new_task(
-                foreground,
-                prompt_for_task_creation,
-                merged_config,
-                &mut driver_options,
-            )
-            .await?;
+            Self::initialize_new_task(&mut driver_options).await?;
             None
         };
 
         Ok((driver_options, task, task_conversation_id))
     }
 
-    /// Creates a new task on the server for this agent run, sets the task ID on the driver
-    /// options, and updates the Server API provider so that all subsequent requests to warp-server
-    /// contain this new task ID.
+    /// Creates local driver task state for a new agent run.
     ///
     /// OpenWarp(本地化,Phase 3b-2):原实现调 `server_api.create_agent_task` 在云端创建
     /// ambient agent task,获取服务端 task_id 后在后续请求中携带。本地化后:
     ///   - 不发 GraphQL `create_agent_task` mutation
     ///   - `driver_options.task_id` 保持 `None`
-    ///   - `ServerApiProvider::set_ambient_agent_task_id(None)` 以清除可能的遗留
+    ///   - 不再写入 ServerApiProvider ambient header 上下文(云端请求路径已删除)
     /// 下游所有 `if let Some(task_id) = driver_options.task_id` 分支自动跳过。
     /// BYOP 本地 harness 运行不依赖该 task_id,根据 `harness/` 代码路径仅在服务端
     /// 汇报状态时使用。
     async fn initialize_new_task(
-        foreground: &ModelSpawner<Self>,
-        _prompt: String,
-        _merged_config: AgentConfigSnapshot,
         driver_options: &mut AgentDriverOptions,
     ) -> Result<(), AgentDriverError> {
         driver_options.task_id = None;
-        foreground
-            .spawn(move |_, ctx| {
-                ServerApiProvider::handle(ctx)
-                    .as_ref(ctx)
-                    .get_local_client()
-                    .set_ambient_agent_task_id(None);
-            })
-            .await?;
         Ok(())
     }
 
@@ -806,16 +774,6 @@ impl AgentDriverRunner {
         };
         let parent_run_id = None;
         let task_conversation_id = None;
-
-        // Set the task ID on the ServerApi so it's sent with all subsequent requests.
-        foreground
-            .spawn(move |_, ctx| {
-                ServerApiProvider::handle(ctx)
-                    .as_ref(ctx)
-                    .get_local_client()
-                    .set_ambient_agent_task_id(parsed_task_id);
-            })
-            .await?;
 
         driver_options.task_id = parsed_task_id;
         driver_options.parent_run_id = parent_run_id;

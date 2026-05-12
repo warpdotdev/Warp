@@ -308,26 +308,6 @@ pub struct Assets;
 
 pub static ASSETS: Assets = Assets;
 
-fn determine_agent_source(
-    launch_mode: &LaunchMode,
-) -> Option<crate::ai::ambient_agents::AgentSource> {
-    match launch_mode {
-        LaunchMode::CommandLine { .. } => {
-            if std::env::var("GITHUB_ACTIONS").ok().as_deref() == Some("true") {
-                Some(crate::ai::ambient_agents::AgentSource::GitHubAction)
-            } else {
-                Some(crate::ai::ambient_agents::AgentSource::Cli)
-            }
-        }
-        LaunchMode::App { .. } | LaunchMode::Test { .. } => {
-            Some(crate::ai::ambient_agents::AgentSource::CloudMode)
-        }
-        // RemoteServerProxy and RemoteServerDaemon are headless server
-        // processes that don't use the agent subsystem.
-        LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon => None,
-    }
-}
-
 /// Launch mode for how to start up Warp.
 #[allow(clippy::large_enum_variant)]
 pub enum LaunchMode {
@@ -1117,9 +1097,7 @@ fn initialize_app(
     let auth_state = Arc::new(AuthState::initialize(ctx, api_key));
     timer.mark_interval_end("AUTH_MANAGER_SET_USER");
 
-    let agent_source = determine_agent_source(launch_mode);
-
-    ctx.add_singleton_model(|_ctx| ServerApiProvider::new(agent_source));
+    ctx.add_singleton_model(|_ctx| ServerApiProvider::new());
     let update_http_client = Arc::new(http_client::Client::new());
 
     // OpenWarp:保留 AuthStateProvider singleton 仅用于遗留调用点读取本地占位用户态。
