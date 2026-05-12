@@ -44,7 +44,7 @@ use crate::{
         team::{DiscoverableTeam, Team},
         update_manager::{TeamUpdateManager, TeamUpdateManagerEvent},
         user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
-        workspace::{CustomerType, DelinquencyStatus, WorkspaceSizePolicy},
+        workspace::{BillingMetadata, CustomerType, DelinquencyStatus, WorkspaceSizePolicy},
     },
 };
 
@@ -107,7 +107,8 @@ const CONTENT_SEPARATION_PADDING: f32 = 24.;
 const TEXT_FIELD_TOP_PADDING: f32 = 12.;
 const HORIZONTAL_BAR_TO_SUB_HEADER_PADDING: f32 = 9.;
 const COMPARE_PLANS_BUTTON_WIDTH: f32 = 120.;
-const SUBSECTION_HEADER_FONT_SIZE: f32 = 18.;
+const SUBSECTION_HEADER_FONT_SIZE: f32 = 16.;
+const SUBSUBSECTION_HEADER_FONT_SIZE: f32 = 14.;
 
 const INVITE_LINK_PREFIX: &str = "/team/";
 const INVALID_DOMAINS_INSTRUCTIONS: &str =
@@ -126,8 +127,7 @@ const OFFLINE_TEXT: &str = "You are offline.";
 const LIMIT_HIT_ADMIN_TEXT: &str =
     "You've reached the team member limit for your plan. Upgrade to add more teammates.";
 const LIMIT_HIT_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT: &str = "You've reached the team member limit for your plan. Contact support@warp.dev to add more teammates.";
-const LIMIT_HIT_NON_ADMIN_TEXT: &str =
-    "You've reached the team member limit for your plan. Contact a team admin to add more teammates.";
+const LIMIT_HIT_NON_ADMIN_TEXT: &str = "You've reached the team member limit for your plan. Contact a team admin to add more teammates.";
 
 const DELINQUENT_ADMIN_NON_SELF_SERVE_TEXT: &str = "Team invites have been restricted due to a payment issue. Please contact support@warp.dev to restore access.";
 const DELINQUENT_NON_ADMIN_TEXT: &str = "Team invites have been restricted due to a payment issue. Please contact a team admin to restore access.";
@@ -138,8 +138,7 @@ const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_LINK_TEXT: &str = "update your payment 
 const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_SUFFIX_TEXT: &str = " to restore access.";
 
 const TEAM_LIMIT_EXCEEDED_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT: &str = "You've exceeded the team member limit for your plan. Please contact support@warp.dev to upgrade your team.";
-const TEAM_LIMIT_EXCEEDED_NON_ADMIN_TEXT: &str =
-    "You've exceeded the team member limit for your plan. Contact a team admin to upgrade your team.";
+const TEAM_LIMIT_EXCEEDED_NON_ADMIN_TEXT: &str = "You've exceeded the team member limit for your plan. Contact a team admin to upgrade your team.";
 const TEAM_LIMIT_EXCEEDED_ADMIN_UPGRADEABLE: &str =
     "You've exceeded the team member limit for your plan. Upgrade to add more teammates.";
 
@@ -199,6 +198,7 @@ pub enum TeamsPageAction {
         team_uid: ServerId,
     },
     ContactSupport,
+    ContactSales,
     /// This action is for toggling the discoverability checkbox before a team is created.
     ToggleTeamDiscoverabilityBeforeCreation,
     /// This action is for toggling the discoverability toggle after a team has been created.
@@ -243,6 +243,7 @@ impl TeamsPageAction {
                 | GenerateStripeBillingPortalLink { .. }
                 | OpenAdminPanel { .. }
                 | ContactSupport
+                | ContactSales
                 | ToggleTeamDiscoverabilityBeforeCreation
                 | ToggleTeamDiscoverability { .. }
                 | JoinTeamWithTeamDiscovery { .. }
@@ -266,6 +267,7 @@ impl From<&TeamsPageAction> for LoginGatedFeature {
             GenerateStripeBillingPortalLink { .. } => "Generate Stripe Billing Portal Link",
             OpenAdminPanel { .. } => "Open Admin Panel",
             ContactSupport => "Contact Support",
+            ContactSales => "Contact Sales",
             ToggleTeamDiscoverability { .. } | ToggleTeamDiscoverabilityBeforeCreation => {
                 "Toggle Team Discoverability"
             }
@@ -322,6 +324,8 @@ struct TeamsWidgetMouseHandles {
     discoverable_team_toggle_state: SwitchStateHandle,
     checkbox_mouse_state: MouseStateHandle,
     admin_panel_button: MouseStateHandle,
+    contact_sales_button: MouseStateHandle,
+    seat_cap_upgrade_button: MouseStateHandle,
 }
 
 /// TeamsInviteOption is whether the user is looking at invite-by-link or invite-by-email.
@@ -353,6 +357,19 @@ impl Tabs for TeamsInviteOption {
     fn label(&self, _team: &Team, _cloud_model: &CloudModel) -> String {
         self.tab_name()
     }
+}
+
+/// Actionable path out of a seat-cap warning, derived from real pricing data.
+/// See `TeamsWidget::seat_cap_cta` for how each variant is chosen.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum SeatCapCta {
+    /// Self-serve upgrade is available; route to `/upgrade`.
+    Upgrade,
+    /// Team is on the highest self-serve plan; needs sales for more capacity.
+    ContactSales,
+    /// No actionable CTA: viewer is non-admin, team is delinquent, or no
+    /// higher-cap plan exists.
+    None,
 }
 
 /// The order of the ItemState enum values determines the ordering of the members and
@@ -547,6 +564,9 @@ impl TypedActionView for TeamsPageView {
             }
             TeamsPageAction::ContactSupport => {
                 AdminActions::contact_support(ctx);
+            }
+            TeamsPageAction::ContactSales => {
+                AdminActions::contact_sales(ctx);
             }
             TeamsPageAction::ToggleTeamDiscoverability {
                 team_uid,
@@ -1770,6 +1790,196 @@ impl TeamsWidget {
         Some((monthly_cost, yearly_cost))
     }
 
+    /// Maps an admin's actionable path out of a seat-cap warning, derived from
+    /// real pricing data rather than a hardcoded tier list.
+    ///
+    /// - `Upgrade`: there's at least one self-serve plan with a strictly
+    ///   higher seat cap than the team's current plan, and the team isn't
+    ///   already on the highest self-serve tier (Business). Routes to
+    ///   `/upgrade`.
+    /// - `ContactSales`: team is on the Build Business plan, which is the top
+    ///   self-serve tier. Higher capacity needs an enterprise/sales touch.
+    /// - `None`: viewer is not an admin, or pricing data shows no higher-cap
+    ///   plan exists, or the team is delinquent (PastDue/Unpaid) — the
+    ///   manage-billing copy below the alert handles those.
+    fn seat_cap_cta(
+        has_admin_permissions: bool,
+        billing_metadata: &BillingMetadata,
+        workspace_size_policy: &WorkspaceSizePolicy,
+        pricing_info: &PricingInfoModel,
+    ) -> SeatCapCta {
+        if !has_admin_permissions {
+            return SeatCapCta::None;
+        }
+        if matches!(
+            billing_metadata.delinquency_status,
+            DelinquencyStatus::PastDue | DelinquencyStatus::Unpaid,
+        ) {
+            return SeatCapCta::None;
+        }
+        // Build Business is the top of the self-serve ladder; the only path to
+        // more seats is an enterprise / sales conversation.
+        if billing_metadata.is_on_build_business_plan() {
+            return SeatCapCta::ContactSales;
+        }
+        if Self::has_higher_seat_cap_plan_available(workspace_size_policy, pricing_info) {
+            SeatCapCta::Upgrade
+        } else {
+            SeatCapCta::None
+        }
+    }
+
+    /// Returns true if the pricing data exposes any plan whose `max_team_size`
+    /// is strictly greater than the current team's workspace size cap (treating
+    /// `None` / unlimited plans as having a higher cap than any finite limit).
+    fn has_higher_seat_cap_plan_available(
+        workspace_size_policy: &WorkspaceSizePolicy,
+        pricing_info: &PricingInfoModel,
+    ) -> bool {
+        if workspace_size_policy.is_unlimited {
+            return false;
+        }
+        pricing_info
+            .plans()
+            .iter()
+            .any(|plan| match plan.max_team_size {
+                None => true, // unlimited
+                Some(max) => i64::from(max) > workspace_size_policy.limit,
+            })
+    }
+
+    /// Renders the red "Your team is full" alert. CTA only shown when
+    /// `seat_cap_cta` is `Upgrade` or `ContactSales` (admin + actionable path).
+    /// Non-admins / delinquent teams / teams at the top of the self-serve
+    /// ladder with no higher-cap plan just see the body copy.
+    fn render_seat_cap_alert(
+        &self,
+        team: &Team,
+        has_admin_permissions: bool,
+        workspace_size_policy: &WorkspaceSizePolicy,
+        pricing_info: &PricingInfoModel,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let horizontal_padding = 16.;
+        let theme = appearance.theme();
+        let active_text = theme.active_ui_text_color();
+
+        let alert_icon = Container::new(
+            ConstrainedBox::new(
+                Icon::AlertCircle
+                    .to_warpui_icon(active_text.with_opacity(90))
+                    .finish(),
+            )
+            .with_max_height(20.)
+            .with_max_width(20.)
+            .finish(),
+        )
+        .with_margin_right(horizontal_padding)
+        .finish();
+
+        let title_element =
+            self.render_subsection_header("Your team is full".to_owned(), appearance);
+
+        let cta = Self::seat_cap_cta(
+            has_admin_permissions,
+            &team.billing_metadata,
+            workspace_size_policy,
+            pricing_info,
+        );
+        let cta_sentence = if !has_admin_permissions {
+            "Contact a team admin to add more seats."
+        } else {
+            match cta {
+                SeatCapCta::Upgrade => "Upgrade to add more seats.",
+                SeatCapCta::ContactSales => "Contact sales to upgrade and add more seats.",
+                SeatCapCta::None => "Contact support@warp.dev to add more seats.",
+            }
+        };
+        let body_text = format!("You've used all of your team's seats. {cta_sentence}");
+        let body = self.render_sub_text(body_text, appearance, None);
+        let title_container = Container::new(title_element)
+            .with_margin_bottom(4.)
+            .finish();
+        let text_column = Flex::column()
+            .with_child(title_container)
+            .with_child(body)
+            .finish();
+        let left_content = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(alert_icon)
+            .with_child(Shrinkable::new(1., text_column).finish())
+            .finish();
+
+        let mut content_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_child(Shrinkable::new(1., left_content).finish());
+
+        // The CTA button only renders when there's an actionable path; non-
+        // admins, delinquent teams and teams already at the top of the
+        // self-serve ladder (Business with no higher-cap plan available)
+        // simply read the body copy.
+        if let Some((cta_label, cta_action, cta_mouse_state)) = match cta {
+            SeatCapCta::Upgrade => Some((
+                "Upgrade",
+                TeamsPageAction::GenerateUpgradeLink { team_uid: team.uid },
+                self.mouse_state_handles.seat_cap_upgrade_button.clone(),
+            )),
+            SeatCapCta::ContactSales => Some((
+                "Contact sales",
+                TeamsPageAction::ContactSales,
+                self.mouse_state_handles.contact_sales_button.clone(),
+            )),
+            SeatCapCta::None => None,
+        } {
+            let cta_styles = UiComponentStyles {
+                font_weight: Some(Weight::Medium),
+                font_size: Some(13.),
+                height: Some(32.),
+                padding: Some(Coords {
+                    top: 6.,
+                    bottom: 6.,
+                    left: 14.,
+                    right: 14.,
+                }),
+                ..Default::default()
+            };
+            let error_color = theme.ui_error_color();
+            let cta_button = appearance
+                .ui_builder()
+                .button(ButtonVariant::Secondary, cta_mouse_state)
+                .with_style(cta_styles)
+                .with_centered_text_label(cta_label.to_owned())
+                .with_hovered_styles(UiComponentStyles {
+                    background: Some(
+                        themes::theme::Fill::from(error_color)
+                            .with_opacity(20)
+                            .into(),
+                    ),
+                    border_color: Some(themes::theme::Fill::from(error_color).into()),
+                    ..Default::default()
+                })
+                .build()
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| ctx.dispatch_typed_action(cta_action.clone()))
+                .finish();
+            content_row =
+                content_row.with_child(Container::new(cta_button).with_margin_left(16.).finish());
+        }
+
+        let error_color = theme.ui_error_color();
+        let background_fill = themes::theme::Fill::from(error_color).with_opacity(10);
+        let border_fill = themes::theme::Fill::from(error_color);
+        Container::new(content_row.finish())
+            .with_vertical_padding(12.)
+            .with_horizontal_padding(horizontal_padding)
+            .with_background(background_fill)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+            .with_border(Border::all(1.).with_border_fill(border_fill))
+            .finish()
+    }
+
     fn render_team_member_cost_info(
         &self,
         team_metadata: &Team,
@@ -1786,7 +1996,9 @@ impl TeamsWidget {
         let additional_members_cost_money_msg = if let Some((monthly_cost, yearly_cost)) =
             self.get_per_seat_costs(team_metadata, pricing_info_model)
         {
-            format!("Additional members are billed at your plan's per-user rate: ${monthly_cost:.0}/month or ${yearly_cost:.0}/year, depending on your billing interval. {prorated_message}")
+            format!(
+                "Additional members are billed at your plan's per-user rate: ${monthly_cost:.0}/month or ${yearly_cost:.0}/year, depending on your billing interval. {prorated_message}"
+            )
         } else {
             format!(
                 "Additional members are billed at your plan's per-user rate. {prorated_message}"
@@ -1796,46 +2008,29 @@ impl TeamsWidget {
         let horizontal_padding = 16.;
         let theme = appearance.theme();
         let currency_icon = Container::new(
-            ConstrainedBox::new(
-                Icon::CoinsStacked
-                    .to_warpui_icon(appearance.theme().active_ui_text_color().with_opacity(90))
-                    .finish(),
-            )
-            .with_max_height(20.)
-            .with_max_width(20.)
-            .finish(),
+            ConstrainedBox::new(Icon::CoinsStacked.to_warpui_icon(theme.accent()).finish())
+                .with_max_height(20.)
+                .with_max_width(20.)
+                .finish(),
         )
         .with_margin_right(horizontal_padding)
         .finish();
 
-        let member_pricing_header =
-            Container::new(self.render_subsection_header("Team members".to_owned(), appearance))
-                .with_margin_bottom(8.)
-                .finish();
-
         let member_pricing_info =
             self.render_sub_text(additional_members_cost_money_msg, appearance, None);
-
-        let text_column = Flex::column()
-            .with_child(member_pricing_header)
-            .with_child(member_pricing_info);
 
         let content_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max)
             .with_child(currency_icon)
-            .with_child(Shrinkable::new(1., text_column.finish()).finish());
+            .with_child(Shrinkable::new(1., member_pricing_info).finish());
 
-        // Wrap in a container with styling similar to Alert
+        // Wrap in a container with an accent-tinted alert background.
         Container::new(content_row.finish())
-            .with_vertical_padding(12.)
+            .with_vertical_padding(20.)
             .with_horizontal_padding(horizontal_padding)
-            .with_background(themes::theme::Fill::from(internal_colors::neutral_4(theme)))
+            .with_background(internal_colors::accent_overlay_1(theme))
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-            .with_border(
-                Border::all(1.)
-                    .with_border_fill(themes::theme::Fill::from(internal_colors::neutral_3(theme))),
-            )
             .finish()
     }
 
@@ -1918,15 +2113,8 @@ impl TeamsWidget {
             ));
         };
 
-        // 4) Team members
-        main_content.add_child(self.render_team_members_section(
-            team_metadata,
-            &current_user_email,
-            view,
-            appearance,
-        ));
-
-        // 5) Team discoverability toggle
+        // 4) Team discoverability toggle (sits with the invite flows, directly
+        // under the "By email" subsection)
         if team_metadata.billing_metadata.customer_type != CustomerType::Enterprise
             && has_admin_permissions
             && team_metadata.is_eligible_for_discovery
@@ -1938,7 +2126,24 @@ impl TeamsWidget {
             ))
         }
 
-        // 6) Deleting/leaving teams
+        // 5) Horizontal separator between the invite flows and the team members
+        // list. 32px of breathing room above and below to match the design.
+        main_content.add_child(
+            Container::new(render_separator(appearance))
+                .with_padding_top(32.)
+                .with_padding_bottom(32.)
+                .finish(),
+        );
+
+        // 6) Team members
+        main_content.add_child(self.render_team_members_section(
+            team_metadata,
+            &current_user_email,
+            view,
+            appearance,
+        ));
+
+        // 7) Deleting/leaving teams
         let mut button_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
         let is_enterprise_team =
             team_metadata.billing_metadata.customer_type == CustomerType::Enterprise;
@@ -2278,7 +2483,41 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut invitation_section = Flex::column();
 
+        // "Your team is full" alert sits above the "Invite team members" header
+        // when the team is at its seat cap. We skip the alert entirely for
+        // delinquent teams; the existing manage-billing copy in the
+        // invite-by-email section is the actionable path forward and would
+        // compete with the alert's CTA.
+        let team_size_i64 = i64::try_from(team_metadata.members.len()).unwrap_or(i64::MAX);
+        let is_full =
+            !workspace_size_policy.is_unlimited && team_size_i64 >= workspace_size_policy.limit;
+        let is_delinquent = matches!(
+            team_metadata.billing_metadata.delinquency_status,
+            DelinquencyStatus::PastDue | DelinquencyStatus::Unpaid,
+        );
         let pricing_info_model = view.pricing_info_model.as_ref(app);
+        if is_full && !is_delinquent {
+            let cap_alert = self.render_seat_cap_alert(
+                team_metadata,
+                has_admin_permissions,
+                &workspace_size_policy,
+                pricing_info_model,
+                appearance,
+            );
+            invitation_section
+                .add_child(Container::new(cap_alert).with_padding_bottom(24.).finish());
+        }
+
+        // Top-level "Invite team members" header sits above the per-method
+        // (by link / by email) subsections.
+        invitation_section.add_child(
+            Container::new(
+                self.render_subsection_header("Invite team members".to_owned(), appearance),
+            )
+            .with_padding_bottom(16.)
+            .finish(),
+        );
+
         if team_metadata.billing_metadata.is_on_stripe_paid_plan() {
             let pricing_alert = self.render_team_member_cost_info(
                 team_metadata,
@@ -2333,9 +2572,9 @@ impl TeamsWidget {
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
 
-        // 1) "Invite by Link" subsection header
+        // 1) "By link" subsection header
         invite_by_link_header_row
-            .add_child(self.render_subsection_header("Invite by Link".to_owned(), appearance));
+            .add_child(self.render_subsubsection_header("By link".to_owned(), appearance));
 
         // 1.1) Toggle to the right of header only renders if user is admin
         if has_admin_permissions {
@@ -2429,9 +2668,9 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
-        // "Invite by Email" subsection header
+        // "By email" subsection header
         section.add_child(
-            Container::new(self.render_subsection_header("Invite by Email".to_owned(), appearance))
+            Container::new(self.render_subsubsection_header("By email".to_owned(), appearance))
                 .with_padding_top(CONTENT_SEPARATION_PADDING)
                 .with_padding_bottom(8.)
                 .finish(),
@@ -2557,11 +2796,7 @@ impl TeamsWidget {
                         )
                     };
 
-                    section.add_child(
-                        Container::new(limit_hit_text)
-                            .with_padding_bottom(CONTENT_SEPARATION_PADDING)
-                            .finish(),
-                    );
+                    section.add_child(limit_hit_text);
                 }
             }
             DelinquencyStatus::PastDue | DelinquencyStatus::Unpaid => {
@@ -2637,11 +2872,7 @@ impl TeamsWidget {
                     )
                 };
 
-                section.add_child(
-                    Container::new(delinquent_text)
-                        .with_padding_bottom(CONTENT_SEPARATION_PADDING)
-                        .finish(),
-                );
+                section.add_child(delinquent_text);
             }
             DelinquencyStatus::TeamLimitExceeded => {
                 // If team has hit their team size limit:
@@ -2706,17 +2937,11 @@ impl TeamsWidget {
                     )
                 };
 
-                section.add_child(
-                    Container::new(limit_exceeded_text)
-                        .with_padding_bottom(CONTENT_SEPARATION_PADDING)
-                        .finish(),
-                );
+                section.add_child(limit_exceeded_text);
             }
         };
 
-        Container::new(section.finish())
-            .with_padding_bottom(CONTENT_SEPARATION_PADDING)
-            .finish()
+        section.finish()
     }
 
     fn render_team_members_section(
@@ -2728,11 +2953,12 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column().with_main_axis_size(MainAxisSize::Min);
 
-        // 1) "Team Members" header
+        // 1) "Team members" header. No top padding here — the call site adds a
+        // separator with its own spacing above this section.
         section.add_child(
             SavePosition::new(
                 Container::new(
-                    self.render_subsection_header("Team Members".to_owned(), appearance),
+                    self.render_subsection_header("Team members".to_owned(), appearance),
                 )
                 .with_padding_bottom(16.)
                 .finish(),
@@ -2937,18 +3163,15 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
-        // Header
+        // Header row with title on the left and toggle on the right, matching
+        // the "By link" / "By email" subsection pattern.
         let mut discoverable_header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
-        discoverable_header_row.add_child(
-            Container::new(self.render_sub_header("Make team discoverable".to_owned(), appearance))
-                .with_padding_top(CONTENT_SEPARATION_PADDING)
-                .finish(),
-        );
+        discoverable_header_row
+            .add_child(self.render_subsubsection_header("By discovery".to_owned(), appearance));
 
-        // Toggle to the right of header
         let team_uid = team.uid;
         let current_state = team.organization_settings.is_discoverable;
         let discoverable_team_toggle = appearance
@@ -2966,26 +3189,24 @@ impl TeamsWidget {
                     current_state,
                 })
             });
-        discoverable_header_row.add_child(
-            Container::new(discoverable_team_toggle.finish())
+        discoverable_header_row.add_child(discoverable_team_toggle.finish());
+
+        section.add_child(
+            Container::new(discoverable_header_row.finish())
                 .with_padding_top(CONTENT_SEPARATION_PADDING)
+                .with_padding_bottom(8.)
                 .finish(),
         );
-        section.add_child(discoverable_header_row.finish());
 
         // Instruction text for toggle
         let domain = current_user_email.split('@').nth(1).unwrap_or("");
         let team_discoverability_instructions =
             format!("Allow Warp users with an @{domain} email to find and join the team.");
-        section.add_child(
-            Container::new(self.render_sub_text(
-                team_discoverability_instructions,
-                appearance,
-                Some(Coords::uniform(0.).right(48.)),
-            ))
-            .with_padding_top(8.)
-            .finish(),
-        );
+        section.add_child(self.render_sub_text(
+            team_discoverability_instructions,
+            appearance,
+            Some(Coords::uniform(0.).right(48.)),
+        ));
 
         section.finish()
     }
@@ -3488,10 +3709,42 @@ impl TeamsWidget {
                         appearance
                             .theme()
                             .active_ui_text_color()
-                            .with_opacity(80)
+                            .with_opacity(60)
                             .into(),
                     ),
                     font_size: Some(SUBSECTION_HEADER_FONT_SIZE),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        )
+        .left()
+        .finish()
+    }
+
+    /// Smaller in-page header used under a `render_subsection_header`, e.g.
+    /// "By link" / "By email" under "Invite team members". Matches the
+    /// subsection style (Medium weight, muted gray) but at a smaller font size.
+    fn render_subsubsection_header(
+        &self,
+        text: String,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        Align::new(
+            appearance
+                .ui_builder()
+                .span(text)
+                .with_style(UiComponentStyles {
+                    font_family_id: Some(appearance.ui_font_family()),
+                    font_weight: Some(Weight::Medium),
+                    font_color: Some(
+                        appearance
+                            .theme()
+                            .active_ui_text_color()
+                            .with_opacity(60)
+                            .into(),
+                    ),
+                    font_size: Some(SUBSUBSECTION_HEADER_FONT_SIZE),
                     ..Default::default()
                 })
                 .build()
