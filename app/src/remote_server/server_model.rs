@@ -6,12 +6,12 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use warp_core::SessionId;
 use warp_core::channel::ChannelState;
 use warp_core::safe_error;
+use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
-use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
 use warpui::platform::TerminationMode;
+use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use super::codebase_index_status::{
@@ -31,19 +31,19 @@ use super::diff_state_tracker::{
     DiffModelKey, DiffStateUpdate, RemoteDiffStateManager, SubscribeOutcome,
 };
 use super::proto::{
-    Abort, Authenticate, BufferEdit, BufferUpdatedPush, ClientMessage, CloseBuffer,
-    CodebaseIndexStatusState, CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot,
-    DeleteFile, DeleteFileResponse, DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse,
-    DiscardFilesSuccess, DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead,
-    FileContextProto, FileOperationError, GetDiffStateResponse, IndexCodebase, Initialize,
-    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
-    OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
-    ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
-    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
-    ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
     client_message, delete_file_response, discard_files_response, get_diff_state_response,
     resolve_conflict_response, run_command_response, save_buffer_response, server_message,
-    write_file_response,
+    write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush, ClientMessage,
+    CloseBuffer, CodebaseIndexStatusState, CodebaseIndexStatusUpdated,
+    CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
+    DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess, DropCodebaseIndex, ErrorCode,
+    ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, GetDiffStateResponse,
+    IndexCodebase, Initialize, InitializeResponse, NavigatedToDirectory,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
+    ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, RunCommandError,
+    RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
+    SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
+    WriteFileResponse, WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -56,7 +56,7 @@ pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 
 pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
 use crate::ai::agent::FileLocations;
-use crate::ai::blocklist::{ReadFileContextResult, read_local_file_context};
+use crate::ai::blocklist::{read_local_file_context, ReadFileContextResult};
 use crate::auth::auth_state::{AuthState, AuthStateProvider};
 use crate::features::FeatureFlag;
 use crate::terminal::model::session::command_executor::{

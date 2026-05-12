@@ -16,9 +16,9 @@ use remote_server::auth::RemoteServerAuthContext;
 use remote_server::client::RemoteServerClient;
 use remote_server::manager::RemoteServerExitStatus;
 use remote_server::setup::{
-    PreinstallCheckResult, RemotePlatform, parse_uname_output, remote_server_daemon_dir,
+    parse_uname_output, remote_server_daemon_dir, PreinstallCheckResult, RemotePlatform,
 };
-use remote_server::ssh::{SshCommandError, ssh_args};
+use remote_server::ssh::{ssh_args, SshCommandError};
 use remote_server::transport::{Connection, Error, InstallOutcome, InstallSource, RemoteTransport};
 
 /// SSH transport: connects via a ControlMaster socket.
