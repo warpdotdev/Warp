@@ -176,8 +176,16 @@ impl ActiveAgentViewsModel {
                 ctx.emit(ActiveAgentViewsEvent::TerminalViewFocused);
             }
             AgentViewControllerEvent::ExitedAgentView {
-                conversation_id, ..
+                conversation_id,
+                is_exit_before_new_entrance,
+                ..
             } => {
+                // Skip if this exit is part of an in-place switch — the follow-up
+                // entrance will register the new conversation's consumer.
+                if *is_exit_before_new_entrance {
+                    return;
+                }
+
                 model
                     .last_opened_times
                     .remove(&ConversationOrTaskId::ConversationId(*conversation_id));
@@ -341,6 +349,8 @@ impl ActiveAgentViewsModel {
         task_id: AmbientAgentTaskId,
         ctx: &mut ModelContext<Self>,
     ) {
+        self.ambient_sessions
+            .retain(|view_id, id| *view_id == terminal_view_id || *id != task_id);
         let existing = self.ambient_sessions.insert(terminal_view_id, task_id);
         if existing != Some(task_id) {
             self.last_opened_times
@@ -357,9 +367,11 @@ impl ActiveAgentViewsModel {
         ctx: &mut ModelContext<Self>,
     ) {
         if let Some(task_id) = self.ambient_sessions.remove(&terminal_view_id) {
-            self.last_opened_times
-                .remove(&ConversationOrTaskId::TaskId(task_id));
-            ctx.emit(ActiveAgentViewsEvent::AmbientSessionClosed { task_id });
+            if !self.ambient_sessions.values().any(|id| *id == task_id) {
+                self.last_opened_times
+                    .remove(&ConversationOrTaskId::TaskId(task_id));
+                ctx.emit(ActiveAgentViewsEvent::AmbientSessionClosed { task_id });
+            }
         }
     }
 

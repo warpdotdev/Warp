@@ -27,6 +27,7 @@ use crate::{
         message_bar::{Message, MessageItem},
         slash_command_model::SlashCommandModel,
         suggestions_mode_model::InputSuggestionsModeModel,
+        HandoffComposeState,
     },
 };
 use warp_multi_agent_api as api;
@@ -159,6 +160,7 @@ impl BlocklistAIStatusBar {
         input_suggestions_model: ModelHandle<InputSuggestionsModeModel>,
         slash_command_model: ModelHandle<SlashCommandModel>,
         ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
+        handoff_compose_state: ModelHandle<HandoffComposeState>,
         terminal_view_id: EntityId,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
@@ -348,6 +350,7 @@ impl BlocklistAIStatusBar {
                 input_suggestions_model,
                 slash_command_model,
                 context_model.clone(),
+                handoff_compose_state,
                 terminal_model.clone(),
                 ctx,
             )
@@ -1154,10 +1157,11 @@ impl View for BlocklistAIStatusBar {
                     .ambient_agent_view_model
                     .as_ref()
                     .is_some_and(|ambient_agent_view_model| {
+                        let terminal_model = self.terminal_model.lock();
                         is_cloud_agent_pre_first_exchange(
                             Some(ambient_agent_view_model),
                             &self.agent_view_controller,
-                            &self.terminal_model,
+                            &terminal_model,
                             app,
                         )
                     })
