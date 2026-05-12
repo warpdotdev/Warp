@@ -50,17 +50,64 @@ roves between three logical positions via arrow keys:
 [ row body ] <— Left/Right —> [ Fork ] <— Left/Right —> [ Kebab ]
 ```
 
-- Roving focus is implemented via `tabindex="-1"` on the inline
-  buttons + `tabindex="0"` on the row container, with a JS-managed
-  `aria-activedescendant` (or roving `tabindex` swap) per existing
-  patterns in the codebase.
-- Enter / Space on the row activates whichever logical position is
-  active.
-- Escape with no menu open returns the active position to the row
-  body.
-- The kebab menu, when open, owns its own focus loop (Up/Down to
-  navigate, Enter/Space to activate, Escape to close + restore
-  focus to the kebab button).
+### Canonical focus implementation: `aria-activedescendant`
+
+V1 uses **`aria-activedescendant` exclusively** for in-row focus
+movement. The roving-`tabindex` alternative is explicitly NOT
+used. This is the canonical contract; ambiguity between the two
+approaches caused the round-N nit and is resolved here.
+
+Concrete requirements:
+
+1. **DOM-focus owner.** The row container is the only element
+   within the row that receives DOM focus. It has
+   `tabindex="0"`. The inline Fork button and the kebab button
+   have `tabindex="-1"` and DO NOT receive DOM focus during
+   in-row arrow navigation. (`document.activeElement` stays on
+   the row container as the user presses Left/Right.)
+2. **`aria-activedescendant`.** The row container exposes
+   `aria-activedescendant="<id-of-active-inner-element>"`,
+   updated by the keyboard handler as the user presses Left /
+   Right. The three valid descendant ids are the row-body
+   sentinel, the Fork button, and the kebab button. Each inner
+   element has a stable id.
+3. **Visual focus ring.** Because DOM focus stays on the row
+   container, the visual focus ring on the active inner element
+   is rendered via CSS `:where([id=...])` keyed off
+   `aria-activedescendant`, NOT via `:focus` /
+   `:focus-visible`. This is asserted by snapshot in T5a (added
+   below).
+4. **Enter / Space.** Pressing Enter or Space on the row
+   container dispatches the activation handler for whichever
+   element id is currently the `aria-activedescendant` value.
+   Activation is a method call on the descendant, not a
+   synthetic `click()` on a focused element (since the
+   descendant is never DOM-focused).
+5. **Escape (no menu open).** Resets
+   `aria-activedescendant` to the row-body sentinel id.
+6. **Roving-`tabindex` is forbidden in V1.** The implementation
+   MUST NOT toggle `tabindex` between `0` and `-1` on the
+   inline buttons during arrow navigation. If a future
+   accessibility-engine constraint requires roving-`tabindex`
+   instead, that is a follow-up spec change with its own test
+   plan. The lint/code-review rule for this section: any commit
+   that changes `tabindex` on the inline Fork or kebab button
+   in response to a keyboard event is rejected.
+7. **Menu open.** The kebab menu, when open, owns its own focus
+   loop. Inside the open menu, the menu itself takes DOM focus
+   (a separate scope from the in-row `aria-activedescendant`
+   model). Up/Down navigate menu items; Enter/Space activate;
+   Escape closes the menu and restores DOM focus to the row
+   container with `aria-activedescendant` pointing at the
+   kebab button id.
+
+This single-implementation contract makes T5 (keyboard
+navigation), T6 (menu key handling), and T11 (accessibility
+audit) deterministic: tests assert
+`document.activeElement === rowContainer` throughout in-row
+navigation, and assert the value of
+`row.getAttribute("aria-activedescendant")` after each
+Left/Right keypress.
 
 ## Accessibility contract
 
@@ -131,10 +178,54 @@ parity (A10).
   against the same predicate's modal-side return values.
 - T3. Right-click outside the toolbelt opens the kebab menu at the
   cursor.
+- T3a. **Right-click no-expand regression.** Right-clicking on a
+  collapsed row to open the overflow menu MUST NOT also expand
+  the row, open it, or otherwise change its collapsed/expanded
+  state. Specifically, the test asserts:
+  1. The row's `aria-expanded` (or equivalent
+     collapsed/expanded state attribute) is unchanged from
+     before the right-click to after the right-click and after
+     the menu closes.
+  2. The row's body content remains in its pre-right-click
+     rendered form (no expansion DOM mutations).
+  3. The activation handler that toggles expand/collapse is NOT
+     invoked on the right-click event path. The test uses a spy
+     on the toggle handler and asserts zero invocations.
+  4. Closing the menu (Escape, click-away, item activation)
+     also does NOT toggle expand/collapse.
+  5. The same invariants hold whether the right-click lands on
+     the row body, on the Fork button, or on the kebab button
+     itself.
+  This guards against the common regression where a right-click
+  fires both a `contextmenu` handler (opens menu) AND a
+  `mousedown` / `click` handler (toggles expand). The
+  implementation MUST `preventDefault()` and `stopPropagation()`
+  on the `contextmenu` event so the row's click/expand handler
+  never sees it.
 - T4. Modal-open state hides the inline toolbelt (snapshot test).
 - T5. Keyboard navigation reaches row body, Fork, and kebab with
   Left/Right; Enter / Space activate the focused in-row control.
   Tab moves between rows, not into in-row controls.
+- T5a. **`aria-activedescendant` canonical-implementation test.**
+  Drive Left/Right keys through the row and assert, after each
+  keypress, that:
+  1. `document.activeElement === rowContainer` (DOM focus
+     stays on the row container; never moves to the Fork or
+     kebab button).
+  2. `rowContainer.getAttribute("aria-activedescendant")`
+     transitions through the three sentinel ids in the
+     documented order (row body → Fork → kebab on Right,
+     reverse on Left).
+  3. The Fork and kebab buttons both have `tabindex="-1"`
+     throughout, NEVER `tabindex="0"`, regardless of which is
+     the active descendant. (Guards against an accidental
+     drift to roving-`tabindex`.)
+  4. The visual focus ring is keyed off `aria-activedescendant`
+     via CSS, not via the native `:focus` pseudo-class
+     (snapshot assertion of the rendered styles).
+  5. Pressing Enter / Space with each descendant active
+     invokes the descendant's activation handler exactly once
+     (asserted by spies on Fork-activate and kebab-activate).
 - T6. Kebab menu supports Up/Down, Enter/Space, and Escape without
   dropping focus from the collapsed row.
 - T7. **Share-link parity test.** For a conversation in a fixture
