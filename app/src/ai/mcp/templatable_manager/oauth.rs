@@ -6,7 +6,7 @@ use oauth2::{RefreshToken, TokenResponse as _};
 use rmcp::transport::{
     auth::{
         AuthClient, AuthorizationManager, CredentialStore, InMemoryCredentialStore,
-        OAuthClientConfig, OAuthState, OAuthTokenResponse, StoredCredentials,
+        OAuthClientConfig, OAuthState, StoredCredentials,
     },
     AuthError, AuthorizationSession,
 };
@@ -39,32 +39,14 @@ static GITHUB_OAUTH_SCOPES: [&str; 7] = [
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedCredentials {
-    client_id: String,
+    /// The credential information that `rmcp` wants us to store and retrieve.
+    #[serde(flatten)]
+    credentials: StoredCredentials,
+    /// The client secret for the OAuth application.
+    ///
+    /// This is needed to properly refresh tokens when using DCR (Dynamic Client Registration),
+    /// as the server expects the client to provide the secret when refreshing.
     client_secret: Option<String>,
-    token_response: OAuthTokenResponse,
-    /// Unix timestamp (seconds) when this token was received from the OAuth server.
-    ///
-    /// Required for rmcp's pre-emptive refresh: it computes remaining lifetime as
-    /// `expires_in - (now - token_received_at)` and refreshes when below the buffer.
-    /// Without this value the check is skipped, the cached token stays in use past
-    /// its TTL, and the next request fails with 401 (see #8863).
-    ///
-    /// `None` for credentials persisted by older Warp versions; the next refresh
-    /// will populate it via the credential-store save path.
-    #[serde(default)]
-    token_received_at: Option<u64>,
-}
-
-/// Returns the current Unix timestamp in seconds.
-///
-/// Mirrors rmcp's internal `now_epoch_secs` (which is private) so we can stamp
-/// `token_received_at` consistently with the timestamps rmcp itself emits during
-/// refresh.
-fn now_epoch_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 /// Maps cloud MCP installation UUID to its OAuth credentials in secure storage.
@@ -132,19 +114,12 @@ impl CredentialStore for PersistingCredentialStore {
         self.apply_refresh_token_carry_forward(&mut credentials)
             .await;
 
-        // Capture before `credentials` is consumed below.
-        let token_received_at = credentials.token_received_at;
-
         self.inner.save(credentials.clone()).await?;
 
-        if let Some(token_response) = credentials.token_response {
-            let _ = self.persist_tx.try_send(PersistedCredentials {
-                client_id: credentials.client_id,
-                client_secret: self.client_secret.clone(),
-                token_response,
-                token_received_at,
-            });
-        }
+        let _ = self.persist_tx.try_send(PersistedCredentials {
+            credentials,
+            client_secret: self.client_secret.clone(),
+        });
         Ok(())
     }
 
@@ -169,7 +144,6 @@ async fn install_persisting_credential_store(
     client_secret: Option<String>,
     spawner: ModelSpawner<TemplatableMCPServerManager>,
     installation_uuid: Uuid,
-    token_received_at: Option<u64>,
 ) {
     let (persist_tx, persist_rx) = async_channel::unbounded();
     let store = PersistingCredentialStore {
@@ -191,6 +165,7 @@ async fn install_persisting_credential_store(
                 client_id,
                 Some(token_response),
                 Vec::new(),
+                // TODO(vorporeal): gotta initialize this better
                 None,
             ))
             .await;
@@ -262,21 +237,26 @@ pub async fn make_authenticated_client(
 
     // If we have cached credentials, use them.
     if let Some(credentials) = persisted_credentials {
-        let provider = ChannelState::mcp_oauth_provider_by_client_id(&credentials.client_id);
+        let provider =
+            ChannelState::mcp_oauth_provider_by_client_id(&credentials.credentials.client_id);
         let client_secret = credentials
             .client_secret
             .or_else(|| provider.as_ref().map(|p| p.client_secret.to_string()));
-        let cached_token_received_at = credentials.token_received_at;
-        oauth_state
-            .set_credentials(&credentials.client_id, credentials.token_response)
-            .await?;
+        if let Some(token_response) = credentials.credentials.token_response {
+            oauth_state
+                .set_credentials(&credentials.credentials.client_id, token_response)
+                .await?;
+        }
         if let OAuthState::Authorized(mut auth_manager) = oauth_state {
             // If this is a client for which we have a known client secret,
             // update our client config accordingly.
             if let Some(client_secret) = &client_secret {
                 auth_manager.configure_client(
-                    OAuthClientConfig::new(credentials.client_id.clone(), redirect_uri.clone())
-                        .with_client_secret(client_secret.clone()),
+                    OAuthClientConfig::new(
+                        credentials.credentials.client_id.clone(),
+                        redirect_uri.clone(),
+                    )
+                    .with_client_secret(client_secret.clone()),
                 )?;
             }
 
@@ -302,7 +282,6 @@ pub async fn make_authenticated_client(
                 client_secret,
                 spawner.clone(),
                 uuid,
-                cached_token_received_at,
             )
             .await;
             match auth_manager.refresh_token().await {
@@ -444,14 +423,11 @@ pub async fn make_authenticated_client(
     // pre-emptive refresh check in rmcp has a timestamp to compute remaining
     // lifetime against on subsequent connects (without it, the cached token
     // would be used past its TTL — see #8863).
-    let token_received_at = now_epoch_secs();
     let (client_id, token_response) = oauth_state.get_credentials().await?;
     if let Some(token_response) = token_response {
         let credentials = PersistedCredentials {
-            client_id,
+            credentials: StoredCredentials::new(client_id, Some(token_response), Vec::new(), None),
             client_secret: client_secret.clone(),
-            token_response,
-            token_received_at: Some(token_received_at),
         };
         spawner
             .spawn(move |manager, ctx| {
@@ -470,7 +446,6 @@ pub async fn make_authenticated_client(
         client_secret,
         spawner,
         uuid,
-        Some(token_received_at),
     )
     .await;
 
@@ -652,12 +627,12 @@ mod tests {
 
     #[test]
     fn persisted_credentials_round_trip_through_serde_preserves_received_at() {
-        let original = PersistedCredentials {
-            client_id: "client-abc".to_string(),
-            client_secret: Some("shh".to_string()),
-            token_response: make_test_token_response(Some("refresh-1")),
-            token_received_at: Some(1_700_000_000),
-        };
+        let original = PersistedCredentials::new(
+            "client-abc".to_string(),
+            Some("shh".to_string()),
+            make_test_token_response(Some("refresh-1")),
+            Some(1_700_000_000),
+        );
 
         let json = serde_json::to_string(&original).expect("serialize");
         let parsed: PersistedCredentials = serde_json::from_str(&json).expect("deserialize");
@@ -702,12 +677,12 @@ mod tests {
     async fn save_forwards_token_received_at_to_persist_channel() {
         let (store, rx) = make_test_store(Some("client_secret_xyz".to_string()));
 
-        let credentials = StoredCredentials {
-            client_id: "client-id".to_string(),
-            token_response: Some(make_test_token_response(Some("refresh-1"))),
-            granted_scopes: Vec::new(),
-            token_received_at: Some(1_700_000_500),
-        };
+        let credentials = StoredCredentials::new(
+            "client-id".to_string(),
+            Some(make_test_token_response(Some("refresh-1"))),
+            Vec::new(),
+            Some(1_700_000_500),
+        );
 
         store.save(credentials).await.expect("save succeeds");
 
@@ -727,12 +702,12 @@ mod tests {
     async fn save_forwards_none_when_received_at_is_none() {
         let (store, rx) = make_test_store(None);
 
-        let credentials = StoredCredentials {
-            client_id: "c".to_string(),
-            token_response: Some(make_test_token_response(None)),
-            granted_scopes: Vec::new(),
-            token_received_at: None,
-        };
+        let credentials = StoredCredentials::new(
+            "c".to_string(),
+            Some(make_test_token_response(None)),
+            Vec::new(),
+            None,
+        );
 
         store.save(credentials).await.expect("save succeeds");
 
@@ -746,12 +721,12 @@ mod tests {
     async fn save_skips_persist_when_token_response_absent() {
         let (store, rx) = make_test_store(None);
 
-        let credentials = StoredCredentials {
-            client_id: "c".to_string(),
-            token_response: None,
-            granted_scopes: Vec::new(),
-            token_received_at: Some(1_700_000_500),
-        };
+        let credentials = StoredCredentials::new(
+            "c".to_string(),
+            None,
+            Vec::new(),
+            Some(1_700_000_500),
+        );
 
         store.save(credentials).await.expect("save succeeds");
 
@@ -772,23 +747,23 @@ mod tests {
         // Seed the inner store with prior credentials that have a refresh token.
         store
             .inner
-            .save(StoredCredentials {
-                client_id: "c".to_string(),
-                token_response: Some(make_test_token_response(Some("prior-refresh-token"))),
-                granted_scopes: Vec::new(),
-                token_received_at: Some(1_699_000_000),
-            })
+            .save(StoredCredentials::new(
+                "c".to_string(),
+                Some(make_test_token_response(Some("prior-refresh-token"))),
+                Vec::new(),
+                Some(1_699_000_000),
+            ))
             .await
             .expect("seed succeeds");
 
         // Now save NEW credentials that omit a refresh token, simulating a
         // refresh response from a server that does not rotate refresh tokens.
-        let new_credentials = StoredCredentials {
-            client_id: "c".to_string(),
-            token_response: Some(make_test_token_response(None)),
-            granted_scopes: Vec::new(),
-            token_received_at: Some(1_700_000_500),
-        };
+        let new_credentials = StoredCredentials::new(
+            "c".to_string(),
+            Some(make_test_token_response(None)),
+            Vec::new(),
+            Some(1_700_000_500),
+        );
 
         store.save(new_credentials).await.expect("save succeeds");
 
@@ -805,20 +780,6 @@ mod tests {
                 .map(|rt| rt.secret().to_string()),
             Some("prior-refresh-token".to_string()),
             "prior refresh token carried forward"
-        );
-    }
-
-    /// `now_epoch_secs` returns a non-zero monotonic-ish value. Sanity check
-    /// that the helper does what it claims and matches rmcp's own clock domain.
-    #[test]
-    fn now_epoch_secs_returns_recent_unix_time() {
-        let now = now_epoch_secs();
-        // Sanity: any timestamp produced by the running test process must be
-        // after the OSS-release date (2026-04-28) and before the year 2200.
-        assert!(now > 1_745_000_000, "epoch seconds must be a real time");
-        assert!(
-            now < 7_258_118_400,
-            "epoch seconds must be before year 2200"
         );
     }
 }
