@@ -947,6 +947,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::HandoffCloudCloud,
     FeatureFlag::HarnessSessionHeader,
     FeatureFlag::SoloUserByok,
+    FeatureFlag::BillingAndUsagePageV2,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

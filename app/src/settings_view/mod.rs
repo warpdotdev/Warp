@@ -1072,7 +1072,7 @@ impl SettingsView {
 
         let billing_and_usage_page: SettingsPage =
             if FeatureFlag::BillingAndUsagePageV2.is_enabled() {
-                let handle = ctx.add_view(BillingAndUsagePageV2View::new);
+                let handle = ctx.add_typed_action_view(BillingAndUsagePageV2View::new);
                 ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
                     me.handle_billing_and_usage_page_event(event, ctx);
                 });
@@ -2187,6 +2187,9 @@ impl SettingsView {
     ) -> Option<Box<dyn Element>> {
         match page_handle {
             SettingsPageViewHandle::BillingAndUsage(view) => {
+                view.read(app, |view, _| view.get_modal_content())
+            }
+            SettingsPageViewHandle::BillingAndUsageV2(view) => {
                 view.read(app, |view, _| view.get_modal_content())
             }
             SettingsPageViewHandle::Privacy(view) => {
