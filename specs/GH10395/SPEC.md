@@ -1,5 +1,30 @@
 # Alert Maintainers When There Are Duplicates Of A PR (GH-10395)
 
+## Spec layout note
+
+This spec is delivered as a single `SPEC.md` file but is internally
+partitioned into the same product / tech contract sections that the
+repository's spec convention expects to find in `PRODUCT.md` and
+`TECH.md` siblings:
+
+- **Product contract** (what the user / maintainer experiences): `Summary`,
+  `Problem`, `Goals`, `Non-Goals`, `Behavior Contract` sections B1–B5
+  (UI surface, detection signals, dismissal UX, detection cadence), the
+  `Acceptance Criteria` block, and the `Open Questions` / `Telemetry`
+  sections.
+- **Tech contract** (how the system must behave, including security and
+  state): `Behavior Contract` sections B-Secret (secret-material
+  handling), B-Dedup (server-side dedupe + TTL), B3a (per-pair signal
+  expansion vs aggregated payload), B4a (dismissal trust model), B4b
+  (marker write / scan / reversal mechanics), the `Settings / API
+  surface` table, `Implementation Pointers`, and `Tests`.
+
+If reviewers prefer a strict two-file layout, the partition above is the
+authoritative split; a follow-up cleanup may extract them into
+`specs/GH10395/PRODUCT.md` and `specs/GH10395/TECH.md` without any
+content change. The single-file form is retained for V1 to keep the
+review thread anchored on one document.
+
 ## Summary
 
 Surface a non-blocking maintainer alert inside the Warp Code Review experience when multiple open PRs appear to target the same underlying issue or duplicate each other's diff. Provide a cross-link list of candidate duplicates, one-click navigation between them, and emit a structured signal that can be routed to Slack or Linear so maintainers are notified outside Warp.
@@ -52,9 +77,50 @@ When ≥1 candidate is detected for a PR, emit `MaintainerAlert.DuplicatePr { pr
 
 If both are configured, both fire. If neither is configured, no external signal fires (the in-product callout still renders).
 
+#### B3a. Per-pair signal expansion vs aggregated payload
+
+The detector produces an aggregated callout (one row per candidate in the in-product UI), but the **external signal** is conceptually a SET of per-pair tuples. Because the dedupe / cooldown key in B-Dedup is keyed on `({pr_a, pr_b}, signal_type)` (a per-pair, per-signal-type tuple), the aggregated payload MUST be FANNED OUT into per-pair tuples BEFORE dedupe is consulted. Mixed runs — where one detection run yields some pairs that are fresh and others that are within their cooldown window — are resolved as follows:
+
+1. **Compute the candidate set.** The detector produces the full set of `(pr_number, candidate_pr_number, signal_type)` triples for the current run. Each triple is canonicalized to `({pr_a, pr_b}, signal_type)` per B-Dedup.
+2. **Filter against dedupe.** For each canonical tuple, look up the server-side dedupe store. Tuples within TTL are MARKED `suppressed`; tuples outside TTL (or never seen) are MARKED `fresh`.
+3. **Emit only the fresh subset.** The external signal is emitted **only if the fresh subset is non-empty**. The payload SHALL include only the fresh tuples — suppressed tuples MUST NOT appear in the emitted payload, even though they remain in the in-product callout. Specifically: `candidate_pr_numbers` and `signal_types` in the emitted `MaintainerAlert.DuplicatePr` are projections of the FRESH subset only.
+4. **Record dedupe state atomically.** The dedupe store is updated for each fresh tuple in the same transaction (or equivalent atomic operation) as the emit. If the emit fails (network/transport error), the dedupe store MUST NOT be advanced for any tuple in that emit — the entire fresh subset is retried on the next detection run. Partial dedupe writes are forbidden.
+5. **No empty-payload emits.** If every tuple in the run is suppressed (all within TTL), no external signal fires. The in-product callout still renders the full candidate set including the suppressed pairs.
+6. **Multi-signal-type collisions.** A single `(pr_a, pr_b)` pair that matches under multiple signal types (e.g., both `same_issue_ref` and `file_overlap`) produces ONE tuple per signal type. Each tuple is independently deduped. The emitted payload's `signal_types` field is the union of signal types whose tuples were in the fresh subset.
+
+Worked example:
+
+> Run 1: pair `{12, 17}` matches `same_issue_ref`; pair `{12, 24}` matches `file_overlap`. Both are fresh. Emit one external signal with `pr_number=12`, `candidate_pr_numbers=[17, 24]`, `signal_types=[same_issue_ref, file_overlap]`. Record both tuples in the dedupe store.
+>
+> Run 2 (4 days later): pair `{12, 17}` still matches `same_issue_ref` (suppressed — within TTL); pair `{12, 33}` newly matches `file_overlap` (fresh). Emit ONE external signal with `pr_number=12`, `candidate_pr_numbers=[33]`, `signal_types=[file_overlap]`. The `{12, 17}` pair does NOT appear in the payload. Both pairs continue to appear in the in-product callout.
+
 ### B4. Suppression
 
 The callout exposes a "Mark as not duplicate" button per candidate. Clicking it records a dismissal as a structured PR comment with marker `<!-- warp-dup-dismiss pr=<candidate_pr_number> -->`. On subsequent opens, the dismissed candidate is filtered out for that (PR, candidate) pair only. Dismissals are bidirectional — dismissing on PR A also hides PR A from PR B's candidate list.
+
+#### B4b. Marker write and scan mechanics
+
+The marker is a one-sided write (the user is acting on one PR's callout at a time), but it MUST behave bidirectionally on read. The contract:
+
+- **Write side — exactly one marker comment per click, on the SOURCE PR only.**
+  - Clicking "Mark as not duplicate" on PR A's callout for candidate PR B posts EXACTLY ONE PR comment on PR A with body `<!-- warp-dup-dismiss pr=B -->` (plus a brief human-readable suffix on the SAME comment for audit clarity, e.g., `<!-- warp-dup-dismiss pr=B --> Dismissed as not duplicate by @username`). No second comment is written on PR B; the cross-PR effect comes from the scan side below.
+  - If a marker for the same `(A, B)` pair already exists on PR A (e.g., user double-clicks, or a previous session wrote one), the UI is a no-op — no duplicate marker comment is written. The detector MUST treat any number of identical markers as equivalent to one.
+  - The marker comment is written via the GitHub Issues Comments API on the source PR's issue endpoint (PRs share the issue comment surface with the PR's discussion thread). Comments are written in plain text; no Markdown rendering hazard since the marker is an HTML comment.
+- **Scan side — both PRs in the pair are scanned at detection time.**
+  - For a candidate pair `(A, B)`, the detector fetches and scans the comment list of BOTH PR A and PR B. A trusted marker (per B4a) for the OTHER PR in the pair on EITHER side suppresses the pair. Specifically:
+    - A marker `<!-- warp-dup-dismiss pr=B -->` on PR A by a trusted author suppresses the `(A, B)` pair.
+    - A marker `<!-- warp-dup-dismiss pr=A -->` on PR B by a trusted author also suppresses the `(A, B)` pair.
+    - Either side is sufficient; the pair is suppressed if at least one trusted marker exists on either side. This is what "bidirectional" means in B4 — the EFFECT is symmetric on read, not that two write operations happen.
+  - The scan reads up to the most recent 100 comments per PR (the GitHub default page size); paginate if needed to cover older markers. Comments are scanned in reverse chronological order.
+- **Reversal — explicit, by writing a counter-marker on the same PR.**
+  - To reverse a dismissal, a trusted user writes a counter-marker comment on the SAME PR that previously dismissed, with body `<!-- warp-dup-undismiss pr=<candidate_pr_number> -->`. Reversal markers are subject to the same B4a trust model (`permission ∈ { admin, maintain, write }`).
+  - At scan time, the detector resolves the pair's dismissal state by reading ALL `warp-dup-dismiss` and `warp-dup-undismiss` markers for the pair across both PRs and taking the MOST RECENT trusted marker by `created_at` timestamp as authoritative. A `warp-dup-undismiss` newer than every `warp-dup-dismiss` for the pair re-surfaces the candidate.
+  - The UI exposes reversal as an "Un-dismiss" affordance on the suppressed candidate (visible to trusted users only); clicking it writes the `warp-dup-undismiss` marker.
+- **Write count summary.**
+  - Initial dismissal: 1 comment written on the SOURCE PR.
+  - Reversal: 1 additional comment written on whichever PR the user is acting from (typically the same PR as the original dismissal, but either side is accepted because both are scanned).
+  - Re-dismissal after reversal: 1 additional `warp-dup-dismiss` comment. The scan always uses the most recent trusted marker.
+  - At most, a single pair accumulates one comment per state transition; there is no compaction in V1.
 
 #### B4a. Dismissal trust model
 
@@ -92,6 +158,17 @@ The Slack incoming-webhook URL is treated as **secret material** and follows tea
 
 **Transmission.**
 - The webhook is invoked over **TLS only**. Plain HTTP webhook URLs are rejected at save time with a validation error.
+- **Host allowlist (anti-SSRF).** The webhook URL's host MUST match the Slack incoming-webhook host set, which is the EXACT pattern `hooks.slack.com` (case-insensitive). Subdomains, alternate Slack hosts, or unrelated hosts are rejected at save time AND at request time:
+  - At **save time**, the URL is parsed (RFC 3986); the host component is compared against the allowlist; any non-match returns a validation error with the message `"Webhook URL host must be hooks.slack.com"`. The path component MUST also begin with `/services/` (the canonical Slack incoming-webhook path prefix); other paths are rejected.
+  - At **request time** (immediately before the outbound HTTP call), the URL is re-parsed and re-validated against the same allowlist. This second check defends against TOCTOU between save and emit — a stored value that fails request-time validation is treated as misconfigured (the emit is dropped, telemetry records a `team.duplicate_alert.webhook_invalid` event, no fallback host is contacted).
+  - The allowlist is a small, hard-coded constant in the emitter module. There is NO admin-configurable bypass, NO env-var override, and NO "trusted hosts" list.
+- **SSRF-safe HTTP client configuration.** The HTTP client used for Slack emission MUST be configured with the following constraints, separately from Warp's general-purpose HTTP clients:
+  - **Redirect handling: disabled.** The client MUST NOT follow HTTP redirects. A `3xx` response is treated as a failed emit (logged via the redacted sanitizer); the response body is dropped. Following redirects would let a (hypothetically) compromised Slack response steer the request to an internal host.
+  - **DNS resolution: public-only.** The resolved IP for `hooks.slack.com` MUST NOT fall into RFC 1918 private space (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), unique-local IPv6 (`fc00::/7`), multicast, or the IPv4-mapped IPv6 equivalents of any of the above. If the resolved address falls into any of these ranges, the emit is dropped and telemetry records a `team.duplicate_alert.webhook_blocked_address` event. This guards against DNS rebinding and against any future allowlist host that could be coerced via DNS.
+  - **Timeouts: bounded.** Connect timeout ≤ 5s, total request timeout ≤ 10s. Slow-loris responses cannot tie up the emitter indefinitely.
+  - **Method: POST only.** The emitter only issues POST; the HTTP client MUST NOT permit method override via the response.
+  - **No proxy fallback.** The emitter MUST NOT honor `HTTP_PROXY` / `HTTPS_PROXY` env variables that would route the request through an attacker-controlled proxy. The Slack client uses direct outbound only.
+- **Arbitrary outbound webhooks: explicitly NOT supported in V1.** This spec deliberately does NOT support arbitrary HTTP/HTTPS webhook destinations. Routing to anything other than `hooks.slack.com` requires a future spec that defines an explicit destination registry, per-host SSRF posture, and an admin-controlled allowlist; until that lands, the validation above is the authoritative constraint.
 - The webhook URL is **never** included in logs, telemetry payloads, error messages, panic traces, or crash reports — emit error metadata stripped of URL components. A dedicated sanitizer wraps every log/error path that could touch the URL: it replaces the URL with `[redacted-slack-webhook]`.
 
 **Rotation.**
