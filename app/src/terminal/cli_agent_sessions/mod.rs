@@ -1,4 +1,6 @@
 pub mod event;
+#[cfg(unix)]
+pub mod ipc;
 pub mod listener;
 #[cfg(not(target_family = "wasm"))]
 pub(crate) mod plugin_manager;
