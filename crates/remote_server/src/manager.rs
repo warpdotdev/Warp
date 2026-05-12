@@ -248,6 +248,12 @@ pub enum RemoteSessionState {
         host_id: HostId,
         control_path: Option<PathBuf>,
     },
+    /// The connection failed and the background task is briefly awaiting
+    /// the child process's exit status before emitting the failure event.
+    /// Preserves the `control_path` so `deregister_session` can still
+    /// call `stop_control_master` if the user exits during this window.
+    #[cfg(not(target_family = "wasm"))]
+    AwaitingExitStatus { control_path: Option<PathBuf> },
     /// Connection dropped (EOF/error from the reader task).
     Disconnected,
 }
@@ -841,11 +847,15 @@ impl RemoteServerManager {
                                 .spawn(move |me, _ctx| {
                                     match me.sessions.remove(&session_id) {
                                         Some(RemoteSessionState::Initializing {
-                                            _child, ..
+                                            _child,
+                                            control_path,
+                                            ..
                                         }) => {
                                             me.sessions.insert(
                                                 session_id,
-                                                RemoteSessionState::Disconnected,
+                                                RemoteSessionState::AwaitingExitStatus {
+                                                    control_path,
+                                                },
                                             );
                                             Some(_child)
                                         }
@@ -1091,7 +1101,10 @@ impl RemoteServerManager {
         #[cfg(not(target_family = "wasm"))]
         let control_path = match &prev {
             Some(RemoteSessionState::Connected { control_path, .. })
-            | Some(RemoteSessionState::Initializing { control_path, .. }) => control_path.clone(),
+            | Some(RemoteSessionState::Initializing { control_path, .. })
+            | Some(RemoteSessionState::AwaitingExitStatus { control_path, .. }) => {
+                control_path.clone()
+            }
             Some(RemoteSessionState::Reconnecting { control_path, .. }) => control_path.clone(),
             _ => None,
         };
@@ -1193,6 +1206,8 @@ impl RemoteServerManager {
     pub fn is_session_potentially_active(&self, session_id: SessionId) -> bool {
         match self.sessions.get(&session_id) {
             Some(RemoteSessionState::Disconnected) | None => false,
+            #[cfg(not(target_family = "wasm"))]
+            Some(RemoteSessionState::AwaitingExitStatus { .. }) => false,
             Some(
                 RemoteSessionState::Connecting
                 | RemoteSessionState::Initializing { .. }
@@ -1712,8 +1727,9 @@ impl RemoteServerManager {
                 ctx,
             );
         } else {
-            // Non-Connected states (Initializing, Connecting, etc.) —
-            // no reconnect, just mark disconnected.
+            // Non-Connected states (Initializing, Connecting,
+            // AwaitingExitStatus, etc.) — no reconnect, just mark
+            // disconnected.
             self.sessions
                 .insert(session_id, RemoteSessionState::Disconnected);
         }
