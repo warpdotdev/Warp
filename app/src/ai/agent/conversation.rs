@@ -3258,6 +3258,8 @@ impl AIConversation {
                                 output: command_output,
                                 exit_code,
                                 command_id: finished_command_id,
+                                start_ts: proto_start_ts,
+                                finish_ts: proto_finish_ts,
                             },
                         )) = &cmd_result.result
                         {
@@ -3268,33 +3270,43 @@ impl AIConversation {
                                 seen_command_ids.insert(finished_command_id.clone());
                             }
 
-                            // start_ts: tool call message's proto timestamp.
-                            // This should always be populated.
-                            let start_ts = message
-                                .timestamp
+                            // start_ts: prefer the block timestamp stored on ShellCommandFinished,
+                            // falling back to the tool call message's proto timestamp.
+                            let start_ts = proto_start_ts
                                 .as_ref()
-                                .map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos));
+                                .map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos))
+                                .or_else(|| {
+                                    message
+                                        .timestamp
+                                        .as_ref()
+                                        .map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos))
+                                });
                             if start_ts.is_none() {
                                 log::error!(
                                     "RunShellCommand tool call message has no timestamp (message_id: {message_id})"
                                 );
                             }
 
-                            // completed_ts: the earlier of (1) the exchange start_time for the
+                            // completed_ts: prefer the block timestamp stored on ShellCommandFinished.
+                            // Fall back to the earlier of (1) the exchange start_time for the
                             // exchange containing the result message (from CurrentTime input
-                            // context) and (2) the result message's proto timestamp. Use whichever
-                            // side is present when only one exists.
-                            let exchange_ts = message_id_to_exchange
-                                .get(*result_message_id)
-                                .map(|exchange| exchange.start_time);
-                            let completed_ts = match (*result_proto_ts, exchange_ts) {
-                                (Some(proto_ts), Some(exchange_ts)) => {
-                                    Some(proto_ts.min(exchange_ts))
-                                }
-                                (Some(proto_ts), None) => Some(proto_ts),
-                                (None, Some(exchange_ts)) => Some(exchange_ts),
-                                (None, None) => None,
-                            };
+                            // context) and (2) the result message's proto timestamp.
+                            let completed_ts = proto_finish_ts
+                                .as_ref()
+                                .map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos))
+                                .or_else(|| {
+                                    let exchange_ts = message_id_to_exchange
+                                        .get(*result_message_id)
+                                        .map(|exchange| exchange.start_time);
+                                    match (*result_proto_ts, exchange_ts) {
+                                        (Some(proto_ts), Some(exchange_ts)) => {
+                                            Some(proto_ts.min(exchange_ts))
+                                        }
+                                        (Some(proto_ts), None) => Some(proto_ts),
+                                        (None, Some(exchange_ts)) => Some(exchange_ts),
+                                        (None, None) => None,
+                                    }
+                                });
 
                             command_blocks.push(CommandBlockInfo {
                                 command: command.clone(),

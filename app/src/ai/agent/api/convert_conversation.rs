@@ -585,6 +585,8 @@ pub(crate) fn convert_tool_call_result_to_input(
                         command: result.command.clone(),
                         output: finished.output.clone(),
                         exit_code: ExitCode::from(finished.exit_code),
+                        start_ts: finished.start_ts.as_ref().map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos)),
+                        completed_ts: finished.finish_ts.as_ref().map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos)),
                     }
                 }
                 Some(api::run_shell_command_result::Result::LongRunningCommandSnapshot(
@@ -631,6 +633,8 @@ pub(crate) fn convert_tool_call_result_to_input(
                         block_id: finished.command_id.clone().into(),
                         output: finished.output.clone(),
                         exit_code: ExitCode::from(finished.exit_code),
+                        start_ts: finished.start_ts.as_ref().map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos)),
+                        completed_ts: finished.finish_ts.as_ref().map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos)),
                     },
                     Some(api::write_to_long_running_shell_command_result::Result::Error(api::ShellCommandError{
                         r#type: Some(api::shell_command_error::Type::CommandNotFound(()))
@@ -1221,6 +1225,8 @@ pub(crate) fn convert_tool_call_result_to_input(
                         block_id: finished.command_id.clone().into(),
                         output: finished.output.clone(),
                         exit_code: ExitCode::from(finished.exit_code),
+                        start_ts: finished.start_ts.as_ref().map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos)),
+                        completed_ts: finished.finish_ts.as_ref().map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos)),
                     }
                 }
                 Some(
@@ -1271,6 +1277,8 @@ pub(crate) fn convert_tool_call_result_to_input(
                     block_id: finished.command_id.clone().into(),
                     output: finished.output.clone(),
                     exit_code: ExitCode::from(finished.exit_code),
+                    start_ts: finished.start_ts.as_ref().map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos)),
+                    completed_ts: finished.finish_ts.as_ref().map(|ts| proto_timestamp_to_local_datetime(ts.seconds, ts.nanos)),
                 },
                 Some(api::transfer_shell_command_control_to_user_result::Result::Error(
                     api::ShellCommandError {
