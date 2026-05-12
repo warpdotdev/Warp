@@ -171,7 +171,7 @@ impl SettingsWidget for WarpDriveHeaderWidget {
                     }),
                     ..Default::default()
                 })
-                .with_text_label("Sign up".to_owned())
+                .with_text_label(t!("settings.sign_up").to_string())
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(WarpDriveSettingsPageAction::SignUp);

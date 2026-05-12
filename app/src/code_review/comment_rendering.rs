@@ -470,7 +470,7 @@ impl CommentViewCard {
             _ => source
                 .head()
                 .map(|head| head.title())
-                .unwrap_or_else(|| "Review Comment".to_string()),
+                .unwrap_or_else(|| t!("code_review_ext.review_comment").to_string()),
         }
     }
 }

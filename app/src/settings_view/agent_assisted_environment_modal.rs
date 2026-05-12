@@ -101,7 +101,7 @@ pub struct AgentAssistedEnvironmentModal {
 impl AgentAssistedEnvironmentModal {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let add_repo_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Add repo", SecondaryTheme)
+            ActionButton::new(t!("settings.add_repo"), SecondaryTheme)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(
@@ -111,13 +111,13 @@ impl AgentAssistedEnvironmentModal {
         });
 
         let cancel_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Cancel", SecondaryTheme).on_click(|ctx| {
+            ActionButton::new(t!("common.cancel"), SecondaryTheme).on_click(|ctx| {
                 ctx.dispatch_typed_action(AgentAssistedEnvironmentModalAction::Cancel);
             })
         });
 
         let create_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Create environment", PrimaryTheme).on_click(|ctx| {
+            ActionButton::new(t!("settings.create_environment"), PrimaryTheme).on_click(|ctx| {
                 ctx.dispatch_typed_action(AgentAssistedEnvironmentModalAction::Confirm);
             })
         });
@@ -333,7 +333,7 @@ impl AgentAssistedEnvironmentModal {
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_spacing(8.);
 
-        col.add_child(self.render_section_title("Selected repos", appearance));
+        col.add_child(self.render_section_title(&t!("settings.selected_repos"), appearance));
 
         if self.selected_repo_paths.is_empty() {
             col.add_child(
@@ -414,7 +414,7 @@ impl AgentAssistedEnvironmentModal {
             .with_child(
                 Expanded::new(
                     1.,
-                    self.render_section_title("Available indexed repos", appearance),
+                    self.render_section_title(&t!("settings.available_indexed_repos"), appearance),
                 )
                 .finish(),
             )
@@ -596,7 +596,7 @@ impl AgentAssistedEnvironmentModal {
             move |paths_result, ctx| {
                 let result = paths_result.and_then(|paths| {
                     paths.into_iter().next().map(PathBuf::from).ok_or_else(|| {
-                        FilePickerError::DialogFailed("No directory selected".to_string())
+                        FilePickerError::DialogFailed(t!("settings.no_directory_selected").to_string())
                     })
                 });
 
@@ -614,11 +614,10 @@ impl AgentAssistedEnvironmentModal {
 
     fn render_dialog(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let description = if FeatureFlag::FullSourceCodeEmbedding.is_enabled() {
-            "Select locally indexed repos to provide context for the environment creation agent."
+            t!("settings.select_repos_description_indexed").to_string()
         } else {
-            "Select repos to provide context for the environment creation agent."
-        }
-        .to_string();
+            t!("settings.select_repos_description").to_string()
+        };
 
         let close_button = icon_button(
             appearance,
@@ -640,7 +639,7 @@ impl AgentAssistedEnvironmentModal {
             .finish();
 
         let dialog = Dialog::new(
-            "Select repos for your environment".to_string(),
+            t!("settings.select_repos_for_environment").to_string(),
             Some(description),
             dialog_styles(appearance),
         )

@@ -135,7 +135,7 @@ pub struct MCPServersEditPageView {
 impl MCPServersEditPageView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let save_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Save", PrimaryTheme)
+            ActionButton::new(t!("mcp_ext.save"), PrimaryTheme)
                 .with_icon(Icon::Check)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(MCPServersEditPageViewAction::Save);
@@ -143,13 +143,13 @@ impl MCPServersEditPageView {
         });
 
         let reinstall_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Edit Variables", PrimaryTheme).on_click(|ctx| {
+            ActionButton::new(t!("mcp_ext.edit_variables"), PrimaryTheme).on_click(|ctx| {
                 ctx.dispatch_typed_action(MCPServersEditPageViewAction::Reinstall);
             })
         });
 
         let delete_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Delete MCP", DangerSecondaryTheme)
+            ActionButton::new(t!("mcp_ext.delete_mcp"), DangerSecondaryTheme)
                 .with_icon(Icon::Trash)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(MCPServersEditPageViewAction::Delete);
@@ -157,7 +157,7 @@ impl MCPServersEditPageView {
         });
 
         let unshare_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Remove from team", DangerNakedTheme)
+            ActionButton::new(t!("mcp_ext.remove_from_team"), DangerNakedTheme)
                 .with_icon(Icon::MinusCircle)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(MCPServersEditPageViewAction::Unshare);
@@ -314,11 +314,11 @@ impl MCPServersEditPageView {
     fn render_header(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let title = if self.server_card_item_id.is_none() {
-            "Add New MCP Server".to_string()
+            t!("mcp_ext.add_new_server").to_string()
         } else if let Some(name) = self.server_model.name() {
             format!("Edit {name} MCP Server")
         } else {
-            "Edit MCP Server".to_string()
+            t!("mcp_ext.edit_server").to_string()
         };
 
         let ui_builder = appearance.ui_builder().clone();

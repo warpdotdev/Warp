@@ -503,7 +503,7 @@ impl PlatformPageWidget {
                             ButtonVariant::Outlined,
                             self.create_api_key_button_mouse_state.clone(),
                         )
-                        .with_text_label("+ Create API Key".to_string())
+                        .with_text_label(t!("platform_ext.create_api_key").to_string())
                         .build()
                         .on_click(|ctx, _, _| {
                             ctx.dispatch_typed_action(PlatformPageAction::ShowCreateApiKeyModal);

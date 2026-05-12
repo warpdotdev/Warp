@@ -256,7 +256,7 @@ impl CodeSettingsPageView {
         });
 
         let manual_add_directory_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Index new folder", SecondaryTheme)
+            ActionButton::new(t!("settings.index_new_folder"), SecondaryTheme)
                 .with_icon(Icon::FindAll)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(CodeSettingsPageAction::ManualAddDirectory);
@@ -300,8 +300,8 @@ impl CodeSettingsPageView {
                 Box::new(GlobalSearchToggleWidget::default()),
             ]);
             let categories = vec![
-                Category::new("Codebase Indexing", codebase_indexing_widgets),
-                Category::new("Code Editor and Review", code_editor_review_widgets),
+                Category::new(t!("settings.codebase_indexing"), codebase_indexing_widgets),
+                Category::new(t!("settings.editor_and_code_review"), code_editor_review_widgets),
             ];
             PageType::new_categorized(categories, None)
         } else {
@@ -343,7 +343,7 @@ impl CodeSettingsPageView {
             // or the full categorized page when subpage is None.
             if let Some(subpage) = subpage {
                 let manual_add_directory_button = ctx.add_typed_action_view(|_| {
-                    ActionButton::new("Index new folder", SecondaryTheme)
+                    ActionButton::new(t!("settings.index_new_folder"), SecondaryTheme)
                         .with_icon(Icon::FindAll)
                         .on_click(|ctx| {
                             ctx.dispatch_typed_action(CodeSettingsPageAction::ManualAddDirectory);
@@ -392,7 +392,7 @@ impl CodeSettingsPageView {
     fn build_full_page(ctx: &mut ViewContext<Self>) -> PageType<Self> {
         if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
             let manual_add_directory_button = ctx.add_typed_action_view(|_| {
-                ActionButton::new("Index new folder", SecondaryTheme)
+                ActionButton::new(t!("settings.index_new_folder"), SecondaryTheme)
                     .with_icon(Icon::FindAll)
                     .on_click(|ctx| {
                         ctx.dispatch_typed_action(CodeSettingsPageAction::ManualAddDirectory);
@@ -424,13 +424,13 @@ impl CodeSettingsPageView {
                 Box::new(GlobalSearchToggleWidget::default()),
             ]);
             let categories = vec![
-                Category::new("Codebase Indexing", codebase_indexing_widgets),
-                Category::new("Code Editor and Review", code_editor_review_widgets),
+                Category::new(t!("settings.codebase_indexing"), codebase_indexing_widgets),
+                Category::new(t!("settings.editor_and_code_review"), code_editor_review_widgets),
             ];
             PageType::new_categorized(categories, None)
         } else {
             let manual_add_directory_button = ctx.add_typed_action_view(|_| {
-                ActionButton::new("Index new folder", SecondaryTheme)
+                ActionButton::new(t!("settings.index_new_folder"), SecondaryTheme)
                     .with_icon(Icon::FindAll)
                     .on_click(|ctx| {
                         ctx.dispatch_typed_action(CodeSettingsPageAction::ManualAddDirectory);
@@ -1148,7 +1148,7 @@ impl CodePageWidget {
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_child(
                         ui_builder
-                            .span("Initialized / indexed folders")
+                            .span(t!("settings.initialized_folders").to_string())
                             .with_style(UiComponentStyles {
                                 font_size: Some(16.0),
                                 font_weight: Some(Weight::Semibold),
@@ -1175,7 +1175,7 @@ impl CodePageWidget {
                 Container::new(
                     appearance
                         .ui_builder()
-                        .paragraph("No folders have been initialized yet.")
+                        .paragraph(t!("settings.no_folders_initialized").to_string())
                         .build()
                         .finish(),
                 )
@@ -1405,7 +1405,7 @@ impl CodePageWidget {
         // "INDEXING" label on its own row
         column.add_child(
             ui_builder
-                .span("INDEXING")
+                .span(t!("settings.indexing_label").to_string())
                 .with_style(UiComponentStyles {
                     font_size: Some(11.0),
                     font_weight: Some(Weight::Semibold),
@@ -1458,7 +1458,7 @@ impl CodePageWidget {
                     )
                     .with_child(
                         ui_builder
-                            .label("No index created")
+                            .label(t!("settings.no_index_created").to_string())
                             .with_style(UiComponentStyles {
                                 font_color: Some(status_color),
                                 font_size: Some(12.),
@@ -1629,7 +1629,7 @@ impl CodePageWidget {
         // "LSP SERVERS" label
         content.add_child(
             ui_builder
-                .span("LSP SERVERS")
+                .span(t!("settings.lsp_servers").to_string())
                 .with_style(UiComponentStyles {
                     font_size: Some(11.0),
                     font_weight: Some(Weight::Semibold),
@@ -1927,7 +1927,7 @@ impl CodePageWidget {
                         background: Some(theme.surface_3().into()),
                         ..Default::default()
                     })
-                    .with_text_label("Restart server".to_owned())
+                    .with_text_label(t!("settings.restart_server").to_string())
                     .build()
                     .with_cursor(Cursor::PointingHand)
                     .on_click(move |ctx, _, _| {
@@ -1958,7 +1958,7 @@ impl CodePageWidget {
                         font_size: Some(12.),
                         ..Default::default()
                     })
-                    .with_text_label("View logs".to_owned())
+                    .with_text_label(t!("mcp.view_logs").to_string())
                     .build()
                     .with_cursor(Cursor::PointingHand)
                     .on_click(move |ctx, _, _| {

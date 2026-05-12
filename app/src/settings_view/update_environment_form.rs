@@ -441,7 +441,7 @@ impl UpdateEnvironmentForm {
 
         // Create buttons
         let submit_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Create", PrimaryTheme)
+            ActionButton::new(t!("settings.create"), PrimaryTheme)
                 .with_icon(Icon::Check)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(UpdateEnvironmentFormAction::Submit);
@@ -449,7 +449,7 @@ impl UpdateEnvironmentForm {
         });
 
         let delete_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Delete environment", DangerSecondaryTheme)
+            ActionButton::new(t!("settings.delete_environment"), DangerSecondaryTheme)
                 .with_icon(Icon::Trash)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(UpdateEnvironmentFormAction::Delete);
@@ -1246,7 +1246,7 @@ impl UpdateEnvironmentForm {
                     }
                     Ok(UserGithubInfoResult::Unknown) => {
                         me.github_dropdown_state.load_error_message =
-                            Some("Failed to load GitHub repos".to_string());
+                            Some(t!("settings.failed_load_github_repos").to_string());
                     }
                     Err(e) => {
                         me.github_dropdown_state.load_error_message =
@@ -1439,7 +1439,7 @@ impl UpdateEnvironmentForm {
                             };
                         }
                         warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::UserFacingError(_) => {
-                            let error_message = "Failed to suggest a Docker image".to_string();
+                            let error_message = t!("settings.failed_suggest_docker").to_string();
                             send_telemetry_from_ctx!(
                                 CloudAgentTelemetryEvent::ImageSuggestionFailed {
                                     error: error_message.clone(),
@@ -1452,7 +1452,7 @@ impl UpdateEnvironmentForm {
                             };
                         }
                         warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::Unknown => {
-                            let error_message = "Unknown response from suggestCloudEnvironmentImage".to_string();
+                            let error_message = t!("settings.unknown_response").to_string();
                             send_telemetry_from_ctx!(
                                 CloudAgentTelemetryEvent::ImageSuggestionFailed {
                                     error: error_message.clone(),
@@ -2049,7 +2049,7 @@ impl UpdateEnvironmentForm {
             .github_dropdown_state
             .load_error_message
             .clone()
-            .unwrap_or_else(|| "Failed to load GitHub repositories".to_string());
+            .unwrap_or_else(|| t!("settings.failed_load_github_repositories").to_string());
 
         let mut field = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)

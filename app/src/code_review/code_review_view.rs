@@ -335,7 +335,7 @@ pub fn get_discard_button_disabled_tooltip(git_operation_blocked: bool) -> Strin
         "Cannot discard changes while a git operation (merge, rebase, etc.) is in progress"
             .to_string()
     } else {
-        "No changes to discard".to_string()
+        t!("code_review_ext.no_changes_to_discard").to_string()
     }
 }
 
@@ -526,14 +526,14 @@ impl DiscardOperationType {
     pub fn title(&self) -> String {
         match self {
             DiscardOperationType::AllUncommittedChanges => {
-                "Discard uncommitted changes?".to_string()
+                t!("code_review_ext.discard_uncommitted").to_string()
             }
             DiscardOperationType::FileUncommittedChanges => {
-                "Discard all uncommitted changes to file?".to_string()
+                t!("code_review_ext.discard_all_uncommitted_file").to_string()
             }
-            DiscardOperationType::AllChangesAgainstBranch(_) => "Discard all changes?".to_string(),
+            DiscardOperationType::AllChangesAgainstBranch(_) => t!("code_review_ext.discard_all_changes").to_string(),
             DiscardOperationType::FileChangesAgainstBranch(_) => {
-                "Discard all changes to file?".to_string()
+                t!("code_review_ext.discard_all_changes_file").to_string()
             }
         }
     }
@@ -1143,12 +1143,12 @@ impl CodeReviewView {
         let file_nav_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", NakedTheme)
                 .with_icon(Icon::FileCopy)
-                .with_tooltip("Show file navigation")
+                .with_tooltip(t!("code_review_ext.show_file_navigation"))
                 .on_click(|ctx| ctx.dispatch_typed_action(CodeReviewAction::ToggleFileSidebar))
         });
 
         let git_primary_action_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Commit", SecondaryTheme)
+            ActionButton::new(t!("code_review_ext.commit"), SecondaryTheme)
                 .with_size(ButtonSize::Small)
                 .with_icon(Icon::GitCommit)
                 .with_adjoined_side(AdjoinedSide::Right)
@@ -1189,7 +1189,7 @@ impl CodeReviewView {
 
         let undo_action_button = ctx.add_typed_action_view(move |ctx| {
             let keybinding = custom_tag_to_keystroke(CustomAction::Undo.into());
-            let mut action_button = ActionButton::new("Undo", NakedTheme)
+            let mut action_button = ActionButton::new(t!("code_review_ext.undo"), NakedTheme)
                 .with_size(ButtonSize::Small)
                 .on_click(move |ctx| {
                     ctx.dispatch_typed_action(WorkspaceAction::UndoRevertInCodeReviewPane {
@@ -1206,12 +1206,12 @@ impl CodeReviewView {
         });
 
         let discard_confirm_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Discard changes", DangerPrimaryTheme)
+            ActionButton::new(t!("code_review_ext.discard_changes"), DangerPrimaryTheme)
                 .on_click(|ctx| ctx.dispatch_typed_action(CodeReviewAction::ConfirmDiscardFile))
         });
 
         let discard_cancel_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Cancel", NakedTheme).on_click(|ctx| {
+            ActionButton::new(t!("common.cancel"), NakedTheme).on_click(|ctx| {
                 ctx.dispatch_typed_action(CodeReviewAction::CancelDiscardFile);
             })
         });
@@ -1279,9 +1279,9 @@ impl CodeReviewView {
         let header = CodeReviewHeader::new();
 
         let init_project_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Initialize codebase", NakedTheme)
+            ActionButton::new(t!("code_review_ext.initialize_codebase"), NakedTheme)
                 .with_size(ButtonSize::Small)
-                .with_tooltip("Enables codebase indexing and WARP.md")
+                .with_tooltip(t!("code_review_ext.enables_indexing"))
                 .with_tooltip_alignment(TooltipAlignment::Center)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(CodeReviewAction::InitProjectForCurrentDirectory)
@@ -1290,9 +1290,9 @@ impl CodeReviewView {
 
         #[cfg(not(target_family = "wasm"))]
         let open_repository_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Open repository", NakedTheme)
+            ActionButton::new(t!("code_review_ext.open_repository"), NakedTheme)
                 .with_size(ButtonSize::Small)
-                .with_tooltip("Navigate to a repo and initialize it for coding")
+                .with_tooltip(t!("code_review_ext.navigate_to_repo"))
                 .with_tooltip_alignment(TooltipAlignment::Center)
                 .on_click(|ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenRepository))
         });
@@ -2555,7 +2555,7 @@ impl CodeReviewView {
         let discard_tooltip_text = if git_operation_blocked {
             get_discard_button_disabled_tooltip(git_operation_blocked)
         } else {
-            "Discard changes".to_string()
+            t!("code_review_ext.discard_changes").to_string()
         };
 
         let mut file_states = vec![];
@@ -2597,7 +2597,7 @@ impl CodeReviewView {
                 ActionButton::new("", NakedTheme)
                     .with_icon(Icon::LinkExternal)
                     .with_size(ButtonSize::InlineActionHeader)
-                    .with_tooltip("Open file")
+                    .with_tooltip(t!("code_review_ext.open_file"))
                     .on_click(move |ctx| {
                         ctx.dispatch_typed_action(CodeReviewAction::OpenInNewTab {
                             path: open_tab_path.clone(),
@@ -2634,7 +2634,7 @@ impl CodeReviewView {
                 ActionButton::new("", NakedTheme)
                     .with_icon(Icon::Paperclip)
                     .with_size(ButtonSize::InlineActionHeader)
-                    .with_tooltip("Add file diff as context")
+                    .with_tooltip(t!("code_review_ext.add_file_diff_context"))
                     .on_click(move |ctx| {
                         ctx.dispatch_typed_action(CodeReviewAction::AddDiffSetAsContext(
                             DiffSetScope::File(context_path.clone()),
@@ -2647,7 +2647,7 @@ impl CodeReviewView {
                 ActionButton::new("", NakedTheme)
                     .with_icon(Icon::Copy)
                     .with_size(ButtonSize::InlineActionHeader)
-                    .with_tooltip("Copy file path")
+                    .with_tooltip(t!("code_review_ext.copy_file_path"))
                     .on_click(move |ctx| {
                         ctx.dispatch_typed_action(CodeReviewAction::CopyFilePath(copy_path.clone()))
                     })
@@ -3601,7 +3601,7 @@ impl CodeReviewView {
     fn render_placeholder_header(appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
 
-        let header_text = "Loading open changes...";
+        let header_text = t!("code_review_ext.loading_open_changes");
         let loading_icon = Icon::Loading
             .to_warpui_icon(warp_core::ui::theme::Fill::Solid(
                 internal_colors::neutral_6(theme),
@@ -4335,7 +4335,7 @@ impl CodeReviewView {
             }
             ReviewSubmissionResult::Error => {
                 log::error!("Failed to submit review comments");
-                let error_message = "Could not submit comments to the agent".to_string();
+                let error_message = t!("code_review_ext.could_not_submit_comments").to_string();
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = DismissibleToast::error(error_message);
                     toast_stack.add_ephemeral_toast(toast, self.window_id, ctx);
@@ -5532,7 +5532,7 @@ impl CodeReviewView {
                     )
                     .check(self.discard_dialog_state.stash_changes_enabled)
                     .with_label(
-                        appearance.ui_builder().span("Stash changes").with_style(
+                        appearance.ui_builder().span(t!("code_review_ext.stash_changes")).with_style(
                             UiComponentStyles {
                                 font_size: Some(appearance.ui_font_size()),
                                 font_color: Some(
@@ -6483,7 +6483,7 @@ impl CodeReviewView {
             PrimaryGitActionMode::Commit => {
                 let disabled = !self.has_uncommitted_changes(ctx);
                 self.git_primary_action_button.update(ctx, |button, ctx| {
-                    button.set_label("Commit", ctx);
+                    button.set_label(t!("code_review_ext.commit"), ctx);
                     button.set_icon(Some(Icon::GitCommit), ctx);
                     button.set_disabled(disabled, ctx);
                     button.set_tooltip(disabled.then_some("No changes to commit"), ctx);
@@ -6500,7 +6500,7 @@ impl CodeReviewView {
             }
             PrimaryGitActionMode::Push => {
                 self.git_primary_action_button.update(ctx, |button, ctx| {
-                    button.set_label("Push", ctx);
+                    button.set_label(t!("code_review_ext.push"), ctx);
                     button.set_icon(Some(Icon::ArrowUp), ctx);
                     button.set_disabled(false, ctx);
                     button.clear_tooltip(ctx);
@@ -6516,7 +6516,7 @@ impl CodeReviewView {
             }
             PrimaryGitActionMode::CreatePr => {
                 self.git_primary_action_button.update(ctx, |button, ctx| {
-                    button.set_label("Create PR", ctx);
+                    button.set_label(t!("code_review.create_pr"), ctx);
                     button.set_icon(Some(Icon::Github), ctx);
                     button.set_disabled(false, ctx);
                     button.clear_tooltip(ctx);
@@ -6555,7 +6555,7 @@ impl CodeReviewView {
             }
             PrimaryGitActionMode::Publish => {
                 self.git_primary_action_button.update(ctx, |button, ctx| {
-                    button.set_label("Publish", ctx);
+                    button.set_label(t!("code_review_ext.publish"), ctx);
                     button.set_icon(Some(Icon::UploadCloud), ctx);
                     button.set_disabled(false, ctx);
                     button.clear_tooltip(ctx);

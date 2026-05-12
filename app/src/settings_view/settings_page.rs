@@ -1539,8 +1539,8 @@ impl<V: warpui::View> PageType<V> {
                     .map(|(i, indices)| {
                         let category = &categories[i];
                         FilteredCategory {
-                            title: category.title,
-                            subtitle: category.subtitle,
+                            title: category.title.clone(),
+                            subtitle: category.subtitle.clone(),
                             widgets: indices
                                 .iter()
                                 .map(|i| category.widgets[*i].as_ref())
@@ -1810,33 +1810,33 @@ pub(super) enum FilteredPageType<'a, V: warpui::View> {
 
 /// A grouping of related [`SettingsWidget`]s that fall under the same sub-header.
 pub(super) struct Category<V: warpui::View> {
-    title: &'static str,
-    subtitle: Option<&'static str>,
+    title: Cow<'static, str>,
+    subtitle: Option<Cow<'static, str>>,
     widgets: Vec<Box<dyn SettingsWidget<View = V>>>,
 }
 
 impl<V: warpui::View> Category<V> {
     pub(super) fn new(
-        title: &'static str,
+        title: impl Into<Cow<'static, str>>,
         widgets: Vec<Box<dyn SettingsWidget<View = V>>>,
     ) -> Self {
         Self {
-            title,
+            title: title.into(),
             subtitle: None,
             widgets,
         }
     }
 
-    pub(super) fn with_subtitle(mut self, subtitle: &'static str) -> Self {
-        self.subtitle = Some(subtitle);
+    pub(super) fn with_subtitle(mut self, subtitle: impl Into<Cow<'static, str>>) -> Self {
+        self.subtitle = Some(subtitle.into());
         self
     }
 }
 
 /// A [`Category`] with only the results which match a search query.
 pub(super) struct FilteredCategory<'a, V: warpui::View> {
-    pub(super) title: &'static str,
-    pub(super) subtitle: Option<&'static str>,
+    pub(super) title: Cow<'static, str>,
+    pub(super) subtitle: Option<Cow<'static, str>>,
     pub(super) widgets: Vec<&'a dyn SettingsWidget<View = V>>,
 }
 
@@ -1912,5 +1912,5 @@ pub(super) fn build_reset_button(
             font_size: Some(appearance.ui_font_size() * 0.8),
             ..Default::default()
         })
-        .with_text_label("Reset to default".to_owned())
+        .with_text_label(t!("settings.reset_to_default").to_string())
 }

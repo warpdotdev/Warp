@@ -380,7 +380,7 @@ impl AIDocumentView {
             ActionButton::new("", NakedTheme)
                 .with_icon(icons::Icon::History)
                 .with_size(ButtonSize::Small)
-                .with_tooltip("Show version history")
+                .with_tooltip(t!("ai_ext.show_version_history").to_string())
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(
                         PaneHeaderAction::<AIDocumentAction, AIDocumentAction>::CustomAction(
@@ -406,7 +406,7 @@ impl AIDocumentView {
             .unwrap_or("Click".to_string());
         let tooltip_text = format!("This plan has changes the agent isn't aware of. {save_action} to stop the agent's current task and send the updated plan");
         let update_plan_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Update Agent", PrimaryTheme)
+            ActionButton::new(t!("ai_ext.update_agent"), PrimaryTheme)
                 .with_size(ButtonSize::Small)
                 .with_tooltip(tooltip_text)
                 .with_tooltip_alignment(TooltipAlignment::Right)
@@ -422,7 +422,7 @@ impl AIDocumentView {
 
         // Create restore button
         let restore_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Restore", SecondaryTheme)
+            ActionButton::new(t!("ai_ext.restore"), SecondaryTheme)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(
@@ -1145,7 +1145,7 @@ impl TypedActionView for AIDocumentView {
                 let window_id = ctx.window_id();
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast(
-                        DismissibleToast::success("Link copied to clipboard".to_string()),
+                        DismissibleToast::success(t!("ai_ext.link_copied").to_string()),
                         window_id,
                         ctx,
                     );
@@ -1158,7 +1158,7 @@ impl TypedActionView for AIDocumentView {
                 let window_id = ctx.window_id();
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast(
-                        DismissibleToast::success("Plan ID copied to clipboard".to_string()),
+                        DismissibleToast::success(t!("ai_ext.plan_id_copied").to_string()),
                         window_id,
                         ctx,
                     );

@@ -300,7 +300,7 @@ impl BillingAndUsagePageView {
         });
 
         let load_more_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Load more", SecondaryTheme).on_click(|ctx| {
+            ActionButton::new(t!("settings.load_more"), SecondaryTheme).on_click(|ctx| {
                 ctx.dispatch_typed_action(BillingAndUsagePageAction::RenderMoreUsageEntries);
             })
         });
@@ -1140,7 +1140,7 @@ impl UsageWidget {
                     ButtonVariant::Secondary,
                     self.ambient_trial_new_agent_button.clone(),
                 )
-                .with_text_label("New agent".to_string())
+                .with_text_label(t!("settings.new_agent").to_string())
                 .with_style(UiComponentStyles {
                     font_color: Some(bg),
                     background: Some(fg.into()),
@@ -1177,7 +1177,7 @@ impl UsageWidget {
                     ButtonVariant::Secondary,
                     self.ambient_trial_buy_more_button.clone(),
                 )
-                .with_text_label("Buy more".to_string())
+                .with_text_label(t!("settings.buy_more").to_string())
                 .with_style(UiComponentStyles {
                     background: Some(bg.into()),
                     font_size: Some(14.),
@@ -1810,7 +1810,7 @@ impl UsageWidget {
         let monthly_spend_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_children([
-                ui_builder.span("Monthly spend limit").build().finish(),
+                ui_builder.span(t!("settings.monthly_spend_limit").to_string()).build().finish(),
                 Shrinkable::new(1., Align::new(info_icon).left().finish()).finish(),
                 icon_button(
                     appearance,
@@ -2089,7 +2089,7 @@ impl UsageWidget {
                 .finish();
 
             let mut card_content_lower_children = vec![
-                ui_builder.span("One-time purchase").build().finish(),
+                ui_builder.span(t!("settings.one_time_purchase").to_string()).build().finish(),
                 buy_row.finish(),
             ];
 
@@ -3392,7 +3392,7 @@ impl PlanWidget {
                 self.ui_state_handles.anonymous_user_sign_up_button.clone(),
             )
             .with_style(button_styles)
-            .with_text_label("Sign up".to_owned())
+            .with_text_label(t!("settings.sign_up").to_string())
             .build()
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(BillingAndUsagePageAction::SignupAnonymousUser);
