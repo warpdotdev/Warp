@@ -424,13 +424,7 @@ impl View for OrchestrationLaunchModal {
         .finish();
 
         Container::new(Align::new(card).finish())
-            .with_background_color(
-                appearance
-                    .theme()
-                    .foreground()
-                    .with_opacity(70)
-                    .into_solid(),
-            )
+            .with_background(Fill::Solid(ColorU::new(97, 97, 97, 255)).with_opacity(50))
             .finish()
     }
 }
