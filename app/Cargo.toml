@@ -28,6 +28,11 @@ path = "src/bin/local.rs"
 test = false
 
 [[bin]]
+name = "integration"
+path = "src/bin/integration.rs"
+test = false
+
+[[bin]]
 name = "stable"
 path = "src/bin/stable.rs"
 test = false
@@ -203,6 +208,7 @@ toml_edit.workspace = true
 tracing.workspace = true
 ui_components.workspace = true
 unicase = "2.7.0"
+unicode-general-category.workspace = true
 unicode-width.workspace = true
 unindent = "0.1.7"
 url = { workspace = true, features = ["serde"] }
@@ -286,9 +292,9 @@ tokio.workspace = true
 tokio-util.workspace = true
 
 # AWS SDK (loading credentials for BYO LLM)
-aws-config = { version = "1.8.12", features = ["credentials-login"] }
+aws-config = { version = "1.8.16", features = ["credentials-login"] }
 aws-credential-types = "1"
-aws-sdk-sts = "1"
+aws-sdk-sts = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-types = "1"
 
 rmcp = { workspace = true, features = [
@@ -461,11 +467,7 @@ default = [
     "agent_mode",
     "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",
-    "settings_import",
     "shared_with_me",
-    "block_toolbelt_save_as_workflow",
-    "remove_alt_screen_padding",
-    "less_horizontal_terminal_padding",
     "session_sharing_acls",
     "external_agent_mode_context",
     "shell_selector",
@@ -574,6 +576,7 @@ default = [
     "cloud_mode_image_context",
     "agent_mode_computer_use",
     "oz_platform_skills",
+    "oz_identity_federation",
     "sync_ambient_plans",
     "conversation_artifacts",
     "agent_view",
@@ -751,7 +754,6 @@ richtext_multiselect = []
 runtime_feature_flags = []
 selectable_prompt = []
 settings_file = []
-settings_import = []
 sequential_storage = []
 session_sharing = []
 session_sharing_acls = []
@@ -781,14 +783,11 @@ alacritty_settings_import = []
 shared_with_me = []
 ai_rules = []
 am_workflows = []
-less_horizontal_terminal_padding = []
 shell_selector = []
 shared_session_long_running_commands = []
-block_toolbelt_save_as_workflow = []
 blocklist_markdown_table_rendering = []
 blocklist_markdown_images = []
 minimalist_ui = []
-remove_alt_screen_padding = []
 loginless_conversion = []
 external_agent_mode_context = []
 avatar_in_tab_bar = []
@@ -934,6 +933,7 @@ cloud_mode_setup_v2 = ["cloud_mode"]
 cloud_mode_input_v2 = ["cloud_mode"]
 configurable_context_window = []
 handoff_cloud_cloud = ["cloud_mode_setup_v2"]
+git_credential_refresh = []
 
 [package.metadata.bundle.bin.warp-oss]
 category = "public.app-category.developer-tools"

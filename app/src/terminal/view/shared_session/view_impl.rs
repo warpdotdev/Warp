@@ -122,11 +122,11 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal::view) fn owned_ambient_agent_task_id(
+    pub(crate) fn owned_ambient_agent_task_id(
         &self,
         ctx: &AppContext,
     ) -> Option<AmbientAgentTaskId> {
-        let task_id = self.model.lock().ambient_agent_task_id()?;
+        let task_id = self.ambient_agent_task_id_for_details_panel(ctx)?;
         self.is_current_user_creator_of_ambient_task(task_id, ctx)
             .then_some(task_id)
     }
@@ -496,7 +496,9 @@ impl TerminalView {
                 .any(|conv| conv.exchange_count() > 0);
 
             if has_conversations {
-                log::warn!("Cannot share without scrollback when agent conversations exist. Agent shared sessions require conversation history to be shared.");
+                log::warn!(
+                    "Cannot share without scrollback when agent conversations exist. Agent shared sessions require conversation history to be shared."
+                );
                 return;
             }
         }
@@ -725,11 +727,13 @@ impl TerminalView {
     /// Applies to both sharer and viewer when the session sharing ends.
     pub fn on_session_share_ended(&mut self, ctx: &mut ViewContext<Self>) {
         let viewed_ambient_task_id_owned_by_current_user = self.owned_ambient_agent_task_id(ctx);
+        let can_continue_owned_task_in_cloud = FeatureFlag::HandoffCloudCloud.is_enabled();
         let should_insert_tombstone = {
             let model = self.model.lock();
             FeatureFlag::CloudModeSetupV2.is_enabled()
                 && model.is_shared_ambient_agent_session()
-                && viewed_ambient_task_id_owned_by_current_user.is_none()
+                && (viewed_ambient_task_id_owned_by_current_user.is_none()
+                    || !can_continue_owned_task_in_cloud)
                 && self.conversation_ended_tombstone_view_id.is_none()
                 && !model.is_receiving_agent_conversation_replay()
         };
@@ -772,7 +776,9 @@ impl TerminalView {
         });
 
         if self.pending_cloud_followup_task_id.is_none() {
-            if let Some(task_id) = viewed_ambient_task_id_owned_by_current_user {
+            if let Some(task_id) = viewed_ambient_task_id_owned_by_current_user
+                .filter(|_| can_continue_owned_task_in_cloud)
+            {
                 self.enable_owned_cloud_followup_input(task_id, ctx);
             } else if self.model.lock().shared_session_status().is_viewer() {
                 // When the session is ended, the input should be uneditable iff this is a viewer.
@@ -811,21 +817,25 @@ impl TerminalView {
             });
         }
         self.refresh_conversation_details_panel_if_open(ctx);
-        if !FeatureFlag::HandoffCloudCloud.is_enabled()
-            || !FeatureFlag::CloudModeSetupV2.is_enabled()
+        if !FeatureFlag::CloudModeSetupV2.is_enabled()
             || self.conversation_ended_tombstone_view_id.is_some()
             || self.pending_cloud_followup_task_id.is_some()
         {
             return;
         }
-        if let Some(task_id) = self.owned_ambient_agent_task_id(ctx) {
-            if !has_live_shared_session {
-                self.enable_owned_cloud_followup_input(task_id, ctx);
-            }
+        if !FeatureFlag::HandoffCloudCloud.is_enabled() {
+            self.insert_conversation_ended_tombstone(ctx);
+            return;
+        }
+        let Some(task_id) = self.owned_ambient_agent_task_id(ctx) else {
+            self.insert_conversation_ended_tombstone(ctx);
+            return;
+        };
+        if has_live_shared_session {
             return;
         }
 
-        self.insert_conversation_ended_tombstone(ctx);
+        self.enable_owned_cloud_followup_input(task_id, ctx);
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -1660,7 +1670,7 @@ impl TerminalView {
         if self.conversation_ended_tombstone_view_id.is_some() {
             self.remove_conversation_ended_tombstone(ctx);
         }
-        let task_id = self.model.lock().ambient_agent_task_id();
+        let task_id = self.ambient_agent_task_id_for_details_panel(ctx);
         let terminal_view_id = self.id();
 
         let tombstone_view_handle = ctx.add_typed_action_view(|ctx| {

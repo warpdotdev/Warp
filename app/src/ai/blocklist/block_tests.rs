@@ -1,4 +1,4 @@
-use super::{CollapsibleElementState, CollapsibleExpansionState};
+use super::{received_message_collapsible_id, CollapsibleElementState, CollapsibleExpansionState};
 use crate::ai::agent::StartAgentExecutionMode;
 use crate::ai::blocklist::action_model::{
     compose_run_agents_child_prompt, run_agents_to_start_agent_mode,
@@ -91,6 +91,16 @@ fn manual_reexpand_while_streaming_stays_expanded_after_finish() {
             }
         ));
     });
+}
+
+#[test]
+fn received_message_collapsible_id_prefixes_row_ids() {
+    let first = received_message_collapsible_id("message-1");
+    let second = received_message_collapsible_id("message-2");
+
+    assert_eq!(&*first, "received-message:message-1");
+    assert_eq!(&*second, "received-message:message-2");
+    assert_ne!(first, second);
 }
 
 #[test]

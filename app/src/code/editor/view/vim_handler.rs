@@ -18,6 +18,7 @@ use warp_editor::{
         ToBufferCharOffset as _, VimInsertPoint,
     },
     model::{CoreEditorModel, PlainTextEditorModel},
+    render::model::AutoScrollMode,
     selection::{TextDirection, TextUnit},
 };
 use warpui::{text::point::Point, SingletonEntity, ViewContext};
@@ -920,6 +921,24 @@ impl VimHandler for CodeEditorView {
 
     fn show_hover(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.emit(CodeEditorEvent::VimShowHover);
+    }
+
+    fn center_cursor_vertically(&mut self, ctx: &mut ViewContext<Self>) {
+        let cursor_offset = self
+            .model
+            .as_ref(ctx)
+            .buffer_selection_model()
+            .as_ref(ctx)
+            .first_selection_head();
+        self.model
+            .as_ref(ctx)
+            .render_state()
+            .clone()
+            .update(ctx, |render_state, _ctx| {
+                render_state.request_autoscroll_to(AutoScrollMode::PositionOffsetInViewportCenter(
+                    cursor_offset,
+                ));
+            });
     }
 }
 

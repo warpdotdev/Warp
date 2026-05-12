@@ -18,7 +18,7 @@ use crate::server::server_api::{ServerApi, ServerApiProvider};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::channel::mpsc;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
@@ -39,6 +39,8 @@ const RESTORE_FETCH_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
 const RESTORE_FETCH_PERMANENT_BACKOFF_STEPS: &[u64] = &[30];
 /// How often (milliseconds) the drain timer checks for SSE events.
 const SSE_DRAIN_INTERVAL_MS: u64 = 500;
+/// Cap killed-run tombstones while keeping normal sessions well below the limit.
+const MAX_KILLED_RUN_IDS: usize = 1024;
 
 /// Per-event item delivered from the SSE background task to the entity.
 struct SseStreamItem {
@@ -188,6 +190,9 @@ pub struct OrchestrationEventStreamer {
     /// Monotonic counter for wake-only listener generations. Ensures stale
     /// callbacks from replaced listeners are discarded.
     next_wake_generation: u64,
+    /// Run IDs killed locally; kept briefly to drop late server events.
+    killed_run_ids: HashSet<String>,
+    killed_run_id_order: VecDeque<String>,
 }
 
 pub enum OrchestrationEventStreamerEvent {
@@ -215,6 +220,8 @@ impl OrchestrationEventStreamer {
             streams: HashMap::new(),
             next_sse_generation: 0,
             next_wake_generation: 0,
+            killed_run_ids: HashSet::new(),
+            killed_run_id_order: VecDeque::new(),
         }
     }
 
@@ -237,10 +244,40 @@ impl OrchestrationEventStreamer {
             streams: HashMap::new(),
             next_sse_generation: 0,
             next_wake_generation: 0,
+            killed_run_ids: HashSet::new(),
+            killed_run_id_order: VecDeque::new(),
         }
     }
 
     // ---- Public consumer registry API ---------------------------------
+
+    /// Tombstone a killed run so late SSE events cannot resurrect it.
+    pub fn mark_conversation_killed(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(run_id) = self.self_run_id(conversation_id, ctx) else {
+            log::info!("mark_conversation_killed: conversation {conversation_id:?} has no run_id");
+            return;
+        };
+        log::info!(
+            "Marking orchestration run as killed: conversation_id={conversation_id:?} run_id={run_id}"
+        );
+        self.remember_killed_run_id(run_id);
+    }
+
+    fn remember_killed_run_id(&mut self, run_id: String) {
+        if self.killed_run_ids.insert(run_id.clone()) {
+            self.killed_run_id_order.push_back(run_id);
+        }
+        while self.killed_run_ids.len() > MAX_KILLED_RUN_IDS {
+            let Some(evicted_run_id) = self.killed_run_id_order.pop_front() else {
+                break;
+            };
+            self.killed_run_ids.remove(&evicted_run_id);
+        }
+    }
 
     /// Register a consumer for a conversation. Re-evaluates eligibility
     /// and opens the SSE connection if the conversation is newly
@@ -578,9 +615,6 @@ impl OrchestrationEventStreamer {
             }
         }
 
-        // Prune the removed conversation's run_id from every other
-        // tracked conversation's watched set, then re-evaluate eligibility
-        // for the affected parents.
         if let Some(run_id) = removed_run_id.as_deref() {
             let mut affected = Vec::new();
             for (other_id, stream) in self.streams.iter_mut() {
@@ -1230,8 +1264,8 @@ impl OrchestrationEventStreamer {
         conversation_id: AIConversationId,
         self_run_id: &str,
         previous_cursor: i64,
-        events: Vec<AgentRunEvent>,
-        messages: Vec<ReceivedMessageInput>,
+        mut events: Vec<AgentRunEvent>,
+        mut messages: Vec<ReceivedMessageInput>,
         ctx: &mut ModelContext<Self>,
     ) {
         let max_seq = events
@@ -1244,9 +1278,8 @@ impl OrchestrationEventStreamer {
             .or_default()
             .event_cursor = max_seq;
 
-        // Persist the cursor to SQLite so that after a restart we can
-        // resume event delivery from this sequence number without
-        // re-delivering events the parent has already acted on.
+        // Advance the cursor before filtering so dropped killed-run events
+        // are not replayed later.
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
             model.update_event_sequence(conversation_id, max_seq, ctx);
         });
@@ -1278,6 +1311,25 @@ impl OrchestrationEventStreamer {
             );
         }
 
+        if !self.killed_run_ids.is_empty() {
+            let dropped_message_ids: HashSet<String> = events
+                .iter()
+                .filter(|event| self.killed_run_ids.contains(&event.run_id))
+                .filter_map(|event| event.ref_id.clone())
+                .collect();
+            let event_count_before = events.len();
+            events.retain(|event| !self.killed_run_ids.contains(&event.run_id));
+            messages.retain(|message| {
+                !dropped_message_ids.contains(&message.message_id)
+                    && !self.killed_run_ids.contains(&message.sender_agent_id)
+            });
+            let dropped_event_count = event_count_before - events.len();
+            if dropped_event_count > 0 {
+                log::info!(
+                    "Dropped {dropped_event_count} orchestration events for killed run IDs while handling {conversation_id:?}"
+                );
+            }
+        }
         // Track message IDs for server-side mark_delivered calls.
         let message_ids: Vec<String> = messages
             .iter()

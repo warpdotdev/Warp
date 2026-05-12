@@ -245,6 +245,8 @@ enum PendingAction {
     },
     /// the full "g" command
     G,
+    /// the full "z" command (e.g. zz)
+    Z,
     FindChar {
         direction: Direction,
         destination: FindCharDestination,
@@ -269,6 +271,7 @@ impl From<char> for PendingAction {
                 pending_operand: None,
             },
             'g' => Self::G,
+            'z' => Self::Z,
             'f' => Self::FindChar {
                 direction: Direction::Forward,
                 destination: FindCharDestination::AtChar,
@@ -586,6 +589,8 @@ pub enum VimEventType {
     GotoDefinition,
     FindReferences,
     ShowHover,
+    /// Center the current line vertically in the viewport. Triggered by `zz`.
+    CenterCursorVertically,
 }
 
 impl VimEventType {
@@ -643,7 +648,8 @@ impl VimEventType {
             | VimEventType::Escape
             | VimEventType::GotoDefinition
             | VimEventType::FindReferences
-            | VimEventType::ShowHover => None,
+            | VimEventType::ShowHover
+            | VimEventType::CenterCursorVertically => None,
         }
     }
 }
@@ -917,7 +923,7 @@ impl VimFSA {
                     },
                 ),
                 'r' => self.change_mode(VimMode::Replace.into()),
-                'g' | 'd' | 'c' | 'y' | 'f' | 'F' | 't' | 'T' | '[' | ']' | '"' => {
+                'g' | 'd' | 'c' | 'y' | 'z' | 'f' | 'F' | 't' | 'T' | '[' | ']' | '"' => {
                     self.pending_action = Some(PendingAction::from(c));
                     return None;
                 }
@@ -1025,6 +1031,13 @@ impl VimFSA {
         action: PendingAction,
     ) -> Option<VimEventType> {
         let event = match action {
+            PendingAction::Z => match c {
+                'z' => VimEventType::CenterCursorVertically,
+                _ => {
+                    self.clear();
+                    return None;
+                }
+            },
             PendingAction::G => match c {
                 'e' | 'E' => VimEventType::Navigate(VimMotion::Word(WordMotion {
                     direction: Direction::Backward,
@@ -1467,7 +1480,7 @@ impl VimFSA {
                     write_register_name,
                 }
             }
-            'g' | 'f' | 'F' | 't' | 'T' | '[' | ']' | '"' => {
+            'g' | 'z' | 'f' | 'F' | 't' | 'T' | '[' | ']' | '"' => {
                 self.pending_action = Some(PendingAction::from(c));
                 return None;
             }
@@ -1502,6 +1515,13 @@ impl VimFSA {
         pending_action: PendingAction,
     ) -> Option<VimEventType> {
         let event_type = match pending_action {
+            PendingAction::Z => match c {
+                'z' => VimEventType::CenterCursorVertically,
+                _ => {
+                    self.clear();
+                    return None;
+                }
+            },
             PendingAction::G => match c {
                 'e' | 'E' => VimEventType::Navigate(VimMotion::Word(WordMotion {
                     direction: Direction::Backward,
@@ -1885,6 +1905,7 @@ where
             VimEventType::GotoDefinition => self.goto_definition(ctx),
             VimEventType::FindReferences => self.find_references(ctx),
             VimEventType::ShowHover => self.show_hover(ctx),
+            VimEventType::CenterCursorVertically => self.center_cursor_vertically(ctx),
         };
     }
 }
@@ -2003,4 +2024,6 @@ pub trait VimHandler {
     fn find_references(&mut self, _ctx: &mut ViewContext<Self>) {}
     /// Show hover information for the symbol under cursor (gh).
     fn show_hover(&mut self, _ctx: &mut ViewContext<Self>) {}
+    /// Center the current line vertically in the viewport (zz).
+    fn center_cursor_vertically(&mut self, _ctx: &mut ViewContext<Self>) {}
 }

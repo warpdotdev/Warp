@@ -122,7 +122,7 @@ The checked-in specs should describe the feature that actually ships, not just t
 
 Before considering the work complete, make sure verification maps back to the specs. Prefer tests and artifacts that validate the product behavior directly:
 
-- use the `rust-unit-tests` skill for crate-level unit tests and regression coverage
+- unit tests and regression coverage that follow the repository's local testing conventions
 - integration tests for critical user flows
 - loom walkthroughs or equivalent feature demonstrations when appropriate
 - screenshots or videos when useful for UI-heavy work

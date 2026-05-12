@@ -356,14 +356,6 @@ mod should_auto_launch_tests {
     }
 
     #[test]
-    fn returns_false_when_editor_open() {
-        let mut state = default_state();
-        state.is_editor_open = true;
-        let config = Some(matching_config());
-        assert!(!should_auto_launch(false, false, false, &state, &config));
-    }
-
-    #[test]
     fn returns_false_when_agent_run_configs_empty() {
         let mut state = default_state();
         state.agent_run_configs.clear();

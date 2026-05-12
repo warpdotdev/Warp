@@ -81,6 +81,7 @@ pub fn convert_conversation_data_to_ai_conversation(
             artifacts_json: None,
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
@@ -97,6 +98,7 @@ pub fn convert_conversation_data_to_ai_conversation(
             artifacts_json: serde_json::to_string(&metadata.artifacts).ok(),
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
             // TODO: Populate run_id from server metadata once it is exposed
@@ -434,7 +436,10 @@ impl ConvertToExchanges for &api::Task {
                         api::message::system_query::Type::ResumeConversation(_)
                         | api::message::system_query::Type::GeneratePassiveSuggestions(_)
                         // TODO: Implement this for real. ZB adding this to bump proto version for unrelated API changes.
-                        | api::message::system_query::Type::SummarizeConversation(_)=> false,
+                        | api::message::system_query::Type::SummarizeConversation(_)
+                        // HandoffRehydration is injected by the server for agent-only
+                        // context; the client must never render it as user input.
+                        | api::message::system_query::Type::HandoffRehydration(_) => false,
                     }
                 }
                 api::message::Message::ToolCallResult(tool_call_result) => {

@@ -4,6 +4,7 @@ use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHa
 use crate::{
     app_state::{CodePaneSnapShot, CodePaneTabSnapshot, LeafContents},
     code::{
+        buffer_location::FileLocation,
         editor_management::{CodeEditorStatus, CodeManager, CodeSource},
         view::{CodeView, CodeViewEvent},
     },
@@ -83,7 +84,11 @@ impl PaneContent for CodePane {
                     _ => None,
                 };
                 code_pane.file_view(ctx).update(ctx, |code_view, ctx| {
-                    code_view.open_or_focus_existing(Some(path.clone()), line_col, ctx);
+                    code_view.open_or_focus_existing(
+                        Some(FileLocation::Local(path.clone())),
+                        line_col,
+                        ctx,
+                    );
                 });
             }
 
@@ -100,7 +105,7 @@ impl PaneContent for CodePane {
                     CodeSource::Link { range_start, .. } => *range_start,
                     _ => None,
                 };
-                code_view.open_or_focus_existing(Some(path), line_col, ctx);
+                code_view.open_or_focus_existing(Some(FileLocation::Local(path)), line_col, ctx);
             }
         });
 

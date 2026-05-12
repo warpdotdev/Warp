@@ -500,6 +500,7 @@ pub enum CLIAgentType {
     Auggie,
     Cursor,
     Goose,
+    Hermes,
     Vibe,
     Unknown,
 }
@@ -2807,6 +2808,7 @@ pub enum TelemetryEvent {
     /// `error` is `None` on success, `Some(reason)` on failure.
     RemoteServerInstallation {
         error: Option<String>,
+        install_source: Option<remote_server::transport::InstallSource>,
         remote_os: Option<String>,
         remote_arch: Option<String>,
     },
@@ -2817,6 +2819,11 @@ pub enum TelemetryEvent {
         error: Option<String>,
         remote_os: Option<String>,
         remote_arch: Option<String>,
+        /// Exit code of the SSH subprocess, if available.
+        /// Helps distinguish proxy crashes from transport failures.
+        exit_code: Option<i32>,
+        /// Whether the SSH subprocess was killed by a signal.
+        signal_killed: Option<bool>,
     },
     /// Emitted when an established remote server connection drops.
     RemoteServerDisconnection {
@@ -4162,10 +4169,12 @@ impl TelemetryEvent {
             })),
             TelemetryEvent::RemoteServerInstallation {
                 error,
+                install_source,
                 remote_os,
                 remote_arch,
             } => Some(json!({
                 "error": error,
+                "install_source": install_source,
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
@@ -4174,11 +4183,15 @@ impl TelemetryEvent {
                 error,
                 remote_os,
                 remote_arch,
+                exit_code,
+                signal_killed,
             } => Some(json!({
                 "phase": phase,
                 "error": error,
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
+                "exit_code": exit_code,
+                "signal_killed": signal_killed,
             })),
             TelemetryEvent::RemoteServerDisconnection {
                 remote_os,
@@ -5444,7 +5457,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::SettingsImportConfigFocused
             | Self::SettingsImportConfigParsed
             | Self::SettingsImportResetButtonClicked
-            | Self::ITermMultipleHotkeys => EnablementState::Flag(FeatureFlag::SettingsImport),
+            | Self::ITermMultipleHotkeys => EnablementState::Always,
             Self::ToggleIntelligentAutosuggestionsSetting | Self::AgentModePrediction => {
                 EnablementState::Always
             }
@@ -5477,9 +5490,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleWorkspaceDecorationVisibility => {
                 EnablementState::Flag(FeatureFlag::FullScreenZenMode)
             }
-            Self::UpdateAltScreenPaddingMode => {
-                EnablementState::Flag(FeatureFlag::RemoveAltScreenPadding)
-            }
+            Self::UpdateAltScreenPaddingMode => EnablementState::Always,
             Self::AddTabWithShell => EnablementState::Flag(FeatureFlag::ShellSelector),
             Self::AgentModeSurfacedCitations | Self::AgentModeOpenedCitation => {
                 EnablementState::Always
