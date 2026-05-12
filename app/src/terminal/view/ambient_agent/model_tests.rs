@@ -37,6 +37,7 @@ fn pending_handoff() -> PendingHandoff {
 fn pending_handoff_fresh_launch() -> PendingHandoff {
     PendingHandoff {
         forked_conversation_id: None,
+        title: None,
         touched_workspace: None,
         snapshot_upload: SnapshotUploadStatus::Pending,
         submission_state: HandoffSubmissionState::Idle,
