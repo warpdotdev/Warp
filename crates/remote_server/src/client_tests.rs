@@ -242,6 +242,7 @@ async fn get_fragment_metadata_from_hash_round_trip() {
                         message: "missing".to_string(),
                     }),
                 }],
+                error: None,
             },
         )
     });

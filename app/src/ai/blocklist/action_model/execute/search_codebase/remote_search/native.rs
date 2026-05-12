@@ -8,6 +8,7 @@ use remote_server::proto::{
     ReadFileContextResponse,
 };
 use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
+use string_offset::ByteOffset;
 use warpui::{ModelContext, SingletonEntity};
 
 use crate::{
@@ -248,8 +249,8 @@ impl RemoteFragmentIdentity {
         Self {
             content_hash: fragment.content_hash().to_string(),
             path: fragment.absolute_path().to_string_lossy().to_string(),
-            byte_start: byte_range.start as u64,
-            byte_end: byte_range.end as u64,
+            byte_start: byte_range.start.as_usize() as u64,
+            byte_end: byte_range.end.as_usize() as u64,
         }
     }
 }
@@ -318,7 +319,8 @@ fn remote_fragments_and_file_contexts(
             content.clone(),
             content_hash,
             PathBuf::from(fragment_metadata.path.clone()),
-            fragment_metadata.byte_start as usize..fragment_metadata.byte_end as usize,
+            ByteOffset::from(fragment_metadata.byte_start as usize)
+                ..ByteOffset::from(fragment_metadata.byte_end as usize),
         ));
         file_contexts_by_identity.insert(
             RemoteFragmentIdentity::from_metadata(fragment_metadata),

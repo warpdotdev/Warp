@@ -20,7 +20,8 @@ use super::codebase_index_status::{
 };
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
 use ::ai::index::full_source_code_embedding::manager::{
-    CodebaseIndexManager, CodebaseIndexManagerEvent, FragmentMetadataLookupError,
+    CodebaseIndexManager, CodebaseIndexManagerEvent,
+    FragmentMetadataLookupError as LocalFragmentMetadataLookupError,
 };
 use ::ai::index::full_source_code_embedding::{
     ContentHash, FragmentMetadata as LocalFragmentMetadata, NodeHash,
@@ -42,13 +43,14 @@ use super::proto::{
     DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess, DropCodebaseIndex, ErrorCode,
     ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, GetDiffStateResponse,
     FragmentMetadata as ProtoFragmentMetadata,
-    GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse, IndexCodebase, Initialize,
-    InitializeResponse, MissingFragmentMetadata, NavigatedToDirectory, NavigatedToDirectoryResponse,
-    OpenBuffer, OpenBufferResponse, ReadFileContextResponse, ResolveConflict,
-    ResolveConflictResponse, ResolveConflictSuccess, RunCommandError, RunCommandErrorCode,
-    RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse,
-    SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse,
-    WriteFileSuccess,
+    FragmentMetadataLookupError as ProtoFragmentMetadataLookupError,
+    FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash,
+    GetFragmentMetadataFromHashResponse, IndexCodebase, Initialize, InitializeResponse,
+    MissingFragmentMetadata, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
+    OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
+    ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
+    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
+    ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -180,9 +182,6 @@ pub struct ServerModel {
     /// Used to avoid sending duplicate snapshots on repeated
     /// `NavigatedToDirectory` calls while the user `cd`s within the same repo.
     snapshot_sent_roots_by_connection: HashMap<ConnectionId, HashSet<StandardizedPath>>,
-    /// Per-connection git repo roots that this connection has navigated to or explicitly
-    /// requested indexing for. Fragment metadata lookups are only allowed for these roots.
-    authorized_codebase_index_roots_by_connection: HashMap<ConnectionId, HashSet<StandardizedPath>>,
     /// Abort handle for the active grace timer, if any.
     /// Calling `.abort()` cancels the timer before it fires.
     grace_timer_cancel: Option<SpawnedFutureHandle>,
@@ -224,7 +223,6 @@ impl ServerModel {
         let mut model = Self {
             connection_senders: HashMap::new(),
             snapshot_sent_roots_by_connection: HashMap::new(),
-            authorized_codebase_index_roots_by_connection: HashMap::new(),
             grace_timer_cancel: None,
             in_progress: HashMap::new(),
             host_id,
@@ -577,8 +575,6 @@ impl ServerModel {
         self.connection_senders.insert(conn_id, conn_tx);
         self.snapshot_sent_roots_by_connection
             .insert(conn_id, HashSet::new());
-        self.authorized_codebase_index_roots_by_connection
-            .insert(conn_id, HashSet::new());
         ctx.notify();
     }
 
@@ -586,8 +582,6 @@ impl ServerModel {
     /// and starts the grace timer if no connections remain.
     pub fn deregister_connection(&mut self, conn_id: ConnectionId, ctx: &mut ModelContext<Self>) {
         self.snapshot_sent_roots_by_connection.remove(&conn_id);
-        self.authorized_codebase_index_roots_by_connection
-            .remove(&conn_id);
         // Guard against double-deregister (reader and writer tasks both call
         // this on connection close; the second call must be a safe no-op).
         if self.connection_senders.remove(&conn_id).is_none() {
@@ -772,9 +766,6 @@ impl ServerModel {
             }
             CodebaseIndexManagerEvent::RemoveExpiredIndexMetadata { expired_metadata } => {
                 for repo_path in expired_metadata.iter() {
-                    if let Ok(root_path) = StandardizedPath::from_local_canonicalized(repo_path) {
-                        self.remove_authorized_codebase_index_root(&root_path);
-                    }
                     self.send_server_message(
                         None,
                         None,
@@ -890,9 +881,6 @@ impl ServerModel {
         log::info!(
             "[Remote codebase indexing] Daemon handling IndexCodebase: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
         );
-        if let Ok(root_path) = StandardizedPath::from_local_canonicalized(&repo_path) {
-            self.authorize_codebase_index_root_for_connection(conn_id, root_path);
-        }
         let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
             if let Some(indexed_repo_path) = manager.root_path_for_codebase(&repo_path) {
                 manager.try_manual_resync_codebase(&repo_path, ctx);
@@ -966,9 +954,6 @@ impl ServerModel {
         CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
             manager.drop_index(repo_path.clone(), ctx);
         });
-        if let Ok(root_path) = StandardizedPath::from_local_canonicalized(&repo_path) {
-            self.remove_authorized_codebase_index_root(&root_path);
-        }
 
         HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
             CodebaseIndexStatusUpdated {
@@ -995,37 +980,35 @@ impl ServerModel {
         );
 
         if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: "Remote codebase indexing is not enabled".to_string(),
-            }));
+            return fragment_metadata_lookup_error_response(
+                FragmentMetadataLookupErrorCode::RemoteCodebaseIndexingNotEnabled,
+                "Remote codebase indexing is not enabled".to_string(),
+                None,
+            );
         }
 
         let repo_path = match canonicalize_index_repo_path(&msg.repo_path) {
             Ok(repo_path) => repo_path,
             Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: error,
-                }));
+                return fragment_metadata_lookup_error_response(
+                    FragmentMetadataLookupErrorCode::InvalidRepoPath,
+                    error,
+                    None,
+                );
             }
         };
         let root_hash = match msg.root_hash.parse::<NodeHash>() {
             Ok(root_hash) => root_hash,
             Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: format!("Invalid root_hash: {error}"),
-                }));
+                return fragment_metadata_lookup_error_response(
+                    FragmentMetadataLookupErrorCode::InvalidRootHash,
+                    format!("Invalid root_hash: {error}"),
+                    None,
+                );
             }
         };
-        if let Err(message) =
-            self.validate_fragment_metadata_lookup(conn_id, &repo_path, &root_hash, ctx)
-        {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message,
-            }));
+        if let Err(error) = self.validate_fragment_metadata_lookup(&repo_path, &root_hash, ctx) {
+            return fragment_metadata_lookup_error_response_from_error(error);
         }
 
         let mut valid_hashes = Vec::new();
@@ -1050,10 +1033,7 @@ impl ServerModel {
         {
             Ok(metadata_by_hash) => metadata_by_hash,
             Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: fragment_metadata_lookup_error_message(error),
-                }));
+                return fragment_metadata_lookup_error_response_from_error(error);
             }
         };
 
@@ -1079,72 +1059,35 @@ impl ServerModel {
                 GetFragmentMetadataFromHashResponse {
                     fragments,
                     missing_hashes,
+                    error: None,
                 },
             ),
         )
     }
 
-    fn authorize_codebase_index_root_for_connection(
-        &mut self,
-        conn_id: ConnectionId,
-        repo_path: StandardizedPath,
-    ) {
-        self.authorized_codebase_index_roots_by_connection
-            .entry(conn_id)
-            .or_default()
-            .insert(repo_path);
-    }
-
-    fn remove_authorized_codebase_index_root(&mut self, repo_path: &StandardizedPath) {
-        for roots in self
-            .authorized_codebase_index_roots_by_connection
-            .values_mut()
-        {
-            roots.remove(repo_path);
-        }
-    }
-
-    fn codebase_index_root_authorized_for_connection(
-        &self,
-        conn_id: ConnectionId,
-        repo_path: &StandardizedPath,
-    ) -> bool {
-        self.authorized_codebase_index_roots_by_connection
-            .get(&conn_id)
-            .is_some_and(|roots| roots.contains(repo_path))
-    }
-
     fn validate_fragment_metadata_lookup(
         &self,
-        conn_id: ConnectionId,
         repo_path: &Path,
         root_hash: &NodeHash,
         ctx: &mut ModelContext<Self>,
-    ) -> Result<(), String> {
-        let repo_path_for_auth = StandardizedPath::from_local_canonicalized(repo_path)
-            .map_err(|error| format!("Invalid repo_path: {error}"))?;
-        if !self.codebase_index_root_authorized_for_connection(conn_id, &repo_path_for_auth) {
-            return Err(
-                "Codebase index metadata lookup is not authorized for this connection".to_string(),
-            );
-        }
-
+    ) -> Result<(), LocalFragmentMetadataLookupError> {
         let Some(status) = CodebaseIndexManager::handle(ctx)
             .as_ref(ctx)
             .get_codebase_index_status_for_path(repo_path, ctx)
         else {
-            return Err("Codebase index not found".to_string());
+            return Err(LocalFragmentMetadataLookupError::IndexNotFound);
         };
         if !status.has_synced_version() {
-            return Err("Codebase index has no synced version".to_string());
+            return Err(LocalFragmentMetadataLookupError::IndexNotSynced);
         }
         let Some(current_root_hash) = status.root_hash() else {
-            return Err("Codebase index has no synced root hash".to_string());
+            return Err(LocalFragmentMetadataLookupError::IndexNotSynced);
         };
         if current_root_hash != root_hash {
-            return Err(format!(
-                "Codebase index root hash mismatch: requested {root_hash}, current {current_root_hash}"
-            ));
+            return Err(LocalFragmentMetadataLookupError::RootHashMismatch {
+                requested: root_hash.clone(),
+                current: current_root_hash.clone(),
+            });
         }
 
         Ok(())
@@ -1586,10 +1529,6 @@ impl ServerModel {
                     StandardizedPath::from_local_canonicalized(Path::new(&indexed_path))
                 {
                     if is_git {
-                        me.authorize_codebase_index_root_for_connection(
-                            conn_id_for_response,
-                            root_path.clone(),
-                        );
                         let already_sent = me
                             .snapshot_sent_roots_by_connection
                             .get(&conn_id_for_response)
@@ -2426,8 +2365,9 @@ fn requested_repo_path(repo_path: &str) -> Result<PathBuf, String> {
     if repo_path.is_empty() {
         return Err("repo_path is required".to_string());
     }
-
-    Ok(PathBuf::from(repo_path))
+    StandardizedPath::from_local_canonicalized(Path::new(repo_path))
+        .map(|path| path.to_local_path_lossy())
+        .map_err(|error| format!("Invalid repo_path {repo_path}: {error}"))
 }
 
 fn canonicalize_index_repo_path(repo_path: &str) -> Result<PathBuf, String> {
@@ -2445,17 +2385,48 @@ fn missing_fragment_metadata(content_hash: String, message: String) -> MissingFr
         error: Some(FileOperationError { message }),
     }
 }
+fn fragment_metadata_lookup_error_response(
+    code: FragmentMetadataLookupErrorCode,
+    message: String,
+    current_root_hash: Option<String>,
+) -> HandlerOutcome {
+    HandlerOutcome::Sync(
+        server_message::Message::GetFragmentMetadataFromHashResponse(
+            GetFragmentMetadataFromHashResponse {
+                fragments: vec![],
+                missing_hashes: vec![],
+                error: Some(ProtoFragmentMetadataLookupError {
+                    code: code.into(),
+                    message,
+                    current_root_hash,
+                }),
+            },
+        ),
+    )
+}
 
-fn fragment_metadata_lookup_error_message(error: FragmentMetadataLookupError) -> String {
-    match error {
-        FragmentMetadataLookupError::IndexNotFound => "Codebase index not found".to_string(),
-        FragmentMetadataLookupError::IndexNotSynced => {
-            "Codebase index has no synced root hash".to_string()
-        }
-        FragmentMetadataLookupError::RootHashMismatch { requested, current } => {
-            format!("Codebase index root hash mismatch: requested {requested}, current {current}")
-        }
-    }
+fn fragment_metadata_lookup_error_response_from_error(
+    error: LocalFragmentMetadataLookupError,
+) -> HandlerOutcome {
+    let (code, message, current_root_hash) = match error {
+        LocalFragmentMetadataLookupError::IndexNotFound => (
+            FragmentMetadataLookupErrorCode::IndexNotFound,
+            "Codebase index not found".to_string(),
+            None,
+        ),
+        LocalFragmentMetadataLookupError::IndexNotSynced => (
+            FragmentMetadataLookupErrorCode::IndexNotSynced,
+            "Codebase index has no synced root hash".to_string(),
+            None,
+        ),
+        LocalFragmentMetadataLookupError::RootHashMismatch { requested, current } => (
+            FragmentMetadataLookupErrorCode::RootHashMismatch,
+            format!("Codebase index root hash mismatch: requested {requested}, current {current}"),
+            Some(current.to_string()),
+        ),
+    };
+
+    fragment_metadata_lookup_error_response(code, message, current_root_hash)
 }
 
 fn fragment_metadata_to_proto(

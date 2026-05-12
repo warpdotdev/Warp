@@ -170,14 +170,14 @@ impl Fragment {
         content: String,
         content_hash: ContentHash,
         absolute_path: PathBuf,
-        byte_range: Range<usize>,
+        byte_range: Range<ByteOffset>,
     ) -> Self {
         Self {
             content,
             content_hash,
             location: FragmentLocation {
                 absolute_path,
-                byte_range: ByteOffset::from(byte_range.start)..ByteOffset::from(byte_range.end),
+                byte_range,
             },
         }
     }
@@ -190,8 +190,8 @@ impl Fragment {
         &self.location.absolute_path
     }
 
-    pub fn byte_range(&self) -> Range<usize> {
-        self.location.byte_range.start.as_usize()..self.location.byte_range.end.as_usize()
+    pub fn byte_range(&self) -> Range<ByteOffset> {
+        self.location.byte_range.clone()
     }
 }
 

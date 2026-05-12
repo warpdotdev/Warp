@@ -1,8 +1,6 @@
 use crate::auth::auth_state::AuthState;
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::collections::HashMap;
 use std::sync::Arc;
-use warp_util::standardized_path::StandardizedPath;
 use warpui::App;
 
 use super::super::diff_state_tracker::RemoteDiffStateManager;
@@ -15,7 +13,6 @@ fn test_model(app: &mut App) -> ServerModel {
     ServerModel {
         connection_senders: HashMap::new(),
         snapshot_sent_roots_by_connection: HashMap::new(),
-        authorized_codebase_index_roots_by_connection: HashMap::new(),
         grace_timer_cancel: None,
         in_progress: HashMap::new(),
         host_id: "test-host-id".to_string(),
@@ -25,47 +22,6 @@ fn test_model(app: &mut App) -> ServerModel {
         buffers: ServerBufferTracker::new(),
         diff_states: app.add_model(|_| RemoteDiffStateManager::new()),
     }
-}
-
-#[test]
-fn codebase_index_root_authorization_is_connection_scoped() {
-    App::test((), |mut app| async move {
-        let mut model = test_model(&mut app);
-        let authorized_conn = uuid::Uuid::new_v4();
-        let unauthorized_conn = uuid::Uuid::new_v4();
-        let repo_path = StandardizedPath::from_local_canonicalized(Path::new("/")).unwrap();
-
-        model
-            .authorized_codebase_index_roots_by_connection
-            .insert(authorized_conn, HashSet::new());
-        model
-            .authorized_codebase_index_roots_by_connection
-            .insert(unauthorized_conn, HashSet::new());
-        model.authorize_codebase_index_root_for_connection(authorized_conn, repo_path.clone());
-
-        assert!(model.codebase_index_root_authorized_for_connection(authorized_conn, &repo_path));
-        assert!(!model.codebase_index_root_authorized_for_connection(
-            unauthorized_conn,
-            &repo_path
-        ));
-    });
-}
-
-#[test]
-fn removing_authorized_codebase_index_root_clears_all_connections() {
-    App::test((), |mut app| async move {
-        let mut model = test_model(&mut app);
-        let first_conn = uuid::Uuid::new_v4();
-        let second_conn = uuid::Uuid::new_v4();
-        let repo_path = StandardizedPath::from_local_canonicalized(Path::new("/")).unwrap();
-
-        model.authorize_codebase_index_root_for_connection(first_conn, repo_path.clone());
-        model.authorize_codebase_index_root_for_connection(second_conn, repo_path.clone());
-        model.remove_authorized_codebase_index_root(&repo_path);
-
-        assert!(!model.codebase_index_root_authorized_for_connection(first_conn, &repo_path));
-        assert!(!model.codebase_index_root_authorized_for_connection(second_conn, &repo_path));
-    });
 }
 
 #[test]

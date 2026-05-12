@@ -16,11 +16,11 @@ use warpui::r#async::{executor, FutureExt as _};
 use crate::proto::{
     client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
     DeleteFile, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex,
-    ErrorCode, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse, IndexCodebase,
-    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse,
-    OpenBuffer, OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse,
-    RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped,
-    TextEdit, WriteFile,
+    ErrorCode, FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash,
+    GetFragmentMetadataFromHashResponse, IndexCodebase, Initialize, InitializeResponse,
+    LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse, OpenBuffer,
+    OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse, RunCommandRequest,
+    RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
@@ -53,6 +53,12 @@ pub enum ClientError {
 
     #[error("File operation failed: {0}")]
     FileOperationFailed(String),
+
+    #[error("Fragment metadata lookup failed ({code:?}): {message}")]
+    FragmentMetadataLookup {
+        code: FragmentMetadataLookupErrorCode,
+        message: String,
+    },
 }
 
 /// Events received from the remote server, delivered through the event
@@ -359,7 +365,17 @@ impl RemoteServerClient {
         let response = self.send_request(request_id, msg).await?;
 
         match response.message {
-            Some(server_message::Message::GetFragmentMetadataFromHashResponse(resp)) => Ok(resp),
+            Some(server_message::Message::GetFragmentMetadataFromHashResponse(resp)) => {
+                if let Some(error) = resp.error.as_ref() {
+                    let code = FragmentMetadataLookupErrorCode::try_from(error.code)
+                        .unwrap_or(FragmentMetadataLookupErrorCode::Unspecified);
+                    return Err(ClientError::FragmentMetadataLookup {
+                        code,
+                        message: error.message.clone(),
+                    });
+                }
+                Ok(resp)
+            }
             other => {
                 log::error!(
                     "Unexpected response variant for GetFragmentMetadataFromHash: {other:?}"

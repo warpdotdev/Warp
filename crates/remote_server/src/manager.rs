@@ -162,7 +162,8 @@ impl RemoteServerErrorKind {
             ClientError::ServerError { .. } => Self::ServerError,
             ClientError::Protocol(_)
             | ClientError::UnexpectedResponse
-            | ClientError::FileOperationFailed(_) => Self::Other,
+            | ClientError::FileOperationFailed(_)
+            | ClientError::FragmentMetadataLookup { .. } => Self::Other,
         }
     }
 }
@@ -1598,25 +1599,6 @@ impl RemoteServerManager {
                 ctx.emit(RemoteServerManagerEvent::RepoMetadataUpdated { host_id, update });
             }
             ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses } => {
-                log::info!(
-                    "[Remote codebase indexing] Remote server received codebase index statuses snapshot: \
-                     session={session_id:?} host={host_id} status_count={}",
-                    statuses.len()
-                );
-                for status in &statuses {
-                    log::info!(
-                        "[Remote codebase indexing] Remote server received codebase index status in snapshot: \
-                         session={session_id:?} host={host_id} repo_path={} state={:?} \
-                         root_hash_present={} \
-                         progress_completed={:?} progress_total={:?} failure_message={:?}",
-                        status.repo_path,
-                        status.state,
-                        status.root_hash.is_some(),
-                        status.progress_completed,
-                        status.progress_total,
-                        status.failure_message,
-                    );
-                }
                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
                     remote_identity_key,
                     host_id,
@@ -1624,12 +1606,6 @@ impl RemoteServerManager {
                 });
             }
             ClientEvent::CodebaseIndexStatusUpdated { status } => {
-                log::info!(
-                    "[Remote codebase indexing] Remote server received codebase index status update: \
-                     session={session_id:?} host={host_id} repo_path={} state={:?}",
-                    status.repo_path,
-                    status.state,
-                );
                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
                     remote_identity_key,
                     host_id,

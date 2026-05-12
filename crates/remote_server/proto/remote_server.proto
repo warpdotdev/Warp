@@ -361,10 +361,26 @@ message MissingFragmentMetadata {
   string content_hash = 1;
   FileOperationError error = 2;
 }
+enum FragmentMetadataLookupErrorCode {
+  FRAGMENT_METADATA_LOOKUP_ERROR_CODE_UNSPECIFIED = 0;
+  REMOTE_CODEBASE_INDEXING_NOT_ENABLED = 1;
+  INVALID_REPO_PATH = 2;
+  INVALID_ROOT_HASH = 3;
+  INDEX_NOT_FOUND = 4;
+  INDEX_NOT_SYNCED = 5;
+  ROOT_HASH_MISMATCH = 6;
+}
+
+message FragmentMetadataLookupError {
+  FragmentMetadataLookupErrorCode code = 1;
+  string message = 2;
+  optional string current_root_hash = 3;
+}
 
 message GetFragmentMetadataFromHashResponse {
   repeated FragmentMetadata fragments = 1;
   repeated MissingFragmentMetadata missing_hashes = 2;
+  optional FragmentMetadataLookupError error = 3;
 }
 
 enum CodebaseIndexStatusState {
