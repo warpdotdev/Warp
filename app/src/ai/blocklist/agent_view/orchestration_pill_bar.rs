@@ -2025,14 +2025,20 @@ pub fn render_orchestration_breadcrumbs(
     .finish();
 
     // Center breadcrumbs while they fit; when they overflow, use the full
-    // width so horizontal scrolling still works.
+    // width so horizontal scrolling still works. Wrap in a `Container`
+    // with a touch of left padding so the leading parent crumb doesn't
+    // sit flush against the pane edge.
     Some(
-        Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(scrollable)
-            .finish(),
+        Container::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::Center)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(scrollable)
+                .finish(),
+        )
+        .with_padding_left(4.)
+        .finish(),
     )
 }
 
