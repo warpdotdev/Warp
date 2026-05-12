@@ -73,7 +73,13 @@ Each message's `content` is an ordered array of typed blocks. Decoders that don'
 - `{ "type": "text", "text": "..." }`
 - `{ "type": "reasoning", "text": "...", "duration_ms": <int> }`
 - `{ "type": "tool_call", "tool": "<name>", "input": <TypedValue>, "output": <TypedValue>, "duration_ms": <int>, "status": "ok" | "error" }`
-- `{ "type": "plan_step", "title": "...", "status": "pending" | "in_progress" | "complete", "items": [ /* see B2.1.2 */ ] }`
+- `{ "type": "plan_step", "title": "...", "status": "pending" | "in_progress" | "complete" | "blocked" | "cancelled", "items": [ /* see B2.1.2 */ ] }`
+  - The top-level `plan_step.status` field uses the SAME fixed
+    five-value enum as `items[].status` (see B2.1.2). Earlier drafts
+    listed only three values (`pending | in_progress | complete`); that
+    was an editorial oversight and is **superseded** here. Top-level
+    `status` is a roll-up summary; its relationship to nested
+    `items[].status` is defined in B2.1.2 below.
 - `{ "type": "code_diff", "files": [ { "path": "...", "before": "...", "after": "...", "hunks": [ /* see B2.1.3 */ ] } ] }`
 - `{ "type": "image", "data_uri": "..." }` (base64-encoded inline; no external file refs in V1)
 
@@ -102,6 +108,27 @@ Tool I/O in the wild is NOT always an object — many tools accept and return sc
 ```
 
 Decoders MUST switch on `type` to recover the original JSON value. `null` has no `value` field by design (its presence is fully encoded by `type`).
+
+**"Round-trip" terminology used in this spec.** Several tests and
+acceptance criteria below refer to values "round-tripping losslessly".
+Since V1 ships no conversation re-import / restore-from-export feature
+(see Non-Goals), "round-trip" in this document means **structural /
+data** round-trip only:
+
+```
+in-memory value
+    → JSON-serialize via the exporter
+    → re-parse to a generic JSON value or to the typed
+      `export_schema.rs` decoder
+    → assert deep equality with the original
+```
+
+It does **NOT** mean "decoded back into a live agent conversation". No
+V1 test asserts that an exported file can be opened as a conversation in
+Warp — only that the bytes round-trip through `serde_json` /
+`export_schema.rs` cleanly and that the schema describes them exactly.
+Any earlier wording that implied a behavioral re-import path is
+**superseded** by this clarification.
 
 Worked example — a `read_file` tool whose input is a string path and whose output is the file's text content:
 
@@ -156,15 +183,47 @@ Earlier drafts left `items: [ ... ]` as a placeholder. The concrete schema:
 Field rules:
 
 - `id`, `title`, `status` are REQUIRED.
-- `status` enum is fixed; decoders MUST reject unknown values within
-  the same major schema version (per B3 unknown-major / known-major
-  rules). Adding a new status is a minor-version-bump change.
+- `status` enum is fixed at `"pending" | "in_progress" | "complete" |
+  "blocked" | "cancelled"` for BOTH top-level `plan_step.status` and
+  nested `items[].status` (and recursively `subitems[].status`).
+  Decoders MUST reject unknown values within the same major schema
+  version (per B3 unknown-major / known-major rules). Adding a new
+  status is a minor-version-bump change.
 - `description`, `started_at`, `completed_at`, `blocked_reason` are
   OPTIONAL but MUST be present and `null` (not omitted) so consumers
   can shape-match without a second null-safety branch.
 - `subitems` is REQUIRED but MAY be the empty array `[]` when a step
   has no children. Recursion depth is bounded only by source data.
 - `blocked_reason` is REQUIRED to be non-`null` iff `status == "blocked"`.
+
+**Top-level `plan_step.status` vs nested `items[].status` (coverage
+rule):**
+
+- Each `plan_step.items[]` entry (and each `subitems[]` entry recursively)
+  carries its OWN `status`. Nested statuses are independent and
+  authoritative for that node.
+- The TOP-LEVEL `plan_step.status` is a **roll-up summary** of its
+  direct `items[]`, computed by the producer at export time using these
+  precedence rules (highest precedence wins):
+  1. If `items[]` is empty, `plan_step.status` is taken directly from
+     the agent's plan-step model (its own status, independent of any
+     items). No roll-up applies.
+  2. Otherwise the roll-up considers ONLY the direct `items[]` (not
+     recursive `subitems[]`) and emits:
+     - `"blocked"` if ANY direct item has `status == "blocked"`.
+     - else `"in_progress"` if ANY direct item has
+       `status == "in_progress"`, OR if items contain a MIX of
+       `"complete"` / `"cancelled"` and `"pending"`.
+     - else `"complete"` if EVERY direct item has
+       `status ∈ { "complete", "cancelled" }` (i.e., all terminal).
+     - else `"cancelled"` if EVERY direct item has
+       `status == "cancelled"`.
+     - else `"pending"` (every direct item is `"pending"`).
+- The producer MUST emit `plan_step.status` according to the above
+  rules; consumers MAY rely on it as a summary but should consult
+  `items[].status` for per-item state. The schema enforces only that
+  both fields use the same enum; the roll-up itself is a producer
+  invariant verified by tests (T_plan_step_status_rollup).
 
 ##### B2.1.3 `code_diff.hunks` shape (concrete)
 
@@ -252,11 +311,26 @@ Headless exports (CLI, scripted, automation) MUST NOT bypass redaction. Any code
 
 ### B4.2 Reasoning blocks: include/exclude policy
 
-V1 INCLUDES reasoning blocks (`{ "type": "reasoning", ... }`) by default. Some users will not want reasoning surfaced in shared exports, so V1 ships an explicit toggle:
+V1 **EXCLUDES** reasoning blocks (`{ "type": "reasoning", ... }`) by
+default. Reasoning text can contain sensitive draft thoughts, API keys or
+secrets the agent reasoned over but chose not to call, and intermediate
+decisions the user does not intend to share. The safe default therefore
+omits reasoning from exports; users who want to include it must opt in
+explicitly — either by flipping the setting or by checking the
+per-export box.
 
-- Setting: `agent.conversation_export.include_reasoning` — bool, default `true`.
-- UI surface: Settings → Agents → Conversation Export → "Include reasoning blocks in exports" toggle.
-- CLI: `--include-reasoning <true|false>` flag overrides the setting for a single run; otherwise the setting value applies.
+This is a security-driven default and supersedes any earlier draft that
+made reasoning include-by-default.
+
+- Setting: `agent.conversation_export.include_reasoning` — bool, **default
+  `false`** (was `true` in earlier drafts).
+- UI surface: Settings → Agents → Conversation Export → "Include
+  reasoning blocks in exports" toggle.
+- CLI: `--include-reasoning <true|false>` flag overrides the setting for
+  a single run; otherwise the setting value applies. When the flag is
+  omitted and the setting is `false`, the CLI silently omits reasoning
+  (no stderr warning — the safe default is already in effect; see
+  B4.2.1).
 
 When `include_reasoning = false`:
 
@@ -266,43 +340,52 @@ When `include_reasoning = false`:
 
 This setting is independent of redaction. Redaction is about secrets/PII; this toggle is about whether reasoning text is part of the export at all.
 
-#### B4.2.1 Per-export reasoning disclosure (security)
+#### B4.2.1 Per-export reasoning opt-in (security)
 
-The default `include_reasoning = true` means a user who clicks Export
-without first opening Settings can ship reasoning text — which may
-contain sensitive draft thoughts, API keys the agent reasoned over but
-chose not to call, or intermediate decisions the user does not intend to
-share. To make this explicit at the moment of export, the Export
-Conversation UI MUST surface a per-export disclosure when reasoning is
-about to be included:
+Because B4.2 makes `include_reasoning = false` the default, the
+per-export surface is structured as an **opt-in to inclusion**, not a
+warning before inclusion. A user who has not changed the user-level
+setting AND does not check the per-export box will never ship reasoning.
 
-- The Export Conversation dialog (the same dialog that hosts the
-  Markdown / JSON format selector) renders an inline notice whenever
-  the conversation contains at least one reasoning block AND the
-  effective `include_reasoning` value for this export is `true`:
-  > **Reasoning will be included.** This export contains internal
-  > model reasoning (`<N>` blocks). Uncheck below to omit it.
-- Below the notice, a per-export **"Include reasoning blocks"**
-  checkbox is shown, **pre-seeded from the user's
-  `agent.conversation_export.include_reasoning` setting**. Toggling it
+- **Export dialog (UI):** the Export Conversation dialog (the same
+  dialog that hosts the Markdown / JSON format selector) renders an
+  inline per-export **"Include reasoning blocks"** checkbox **whenever
+  the conversation contains at least one reasoning block**, regardless
+  of the user-level setting. The checkbox is **pre-seeded from the
+  user's `agent.conversation_export.include_reasoning` setting** —
+  unchecked by default (the safe default), pre-checked only if the
+  user has explicitly enabled inclusion globally. Toggling the box
   here applies to **this export only**; the user-level setting is not
   written.
-- If the conversation contains zero reasoning blocks, neither the
-  notice nor the checkbox is shown (no warning fatigue when there is
-  nothing to disclose).
-- The CLI is the headless equivalent: when invoked without an
-  explicit `--include-reasoning` flag and the conversation contains
-  reasoning blocks, the CLI emits a single warning line to stderr —
-  `warp: this conversation contains <N> reasoning block(s); they will
-  be included. Pass --include-reasoning false to omit.` — and
-  proceeds. Passing `--include-reasoning true|false` explicitly
-  suppresses the warning. Stderr is used so it does not contaminate
-  `--output -` stdout pipelines.
+  - When the effective value at export time is `true` (either the user
+    enabled it globally OR they checked the per-export box), the
+    dialog renders an additional inline notice **above the action
+    buttons**, immediately before the user clicks Export:
+    > **Reasoning will be included.** This export contains internal
+    > model reasoning (`<N>` blocks), which may contain draft
+    > thoughts, secrets the agent reasoned over, or intermediate
+    > decisions you may not intend to share.
+  - When the conversation contains zero reasoning blocks, neither the
+    checkbox nor the notice is shown (no warning fatigue when there is
+    nothing to disclose).
+- **CLI (headless):** the CLI mirrors this opt-in shape:
+  - If the user passes `--include-reasoning false` (explicit), or
+    omits the flag while the user-level setting is `false` (default),
+    reasoning is omitted with NO stderr warning — the safe default is
+    in effect.
+  - If the user passes `--include-reasoning true` (explicit), or
+    omits the flag while the user-level setting has been flipped to
+    `true`, AND the conversation contains ≥1 reasoning block, the CLI
+    emits exactly one stderr line BEFORE writing any output to stdout:
+    `warp: this conversation contains <N> reasoning block(s); they
+    will be included.` Stderr is used so it does not contaminate
+    `--output -` stdout pipelines. Passing `--include-reasoning
+    false` always suppresses this warning (reasoning is not being
+    included).
 
 This disclosure does NOT replace the user-level setting; it complements
-it. Users who have already disabled `include_reasoning` globally see
-neither the notice nor the warning (the effective value is `false` and
-no reasoning is included).
+it. Users on the safe default never see warnings, and users who have
+opted in globally still get a per-export reminder.
 
 ### B5. Tool-call output truncation (opt-in)
 
@@ -317,25 +400,55 @@ contract is defined per-`type` so it is unambiguous for every shape.
 
 #### B5.1 Sizing rule (applies to every TypedValue type)
 
-`original_size_bytes` is always the byte length of the **canonical UTF-8
-JSON serialization** of the **inner `value` field** (or, for `null`, the
-serialization of the literal `null`), with no surrounding TypedValue
-wrapper, no whitespace, and JSON object keys serialized in lexicographic
-order. This produces a single deterministic size regardless of in-memory
-representation.
+A single, deterministic byte-size function `S(value)` is used everywhere
+in this contract — for both the threshold check and the reported
+`original_size_bytes`. It is the byte length of the **canonical UTF-8
+JSON serialization of the inner `value` field**, with no surrounding
+TypedValue wrapper, no whitespace, and JSON object keys serialized in
+lexicographic order.
+
+Concretely, by `TypedValue.type`:
+
+- `string`: `S = bytecount(canonical_json_quote(value))`. For a string
+  whose raw UTF-8 form is `s`, `canonical_json_quote(s)` is `'"' + s +
+  '"'` after JSON-escaping any required characters (`\"`, `\\`, control
+  chars). For pure-ASCII strings with no escapes, `S = len(s) + 2`.
+- `array` / `object`: `S` is the byte length of their canonical JSON
+  serialization (object keys lexicographic, no whitespace).
+- `number`: `S` is the byte length of the canonical JSON number form
+  (the shortest representation that round-trips, per `serde_json` /
+  ECMAScript-style rules).
+- `boolean`: `S ∈ {4, 5}` (`true` = 4, `false` = 5).
+- `null`: `S = 4` (`null`).
+
+The **threshold check** in B5.2 is `S(value) > limit_bytes`. The
+**reported `original_size_bytes`** in B5.2 is exactly that same
+`S(value)` for the pre-truncation `value`. The earlier-draft wording that
+described the string rule in terms of "first `limit_bytes` bytes of the
+original UTF-8 string" mixed two different metrics (raw UTF-8 bytes vs
+canonical JSON bytes); it is **superseded** by the rules in B5.2 below,
+which are stated entirely in terms of `S`.
 
 The `truncated` flag is set on the `tool_call` block — not on the inner
 TypedValue — and the `output` field always remains a valid TypedValue
 after truncation.
 
+`limit_bytes` is derived from the `large_output_limit_kb` setting as
+`limit_bytes = large_output_limit_kb * 1024` (KiB, base-2). For the
+default of `64`, `limit_bytes = 65536`.
+
 #### B5.2 Per-type truncation rules
 
-| `output.type` | Truncation behavior when `original_size_bytes > limit_bytes` |
+All truncation operates on the inner `value` and is checked against
+`S(value)` from B5.1. A `tool_call` whose `S(output.value) > limit_bytes`
+is truncated as follows; otherwise it is left untouched.
+
+| `output.type` | Truncation behavior when `S(value) > limit_bytes` |
 |---|---|
-| `string` | Replace `value` with the first `limit_bytes` bytes of the original UTF-8 string, snapped backward to the nearest valid codepoint boundary so the result is well-formed UTF-8. |
-| `array`  | Drop trailing elements one at a time (deepest-last) until the canonical serialization of the resulting array fits within `limit_bytes`. The remaining `value` is a strict prefix of the original. |
-| `object` | Drop trailing key-value pairs (in lexicographic key order) one at a time until the canonical serialization fits within `limit_bytes`. Earlier-sorted keys are preserved; the result is a strict subset of the original keys. |
-| `number` / `boolean` / `null` | NEVER truncated — these encode in well under any practical limit. The `truncated` flag is NOT set for these types regardless of the configured limit. |
+| `string` | Find the largest prefix `p` of the original UTF-8 string `value` such that `S("string", p) ≤ limit_bytes`, where `S("string", p) = bytecount(canonical_json_quote(p))` (the JSON-quoted/escaped form). Snap `p` backward to the nearest valid Unicode codepoint boundary if needed, so the result is well-formed UTF-8. Replace `value` with `p`. |
+| `array`  | Drop trailing elements one at a time until `S("array", value') ≤ limit_bytes`, where `value'` is the surviving array. The remaining `value` is a strict prefix of the original. |
+| `object` | Drop trailing key-value pairs (in lexicographic key order) one at a time until `S("object", value') ≤ limit_bytes`. Earlier-sorted keys are preserved; the result is a strict subset of the original keys. |
+| `number` / `boolean` / `null` | NEVER truncated — these encode in well under any practical `limit_bytes` (worst case `S = 5`). The `truncated` flag is NOT set for these types regardless of the configured limit. |
 
 For every type that can be truncated (`string` / `array` / `object`),
 when truncation actually occurs the `tool_call` block carries:
@@ -419,10 +532,38 @@ same byte-identical document.
   `TypedValue` variants in B2.1.1), `plan_step` (B2.1.2),
   `code_diff` (B2.1.3), `image`. Required vs optional fields and
   enum values match this spec exactly.
-- **Truncation flags**: the schema constrains `truncated`,
-  `original_size_bytes`, and `truncation_strategy` to appear iff the
-  rules in B5.2 hold (i.e., they are forbidden on `tool_call` blocks
-  whose `output.type ∈ { number, boolean, null }`).
+- **Truncation flags (what the schema CAN enforce):** the schema
+  enforces only the **shape-level** rules — the parts that depend on
+  static structure, not on runtime byte sizes:
+  - The three fields `truncated`, `original_size_bytes`, and
+    `truncation_strategy` form a co-required group: a `tool_call`
+    either has all three or none of them (encoded via JSON Schema
+    `dependentRequired` / `dependentSchemas`).
+  - When `truncated` is present it MUST be `true`.
+  - When `truncation_strategy` is present, its value MUST be one of
+    `"string_bytes"`, `"array_tail"`, `"object_tail_keys"` (fixed
+    enum).
+  - When `truncation_strategy == "string_bytes"`, the schema requires
+    `output.type == "string"`; for `"array_tail"`, `output.type ==
+    "array"`; for `"object_tail_keys"`, `output.type == "object"`.
+    These are `if`/`then` conditional sub-schemas (JSON Schema
+    draft 2020-12) that look only at the discriminator field, not at
+    byte sizes.
+  - JSON Schema therefore enforces that `tool_call` blocks whose
+    `output.type ∈ { number, boolean, null }` carry NONE of the three
+    truncation fields — because no valid `truncation_strategy` enum
+    value pairs with those types.
+- **Runtime-only rules (what tests, not the schema, enforce):** the
+  schema cannot evaluate byte-size predicates such as
+  `S(output.value) > limit_bytes` or "`original_size_bytes` equals the
+  pre-truncation canonical-JSON size of `output.value`". These
+  invariants are verified by exporter unit tests
+  (T_truncation_string_codepoint_boundary, T_truncation_array_tail,
+  T_truncation_object_lex_keys, etc.) and by the producer's
+  contract — not by JSON Schema. Earlier-draft wording that said the
+  schema "constrains ... iff the rules in B5.2 hold" is **superseded**
+  by this split: the schema enforces static co-required/conditional
+  shape; tests enforce the size predicates.
 - **Validation in tests**: T_schema_validates (and any other
   schema-validation test in this spec) loads the in-tree
   `schema.json` and validates produced exports against it; tests do
@@ -435,7 +576,7 @@ same byte-identical document.
 - `agent.conversation_export.default_format` — enum, default `Markdown`. Seeds the UI format selector. (Single canonical key — see B1.)
 - `agent.conversation_export.truncate_large_outputs` — bool, default `false`.
 - `agent.conversation_export.large_output_limit_kb` — int, default `64`. Only consulted when truncation is enabled.
-- `agent.conversation_export.include_reasoning` — bool, default `true`. When false, reasoning content blocks are omitted from exports (see B4.2).
+- `agent.conversation_export.include_reasoning` — bool, **default `false`** (safe default; was `true` in earlier drafts — see B4.2). When `false`, reasoning content blocks are omitted from exports.
 - UI: Settings → Agents → Conversation Export panel hosting the four settings above (format selector, truncation toggle + limit, include-reasoning toggle).
 - CLI: `--format json` and `--include-reasoning` flags on the export-conversation verb (or net-new verb if Markdown export is UI-only today). The CLI is a thin wrapper over the same export pipeline (B4.1, B8).
 
@@ -452,8 +593,11 @@ same byte-identical document.
 - A8. Plan-step blocks preserve `status` correctly across all states.
 - A9. Tool-call blocks preserve both `input` and `output` as discriminated `TypedValue`s (B2.1.1) — `object`, `array`, `string`, `number`, `boolean`, and `null` all round-trip losslessly.
 - A10. Filename matches `<conversation_title-or-id>-<timestamp>.warp-export.json` when no custom location is chosen.
-- A11. With `agent.conversation_export.include_reasoning = true` (default), reasoning blocks appear in the exported `content` arrays.
-- A12. With `agent.conversation_export.include_reasoning = false`, reasoning blocks are omitted from exports — no placeholder, no `[REDACTED]` stub — and surrounding block order is preserved.
+- A11. With `agent.conversation_export.include_reasoning = false` (the new safe default), reasoning blocks are OMITTED from the exported `content` arrays — no placeholder, no `[REDACTED]` stub — and surrounding block order is preserved.
+- A12. With `agent.conversation_export.include_reasoning = true` (explicit opt-in), reasoning blocks appear in the exported `content` arrays.
+- A_plan_step_status_rollup. For a `plan_step` with non-empty `items[]`, the top-level `plan_step.status` matches the roll-up rules in B2.1.2: `blocked` if any item is blocked; else `in_progress` if any item is in-progress or items mix terminal+pending; else `complete` if all items are terminal (`complete`/`cancelled`); else `cancelled` if all items are `cancelled`; else `pending`. For empty `items[]`, the top-level status is taken verbatim from the agent's plan-step model.
+- A_truncation_uses_S. The exporter's threshold check uses the SAME canonical-JSON byte-size function `S(value)` for both the comparison and the reported `original_size_bytes` (see B5.1). The exporter MUST NOT use raw UTF-8 byte length for strings while reporting canonical-JSON size — these are different sizes and must not be mixed.
+- A_schema_enforces_shape_only. The in-tree JSON Schema enforces the static shape rules for truncation flags (co-required group, fixed `truncation_strategy` enum, conditional `output.type`) but does NOT attempt to express runtime byte-size predicates. Byte-size invariants are verified by exporter tests, not by JSON Schema.
 - A_schema_in_tree. The exporter's schema lives at
   `app/src/ai/agent/export_schema/v1.0.0/schema.json` and is the artifact
   used by every schema-validation test. CI fails when the in-tree
@@ -537,8 +681,8 @@ Reuse, do not duplicate:
 - T8. Integration: CLI `--format json --output -` and UI export produce byte-identical (or at minimum JSON-structurally-identical) output for the same conversation snapshot.
 - T_cli_redaction_parity. Integration: CLI export of a conversation containing redacted secrets produces the SAME `[REDACTED]` placeholders in the SAME fields as the UI export. The CLI must consume `RedactedConversationView` and not the raw conversation store; verified by injecting a sentinel raw value that, if not redacted, would appear in the CLI output.
 - T_schema_validates. Unit/integration: produced exports validate cleanly against the documented JSON Schema for `schema_version 1.0.0`. This is the renamed and re-scoped successor to the earlier "round-trip" test — it is JSON Schema validation, not behavioral re-import (V1 has no re-import path).
-- T_reasoning_included_default. Unit: with `include_reasoning` left at its default (`true`), reasoning blocks appear in exports.
-- T_reasoning_omitted. Unit: with `include_reasoning = false`, reasoning blocks are omitted entirely from `content` arrays — no empty marker, no `[REDACTED]` stub — and surrounding text blocks remain in their original order. Cover the `[text, reasoning, text]` -> `[text, text]` case explicitly.
+- T_reasoning_omitted_default. Unit: with `include_reasoning` left at its NEW default (`false`), reasoning blocks are OMITTED from `content` arrays — no empty marker, no `[REDACTED]` stub — and surrounding text blocks remain in their original order. Cover the `[text, reasoning, text]` -> `[text, text]` case explicitly.
+- T_reasoning_included_when_opted_in. Unit: with `include_reasoning = true` (explicit opt-in, either via the user-level setting or the per-export checkbox), reasoning blocks appear in the exported `content` arrays unchanged.
 - T9. Unit: filename slug matches `<conversation_title-or-id>-<timestamp>.warp-export.json` for several title shapes including titles with spaces, slashes, and unicode.
 - T10. Unit: a conversation with an inline image serializes as a `data_uri` content block.
 - T11. Unit: unknown content-block `type` encountered during decode round-trips unchanged (forward-compat probe).
@@ -549,16 +693,40 @@ Reuse, do not duplicate:
 - T_truncation_array_tail. Unit: an array of mixed scalar+object elements truncates by dropping trailing elements; resulting array is a prefix of the original; `truncation_strategy == "array_tail"`.
 - T_truncation_object_lex_keys. Unit: an object with keys `{z, m, a}` (insertion order) and oversized total size has trailing-by-lex-key entries dropped first (so `z` is dropped before `m` before `a`); resulting object is a subset of original keys; `truncation_strategy == "object_tail_keys"`.
 - T_truncation_no_flags_for_scalars. Unit: tool calls with `output.type` of `number`, `boolean`, and `null` (three sub-cases) never carry `truncated`, `original_size_bytes`, or `truncation_strategy`, regardless of the configured limit. Adding any of those fields to such a block fails schema validation.
-- T_reasoning_disclosure_ui_shown. Integration: opening the Export dialog on a conversation with reasoning blocks and `include_reasoning=true` shows the disclosure notice and the per-export checkbox; the checkbox is pre-seeded from the user setting; toggling it does not mutate the persisted setting.
-- T_reasoning_disclosure_ui_hidden_when_absent. Integration: on a conversation with zero reasoning blocks, neither the notice nor the per-export checkbox is shown.
-- T_reasoning_disclosure_cli_stderr. Integration: invoking the CLI export verb without `--include-reasoning` on a conversation with N reasoning blocks emits exactly one stderr line of the form `warp: this conversation contains <N> reasoning block(s)...` and emits NO such line on stdout, including when `--output -` is used.
-- T_reasoning_disclosure_cli_explicit_silences. Integration: invoking the CLI with `--include-reasoning true` or `--include-reasoning false` emits no warning line on stderr.
+- T_reasoning_disclosure_ui_checkbox_default_unchecked. Integration: opening the Export dialog on a conversation with reasoning blocks while the user-level setting is at the new default (`false`) shows the per-export "Include reasoning blocks" checkbox UNCHECKED. The disclosure notice ("Reasoning will be included") is NOT shown because the effective value is `false`.
+- T_reasoning_disclosure_ui_checkbox_default_checked_when_optin. Integration: with the user-level setting set to `true`, the per-export checkbox is shown PRE-CHECKED, and the disclosure notice IS shown.
+- T_reasoning_disclosure_ui_per_export_toggle_no_setting_write. Integration: toggling the per-export checkbox (in either direction) affects only the produced export and does NOT write the user-level setting.
+- T_reasoning_disclosure_ui_hidden_when_absent. Integration: on a conversation with zero reasoning blocks, neither the per-export checkbox nor the disclosure notice is shown.
+- T_reasoning_disclosure_cli_default_silent. Integration: invoking the CLI export verb without `--include-reasoning` on a conversation with reasoning blocks while the user-level setting is at the new default (`false`) emits NO stderr warning and produces an export with reasoning omitted.
+- T_reasoning_disclosure_cli_stderr_when_optin. Integration: invoking the CLI export verb without `--include-reasoning` on a conversation with N reasoning blocks while the user-level setting has been flipped to `true` (OR invoking with explicit `--include-reasoning true`) emits exactly one stderr line of the form `warp: this conversation contains <N> reasoning block(s); they will be included.` and emits NO such line on stdout, including when `--output -` is used.
+- T_reasoning_disclosure_cli_explicit_false_silent. Integration: invoking the CLI with `--include-reasoning false` emits no warning line on stderr (reasoning not being included).
+
+Plan-step status roll-up (B2.1.2):
+
+- T_plan_step_status_rollup_blocked. Unit: a `plan_step` with `items[]` containing one `blocked` item and several `pending`/`complete` items rolls up to `plan_step.status == "blocked"`.
+- T_plan_step_status_rollup_in_progress_mixed. Unit: `items[]` with a `complete` item and a `pending` item (no `in_progress`, no `blocked`) rolls up to `"in_progress"` (mixed terminal+pending).
+- T_plan_step_status_rollup_complete. Unit: `items[]` all `complete` (or a mix of `complete` and `cancelled`) rolls up to `"complete"`.
+- T_plan_step_status_rollup_cancelled. Unit: `items[]` all `cancelled` rolls up to `"cancelled"`.
+- T_plan_step_status_rollup_pending. Unit: `items[]` all `pending` rolls up to `"pending"`.
+- T_plan_step_status_empty_items_passthrough. Unit: a `plan_step` with `items: []` exports `plan_step.status` directly from the agent's model (no roll-up); each of the five enum values is preserved on the top-level field.
+
+Truncation sizing function `S` (B5.1):
+
+- T_truncation_sizing_function_uniform. Unit: for several `output.value` instances (a 1000-byte JSON string with no escapes, a string requiring `\"` and `\\` escapes, a small array, a small object with non-lexicographic insertion order), `S(value)` matches both (a) the byte length used in the threshold check and (b) the reported `original_size_bytes` when truncation triggers. The test asserts they are equal — preventing future drift between "what we measured" and "what we reported".
+- T_truncation_threshold_uses_canonical_json. Unit: a string whose raw UTF-8 bytes are exactly `limit_bytes` but whose JSON-quoted form (`"..."`) is `limit_bytes + 2` triggers truncation (`S > limit_bytes`), even though the raw bytes alone would not. Verifies the canonical-JSON metric is used uniformly.
+
+JSON Schema shape-only enforcement (B9):
+
+- T_schema_enforces_truncation_co_required. Unit: a `tool_call` block containing only `truncated: true` (without `original_size_bytes` and `truncation_strategy`) fails schema validation; a block containing all three passes; a block containing none passes.
+- T_schema_enforces_truncation_strategy_enum. Unit: a `tool_call` with `truncation_strategy: "bogus_strategy"` fails schema validation. Each of the three valid values passes.
+- T_schema_enforces_truncation_strategy_type_pairing. Unit: `truncation_strategy == "string_bytes"` paired with `output.type == "array"` fails schema validation (and analogues for the other two strategies). Correct pairings pass.
+- T_schema_does_not_enforce_byte_size. Unit: a hand-crafted block with `original_size_bytes: 5` and a multi-megabyte `output.value.value` (clearly inconsistent) PASSES JSON Schema validation — the schema cannot inspect actual byte sizes. The same block fails the exporter's integration test (T_truncation_sizing_function_uniform), confirming the split between schema-enforced shape and test-enforced size invariants.
 
 ## Open Questions
 
 - Should we ALSO ship YAML and JSONL? Suggest V1 = JSON only, V1.5 = JSONL (one message per line) for streaming consumption. Defer YAML unless concrete demand surfaces.
 - Should image blocks support an external-file mode (`{"type":"image","path":"..."}`) for very large images, with the JSON exported alongside an `assets/` sibling directory? Suggest defer to V1.5.
-- ~~Should there be an explicit "include reasoning blocks" toggle?~~ Resolved in B4.2: V1 ships `agent.conversation_export.include_reasoning` (bool, default `true`). UI toggle in Settings → Agents → Conversation Export. CLI flag `--include-reasoning <true|false>`.
+- ~~Should there be an explicit "include reasoning blocks" toggle?~~ Resolved in B4.2: V1 ships `agent.conversation_export.include_reasoning` (bool, **default `false`** — safe default after round-3 security review). UI toggle in Settings → Agents → Conversation Export. Per-export checkbox in the Export dialog. CLI flag `--include-reasoning <true|false>`.
 - Should `warp_version` be the app version, the agent-runtime version, or both? Suggest app version in V1; expand to a version map if it becomes ambiguous.
 
 ## Telemetry
