@@ -649,13 +649,26 @@ impl FileModel {
                         WatcherType::Individual => {
                             // Unwatch the parent directory (matching the register
                             // in open() which watches the parent, not the file).
+                            // Only unregister if no other individually-watched
+                            // files share the same parent directory.
                             let watch_path = path
                                 .parent()
                                 .map(|p| p.to_path_buf())
                                 .unwrap_or_else(|| path.clone());
-                            self.watcher.update(ctx, |watcher, _ctx| {
-                                std::mem::drop(watcher.unregister_path(&watch_path));
-                            });
+                            let other_files_share_parent =
+                                self.file_state.local_values().any(|f| {
+                                    f.watcher_type == WatcherType::Individual
+                                        && f.path
+                                            .as_deref()
+                                            .and_then(|p| p.parent())
+                                            .map(|p| p == watch_path)
+                                            .unwrap_or(false)
+                                });
+                            if !other_files_share_parent {
+                                self.watcher.update(ctx, |watcher, _ctx| {
+                                    std::mem::drop(watcher.unregister_path(&watch_path));
+                                });
+                            }
                         }
                         WatcherType::Repository => {
                             if let Some((repo_root, unused_repo)) =

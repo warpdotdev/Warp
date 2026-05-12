@@ -1993,7 +1993,11 @@ impl GlobalBufferModel {
                     let new_server_version =
                         if let BufferSource::ServerLocal { sync_clock, .. } = &mut state.source {
                             let sv = sync_clock.bump_server();
-                            // Reset client version since the buffer is fresh from disk.
+                            // Reset client version to 0 ("no client edits").
+                            // server_version tracks disk state; client_version
+                            // tracks user edits. After a force-reload both sides
+                            // agree on CV=0 (the client also resets via
+                            // apply_open_buffer_response → SyncClock::from_wire).
                             sync_clock.client_version = ContentVersion::from_raw(0);
                             sv
                         } else {
@@ -2195,7 +2199,7 @@ impl GlobalBufferModel {
                 return;
             }
             // Conflict — local edits diverged from server.
-            log::warn!(
+            log::info!(
                 "[remote-buffer] CONFLICT for {path}: push expected C={expected_client_version}, \
                  but local C={:?}. Emitting RemoteBufferConflict.",
                 sync_clock.client_version
