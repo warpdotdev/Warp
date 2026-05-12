@@ -12,6 +12,7 @@ use crate::client::ClientEvent;
 use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
+use crate::proto::{DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot};
 use crate::setup::PreinstallCheckResult;
 #[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
@@ -174,6 +175,9 @@ fn client_event_kind(event: &ClientEvent) -> &'static str {
         ClientEvent::CodebaseIndexStatusUpdated { .. } => "codebase_index_status_updated",
         ClientEvent::BufferUpdated { .. } => "buffer_updated",
         ClientEvent::BufferConflictDetected { .. } => "buffer_conflict_detected",
+        ClientEvent::DiffStateSnapshotReceived { .. } => "diff_state_snapshot",
+        ClientEvent::DiffStateMetadataUpdateReceived { .. } => "diff_state_metadata_update",
+        ClientEvent::DiffStateFileDeltaReceived { .. } => "diff_state_file_delta",
         ClientEvent::MessageDecodingError => "message_decoding_error",
     }
 }
@@ -369,6 +373,23 @@ pub enum RemoteServerManagerEvent {
     /// conflict resolution banner.
     BufferConflictDetected { host_id: HostId, path: String },
 
+    // --- Diff state events (forwarded from ClientEvent push channel) ---
+    /// A full diff state snapshot was pushed by the server (NewDiffsComputed).
+    DiffStateSnapshotReceived {
+        host_id: HostId,
+        snapshot: DiffStateSnapshot,
+    },
+    /// A metadata-only diff state update was pushed by the server.
+    DiffStateMetadataUpdateReceived {
+        host_id: HostId,
+        update: DiffStateMetadataUpdate,
+    },
+    /// A single-file diff delta was pushed by the server.
+    DiffStateFileDeltaReceived {
+        host_id: HostId,
+        delta: DiffStateFileDelta,
+    },
+
     // --- Setup events ---
     /// Intermediate state change during the binary check/install flow.
     SetupStateChanged {
@@ -449,7 +470,10 @@ impl RemoteServerManagerEvent {
             | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
             | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. }
             | RemoteServerManagerEvent::BufferUpdated { .. }
-            | RemoteServerManagerEvent::BufferConflictDetected { .. } => None,
+            | RemoteServerManagerEvent::BufferConflictDetected { .. }
+            | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
+            | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
+            | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. } => None,
         }
     }
 }
@@ -1391,6 +1415,18 @@ impl RemoteServerManager {
             }
             ClientEvent::BufferConflictDetected { path } => {
                 ctx.emit(RemoteServerManagerEvent::BufferConflictDetected { host_id, path });
+            }
+            ClientEvent::DiffStateSnapshotReceived { snapshot } => {
+                ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived { host_id, snapshot });
+            }
+            ClientEvent::DiffStateMetadataUpdateReceived { update } => {
+                ctx.emit(RemoteServerManagerEvent::DiffStateMetadataUpdateReceived {
+                    host_id,
+                    update,
+                });
+            }
+            ClientEvent::DiffStateFileDeltaReceived { delta } => {
+                ctx.emit(RemoteServerManagerEvent::DiffStateFileDeltaReceived { host_id, delta });
             }
             ClientEvent::Disconnected => {
                 // Handled by the drain loop's completion callback.
