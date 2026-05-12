@@ -501,12 +501,12 @@ pub fn test_elapsed_duration_rounds_down_to_whole_seconds() {
 
     // Sub-second elapsed time is treated as "not yet elapsed", so nothing is rendered.
     let now_sub_second = start + chrono::Duration::milliseconds(500);
-    assert_eq!(block.elapsed_duration_at(now_sub_second), None);
+    assert_eq!(block.elapsed_duration_whole_secs_at(now_sub_second), None);
 
     // Whole-second elapsed time rounds cleanly.
     let now_1s = start + chrono::Duration::milliseconds(1_200);
     assert_eq!(
-        block.elapsed_duration_at(now_1s),
+        block.elapsed_duration_whole_secs_at(now_1s),
         Some(chrono::Duration::seconds(1))
     );
 
@@ -514,14 +514,14 @@ pub fn test_elapsed_duration_rounds_down_to_whole_seconds() {
     // between one-second repaint ticks.
     let now_7s = start + chrono::Duration::milliseconds(7_950);
     assert_eq!(
-        block.elapsed_duration_at(now_7s),
+        block.elapsed_duration_whole_secs_at(now_7s),
         Some(chrono::Duration::seconds(7))
     );
 
     // Multi-minute elapsed times also round down to whole seconds.
     let now_long = start + chrono::Duration::milliseconds(125_999);
     assert_eq!(
-        block.elapsed_duration_at(now_long),
+        block.elapsed_duration_whole_secs_at(now_long),
         Some(chrono::Duration::seconds(125))
     );
 }
@@ -533,26 +533,26 @@ pub fn test_elapsed_duration_requires_executing_state() {
     let now = start + chrono::Duration::seconds(5);
 
     // With no start_ts and no execution, there's nothing to show live.
-    assert_eq!(block.elapsed_duration_at(now), None);
+    assert_eq!(block.elapsed_duration_whole_secs_at(now), None);
     assert!(!block.is_duration_live());
 
     // `precmd` alone leaves the block in `BeforeExecution`; the duration is not yet live.
     block.precmd(PrecmdValue::default());
     block.override_start_ts(start);
-    assert_eq!(block.elapsed_duration_at(now), None);
+    assert_eq!(block.elapsed_duration_whole_secs_at(now), None);
     assert!(!block.is_duration_live());
 
     // `preexec` transitions the block to `Executing`; the duration should now be live.
     block.preexec(Default::default());
     assert_eq!(
-        block.elapsed_duration_at(now),
+        block.elapsed_duration_whole_secs_at(now),
         Some(chrono::Duration::seconds(5))
     );
     assert!(block.is_duration_live());
 
     // Once the block finishes, completed_ts is set and the duration is no longer live.
     block.finish(0);
-    assert_eq!(block.elapsed_duration_at(now), None);
+    assert_eq!(block.elapsed_duration_whole_secs_at(now), None);
     assert!(!block.is_duration_live());
 }
 
@@ -567,7 +567,7 @@ pub fn test_elapsed_duration_for_background_block_is_not_live() {
 
     // Background blocks are not in `Executing` state, so we don't render a live counter for them.
     assert_eq!(block.state(), BlockState::Background);
-    assert_eq!(block.elapsed_duration_at(now), None);
+    assert_eq!(block.elapsed_duration_whole_secs_at(now), None);
     assert!(!block.is_duration_live());
 }
 

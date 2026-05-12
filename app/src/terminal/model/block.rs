@@ -2462,7 +2462,7 @@ impl Block {
 
     pub fn formatted_duration_string(&self) -> Option<String> {
         self.duration()
-            .or_else(|| self.elapsed_duration())
+            .or_else(|| self.elapsed_duration_whole_secs())
             .map(Self::format_duration)
     }
 
@@ -2473,7 +2473,7 @@ impl Block {
     /// This is kept in lock-step with `elapsed_duration()` so the view layer can decide
     /// whether to wrap the duration in a periodically-repainting element.
     pub fn is_duration_live(&self) -> bool {
-        self.elapsed_duration().is_some()
+        self.elapsed_duration_whole_secs().is_some()
     }
 
     pub fn format_duration(duration: Duration) -> String {
@@ -2702,12 +2702,12 @@ impl Block {
     /// formatted duration string stable between one-second repaint ticks so that
     /// unrelated `ctx.notify` calls (e.g. when the user interacts with the block)
     /// don't cause the counter to flicker sub-second values.
-    pub fn elapsed_duration(&self) -> Option<Duration> {
-        self.elapsed_duration_at(Local::now())
+    pub fn elapsed_duration_whole_secs(&self) -> Option<Duration> {
+        self.elapsed_duration_whole_secs_at(Local::now())
     }
 
     /// Testable helper behind `elapsed_duration()` that takes an explicit `now`.
-    fn elapsed_duration_at(&self, now: DateTime<Local>) -> Option<Duration> {
+    fn elapsed_duration_whole_secs_at(&self, now: DateTime<Local>) -> Option<Duration> {
         if self.completed_ts.is_some() || !self.is_executing() {
             return None;
         }
