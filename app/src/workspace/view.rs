@@ -5034,6 +5034,24 @@ impl Workspace {
             index
         };
 
+        // Fix #9171: preserve terminal scroll position across tab switches.
+        //
+        // Inactive tabs are NOT in the layout tree (see `render_banner_and_active_tab`),
+        // but their terminal views remain live and can receive streaming output,
+        // rich-content insertions, and other model updates that mutate
+        // `TerminalView::scroll_position`. Without intervention, a user who scrolled
+        // up to read a long output and then switched tabs would return to find the
+        // scroll yanked away — usually to the top or bottom of a buffer that grew
+        // while they were away.
+        //
+        // We snapshot the previously-active tab's terminal scroll positions on
+        // deactivation and restore them on reactivation. The snapshot/restore is a
+        // no-op when index doesn't actually change (e.g. re-activating the same tab).
+        let previous_index = self.active_tab_index;
+        if previous_index != index && previous_index < self.tab_count() {
+            self.save_terminal_scroll_positions_for_tab(previous_index, ctx);
+        }
+
         self.active_tab_index = index;
 
         if let Some(tab) = self.tabs.get(index) {
@@ -5080,7 +5098,50 @@ impl Workspace {
         let ambient_agent_task_id = self.ambient_agent_task_id_for_focused_terminal_view(ctx);
         self.notify_terminal_focus_change(focused_terminal_view_id, ambient_agent_task_id, ctx);
 
+        // Fix #9171: restore the terminal scroll positions that were snapshotted
+        // the last time this tab was deactivated. See the corresponding
+        // `save_terminal_scroll_positions_for_tab` call above.
+        if previous_index != index {
+            self.restore_terminal_scroll_positions_for_tab(index, ctx);
+        }
+
         self.update_active_session(ctx);
+    }
+
+    /// Snapshot the scroll position of every terminal view in the given tab's pane
+    /// group so it can be restored on reactivation. See issue #9171.
+    fn save_terminal_scroll_positions_for_tab(
+        &self,
+        tab_index: usize,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(pane_group) = self.get_pane_group_view(tab_index).cloned() else {
+            return;
+        };
+        let terminal_views = pane_group.as_ref(ctx).terminal_views(ctx);
+        for terminal_view in terminal_views {
+            terminal_view.update(ctx, |view, _ctx| {
+                view.save_scroll_position_for_tab_deactivation();
+            });
+        }
+    }
+
+    /// Restore the previously-snapshotted scroll position of every terminal view
+    /// in the given tab's pane group. See issue #9171.
+    fn restore_terminal_scroll_positions_for_tab(
+        &self,
+        tab_index: usize,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(pane_group) = self.get_pane_group_view(tab_index).cloned() else {
+            return;
+        };
+        let terminal_views = pane_group.as_ref(ctx).terminal_views(ctx);
+        for terminal_view in terminal_views {
+            terminal_view.update(ctx, |view, ctx| {
+                view.restore_scroll_position_after_tab_activation(ctx);
+            });
+        }
     }
 
     fn update_window_title(&self, ctx: &mut ViewContext<Self>) {

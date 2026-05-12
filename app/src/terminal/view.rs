@@ -7918,6 +7918,27 @@ impl TerminalView {
         }
     }
 
+    /// Snapshot the current scroll position so it can be restored when the owning
+    /// tab becomes active again. Called by the workspace whenever this terminal's
+    /// tab is being deactivated.
+    ///
+    /// Fixes issue #9171: while a tab is hidden the blocklist is not in the
+    /// layout tree, but streaming output, rich-content insertion, and other model
+    /// updates can still mutate the scroll position. Capturing here lets us
+    /// restore the user's exact viewport on reactivation.
+    pub fn save_scroll_position_for_tab_deactivation(&mut self) {
+        self.scroll_position.save_for_tab_deactivation();
+    }
+
+    /// Restore the scroll position recorded at the moment of last tab
+    /// deactivation, if any. Called by the workspace when this terminal's tab
+    /// becomes active. See [`save_scroll_position_for_tab_deactivation`].
+    pub fn restore_scroll_position_after_tab_activation(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.scroll_position.restore_after_tab_activation() {
+            ctx.notify();
+        }
+    }
+
     pub fn set_show_pane_accent_border(
         &mut self,
         show_accent_border: bool,

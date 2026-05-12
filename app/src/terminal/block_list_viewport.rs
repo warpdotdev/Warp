@@ -38,11 +38,26 @@ use super::{
 /// Wraps a scroll position for the purposes of centralizing update logic.
 pub struct ScrollState {
     position: ScrollPosition,
+
+    /// The scroll position recorded at the moment of last tab deactivation.
+    ///
+    /// While a tab is inactive, the blocklist is not rendered and `after_terminal_view_layout`
+    /// doesn't fire — but streaming output, rich-block insertion, and other model updates
+    /// can still mutate `position` (e.g. switching `FixedAtPosition` to
+    /// `FollowsBottomOfMostRecentBlock`). On reactivation we restore the snapshot so the
+    /// user returns to exactly where they left off, instead of getting yanked to the top
+    /// or bottom of a buffer that grew while they were away.
+    ///
+    /// This is `None` whenever the owning tab is active or has never been deactivated.
+    saved_for_tab_deactivation: Option<ScrollPosition>,
 }
 
 impl ScrollState {
     pub fn new(position: ScrollPosition) -> Self {
-        Self { position }
+        Self {
+            position,
+            saved_for_tab_deactivation: None,
+        }
     }
 
     pub fn position(&self) -> ScrollPosition {
@@ -68,6 +83,64 @@ impl ScrollState {
             return true;
         }
         false
+    }
+
+    /// Snapshot the current scroll position so it can be restored when the owning tab
+    /// becomes active again.
+    ///
+    /// Idempotent: if a snapshot already exists, calling this again is a no-op. This
+    /// matters because tab deactivation paths can fire more than once (e.g. window
+    /// focus + tab switch) and we want to preserve the position at the FIRST
+    /// deactivation, before any inactive-tab mutations.
+    ///
+    /// Returns `true` if a new snapshot was taken.
+    pub fn save_for_tab_deactivation(&mut self) -> bool {
+        if self.saved_for_tab_deactivation.is_none() {
+            self.saved_for_tab_deactivation = Some(self.position);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Restore the scroll position recorded at the moment of last tab deactivation,
+    /// if any.
+    ///
+    /// Clears the snapshot so future deactivations capture a fresh value. Returns
+    /// `true` if the position was actually mutated (i.e. drift had occurred while the
+    /// tab was inactive).
+    ///
+    /// The restored value is the opaque `ScrollPosition` previously stored — clamping
+    /// against the current content range is handled at render time by
+    /// `ViewportState::scroll_top_in_lines`, so this method does not need to inspect
+    /// the block list.
+    pub fn restore_after_tab_activation(&mut self) -> bool {
+        let Some(saved) = self.saved_for_tab_deactivation.take() else {
+            return false;
+        };
+        if saved != self.position {
+            log::debug!(
+                "restoring scroll position from {:?} to {:?} after tab activation",
+                self.position,
+                saved
+            );
+            self.position = saved;
+            true
+        } else {
+            false
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_deactivation_snapshot(&self) -> bool {
+        self.saved_for_tab_deactivation.is_some()
+    }
+
+    /// Overwrite the current scroll position. Test-only escape hatch that mimics
+    /// drift caused by streaming output or model updates while a tab is inactive.
+    #[cfg(test)]
+    pub(crate) fn set_position_for_test(&mut self, position: ScrollPosition) {
+        self.position = position;
     }
 }
 
@@ -2056,5 +2129,103 @@ impl Iterator for ViewportIter<'_> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod scroll_state_tab_switch_tests {
+    //! Unit tests for the tab-switch save/restore semantics on [`ScrollState`]
+    //! (issue #9171). These tests stay at the pure-data layer so they don't need
+    //! a full app harness, viewport, or block list.
+
+    use super::{ScrollLines, ScrollPosition, ScrollState};
+    use warpui::units::IntoLines;
+
+    fn fixed_at(scroll_top: f32) -> ScrollPosition {
+        ScrollPosition::FixedAtPosition {
+            scroll_lines: ScrollLines::ScrollTop(scroll_top.into_lines()),
+        }
+    }
+
+    #[test]
+    fn save_then_restore_returns_to_recorded_position() {
+        // Simulate a tab with the user scrolled to a fixed position.
+        let mut state = ScrollState::new(fixed_at(42.0));
+
+        // Tab is deactivated — record where the user left off.
+        assert!(state.save_for_tab_deactivation());
+        assert!(state.has_deactivation_snapshot());
+
+        // While the tab is hidden, streaming output / rich-block insertion drags
+        // the position back to "follows the most recent block".
+        state.set_position_for_test(ScrollPosition::FollowsBottomOfMostRecentBlock);
+
+        // Tab becomes active again — the user expects to be exactly where they
+        // were when they switched away.
+        assert!(state.restore_after_tab_activation());
+        assert_eq!(state.position(), fixed_at(42.0));
+        assert!(!state.has_deactivation_snapshot());
+    }
+
+    #[test]
+    fn restore_without_prior_save_is_a_noop() {
+        // First activation (or any reactivation without a snapshot) must not
+        // mutate the position — there's nothing meaningful to restore to.
+        let mut state = ScrollState::new(ScrollPosition::FollowsBottomOfMostRecentBlock);
+        assert!(!state.restore_after_tab_activation());
+        assert_eq!(
+            state.position(),
+            ScrollPosition::FollowsBottomOfMostRecentBlock
+        );
+    }
+
+    #[test]
+    fn save_is_idempotent_within_one_deactivation() {
+        // Tab deactivation can fire from multiple call sites (window blur, tab
+        // switch). We must capture the FIRST snapshot, before any subsequent
+        // mutations corrupt `position` — otherwise an "inactive-tab" event that
+        // resets scroll to bottom would re-snapshot the bottom and clobber the
+        // user's real position.
+        let mut state = ScrollState::new(fixed_at(100.0));
+
+        assert!(state.save_for_tab_deactivation());
+
+        // Imagine some hidden-tab update drifts position before a second save
+        // call arrives.
+        state.set_position_for_test(ScrollPosition::FollowsBottomOfMostRecentBlock);
+        assert!(!state.save_for_tab_deactivation()); // second save is a no-op
+
+        // Restore must still give us the original pre-deactivation position.
+        assert!(state.restore_after_tab_activation());
+        assert_eq!(state.position(), fixed_at(100.0));
+    }
+
+    #[test]
+    fn restore_clears_snapshot_so_next_cycle_is_fresh() {
+        let mut state = ScrollState::new(fixed_at(10.0));
+        state.save_for_tab_deactivation();
+        state.restore_after_tab_activation();
+        assert!(!state.has_deactivation_snapshot());
+
+        // A subsequent deactivation should capture the CURRENT position, not
+        // the stale value from the previous cycle.
+        state.set_position_for_test(fixed_at(50.0));
+        assert!(state.save_for_tab_deactivation());
+        state.set_position_for_test(ScrollPosition::FollowsBottomOfMostRecentBlock);
+
+        state.restore_after_tab_activation();
+        assert_eq!(state.position(), fixed_at(50.0));
+    }
+
+    #[test]
+    fn restore_is_a_noop_when_position_did_not_drift() {
+        // If nothing drifted while the tab was hidden, restore should still
+        // clear the snapshot but report no mutation.
+        let mut state = ScrollState::new(fixed_at(25.0));
+        state.save_for_tab_deactivation();
+
+        assert!(!state.restore_after_tab_activation());
+        assert_eq!(state.position(), fixed_at(25.0));
+        assert!(!state.has_deactivation_snapshot());
     }
 }
