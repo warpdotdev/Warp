@@ -108,7 +108,7 @@ const CONTENT_SEPARATION_PADDING: f32 = 24.;
 const TEXT_FIELD_TOP_PADDING: f32 = 12.;
 const HORIZONTAL_BAR_TO_SUB_HEADER_PADDING: f32 = 9.;
 const COMPARE_PLANS_BUTTON_WIDTH: f32 = 120.;
-const SUBSECTION_HEADER_FONT_SIZE: f32 = 16.;
+const SUBSECTION_HEADER_FONT_SIZE: f32 = 18.;
 const SUBSUBSECTION_HEADER_FONT_SIZE: f32 = 14.;
 
 const INVITE_LINK_PREFIX: &str = "/team/";
@@ -1828,9 +1828,12 @@ impl TeamsWidget {
         }
     }
 
-    /// Returns true if the pricing data exposes any plan whose `max_team_size`
-    /// is strictly greater than the current team's workspace size cap (treating
-    /// `None` / unlimited plans as having a higher cap than any finite limit).
+    /// Returns true if pricing data exposes any plan with a strictly higher
+    /// finite seat cap than the current team's. Plans with `max_team_size =
+    /// None` (unlimited) are explicitly ignored — in practice those entries
+    /// are legacy plans (Pro, Team, Turbo, Lightspeed, …) that customers
+    /// can't upgrade into anymore, so treating them as a viable upgrade
+    /// target would surface a misleading CTA.
     fn has_higher_seat_cap_plan_available(
         workspace_size_policy: &WorkspaceSizePolicy,
         pricing_info: &PricingInfoModel,
@@ -1841,10 +1844,8 @@ impl TeamsWidget {
         pricing_info
             .plans()
             .iter()
-            .any(|plan| match plan.max_team_size {
-                None => true, // unlimited
-                Some(max) => i64::from(max) > workspace_size_policy.limit,
-            })
+            .filter_map(|plan| plan.max_team_size)
+            .any(|max| i64::from(max) > workspace_size_policy.limit)
     }
 
     /// Renders the red "Your team is full" alert. CTA only shown when
@@ -2097,7 +2098,7 @@ impl TeamsWidget {
                 .finish(),
         );
 
-        // 3) Team invitation flows (invite link / email invites)
+        // 3) Team invitation flows (invite link / email invites / discovery)
         if let Some(workspace_size_policy) =
             team_metadata.billing_metadata.tier.workspace_size_policy
         {
@@ -2112,20 +2113,7 @@ impl TeamsWidget {
             ));
         };
 
-        // 4) Team discoverability toggle (sits with the invite flows, directly
-        // under the "By email" subsection)
-        if team_metadata.billing_metadata.customer_type != CustomerType::Enterprise
-            && has_admin_permissions
-            && team_metadata.is_eligible_for_discovery
-        {
-            main_content.add_child(self.render_discoverability_toggle_section(
-                team_metadata,
-                &current_user_email,
-                appearance,
-            ))
-        }
-
-        // 5) Horizontal separator between the invite flows and the team members
+        // 4) Horizontal separator between the invite flows and the team members
         // list. 32px of breathing room above and below to match the design.
         main_content.add_child(
             Container::new(render_separator(appearance))
@@ -2134,7 +2122,7 @@ impl TeamsWidget {
                 .finish(),
         );
 
-        // 6) Team members
+        // 5) Team members
         main_content.add_child(self.render_team_members_section(
             team_metadata,
             &current_user_email,
@@ -2142,10 +2130,7 @@ impl TeamsWidget {
             appearance,
         ));
 
-        // 6.5) Optional outgrow CTA — "Upgrade to {plan} for up to N members"
-        // when the team has natural room to grow into a higher-cap plan, or
-        // "Contact sales@warp.dev to grow your team further" when even the
-        // next plan isn't enough (or no higher self-serve plan exists).
+        // 6.5) Optional outgrow CTA
         let pricing_info_model = view.pricing_info_model.as_ref(app);
         if let Some(cta) = self.render_outgrow_cta(
             team_metadata,
@@ -2160,7 +2145,7 @@ impl TeamsWidget {
             );
         }
 
-        // 7) Deleting/leaving teams
+        // 6) Deleting/leaving teams
         let mut button_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
         let is_enterprise_team =
             team_metadata.billing_metadata.customer_type == CustomerType::Enterprise;
@@ -2500,20 +2485,12 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut invitation_section = Flex::column();
 
-        // "Your team is full" alert sits above the "Invite team members" header
-        // when the team is at its seat cap. We skip the alert entirely for
-        // delinquent teams; the existing manage-billing copy in the
-        // invite-by-email section is the actionable path forward and would
-        // compete with the alert's CTA.
-        let team_size_i64 = i64::try_from(team_metadata.members.len()).unwrap_or(i64::MAX);
+        // Optional "Team is full" warning box.
+        let team_size_i64 = i64::try_from(team_metadata.members.len()).unwrap_or(1);
         let is_full =
             !workspace_size_policy.is_unlimited && team_size_i64 >= workspace_size_policy.limit;
-        let is_delinquent = matches!(
-            team_metadata.billing_metadata.delinquency_status,
-            DelinquencyStatus::PastDue | DelinquencyStatus::Unpaid,
-        );
         let pricing_info_model = view.pricing_info_model.as_ref(app);
-        if is_full && !is_delinquent {
+        if is_full {
             let cap_alert = self.render_seat_cap_alert(
                 team_metadata,
                 has_admin_permissions,
@@ -2525,8 +2502,6 @@ impl TeamsWidget {
                 .add_child(Container::new(cap_alert).with_padding_bottom(24.).finish());
         }
 
-        // Top-level "Invite team members" header sits above the per-method
-        // (by link / by email) subsections.
         invitation_section.add_child(
             Container::new(
                 self.render_subsection_header("Invite team members".to_owned(), appearance),
@@ -2569,6 +2544,21 @@ impl TeamsWidget {
             chip_editor_style,
             has_admin_permissions,
         ));
+
+        // By discovery — third invitation method, same hierarchical level as
+        // By link / By email. Gated on non-Enterprise, admin viewer, and the
+        // team being eligible for discovery.
+        let current_user_email = view.auth_state.user_email().unwrap_or_default();
+        if team_metadata.billing_metadata.customer_type != CustomerType::Enterprise
+            && has_admin_permissions
+            && team_metadata.is_eligible_for_discovery
+        {
+            invitation_section.add_child(self.render_discoverability_toggle_section(
+                team_metadata,
+                &current_user_email,
+                appearance,
+            ));
+        }
 
         invitation_section.finish()
     }
@@ -2904,10 +2894,7 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column().with_main_axis_size(MainAxisSize::Min);
 
-        // 1) "Team members" header row: title on the left, "{N} team members"
-        // (with capacity tooltip when the plan has a finite cap) on the right.
-        // No top padding here — the call site adds a separator with its own
-        // spacing above this section.
+        // 1) "Team members" header row
         let header_row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
@@ -3860,13 +3847,7 @@ impl TeamsWidget {
                 .with_style(UiComponentStyles {
                     font_family_id: Some(appearance.ui_font_family()),
                     font_weight: Some(Weight::Medium),
-                    font_color: Some(
-                        appearance
-                            .theme()
-                            .active_ui_text_color()
-                            .with_opacity(60)
-                            .into(),
-                    ),
+                    font_color: Some(appearance.theme().active_ui_text_color().into()),
                     font_size: Some(SUBSECTION_HEADER_FONT_SIZE),
                     ..Default::default()
                 })
