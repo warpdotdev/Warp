@@ -96,48 +96,92 @@ updates without losing the final state.
 
 ### Result ordering (stale-result rejection)
 
-A leading-edge derivation and the trailing-edge re-derivation
-of the SAME 250ms window can complete in any order — the child
-processes overlap and the trailing-edge process started later
-may finish FIRST (leading was scheduled against an earlier
-CWD that resolves slowly; trailing was dispatched against the
-latest CWD and returns quickly). Without explicit ordering,
-the leading result could land second and overwrite the
-trailing result, leaving the metadata reflecting an
-intermediate CWD instead of the final one.
+Two `git rev-parse` derivations for the SAME pane can be in
+flight at the same time — typically a leading-edge derivation
+dispatched at window start AND a trailing-edge derivation
+dispatched at window end, but in principle ANY pair of
+overlapping derivations dispatched in dispatch order
+`d1 < d2 < ... < dK` for the same pane. Their child processes
+may exit in ANY order:
+
+1. Trailing-finishes-first: `d2` returns before `d1`. The
+   intended final result `d2` lands first; without ordering,
+   the older `d1` arriving second would overwrite the newer
+   metadata.
+2. Leading-finishes-last (same as #1, restated): `d1` was
+   dispatched against an older CWD but its child stalled in
+   filesystem / fork / git startup; it returns AFTER `d2` —
+   same risk.
+3. K-way overlap: more than two in-flight derivations
+   (transient, e.g., across multiple consecutive windows when
+   prior leading-edge children have not yet exited). The
+   ordering rule below handles ALL K-way orderings, not just
+   the 2-way case.
+
+The spec MUST guarantee that the metadata surface always
+reflects the LATEST-DISPATCHED derivation that has terminated,
+regardless of child-process exit order, and that no earlier
+derivation can ever overwrite or re-apply a later one.
 
 - B-ORDER. **Each derivation carries a monotonically
   increasing `derivation_seq: u64` per pane**, assigned at the
   moment the derivation is *dispatched* (not at the moment its
   child process exits). The pane's repo-metadata coordinator
   also tracks `last_applied_seq: u64` per pane, initially 0.
+  Sequence numbers are strictly increasing per pane: each new
+  dispatch increments by 1. Two derivations on the same pane
+  CANNOT share a `seq` value.
 - B-ORDER-1. When a derivation child process exits and
   produces a result (success → canonical tuple, or failure →
   non-git clear), the coordinator compares its `seq` against
   `last_applied_seq` for the pane:
   - If `seq > last_applied_seq`: the result is current. Apply
     it (fire `RepoContextChanged` or `RepoMetadataCleared` per
-    B2/B5), then set `last_applied_seq = seq`.
+    B2/B5), then set `last_applied_seq = seq`. This holds for
+    ALL K in-flight derivations: only the result with the
+    highest `seq` that has yet terminated will be applied;
+    every later-arriving result with smaller `seq` is
+    discarded by the next clause.
   - If `seq <= last_applied_seq`: the result is stale (a
     later derivation has already been applied to the metadata
     surface). **Discard the result silently**: do NOT fire any
-    event, do NOT update the cached canonical tuple. Log at
-    debug level.
+    event, do NOT update the cached canonical tuple, do NOT
+    re-emit prior metadata. Log at debug level.
+- B-ORDER-1a. **Exit-order invariance.** The applied result is
+  determined ONLY by `seq`, NOT by child-process exit order,
+  child-process exit status, or wall-clock time. The rule
+  produces the same final metadata for any permutation of
+  exit orders. In particular: if `d1` is dispatched first and
+  `d2` is dispatched second on the same pane and `d2` returns
+  first, applying `d2`'s result sets `last_applied_seq` to
+  `d2.seq`; when `d1` returns later with the older CWD, the
+  rule "seq <= last_applied_seq" discards it. No
+  `RepoContextChanged` for the intermediate CWD ever fires.
 - B-ORDER-2. The cached canonical tuple used for B-CANON
   short-circuit decisions (and for B5-INVALIDATE) is updated
   **only when a non-stale result is applied**. Stale results
   cannot perturb the cache or suppress future event emission.
 - B-ORDER-3. Cancelling an in-flight leading-edge derivation
   is NOT required for correctness; the seq comparison
-  guarantees the trailing-edge result wins regardless of the
-  child-process exit order. Implementations MAY cancel
-  in-flight leading-edge children for resource reasons but
-  MUST NOT rely on cancellation for the ordering guarantee.
+  guarantees the latest-dispatched result wins regardless of
+  the child-process exit order. Implementations MAY cancel
+  in-flight earlier children for resource reasons but MUST
+  NOT rely on cancellation for the ordering guarantee.
 - B-ORDER-4. The pane's `derivation_seq` is monotonic across
-  pane lifetime; it is NOT reset by `RepoMetadataCleared` or by
-  CWD-into-non-git transitions, so a late-arriving leading-edge
-  result from before a clear cannot be re-applied as the
-  "next" event after the clear.
+  pane lifetime; it is NOT reset by `RepoMetadataCleared`, by
+  CWD-into-non-git transitions, by tab switches, or by
+  pane focus changes. A late-arriving derivation dispatched
+  before a clear (or before any other transition) cannot be
+  re-applied as the "next" event after the transition,
+  because its `seq` is always less than `last_applied_seq`
+  by construction.
+- B-ORDER-5. When the pane is destroyed, any still-in-flight
+  derivations for that pane MUST have their results
+  discarded; the seq comparison is irrelevant once the pane
+  no longer exists. Implementations MAY (but are not required
+  to) cancel the underlying processes; the binding
+  requirement is only that no event fires against a
+  destroyed pane.
 
 ### Throttle (leading + trailing edge)
 
@@ -153,34 +197,33 @@ intermediate CWD instead of the final one.
     guarantees the final state is correct after a burst.
   - Skip the spawn entirely if CWD hasn't changed since the
     last completed derivation.
-- B3-budget. **Per-pane derivation-rate cap (canonical, single
-  rule — supersedes any earlier wording).** The throttle window
-  is exactly 250ms.
-  - **Per-window cap (the only normative bound):** Within any
-    single 250ms window per pane, AT MOST 2 derivation
-    processes may be spawned — at most ONE leading-edge
-    derivation at the start of the window, and at most ONE
-    trailing-edge derivation when the window elapses.
-  - **Peak rate (informative):** 2 derivations per 250ms window
-    = **8 derivations per second per pane PEAK**. This is the
-    only "8/s" number used in this spec and refers strictly to
-    the worst-case per-window peak.
-  - **Steady-state rate (informative):** Under continuous CWD
-    churn, each window after the first short-circuits its
-    leading edge via the "skip if CWD unchanged since last
-    completed derivation" rule in B3, because the prior
-    window's trailing derivation already covered the latest
-    CWD. The result is one trailing derivation per window =
-    **4 derivations per second per pane STEADY-STATE**.
-  - The two numbers are not contradictory: PEAK (8/s) is the
-    worst-case per-window upper bound; STEADY-STATE (4/s) is
-    the long-run average under sustained churn. Both derive
-    from the single normative per-window cap of 2.
+- B3-budget. **Per-pane derivation-rate cap (single normative
+  rule, no other rate bound exists).** The throttle window is
+  exactly 250ms. The ONLY normative bound is the **per-window
+  cap**:
+
+  > Within any single 250ms window per pane, AT MOST 2
+  > derivation processes may be spawned — at most ONE
+  > leading-edge derivation at the start of the window, and at
+  > most ONE trailing-edge derivation when the window elapses.
+
+  No other rate bound is normative in this spec. Any rate
+  expressed in "derivations per second" is a derived
+  observation of the per-window cap under specific assumptions
+  and is NOT a separate budget. Implementations satisfy
+  B3-budget exclusively by enforcing the per-window cap above.
+
   - Implementations MUST NOT batch / amortize trailing edges
     across windows; each window's trailing edge fires at most
     once with the LATEST CWD at the moment that window elapses.
-    Bursts longer than one window are governed by per-window
-    enforcement, NOT by a global moving-rate budget.
+  - Bursts longer than one window are governed by per-window
+    enforcement applied independently to each window, NOT by a
+    global moving-rate budget.
+  - Under sustained CWD churn, the per-window cap naturally
+    short-circuits redundant leading edges (per the
+    "skip if CWD unchanged since last completed derivation"
+    rule in B3), but that short-circuit is a *consequence* of
+    the per-window cap plus B3, not an additional rule.
 
 ### Worktree vs different repo
 
@@ -348,6 +391,21 @@ intermediate CWD instead of the final one.
      last_applied_seq = N+1`). No `RepoContextChanged` for
      `/repo-A` is emitted; the cached tuple still equals the
      `/repo-B` tuple; metadata reflects `/repo-B`.
+- T_stale_kway_overlap. **K-way overlapping derivations.**
+  Three derivations dispatched in sequence on the same pane
+  with `seq = N, N+1, N+2` against CWDs `/repo-A`, `/repo-B`,
+  `/repo-C` respectively. Mock exit times so child processes
+  finish in the order `(N+1) → (N+2) → N` (out-of-order, with
+  the OLDEST dispatch finishing LAST):
+  1. `N+1` exits → `seq > 0` → apply `/repo-B` metadata;
+     `last_applied_seq = N+1`.
+  2. `N+2` exits → `seq > N+1` → apply `/repo-C` metadata;
+     `last_applied_seq = N+2`.
+  3. `N` exits → `seq = N <= N+2` → DISCARDED. No
+     `RepoContextChanged` for `/repo-A` fires.
+  Final metadata reflects `/repo-C`. Assertion: exactly two
+  `RepoContextChanged` events fired across the whole sequence
+  (one for `/repo-B`, one for `/repo-C`), in that order.
 - T_stale_after_clear. **No re-application across a clear.**
   Sequence:
   1. CWD = `/repo-A` → leading derivation L (`seq = N`)
