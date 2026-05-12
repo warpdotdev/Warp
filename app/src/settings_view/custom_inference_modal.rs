@@ -28,14 +28,14 @@ pub enum CustomEndpointModalEvent {
         name: String,
         url: String,
         api_key: String,
-        models: Vec<(String, Option<String>)>,
+        models: Vec<(String, Option<String>, Option<String>)>,
     },
     SaveEndpoint {
         index: usize,
         name: String,
         url: String,
         api_key: String,
-        models: Vec<(String, Option<String>)>,
+        models: Vec<(String, Option<String>, Option<String>)>,
     },
     RemoveEndpoint {
         index: usize,
@@ -55,6 +55,7 @@ struct ModelRow {
     name_editor: ViewHandle<EditorView>,
     alias_editor: ViewHandle<EditorView>,
     remove_mouse_state: MouseStateHandle,
+    config_key: Option<String>,
 }
 
 pub struct CustomEndpointModal {
@@ -145,6 +146,7 @@ impl CustomEndpointModal {
                 model_rows.push(Self::create_model_row(
                     Some(&model.name),
                     model.alias.as_deref(),
+                    Some(model.config_key.clone()),
                     font_family,
                     &text_colors,
                     ctx,
@@ -153,6 +155,7 @@ impl CustomEndpointModal {
         }
         if model_rows.is_empty() {
             model_rows.push(Self::create_model_row(
+                None,
                 None,
                 None,
                 font_family,
@@ -197,6 +200,7 @@ impl CustomEndpointModal {
     fn create_model_row(
         name: Option<&str>,
         alias: Option<&str>,
+        config_key: Option<String>,
         font_family: FamilyId,
         text_colors: &crate::editor::TextColors,
         ctx: &mut ViewContext<Self>,
@@ -245,6 +249,7 @@ impl CustomEndpointModal {
             name_editor,
             alias_editor,
             remove_mouse_state: Default::default(),
+            config_key,
         }
     }
 
@@ -274,6 +279,7 @@ impl CustomEndpointModal {
                 self.model_rows.push(Self::create_model_row(
                     Some(&model.name),
                     model.alias.as_deref(),
+                    Some(model.config_key.clone()),
                     font_family,
                     &text_colors,
                     ctx,
@@ -282,6 +288,7 @@ impl CustomEndpointModal {
         }
         if self.model_rows.is_empty() {
             self.model_rows.push(Self::create_model_row(
+                None,
                 None,
                 None,
                 font_family,
@@ -329,7 +336,7 @@ impl CustomEndpointModal {
         let name = self.endpoint_name_editor.as_ref(ctx).buffer_text(ctx);
         let url = self.endpoint_url_editor.as_ref(ctx).buffer_text(ctx);
         let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
-        let models: Vec<(String, Option<String>)> = self
+        let models: Vec<(String, Option<String>, Option<String>)> = self
             .model_rows
             .iter()
             .map(|row| {
@@ -340,9 +347,9 @@ impl CustomEndpointModal {
                 } else {
                     Some(alias)
                 };
-                (name, alias_opt)
+                (name, alias_opt, row.config_key.clone())
             })
-            .filter(|(name, _)| !name.trim().is_empty())
+            .filter(|(name, _, _)| !name.trim().is_empty())
             .collect();
         if let Some(index) = self.editing_index {
             ctx.emit(CustomEndpointModalEvent::SaveEndpoint {
@@ -369,7 +376,7 @@ impl CustomEndpointModal {
     fn add_model(&mut self, ctx: &mut ViewContext<Self>) {
         let font_family = Appearance::as_ref(ctx).ui_font_family();
         let text_colors = crate::settings_view::editor_text_colors(Appearance::as_ref(ctx));
-        let row = Self::create_model_row(None, None, font_family, &text_colors, ctx);
+        let row = Self::create_model_row(None, None, None, font_family, &text_colors, ctx);
         // Subscribe to the new editors
         let name_editor = row.name_editor.clone();
         ctx.subscribe_to_view(&name_editor, |me, editor, event, ctx| {
