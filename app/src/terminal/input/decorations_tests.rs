@@ -4,7 +4,7 @@ use crate::{
     appearance::Appearance,
     terminal::{
         input::{
-            decorations::InputBackgroundJobOptions,
+            decorations::{should_underline_unknown_command, InputBackgroundJobOptions},
             tests::{
                 add_window_with_bootstrapped_terminal, initialize_app,
                 simulate_directory_for_completion,
@@ -15,6 +15,83 @@ use crate::{
     themes::theme::AnsiColorIdentifier,
 };
 use warp_completer::completer::SuggestionTypeName;
+
+/// Regression test for issue #9182: when the session has not yet finished
+/// loading its set of external commands (executables on PATH), valid commands
+/// like `git` would otherwise be incorrectly underlined as unknown. The
+/// decision function must suppress underlining entirely until the load
+/// completes.
+#[test]
+fn should_underline_unknown_command_suppresses_when_external_commands_not_loaded() {
+    // The completer returned no description (would otherwise indicate an
+    // unknown command), the token is the command position, and the symbols
+    // are valid for our heuristic — but external commands haven't loaded
+    // yet, so we must not underline.
+    let has_loaded_external_commands = false;
+    let has_no_description = true;
+    let is_first_token = true;
+    let valid_symbols = true;
+
+    let result = should_underline_unknown_command(
+        has_loaded_external_commands,
+        has_no_description,
+        is_first_token,
+        valid_symbols,
+    );
+
+    assert!(
+        !result,
+        "must not underline command before external commands have loaded (issue #9182)"
+    );
+}
+
+#[test]
+fn should_underline_unknown_command_underlines_unknown_after_load_completes() {
+    // After commands have loaded, an undescribed first-position token with
+    // valid symbols is an unknown command and should be underlined.
+    assert!(should_underline_unknown_command(
+        true, /* has_loaded_external_commands */
+        true, /* has_no_description */
+        true, /* is_first_token */
+        true, /* valid_symbols */
+    ));
+}
+
+#[test]
+fn should_underline_unknown_command_skips_known_commands() {
+    // After load, a token with a description (i.e. a known command) must
+    // not be underlined.
+    assert!(!should_underline_unknown_command(
+        true,  /* has_loaded_external_commands */
+        false, /* has_no_description -- known */
+        true,  /* is_first_token */
+        true,  /* valid_symbols */
+    ));
+}
+
+#[test]
+fn should_underline_unknown_command_skips_non_first_tokens() {
+    // Only the command position (token_index == 0) is subject to the
+    // unknown-command underline. Arguments are not.
+    assert!(!should_underline_unknown_command(
+        true,  /* has_loaded_external_commands */
+        true,  /* has_no_description */
+        false, /* is_first_token -- this is an argument */
+        true,  /* valid_symbols */
+    ));
+}
+
+#[test]
+fn should_underline_unknown_command_skips_invalid_symbols() {
+    // Tokens containing characters we don't trust for the heuristic
+    // (e.g. `!!`, `$foo`) should be left alone to avoid false positives.
+    assert!(!should_underline_unknown_command(
+        true,  /* has_loaded_external_commands */
+        true,  /* has_no_description */
+        true,  /* is_first_token */
+        false, /* valid_symbols -- contains e.g. `!` */
+    ));
+}
 
 #[test]
 fn test_decorations_with_multibyte_chars() {
