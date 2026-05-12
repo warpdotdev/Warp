@@ -454,6 +454,7 @@ jobs:
       # deploy/test jobs across workflow runs to avoid cross-run clobbering.
       group: remote-server-test-vm
       cancel-in-progress: false
+      queue: max
     permissions:
       contents: 'read'
       id-token: 'write'
