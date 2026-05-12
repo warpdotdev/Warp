@@ -112,7 +112,7 @@
 /app/src/terminal/warpify/ @zachbai
 /app/src/settings_view/warpify_page.rs @zachbai
 /app/assets/bundled/bootstrap/ @zachbai
-/crates/warp_completer/ @zachbai @szgupta @alokedesai
+/crates/warp_completer/ @zachbai @szgupta @alokedesai @acarl005
 
 # Agent mode
 /app/src/ai/agent/ @zachbai
