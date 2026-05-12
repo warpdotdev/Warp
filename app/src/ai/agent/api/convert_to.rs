@@ -3,6 +3,7 @@
 use ai::agent::convert::ConvertToAPITypeError;
 use anyhow::anyhow;
 use chrono::{DateTime, Local, Timelike};
+use sha2::Digest as _;
 use warp_multi_agent_api as api;
 
 use crate::ai::{
@@ -14,11 +15,28 @@ use crate::ai::{
     block_context::BlockContext,
 };
 
+const OPENAI_RESPONSES_MAX_TOOL_CALL_ID_LEN: usize = 64;
+const SANITIZED_TOOL_CALL_ID_PREFIX: &str = "call_";
+
 fn local_datetime_to_timestamp(timestamp: DateTime<Local>) -> prost_types::Timestamp {
     prost_types::Timestamp {
         seconds: timestamp.timestamp(),
         nanos: timestamp.timestamp_subsec_nanos() as i32,
     }
+}
+
+/// Some OpenAI-compatible providers emit tool call IDs that OpenAI's Responses
+/// API rejects when Warp sends the corresponding tool call result downstream.
+fn tool_call_id_for_request(id: impl Into<String>) -> String {
+    let id = id.into();
+    if id.len() <= OPENAI_RESPONSES_MAX_TOOL_CALL_ID_LEN {
+        return id;
+    }
+
+    let digest = sha2::Sha256::digest(id.as_bytes());
+    let mut sanitized = format!("{SANITIZED_TOOL_CALL_ID_PREFIX}{digest:x}");
+    sanitized.truncate(OPENAI_RESPONSES_MAX_TOOL_CALL_ID_LEN);
+    sanitized
 }
 
 impl TryFrom<StaticQueryType> for api::request::input::query_with_canned_response::Type {
@@ -712,7 +730,7 @@ impl TryFrom<AIAgentActionResult> for api::request::input::user_inputs::user_inp
         Ok(
             api::request::input::user_inputs::user_input::Input::ToolCallResult(
                 api::request::input::ToolCallResult {
-                    tool_call_id: action_result.id.into(),
+                    tool_call_id: tool_call_id_for_request(action_result.id),
                     result,
                 },
             ),

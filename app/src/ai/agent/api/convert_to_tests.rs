@@ -8,6 +8,55 @@ use chrono::Utc;
 use warp_core::command::ExitCode;
 use warp_multi_agent_api as api;
 
+fn open_code_review_tool_call_result_id(action_id: &str) -> String {
+    let input =
+        api::request::input::user_inputs::user_input::Input::try_from(AIAgentActionResult {
+            id: action_id.to_string().into(),
+            task_id: TaskId::new("task".to_string()),
+            result: AIAgentActionResultType::OpenCodeReview,
+        })
+        .unwrap();
+
+    match input {
+        api::request::input::user_inputs::user_input::Input::ToolCallResult(result) => {
+            result.tool_call_id
+        }
+        other => panic!("Expected tool-call-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn tool_call_result_preserves_openai_compatible_tool_call_id() {
+    let id = "a".repeat(super::OPENAI_RESPONSES_MAX_TOOL_CALL_ID_LEN);
+
+    assert_eq!(open_code_review_tool_call_result_id(&id), id);
+}
+
+#[test]
+fn tool_call_result_hashes_long_tool_call_id_for_openai_responses() {
+    let id = "glm_tool_call_".repeat(16);
+    assert!(id.len() > super::OPENAI_RESPONSES_MAX_TOOL_CALL_ID_LEN);
+
+    let sanitized = open_code_review_tool_call_result_id(&id);
+
+    assert_eq!(
+        sanitized.len(),
+        super::OPENAI_RESPONSES_MAX_TOOL_CALL_ID_LEN
+    );
+    assert!(sanitized.starts_with(super::SANITIZED_TOOL_CALL_ID_PREFIX));
+    assert_ne!(sanitized, id);
+    assert_eq!(open_code_review_tool_call_result_id(&id), sanitized);
+}
+
+#[test]
+fn tool_call_result_hashes_long_tool_call_ids_without_truncation_collisions() {
+    let first = open_code_review_tool_call_result_id(&format!("{}a", "kimi_tool_call_".repeat(16)));
+    let second =
+        open_code_review_tool_call_result_id(&format!("{}b", "kimi_tool_call_".repeat(16)));
+
+    assert_ne!(first, second);
+}
+
 #[test]
 fn transfer_control_snapshot_result_converts_to_tool_call_result_input() {
     let block_id = BlockId::default();
