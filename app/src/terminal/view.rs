@@ -12131,13 +12131,32 @@ impl TerminalView {
         claude_version: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let Some(existing_metadata) = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&conversation_id)
-            .and_then(|conversation| conversation.local_claude_harness_metadata().cloned())
+        let Some((existing_metadata, server_conversation_token)) =
+            BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&conversation_id)
+                .and_then(|conversation| {
+                    Some((
+                        conversation.local_claude_harness_metadata()?.clone(),
+                        conversation.server_conversation_token()?.clone(),
+                    ))
+                })
         else {
             return;
         };
+        let Ok(external_conversation_id) =
+            AIConversationId::try_from(server_conversation_token.as_str().to_string())
+        else {
+            log::warn!(
+                "Could not parse local Claude external conversation id from server token: {}",
+                server_conversation_token.as_str(),
+            );
+            return;
+        };
 
+        // Prefer live plugin-reported session details when present. Claude can
+        // report a different session id than the one we seeded if it resumes
+        // or rotates the underlying session, and upload should follow the
+        // transcript Claude actually wrote.
         let session_id = session_context
             .session_id
             .as_deref()
@@ -12151,7 +12170,6 @@ impl TerminalView {
             .map(PathBuf::from)
             .unwrap_or_else(|| existing_metadata.working_dir.clone());
         let metadata = LocalClaudeHarnessMetadata {
-            conversation_id: existing_metadata.conversation_id,
             session_id,
             working_dir,
         };
@@ -12171,7 +12189,7 @@ impl TerminalView {
             async move {
                 upload_claude_transcript(
                     harness_support_client.as_ref(),
-                    metadata.conversation_id,
+                    external_conversation_id,
                     metadata.session_id,
                     &metadata.working_dir,
                     claude_version,

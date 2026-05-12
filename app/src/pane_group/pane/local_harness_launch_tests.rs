@@ -202,6 +202,7 @@ async fn prepare_local_codex_child_launch_does_not_rewrite_global_codex_state() 
         "codex --dangerously-bypass-approvals-and-sandbox 'hello world'"
     );
     assert!(prepared.local_claude_harness_metadata.is_none());
+    assert!(prepared.local_claude_external_conversation_id.is_none());
     assert!(!fake_home.path().join(".codex").exists());
 }
 
@@ -267,7 +268,10 @@ async fn prepare_local_claude_child_launch_creates_and_links_external_conversati
     .unwrap();
 
     let metadata = prepared.local_claude_harness_metadata.as_ref().unwrap();
-    assert_eq!(metadata.conversation_id, conversation_id);
+    assert_eq!(
+        prepared.local_claude_external_conversation_id,
+        Some(conversation_id)
+    );
     assert_eq!(metadata.working_dir, working_dir);
     assert!(prepared.command.contains(&format!(
         "claude --session-id {} --dangerously-skip-permissions",

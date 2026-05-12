@@ -1414,6 +1414,7 @@ fn launch_local_harness_child(
                     env_vars,
                     run_id,
                     task_id,
+                    local_claude_external_conversation_id,
                     local_claude_harness_metadata,
                 } = launch;
                 if let Some(HiddenChildAgentConversation {
@@ -1451,6 +1452,14 @@ fn launch_local_harness_child(
                             terminal_view_id,
                             ctx,
                         );
+                        if let Some(external_conversation_id) =
+                            local_claude_external_conversation_id
+                        {
+                            history_model.set_server_conversation_token_for_conversation(
+                                conversation_id,
+                                external_conversation_id.to_string(),
+                            );
+                        }
                         if let Some(metadata) = local_claude_harness_metadata {
                             history_model.set_local_claude_harness_metadata_for_conversation(
                                 conversation_id,

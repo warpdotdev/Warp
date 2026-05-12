@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::Arc};
 
 use crate::ai::{
-    agent::conversation::LocalClaudeHarnessMetadata,
+    agent::conversation::{AIConversationId, LocalClaudeHarnessMetadata},
     agent_sdk::{
         driver::{
             harness::{
@@ -28,8 +28,10 @@ pub(super) struct PreparedLocalHarnessLaunch {
     pub env_vars: HashMap<OsString, OsString>,
     pub run_id: String,
     pub task_id: AmbientAgentTaskId,
+    pub local_claude_external_conversation_id: Option<AIConversationId>,
     pub local_claude_harness_metadata: Option<LocalClaudeHarnessMetadata>,
 }
+
 pub(super) struct LocalHarnessChildLaunchRequest {
     pub prompt: String,
     pub harness_type: String,
@@ -111,6 +113,7 @@ pub(super) async fn prepare_local_harness_child_launch(
         });
     };
     validate_local_harness_shell(shell_type)?;
+    let mut local_claude_external_conversation_id = None;
     let mut local_claude_harness_metadata = None;
     let command = match harness {
         Harness::Oz => unreachable!("normalize_local_child_harness filters out Oz"),
@@ -156,8 +159,8 @@ pub(super) async fn prepare_local_harness_child_launch(
                     format!("Failed to create local Claude child conversation: {error}")
                 })?;
             let session_id = Uuid::new_v4();
+            local_claude_external_conversation_id = Some(conversation_id);
             local_claude_harness_metadata = Some(LocalClaudeHarnessMetadata {
-                conversation_id,
                 session_id,
                 working_dir,
             });
@@ -187,6 +190,9 @@ pub(super) async fn prepare_local_harness_child_launch(
         Harness::Gemini => unreachable!("normalize_local_child_harness filters out Gemini"),
     };
 
+    // TODO(QUALITY-382): Fold task creation and linked conversation assignment
+    // into one server request. The current create-then-update flow costs two
+    // round trips and can orphan the external conversation if a later step fails.
     let task_id = ai_client
         .create_agent_task(
             prompt.clone(),
@@ -201,15 +207,9 @@ pub(super) async fn prepare_local_harness_child_launch(
                 harness.display_name()
             )
         })?;
-    if let Some(metadata) = local_claude_harness_metadata.as_ref() {
+    if let Some(conversation_id) = local_claude_external_conversation_id.as_ref() {
         ai_client
-            .update_agent_task(
-                task_id,
-                None,
-                None,
-                Some(metadata.conversation_id.to_string()),
-                None,
-            )
+            .update_agent_task(task_id, None, None, Some(conversation_id.to_string()), None)
             .await
             .map_err(|error| {
                 format!("Failed to link local Claude child task to conversation: {error}")
@@ -227,6 +227,7 @@ pub(super) async fn prepare_local_harness_child_launch(
         env_vars,
         run_id: task_id.to_string(),
         task_id,
+        local_claude_external_conversation_id,
         local_claude_harness_metadata,
     })
 }

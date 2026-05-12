@@ -486,6 +486,7 @@ impl BlocklistAIHistoryModel {
         let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
             return;
         };
+        let old_agent_id_key = agent_id_key(conversation);
 
         // Drop the old entry only if it still points at the given conversation_id,
         // so we don't wrongly remove an entry that's been remapped.
@@ -496,10 +497,19 @@ impl BlocklistAIHistoryModel {
                 }
             }
         }
+        if let Some(old_key) = old_agent_id_key {
+            if self.agent_id_to_conversation_id.get(&old_key) == Some(&conversation_id) {
+                self.agent_id_to_conversation_id.remove(&old_key);
+            }
+        }
 
         conversation.set_server_conversation_token(token.clone());
         self.server_token_to_conversation_id
             .insert(ServerConversationToken::new(token), conversation_id);
+        if let Some(key) = agent_id_key(conversation) {
+            self.agent_id_to_conversation_id
+                .insert(key, conversation_id);
+        }
     }
 
     /// Sets server metadata for a conversation and emits the ConversationMetadataUpdated event.
@@ -1016,6 +1026,7 @@ impl BlocklistAIHistoryModel {
         };
         let had_token_before = conversation.server_conversation_token().is_some();
         conversation.set_local_claude_harness_metadata(metadata);
+        let has_token_after = conversation.server_conversation_token().is_some();
 
         if let Some(key) = agent_id_key(conversation) {
             self.agent_id_to_conversation_id
@@ -1029,7 +1040,7 @@ impl BlocklistAIHistoryModel {
 
         conversation.write_updated_conversation_state(ctx);
 
-        if !had_token_before {
+        if !had_token_before && has_token_after {
             ctx.emit(BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
                 conversation_id,
                 terminal_view_id,

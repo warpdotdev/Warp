@@ -119,11 +119,10 @@ pub enum RestoreConversationError {
 #[derive(thiserror::Error, Debug)]
 #[error("Subagent task not found")]
 pub struct SubagentTaskNotFound;
+
 /// Metadata needed to persist and update the transcript for a local Claude child harness.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalClaudeHarnessMetadata {
-    /// Harness-support external conversation id that owns the Claude transcript blob.
-    pub conversation_id: AIConversationId,
     /// Claude Code session UUID passed to `claude --session-id` / `claude --resume`.
     pub session_id: Uuid,
     /// Local working directory used for Claude's transcript layout.
@@ -238,9 +237,10 @@ pub struct AIConversation {
     /// reporting. TaskStatusSyncModel skips status updates for these.
     is_remote_child: bool,
 
-    /// Metadata for direct local Claude child harness panes. The external
-    /// conversation id is also mirrored into `server_conversation_token` so it
-    /// round-trips through existing conversation persistence/indexing.
+    /// Metadata for direct local Claude child harness panes.
+    /// The harness-support external conversation id is stored in
+    /// `server_conversation_token` so it round-trips through existing
+    /// conversation persistence/indexing.
     local_claude_harness_metadata: Option<LocalClaudeHarnessMetadata>,
 
     /// The last event sequence number observed from the v2 orchestration
@@ -417,7 +417,6 @@ impl AIConversation {
             let is_remote_child = data.is_remote_child;
             let run_id = data.run_id;
             let local_claude_harness_metadata = local_claude_harness_metadata_from_persisted(
-                server_conversation_token.as_ref(),
                 data.local_claude_session_id.as_deref(),
                 data.local_claude_working_dir.as_deref(),
             );
@@ -808,9 +807,6 @@ impl AIConversation {
     }
 
     pub fn set_local_claude_harness_metadata(&mut self, metadata: LocalClaudeHarnessMetadata) {
-        self.server_conversation_token = Some(ServerConversationToken::new(
-            metadata.conversation_id.to_string(),
-        ));
         self.local_claude_harness_metadata = Some(metadata);
     }
 
@@ -3510,12 +3506,9 @@ fn parse_orchestration_harness_type(value: &str) -> Harness {
 }
 
 fn local_claude_harness_metadata_from_persisted(
-    server_conversation_token: Option<&ServerConversationToken>,
     session_id: Option<&str>,
     working_dir: Option<&str>,
 ) -> Option<LocalClaudeHarnessMetadata> {
-    let conversation_id = server_conversation_token
-        .and_then(|token| AIConversationId::try_from(token.as_str().to_string()).ok())?;
     let session_id = session_id.and_then(|id| Uuid::try_parse(id).ok())?;
     let working_dir = working_dir
         .map(str::trim)
@@ -3523,11 +3516,11 @@ fn local_claude_harness_metadata_from_persisted(
         .map(PathBuf::from)?;
 
     Some(LocalClaudeHarnessMetadata {
-        conversation_id,
         session_id,
         working_dir,
     })
 }
+
 pub(super) fn update_todo_list_from_todo_op(
     todo_lists: &mut Vec<AIAgentTodoList>,
     op: api::message::update_todos::Operation,

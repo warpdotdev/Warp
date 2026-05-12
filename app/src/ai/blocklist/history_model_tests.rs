@@ -1021,10 +1021,13 @@ fn set_local_claude_harness_metadata_updates_token_index_and_persistence() {
         });
 
         history_model.update(&mut app, |history_model, ctx| {
+            history_model.set_server_conversation_token_for_conversation(
+                conversation_id,
+                external_conversation_id.to_string(),
+            );
             history_model.set_local_claude_harness_metadata_for_conversation(
                 conversation_id,
                 LocalClaudeHarnessMetadata {
-                    conversation_id: external_conversation_id,
                     session_id,
                     working_dir: working_dir.clone(),
                 },
@@ -1072,7 +1075,6 @@ fn set_local_claude_harness_metadata_updates_token_index_and_persistence() {
             assert_eq!(
                 conversation.local_claude_harness_metadata(),
                 Some(&LocalClaudeHarnessMetadata {
-                    conversation_id: external_conversation_id,
                     session_id,
                     working_dir,
                 })

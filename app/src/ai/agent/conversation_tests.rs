@@ -145,7 +145,7 @@ fn restored_conversation_uses_persisted_remote_child_marker() {
 
 #[test]
 fn restored_conversation_uses_persisted_local_claude_harness_metadata() {
-    let conversation_id = "550e8400-e29b-41d4-a716-446655440001";
+    let server_conversation_token = "550e8400-e29b-41d4-a716-446655440001";
     let session_id = "550e8400-e29b-41d4-a716-446655440000";
     let conversation_data: AgentConversationData = serde_json::from_str(
         r#"{
@@ -160,8 +160,10 @@ fn restored_conversation_uses_persisted_local_claude_harness_metadata() {
     let metadata = conversation.local_claude_harness_metadata().unwrap();
 
     assert_eq!(
-        metadata.conversation_id,
-        AIConversationId::try_from(conversation_id.to_string()).unwrap()
+        conversation
+            .server_conversation_token()
+            .map(|token| token.as_str()),
+        Some(server_conversation_token)
     );
     assert_eq!(metadata.session_id.to_string(), session_id);
     assert_eq!(
