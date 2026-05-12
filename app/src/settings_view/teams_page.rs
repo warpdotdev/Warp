@@ -19,6 +19,7 @@ use crate::auth::{AuthStateProvider, UserUid};
 use crate::menu::{self, Menu, MenuItem, MenuItemFields};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::pricing::PricingInfoModel;
+use warp_graphql::billing::StripeSubscriptionPlan;
 use crate::view_components::ToastFlavor;
 use crate::workspaces::team::{MembershipRole, TeamDeleteDisabledReason};
 use crate::{
@@ -123,11 +124,6 @@ const INVALID_EMAILS_INSTRUCTIONS: &str =
     "Some of the provided email addresses are invalid, already invited, or members of the team.";
 
 const OFFLINE_TEXT: &str = "You are offline.";
-
-const LIMIT_HIT_ADMIN_TEXT: &str =
-    "You've reached the team member limit for your plan. Upgrade to add more teammates.";
-const LIMIT_HIT_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT: &str = "You've reached the team member limit for your plan. Contact support@warp.dev to add more teammates.";
-const LIMIT_HIT_NON_ADMIN_TEXT: &str = "You've reached the team member limit for your plan. Contact a team admin to add more teammates.";
 
 const DELINQUENT_ADMIN_NON_SELF_SERVE_TEXT: &str = "Team invites have been restricted due to a payment issue. Please contact support@warp.dev to restore access.";
 const DELINQUENT_NON_ADMIN_TEXT: &str = "Team invites have been restricted due to a payment issue. Please contact a team admin to restore access.";
@@ -326,6 +322,9 @@ struct TeamsWidgetMouseHandles {
     admin_panel_button: MouseStateHandle,
     contact_sales_button: MouseStateHandle,
     seat_cap_upgrade_button: MouseStateHandle,
+    team_members_count_tooltip: MouseStateHandle,
+    outgrow_upgrade_link: MouseStateHandle,
+    outgrow_contact_sales_link: MouseStateHandle,
 }
 
 /// TeamsInviteOption is whether the user is looking at invite-by-link or invite-by-email.
@@ -2143,6 +2142,24 @@ impl TeamsWidget {
             appearance,
         ));
 
+        // 6.5) Optional outgrow CTA — "Upgrade to {plan} for up to N members"
+        // when the team has natural room to grow into a higher-cap plan, or
+        // "Contact sales@warp.dev to grow your team further" when even the
+        // next plan isn't enough (or no higher self-serve plan exists).
+        let pricing_info_model = view.pricing_info_model.as_ref(app);
+        if let Some(cta) = self.render_outgrow_cta(
+            team_metadata,
+            has_admin_permissions,
+            pricing_info_model,
+            appearance,
+        ) {
+            main_content.add_child(
+                Container::new(cta)
+                    .with_padding_top(CONTENT_SEPARATION_PADDING)
+                    .finish(),
+            );
+        }
+
         // 7) Deleting/leaving teams
         let mut button_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
         let is_enterprise_team =
@@ -2550,7 +2567,6 @@ impl TeamsWidget {
             view,
             appearance,
             chip_editor_style,
-            workspace_size_policy,
             has_admin_permissions,
         ));
 
@@ -2567,16 +2583,35 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
+        // 1) Header row: "By link" + admin-only instruction text on the left,
+        // toggle on the right. The text is in a column so the toggle is
+        // vertically centered against the combined header + subtext block,
+        // not just the header.
+        let header = self.render_subsubsection_header("By link".to_owned(), appearance);
+        let text_column = if has_admin_permissions {
+            Flex::column()
+                .with_child(header)
+                .with_child(
+                    Container::new(self.render_sub_text(
+                        INVITE_LINK_TOGGLE_INSTRUCTIONS.into(),
+                        appearance,
+                        Some(Coords::uniform(0.).right(48.)),
+                    ))
+                    .with_padding_top(8.)
+                    .finish(),
+                )
+                .finish()
+        } else {
+            Flex::column().with_child(header).finish()
+        };
+
         let mut invite_by_link_header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_child(Shrinkable::new(1., text_column).finish());
 
-        // 1) "By link" subsection header
-        invite_by_link_header_row
-            .add_child(self.render_subsubsection_header("By link".to_owned(), appearance));
-
-        // 1.1) Toggle to the right of header only renders if user is admin
+        // Toggle on the right only renders if user is admin
         if has_admin_permissions {
             let team_uid = team.uid;
             let current_state = team.organization_settings.is_invite_link_enabled;
@@ -2596,19 +2631,6 @@ impl TeamsWidget {
         }
 
         section.add_child(invite_by_link_header_row.finish());
-
-        // 2) Instruction text for invite by link toggle
-        if has_admin_permissions {
-            section.add_child(
-                Container::new(self.render_sub_text(
-                    INVITE_LINK_TOGGLE_INSTRUCTIONS.into(),
-                    appearance,
-                    Some(Coords::uniform(0.).right(48.)),
-                ))
-                .with_padding_top(8.)
-                .finish(),
-            );
-        }
 
         // 3) Invite link + domain restrictions
         // Only renders if invite by link is enabled
@@ -2663,7 +2685,6 @@ impl TeamsWidget {
         view: &TeamsPageView,
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
-        policy: WorkspaceSizePolicy,
         has_admin_permissions: bool,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
@@ -2678,125 +2699,55 @@ impl TeamsWidget {
 
         match team.billing_metadata.delinquency_status {
             DelinquencyStatus::Unknown | DelinquencyStatus::NoDelinquency => {
-                if policy.is_unlimited
-                    || policy.limit
-                        > team
-                            .members
-                            .len()
-                            .try_into()
-                            .expect("team size should be within max i64 range")
-                {
-                    // Instruction text for invite by email expiry
-                    section.add_child(
-                        Container::new(self.render_sub_text(
-                            INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS.into(),
-                            appearance,
-                            Some(Coords::uniform(0.).right(48.)),
-                        ))
-                        .with_padding_bottom(TEXT_FIELD_TOP_PADDING)
-                        .finish(),
-                    );
+                // Always show the email invite form, even when the team is at
+                // its workspace size cap. The seat-cap alert at the top of the
+                // page already communicates the cap and offers an upgrade CTA,
+                // and the server enforces the cap at join time, so there's no
+                // value in hiding the form here — it just blocks admins from
+                // queueing invites for when seats free up.
+                section.add_child(
+                    Container::new(self.render_sub_text(
+                        INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS.into(),
+                        appearance,
+                        Some(Coords::uniform(0.).right(48.)),
+                    ))
+                    .with_padding_bottom(TEXT_FIELD_TOP_PADDING)
+                    .finish(),
+                );
 
-                    // Email invite editor + button
-                    section.add_child(
-                        Flex::row()
-                            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                            .with_child(
-                                Shrinkable::new(
-                                    1.,
-                                    TextInput::new(
-                                        view.email_invites_block_editor.clone(),
-                                        chip_editor_style,
-                                    )
-                                    .build()
-                                    .finish(),
-                                )
-                                .finish(),
-                            )
-                            .with_child(
-                                self.render_send_email_invites_button(team.uid, view, appearance),
-                            )
-                            .finish(),
-                    );
-
-                    if !view.email_invites_block_editor_state.is_valid
-                        && !view.email_invites_block_editor_state.is_empty
-                        && view.email_invites_block_editor_state.num_chips > 0
-                    {
-                        section.add_child(
-                            Container::new(self.render_error_sub_text(
-                                INVALID_EMAILS_INSTRUCTIONS.into(),
-                                appearance,
-                            ))
-                            .with_padding_top(8.)
-                            .finish(),
-                        )
-                    }
-                } else {
-                    // Team is not delinquent, but has hit their team size limit.
-
-                    let team_uid = team.uid;
-
-                    let limit_hit_text = if team.billing_metadata.can_upgrade_to_higher_tier_plan()
-                    {
-                        let mut limit_hit_text_and_upgrade_button = Flex::row()
-                            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                            .with_main_axis_size(MainAxisSize::Max)
-                            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
-
-                        let text = if has_admin_permissions {
-                            LIMIT_HIT_ADMIN_TEXT
-                        } else {
-                            LIMIT_HIT_NON_ADMIN_TEXT
-                        };
-
-                        limit_hit_text_and_upgrade_button.add_child(
+                section.add_child(
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_child(
                             Shrinkable::new(
                                 1.,
-                                self.render_sub_text(
-                                    text.into(),
-                                    appearance,
-                                    Some(Coords::uniform(0.).right(12.)),
-                                ),
+                                TextInput::new(
+                                    view.email_invites_block_editor.clone(),
+                                    chip_editor_style,
+                                )
+                                .build()
+                                .finish(),
                             )
                             .finish(),
-                        );
-
-                        limit_hit_text_and_upgrade_button.add_child(
-                            self.render_compare_plans_button(
-                                "Compare plans",
-                                self.mouse_state_handles
-                                    .invite_by_email_upgrade_button
-                                    .clone(),
-                                team_uid,
-                                appearance,
-                                Some(
-                                    self.button_properties()
-                                        .set_width(COMPARE_PLANS_BUTTON_WIDTH),
-                                ),
-                            ),
-                        );
-
-                        limit_hit_text_and_upgrade_button.finish()
-                    } else {
-                        // Otherwise, they've hit the team size limit, but are not able
-                        // to upgrade to team plan (e.g. they're on a tier that has
-                        // a limit on # of seats but it's not one of free/free preview/legacy/prosumer).
-                        // In that case show message to contact their admin/support with no
-                        // button to `/upgrade`.
-                        let text = if has_admin_permissions {
-                            LIMIT_HIT_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT
-                        } else {
-                            LIMIT_HIT_NON_ADMIN_TEXT
-                        };
-                        self.render_sub_text(
-                            text.into(),
-                            appearance,
-                            Some(Coords::uniform(0.).right(48.)),
                         )
-                    };
+                        .with_child(
+                            self.render_send_email_invites_button(team.uid, view, appearance),
+                        )
+                        .finish(),
+                );
 
-                    section.add_child(limit_hit_text);
+                if !view.email_invites_block_editor_state.is_valid
+                    && !view.email_invites_block_editor_state.is_empty
+                    && view.email_invites_block_editor_state.num_chips > 0
+                {
+                    section.add_child(
+                        Container::new(self.render_error_sub_text(
+                            INVALID_EMAILS_INSTRUCTIONS.into(),
+                            appearance,
+                        ))
+                        .with_padding_top(8.)
+                        .finish(),
+                    )
                 }
             }
             DelinquencyStatus::PastDue | DelinquencyStatus::Unpaid => {
@@ -2953,15 +2904,22 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column().with_main_axis_size(MainAxisSize::Min);
 
-        // 1) "Team members" header. No top padding here — the call site adds a
-        // separator with its own spacing above this section.
+        // 1) "Team members" header row: title on the left, "{N} team members"
+        // (with capacity tooltip when the plan has a finite cap) on the right.
+        // No top padding here — the call site adds a separator with its own
+        // spacing above this section.
+        let header_row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(self.render_subsection_header("Team members".to_owned(), appearance))
+            .with_child(self.render_team_members_count(team, appearance))
+            .finish();
         section.add_child(
             SavePosition::new(
-                Container::new(
-                    self.render_subsection_header("Team members".to_owned(), appearance),
-                )
-                .with_padding_bottom(16.)
-                .finish(),
+                Container::new(header_row)
+                    .with_padding_bottom(16.)
+                    .finish(),
                 TEAM_MEMBERS_HEADER_POSITION_ID,
             )
             .finish(),
@@ -2976,6 +2934,204 @@ impl TeamsWidget {
         ));
 
         section.finish()
+    }
+
+    /// Renders the right-aligned "{N} team members" label that sits next to
+    /// the "Team members" subsection header. When the team's plan has a finite
+    /// seat cap, the count is followed by an info icon whose hover tooltip
+    /// exposes the plan name and capacity. The icon is omitted entirely when
+    /// the plan is unlimited.
+    fn render_team_members_count(
+        &self,
+        team: &Team,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let count = team.members.len();
+        let count_label = if count == 1 {
+            "1 team member".to_string()
+        } else {
+            format!("{count} team members")
+        };
+        let theme = appearance.theme();
+        let count_color = theme.active_ui_text_color();
+        // Info icon uses the muted gray that matches other secondary UI hints.
+        let muted_color = theme.active_ui_text_color().with_opacity(60);
+
+        let count_text = appearance
+            .ui_builder()
+            .span(count_label)
+            .with_style(UiComponentStyles {
+                font_family_id: Some(appearance.ui_font_family()),
+                font_color: Some(count_color.into()),
+                font_size: Some(12.),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        // No capacity tooltip when the plan is unlimited (or workspace size
+        // policy is missing). Just render the count text on its own.
+        let policy = team.billing_metadata.tier.workspace_size_policy;
+        let finite_cap = match policy {
+            Some(p) if !p.is_unlimited => Some(p.limit),
+            _ => None,
+        };
+        let Some(cap) = finite_cap else {
+            return count_text;
+        };
+
+        let plan_display = team.billing_metadata.customer_type.to_display_string();
+        let tooltip_text =
+            format!("Your plan ({plan_display}) has a maximum capacity of {cap} members.");
+
+        let info_icon = Container::new(
+            ConstrainedBox::new(Icon::Info.to_warpui_icon(muted_color).finish())
+                .with_max_height(14.)
+                .with_max_width(14.)
+                .finish(),
+        )
+        .with_margin_left(6.)
+        .finish();
+
+        let info_icon_with_tooltip = appearance.ui_builder().overlay_tool_tip_on_element(
+            tooltip_text,
+            self.mouse_state_handles.team_members_count_tooltip.clone(),
+            info_icon,
+            ParentAnchor::TopRight,
+            ChildAnchor::BottomRight,
+            vec2f(0., -5.),
+        );
+
+        Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(count_text)
+            .with_child(info_icon_with_tooltip)
+            .finish()
+    }
+
+    /// Footer CTA shown below the team-members list that nudges admins to
+    /// grow their team. Three states:
+    /// - On the Business plan — render the "Reach out to sales@warp.dev for
+    ///   more seats" line. Business is the top of self-serve, so anything
+    ///   bigger requires a sales conversation.
+    /// - Not on Business, current plan has a finite seat cap, and the team
+    ///   would still fit inside Business's cap — render the
+    ///   "<Upgrade to Business> for up to N members" line.
+    /// - Anything else (non-admin, unlimited plan, no Business plan in
+    ///   pricing data, team already too big for Business) — omit the CTA.
+    fn render_outgrow_cta(
+        &self,
+        team: &Team,
+        has_admin_permissions: bool,
+        pricing_info: &PricingInfoModel,
+        appearance: &Appearance,
+    ) -> Option<Box<dyn Element>> {
+        if !has_admin_permissions {
+            return None;
+        }
+
+        // Already on Business — sales is the only path to more capacity.
+        if team.billing_metadata.is_on_build_business_plan() {
+            return Some(self.render_outgrow_contact_sales_line(appearance));
+        }
+
+        // Not on Business: only suggest an upgrade when the current plan has
+        // a finite seat cap AND the team would actually fit in Business.
+        let policy = team.billing_metadata.tier.workspace_size_policy?;
+        if policy.is_unlimited {
+            return None;
+        }
+
+        // Look up Business's seat cap from live pricing data. We accept
+        // either the legacy `Business` variant or the newer `BuildBusiness`
+        // variant — both surface as "Business" in the UI.
+        let business_cap = pricing_info
+            .plans()
+            .iter()
+            .find(|p| {
+                matches!(
+                    p.plan,
+                    StripeSubscriptionPlan::BuildBusiness | StripeSubscriptionPlan::Business,
+                )
+            })
+            .and_then(|p| p.max_team_size)?;
+
+        let team_size = i64::try_from(team.members.len()).unwrap_or(i64::MAX);
+        if team_size >= i64::from(business_cap) {
+            // Team is already too big for Business; the contact-sales line
+            // would be the right answer here, but per the simplified spec we
+            // only show the sales line for teams that are actually on
+            // Business. Omit entirely.
+            return None;
+        }
+
+        Some(self.render_outgrow_upgrade_line(
+            format!(" for up to {business_cap} members"),
+            team.uid,
+            appearance,
+        ))
+    }
+
+    /// Builds the "<link>Upgrade to Business</link> for up to N members" line.
+    /// Clicking the link routes through the existing self-serve upgrade flow.
+    fn render_outgrow_upgrade_line(
+        &self,
+        cap_phrase: String,
+        team_uid: ServerId,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let link = appearance
+            .ui_builder()
+            .link(
+                "Upgrade to Business".to_string(),
+                None,
+                Some(Box::new(move |ctx| {
+                    ctx.dispatch_typed_action(TeamsPageAction::GenerateUpgradeLink { team_uid });
+                })),
+                self.mouse_state_handles.outgrow_upgrade_link.clone(),
+            )
+            .soft_wrap(false)
+            .build()
+            .finish();
+
+        let trailing = self.render_sub_text(cap_phrase, appearance, None);
+
+        Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(link)
+            .with_child(trailing)
+            .finish()
+    }
+
+    /// Builds the "Reach out to <link>sales@warp.dev</link> for more seats"
+    /// line. Clicking the email opens a `mailto:` to sales via the shared
+    /// `ContactSales` action.
+    fn render_outgrow_contact_sales_line(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let prefix = self.render_sub_text("Reach out to ".to_string(), appearance, None);
+        let link = appearance
+            .ui_builder()
+            .link(
+                "sales@warp.dev".into(),
+                None,
+                Some(Box::new(move |ctx| {
+                    ctx.dispatch_typed_action(TeamsPageAction::ContactSales);
+                })),
+                self.mouse_state_handles.outgrow_contact_sales_link.clone(),
+            )
+            .soft_wrap(false)
+            .build()
+            .finish();
+        let suffix = self.render_sub_text(" for more seats".to_string(), appearance, None);
+
+        Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_child(prefix)
+            .with_child(link)
+            .with_child(suffix)
+            .finish()
     }
 
     fn render_approved_domains_section(
@@ -3161,16 +3317,23 @@ impl TeamsWidget {
         current_user_email: &str,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let mut section = Flex::column();
+        // Header + subtext stacked on the left, toggle on the right. The text
+        // is in a column so the toggle is vertically centered against the
+        // combined header + subtext block, matching the "By link" pattern.
+        let header = self.render_subsubsection_header("By discovery".to_owned(), appearance);
 
-        // Header row with title on the left and toggle on the right, matching
-        // the "By link" / "By email" subsection pattern.
-        let mut discoverable_header_row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
-        discoverable_header_row
-            .add_child(self.render_subsubsection_header("By discovery".to_owned(), appearance));
+        let domain = current_user_email.split('@').nth(1).unwrap_or("");
+        let team_discoverability_instructions =
+            format!("Allow Warp users with an @{domain} email to find and join the team.");
+        let subtext = self.render_sub_text(
+            team_discoverability_instructions,
+            appearance,
+            Some(Coords::uniform(0.).right(48.)),
+        );
+        let text_column = Flex::column()
+            .with_child(header)
+            .with_child(Container::new(subtext).with_padding_top(8.).finish())
+            .finish();
 
         let team_uid = team.uid;
         let current_state = team.organization_settings.is_discoverable;
@@ -3189,26 +3352,18 @@ impl TeamsWidget {
                     current_state,
                 })
             });
-        discoverable_header_row.add_child(discoverable_team_toggle.finish());
 
-        section.add_child(
-            Container::new(discoverable_header_row.finish())
-                .with_padding_top(CONTENT_SEPARATION_PADDING)
-                .with_padding_bottom(8.)
-                .finish(),
-        );
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_child(Shrinkable::new(1., text_column).finish())
+            .with_child(discoverable_team_toggle.finish())
+            .finish();
 
-        // Instruction text for toggle
-        let domain = current_user_email.split('@').nth(1).unwrap_or("");
-        let team_discoverability_instructions =
-            format!("Allow Warp users with an @{domain} email to find and join the team.");
-        section.add_child(self.render_sub_text(
-            team_discoverability_instructions,
-            appearance,
-            Some(Coords::uniform(0.).right(48.)),
-        ));
-
-        section.finish()
+        Container::new(row)
+            .with_padding_top(CONTENT_SEPARATION_PADDING)
+            .finish()
     }
 
     fn render_leave_or_delete_team_button(
