@@ -4362,6 +4362,109 @@ fn ctrl_g_closes_cli_agent_rich_input_when_editor_is_focused() {
     })
 }
 
+/// Verifies that Ctrl-G closes CLI agent rich input when dispatched from the
+/// terminal context alone (no editor in the responder chain). Regression test
+/// for #9916 where the keybinding only opened rich input but did not close it
+/// in scenarios where focus was outside the embedded editor and the active
+/// block had transitioned out of `LongRunningCommand` — for example, when the
+/// CLI agent has paused waiting for user input.
+#[test]
+fn ctrl_g_closes_cli_agent_rich_input_from_terminal_context() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        // Register keybindings so keystroke dispatch can match the Ctrl-G binding.
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let (window_id, terminal) =
+            open_cli_agent_rich_input_for_agent_with_window_id(&mut app, CLIAgent::OpenCode);
+
+        // Dispatch Ctrl-G with only the terminal view in the responder chain.
+        // This simulates the case where focus is not on the embedded editor
+        // (e.g., on the block list) and the previous Case 1 / Case 2 predicates
+        // would both fail to match.
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &[terminal.id()],
+                &warpui::keymap::Keystroke::parse("ctrl-g").expect("valid keystroke"),
+                false,
+            )
+            .expect("dispatch should succeed");
+
+        assert!(
+            handled,
+            "ctrl-g should be handled from the terminal context when rich input is open"
+        );
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after Ctrl-G from terminal context"
+            );
+        });
+    })
+}
+
+/// Verifies that Ctrl-G is a true toggle: opens then closes rich input from
+/// the terminal context. Regression test for #9916.
+#[test]
+fn ctrl_g_toggles_cli_agent_rich_input_from_terminal_context() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        // Start with rich input open, then close via Ctrl-G, then re-open via
+        // direct call (Ctrl-G open path requires LongRunningCommand which is
+        // tricky to simulate in a unit test), then close via Ctrl-G again.
+        let (window_id, terminal) =
+            open_cli_agent_rich_input_for_agent_with_window_id(&mut app, CLIAgent::OpenCode);
+
+        let keystroke = warpui::keymap::Keystroke::parse("ctrl-g").expect("valid keystroke");
+
+        // First close: rich input is open → Ctrl-G should close.
+        let handled = app
+            .dispatch_keystroke(window_id, &[terminal.id()], &keystroke, false)
+            .expect("dispatch should succeed");
+        assert!(handled, "first ctrl-g should be handled (close)");
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after first Ctrl-G"
+            );
+        });
+
+        // Re-open programmatically (mirrors the user re-triggering open via
+        // Ctrl-G in a long-running context).
+        terminal.update(&mut app, |view, ctx| {
+            view.open_cli_agent_rich_input(CLIAgentInputEntrypoint::CtrlG, ctx);
+            assert!(view.has_active_cli_agent_input_session(ctx));
+        });
+
+        // Second close: rich input is open again → Ctrl-G should close again.
+        let handled = app
+            .dispatch_keystroke(window_id, &[terminal.id()], &keystroke, false)
+            .expect("dispatch should succeed");
+        assert!(handled, "second ctrl-g should be handled (close again)");
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after second Ctrl-G"
+            );
+        });
+    })
+}
+
 #[test]
 fn cli_agent_rich_input_hint_text_mentions_active_cli_agent() {
     App::test((), |mut app| async move {

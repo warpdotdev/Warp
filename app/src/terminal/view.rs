@@ -26792,6 +26792,15 @@ impl View for TerminalView {
                     context.set.insert(flags::CLI_AGENT_RICH_INPUT_CHIP_ENABLED);
                 }
             }
+
+            // Mirror the rich-input-open flag onto the terminal context so the
+            // Ctrl+G toggle binding can close rich input regardless of which
+            // descendant view currently holds focus, and even when the
+            // active block has transitioned out of `LongRunningCommand`
+            // (e.g., the CLI agent has paused waiting for user input). See #9916.
+            if CLIAgentSessionsModel::as_ref(app).is_input_open(self.view_id) {
+                context.set.insert(flags::CLI_AGENT_RICH_INPUT_OPEN);
+            }
         }
 
         if FeatureFlag::AgentView.is_enabled() {
