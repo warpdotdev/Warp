@@ -180,9 +180,10 @@ impl Harness {
     /// should `.unwrap_or(Harness::Unknown)`. UI surfaces should treat `Unknown` as a
     /// non-Oz, non-runnable harness.
     pub fn from_config_name(name: &str) -> Option<Self> {
-        match name {
+        let normalized = name.trim().to_ascii_lowercase().replace('_', "-");
+        match normalized.as_str() {
             "oz" => Some(Harness::Oz),
-            "claude" => Some(Harness::Claude),
+            "claude" | "claude-code" => Some(Harness::Claude),
             "opencode" => Some(Harness::OpenCode),
             "gemini" => Some(Harness::Gemini),
             "codex" => Some(Harness::Codex),
@@ -200,6 +201,20 @@ impl Harness {
         match self {
             Harness::Oz => "oz",
             Harness::Claude => "claude",
+            Harness::OpenCode => "opencode",
+            Harness::Gemini => "gemini",
+            Harness::Codex => "codex",
+            Harness::Unknown => "unknown",
+        }
+    }
+
+    /// Canonical name for harness values exchanged through orchestration tools
+    /// and UI state. Runtime config serialization remains on [`Harness::config_name`]
+    /// for backwards compatibility with persisted task config.
+    pub fn orchestration_name(self) -> &'static str {
+        match self {
+            Harness::Oz => "oz",
+            Harness::Claude => "claude-code",
             Harness::OpenCode => "opencode",
             Harness::Gemini => "gemini",
             Harness::Codex => "codex",

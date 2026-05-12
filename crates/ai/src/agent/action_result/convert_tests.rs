@@ -28,3 +28,15 @@ fn ask_user_question_skipped_by_auto_approve_converts_to_skipped_answers() {
         Some(AskUserQuestionAnswer::Skipped(()))
     ));
 }
+
+#[test]
+fn build_api_harness_accepts_claude_code_and_legacy_alias() {
+    for harness_type in ["claude-code", "claude", "claude_code"] {
+        let harness = build_api_harness(harness_type).expect("Claude alias should convert");
+
+        assert!(matches!(
+            harness.variant,
+            Some(api::harness::Variant::ClaudeCode(_))
+        ));
+    }
+}

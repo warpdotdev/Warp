@@ -1,6 +1,6 @@
 use super::{
-    convert_api_question, ConversionParams, ConvertAPIMessageToClientOutputMessage,
-    MaybeAIAgentOutputMessage,
+    convert_api_question, convert_run_agents_harness, ConversionParams,
+    ConvertAPIMessageToClientOutputMessage, MaybeAIAgentOutputMessage,
 };
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::{
@@ -285,6 +285,20 @@ fn extract_file_artifact_created(
         panic!("expected file artifact created output message");
     };
     (filepath, filename, description, size_bytes)
+}
+
+#[test]
+fn convert_run_agents_harness_uses_claude_code_identifier() {
+    let harness = api::Harness {
+        variant: Some(api::harness::Variant::ClaudeCode(
+            api::harness::ClaudeCode {},
+        )),
+    };
+
+    assert_eq!(
+        convert_run_agents_harness(Some(&harness)),
+        Some("claude-code".to_string())
+    );
 }
 
 #[test]

@@ -490,7 +490,7 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
             if let Some(color) = harness_display::brand_color(harness) {
                 fields = fields.with_override_icon_color(Fill::from(color));
             }
-            let harness_str = harness.to_string();
+            let harness_str = harness.orchestration_name().to_string();
             if entry.enabled {
                 fields = fields.with_on_select_action(DropdownAction::SelectActionAndClose(
                     A::harness_changed(harness_str.clone()),

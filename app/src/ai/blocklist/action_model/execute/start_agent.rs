@@ -34,6 +34,15 @@ fn invalid_local_child_harness_error(harness_type: &str) -> String {
         format!("Unsupported local child harness '{harness_name}'.")
     }
 }
+fn canonical_local_child_harness_type(harness_type: &str) -> Option<String> {
+    Harness::parse_local_child_harness(harness_type)
+        .map(|harness| harness.orchestration_name().to_string())
+}
+
+fn canonical_orchestration_harness_type(harness_type: &str) -> Option<String> {
+    Harness::parse_orchestration_harness(harness_type)
+        .map(|harness| harness.orchestration_name().to_string())
+}
 
 /// Opaque, monotonically increasing request identifier.
 /// Disambiguates parallel in-flight StartAgent requests.
@@ -325,7 +334,9 @@ impl StartAgentExecutor {
                 harness_type: Some(harness_type),
                 model_id,
             } => {
-                let Some(harness) = Harness::parse_local_child_harness(&harness_type) else {
+                let Some(canonical_harness_type) =
+                    canonical_local_child_harness_type(&harness_type)
+                else {
                     return ActionExecution::Sync(AIAgentActionResultType::StartAgent(
                         StartAgentResult::Error {
                             error: invalid_local_child_harness_error(&harness_type),
@@ -360,7 +371,7 @@ impl StartAgentExecutor {
 
                 (
                     StartAgentExecutionMode::Local {
-                        harness_type: Some(harness.to_string()),
+                        harness_type: Some(canonical_harness_type),
                         model_id,
                     },
                     Some(parent_run_id),
@@ -384,9 +395,8 @@ impl StartAgentExecutor {
                     ));
                 }
 
-                let harness_type = Harness::parse_orchestration_harness(&harness_type)
-                    .map(|harness| harness.to_string())
-                    .unwrap_or(harness_type);
+                let harness_type =
+                    canonical_orchestration_harness_type(&harness_type).unwrap_or(harness_type);
                 if Harness::parse_orchestration_harness(&harness_type) == Some(Harness::OpenCode) {
                     return ActionExecution::Sync(AIAgentActionResultType::StartAgent(
                         StartAgentResult::Error {

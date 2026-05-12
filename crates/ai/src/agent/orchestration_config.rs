@@ -68,7 +68,7 @@ pub fn matches_active_config(request: &RunAgentsRequest, config: &OrchestrationC
     }
 
     // harness_type
-    if !request.harness_type.is_empty() && request.harness_type != config.harness_type {
+    if !harness_types_match(&request.harness_type, &config.harness_type) {
         return false;
     }
 
@@ -181,14 +181,40 @@ impl OrchestrationConfigStatus {
     }
 }
 
-/// Maps the proto `Harness` oneof to a client-side string identifier.
+fn canonical_harness_type(harness_type: &str) -> Option<&'static str> {
+    let normalized = harness_type.trim().to_ascii_lowercase().replace('_', "-");
+    match normalized.as_str() {
+        "" => Some(""),
+        "oz" => Some("oz"),
+        "claude" | "claude-code" => Some("claude-code"),
+        "opencode" | "open-code" => Some("opencode"),
+        "gemini" => Some("gemini"),
+        "codex" => Some("codex"),
+        _ => None,
+    }
+}
+
+fn harness_types_match(request_harness_type: &str, config_harness_type: &str) -> bool {
+    if request_harness_type.trim().is_empty() {
+        return true;
+    }
+    match (
+        canonical_harness_type(request_harness_type),
+        canonical_harness_type(config_harness_type),
+    ) {
+        (Some(request), Some(config)) => request == config,
+        _ => request_harness_type == config_harness_type,
+    }
+}
+
+/// Maps the proto `Harness` oneof to a client-side orchestration identifier.
 /// Returns `None` for an unset variant.
 fn harness_proto_to_string(harness: Option<&api::Harness>) -> Option<String> {
     let variant = harness?.variant.as_ref()?;
     Some(
         match variant {
             api::harness::Variant::Oz(_) => "oz",
-            api::harness::Variant::ClaudeCode(_) => "claude",
+            api::harness::Variant::ClaudeCode(_) => "claude-code",
             api::harness::Variant::OpenCode(_) => "opencode",
             api::harness::Variant::Gemini(_) => "gemini",
             api::harness::Variant::Codex(_) => "codex",
@@ -200,9 +226,10 @@ fn harness_proto_to_string(harness: Option<&api::Harness>) -> Option<String> {
 /// Converts a client-side harness string identifier to the proto `Harness`
 /// oneof variant. Returns `None` for empty or unknown strings.
 fn harness_type_to_proto(harness_type: &str) -> Option<api::Harness> {
-    let variant = match harness_type {
+    let variant = match canonical_harness_type(harness_type)? {
+        "" => return None,
         "oz" => api::harness::Variant::Oz(api::harness::Oz {}),
-        "claude" => api::harness::Variant::ClaudeCode(api::harness::ClaudeCode {}),
+        "claude-code" => api::harness::Variant::ClaudeCode(api::harness::ClaudeCode {}),
         "opencode" => api::harness::Variant::OpenCode(api::harness::OpenCode {}),
         "gemini" => api::harness::Variant::Gemini(api::harness::Gemini {}),
         "codex" => api::harness::Variant::Codex(api::harness::Codex {}),
