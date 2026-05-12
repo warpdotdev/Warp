@@ -769,8 +769,13 @@ impl Component for Lightbox {
         let scrim_content: Box<dyn Element> =
             match (params.thumbnail_rail, show_rail) {
                 (Some(rail), true) => {
-                    let rail_element =
-                        build_thumbnail_rail(appearance, params.images, current_index, rail);
+                    let rail_element = build_thumbnail_rail(
+                        appearance,
+                        params.images,
+                        current_index,
+                        params.animation_start_time,
+                        rail,
+                    );
                     Flex::row()
                         .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                         .with_child(rail_element)
@@ -1017,6 +1022,7 @@ fn build_thumbnail_rail(
     appearance: &Appearance,
     images: &[LightboxImage],
     current_index: usize,
+    animation_start_time: Option<Instant>,
     rail: ThumbnailRail,
 ) -> Box<dyn Element> {
     let mut column = Flex::column()
@@ -1029,6 +1035,7 @@ fn build_thumbnail_rail(
             image,
             index == current_index,
             index,
+            animation_start_time,
             rail.on_select.clone(),
         );
         column = column.with_child(thumbnail);
@@ -1070,10 +1077,14 @@ fn build_thumbnail_rail(
 
 /// GH9729 (post-tier2): build one clickable thumbnail cell. The image
 /// is rendered through the standard `Image::contain()` path so the
-/// existing decode + size caps + animation behaviour apply (the rail
-/// is opted out of `enable_animation_with_start_time` so animated
-/// siblings render as their first frame in the rail — only the
-/// currently-displayed image animates).
+/// existing decode + size caps + animation behaviour apply.
+///
+/// When the caller supplies `animation_start_time` (i.e. when the
+/// containing Lightbox has animated playback enabled for the main
+/// image), the rail thumbnails also animate — using the SAME timeline
+/// anchor as the main image so all animated siblings appear visually
+/// synchronised on open, which makes the rail useful as a live
+/// directory preview rather than a wall of arbitrary first frames.
 ///
 /// Current-entry highlight: a coloured `Border` outline. Non-current
 /// entries get the same border at 0 alpha so layout doesn't shift
@@ -1083,6 +1094,7 @@ fn build_thumbnail_cell(
     image: &LightboxImage,
     is_current: bool,
     index: usize,
+    animation_start_time: Option<Instant>,
     on_select: ThumbnailSelectHandler,
 ) -> Box<dyn Element> {
     // The thumbnail surface depends on the image source state. Loading /
@@ -1090,13 +1102,15 @@ fn build_thumbnail_cell(
     // glyph; clicking still selects them so the user gets the same
     // main-area error or spinner they'd see by other means.
     let inner: Box<dyn Element> = match &image.source {
-        LightboxImageSource::Resolved { asset_source } => Image::new(
-            asset_source.clone(),
-            CacheOption::Original,
-        )
-        .contain()
-        .before_load(Align::new(loading_element(appearance)).finish())
-        .finish(),
+        LightboxImageSource::Resolved { asset_source } => {
+            let mut builder = Image::new(asset_source.clone(), CacheOption::Original).contain();
+            if let Some(start) = animation_start_time {
+                builder = builder.enable_animation_with_start_time(start);
+            }
+            builder
+                .before_load(Align::new(loading_element(appearance)).finish())
+                .finish()
+        }
         LightboxImageSource::Loading => Align::new(loading_element(appearance)).finish(),
         LightboxImageSource::Error { .. } => {
             // A tiny "!" placeholder keeps the rail visually tidy
