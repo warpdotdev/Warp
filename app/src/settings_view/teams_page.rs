@@ -19,7 +19,6 @@ use crate::auth::{AuthStateProvider, UserUid};
 use crate::menu::{self, Menu, MenuItem, MenuItemFields};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::pricing::PricingInfoModel;
-use warp_graphql::billing::StripeSubscriptionPlan;
 use crate::view_components::ToastFlavor;
 use crate::workspaces::team::{MembershipRole, TeamDeleteDisabledReason};
 use crate::{
@@ -30,7 +29,9 @@ use crate::{
         CloudActionConfirmationDialog, CloudActionConfirmationDialogEvent,
         CloudActionConfirmationDialogVariant,
     },
-    editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions, TextOptions},
+    editor::{
+        EditorView, Event as EditorEvent, InteractionState, SingleLineEditorOptions, TextOptions,
+    },
     network::NetworkStatus,
     send_telemetry_from_ctx,
     server::{
@@ -107,7 +108,6 @@ const CLOSE_BUTTON_ICON_SIZE: f32 = 20.;
 const CONTENT_SEPARATION_PADDING: f32 = 24.;
 const TEXT_FIELD_TOP_PADDING: f32 = 12.;
 const HORIZONTAL_BAR_TO_SUB_HEADER_PADDING: f32 = 9.;
-const COMPARE_PLANS_BUTTON_WIDTH: f32 = 120.;
 const SUBSECTION_HEADER_FONT_SIZE: f32 = 18.;
 const SUBSUBSECTION_HEADER_FONT_SIZE: f32 = 14.;
 
@@ -117,7 +117,7 @@ const INVALID_DOMAINS_INSTRUCTIONS: &str =
 
 const INVITE_LINK_TOGGLE_INSTRUCTIONS: &str = "As an admin, you can choose whether to enable or disable the ability for team members to invite others by invitation link.";
 const INVITE_LINK_DOMAIN_RESTRICTIONS_INSTRUCTIONS: &str =
-    "Only allow users with emails at specific domains to join your team through the invite link.";
+    "Restrict by domain — only allow users with emails at specific domains to join your team through the invite link.";
 
 const INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS: &str = "Email invitations are valid for 7 days.";
 const INVALID_EMAILS_INSTRUCTIONS: &str =
@@ -132,11 +132,6 @@ const DELINQUENT_ADMIN_SELF_SERVE_LINE_1_TEXT: &str =
 const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_PREFIX_TEXT: &str = "Please ";
 const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_LINK_TEXT: &str = "update your payment information";
 const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_SUFFIX_TEXT: &str = " to restore access.";
-
-const TEAM_LIMIT_EXCEEDED_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT: &str = "You've exceeded the team member limit for your plan. Please contact support@warp.dev to upgrade your team.";
-const TEAM_LIMIT_EXCEEDED_NON_ADMIN_TEXT: &str = "You've exceeded the team member limit for your plan. Contact a team admin to upgrade your team.";
-const TEAM_LIMIT_EXCEEDED_ADMIN_UPGRADEABLE: &str =
-    "You've exceeded the team member limit for your plan. Upgrade to add more teammates.";
 
 const MAX_CHIP_WIDTH: f32 = 280.;
 
@@ -315,7 +310,6 @@ struct TeamsWidgetMouseHandles {
     stripe_billing_portal_link: MouseStateHandle,
     manage_plan_link: MouseStateHandle,
     enterprise_contact_us_link: MouseStateHandle,
-    invite_by_email_upgrade_button: MouseStateHandle,
     invite_by_email_billing_portal_link: MouseStateHandle,
     discoverable_team_toggle_state: SwitchStateHandle,
     checkbox_mouse_state: MouseStateHandle,
@@ -358,8 +352,6 @@ impl Tabs for TeamsInviteOption {
     }
 }
 
-/// Actionable path out of a seat-cap warning, derived from real pricing data.
-/// See `TeamsWidget::seat_cap_cta` for how each variant is chosen.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum SeatCapCta {
     /// Self-serve upgrade is available; route to `/upgrade`.
@@ -1238,6 +1230,30 @@ impl TeamsPageView {
         self.update_team_member_mouse_state_handles(ctx);
         self.update_email_validator(ctx);
         self.update_team_name(ctx);
+        self.update_email_editor_interaction_state(ctx);
+    }
+
+    /// Disables the invite-by-email chip editor when the team is at its
+    /// seat cap. Visual styling is unchanged; only interaction is blocked.
+    fn update_email_editor_interaction_state(&mut self, ctx: &mut ViewContext<Self>) {
+        let cap_reached = self
+            .user_workspaces
+            .as_ref(ctx)
+            .current_team()
+            .and_then(|team| {
+                let policy = team.billing_metadata.tier.workspace_size_policy?;
+                let team_size = i64::try_from(team.members.len()).unwrap_or(0);
+                Some(!policy.is_unlimited && team_size >= policy.limit)
+            })
+            .unwrap_or(false);
+        let state = if cap_reached {
+            InteractionState::Disabled
+        } else {
+            InteractionState::Editable
+        };
+        self.email_invites_block_editor.update(ctx, |editor, ctx| {
+            editor.set_interaction_state(state, ctx);
+        });
     }
 
     fn update_team_member_mouse_state_handles(&mut self, ctx: &mut ViewContext<Self>) {
@@ -1789,18 +1805,7 @@ impl TeamsWidget {
         Some((monthly_cost, yearly_cost))
     }
 
-    /// Maps an admin's actionable path out of a seat-cap warning, derived from
-    /// real pricing data rather than a hardcoded tier list.
-    ///
-    /// - `Upgrade`: there's at least one self-serve plan with a strictly
-    ///   higher seat cap than the team's current plan, and the team isn't
-    ///   already on the highest self-serve tier (Business). Routes to
-    ///   `/upgrade`.
-    /// - `ContactSales`: team is on the Build Business plan, which is the top
-    ///   self-serve tier. Higher capacity needs an enterprise/sales touch.
-    /// - `None`: viewer is not an admin, or pricing data shows no higher-cap
-    ///   plan exists, or the team is delinquent (PastDue/Unpaid) — the
-    ///   manage-billing copy below the alert handles those.
+    /// Maps an admin's actionable path out of a seat-cap warning
     fn seat_cap_cta(
         has_admin_permissions: bool,
         billing_metadata: &BillingMetadata,
@@ -1828,12 +1833,6 @@ impl TeamsWidget {
         }
     }
 
-    /// Returns true if pricing data exposes any plan with a strictly higher
-    /// finite seat cap than the current team's. Plans with `max_team_size =
-    /// None` (unlimited) are explicitly ignored — in practice those entries
-    /// are legacy plans (Pro, Team, Turbo, Lightspeed, …) that customers
-    /// can't upgrade into anymore, so treating them as a viable upgrade
-    /// target would surface a misleading CTA.
     fn has_higher_seat_cap_plan_available(
         workspace_size_policy: &WorkspaceSizePolicy,
         pricing_info: &PricingInfoModel,
@@ -1877,8 +1876,15 @@ impl TeamsWidget {
         .with_margin_right(horizontal_padding)
         .finish();
 
-        let title_element =
-            self.render_subsection_header("Your team is full".to_owned(), appearance);
+        let team_size = i64::try_from(team.members.len()).unwrap_or(i64::MAX);
+        let is_over_cap = team_size > workspace_size_policy.limit;
+
+        let title = if is_over_cap {
+            "You've exceeded your member limit"
+        } else {
+            "Your team is full"
+        };
+        let title_element = self.render_subsection_header(title.to_owned(), appearance);
 
         let cta = Self::seat_cap_cta(
             has_admin_permissions,
@@ -1887,15 +1893,21 @@ impl TeamsWidget {
             pricing_info,
         );
         let cta_sentence = if !has_admin_permissions {
-            "Contact a team admin to add more seats."
+            "Contact a team admin to grow the team."
         } else {
             match cta {
-                SeatCapCta::Upgrade => "Upgrade to add more seats.",
-                SeatCapCta::ContactSales => "Contact sales to upgrade and add more seats.",
-                SeatCapCta::None => "Contact support@warp.dev to add more seats.",
+                SeatCapCta::Upgrade => "Upgrade to grow your team.",
+                SeatCapCta::ContactSales | SeatCapCta::None => {
+                    "Contact sales@warp.dev to grow your team."
+                }
             }
         };
-        let body_text = format!("You've used all of your team's seats. {cta_sentence}");
+        let body_prefix = if is_over_cap {
+            "You've exceeded your plan's member limit. Existing members keep their access, but you won't be able to add new members."
+        } else {
+            "You've reached your plan's member limit."
+        };
+        let body_text = format!("{body_prefix} {cta_sentence}");
         let body = self.render_sub_text(body_text, appearance, None);
         let title_container = Container::new(title_element)
             .with_margin_bottom(4.)
@@ -1916,10 +1928,7 @@ impl TeamsWidget {
             .with_main_axis_size(MainAxisSize::Max)
             .with_child(Shrinkable::new(1., left_content).finish());
 
-        // The CTA button only renders when there's an actionable path; non-
-        // admins, delinquent teams and teams already at the top of the
-        // self-serve ladder (Business with no higher-cap plan available)
-        // simply read the body copy.
+        // CTA button only renders when there's an actionable path.
         if let Some((cta_label, cta_action, cta_mouse_state)) = match cta {
             SeatCapCta::Upgrade => Some((
                 "Upgrade",
@@ -2543,6 +2552,7 @@ impl TeamsWidget {
             appearance,
             chip_editor_style,
             has_admin_permissions,
+            is_full,
         ));
 
         // By discovery — third invitation method, same hierarchical level as
@@ -2573,10 +2583,8 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
-        // 1) Header row: "By link" + admin-only instruction text on the left,
-        // toggle on the right. The text is in a column so the toggle is
-        // vertically centered against the combined header + subtext block,
-        // not just the header.
+        // Header + admin-only subtext on the left, toggle on the right. The
+        // text is stacked so the toggle centers against the whole block.
         let header = self.render_subsubsection_header("By link".to_owned(), appearance);
         let text_column = if has_admin_permissions {
             Flex::column()
@@ -2669,6 +2677,7 @@ impl TeamsWidget {
         section.finish()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_invite_by_email_section(
         &self,
         team: &Team,
@@ -2676,6 +2685,7 @@ impl TeamsWidget {
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
         has_admin_permissions: bool,
+        cap_reached: bool,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
@@ -2688,13 +2698,12 @@ impl TeamsWidget {
         );
 
         match team.billing_metadata.delinquency_status {
-            DelinquencyStatus::Unknown | DelinquencyStatus::NoDelinquency => {
-                // Always show the email invite form, even when the team is at
-                // its workspace size cap. The seat-cap alert at the top of the
-                // page already communicates the cap and offers an upgrade CTA,
-                // and the server enforces the cap at join time, so there's no
-                // value in hiding the form here — it just blocks admins from
-                // queueing invites for when seats free up.
+            DelinquencyStatus::Unknown
+            | DelinquencyStatus::NoDelinquency
+            | DelinquencyStatus::TeamLimitExceeded => {
+                // Form stays visually unchanged at seat cap; the chip editor
+                // is disabled via `update_email_editor_interaction_state` and
+                // the send button is force-disabled below.
                 section.add_child(
                     Container::new(self.render_sub_text(
                         INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS.into(),
@@ -2720,21 +2729,28 @@ impl TeamsWidget {
                             )
                             .finish(),
                         )
-                        .with_child(
-                            self.render_send_email_invites_button(team.uid, view, appearance),
-                        )
+                        .with_child(self.render_send_email_invites_button(
+                            team.uid,
+                            view,
+                            appearance,
+                            cap_reached,
+                        ))
                         .finish(),
                 );
 
-                if !view.email_invites_block_editor_state.is_valid
+                // Skip the "invalid emails" hint when the form is disabled.
+                if !cap_reached
+                    && !view.email_invites_block_editor_state.is_valid
                     && !view.email_invites_block_editor_state.is_empty
                     && view.email_invites_block_editor_state.num_chips > 0
                 {
                     section.add_child(
-                        Container::new(self.render_error_sub_text(
-                            INVALID_EMAILS_INSTRUCTIONS.into(),
-                            appearance,
-                        ))
+                        Container::new(
+                            self.render_error_sub_text(
+                                INVALID_EMAILS_INSTRUCTIONS.into(),
+                                appearance,
+                            ),
+                        )
                         .with_padding_top(8.)
                         .finish(),
                     )
@@ -2815,71 +2831,6 @@ impl TeamsWidget {
 
                 section.add_child(delinquent_text);
             }
-            DelinquencyStatus::TeamLimitExceeded => {
-                // If team has hit their team size limit:
-                let team_uid = team.uid;
-
-                let limit_exceeded_text = if team.billing_metadata.can_upgrade_to_higher_tier_plan()
-                {
-                    let mut limit_exceeded_text_and_upgrade_button = Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_main_axis_size(MainAxisSize::Max)
-                        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
-
-                    let text = if has_admin_permissions {
-                        TEAM_LIMIT_EXCEEDED_ADMIN_UPGRADEABLE
-                    } else {
-                        TEAM_LIMIT_EXCEEDED_NON_ADMIN_TEXT
-                    };
-
-                    limit_exceeded_text_and_upgrade_button.add_child(
-                        Shrinkable::new(
-                            1.,
-                            self.render_sub_text(
-                                text.into(),
-                                appearance,
-                                Some(Coords::uniform(0.).right(12.)),
-                            ),
-                        )
-                        .finish(),
-                    );
-
-                    limit_exceeded_text_and_upgrade_button.add_child(
-                        self.render_compare_plans_button(
-                            "Compare plans",
-                            self.mouse_state_handles
-                                .invite_by_email_upgrade_button
-                                .clone(),
-                            team_uid,
-                            appearance,
-                            Some(
-                                self.button_properties()
-                                    .set_width(COMPARE_PLANS_BUTTON_WIDTH),
-                            ),
-                        ),
-                    );
-
-                    limit_exceeded_text_and_upgrade_button.finish()
-                } else {
-                    // Otherwise, they've hit the team size limit, but are not able
-                    // to upgrade to team plan (e.g. they're on a tier that has
-                    // a limit on # of seats but it's not one of free/free preview/legacy/prosumer).
-                    // In that case show message to contact their admin/support with no
-                    // button to `/upgrade`.
-                    let text = if has_admin_permissions {
-                        TEAM_LIMIT_EXCEEDED_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT
-                    } else {
-                        TEAM_LIMIT_EXCEEDED_NON_ADMIN_TEXT
-                    };
-                    self.render_sub_text(
-                        text.into(),
-                        appearance,
-                        Some(Coords::uniform(0.).right(48.)),
-                    )
-                };
-
-                section.add_child(limit_exceeded_text);
-            }
         };
 
         section.finish()
@@ -2904,9 +2855,7 @@ impl TeamsWidget {
             .finish();
         section.add_child(
             SavePosition::new(
-                Container::new(header_row)
-                    .with_padding_bottom(16.)
-                    .finish(),
+                Container::new(header_row).with_padding_bottom(16.).finish(),
                 TEAM_MEMBERS_HEADER_POSITION_ID,
             )
             .finish(),
@@ -2923,16 +2872,9 @@ impl TeamsWidget {
         section.finish()
     }
 
-    /// Renders the right-aligned "{N} team members" label that sits next to
-    /// the "Team members" subsection header. When the team's plan has a finite
-    /// seat cap, the count is followed by an info icon whose hover tooltip
-    /// exposes the plan name and capacity. The icon is omitted entirely when
-    /// the plan is unlimited.
-    fn render_team_members_count(
-        &self,
-        team: &Team,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
+    /// Right-aligned "{N} team members" label next to the section header.
+    /// On finite-cap plans, appends an info icon with a capacity tooltip.
+    fn render_team_members_count(&self, team: &Team, appearance: &Appearance) -> Box<dyn Element> {
         let count = team.members.len();
         let count_label = if count == 1 {
             "1 team member".to_string()
@@ -2997,16 +2939,8 @@ impl TeamsWidget {
             .finish()
     }
 
-    /// Footer CTA shown below the team-members list that nudges admins to
-    /// grow their team. Three states:
-    /// - On the Business plan — render the "Reach out to sales@warp.dev for
-    ///   more seats" line. Business is the top of self-serve, so anything
-    ///   bigger requires a sales conversation.
-    /// - Not on Business, current plan has a finite seat cap, and the team
-    ///   would still fit inside Business's cap — render the
-    ///   "<Upgrade to Business> for up to N members" line.
-    /// - Anything else (non-admin, unlimited plan, no Business plan in
-    ///   pricing data, team already too big for Business) — omit the CTA.
+    /// Footer CTA below the team-members list. Reuses `seat_cap_cta` so the
+    /// page speaks with one voice; omitted when the CTA is `None`.
     fn render_outgrow_cta(
         &self,
         team: &Team,
@@ -3014,64 +2948,40 @@ impl TeamsWidget {
         pricing_info: &PricingInfoModel,
         appearance: &Appearance,
     ) -> Option<Box<dyn Element>> {
-        if !has_admin_permissions {
-            return None;
+        // Fall back to an unlimited policy when tier data is missing; this
+        // yields no Upgrade path but still surfaces ContactSales on Business.
+        let policy =
+            team.billing_metadata
+                .tier
+                .workspace_size_policy
+                .unwrap_or(WorkspaceSizePolicy {
+                    is_unlimited: true,
+                    limit: 0,
+                });
+        let cta = Self::seat_cap_cta(
+            has_admin_permissions,
+            &team.billing_metadata,
+            &policy,
+            pricing_info,
+        );
+        match cta {
+            SeatCapCta::Upgrade => Some(self.render_outgrow_upgrade_line(team.uid, appearance)),
+            SeatCapCta::ContactSales => Some(self.render_outgrow_contact_sales_line(appearance)),
+            SeatCapCta::None => None,
         }
-
-        // Already on Business — sales is the only path to more capacity.
-        if team.billing_metadata.is_on_build_business_plan() {
-            return Some(self.render_outgrow_contact_sales_line(appearance));
-        }
-
-        // Not on Business: only suggest an upgrade when the current plan has
-        // a finite seat cap AND the team would actually fit in Business.
-        let policy = team.billing_metadata.tier.workspace_size_policy?;
-        if policy.is_unlimited {
-            return None;
-        }
-
-        // Look up Business's seat cap from live pricing data. We accept
-        // either the legacy `Business` variant or the newer `BuildBusiness`
-        // variant — both surface as "Business" in the UI.
-        let business_cap = pricing_info
-            .plans()
-            .iter()
-            .find(|p| {
-                matches!(
-                    p.plan,
-                    StripeSubscriptionPlan::BuildBusiness | StripeSubscriptionPlan::Business,
-                )
-            })
-            .and_then(|p| p.max_team_size)?;
-
-        let team_size = i64::try_from(team.members.len()).unwrap_or(i64::MAX);
-        if team_size >= i64::from(business_cap) {
-            // Team is already too big for Business; the contact-sales line
-            // would be the right answer here, but per the simplified spec we
-            // only show the sales line for teams that are actually on
-            // Business. Omit entirely.
-            return None;
-        }
-
-        Some(self.render_outgrow_upgrade_line(
-            format!(" for up to {business_cap} members"),
-            team.uid,
-            appearance,
-        ))
     }
 
-    /// Builds the "<link>Upgrade to Business</link> for up to N members" line.
-    /// Clicking the link routes through the existing self-serve upgrade flow.
+    /// "Want to grow your team? <Upgrade>." — routes through self-serve upgrade.
     fn render_outgrow_upgrade_line(
         &self,
-        cap_phrase: String,
         team_uid: ServerId,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
+        let prefix = self.render_sub_text("Want to grow your team? ".to_string(), appearance, None);
         let link = appearance
             .ui_builder()
             .link(
-                "Upgrade to Business".to_string(),
+                "Upgrade".to_string(),
                 None,
                 Some(Box::new(move |ctx| {
                     ctx.dispatch_typed_action(TeamsPageAction::GenerateUpgradeLink { team_uid });
@@ -3081,26 +2991,24 @@ impl TeamsWidget {
             .soft_wrap(false)
             .build()
             .finish();
-
-        let trailing = self.render_sub_text(cap_phrase, appearance, None);
+        let suffix = self.render_sub_text(".".to_string(), appearance, None);
 
         Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
+            .with_child(prefix)
             .with_child(link)
-            .with_child(trailing)
+            .with_child(suffix)
             .finish()
     }
 
-    /// Builds the "Reach out to <link>sales@warp.dev</link> for more seats"
-    /// line. Clicking the email opens a `mailto:` to sales via the shared
-    /// `ContactSales` action.
+    /// "Want to grow your team? <Contact sales@warp.dev>." — opens a mailto.
     fn render_outgrow_contact_sales_line(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let prefix = self.render_sub_text("Reach out to ".to_string(), appearance, None);
+        let prefix = self.render_sub_text("Want to grow your team? ".to_string(), appearance, None);
         let link = appearance
             .ui_builder()
             .link(
-                "sales@warp.dev".into(),
+                "Contact sales@warp.dev".into(),
                 None,
                 Some(Box::new(move |ctx| {
                     ctx.dispatch_typed_action(TeamsPageAction::ContactSales);
@@ -3110,7 +3018,7 @@ impl TeamsWidget {
             .soft_wrap(false)
             .build()
             .finish();
-        let suffix = self.render_sub_text(" for more seats".to_string(), appearance, None);
+        let suffix = self.render_sub_text(".".to_string(), appearance, None);
 
         Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -3131,14 +3039,7 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
-        // 1) "Restrict by domain" header
-        section.add_child(
-            Container::new(self.render_sub_header("Restrict by domain".to_owned(), appearance))
-                .with_padding_top(16.)
-                .finish(),
-        );
-
-        // 2) Instruction text for domain restrictions + Domain approval mechanism (input box + button)
+        // 1) Instruction text for domain restrictions + Domain approval mechanism (input box + button)
         if has_admin_permissions {
             section.add_child(
                 Container::new(self.render_sub_text(
@@ -3146,7 +3047,7 @@ impl TeamsWidget {
                     appearance,
                     Some(Coords::uniform(0.).right(48.)),
                 ))
-                .with_padding_top(8.)
+                .with_padding_top(16.)
                 .finish(),
             );
 
@@ -3260,9 +3161,12 @@ impl TeamsWidget {
         team_uid: ServerId,
         view: &TeamsPageView,
         appearance: &Appearance,
+        force_disabled: bool,
     ) -> Box<dyn Element> {
-        // Only render enabled button with action if email list is valid.
-        let (action, variant) = if view.email_invites_block_editor_state.is_valid {
+        // Only render enabled button with action if email list is valid AND
+        // the caller hasn't forced the disabled state (e.g. team at seat cap).
+        let (action, variant) = if !force_disabled && view.email_invites_block_editor_state.is_valid
+        {
             (
                 Some(TeamsPageAction::SendEmailInvites { team_uid }),
                 ButtonVariant::Accent,
@@ -3304,9 +3208,8 @@ impl TeamsWidget {
         current_user_email: &str,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        // Header + subtext stacked on the left, toggle on the right. The text
-        // is in a column so the toggle is vertically centered against the
-        // combined header + subtext block, matching the "By link" pattern.
+        // Same layout as the "By link" header row: text column on the left,
+        // toggle on the right.
         let header = self.render_subsubsection_header("By discovery".to_owned(), appearance);
 
         let domain = current_user_email.split('@').nth(1).unwrap_or("");
@@ -3858,9 +3761,8 @@ impl TeamsWidget {
         .finish()
     }
 
-    /// Smaller in-page header used under a `render_subsection_header`, e.g.
-    /// "By link" / "By email" under "Invite team members". Matches the
-    /// subsection style (Medium weight, muted gray) but at a smaller font size.
+    /// Smaller in-page header used under a `render_subsection_header`
+    /// (e.g. "By link" / "By email" / "By discovery").
     fn render_subsubsection_header(
         &self,
         text: String,
@@ -3873,13 +3775,7 @@ impl TeamsWidget {
                 .with_style(UiComponentStyles {
                     font_family_id: Some(appearance.ui_font_family()),
                     font_weight: Some(Weight::Medium),
-                    font_color: Some(
-                        appearance
-                            .theme()
-                            .active_ui_text_color()
-                            .with_opacity(60)
-                            .into(),
-                    ),
+                    font_color: Some(appearance.theme().active_ui_text_color().into()),
                     font_size: Some(SUBSUBSECTION_HEADER_FONT_SIZE),
                     ..Default::default()
                 })
@@ -4290,12 +4186,17 @@ impl TeamsWidget {
         styles: UiComponentStyles,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let button = appearance
+        let mut builder = appearance
             .ui_builder()
             .button(variant, mouse_state_handle)
             .with_style(styles)
-            .with_centered_text_label(label.to_owned())
-            .build();
+            .with_centered_text_label(label.to_owned());
+
+        // No action → render as truly disabled, otherwise hover styling still applies.
+        if action.is_none() {
+            builder = builder.disabled();
+        }
+        let button = builder.build();
 
         if let Some(action) = action {
             button
