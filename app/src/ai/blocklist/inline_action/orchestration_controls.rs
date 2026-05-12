@@ -152,10 +152,7 @@ impl OrchestrationEditState {
     /// `worker_host` from the config. If the state is `Local` while the
     /// config is `Remote` (or vice-versa), does nothing — variant
     /// mismatches are intentional.
-    pub fn resolve_execution_mode_from_config(
-        &mut self,
-        config_mode: &OrchestrationExecutionMode,
-    ) {
+    pub fn resolve_execution_mode_from_config(&mut self, config_mode: &OrchestrationExecutionMode) {
         if let (
             RunAgentsExecutionMode::Remote {
                 environment_id,

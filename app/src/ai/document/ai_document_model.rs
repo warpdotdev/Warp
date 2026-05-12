@@ -1232,8 +1232,10 @@ impl AIDocumentModel {
                     &message.message
                 {
                     if !snapshot.plan_id.is_empty() && !configs.contains_key(&snapshot.plan_id) {
-                        if let Some(config) =
-                            snapshot.config.as_ref().map(OrchestrationConfig::from_proto)
+                        if let Some(config) = snapshot
+                            .config
+                            .as_ref()
+                            .map(OrchestrationConfig::from_proto)
                         {
                             let status =
                                 OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());

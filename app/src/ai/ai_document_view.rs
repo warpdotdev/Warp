@@ -306,9 +306,7 @@ impl AIDocumentView {
                                 let plan_id = document_id.to_string();
                                 me.orchestration_config_block =
                                     Some(ctx.add_typed_action_view(move |ctx| {
-                                        OrchestrationConfigBlockView::new(
-                                            conv_id, plan_id, ctx,
-                                        )
+                                        OrchestrationConfigBlockView::new(conv_id, plan_id, ctx)
                                     }));
                             }
                             ctx.notify();
@@ -1071,10 +1069,7 @@ impl View for AIDocumentView {
                 let plan_id_str = self.document_id.to_string();
                 BlocklistAIHistoryModel::as_ref(app)
                     .conversation(&cid)
-                    .and_then(|conv| {
-                        conv.orchestration_config_for_plan(&plan_id_str)
-                            .map(|_| ())
-                    })
+                    .and_then(|conv| conv.orchestration_config_for_plan(&plan_id_str).map(|_| ()))
             })
             .is_some();
 
