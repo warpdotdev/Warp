@@ -582,7 +582,6 @@ fn worker_injected_env_skips_entire_bedrock_secret() {
     std::env::remove_var("AWS_REGION");
 }
 
-<<<<<<< HEAD
 // ── Skill-loading integration test ───────────────────────────────────────────
 
 /// Verifies that `load_environment_skills` loads every skill from an env repo
@@ -837,8 +836,8 @@ fn write_skill_file(repo: &Path, name: &str) {
     let skill_dir = repo.join(".agents").join("skills").join(name);
     fs::create_dir_all(&skill_dir).unwrap();
     fs::write(skill_dir.join("SKILL.md"), format!("Skill: {name}.")).unwrap();
-||||||| parent of 82c7b68d (fixes)
-=======
+}
+
 #[test]
 #[serial_test::serial]
 fn openai_api_key_exports_only_api_key_not_base_url() {
@@ -863,5 +862,4 @@ fn openai_api_key_exports_only_api_key_not_base_url() {
         !env_vars.contains_key(&OsString::from("OPENAI_BASE_URL")),
         "OPENAI_BASE_URL should NOT be exported as an env var"
     );
->>>>>>> 82c7b68d (fixes)
 }
