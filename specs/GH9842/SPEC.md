@@ -101,59 +101,52 @@ without dispatching it. The user edits, then submits manually.
     icon uses the existing icon-button base style and the card's
     existing padding.
 
-#### Accessibility contract — native Warp UI (NOT browser DOM)
+#### Accessibility contract (native Warp UI)
 
-The previous draft referenced web-only accessibility primitives
-(`tabindex`, `aria-label`). Warp's UI is native (GPUI-rendered)
-and does not have a browser DOM to attach those attributes to.
-This section names the equivalent native primitives the
-implementation MUST use, verified against the existing codebase:
+Warp's UI is native (GPUI-rendered), so the accessibility
+contract is expressed entirely in terms of Warp's native
+accessibility primitives — verified against the existing
+codebase. No web/DOM primitives are referenced or required.
 
-- **Accessibility label.** The edit icon implements
-  `accessibility_label()` (the trait method already used by
-  Warp search items, slash-command items, profile pickers,
-  etc. — see `app/src/terminal/input/{prompts,profiles,
+- **Accessibility label.** The edit icon implements the
+  `accessibility_label()` trait method already used by Warp
+  search items, slash-command items, profile pickers, etc.
+  (see `app/src/terminal/input/{prompts,profiles,
   slash_commands,...}/search_item.rs::accessibility_label`,
   `app/src/search/data_source.rs`). The value MUST be the
-  literal string `"Edit suggestion before sending"`. This is
-  the assistive-tech-readable name (replaces the prior
-  `aria-label` reference; it is NOT a DOM attribute, it is
-  the native `accessibility_label` value surfaced through
-  Warp's AT bridge — UIA on Windows, NSAccessibility on
-  macOS, AT-SPI / `accessibility_content_text` on Linux).
-- **Focus / tab order.** The edit icon participates in Warp's
-  native focus system (`FocusHandle` / `PaneFocusHandle`),
-  not browser tab order. Concretely, the suggestion list's
-  existing roving-focus state is extended to treat the edit
-  icon as a focusable peer of the suggestion card such that
-  Tab moves focus suggestion-card → edit-icon → next-
-  suggestion-card → next-edit-icon, and Shift+Tab reverses.
-  No `tabindex` attribute is set (Warp has no DOM); the
-  effect is implemented through Warp's existing focus-handle
-  registration on the icon element. Activation via the
-  existing `KeyboardAction::Confirm` (Enter) and a Space
-  binding routed through the same handler dispatches
+  literal string `"Edit suggestion before sending"`. This
+  value is the assistive-tech-readable name surfaced through
+  Warp's native AT bridge:
+  - macOS → NSAccessibility `accessibilityLabel`.
+  - Windows → UIA `Name` property.
+  - Linux → AT-SPI `accessible-name` /
+    `accessibility_content_text`.
+- **Focus / keyboard order.** The edit icon participates in
+  Warp's native focus system via `FocusHandle` /
+  `PaneFocusHandle`. The suggestion list's existing
+  roving-focus state is extended to treat the edit icon as a
+  focusable peer of the suggestion card, with the order
+  suggestion-card → edit-icon → next-suggestion-card →
+  next-edit-icon under Tab, reversed under Shift+Tab.
+  Activation via `KeyboardAction::Confirm` (Enter) and a
+  Space binding routed through the same handler dispatches
   `InsertPromptSuggestionAsDraft`.
 - **Validation target.** Accessibility behavior is validated
-  against the **native AT bridge**, not against DOM-snapshot
-  tools. Acceptable validation:
+  against the native AT bridge for each platform:
   - macOS: Accessibility Inspector reports the icon with
     role = button, label = `"Edit suggestion before
-    sending"`, and that VoiceOver announces the label on
-    focus.
+    sending"`, and VoiceOver announces the label on focus.
   - Windows: Inspect.exe / Accessibility Insights reports
     the equivalent UIA `Name` property and a button-like
     `LocalizedControlType`.
   - Linux: Accerciser / `dogtail` reports the equivalent
     AT-SPI `accessible-name`.
   Automated coverage in CI uses Warp's existing accessibility
-  testing harness (the same one exercised by the
+  testing harness — the same one exercised by the
   `accessibility_content_text` and search-bar accessibility
-  tests, e.g. `app/src/search/search_bar.rs` and
+  tests (e.g. `app/src/search/search_bar.rs` and
   `app/src/search/command_search/searcher_test.rs::
-  accessibility_label`). Browser-DOM tools (Lighthouse,
-  axe-core, Cypress a11y) are NOT applicable and MUST NOT
-  be used as the validation target.
+  accessibility_label`).
 - B8. Sequential composition (NOT out of scope in V1). Users may
   insert multiple suggestions in a row. Each insert applies the
   B2 replace-with-confirm rule against the current draft. The
