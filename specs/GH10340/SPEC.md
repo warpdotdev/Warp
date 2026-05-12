@@ -84,6 +84,14 @@ Selecting a file row opens the diff using the same routing as Flat mode.
 
 ### B6. File-list filter contract
 
+**TL;DR for implementers.** The file-list filter is a case-insensitive
+plain-text substring match against the **basename only** of each changed
+file. It never matches folder rows, full paths, intermediate segments, or
+the non-attributed side of a rename. Filter-driven folder auto-expansion
+is **transient** (overlay layer) and never mutates the persisted
+expanded-state cache. Two normative subsections below specify these
+rules.
+
 This spec introduces a **new file-list filter** that is distinct from Code
 Review's existing content-based find bar. The two are independent:
 
@@ -114,36 +122,110 @@ Review header component. See Implementation Pointers for the exact module.
 Filter behavior:
 
 - Filters the changed-files set only; it never searches diff content.
-- **Match scope (authoritative).** The filter performs a case-insensitive
-  plain-text substring match against **the file's basename only** (the
-  final path segment, e.g. `bar.rs` for `app/src/foo/bar.rs`). It does
-  **NOT** match against:
-  - full relative paths,
-  - intermediate directory segments,
-  - folder row labels (including compact folder labels like
-    `app/src/foo/bar`),
-  - rename old paths or rename new paths beyond their own basenames.
-  For renamed files, the match is evaluated against the **basename of the
-  attribution path** — i.e. the new-path basename when
-  `group_renames_by_old_path = false` (default), and the old-path
-  basename when `group_renames_by_old_path = true`. The non-attributed
-  side (rendered as the subtitle) is **not** considered for matching.
+
+#### B6a-match. Match scope (authoritative)
+
+The filter performs a **case-insensitive plain-text substring match
+against the file's basename only** — the final path segment of the
+attributed path. For example, with files `app/src/foo/bar.rs`,
+`app/src/foo/baz.txt`, and `unrelated/foo.rs`:
+
+| Filter input | Matches |
+|---|---|
+| `"bar"` | `app/src/foo/bar.rs` (basename `bar.rs` contains `bar`) |
+| `"baz"` | `app/src/foo/baz.txt` |
+| `"foo"` | ONLY `unrelated/foo.rs` (the `foo` in `app/src/foo/` is a directory segment, not a basename) |
+| `"src"` | NOTHING (no basename contains `src`) |
+| `"app/src"` | NOTHING (full paths are never matched) |
+
+The filter does **NOT** match against:
+
+1. **Full relative paths** (e.g. `app/src/foo/bar.rs`) — never considered.
+2. **Intermediate directory segments** (e.g. the `src` in
+   `app/src/foo/bar.rs`) — never considered.
+3. **Folder row labels** in Tree mode (e.g. the row labeled `app/src/foo`
+   or the compact label `app/src/foo/bar`) — folders themselves are
+   never "matched"; they are only auto-expanded when a descendant file's
+   basename matches.
+4. **Compact folder labels** specifically (e.g. `app/src/foo/bar` as a
+   single compact row) — the embedded path segments are not matched even
+   though they appear in the visible label.
+5. **The non-attributed side of a rename** — for a renamed file
+   `a/old.rs → b/new.rs`, the path that appears as the *subtitle* under
+   the row title is never considered for matching.
+
+For renamed files, the match is evaluated against the **basename of the
+attribution path**:
+
+- When `code.review.file_list.group_renames_by_old_path = false`
+  (default): match the **new-path basename** (`new.rs` in the example
+  above). Filter `"new"` matches; filter `"old"` does not.
+- When `code.review.file_list.group_renames_by_old_path = true`: match
+  the **old-path basename** (`old.rs`). Filter `"old"` matches; filter
+  `"new"` does not.
+
+The non-attributed side (rendered as the subtitle) is **not** considered
+for matching under either setting.
 - In Tree mode, files whose names match the filter cause their parent
   folders to auto-expand. Non-matching siblings are **dimmed** by default
   (see B6c for the toggle that hides them entirely).
 - In Flat mode, non-matching files are **dimmed** by default. (Same toggle
   in B6c hides them when ON.)
-- **Filter-driven auto-expansion is transient.** Auto-expansion of folders
-  caused by the filter does **NOT** mutate the review's cached
-  expanded-state map (the per-`(repo, review)` expansion state described
-  in Implementation Pointers). When the filter is cleared or the user
-  blurs the filter input with an empty value, every folder reverts to its
-  pre-filter expanded state. Folders the user manually expands or
-  collapses **while the filter is active** DO update the cached state and
-  persist after the filter is cleared. Concretely: the renderer maintains
-  two layers — a base expanded-state map (mutated only by user clicks /
-  keyboard) and a transient filter-expansion overlay (cleared on filter
-  empty/blur). The visible expanded state is the union of the two.
+
+#### B6b-expansion. Filter-driven auto-expansion semantics (authoritative)
+
+Filter-driven auto-expansion is **transient — it never mutates the
+review's cached expansion state**. The renderer maintains two layers:
+
+1. **Base expanded-state map** (persistent for the lifetime of the review
+   session). Keyed by folder path. **Mutated ONLY** by:
+   - User click on a folder row.
+   - Keyboard Enter on a focused folder row.
+   - Left/Right arrow expand/collapse on a folder row.
+   - `Cmd`/`Ctrl`-click-toggle-all-descendants from B5.
+   This is the same expanded-state cache referenced in Implementation
+   Pointers as the "per-`(repo, review)` expansion state".
+2. **Transient filter-expansion overlay** (an in-memory set of folder
+   paths). Populated when the filter is non-empty with the ancestors of
+   every file whose basename matches the filter. **Mutated ONLY** by:
+   - The filter input value changing to a non-empty value (recompute
+     overlay).
+   - The filter input becoming empty or losing focus while empty (clear
+     overlay).
+
+The visible expanded state of a folder is the **set union** of the two
+layers (base ∪ overlay) — a folder is rendered expanded if it is
+expanded in either layer.
+
+Concrete cases (normative):
+
+- **Clearing the filter** (input value → empty, or focus lost while
+  empty) clears the overlay. The visible expanded state reverts to the
+  base map exactly. Folders auto-expanded only because of the filter
+  collapse back to their pre-filter state.
+- **Manual expansion while the filter is active.** If the user clicks
+  a folder row (or otherwise triggers a B5 expand action) while the
+  filter is non-empty, that action mutates the **base map** as usual.
+  When the filter is later cleared, that folder remains expanded
+  because the base map remembers it.
+- **Manual collapse of an auto-expanded folder.** If the filter
+  auto-expanded folder `X` and the user clicks `X` to collapse it
+  while the filter is still active, the base map is updated to mark
+  `X` as collapsed AND the overlay's entry for `X` is removed for the
+  remainder of the current filter span. `X` is rendered collapsed
+  for the rest of the filter session (the overlay does not re-expand
+  it). On the next change of the filter input value, the overlay is
+  recomputed from the new filter results, which MAY re-add `X`.
+- **Switching modes while filtering.** Toggling Flat ↔ Tree preserves
+  both the base map and the overlay; the filter value is preserved
+  per B6 and the overlay is re-applied on entering Tree mode.
+- **Closing the review session.** Both layers are discarded; nothing
+  persists across review sessions in V1 (see Open Questions for
+  V1.5 persistence).
+
+The overlay is never written to disk; it is never included in any
+persisted setting; it is never visible to telemetry as a distinct
+event.
 - The filter value is preserved when the user toggles Flat ↔ Tree.
 - The filter is window-local and cleared when the review session closes;
   it is not persisted across reviews or restarts.
@@ -290,11 +372,21 @@ header — see B6 for the authoritative layout):
 ## Implementation Pointers
 
 **Where the existing sidebar lives today.** The current Code Review
-changed-files sidebar is rendered from `app/src/code_review/code_review_view.rs`
-(the existing flat-list renderer). This spec does **not** delete or
-replace that file; instead it carves the file-list rendering out into a
-new sibling module so the two modes can coexist. Implementers should
-expect to:
+changed-files sidebar is rendered from
+`app/src/code_review/code_review_view.rs` (the existing flat-list
+renderer). This spec does **not** delete or replace that file; instead
+it carves the file-list rendering out into a new sibling module so the
+two modes can coexist. After this refactor:
+
+- `app/src/code_review/code_review_view.rs` remains the top-level Code
+  Review pane. It loses its inline file-row rendering loop but keeps
+  layout glue, the existing toolbar host, and the call site that
+  invokes the new file-list module.
+- `app/src/code_review/file_list/` (NEW DIRECTORY introduced by this
+  spec) hosts the Flat and Tree renderers, the filter input, the
+  Flat/Tree toggle, and the kebab menu.
+
+Implementers should expect to:
 
 1. Create the new module tree at `app/src/code_review/file_list/` (new
    directory) containing:
