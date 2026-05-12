@@ -34,10 +34,7 @@ where
         uri: Uri,
         last_event_id: Option<String>,
         mut auth_token: Option<String>,
-    ) -> Result<
-        super::client_side_sse::BoxedSseResponse,
-        SseTransportError<Self::Error>,
-    > {
+    ) -> Result<super::client_side_sse::BoxedSseResponse, SseTransportError<Self::Error>> {
         if auth_token.is_none() {
             auth_token = Some(self.get_access_token().await?);
         }

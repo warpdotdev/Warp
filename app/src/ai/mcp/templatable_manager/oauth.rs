@@ -190,8 +190,6 @@ async fn install_persisting_credential_store(
             .save(StoredCredentials {
                 client_id,
                 token_response: Some(token_response),
-                granted_scopes: Vec::new(),
-                token_received_at,
             })
             .await;
     }

@@ -47,10 +47,7 @@ impl SseClient for reqwest::Client {
         uri: Uri,
         last_event_id: Option<String>,
         auth_token: Option<String>,
-    ) -> Result<
-        super::client_side_sse::BoxedSseResponse,
-        SseTransportError<Self::Error>,
-    > {
+    ) -> Result<super::client_side_sse::BoxedSseResponse, SseTransportError<Self::Error>> {
         let mut request_builder = self
             .get(uri.to_string())
             .header(ACCEPT, EVENT_STREAM_MIME_TYPE);

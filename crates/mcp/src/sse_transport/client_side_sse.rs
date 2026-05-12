@@ -7,11 +7,11 @@ use std::{
     future::Future,
     pin::Pin,
     sync::Arc,
-    task::{Poll, ready},
+    task::{ready, Poll},
     time::Duration,
 };
 
-use futures::{Stream, stream::BoxStream};
+use futures::{stream::BoxStream, Stream};
 use rmcp::model::ServerJsonRpcMessage;
 use sse_stream::{Error as SseError, Sse};
 
