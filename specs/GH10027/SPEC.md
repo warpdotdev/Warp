@@ -155,13 +155,30 @@ the argv set.
    (added in Test plan) asserts the contract on every default
    rule and on a synthetic adversarial input.
 
+6. **Explicit non-contradiction clause (round-N fix).** Any earlier
+   mention in this spec of trailing `(\s|$)` "admitting trailing
+   positionals" is to be read STRICTLY as admitting trailing
+   *subcommand-path tokens drawn from the per-CLI verb table* —
+   never as admitting resource-name positionals, file paths, or
+   any other free-form argv tokens. Resource names, IDs, file
+   paths, and flags are members of the argv set only and are
+   invisible to `command_pattern`. Where prior round notes used
+   the phrase "trailing positionals," that phrase refers to
+   verb-table subcommand tokens; it does NOT refer to user-supplied
+   resource positionals. This clause supersedes any earlier
+   wording in this document that could be read otherwise.
+
 #### B1.2 — Default command-output rules (regex form)
 
 V1 ships defaults covering the most common secret-bearing CLIs.
 Each is argument-order independent per B1.1. Patterns are matched
-against the normalized subcommand path. The `(\s|$)` trailing
-boundary admits trailing positionals like resource names without
-admitting near-miss tokens.
+against the normalized subcommand path string (NOT against any
+string that includes resource-name positionals). The `(\s|$)`
+trailing boundary admits trailing *verb-table subcommand tokens*
+only — not user-supplied resource names — and excludes near-miss
+tokens like `secrets-config`. Resource names and other free-form
+positionals live in the argv set and are constrained via
+`argv_contains` / `argv_excludes`, not via `command_pattern`.
 
 | id                                   | `command_pattern` (Rust regex)                                |
 | ------------------------------------ | ------------------------------------------------------------- |
@@ -180,6 +197,66 @@ admitting near-miss tokens.
 
 All defaults redact the full output block and use a stable `id`
 so users can override or disable them (see B3).
+
+#### B1.3 — Shell prefixes, compound invocations, and command-substitution
+
+The normalizer in B1.1 receives the **effective leaf command** that
+actually produced the captured output block, not the raw line the
+user typed. This closes the security gap where a secret-bearing
+CLI is wrapped in a shell prefix or compound expression and would
+otherwise slip past `command_pattern`.
+
+The following invocation forms MUST all normalize to a
+subcommand_path that the matching V1 default rule sees and
+redacts:
+
+| Form                                          | Effective leaf command captured by the normalizer | Matched by V1 default? |
+| --------------------------------------------- | -------------------------------------------------- | ---------------------- |
+| `kubectl get secret foo`                      | `kubectl get secret foo`                           | YES (`default-kubectl-get-secret`) |
+| `sudo kubectl get secret foo`                 | `kubectl get secret foo`                           | YES — `sudo` is a recognized prefix and is stripped before normalization |
+| `sudo -E kubectl get secret foo`              | `kubectl get secret foo`                           | YES — flags to `sudo` are consumed by the prefix table |
+| `env FOO=bar kubectl get secret foo`          | `kubectl get secret foo`                           | YES — `env` prefix + assignments stripped |
+| `KUBECONFIG=./kc kubectl get secret foo`      | `kubectl get secret foo`                           | YES — leading `VAR=value` shell assignments stripped before resolving the leaf |
+| `time kubectl get secret foo`                 | `kubectl get secret foo`                           | YES — `time`, `nice`, `nohup` are recognized prefixes |
+| `/usr/local/bin/kubectl get secret foo`       | `kubectl get secret foo`                           | YES — absolute-path argv[0] is basenamed before normalization |
+| `xargs kubectl get secret foo`                | `kubectl get secret foo` (one invocation per arg group) | YES — `xargs` is a recognized prefix that defers to its trailing command |
+| `aws secretsmanager get-secret-value …`<br>`\| jq .`             | `aws secretsmanager get-secret-value …`            | YES — for `cmd \| filter` (pipeline), the block-level capture is keyed off the **first** command in the pipeline. Output is the post-pipeline stdout, but the rule is keyed off the head command. |
+| `vault kv get x && echo done`                 | TWO independent commands captured per block; rule fires on the `vault kv get x` portion | YES — `&&`, `\|\|`, and `;` separate the captured block into segments, each normalized and matched independently. The block's captured output is segmented by separator and redacted per-segment. |
+| `( kubectl get secret foo )` / `{ kubectl get secret foo ; }` | `kubectl get secret foo`                           | YES — grouping constructs are unwrapped before normalization |
+| `bash -c 'kubectl get secret foo'`            | `kubectl get secret foo`                           | YES — `bash -c`, `sh -c`, `zsh -c` with a single-string argument are recursively re-parsed and the inner leaf is normalized |
+| `kubectl get secret $(name)` / `` kubectl get secret `name` `` | `kubectl get secret <substituted>`                 | YES — command substitution in the resource positional does NOT escape the rule because the resource positional is in the argv set, not in `command_pattern`'s matched string |
+| `watch -n5 'kubectl get secret foo'`          | `kubectl get secret foo`                           | YES — `watch` with a quoted command argument is treated like `bash -c` |
+| `unknown-wrapper kubectl get secret foo`      | NOT matched                                        | NO — only the explicit prefix table is stripped. Unknown wrappers are matched verbatim and intentionally fail closed for the wrapper (the user's terminal still shows real output; the agent context shows the verbatim wrapper command and its full output **unredacted** unless a user rule names the wrapper). See "Compound-invocation fail-open caveat" below. |
+
+**Prefix table (V1).** The stripped-before-normalization prefix
+list is exhaustively: `sudo` (with its own flag set),
+`env` (with trailing `VAR=value` assignments), `time`, `nice`,
+`ionice`, `nohup`, `stdbuf`, `xargs`, `watch`, leading
+`VAR=value …` assignments with no command verb, and `bash -c` /
+`sh -c` / `zsh -c` / `dash -c` (single-string forms are
+recursively re-parsed).
+
+**Compound-invocation fail-open caveat.** A wrapper that is NOT
+in the V1 prefix table (e.g., a custom user script
+`my-secret-runner kubectl get secret foo`) is intentionally NOT
+auto-stripped. This is documented as a known V1 gap, not a silent
+fail-open: the spec's threat model assumes the user controls the
+prefix table. Users can either (a) define a user rule whose
+`command_pattern` includes their wrapper, or (b) request the
+wrapper be added to the prefix table in a follow-up. The clippy
+lint in B4.3 still enforces that any agent-bound text path runs
+through the choke-point — i.e., the wrapper case still falls
+under single-line and multiline redaction (e.g., PEM blocks in
+the wrapped output are still redacted by the B2 multiline rule
+even though the B1 command-keyed rule did not fire).
+
+**Acceptance criteria for B1.3.** All matched rows above MUST
+fire the corresponding V1 default rule in T_shell_prefix_contract
+(added in Test plan). The "unknown-wrapper" row MUST NOT fire
+the V1 default rule but MUST still trigger B2 multiline PEM
+redaction if the captured output contains a PEM block — i.e.,
+defense in depth across single-line, command-keyed, and multiline
+layers.
 
 ### B2 — Multiline pattern redaction
 
@@ -316,7 +393,7 @@ and never disable built-in protections**.
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Invalid regex in any pattern field           | Rule is DROPPED. Other user rules and ALL defaults remain active. Warning logged with rule id and parser error. Surfaced in Settings UI as `Rule '<id>' has invalid pattern: <error>`. |
 | Missing required field (`id`, `pattern`, …)  | Rule is DROPPED. Other rules unaffected. Warning surfaced in Settings UI.                                            |
-| Duplicate user-supplied id (same id twice in user config) | First occurrence is kept; subsequent duplicates are DROPPED with a warning. Defaults are never overridden by a duplicate-id user rule. |
+| Duplicate user-supplied id (same id twice in user config) | The first occurrence is kept and participates in normal B3.1 merge semantics against any matching default; subsequent duplicates within the user config are DROPPED with a warning. If the kept first occurrence shares an id with a built-in default, it overrides/disables that default per B3.1 (Replace/Disable). The "duplicate" failure mode applies only to repeated user entries within the user config; it does NOT inhibit the documented user-wins override of a built-in default by the kept first occurrence. |
 | User id begins with reserved `default-` prefix but does not match a real built-in | Rule is REJECTED with warning; dropped. Other rules unaffected. |
 | Whole config file malformed (TOML parse error)  | The user config is treated as empty. **All built-in defaults remain active.** Loud warning in Settings UI; redaction is never disabled by a config error. |
 
@@ -445,6 +522,12 @@ post-cap content ever leaks once redaction is active:
   `redact_for_agent`. Adding a new agent-bound construction site
   without calling the choke-point fails CI via the clippy lint
   (B4.3).
+- A9. Every shell-prefix / compound-invocation form enumerated in
+  the B1.3 "Matched by V1 default" column fires the corresponding
+  V1 default rule. The unknown-wrapper row does NOT fire the V1
+  command-keyed rule but DOES still trigger PEM multiline
+  redaction if the captured output contains a PEM block (defense
+  in depth across B1, single-line, and B2 layers).
 
 ## Test plan
 
@@ -529,6 +612,39 @@ post-cap content ever leaks once redaction is active:
   records the exact strings it sees and fails if any contains a
   trailing resource positional. Asserts the canonical "subcommand
   path only" contract end-to-end.
+
+- T_shell_prefix_contract = **Shell-prefix / compound-invocation
+  contract test** (closes the round-N security concern that the
+  spec did not specify how common shell prefixes and compound
+  invocations interact with `command_pattern`). For every row in
+  the B1.3 table:
+
+    1. Feed the raw command line into the normalizer.
+    2. Assert the resulting effective leaf command equals the
+       row's "Effective leaf command" column.
+    3. Run the V1 default rule set against the effective leaf
+       command and assert it fires when the row says "YES" and
+       does NOT fire when the row says "NO".
+    4. For the `cmd && cmd2` / `cmd ; cmd2` / `cmd || cmd2` rows,
+       assert the captured block is segmented and that the
+       redaction fires on the correct segment(s) while the
+       non-secret-bearing segment's output is forwarded
+       unredacted.
+    5. For the `bash -c '...'` / `sh -c '...'` / `watch -n5 '...'`
+       rows, assert that the inner quoted command is recursively
+       re-parsed and that the inner leaf is what matches.
+    6. For the unknown-wrapper row, assert that the V1
+       command-keyed rule does NOT fire AND that a PEM block
+       embedded in the captured output IS still redacted via the
+       B2 multiline rule. This is the defense-in-depth regression
+       guard for the documented compound-invocation fail-open
+       caveat.
+
+  CI fails if any matched row leaks a single secret byte to the
+  agent stream, or if any non-matched row (the unknown wrapper)
+  is silently extended to fire the command-keyed rule (which
+  would change the documented fail-open behavior without an
+  intentional spec change).
 
 ## Out of scope (V1)
 
