@@ -744,6 +744,8 @@ predict_am_queries = []
 quake_mode = []
 record_app_active_events = []
 recording_mode = []
+remote_codebase_indexing = ["full_source_code_embedding"]
+
 # This feature should only be enabled when building a release bundle with
 # the bundle script, and can be used to conditionally enable functionality
 # accordingly.

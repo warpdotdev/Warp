@@ -4044,6 +4044,7 @@ impl PaneGroup {
                     AIAgentHarness::Oz => None,
                     AIAgentHarness::Unknown => Some(Harness::Unknown),
                 };
+                let fallback_title = cli_conversation.metadata.title.clone();
                 terminal_view.update(ctx, |view, ctx| {
                     view.restore_conversation_and_directory_context(
                         CloudConversationData::CLIAgent(cli_conversation),
@@ -4064,12 +4065,9 @@ impl PaneGroup {
                     // 3p runs have no materialized AIConversation, so enter agent view with a
                     // fresh vehicle conversation and retag the restored snapshot block onto it so
                     // it passes `should_hide_block`'s agent view filter.
-                    view.enter_agent_view_for_new_conversation(
-                        None,
-                        AgentViewEntryOrigin::ThirdPartyCloudAgent,
-                        ctx,
-                    );
-                    if let Some(vehicle_conversation_id) = view.active_conversation_id(ctx) {
+                    if let Some(vehicle_conversation_id) =
+                        view.enter_agent_view_for_restored_cli_agent(fallback_title, ctx)
+                    {
                         view.model
                             .lock()
                             .block_list_mut()
@@ -5475,6 +5473,7 @@ impl PaneGroup {
                         AIAgentHarness::Oz => None,
                         AIAgentHarness::Unknown => Some(Harness::Unknown),
                     };
+                    let fallback_title = cli_conversation.metadata.title.clone();
                     view.restore_conversation_and_directory_context(
                         CloudConversationData::CLIAgent(cli_conversation),
                         true,
@@ -5490,12 +5489,9 @@ impl PaneGroup {
                             });
                         }
                     }
-                    view.enter_agent_view_for_new_conversation(
-                        None,
-                        AgentViewEntryOrigin::ThirdPartyCloudAgent,
-                        ctx,
-                    );
-                    if let Some(vehicle_conversation_id) = view.active_conversation_id(ctx) {
+                    if let Some(vehicle_conversation_id) =
+                        view.enter_agent_view_for_restored_cli_agent(fallback_title, ctx)
+                    {
                         view.model
                             .lock()
                             .block_list_mut()

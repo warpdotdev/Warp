@@ -149,6 +149,33 @@ impl OrchestrationEditState {
         }
     }
 
+    /// Fills empty execution-mode fields from the given config.
+    /// If both sides are `Remote`, inherits empty `environment_id` and
+    /// `worker_host` from the config. If the state is `Local` while the
+    /// config is `Remote` (or vice-versa), does nothing — variant
+    /// mismatches are intentional.
+    pub fn resolve_execution_mode_from_config(&mut self, config_mode: &OrchestrationExecutionMode) {
+        if let (
+            RunAgentsExecutionMode::Remote {
+                environment_id,
+                worker_host,
+                ..
+            },
+            OrchestrationExecutionMode::Remote {
+                environment_id: cfg_env,
+                worker_host: cfg_host,
+            },
+        ) = (&mut self.execution_mode, config_mode)
+        {
+            if environment_id.is_empty() {
+                *environment_id = cfg_env.clone();
+            }
+            if worker_host.is_empty() {
+                *worker_host = cfg_host.clone();
+            }
+        }
+    }
+
     /// Returns `Some(reason)` if Accept / Apply must be disabled.
     /// Only hard block: OpenCode + Cloud.
     pub fn accept_disabled_reason(&self) -> Option<&'static str> {
