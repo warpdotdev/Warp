@@ -275,11 +275,8 @@ pub async fn make_authenticated_client(
             // update our client config accordingly.
             if let Some(client_secret) = &client_secret {
                 auth_manager.configure_client(
-                    OAuthClientConfig::new(
-                        credentials.client_id.clone(),
-                        redirect_uri.clone(),
-                    )
-                    .with_client_secret(client_secret.clone()),
+                    OAuthClientConfig::new(credentials.client_id.clone(), redirect_uri.clone())
+                        .with_client_secret(client_secret.clone()),
                 )?;
             }
 
@@ -360,7 +357,10 @@ pub async fn make_authenticated_client(
     // For apps for which we have static client IDs (e.g. GitHub), we manually override scopes.
     let mut scopes: &[&str] = &[];
 
-    let config = match auth_manager.register_client("Warp", &redirect_uri, scopes).await {
+    let config = match auth_manager
+        .register_client("Warp", &redirect_uri, scopes)
+        .await
+    {
         Ok(config) => config,
         Err(err @ AuthError::RegistrationFailed(_)) => {
             // If we failed dynamic registration, check to see if this is an auth
@@ -380,11 +380,8 @@ pub async fn make_authenticated_client(
                 scopes = &GITHUB_OAUTH_SCOPES;
             }
 
-            OAuthClientConfig::new(
-                provider.client_id.into_owned(),
-                redirect_uri.clone(),
-            )
-            .with_client_secret(provider.client_secret.into_owned())
+            OAuthClientConfig::new(provider.client_id.into_owned(), redirect_uri.clone())
+                .with_client_secret(provider.client_secret.into_owned())
         }
         Err(e) => return Err(e),
     };
@@ -393,9 +390,11 @@ pub async fn make_authenticated_client(
     auth_manager.configure_client(config)?;
 
     let auth_url = auth_manager.get_authorization_url(scopes).await?;
-    oauth_state = OAuthState::Session(
-        AuthorizationSession::for_scope_upgrade(auth_manager, auth_url.clone(), &redirect_uri),
-    );
+    oauth_state = OAuthState::Session(AuthorizationSession::for_scope_upgrade(
+        auth_manager,
+        auth_url.clone(),
+        &redirect_uri,
+    ));
 
     // Extract the CSRF token that rmcp embedded as the `state` query parameter in the
     // authorization URL. We register a csrf→uuid mapping on the manager so that
