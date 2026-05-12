@@ -219,7 +219,11 @@ pub(super) fn check_and_report_update_errors(ctx: &mut AppContext) {
 
 pub(super) fn relaunch() -> Result<()> {
     let install_dir = install_dir()?;
-    let Some(installer_path) = INSTALLER_PATH.lock().take() else {
+    let Some(installer_path) = INSTALLER_PATH
+        .lock()
+        .as_ref()
+        .map(|path| path.to_path_buf())
+    else {
         bail!("No installer path");
     };
 
