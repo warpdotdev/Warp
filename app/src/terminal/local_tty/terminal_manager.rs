@@ -128,6 +128,13 @@ type RemoteServerController =
 
 const ACL_UPDATE_FAILURE_RESPONSE: &str = "Something went wrong. Please try again.";
 
+/// Whether the given CRDT operation is a selection-only update. In ambient
+/// agent sessions the sharer is a headless worker — forwarding its selection
+/// ops would produce a phantom cursor on the viewer side.
+fn is_sharer_selection_op(op: &CrdtOperation) -> bool {
+    matches!(op, CrdtOperation::UpdateSelections(_))
+}
+
 /// The TerminalManager is responsible for
 /// - creating the terminal model
 /// - starting the local PTY
@@ -1476,16 +1483,18 @@ impl TerminalManager {
 
                 // Flush the initial input operations that the sharer performed
                 // in the latest buffer before the share was started.
-                // Skip for ambient agent sessions — the sharer is a headless
-                // worker whose input ops would cause a phantom cursor.
-                if !model.lock().is_shared_ambient_agent_session() {
-                    let init_input_ops: Vec<CrdtOperation> = terminal_view
-                        .as_ref(ctx)
-                        .input()
-                        .as_ref(ctx)
-                        .latest_buffer_operations()
-                        .cloned()
-                        .collect();
+                // For ambient agent sessions, filter out selection ops to
+                // avoid a phantom cursor from the headless worker.
+                let is_ambient = model.lock().is_shared_ambient_agent_session();
+                let init_input_ops: Vec<CrdtOperation> = terminal_view
+                    .as_ref(ctx)
+                    .input()
+                    .as_ref(ctx)
+                    .latest_buffer_operations()
+                    .filter(|op| !is_ambient || !is_sharer_selection_op(op))
+                    .cloned()
+                    .collect();
+                if !init_input_ops.is_empty() {
                     network.update(ctx, |network, _ctx| {
                         network.send_input_update(
                             model.lock().block_list().active_block_id(),
@@ -2323,18 +2332,29 @@ impl TerminalManager {
                     return;
                 }
 
-                // In cloud agent sessions the sharer is a headless worker
-                // that never interactively types in the rich input. Sending
-                // its CRDT selection ops would cause a phantom cursor to
-                // render on the viewer side.
-                if model.lock().is_shared_ambient_agent_session() {
-                    return;
-                }
-
-                if let Some(network) = session_sharer.borrow().as_ref() {
-                    network.update(ctx, |network, _| {
-                        network.send_input_update(block_id, operations.iter());
-                    });
+                // In ambient agent sessions the sharer is a headless worker;
+                // filter out selection ops to avoid a phantom cursor on the
+                // viewer side, but keep content ops so the buffer stays in sync.
+                let is_ambient = model.lock().is_shared_ambient_agent_session();
+                if is_ambient {
+                    let filtered: Vec<_> = operations
+                        .iter()
+                        .filter(|op| !is_sharer_selection_op(op))
+                        .collect();
+                    if filtered.is_empty() {
+                        return;
+                    }
+                    if let Some(network) = session_sharer.borrow().as_ref() {
+                        network.update(ctx, |network, _| {
+                            network.send_input_update(block_id, filtered.into_iter());
+                        });
+                    }
+                } else {
+                    if let Some(network) = session_sharer.borrow().as_ref() {
+                        network.update(ctx, |network, _| {
+                            network.send_input_update(block_id, operations.iter());
+                        });
+                    }
                 }
             }
             TerminalViewEvent::UpdateSessionLinkPermissions { role } => {

@@ -21,20 +21,15 @@ This does not affect the Oz harness because it does not use the CLI agent rich i
 `input_data_for_participant` (`presence_manager.rs:726`) sets `should_draw_cursors: true` when the participant has `Selection::None` in its presence data. The cloud agent worker — running a CLI agent in the alt screen with no block or text selected — satisfies this.
 
 ## Proposed changes
-Gate the **emission** of sharer input CRDT operations for ambient agent sessions. The sharer is a headless worker that never types in the rich input; sending its CRDT selection ops would cause a phantom cursor on the viewer side. Gating at the source (rather than filtering on the receiver) avoids needing to guard every downstream call site that touches registered peers.
+Filter **selection-only** CRDT operations (`UpdateSelections`) from the sharer's input broadcasts in ambient agent sessions. The sharer is a headless worker that never types in the rich input; its selection ops would render a phantom cursor on the viewer side. Content operations (`Edit` / `Undo`) are still forwarded so the viewer's buffer stays in sync if the sharer ever writes to the input. Filtering at the source (rather than on the receiver) avoids needing to guard every downstream call site that touches registered peers.
+
+A predicate helper `is_sharer_selection_op` (`local_tty/terminal_manager.rs`) encapsulates the check for `CrdtOperation::UpdateSelections`.
 
 ### `local_tty/terminal_manager.rs` — `InputEditorUpdated` handler
-Early-return when `model.lock().is_shared_ambient_agent_session()` so the sharer's real-time input CRDT ops are never sent to the server.
+For ambient agent sessions, filter the operations through `is_sharer_selection_op` so only content ops are sent. Non-ambient sessions pass operations through unchanged with no allocation.
 
 ### `local_tty/terminal_manager.rs` — initial input flush
-Wrap the initial `send_input_update` call (inside `SharedSessionCreatedSuccessfully`) in the same `is_shared_ambient_agent_session()` check so pre-share buffer ops are not flushed either.
-
-### Why this gate is safe
-The only code path that emits `InputEditorUpdated` on the sharer side in ambient agent sessions is the CLI agent input lifecycle (`clear_buffer_and_reset_undo_stack` on open/close). All other input-adjacent flows bypass the rich input editor entirely:
-- **Long-running command write-to-PTY** (`WriteToPtyRequested` / `WriteAgentInputToPty`): writes directly to the PTY event loop, never touches the editor.
-- **Viewer submits a terminal command** (`CommandExecutionRequested`): the sharer executes via `try_execute_command_on_behalf_of_shared_session_participant` → PTY. Buffer is cleared by `handle_block_completed_event` → `reinitialize_buffer` (no CRDT ops).
-- **Sharer executes its own commands**: same path — PTY + `reinitialize_buffer`.
-- **Viewer submits a CLI agent prompt** (`AgentPromptRequested`): for CLI agents, `submit_text_to_cli_agent_pty` writes to the PTY. The viewer's own buffer ops go through the viewer's `InputEditorUpdated` handler (`viewer/terminal_manager.rs:1374`), a completely separate code path.
+Filter the initial `latest_buffer_operations()` iterator through the same predicate before cloning, so selection ops from the pre-share buffer are excluded while content ops are still flushed.
 
 ### What stays the same
 - The sharer is still registered as a remote peer on the viewer side — presence avatars, `set_remote_peer_selection_data`, and `refresh_input_data_for_participants` all continue to work without warnings.
