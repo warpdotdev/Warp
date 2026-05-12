@@ -441,17 +441,20 @@ impl ModelSelector {
                 if !query.is_empty() && !display_name.to_lowercase().contains(query) {
                     return None;
                 }
-                let icon = llm.provider.icon().unwrap_or(Icon::Oz);
-                Some(MenuItem::Item(
-                    MenuItemFields::new(display_name)
-                        .with_icon(icon)
-                        .with_icon_size_override(ITEM_ICON_SIZE)
-                        .with_font_size_override(ITEM_FONT_SIZE)
-                        .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
-                        .with_override_hover_background_color(hover_background)
-                        .with_on_select_action(ModelSelectorAction::SelectModel(llm.id.clone()))
-                        .with_disabled(llm.disable_reason.is_some()),
-                ))
+                let is_custom = llm_preferences.custom_llm_info_for_id(&llm.id).is_some();
+                let mut fields = MenuItemFields::new(display_name)
+                    .with_icon_size_override(ITEM_ICON_SIZE)
+                    .with_font_size_override(ITEM_FONT_SIZE)
+                    .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                    .with_override_hover_background_color(hover_background)
+                    .with_on_select_action(ModelSelectorAction::SelectModel(llm.id.clone()))
+                    .with_disabled(llm.disable_reason.is_some());
+                if is_custom {
+                    fields = fields.with_right_side_icon(Icon::Key);
+                } else {
+                    fields = fields.with_icon(llm.provider.icon().unwrap_or(Icon::Oz));
+                }
+                Some(MenuItem::Item(fields))
             })
             .collect();
 
