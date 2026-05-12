@@ -598,12 +598,24 @@ impl RightPanelView {
         self.active_pane_group = Some(pane_group);
 
         if let Some(state) = &mut self.code_review_state {
-            let active_repositories = working_directories_model.read(ctx, |model, _| {
-                model
-                    .most_recent_repositories_for_pane_group(pane_group_id)
-                    .map(|repos| repos.collect())
-                    .unwrap_or_default()
-            });
+            let (active_repositories, saved_selection) =
+                working_directories_model.read(ctx, |model, _| {
+                    let repos: Vec<PathBuf> = model
+                        .most_recent_repositories_for_pane_group(pane_group_id)
+                        .map(|repos| repos.collect())
+                        .unwrap_or_default();
+                    let saved = model
+                        .get_selected_review_repo(pane_group_id)
+                        .map(Path::to_path_buf);
+                    (repos, saved)
+                });
+
+            // Replace the carried-over selection from a different pane group
+            // with whatever was saved for this pane group (if anything). This
+            // ensures `set_available_repos` either keeps the saved selection
+            // (when it's still in the repo list) or falls back to auto-selecting
+            // the first repo, instead of preserving the previous tab's repo.
+            state.selected_repo_path = saved_selection;
             state.set_available_repos(active_repositories, ctx);
         }
 
@@ -1714,6 +1726,20 @@ impl TypedActionView for RightPanelView {
                         ctx,
                     );
                     self.ensure_code_review_view_exists(repo_path, ctx);
+
+                    // Persist the user's manual selection so it can be restored when
+                    // they leave this pane group's session and come back. We only
+                    // persist explicit `SelectRepo` actions (i.e. dropdown picks or
+                    // contextual opens) so that the auto-selected default doesn't
+                    // overwrite an earlier manual choice for a different pane group.
+                    if let Some(pane_group) = &self.active_pane_group {
+                        let pane_group_id = pane_group.id();
+                        let repo_path = repo_path.clone();
+                        self.working_directories_model.update(ctx, |model, _| {
+                            model.set_selected_review_repo(pane_group_id, repo_path);
+                        });
+                    }
+
                     ctx.notify();
                 }
             }
