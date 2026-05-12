@@ -3,11 +3,9 @@ use std::collections::HashMap;
 use anyhow::{anyhow, bail};
 use oauth2::{RefreshToken, TokenResponse as _};
 use rmcp::transport::{
-    auth::{
-        AuthClient, AuthorizationManager, CredentialStore, InMemoryCredentialStore,
-        OAuthClientConfig, OAuthState, StoredCredentials,
-    },
-    AuthError, AuthorizationSession, ClientCredentialsConfig,
+    AuthError, AuthorizationSession, auth::{
+        AuthClient, AuthorizationManager, CredentialStore, InMemoryCredentialStore, OAuthClientConfig, OAuthState, OAuthTokenResponse, StoredCredentials
+    }
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -46,6 +44,25 @@ pub struct PersistedCredentials {
     /// This is needed to properly refresh tokens when using DCR (Dynamic Client Registration),
     /// as the server expects the client to provide the secret when refreshing.
     client_secret: Option<String>,
+}
+
+impl PersistedCredentials {
+    fn new(
+        client_id: String,
+        client_secret: Option<String>,
+        token_response: Option<OAuthTokenResponse>,
+        token_received_at: Option<u64>,
+    ) -> Self {
+        Self {
+            credentials: StoredCredentials::new(
+                client_id,
+                token_response,
+                Vec::new(),
+                token_received_at,
+            ),
+            client_secret,
+        }
+    }
 }
 
 /// Maps cloud MCP installation UUID to its OAuth credentials in secure storage.
@@ -268,71 +285,50 @@ pub async fn make_authenticated_client(
         ));
     }
 
-    // With DCR (Dynamic Client Registration), we don't pass in explicit scopes; they are specified
-    // during dynamic registration.
-    //
-    // For apps for which we have static client IDs (e.g. GitHub), we manually override scopes.
-    let mut scopes: &[&str] = &[];
+    let metadata = auth_manager.discover_metadata().await?;
 
-    // Create the OAuth state machine.
-    let mut oauth_state = OAuthState::Unauthorized(auth_manager);
-
-    // Determine whether we can use DCR or need to use static registration.
-    let can_use_dcr = match oauth_state
-        .start_authorization(&[], &redirect_uri, Some("Warp"))
-        .await
+    // Configure the auth manager's OAuth client using dynamic or static client registration.
+    let mut oauth_state = if let Some(provider) = metadata
+        .issuer
+        .as_deref()
+        .and_then(ChannelState::mcp_oauth_provider_by_issuer)
     {
-        Ok(_) => true,
-        Err(AuthError::RegistrationFailed(_)) => false,
-        Err(e) => return Err(e),
-    };
+        // Configure the auth manager based on the static MCP configuration for this
+        // issuer.
+        auth_manager.set_metadata(metadata);
 
-    let OAuthState::Session(AuthorizationSession {
-        mut auth_manager, ..
-    }) = oauth_state
-    else {
-        return Err(AuthError::InternalError(
-            "OAuth state is not in the expected state".to_string(),
-        ));
-    };
+        let scopes = if provider.issuer == GITHUB_ISSUER {
+            GITHUB_OAUTH_SCOPES
+                .into_iter()
+                .map(ToString::to_string)
+                .collect()
+        } else {
+            vec![]
+        };
+        auth_manager.configure_client(
+            OAuthClientConfig::new(provider.client_id, redirect_uri.clone())
+                .with_client_secret(provider.client_secret)
+                .with_scopes(scopes),
+        )?;
 
-    // Start the authorization process with our custom redirect URI
-    let config = if can_use_dcr {
-        auth_manager
-            .register_client("Warp", &redirect_uri, scopes)
-            .await?
+        // We do a scope "upgrade" with no additional scopes here as it's the easiest way
+        // to construct an auth URL.
+        let auth_url = auth_manager.request_scope_upgrade("").await?;
+        OAuthState::Session(AuthorizationSession::for_scope_upgrade(
+            auth_manager,
+            auth_url,
+            &redirect_uri,
+        ))
     } else {
-        // If we failed dynamic registration, check to see if this is an auth
-        // server we have a static client ID for.
-
-        // TODO(vorporeal): adjust APIs in rmcp so that we don't need to make this redundant
-        // discover_metadata() call (as it gets made within start_authorization() but we can't
-        // look at the results).
-        let metadata = auth_manager.discover_metadata().await?;
-        let provider = metadata
-            .issuer
-            .as_deref()
-            .and_then(ChannelState::mcp_oauth_provider_by_issuer)
-            .ok_or(AuthError::RegistrationFailed("DCR is not supported and provider is not known".to_string()))?;
-
-        if provider.issuer == GITHUB_ISSUER {
-            scopes = &GITHUB_OAUTH_SCOPES;
-        }
-
-        OAuthClientConfig::new(provider.client_id.into_owned(), redirect_uri.clone())
-            .with_client_secret(provider.client_secret.into_owned())
+        // Try dynamic client registration.
+        let mut oauth_state = OAuthState::Unauthorized(auth_manager);
+        oauth_state
+            .start_authorization(&[], &redirect_uri, Some("Warp"))
+            .await?;
+        oauth_state
     };
 
-    let client_secret = config.client_secret.clone();
-
-    auth_manager.configure_client(config)?;
-
-    let auth_url = auth_manager.get_authorization_url(scopes).await?;
-    oauth_state = OAuthState::Session(AuthorizationSession::for_scope_upgrade(
-        auth_manager,
-        auth_url.clone(),
-        &redirect_uri,
-    ));
+    let auth_url = oauth_state.get_authorization_url().await?;
 
     // Extract the CSRF token that rmcp embedded as the `state` query parameter in the
     // authorization URL. We register a csrf→uuid mapping on the manager so that
@@ -526,7 +522,6 @@ pub(crate) fn write_to_secure_storage<T: Serialize>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::transport::auth::OAuthTokenResponse;
 
     /// Builds a minimal `OAuthTokenResponse` for tests, optionally with a refresh token.
     fn make_test_token_response(refresh_token: Option<&str>) -> OAuthTokenResponse {
@@ -563,16 +558,16 @@ mod tests {
         let original = PersistedCredentials::new(
             "client-abc".to_string(),
             Some("shh".to_string()),
-            make_test_token_response(Some("refresh-1")),
+            Some(make_test_token_response(Some("refresh-1"))),
             Some(1_700_000_000),
         );
 
         let json = serde_json::to_string(&original).expect("serialize");
         let parsed: PersistedCredentials = serde_json::from_str(&json).expect("deserialize");
 
-        assert_eq!(parsed.client_id, original.client_id);
+        assert_eq!(parsed.credentials.client_id, original.credentials.client_id);
         assert_eq!(parsed.client_secret, original.client_secret);
-        assert_eq!(parsed.token_received_at, Some(1_700_000_000));
+        assert_eq!(parsed.credentials.token_received_at, Some(1_700_000_000));
     }
 
     /// Backward compatibility: credentials persisted by older Warp versions do not
@@ -596,8 +591,8 @@ mod tests {
         let parsed: PersistedCredentials =
             serde_json::from_str(legacy_json).expect("legacy format must deserialize");
 
-        assert_eq!(parsed.client_id, "client-abc");
-        assert_eq!(parsed.token_received_at, None);
+        assert_eq!(parsed.credentials.client_id, "client-abc");
+        assert_eq!(parsed.credentials.token_received_at, None);
     }
 
     /// Regression test for #8863. When rmcp persists refreshed credentials via
@@ -620,8 +615,8 @@ mod tests {
         store.save(credentials).await.expect("save succeeds");
 
         let persisted = rx.try_recv().expect("persist channel received credentials");
-        assert_eq!(persisted.token_received_at, Some(1_700_000_500));
-        assert_eq!(persisted.client_id, "client-id");
+        assert_eq!(persisted.credentials.token_received_at, Some(1_700_000_500));
+        assert_eq!(persisted.credentials.client_id, "client-id");
         assert_eq!(
             persisted.client_secret.as_deref(),
             Some("client_secret_xyz")
@@ -645,7 +640,7 @@ mod tests {
         store.save(credentials).await.expect("save succeeds");
 
         let persisted = rx.try_recv().expect("persist channel received credentials");
-        assert_eq!(persisted.token_received_at, None);
+        assert_eq!(persisted.credentials.token_received_at, None);
     }
 
     /// `save` only forwards a credentials snapshot to the persist channel when
@@ -698,15 +693,17 @@ mod tests {
 
         let persisted = rx.try_recv().expect("persist channel received credentials");
         assert_eq!(
-            persisted.token_received_at,
+            persisted.credentials.token_received_at,
             Some(1_700_000_500),
             "newer received_at preserved"
         );
+
+        let refresh_token = persisted
+            .credentials
+            .token_response
+            .and_then(|tr| tr.refresh_token().cloned());
         assert_eq!(
-            persisted
-                .token_response
-                .refresh_token()
-                .map(|rt| rt.secret().to_string()),
+            refresh_token.map(|rt| rt.secret().to_string()),
             Some("prior-refresh-token".to_string()),
             "prior refresh token carried forward"
         );
