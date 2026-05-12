@@ -38,6 +38,7 @@ fn base_codebase_index_status(
         progress_completed: None,
         progress_total: None,
         failure_message: None,
+        root_hash: None,
     }
 }
 
@@ -55,6 +56,7 @@ pub(super) fn codebase_index_status_to_proto(
         progress_completed,
         progress_total,
         failure_message: failure_message_from_codebase_index_status(status),
+        root_hash: status.root_hash().map(|hash| hash.to_string()),
     }
 }
 

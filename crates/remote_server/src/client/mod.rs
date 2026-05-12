@@ -17,11 +17,11 @@ use crate::proto::{
     client_message, get_fragment_metadata_from_hash_response, server_message, Abort, Authenticate,
     BufferEdit, ClientMessage, CloseBuffer, DeleteFile, DiffStateFileDelta,
     DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex, ErrorCode,
-    FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashSuccess,
-    IndexCodebase, Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
-    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
-    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
-    SessionBootstrapped, TextEdit, WriteFile,
+    FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash,
+    GetFragmentMetadataFromHashSuccess, IndexCodebase, Initialize, InitializeResponse,
+    LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse, OpenBuffer,
+    OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse, RunCommandRequest,
+    RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};

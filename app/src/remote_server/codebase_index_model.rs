@@ -191,6 +191,10 @@ impl RemoteCodebaseIndexModel {
             | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
             | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
             | RemoteServerManagerEvent::BufferUpdated { .. }
+            | RemoteServerManagerEvent::BufferConflictDetected { .. }
+            | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
+            | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
+            | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. }
             | RemoteServerManagerEvent::SetupStateChanged { .. }
             | RemoteServerManagerEvent::BinaryCheckComplete { .. }
             | RemoteServerManagerEvent::BinaryInstallComplete { .. }
