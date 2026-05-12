@@ -35,9 +35,7 @@
       "inputs": {
         "crane": "crane",
         "nixpkgs": "nixpkgs",
-        "rust-overlay": "rust-overlay",
-        "warpProtoApis": "warpProtoApis",
-        "warpWorkflows": "warpWorkflows"
+        "rust-overlay": "rust-overlay"
       }
     },
     "rust-overlay": {
@@ -57,38 +55,6 @@
       "original": {
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "type": "github"
-      }
-    },
-    "warpProtoApis": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1778267021,
-        "narHash": "sha256-qN7dw/EH0ftbpDsAmyNmvgYb8FWGRRig4AYHQqgxByg=",
-        "owner": "warpdotdev",
-        "repo": "warp-proto-apis",
-        "rev": "3dd0cd81eae83b4ce09c7805c8ef12599798aa26",
-        "type": "github"
-      },
-      "original": {
-        "owner": "warpdotdev",
-        "repo": "warp-proto-apis",
-        "type": "github"
-      }
-    },
-    "warpWorkflows": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1776965078,
-        "narHash": "sha256-ICgkxlUUIfyhr0agZEk3KtGHX0uNRlRCKtz0iF2jd7o=",
-        "owner": "warpdotdev",
-        "repo": "workflows",
-        "rev": "793a98ddda6ef19682aed66364faebd2829f0e01",
-        "type": "github"
-      },
-      "original": {
-        "owner": "warpdotdev",
-        "repo": "workflows",
         "type": "github"
       }
     }

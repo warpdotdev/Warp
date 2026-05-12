@@ -8,14 +8,6 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    warpProtoApis = {
-      url = "github:warpdotdev/warp-proto-apis";
-      flake = false;
-    };
-    warpWorkflows = {
-      url = "github:warpdotdev/workflows";
-      flake = false;
-    };
   };
 
   outputs =
@@ -24,8 +16,6 @@
       nixpkgs,
       crane,
       rust-overlay,
-      warpProtoApis,
-      warpWorkflows,
       ...
     }:
     let
@@ -70,20 +60,25 @@
                       find . -name 'Cargo.toml.orig' -delete
 
                       ${lib.optionalString (hasCrate "warp_multi_agent_api") ''
+                        mkdir -p apis/multi_agent/v1/gen/rust/nix-vendored-protos
+                        cp apis/multi_agent/v1/*.proto \
+                          apis/multi_agent/v1/gen/rust/nix-vendored-protos/
                         substituteInPlace apis/multi_agent/v1/gen/rust/build.rs \
                           --replace-fail \
                             'let proto_path = manifest_dir.parent().unwrap().parent().unwrap();' \
-                            'let proto_path = std::path::PathBuf::from("${warpProtoApis}/apis/multi_agent/v1");'
+                            'let proto_path = manifest_dir.join("nix-vendored-protos");'
                       ''}
 
                       ${lib.optionalString (hasCrate "warp-workflows") ''
+                        mkdir -p workflows/nix-vendored-specs
+                        cp -R specs/. workflows/nix-vendored-specs/
                         substituteInPlace workflows/build.rs \
                           --replace-fail \
                             'println!("cargo:rerun-if-changed=../specs");' \
-                            'println!("cargo:rerun-if-changed=${warpWorkflows}/specs");' \
+                            'println!("cargo:rerun-if-changed=nix-vendored-specs");' \
                           --replace-fail \
                             'for entry in WalkDir::new("../specs") {' \
-                            'for entry in WalkDir::new("${warpWorkflows}/specs") {'
+                            'for entry in WalkDir::new("nix-vendored-specs") {'
                       ''}
                     '';
                   });
