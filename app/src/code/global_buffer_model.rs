@@ -59,7 +59,7 @@ struct PendingDiffParse {
 /// How long to wait after the last keystroke before sending a batched
 /// `BufferEdit` to the remote server. Long enough to coalesce rapid
 /// keystrokes, short enough for the remote view to feel responsive.
-const REMOTE_EDIT_DEBOUNCE: Duration = Duration::from_millis(50);
+const REMOTE_EDIT_DEBOUNCE: Duration = Duration::from_millis(200);
 
 /// Accumulates incremental edits for a single remote buffer during a
 /// debounce window before sending them as a single `BufferEdit` message.
@@ -1651,6 +1651,9 @@ impl GlobalBufferModel {
                     sync_clock.client_version = new_cv;
 
                     // Build incremental edits from the ContentChanged delta.
+                    // Each PreciseDelta carries the replaced range (old buffer
+                    // coordinates) and the resolved range (new buffer coordinates)
+                    // from which we can read the replacement text.
                     let Some(buffer) = state.buffer.upgrade(ctx) else {
                         return;
                     };
@@ -1658,6 +1661,7 @@ impl GlobalBufferModel {
                         .precise_deltas
                         .iter()
                         .map(|d| {
+                            // Wire offsets are 1-indexed (matching CharOffset).
                             let text = buffer
                                 .as_ref(ctx)
                                 .text_in_range(d.resolved_range.clone())
@@ -1681,6 +1685,8 @@ impl GlobalBufferModel {
                     batch.latest_client_version = new_cv;
 
                     // Cancel any existing debounce timer and schedule a new one.
+                    // Uses the same Timer::after + abort_handle pattern as
+                    // LanguageServerShutdownManager::schedule_next_scan.
                     if let Some(timer) = batch.debounce_timer.take() {
                         timer.abort();
                     }
@@ -2230,12 +2236,6 @@ impl GlobalBufferModel {
             return;
         };
 
-        // Discard any pending edit batch. A server push arriving while we
-        // have unflushed edits means conflict (our C has been bumped locally
-        // but the server doesn't know), and flushing would be pointless
-        // since the server's S has moved past our batch's S_expected.
-        Self::discard_batch(pending_batch);
-
         log::debug!(
             "[remote-buffer] SyncClock state: local_sv={:?} local_cv={:?}",
             sync_clock.server_version,
@@ -2289,7 +2289,9 @@ impl GlobalBufferModel {
                 );
                 return;
             }
-            // Conflict — local edits diverged from server.
+            // Conflict — local edits diverged from server. Discard any
+            // pending edit batch since conflict resolution will re-sync.
+            Self::discard_batch(pending_batch);
             log::info!(
                 "[remote-buffer] CONFLICT for {path}: push expected C={expected_client_version}, \
                  but local C={:?}. Emitting RemoteBufferConflict.",
@@ -2473,3 +2475,7 @@ impl GlobalBufferModel {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "global_buffer_model_tests.rs"]
+mod global_buffer_model_tests;
