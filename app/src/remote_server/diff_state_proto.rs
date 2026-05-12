@@ -6,11 +6,10 @@
 //! This module lives in `app/` (rather than in the `remote_server` crate alongside
 //! `repo_metadata_proto`) because it depends on app-level types
 //! (`code_review::diff_state`, `util::git`) that are not available in the crate.
-use std::path::{Path, PathBuf};
-
-use typed_path::TypedPath;
+use std::path::Path;
 
 use super::proto;
+use warp_util::standardized_path::StandardizedPath;
 
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::code_review::diff_state::{
@@ -20,25 +19,6 @@ use crate::code_review::diff_state::{
 use crate::util::git::{Commit, PrInfo};
 
 // ── Proto → Rust (for incoming client messages) ────────────────────
-
-/// Rejects empty, absolute, and parent-traversal (`..`) paths.
-///
-/// Uses `typed_path` for platform-agnostic detection so that Unix-style
-/// absolute paths (e.g. `/etc/passwd`) are rejected even on Windows.
-fn validate_relative_path(path: &str) -> Result<(), String> {
-    let p = Path::new(path);
-    let typed = TypedPath::derive(path);
-    if p.as_os_str().is_empty()
-        || typed.is_absolute()
-        || p.components().any(|c| c == std::path::Component::ParentDir)
-    {
-        return Err(format!(
-            "rejecting path with traversal or absolute component: {}",
-            p.display()
-        ));
-    }
-    Ok(())
-}
 
 impl From<&proto::DiffMode> for DiffMode {
     fn from(proto_mode: &proto::DiffMode) -> Self {
@@ -52,22 +32,23 @@ impl From<&proto::DiffMode> for DiffMode {
     }
 }
 
-impl From<&proto::GitFileStatus> for GitFileStatus {
-    fn from(proto_status: &proto::GitFileStatus) -> Self {
+impl TryFrom<&proto::GitFileStatus> for GitFileStatus {
+    type Error = String;
+
+    fn try_from(proto_status: &proto::GitFileStatus) -> Result<Self, Self::Error> {
         match &proto_status.status {
-            Some(proto::git_file_status::Status::NewFile(_)) => GitFileStatus::New,
-            Some(proto::git_file_status::Status::Modified(_)) => GitFileStatus::Modified,
-            Some(proto::git_file_status::Status::Deleted(_)) => GitFileStatus::Deleted,
-            Some(proto::git_file_status::Status::Renamed(r)) => GitFileStatus::Renamed {
+            Some(proto::git_file_status::Status::NewFile(_)) => Ok(GitFileStatus::New),
+            Some(proto::git_file_status::Status::Modified(_)) => Ok(GitFileStatus::Modified),
+            Some(proto::git_file_status::Status::Deleted(_)) => Ok(GitFileStatus::Deleted),
+            Some(proto::git_file_status::Status::Renamed(r)) => Ok(GitFileStatus::Renamed {
                 old_path: r.old_path.clone(),
-            },
-            Some(proto::git_file_status::Status::Copied(c)) => GitFileStatus::Copied {
+            }),
+            Some(proto::git_file_status::Status::Copied(c)) => Ok(GitFileStatus::Copied {
                 old_path: c.old_path.clone(),
-            },
-            Some(proto::git_file_status::Status::Untracked(_)) => GitFileStatus::Untracked,
-            Some(proto::git_file_status::Status::Conflicted(_)) => GitFileStatus::Conflicted,
-            // Default to Modified for unrecognized/missing status.
-            None => GitFileStatus::Modified,
+            }),
+            Some(proto::git_file_status::Status::Untracked(_)) => Ok(GitFileStatus::Untracked),
+            Some(proto::git_file_status::Status::Conflicted(_)) => Ok(GitFileStatus::Conflicted),
+            None => Err("missing status variant in GitFileStatus".to_string()),
         }
     }
 }
@@ -76,27 +57,24 @@ impl TryFrom<&proto::FileStatusInfo> for FileStatusInfo {
     type Error = String;
 
     fn try_from(proto_info: &proto::FileStatusInfo) -> Result<Self, Self::Error> {
-        validate_relative_path(&proto_info.path)?;
+        let path = StandardizedPath::try_new(&proto_info.path).map_err(|e| e.to_string())?;
 
         let status: GitFileStatus = proto_info
             .status
             .as_ref()
-            .map(GitFileStatus::from)
-            .unwrap_or(GitFileStatus::Modified);
+            .ok_or_else(|| "missing status in FileStatusInfo".to_string())
+            .and_then(GitFileStatus::try_from)?;
 
         // Validate old_path in Renamed/Copied variants — these also flow
         // into git restore/checkout commands during discard.
         match &status {
             GitFileStatus::Renamed { old_path } | GitFileStatus::Copied { old_path } => {
-                validate_relative_path(old_path)?;
+                StandardizedPath::try_new(old_path).map_err(|e| e.to_string())?;
             }
             _ => {}
         }
 
-        Ok(FileStatusInfo {
-            path: PathBuf::from(&proto_info.path),
-            status,
-        })
+        Ok(FileStatusInfo { path, status })
     }
 }
 

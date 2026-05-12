@@ -4,7 +4,7 @@ use crate::code_review::diff_state::DiffMode;
 
 use super::super::protocol::RequestId;
 use super::super::server_model::ConnectionId;
-use super::{DiffModelKey, GlobalDiffStateModel};
+use super::{DiffModelKey, RemoteDiffStateManager};
 
 /// Uses `try_new` instead of `try_from_local` so that Unix-style paths
 /// like `/repo` are recognised as absolute on all platforms (including Windows).
@@ -23,7 +23,7 @@ fn new_conn() -> ConnectionId {
 
 #[test]
 fn subscribe_registers_connection() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn = new_conn();
 
@@ -34,7 +34,7 @@ fn subscribe_registers_connection() {
 
 #[test]
 fn subscribe_multiple_connections_to_same_key() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn_a = new_conn();
     let conn_b = new_conn();
@@ -50,7 +50,7 @@ fn subscribe_multiple_connections_to_same_key() {
 
 #[test]
 fn subscribe_same_connection_to_different_keys() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key_head = test_key("/repo", DiffMode::Head);
     let key_main = test_key("/repo", DiffMode::MainBranch);
     let conn = new_conn();
@@ -64,7 +64,7 @@ fn subscribe_same_connection_to_different_keys() {
 
 #[test]
 fn subscribed_connections_returns_empty_for_unknown_key() {
-    let model = GlobalDiffStateModel::new();
+    let model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
 
     assert!(model.subscribed_connections(&key).is_empty());
@@ -74,7 +74,7 @@ fn subscribed_connections_returns_empty_for_unknown_key() {
 
 #[test]
 fn unsubscribe_last_connection_removes_model() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn = new_conn();
 
@@ -94,7 +94,7 @@ fn unsubscribe_last_connection_removes_model() {
 
 #[test]
 fn unsubscribe_one_of_two_keeps_model() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn_a = new_conn();
     let conn_b = new_conn();
@@ -115,7 +115,7 @@ fn unsubscribe_one_of_two_keeps_model() {
 
 #[test]
 fn unsubscribe_clears_pending_responses_for_that_connection() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn_a = new_conn();
     let conn_b = new_conn();
@@ -142,7 +142,7 @@ fn unsubscribe_clears_pending_responses_for_that_connection() {
 
 #[test]
 fn remove_connection_unsubscribes_from_all_keys() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key_head = test_key("/repo", DiffMode::Head);
     let key_main = test_key("/repo", DiffMode::MainBranch);
     let conn = new_conn();
@@ -167,7 +167,7 @@ fn remove_connection_unsubscribes_from_all_keys() {
 
 #[test]
 fn remove_connection_keeps_models_with_other_subscribers() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn_a = new_conn();
     let conn_b = new_conn();
@@ -188,7 +188,7 @@ fn remove_connection_keeps_models_with_other_subscribers() {
 
 #[test]
 fn remove_connection_clears_pending_responses() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn = new_conn();
 
@@ -210,7 +210,7 @@ fn remove_connection_clears_pending_responses() {
 
 #[test]
 fn has_pending_responses_false_when_empty() {
-    let model = GlobalDiffStateModel::new();
+    let model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
 
     assert!(!model.has_pending_responses(&key));
@@ -218,7 +218,7 @@ fn has_pending_responses_false_when_empty() {
 
 #[test]
 fn add_and_drain_pending_responses() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn = new_conn();
     let rid = RequestId::new();
@@ -237,7 +237,7 @@ fn add_and_drain_pending_responses() {
 
 #[test]
 fn drain_pending_responses_returns_empty_for_unknown_key() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
 
     assert!(model.drain_pending_responses(&key).is_empty());
@@ -245,7 +245,7 @@ fn drain_pending_responses_returns_empty_for_unknown_key() {
 
 #[test]
 fn multiple_pending_responses_for_same_key() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn_a = new_conn();
     let conn_b = new_conn();
@@ -263,7 +263,7 @@ fn multiple_pending_responses_for_same_key() {
 
 #[test]
 fn get_model_returns_none_when_empty() {
-    let model = GlobalDiffStateModel::new();
+    let model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
 
     assert!(model.get_model(&key).is_none());
@@ -271,7 +271,7 @@ fn get_model_returns_none_when_empty() {
 
 #[test]
 fn insert_and_get_model() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
 
     warpui::App::test((), |mut app| async move {
@@ -285,7 +285,7 @@ fn insert_and_get_model() {
 
 #[test]
 fn remove_model_clears_pending_and_subscriptions() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key = test_key("/repo", DiffMode::Head);
     let conn = new_conn();
 
@@ -308,7 +308,7 @@ fn remove_model_clears_pending_and_subscriptions() {
 
 #[test]
 fn different_modes_are_different_keys() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key_head = test_key("/repo", DiffMode::Head);
     let key_main = test_key("/repo", DiffMode::MainBranch);
     let conn = new_conn();
@@ -321,7 +321,7 @@ fn different_modes_are_different_keys() {
 
 #[test]
 fn different_repos_are_different_keys() {
-    let mut model = GlobalDiffStateModel::new();
+    let mut model = RemoteDiffStateManager::new();
     let key_a = test_key("/repo-a", DiffMode::Head);
     let key_b = test_key("/repo-b", DiffMode::Head);
     let conn = new_conn();

@@ -12,7 +12,7 @@ use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::platform::TerminationMode;
 use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
-use warpui::{Entity, ModelContext, SingletonEntity};
+use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
 use warp_files::{FileModel, FileModelEvent};
@@ -20,7 +20,9 @@ use warp_util::content_version::ContentVersion;
 use warp_util::file::FileId;
 
 use super::diff_state_proto;
-use super::diff_state_tracker::{DiffModelKey, GlobalDiffStateModel};
+use super::diff_state_tracker::{
+    DiffModelKey, DiffStateUpdate, RemoteDiffStateManager, SubscribeOutcome,
+};
 use super::proto::{
     client_message, delete_file_response, discard_files_response, get_diff_state_response,
     resolve_conflict_response, run_command_response, save_buffer_response, server_message,
@@ -36,9 +38,7 @@ use super::proto::{
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
-use crate::code_review::diff_state::{
-    DiffState, DiffStateModelEvent, FileStatusInfo, LocalDiffStateModel,
-};
+use crate::code_review::diff_state::{DiffMode, FileStatusInfo};
 
 /// How long the daemon waits with no connections before exiting.
 pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 * 60);
@@ -186,7 +186,7 @@ pub struct ServerModel {
     /// buffer requests (OpenBuffer, SaveBuffer).
     buffers: ServerBufferTracker,
     /// Manages per-(repo, mode) diff state models and per-connection subscriptions.
-    diff_states: GlobalDiffStateModel,
+    diff_states: ModelHandle<RemoteDiffStateManager>,
 }
 
 impl Entity for ServerModel {
@@ -213,7 +213,7 @@ impl ServerModel {
             pending_file_ops: PendingFileOps::new(),
             auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             buffers: ServerBufferTracker::new(),
-            diff_states: GlobalDiffStateModel::new(),
+            diff_states: ctx.add_model(|_| RemoteDiffStateManager::new()),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -517,6 +517,14 @@ impl ServerModel {
                 }
             });
         }
+        // Subscribe to diff state manager events — convert domain dispatches
+        // to proto messages and send them to connected clients.
+        {
+            let diff_states = model.diff_states.clone();
+            ctx.subscribe_to_model(&diff_states, |me, dispatch, _ctx| {
+                me.handle_diff_state_update(dispatch);
+            });
+        }
         // Start the grace timer immediately so the daemon exits if no proxy
         // connects within GRACE_PERIOD. In practice the spawning proxy connects
         // within milliseconds, so the risk of premature shutdown is negligible;
@@ -565,7 +573,8 @@ impl ServerModel {
 
         // Remove this connection from diff state subscriptions.
         // Orphaned models (no subscribers) are dropped automatically.
-        self.diff_states.remove_connection(conn_id);
+        self.diff_states
+            .update(ctx, |mgr, _| mgr.remove_connection(conn_id));
 
         let remaining = self.connection_senders.len();
         log::info!("Daemon: connection {conn_id} deregistered — {remaining} active remaining");
@@ -629,7 +638,7 @@ impl ServerModel {
                 return;
             }
             Some(client_message::Message::Abort(abort)) => {
-                self.handle_abort(abort, &request_id);
+                self.handle_abort(abort, &request_id, ctx);
                 return;
             }
             Some(client_message::Message::RunCommand(req)) => {
@@ -671,7 +680,7 @@ impl ServerModel {
                 self.handle_get_diff_state(msg, &request_id, conn_id, ctx)
             }
             Some(client_message::Message::UnsubscribeDiffState(msg)) => {
-                self.handle_unsubscribe_diff_state(msg, conn_id);
+                self.handle_unsubscribe_diff_state(msg, conn_id, ctx);
                 return; // fire-and-forget notification
             }
             Some(client_message::Message::DiscardFiles(msg)) => {
@@ -890,8 +899,10 @@ impl ServerModel {
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.
+    /// Checks `ServerModel`'s own in-progress map first, then delegates to
+    /// the diff state manager for content reload requests.
     /// This is a notification — no response is sent.
-    fn handle_abort(&mut self, abort: Abort, request_id: &RequestId) {
+    fn handle_abort(&mut self, abort: Abort, request_id: &RequestId, ctx: &mut ModelContext<Self>) {
         let target_id = RequestId::from(abort.request_id_to_abort);
         if let Some(handle) = self.in_progress.remove(&target_id) {
             log::info!(
@@ -900,10 +911,15 @@ impl ServerModel {
             );
             handle.abort();
         } else {
-            log::info!(
-                "Abort for unknown/completed request (request_id={target_id}, \
-                 abort_request_id={request_id})"
-            );
+            let found = self
+                .diff_states
+                .update(ctx, |mgr, _| mgr.abort_request(&target_id));
+            if !found {
+                log::info!(
+                    "Abort for unknown/completed request (request_id={target_id}, \
+                     abort_request_id={request_id})"
+                );
+            }
         }
     }
 
@@ -1669,9 +1685,6 @@ impl ServerModel {
     }
 
     /// Handles `GetDiffState` — subscribe to a (repo, mode) pair.
-    /// Creates a `LocalDiffStateModel` if one doesn't exist, subscribes the
-    /// connection, and responds with the current state (sync) or defers the
-    /// response until the model finishes loading (async).
     fn handle_get_diff_state(
         &mut self,
         msg: super::proto::GetDiffState,
@@ -1679,6 +1692,8 @@ impl ServerModel {
         conn_id: ConnectionId,
         ctx: &mut ModelContext<Self>,
     ) -> HandlerOutcome {
+        // Proto3 message fields are always optional on the wire, so `mode`
+        // cannot be made required at the schema level — validate at runtime.
         let Some(mode_proto) = &msg.mode else {
             return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
                 code: ErrorCode::InvalidRequest.into(),
@@ -1697,75 +1712,37 @@ impl ServerModel {
             }
         };
 
-        let key = DiffModelKey {
-            repo_path: std_path,
-            mode: mode_proto.into(),
-        };
+        let mode: DiffMode = mode_proto.into();
 
         log::info!(
-            "Handling GetDiffState repo={} mode={:?} (request_id={request_id})",
+            "Handling GetDiffState repo={} mode={mode:?} (request_id={request_id})",
             msg.repo_path,
-            key.mode
         );
 
-        // Subscribe this connection.
-        self.diff_states.subscribe_connection(key.clone(), conn_id);
+        let outcome = self.diff_states.update(ctx, |mgr, ctx| {
+            mgr.subscribe(std_path, mode, request_id, conn_id, ctx)
+        });
 
-        // Look up or create the model.
-        if let Some(model) = self.diff_states.get_model(&key) {
-            let model_ref = model.as_ref(ctx);
-            let state = model_ref.get();
-            match state {
-                DiffState::Loaded => self.spawn_content_reload_for_subscriber(
-                    key,
-                    msg.repo_path.clone(),
-                    request_id,
-                    conn_id,
-                    ctx,
-                ),
-                DiffState::Error(_) | DiffState::NotInRepository => {
-                    // Terminal state with no diffs — respond immediately.
-                    let repo_path_str = key.repo_path.to_string();
-                    let snapshot = diff_state_proto::build_diff_state_snapshot(
-                        &repo_path_str,
-                        &key.mode,
-                        model_ref.metadata(),
-                        &state,
-                        None,
-                    );
-                    HandlerOutcome::Sync(server_message::Message::GetDiffStateResponse(
-                        GetDiffStateResponse {
-                            result: Some(get_diff_state_response::Result::Snapshot(snapshot)),
-                        },
-                    ))
-                }
-                DiffState::Loading => {
-                    // Model is still loading — defer response.
-                    self.diff_states
-                        .add_pending_response(key, request_id.clone(), conn_id);
-                    HandlerOutcome::Async(None)
-                }
+        match outcome {
+            SubscribeOutcome::RespondWithSnapshot {
+                key,
+                state,
+                metadata,
+            } => {
+                let snapshot = diff_state_proto::build_diff_state_snapshot(
+                    key.repo_path.as_str(),
+                    &key.mode,
+                    metadata.as_ref(),
+                    &state,
+                    None,
+                );
+                HandlerOutcome::Sync(server_message::Message::GetDiffStateResponse(
+                    GetDiffStateResponse {
+                        result: Some(get_diff_state_response::Result::Snapshot(snapshot)),
+                    },
+                ))
             }
-        } else {
-            // Model doesn't exist — create it.
-            let repo_path_str = msg.repo_path.clone();
-            let model = ctx.add_model(|ctx| {
-                let mut m = LocalDiffStateModel::new(Some(repo_path_str), ctx);
-                m.set_diff_mode(key.mode.clone(), false, ctx);
-                m.set_code_review_metadata_refresh_enabled(true, ctx);
-                m
-            });
-
-            // Subscribe to events from this model.
-            let key_for_sub = key.clone();
-            ctx.subscribe_to_model(&model, move |me, event, ctx| {
-                me.handle_diff_state_model_event(&key_for_sub, event, ctx);
-            });
-
-            self.diff_states.insert_model(key.clone(), model);
-            self.diff_states
-                .add_pending_response(key, request_id.clone(), conn_id);
-            HandlerOutcome::Async(None)
+            SubscribeOutcome::Async => HandlerOutcome::Async(None),
         }
     }
 
@@ -1774,6 +1751,7 @@ impl ServerModel {
         &mut self,
         msg: super::proto::UnsubscribeDiffState,
         conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
     ) {
         let Some(mode_proto) = &msg.mode else {
             log::warn!("UnsubscribeDiffState from conn={conn_id}: missing mode");
@@ -1799,176 +1777,92 @@ impl ServerModel {
             key.mode
         );
 
-        self.diff_states.unsubscribe_connection(&key, conn_id);
+        self.diff_states
+            .update(ctx, |mgr, _| mgr.unsubscribe_connection(&key, conn_id));
     }
 
-    /// Dispatches a `DiffStateModelEvent` from a `LocalDiffStateModel` to the
-    /// appropriate proto message and sends it to subscribed connections.
-    fn handle_diff_state_model_event(
-        &mut self,
-        key: &DiffModelKey,
-        event: &DiffStateModelEvent,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let repo_path_str = key.repo_path.to_string();
-
-        match event {
-            DiffStateModelEvent::NewDiffsComputed(diffs) => {
-                // Read current state + metadata from the model for the snapshot.
-                let (state, metadata) =
-                    self.diff_states
-                        .read_state_and_metadata(key, DiffState::Loading, ctx);
-
+    /// Converts a domain-level diff state dispatch to proto messages
+    /// and sends them to the appropriate connections.
+    fn handle_diff_state_update(&self, update: &DiffStateUpdate) {
+        match update {
+            DiffStateUpdate::Snapshot {
+                repo_path,
+                mode,
+                state,
+                metadata,
+                diffs,
+                subscribers,
+            } => {
                 let snapshot = diff_state_proto::build_diff_state_snapshot(
-                    &repo_path_str,
-                    &key.mode,
+                    repo_path,
+                    mode,
                     metadata.as_ref(),
-                    &state,
-                    diffs.as_ref().map(|d| d.as_ref()),
+                    state,
+                    diffs.as_deref(),
                 );
-
-                // Drain pending GetDiffState responses.
-                // These connections receive their initial snapshot as a GetDiffStateResponse
-                // and are excluded from the broadcast push to avoid sending duplicate data.
-                let responded_conns: HashSet<ConnectionId> = self
-                    .diff_states
-                    .drain_pending_responses(key)
-                    .into_iter()
-                    .map(|pending| {
+                for (conn_id, request_id) in subscribers {
+                    if let Some(request_id) = request_id {
                         self.send_server_message(
-                            Some(pending.conn_id),
-                            Some(&pending.request_id),
+                            Some(*conn_id),
+                            Some(request_id),
                             server_message::Message::GetDiffStateResponse(GetDiffStateResponse {
                                 result: Some(get_diff_state_response::Result::Snapshot(
                                     snapshot.clone(),
                                 )),
                             }),
                         );
-                        pending.conn_id
-                    })
-                    .collect();
-
-                // Push to subscribers that didn't already get a response.
-                for conn_id in self.diff_states.subscribed_connections(key) {
-                    if !responded_conns.contains(&conn_id) {
+                    } else {
                         self.send_server_message(
-                            Some(conn_id),
+                            Some(*conn_id),
                             None,
                             server_message::Message::DiffStateSnapshot(snapshot.clone()),
                         );
                     }
                 }
             }
-            DiffStateModelEvent::MetadataRefreshed(metadata) => {
+            DiffStateUpdate::MetadataUpdate {
+                repo_path,
+                mode,
+                metadata,
+                subscribers,
+            } => {
                 let update = diff_state_proto::build_diff_state_metadata_update(
-                    &repo_path_str,
-                    &key.mode,
+                    repo_path.as_str(),
+                    mode,
                     metadata,
                 );
-                self.send_to_diff_state_subscribers(
-                    key,
-                    server_message::Message::DiffStateMetadataUpdate(update),
-                );
-            }
-            DiffStateModelEvent::CurrentBranchChanged => {
-                // Push metadata only as the new branch hasn't been loaded yet.
-                // NewDiffsComputed will follow with the actual diffs.
-                if let Some(model) = self.diff_states.get_model(key) {
-                    if let Some(metadata) = model.as_ref(ctx).metadata() {
-                        let update = diff_state_proto::build_diff_state_metadata_update(
-                            &repo_path_str,
-                            &key.mode,
-                            metadata,
-                        );
-                        self.send_to_diff_state_subscribers(
-                            key,
-                            server_message::Message::DiffStateMetadataUpdate(update),
-                        );
-                    }
-                }
-            }
-            DiffStateModelEvent::SingleFileUpdated { path, diff } => {
-                let diff_ref = diff.as_ref().map(|d| d.as_ref());
-                let metadata = self
-                    .diff_states
-                    .get_model(key)
-                    .and_then(|m| m.as_ref(ctx).metadata().cloned());
-                let delta = diff_state_proto::build_diff_state_file_delta(
-                    &repo_path_str,
-                    &key.mode,
-                    path,
-                    diff_ref,
-                    metadata.as_ref(),
-                );
-                self.send_to_diff_state_subscribers(
-                    key,
-                    server_message::Message::DiffStateFileDelta(delta),
-                );
-            }
-        }
-    }
-
-    /// Spawns an async diff reload with `content_at_base` for late-joining
-    /// subscribers. Used when the model is already `Loaded` but the expensive
-    /// content data was shed after the initial `NewDiffsComputed` event.
-    fn spawn_content_reload_for_subscriber(
-        &mut self,
-        key: DiffModelKey,
-        repo_path: String,
-        request_id: &RequestId,
-        conn_id: ConnectionId,
-        ctx: &mut ModelContext<Self>,
-    ) -> HandlerOutcome {
-        if self.diff_states.has_pending_responses(&key) {
-            // A reload is already in-flight — piggyback on it.
-            self.diff_states
-                .add_pending_response(key, request_id.clone(), conn_id);
-            return HandlerOutcome::Async(None);
-        }
-
-        let diff_mode = key.mode.clone();
-        let diff_model_key = key.clone();
-
-        self.diff_states
-            .add_pending_response(key, request_id.clone(), conn_id);
-
-        let handle = self.spawn_request_handler(
-            request_id.clone(),
-            async move {
-                LocalDiffStateModel::load_diffs_with_content_for_mode(
-                    diff_mode,
-                    PathBuf::from(repo_path),
-                )
-                .await
-            },
-            move |me, diffs, ctx| {
-                let (state, metadata) =
-                    me.diff_states
-                        .read_state_and_metadata(&diff_model_key, DiffState::Loaded, ctx);
-
-                let snapshot = diff_state_proto::build_diff_state_snapshot(
-                    &diff_model_key.repo_path.to_string(),
-                    &diff_model_key.mode,
-                    metadata.as_ref(),
-                    &state,
-                    diffs.as_ref(),
-                );
-
-                for pending in me.diff_states.drain_pending_responses(&diff_model_key) {
-                    me.send_server_message(
-                        Some(pending.conn_id),
-                        Some(&pending.request_id),
-                        server_message::Message::GetDiffStateResponse(GetDiffStateResponse {
-                            result: Some(get_diff_state_response::Result::Snapshot(
-                                snapshot.clone(),
-                            )),
-                        }),
+                for conn_id in subscribers {
+                    self.send_server_message(
+                        Some(*conn_id),
+                        None,
+                        server_message::Message::DiffStateMetadataUpdate(update.clone()),
                     );
                 }
-            },
-            ctx,
-        );
-        HandlerOutcome::Async(Some(handle))
+            }
+            DiffStateUpdate::FileDelta {
+                repo_path,
+                mode,
+                path,
+                diff,
+                metadata,
+                subscribers,
+            } => {
+                let delta = diff_state_proto::build_diff_state_file_delta(
+                    repo_path.as_str(),
+                    mode,
+                    path,
+                    diff.as_deref(),
+                    metadata.as_ref(),
+                );
+                for conn_id in subscribers {
+                    self.send_server_message(
+                        Some(*conn_id),
+                        None,
+                        server_message::Message::DiffStateFileDelta(delta.clone()),
+                    );
+                }
+            }
+        }
     }
 
     /// Handles `DiscardFilesRequest` — request/response.
@@ -2014,7 +1908,10 @@ impl ServerModel {
             mode: mode_proto.into(),
         };
 
-        let Some(model) = self.diff_states.get_model(&key).cloned() else {
+        let model = self
+            .diff_states
+            .update(ctx, |mgr, _| mgr.get_model(&key).cloned());
+        let Some(model) = model else {
             return HandlerOutcome::Sync(server_message::Message::DiscardFilesResponse(
                 DiscardFilesResponse {
                     result: Some(discard_files_response::Result::Error(DiscardFilesError {
@@ -2070,13 +1967,6 @@ impl ServerModel {
                 )),
             },
         ))
-    }
-
-    /// Sends a push message to all connections subscribed to the given diff state key.
-    fn send_to_diff_state_subscribers(&self, key: &DiffModelKey, message: server_message::Message) {
-        for conn_id in self.diff_states.subscribed_connections(key) {
-            self.send_server_message(Some(conn_id), None, message.clone());
-        }
     }
 }
 
