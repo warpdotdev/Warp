@@ -393,7 +393,7 @@ use warpui::elements::new_scrollable::{
 use warpui::elements::{
     get_rich_content_position_id, ChildAnchor, ClippedScrollStateHandle, Container,
     CrossAxisAlignment, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler,
-    Expanded, Flex, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement,
+    Expanded, Flex, LiveElement, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement,
     ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius,
     ScrollableElement, ScrollbarWidth, Shrinkable, Text,
 };
@@ -753,81 +753,8 @@ lazy_static! {
     pub static ref PADDING_LEFT: f32 = 16.;
 }
 
-/// Interval at which the live duration counter repaints.
-const LIVE_DURATION_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
-
-/// A wrapper element that triggers periodic repaints so the duration counter
-/// updates live while a shell command is still executing.
-struct LiveDurationElement {
-    child: Box<dyn Element>,
-    size: Option<Vector2F>,
-    origin: Option<warpui::elements::Point>,
-}
-
-impl LiveDurationElement {
-    fn new(child: Box<dyn Element>) -> Self {
-        Self {
-            child,
-            size: None,
-            origin: None,
-        }
-    }
-}
-
-impl Element for LiveDurationElement {
-    fn layout(
-        &mut self,
-        constraint: warpui::SizeConstraint,
-        ctx: &mut warpui::LayoutContext,
-        app: &AppContext,
-    ) -> Vector2F {
-        let size = self.child.layout(constraint, ctx, app);
-        self.size = Some(size);
-        size
-    }
-
-    fn after_layout(&mut self, ctx: &mut warpui::AfterLayoutContext, app: &AppContext) {
-        self.child.after_layout(ctx, app);
-    }
-
-    fn paint(&mut self, origin: Vector2F, ctx: &mut warpui::PaintContext, app: &AppContext) {
-        self.child.paint(origin, ctx, app);
-        self.origin = Some(warpui::elements::Point::from_vec2f(
-            origin,
-            ctx.scene.z_index(),
-        ));
-        ctx.repaint_after(LIVE_DURATION_REPAINT_INTERVAL);
-    }
-
-    fn size(&self) -> Option<Vector2F> {
-        self.size
-    }
-
-    fn origin(&self) -> Option<warpui::elements::Point> {
-        self.origin
-    }
-
-    fn dispatch_event(
-        &mut self,
-        event: &warpui::event::DispatchedEvent,
-        ctx: &mut warpui::EventContext,
-        app: &AppContext,
-    ) -> bool {
-        self.child.dispatch_event(event, ctx, app)
-    }
-
-    fn as_selectable_element(&self) -> Option<&dyn warpui::elements::SelectableElement> {
-        self.child.as_selectable_element()
-    }
-
-    // The `warp` crate does not have its own `test-util` feature, so we gate on `test` directly.
-    // `warpui/test-util` is enabled as a dev-dependency in `app/Cargo.toml`, so the trait method
-    // is always available when this `cfg(test)` block is compiled.
-    #[cfg(test)]
-    fn debug_text_content(&self) -> Option<String> {
-        self.child.debug_text_content()
-    }
-}
+/// Interval at which the live command duration counter repaints.
+const LIVE_COMMAND_DURATION_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
 pub struct ControlMasterErrorBannerState {
@@ -22051,6 +21978,16 @@ impl TerminalView {
             .is_some_and(|block| block.is_duration_live())
     }
 
+    /// Returns `true` when the block is actively executing (has started but not
+    /// yet completed). Used to kick off the repaint timer before the first
+    /// whole-second tick so the live duration counter appears promptly.
+    fn is_block_executing(model: &TerminalModel, block_index: BlockIndex) -> bool {
+        model
+            .block_list()
+            .block_at(block_index)
+            .is_some_and(|block| block.is_executing())
+    }
+
     fn block_start_and_completed_ts(model: &TerminalModel, block_index: BlockIndex) -> String {
         let block = match model.block_list().block_at(block_index) {
             None => return String::new(),
@@ -22388,10 +22325,10 @@ impl TerminalView {
             .with_color(terminal_theme_prompt)
             .finish();
 
-            // Wrap in LiveDurationElement to trigger periodic repaints while the command
+            // Wrap in LiveElement to trigger periodic repaints while the command
             // is still running, so the counter updates live.
             let duration: Box<dyn Element> = if is_live {
-                LiveDurationElement::new(duration).finish()
+                LiveElement::new(duration, LIVE_COMMAND_DURATION_REPAINT_INTERVAL).finish()
             } else {
                 duration
             };
@@ -22434,6 +22371,20 @@ impl TerminalView {
             } else {
                 duration
             });
+        } else if Self::is_block_executing(model, index) {
+            // Block is executing but less than 1 second has elapsed — no duration
+            // text to show yet. Add an invisible LiveElement to kick off the
+            // repaint timer so the counter appears as soon as 1s elapses.
+            label_row.add_child(
+                LiveElement::new(
+                    ConstrainedBox::new(Empty::new().finish())
+                        .with_width(0.)
+                        .with_height(0.)
+                        .finish(),
+                    LIVE_COMMAND_DURATION_REPAINT_INTERVAL,
+                )
+                .finish(),
+            );
         }
 
         SavePosition::new(
