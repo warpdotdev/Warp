@@ -7,11 +7,7 @@ use warp_core::features::FeatureFlag;
 use warp_core::HostId;
 use warp_multi_agent_api as api;
 
-fn request_params_with_settings(
-    ask_user_question_enabled: bool,
-    session_context: SessionContext,
-    remote_codebase_search_available: bool,
-) -> RequestParams {
+fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool) -> RequestParams {
     let model = LLMId::from("test-model");
 
     RequestParams {
@@ -22,7 +18,7 @@ fn request_params_with_settings(
         tasks: vec![],
         existing_suggestions: None,
         metadata: None,
-        session_context,
+        session_context: SessionContext::new_for_test(),
         model: model.clone(),
         coding_model: model.clone(),
         cli_agent_model: model.clone(),
@@ -40,7 +36,7 @@ fn request_params_with_settings(
         web_search_enabled: false,
         computer_use_enabled: false,
         ask_user_question_enabled,
-        remote_codebase_search_available,
+        remote_codebase_search_available: false,
         research_agent_enabled: false,
         orchestration_enabled: false,
         supported_tools_override: None,
@@ -49,22 +45,14 @@ fn request_params_with_settings(
     }
 }
 
-fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool) -> RequestParams {
-    request_params_with_settings(
-        ask_user_question_enabled,
-        SessionContext::new_for_test(),
-        false,
-    )
-}
-
 fn request_params_for_remote(remote_codebase_search_available: bool) -> RequestParams {
-    request_params_with_settings(
-        false,
+    let mut params = request_params_with_ask_user_question_enabled(false);
+    params.session_context =
         SessionContext::new_with_session_type_for_test(Some(SessionType::WarpifiedRemote {
             host_id: Some(HostId::new("host".to_string())),
-        })),
-        remote_codebase_search_available,
-    )
+        }));
+    params.remote_codebase_search_available = remote_codebase_search_available;
+    params
 }
 
 #[test]
