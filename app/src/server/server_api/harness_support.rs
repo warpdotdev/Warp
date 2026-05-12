@@ -13,7 +13,7 @@
 //   - 顶层 `upload_to_target` 包装:维持公共 API 供 agent_sdk/driver/snapshot.rs
 //     调用,内部委托给 presigned_upload(同样已 stub 返回错误)。
 // 改造:
-//   - `HarnessSupportClient for ServerApi` 所有方法返回
+//   - `DisabledHarnessSupportClient` 所有方法返回
 //     "Cloud harness support disabled in OpenWarp" 错误。
 //   - 删 conversation/transcript/block snapshot 上传相关云端方法。
 
@@ -26,7 +26,6 @@ use async_trait::async_trait;
 #[cfg(test)]
 use mockall::automock;
 
-use super::ServerApi;
 use crate::ai::artifacts::Artifact;
 
 /// A presigned upload target returned by the server.
@@ -121,9 +120,28 @@ pub trait HarnessSupportClient: 'static + Send + Sync {
     fn http_client(&self) -> &http_client::Client;
 }
 
+pub struct DisabledHarnessSupportClient {
+    client: http_client::Client,
+}
+
+impl DisabledHarnessSupportClient {
+    pub fn new() -> Self {
+        Self {
+            client: http_client::Client::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn new_for_test() -> Self {
+        Self {
+            client: http_client::Client::new_for_test(),
+        }
+    }
+}
+
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
-impl HarnessSupportClient for ServerApi {
+impl HarnessSupportClient for DisabledHarnessSupportClient {
     async fn resolve_prompt(
         &self,
         _request: ResolvePromptRequest,

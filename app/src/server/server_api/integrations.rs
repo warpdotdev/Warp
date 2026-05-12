@@ -18,7 +18,6 @@
 //     get_integrations_using_environment,suggest_cloud_environment_image,
 //     user_github_info,user_repo_auth_status}.rs
 
-use super::ServerApi;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 
@@ -64,9 +63,11 @@ pub trait IntegrationsClient: 'static + IntegrationsClientBounds {
     async fn poll_oauth_connect_status(&self, tx_id: String) -> Result<OauthConnectTxStatus>;
 }
 
+pub struct DisabledIntegrationsClient;
+
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl IntegrationsClient for ServerApi {
+impl IntegrationsClient for DisabledIntegrationsClient {
     async fn poll_oauth_connect_status(&self, _tx_id: String) -> Result<OauthConnectTxStatus> {
         Err(anyhow!(
             "OpenWarp local mode has no cloud OAuth connect polling endpoint"

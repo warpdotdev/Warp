@@ -1,6 +1,5 @@
 pub mod schema;
 
-pub use warp_graphql::client::GraphQLError;
 use warp_graphql::client::RequestOptions;
 
 /// Returns the default [`RequestOptions`] that should be used for a GraphQL request.

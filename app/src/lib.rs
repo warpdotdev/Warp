@@ -1119,7 +1119,7 @@ fn initialize_app(
 
     let agent_source = determine_agent_source(launch_mode);
 
-    ctx.add_singleton_model(|_ctx| ServerApiProvider::new(auth_state.clone(), agent_source));
+    ctx.add_singleton_model(|_ctx| ServerApiProvider::new(agent_source));
     let update_http_client = Arc::new(http_client::Client::new());
 
     // OpenWarp:保留 AuthStateProvider singleton 仅用于遗留调用点读取本地占位用户态。
