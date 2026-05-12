@@ -23,7 +23,7 @@ use crate::util::git::RepoGitSummary;
 pub(super) struct RepoSearchItem {
     pub path: PathBuf,
     pub display_name: String,
-    git_summary: Option<RepoGitSummary>,
+    pub(super) git_summary: Option<RepoGitSummary>,
     name_match_result: Option<FuzzyMatchResult>,
 }
 

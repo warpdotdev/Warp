@@ -4318,16 +4318,25 @@ impl Input {
     ) {
         match event {
             InlineReposMenuEvent::NavigateToRepo { path } => {
-                if self.suggestions_mode_model.as_ref(ctx).is_repos_menu() {
-                    self.suggestions_mode_model.update(ctx, |model, ctx| {
-                        model.set_mode(InputSuggestionsMode::Closed, ctx);
-                    });
-                    ctx.notify();
-                }
-                self.clear_buffer_and_reset_undo_stack(ctx);
                 let path_str = path.to_string_lossy().replace("'", "'\\''");
                 let cd_command = format!("cd '{path_str}'");
-                self.try_execute_command(&cd_command, ctx);
+                let did_execute = self.try_execute_command(&cd_command, ctx);
+
+                if did_execute {
+                    self.clear_buffer_and_reset_undo_stack(ctx);
+                } else {
+                    let window_id = ctx.window_id();
+                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                        toast_stack.add_ephemeral_toast(
+                            DismissibleToast::error(
+                                "Could not switch repos yet. Wait for the current command to finish, then try again."
+                                    .to_owned(),
+                            ),
+                            window_id,
+                            ctx,
+                        );
+                    });
+                }
             }
             InlineReposMenuEvent::Dismissed => {
                 if self.suggestions_mode_model.as_ref(ctx).is_repos_menu() {

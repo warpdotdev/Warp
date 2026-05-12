@@ -1,6 +1,10 @@
 //! Async data source for the inline repos menu.
 
+#[cfg(feature = "local_fs")]
+use std::future::Future;
 use std::path::PathBuf;
+#[cfg(feature = "local_fs")]
+use std::time::Duration;
 
 use warpui::{AppContext, Entity, SingletonEntity};
 
@@ -8,6 +12,9 @@ use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{AsyncDataSource, BoxFuture, DataSourceRunErrorWrapper};
 use crate::terminal::input::repos::AcceptRepo;
+
+#[cfg(feature = "local_fs")]
+const REPO_GIT_SUMMARY_TIMEOUT: Duration = Duration::from_millis(200);
 
 pub struct RepoMenuDataSource;
 
@@ -36,14 +43,10 @@ impl AsyncDataSource for RepoMenuDataSource {
             #[cfg(feature = "local_fs")]
             {
                 use crate::terminal::input::repos::search_item::RepoSearchItem;
-                use crate::util::git::get_repo_git_summary;
 
                 let futures: Vec<_> = workspace_paths
                     .into_iter()
-                    .map(|path| async move {
-                        let summary = get_repo_git_summary(&path).await;
-                        RepoSearchItem::new(path, summary)
-                    })
+                    .map(repo_search_item_with_summary_timeout)
                     .collect();
 
                 let mut items: Vec<RepoSearchItem> = futures::future::join_all(futures).await;
@@ -82,6 +85,80 @@ impl AsyncDataSource for RepoMenuDataSource {
     }
 }
 
+#[cfg(feature = "local_fs")]
+async fn repo_search_item_with_summary_timeout(
+    path: PathBuf,
+) -> crate::terminal::input::repos::search_item::RepoSearchItem {
+    use crate::util::git::get_repo_git_summary;
+
+    let summary_path = path.clone();
+    let summary_future = async move { get_repo_git_summary(&summary_path).await };
+    repo_search_item_from_summary_future(path, summary_future, REPO_GIT_SUMMARY_TIMEOUT).await
+}
+
+#[cfg(feature = "local_fs")]
+async fn repo_search_item_from_summary_future<F>(
+    path: PathBuf,
+    summary_future: F,
+    timeout: Duration,
+) -> crate::terminal::input::repos::search_item::RepoSearchItem
+where
+    F: Future<Output = Option<crate::util::git::RepoGitSummary>>,
+{
+    use crate::terminal::input::repos::search_item::RepoSearchItem;
+    use futures::FutureExt;
+    use warpui::r#async::Timer;
+
+    let summary_future = summary_future.fuse();
+    let timeout_future = Timer::after(timeout).fuse();
+    futures::pin_mut!(summary_future, timeout_future);
+
+    let summary = futures::select! {
+        summary = summary_future => summary,
+        _ = timeout_future => {
+            log::debug!("Timed out loading git summary for repo menu item {path:?}");
+            None
+        }
+    };
+
+    RepoSearchItem::new(path, summary)
+}
+
 impl Entity for RepoMenuDataSource {
     type Event = ();
+}
+
+#[cfg(all(test, feature = "local_fs"))]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use warpui::r#async::Timer;
+    use warpui::App;
+
+    use super::repo_search_item_from_summary_future;
+    use crate::util::git::RepoGitSummary;
+
+    #[test]
+    fn repo_search_item_uses_path_when_git_summary_times_out() {
+        App::test((), |_app| async move {
+            let path = PathBuf::from("/tmp/slow-repo");
+            let item = repo_search_item_from_summary_future(
+                path.clone(),
+                async {
+                    Timer::after(Duration::from_secs(30)).await;
+                    Some(RepoGitSummary {
+                        branch: "main".to_owned(),
+                        lines_added: 1,
+                        lines_removed: 0,
+                    })
+                },
+                Duration::from_millis(1),
+            )
+            .await;
+
+            assert_eq!(item.path, path);
+            assert!(item.git_summary.is_none());
+        });
+    }
 }
