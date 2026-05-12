@@ -55,11 +55,37 @@ behaviors.
 ### B2. Match semantics
 
 - Case-insensitive substring match.
-- Match is checked against each path component (folder names and the file
-  basename) and against the full relative path string.
-- A folder match reveals all of the folder's descendants as in-context
-  matches (folder-as-context). See B2a for the precise descendant
-  semantics.
+- **Match target is the row's own name only — NOT the full relative path
+  string.** Concretely: for a file row, the substring match runs against
+  the **file basename** (e.g. `a.rs`). For a folder row, the substring
+  match runs against the **folder name** (e.g. `src`). The full relative
+  path (e.g. `src/a.rs`) is NEVER used as a match target. This avoids the
+  ambiguity in which a file `src/a.rs` would otherwise "directly match"
+  the query `src` purely because its ancestor's name appears in its full
+  path; under this contract, that case is unambiguously a folder match
+  on `src` with `a.rs` included as a folder-match descendant per B2a —
+  it is NOT a direct match on `a.rs`. Earlier drafts that said "matched
+  against … the full relative path string" are superseded by this rule;
+  B2a remains the single source of truth for how descendants are pulled
+  into the match set.
+- **Direct match (per row).** A row is a "direct match" if and only if
+  the query is a substring of that row's OWN name (folder name for
+  folder rows; basename for file rows). Direct matches receive substring
+  highlighting (per B2a.3) and are counted exactly once in the match
+  total (per B2a.2).
+- **Folder-match-descendant (per row).** Any descendant (file or folder)
+  of a directly-matched folder is included in the **union match set** as
+  a folder-match-descendant, regardless of whether the descendant's own
+  name matches the query. Folder-match-descendants are visible (per
+  B2a.1), counted once (per B2a.2), and do NOT receive highlighting
+  unless their own names also directly match (per B2a.3). See B2a for
+  the full descendant contract.
+- **Union match set.** The set of "matching rows" used for visibility
+  (B3), counting (B2a.2), highlighting (B2a.3), and navigation order
+  (B2a.4) is the UNION of (a) direct matches and (b) folder-match
+  descendants, with each row appearing at most once. This same wording
+  is reused verbatim by the Settings / API surface (B6) so implementers
+  read the contract identically there.
 - Matching is performed after NFC normalization, then full Unicode default
   case folding. See B2b for the precise Unicode rules.
 
@@ -228,9 +254,17 @@ panel. Each panel-open starts with an empty search.
 ## Settings / API surface
 
 - `file_tree.search.dim_non_matches` — `bool`, default `true`. When
-  `true`, non-matching siblings are dimmed (visible but de-emphasized).
-  When `false`, non-matching siblings are hidden entirely (only matching
-  files and their ancestor folders are rendered).
+  `true`, rows NOT in the **union match set** (direct matches +
+  folder-match descendants per B2 / B2a) remain visible but **dimmed**
+  (de-emphasized) so the user keeps spatial context. When `false`, rows
+  NOT in the union match set are **hidden entirely**; the rendered tree
+  in this mode is exactly: (1) every row in the union match set (which
+  INCLUDES descendants of any directly-matched folder, even if those
+  descendants' own names do not match the query — per B2a) PLUS (2)
+  every ancestor folder of any row in (1), auto-expanded so the
+  matched rows are reachable. This summary intentionally uses the same
+  "union match set" wording as B2 / B2a so implementers do not read
+  hide mode as filename-only filtering.
 - Keybinding registration for `Cmd+F` (mac) / `Ctrl+F` (win/linux), scoped
   to a new keymap context flag `"FileTreeFocused"` (added via
   `context.set.insert("FileTreeFocused")` in the file-tree view's
