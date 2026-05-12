@@ -14443,14 +14443,28 @@ impl Input {
             bottom_padding = terminal_spacing.editor_bottom_padding - 4.;
         }
 
-        let input_box = Container::new(
+        // Reserve at least `command_input_min_lines` lines for the input field.
+        // Auto-grow on multiline content still works above this minimum because
+        // we only set a minimum, not a fixed height, and we cap at the max
+        // (half-pane) height already computed above.
+        let input_settings = InputSettings::as_ref(app);
+        let min_lines = input_settings.command_input_min_lines.effective();
+        let max_height_px = editor_height_rounded_down.as_f32();
+        let min_height_px =
+            crate::settings::command_input_min_height_px(min_lines, line_height.as_f32())
+                .min(max_height_px);
+
+        let mut constrained =
             ConstrainedBox::new(Clipped::new(ChildView::new(&self.editor).finish()).finish())
-                .with_max_height(editor_height_rounded_down.as_f32())
-                .finish(),
-        )
-        .with_padding_right(*TERMINAL_VIEW_PADDING_LEFT)
-        .with_padding_bottom(bottom_padding)
-        .finish();
+                .with_max_height(max_height_px);
+        if min_height_px > 0.0 {
+            constrained = constrained.with_min_height(min_height_px);
+        }
+
+        let input_box = Container::new(constrained.finish())
+            .with_padding_right(*TERMINAL_VIEW_PADDING_LEFT)
+            .with_padding_bottom(bottom_padding)
+            .finish();
 
         let input_editor_save_position_id = self.editor_save_position_id();
         SavePosition::new(

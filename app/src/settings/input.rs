@@ -181,8 +181,59 @@ define_settings_group!(InputSettings,
             sync_to_cloud: SyncToCloud::Never,
             private: true,
         },
+        command_input_min_lines: CommandInputMinLines {
+            type: u8,
+            default: 1,
+            supported_platforms: SupportedPlatforms::ALL,
+            sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+            private: false,
+            toml_path: "terminal.input.command_input_min_lines",
+            description: "Minimum number of lines reserved for the command input field. Values are clamped to 1..=20.",
+        },
     ]
 );
+
+impl CommandInputMinLines {
+    /// Minimum allowed value for `command_input_min_lines`.
+    pub const MIN: u8 = 1;
+    /// Maximum allowed value for `command_input_min_lines`.
+    ///
+    /// Capped at 20 lines so that overly large values cannot crowd out the
+    /// terminal block list. The render path also constrains the field to at
+    /// most half the visible terminal height regardless of this setting.
+    pub const MAX: u8 = 20;
+
+    fn validate(&self, new_value: u8) -> u8 {
+        clamp_command_input_min_lines(new_value)
+    }
+
+    /// Returns the validated current value of the setting.
+    ///
+    /// The stored value is always validated on load and on update, but reading
+    /// through this accessor guarantees callers never see an out-of-range value
+    /// even if persisted state ever drifts.
+    pub fn effective(&self) -> u8 {
+        clamp_command_input_min_lines(**self)
+    }
+}
+
+/// Clamp a raw `command_input_min_lines` value into the supported range.
+///
+/// Exposed at module scope so it can be exercised in unit tests without
+/// constructing a full settings group.
+pub fn clamp_command_input_min_lines(value: u8) -> u8 {
+    value.clamp(CommandInputMinLines::MIN, CommandInputMinLines::MAX)
+}
+
+/// Compute the pixel height to reserve for the input field given the user's
+/// configured minimum and the editor's line height.
+///
+/// This is a pure function so the layout math can be unit-tested without
+/// constructing an `AppContext`.
+pub fn command_input_min_height_px(min_lines: u8, line_height_px: f32) -> f32 {
+    let clamped = clamp_command_input_min_lines(min_lines);
+    f32::from(clamped) * line_height_px.max(0.0)
+}
 
 impl InputSettings {
     pub fn input_type(&self, app: &AppContext) -> InputBoxType {
@@ -229,5 +280,68 @@ impl InputSettings {
 
     pub fn is_terminal_input_message_bar_enabled(&self) -> bool {
         *self.show_terminal_input_message_bar
+    }
+}
+
+#[cfg(test)]
+mod command_input_min_lines_tests {
+    use super::*;
+
+    #[test]
+    fn clamp_keeps_value_within_default_range() {
+        assert_eq!(
+            clamp_command_input_min_lines(CommandInputMinLines::MIN),
+            CommandInputMinLines::MIN,
+        );
+        assert_eq!(clamp_command_input_min_lines(5), 5);
+        assert_eq!(
+            clamp_command_input_min_lines(CommandInputMinLines::MAX),
+            CommandInputMinLines::MAX,
+        );
+    }
+
+    #[test]
+    fn clamp_raises_subrange_value_to_min() {
+        // u8 min is 0, but our setting min is 1.
+        assert_eq!(clamp_command_input_min_lines(0), CommandInputMinLines::MIN);
+    }
+
+    #[test]
+    fn clamp_caps_oversized_value_to_max() {
+        assert_eq!(
+            clamp_command_input_min_lines(CommandInputMinLines::MAX + 1),
+            CommandInputMinLines::MAX,
+        );
+        assert_eq!(
+            clamp_command_input_min_lines(u8::MAX),
+            CommandInputMinLines::MAX,
+        );
+    }
+
+    #[test]
+    fn min_height_uses_clamped_lines() {
+        let line_height = 18.0_f32;
+
+        // Default (1 line) reserves a single line of height.
+        assert_eq!(command_input_min_height_px(1, line_height), 18.0);
+
+        // 5 lines reserves 5 lines of height.
+        assert_eq!(command_input_min_height_px(5, line_height), 90.0);
+
+        // Values above MAX get clamped down to MAX before multiplying.
+        assert_eq!(
+            command_input_min_height_px(u8::MAX, line_height),
+            f32::from(CommandInputMinLines::MAX) * line_height,
+        );
+
+        // Values below MIN get clamped up to MIN.
+        assert_eq!(command_input_min_height_px(0, line_height), 18.0);
+    }
+
+    #[test]
+    fn min_height_handles_nonpositive_line_height() {
+        // Defensive: a non-positive line height should yield 0, never negative.
+        assert_eq!(command_input_min_height_px(3, 0.0), 0.0);
+        assert_eq!(command_input_min_height_px(3, -10.0), 0.0);
     }
 }
