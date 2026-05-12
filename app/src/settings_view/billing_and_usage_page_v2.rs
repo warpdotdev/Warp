@@ -1,4 +1,6 @@
-use warpui::{elements::Empty, AppContext, Element, Entity, View, ViewContext};
+use warpui::{elements::Empty, AppContext, Element, Entity, SingletonEntity, View, ViewContext};
+
+use crate::auth::AuthStateProvider;
 
 use super::{
     settings_page::{MatchData, SettingsPageMeta, SettingsPageViewHandle},
@@ -20,12 +22,16 @@ impl SettingsPageMeta for BillingAndUsagePageV2View {
         SettingsSection::BillingAndUsage
     }
 
-    fn should_render(&self, _ctx: &AppContext) -> bool {
-        true
+    fn should_render(&self, ctx: &AppContext) -> bool {
+        let is_anonymous = AuthStateProvider::as_ref(ctx)
+            .get()
+            .is_anonymous_or_logged_out();
+
+        !is_anonymous
     }
 
     fn update_filter(&mut self, _query: &str, _ctx: &mut ViewContext<Self>) -> MatchData {
-        MatchData::Uncounted(true)
+        MatchData::Uncounted(false)
     }
 
     fn scroll_to_widget(&mut self, _widget_id: &'static str) {}
