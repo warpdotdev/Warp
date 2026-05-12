@@ -850,6 +850,21 @@ impl ansi::Handler for GridHandler {
                     self.grid.region_mut(..).each(|cell| *cell = bg.into());
                 } else if self.full_grid_clear_behavior == FullGridClearBehavior::Clear {
                     self.clear_visible_rows_in_place(bg);
+                } else if self.is_tui_redraw_clear() {
+                    // TUI redraw heuristic (GH #9181): when CSI 2J is emitted
+                    // with the cursor already at the home position (0, 0),
+                    // treat it as a primary-screen full-frame redraw (the
+                    // pattern used by Claude Code and similar inline TUIs that
+                    // do not opt into the alt screen). Without this guard each
+                    // redraw pushes the previous frame into block-level
+                    // scrollback, producing the "screen replicates throughout
+                    // session" symptom.
+                    //
+                    // This matches xterm/ghostty/iTerm2 semantics for CSI 2J,
+                    // and preserves the legacy scroll-into-scrollback behavior
+                    // for the common `clear` shell command path (which emits
+                    // CSI 2J from a non-home cursor position before homing).
+                    self.clear_visible_rows_in_place(bg);
                 } else {
                     self.clear_viewport();
                 }
@@ -1671,6 +1686,27 @@ impl GridHandler {
         // Clear grid.
         let bg = self.grid.cursor().template.bg;
         self.grid.region_mut(..).each(|cell| *cell = bg.into());
+    }
+
+    /// Detect a primary-screen full-frame redraw triggered by CSI 2J.
+    ///
+    /// TUIs that do not opt into the alt screen (notably Claude Code and
+    /// other "inline" agent CLIs) redraw their frame by homing the cursor
+    /// and then issuing CSI 2J before rewriting the visible region. Warp's
+    /// default CSI 2J handling on the primary screen pushes the prior
+    /// visible rows into block-level scrollback via `clear_viewport`, which
+    /// causes the previous frame to accumulate as duplicate content for
+    /// every redraw cycle (GH #9181).
+    ///
+    /// When the cursor is already at the home position at the moment CSI 2J
+    /// fires, the sequence is overwhelmingly a frame redraw rather than a
+    /// user-initiated screen clear. In that case we use the in-place clear
+    /// path to match xterm/ghostty/iTerm2 semantics. The common shell
+    /// `clear` command path is unaffected because it emits CSI 2J from a
+    /// post-prompt cursor position before homing.
+    fn is_tui_redraw_clear(&self) -> bool {
+        let cursor = self.grid.cursor().point;
+        cursor.row == VisibleRow(0) && cursor.col == 0
     }
 
     fn clear_viewport(&mut self) {
