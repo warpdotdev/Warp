@@ -254,7 +254,7 @@ impl WelcomePalette {
             if ContextFlag::LaunchConfigurations.is_enabled() {
                 mixer.add_sync_source(launch_config_data_source.clone(), HashSet::new());
             }
-            if FeatureFlag::ShellSelector.is_enabled() && cfg!(feature = "local_tty") {
+            if cfg!(feature = "local_tty") {
                 mixer.add_sync_source(new_session_data_source.clone(), HashSet::new());
             }
 

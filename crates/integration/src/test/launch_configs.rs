@@ -130,38 +130,6 @@ pub fn test_with_launch_config() -> Builder {
         )
 }
 
-// TODO(CORE-2300): Once we remove FeatureFlag::ShellSelector, we should remove this test.
-pub fn test_open_launch_config_from_add_tab_menu_legacy() -> Builder {
-    new_builder()
-        .set_should_run_test(|| !FeatureFlag::ShellSelector.is_enabled())
-        .with_setup(move |utils| {
-            utils.set_env("WARP_CONFIG_WATCHER_DELAY_MS", Some((10).to_string()));
-
-            // Write a new launch config file. Launch config is named "Launch Config"
-            let dir = integration_testing::launch_configs::launch_configs_dir();
-            std::fs::create_dir_all(&dir).expect("Should be able to create launch configs dir");
-            integration_testing::create_file_from_assets(
-                TEST_ONLY_ASSETS,
-                "test_launch_config.yaml",
-                &dir.join("test_launch_config.yaml"),
-            );
-        })
-        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(
-            new_step_with_default_assertions("Right click on new tab button")
-                .with_right_click_on_saved_position(NEW_TAB_BUTTON_POSITION_ID),
-        )
-        .with_step(
-            new_step_with_default_assertions("Press Launch Config menu item")
-                // Since we only have one launch config, it should be the third menu item and the
-                // second one is disabled.
-                .with_keystrokes(&["down", "down", "enter"]),
-        )
-        .with_step(
-            new_step_with_default_assertions("Assert that three new windows are created")
-                .add_assertion(assert_num_windows_open(4)),
-        )
-}
 
 pub fn test_launch_config_single_child_branch() -> Builder {
     use warp::launch_configs::launch_config::{

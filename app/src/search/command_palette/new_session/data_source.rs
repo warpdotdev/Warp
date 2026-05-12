@@ -100,10 +100,6 @@ impl NewSessionDataSource {
         source: ModelHandle<BindingSource>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if !FeatureFlag::ShellSelector.is_enabled() {
-            return;
-        }
-
         let (window_id, view_id) = match source.as_ref(ctx) {
             BindingSource::None => return,
             BindingSource::View {

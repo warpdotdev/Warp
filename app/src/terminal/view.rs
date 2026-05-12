@@ -21999,10 +21999,6 @@ impl TerminalView {
     }
 
     pub fn shell_launch_data_if_local(&self, ctx: &AppContext) -> Option<ShellLaunchData> {
-        if !FeatureFlag::ShellSelector.is_enabled() {
-            return None;
-        }
-
         let session_id = self.active_block_session_id()?;
         let Some(session) = self.sessions.as_ref(ctx).get(session_id) else {
             log::warn!("Expected to have session for session ID {session_id:?}, but doesn't exist");

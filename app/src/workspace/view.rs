@@ -1804,20 +1804,14 @@ impl Workspace {
         // grow as needed.
         const NEW_SESSION_MENU_WIDTH: f32 = 300.;
         let new_session_menu = ctx.add_typed_action_view(|ctx| {
-            if FeatureFlag::ShellSelector.is_enabled() {
-                let theme = Appearance::as_ref(ctx).theme();
-                Menu::new()
-                    .with_width(NEW_SESSION_MENU_WIDTH)
-                    .with_border(Border::all(1.).with_border_color(theme.outline().into()))
-                    .with_drop_shadow()
-                    .with_safe_triangle()
-                    .with_ignore_hover_when_covered()
-                    .prevent_interaction_with_other_elements()
-            } else {
-                Menu::new()
-                    .with_safe_triangle()
-                    .with_ignore_hover_when_covered()
-            }
+            let theme = Appearance::as_ref(ctx).theme();
+            Menu::new()
+                .with_width(NEW_SESSION_MENU_WIDTH)
+                .with_border(Border::all(1.).with_border_color(theme.outline().into()))
+                .with_drop_shadow()
+                .with_safe_triangle()
+                .with_ignore_hover_when_covered()
+                .prevent_interaction_with_other_elements()
         });
         ctx.subscribe_to_view(&new_session_menu, move |me, _, event, ctx| {
             me.handle_new_session_menu_event(event, ctx);
@@ -6192,7 +6186,7 @@ impl Workspace {
                 menu_items.push(terminal_item.into_item());
 
                 #[cfg(feature = "local_tty")]
-                if FeatureFlag::ShellSelector.is_enabled() {
+                {
                     AvailableShells::handle(ctx).read(ctx, |model, _| {
                         for shell in model.get_available_shells() {
                             let shell_name = model.display_name_for_shell(shell);
@@ -18303,37 +18297,6 @@ impl Workspace {
             keybinding_name_to_display_string(TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME, ctx);
         let appearance = Appearance::as_ref(ctx);
 
-        if !FeatureFlag::ShellSelector.is_enabled() {
-            // Legacy new tab button, which shows the menu on right click.
-            let new_tab_button = self
-                .render_tab_bar_icon_button(
-                    appearance,
-                    icons::Icon::Plus,
-                    &self.mouse_states.new_tab_button.clone(),
-                    WorkspaceAction::AddDefaultTab,
-                    new_tab_tool_tip_label_text,
-                    new_tab_tool_tip_sublabel_text,
-                    false,
-                    false,
-                )
-                .on_right_click(move |ctx, _, position| {
-                    ctx.dispatch_typed_action(WorkspaceAction::ToggleNewSessionMenu {
-                        position,
-                        is_vertical_tabs: false,
-                    });
-                })
-                .finish();
-            return Container::new(
-                SavePosition::new(
-                    Align::new(new_tab_button).finish(),
-                    NEW_TAB_BUTTON_POSITION_ID,
-                )
-                .finish(),
-            )
-            .with_margin_left(BUTTON_LEFT_MARGIN)
-            .finish();
-        }
-
         let theme = appearance.theme();
 
         Hoverable::new(self.mouse_states.new_tab.clone(), |state| {
@@ -23044,11 +23007,7 @@ impl View for Workspace {
                 // context menu but a dropdown. Since it is quite wide, we need to reposition
                 // it so it does not render outside the bounds of the window.
                 let new_session_menu_position = self.show_new_session_dropdown_menu.unwrap();
-                let bounds = if FeatureFlag::ShellSelector.is_enabled() {
-                    ParentOffsetBounds::WindowByPosition
-                } else {
-                    ParentOffsetBounds::Unbounded
-                };
+                let bounds = ParentOffsetBounds::WindowByPosition;
                 stack.add_positioned_overlay_child(
                     ChildView::new(&self.new_session_dropdown_menu).finish(),
                     OffsetPositioning::offset_from_parent(
@@ -23297,11 +23256,7 @@ impl View for Workspace {
                     ),
                 );
             } else {
-                let anchor_id = if FeatureFlag::ShellSelector.is_enabled() {
-                    NEW_SESSION_MENU_BUTTON_POSITION_ID
-                } else {
-                    NEW_TAB_BUTTON_POSITION_ID
-                };
+                let anchor_id = NEW_SESSION_MENU_BUTTON_POSITION_ID;
                 stack.add_positioned_overlay_child(
                     chip,
                     OffsetPositioning::offset_from_save_position_element(

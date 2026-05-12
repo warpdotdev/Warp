@@ -606,17 +606,10 @@ impl AvailableShells {
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<()> {
         use super::session_settings::SessionSettings;
-        use warp_core::features::FeatureFlag;
         SessionSettings::handle(ctx).update(ctx, |settings, ctx| {
-            if FeatureFlag::ShellSelector.is_enabled() {
-                settings
-                    .new_session_shell_override
-                    .set_value(Some(NewSessionShell::from(value)), ctx)
-            } else {
-                settings
-                    .startup_shell_override
-                    .set_value(StartupShell::from(value), ctx)
-            }
+            settings
+                .new_session_shell_override
+                .set_value(Some(NewSessionShell::from(value)), ctx)
         })
     }
 
@@ -624,25 +617,6 @@ impl AvailableShells {
         paths_to_search: &[PathBuf],
         fallback_path: Option<&Path>,
     ) -> Vec<AvailableShell> {
-        use warp_core::features::FeatureFlag;
-
-        if !FeatureFlag::ShellSelector.is_enabled() {
-            return vec![
-                StartupShell::Zsh,
-                StartupShell::Bash,
-                StartupShell::Fish,
-                StartupShell::PowerShell,
-            ]
-            .into_iter()
-            .filter_map(|shell| {
-                let state = LocalConfig::try_from(shell).ok()?;
-                Some(AvailableShell {
-                    id: None,
-                    state: Arc::new(Config::KnownLocal(state)),
-                })
-            })
-            .collect();
-        }
         let shell_types = Self::get_shell_types();
 
         let mut known_shells = vec![];
