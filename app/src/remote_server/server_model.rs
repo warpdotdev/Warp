@@ -6,21 +6,22 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use warp_core::SessionId;
 use warp_core::channel::ChannelState;
 use warp_core::safe_error;
-use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
 use warpui::platform::TerminationMode;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
+use super::codebase_index_status::{
+    codebase_index_status_to_proto, disabled_codebase_index_status,
+    not_enabled_codebase_index_status, queued_codebase_index_status,
+};
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
 use ::ai::index::full_source_code_embedding::manager::{
-    CodebaseIndexFinishedStatus, CodebaseIndexManager, CodebaseIndexManagerEvent,
-    CodebaseIndexStatus as LocalCodebaseIndexStatus,
+    CodebaseIndexManager, CodebaseIndexManagerEvent,
 };
-use ::ai::index::full_source_code_embedding::SyncProgress;
 use warp_files::{FileModel, FileModelEvent};
 use warp_util::content_version::ContentVersion;
 use warp_util::file::FileId;
@@ -30,19 +31,19 @@ use super::diff_state_tracker::{
     DiffModelKey, DiffStateUpdate, RemoteDiffStateManager, SubscribeOutcome,
 };
 use super::proto::{
+    Abort, Authenticate, BufferEdit, BufferUpdatedPush, ClientMessage, CloseBuffer,
+    CodebaseIndexStatusState, CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot,
+    DeleteFile, DeleteFileResponse, DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse,
+    DiscardFilesSuccess, DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead,
+    FileContextProto, FileOperationError, GetDiffStateResponse, IndexCodebase, Initialize,
+    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
+    OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
+    ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
+    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
+    ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
     client_message, delete_file_response, discard_files_response, get_diff_state_response,
     resolve_conflict_response, run_command_response, save_buffer_response, server_message,
-    write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush, ClientMessage,
-    CloseBuffer, CodebaseIndexStatus, CodebaseIndexStatusState, CodebaseIndexStatusUpdated,
-    CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
-    DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess, DropCodebaseIndex, ErrorCode,
-    ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, GetDiffStateResponse,
-    IndexCodebase, Initialize, InitializeResponse, NavigatedToDirectory,
-    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
-    ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, RunCommandError,
-    RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
-    SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit,
-    WriteFile, WriteFileResponse, WriteFileSuccess,
+    write_file_response,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -55,7 +56,7 @@ pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 
 pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
 use crate::ai::agent::FileLocations;
-use crate::ai::blocklist::{read_local_file_context, ReadFileContextResult};
+use crate::ai::blocklist::{ReadFileContextResult, read_local_file_context};
 use crate::auth::auth_state::{AuthState, AuthStateProvider};
 use crate::features::FeatureFlag;
 use crate::terminal::model::session::command_executor::{
@@ -804,12 +805,6 @@ impl ServerModel {
             return;
         }
         let snapshot = self.codebase_index_statuses_snapshot(ctx);
-        if snapshot.statuses.is_empty() {
-            log::info!(
-                "[Remote codebase indexing] Daemon skipping empty bootstrap codebase index statuses snapshot: conn_id={conn_id}"
-            );
-            return;
-        }
         let status_count = snapshot.statuses.len();
         log::info!(
             "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: conn_id={conn_id} bootstrap_status_count={status_count}"
@@ -855,17 +850,8 @@ impl ServerModel {
                 },
             ));
         }
-        if auth_token.is_empty() {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: "Missing authentication credentials for remote codebase indexing"
-                    .to_string(),
-            }));
-        }
 
-        self.auth_state.set_remote_server_bearer_token(auth_token);
-
-        let repo_path = match canonicalize_repo_path(&repo_path) {
+        let repo_path = match canonicalize_index_repo_path(&repo_path) {
             Ok(repo_path) => repo_path,
             Err(error) => {
                 return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
@@ -874,23 +860,38 @@ impl ServerModel {
                 }));
             }
         };
+        if let Err(error) =
+            self.validate_remote_codebase_index_auth(&auth_token, "remote codebase indexing")
+        {
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: error,
+            }));
+        }
         log::info!(
             "[Remote codebase indexing] Daemon handling IndexCodebase: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
         );
-
-        CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
-            if manager.root_path_for_codebase(&repo_path).is_some() {
-                manager.try_manual_resync_codebase(&repo_path, ctx);
+        let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
+            if let Some(indexed_repo_path) = manager.root_path_for_codebase(&repo_path) {
+                manager
+                    .get_codebase_index_status_for_path(indexed_repo_path.as_path(), ctx)
+                    .map(|status| {
+                        codebase_index_status_to_proto(indexed_repo_path.as_path(), &status)
+                    })
+                    .unwrap_or_else(|| {
+                        queued_codebase_index_status(
+                            indexed_repo_path.to_string_lossy().to_string(),
+                        )
+                    })
             } else {
                 manager.index_directory(repo_path.clone(), ctx);
+                queued_codebase_index_status(repo_path.to_string_lossy().to_string())
             }
         });
 
         HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
             CodebaseIndexStatusUpdated {
-                status: Some(queued_codebase_index_status(
-                    repo_path.to_string_lossy().to_string(),
-                )),
+                status: Some(status),
             },
         ))
     }
@@ -917,17 +918,8 @@ impl ServerModel {
                 },
             ));
         }
-        if auth_token.is_empty() {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: "Missing authentication credentials for remote codebase index removal"
-                    .to_string(),
-            }));
-        }
 
-        self.auth_state.set_remote_server_bearer_token(auth_token);
-
-        let repo_path = match canonicalize_repo_path(&repo_path) {
+        let repo_path = match requested_repo_path(&repo_path) {
             Ok(repo_path) => repo_path,
             Err(error) => {
                 return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
@@ -936,6 +928,14 @@ impl ServerModel {
                 }));
             }
         };
+        if let Err(error) =
+            self.validate_remote_codebase_index_auth(&auth_token, "remote codebase index removal")
+        {
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: error,
+            }));
+        }
         log::info!(
             "[Remote codebase indexing] Daemon handling DropCodebaseIndex: request_id={request_id} conn_id={conn_id} repo_path={}",
             repo_path.display()
@@ -1106,6 +1106,28 @@ impl ServerModel {
 
     pub fn auth_token(&self) -> Option<String> {
         self.auth_state.get_access_token_ignoring_validity()
+    }
+
+    fn validate_remote_codebase_index_auth(
+        &self,
+        auth_token: &str,
+        operation: &str,
+    ) -> Result<(), String> {
+        if auth_token.is_empty() {
+            return Err(format!(
+                "Missing authentication credentials for {operation}"
+            ));
+        }
+
+        match self.auth_token() {
+            Some(cached_auth_token) if cached_auth_token == auth_token => Ok(()),
+            Some(_) => Err(format!(
+                "Authentication credentials for {operation} do not match daemon credentials"
+            )),
+            None => Err(format!(
+                "Missing cached authentication credentials for {operation}"
+            )),
+        }
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.
@@ -2180,116 +2202,21 @@ impl ServerModel {
     }
 }
 
-fn canonicalize_repo_path(repo_path: &str) -> Result<PathBuf, String> {
+fn requested_repo_path(repo_path: &str) -> Result<PathBuf, String> {
     if repo_path.is_empty() {
         return Err("repo_path is required".to_string());
     }
 
-    dunce::canonicalize(Path::new(repo_path))
-        .map_err(|error| format!("Invalid repo_path {repo_path}: {error}"))
+    Ok(PathBuf::from(repo_path))
 }
 
-fn current_epoch_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or_default()
-}
-
-fn queued_codebase_index_status(repo_path: String) -> CodebaseIndexStatus {
-    base_codebase_index_status(repo_path, CodebaseIndexStatusState::Queued)
-}
-fn not_enabled_codebase_index_status(repo_path: String) -> CodebaseIndexStatus {
-    base_codebase_index_status(repo_path, CodebaseIndexStatusState::NotEnabled)
-}
-
-fn disabled_codebase_index_status(repo_path: String) -> CodebaseIndexStatus {
-    base_codebase_index_status(repo_path, CodebaseIndexStatusState::Disabled)
-}
-
-fn base_codebase_index_status(
-    repo_path: String,
-    state: CodebaseIndexStatusState,
-) -> CodebaseIndexStatus {
-    CodebaseIndexStatus {
-        repo_path,
-        state: state.into(),
-        last_updated_epoch_millis: Some(current_epoch_millis()),
-        progress_completed: None,
-        progress_total: None,
-        failure_message: None,
-    }
-}
-
-fn codebase_index_status_to_proto(
-    repo_path: &Path,
-    status: &LocalCodebaseIndexStatus,
-) -> CodebaseIndexStatus {
-    let state = codebase_index_status_state(status);
-    let (progress_completed, progress_total) = progress_from_codebase_index_status(status);
-
-    CodebaseIndexStatus {
-        repo_path: repo_path.to_string_lossy().to_string(),
-        state: state.into(),
-        last_updated_epoch_millis: Some(current_epoch_millis()),
-        progress_completed,
-        progress_total,
-        failure_message: failure_message_from_codebase_index_status(status),
-    }
-}
-
-fn codebase_index_status_state(status: &LocalCodebaseIndexStatus) -> CodebaseIndexStatusState {
-    codebase_index_status_state_from_parts(
-        status.has_pending(),
-        status.has_synced_version(),
-        status.last_sync_result(),
-    )
-}
-
-fn codebase_index_status_state_from_parts(
-    has_pending: bool,
-    has_synced_version: bool,
-    last_sync_result: Option<&CodebaseIndexFinishedStatus>,
-) -> CodebaseIndexStatusState {
-    match (has_pending, has_synced_version, last_sync_result) {
-        (true, true, _) => CodebaseIndexStatusState::Stale,
-        (true, false, _) => CodebaseIndexStatusState::Indexing,
-        (false, _, Some(CodebaseIndexFinishedStatus::Completed)) => CodebaseIndexStatusState::Ready,
-        (false, _, Some(CodebaseIndexFinishedStatus::Failed(_))) => {
-            CodebaseIndexStatusState::Failed
-        }
-        (false, _, None) => CodebaseIndexStatusState::Queued,
-    }
-}
-
-fn progress_from_sync_progress(sync_progress: Option<&SyncProgress>) -> (Option<u64>, Option<u64>) {
-    match sync_progress {
-        Some(SyncProgress::Discovering { total_nodes }) => (Some(0), Some(*total_nodes as u64)),
-        Some(SyncProgress::Syncing {
-            completed_nodes,
-            total_nodes,
-        }) => (Some(*completed_nodes as u64), Some(*total_nodes as u64)),
-        None => (None, None),
-    }
-}
-
-fn progress_from_codebase_index_status(
-    status: &LocalCodebaseIndexStatus,
-) -> (Option<u64>, Option<u64>) {
-    progress_from_sync_progress(status.sync_progress())
-}
-
-fn failure_message_from_last_sync_result(
-    last_sync_result: Option<&CodebaseIndexFinishedStatus>,
-) -> Option<String> {
-    match last_sync_result {
-        Some(CodebaseIndexFinishedStatus::Failed(error)) => Some(error.to_string()),
-        Some(CodebaseIndexFinishedStatus::Completed) | None => None,
-    }
-}
-
-fn failure_message_from_codebase_index_status(status: &LocalCodebaseIndexStatus) -> Option<String> {
-    failure_message_from_last_sync_result(status.last_sync_result())
+fn canonicalize_index_repo_path(repo_path: &str) -> Result<PathBuf, String> {
+    requested_repo_path(repo_path)?;
+    let standardized_path = StandardizedPath::from_local_canonicalized(Path::new(repo_path))
+        .map_err(|error| format!("Invalid repo_path {repo_path}: {error}"))?;
+    Ok(standardized_path
+        .to_local_path()
+        .unwrap_or_else(|| standardized_path.to_local_path_lossy()))
 }
 
 /// Converts a [`ReadFileContextResult`] into its protobuf equivalent.
