@@ -153,30 +153,61 @@ fall through to the appended Default stack on every render.
         ASCII space. Tabs and other whitespace inside an unquoted
         identifier sequence are rejected at parse time per CSS
         Fonts L4 grammar.
-     2. **Case is preserved verbatim from user input.** No
-        case-folding is applied to family names at any layer —
-        storage, sync, settings UI, render. CSS family names are
-        case-insensitive at *match* time (handled by the font
-        engine, not by us), but the *stored* value preserves the
-        user's chosen case so a peer device sees the same string
-        the user typed. This rule applies to both unquoted and
-        quoted families:
+     2. **Case is preserved verbatim from user input for class-3
+        named families.** No case-folding is applied to class-3
+        family names at any layer — storage, sync, settings UI,
+        render. CSS family names are case-insensitive at *match*
+        time (handled by the font engine, not by us), but the
+        *stored* value preserves the user's chosen case so a peer
+        device sees the same string the user typed. This rule
+        applies to both unquoted and quoted class-3 families:
           - Unquoted `inter`, `Inter`, `INTER` are stored
             byte-for-byte as the user wrote them.
           - Quoted `"helvetica neue"`, `"Helvetica Neue"`, and
             `"HELVETICA NEUE"` are stored byte-for-byte as the user
             wrote them.
-     3. **Generic-family keywords are normalized to lowercase.**
-        The CSS generic identifiers enumerated in class 1 above
-        (`system-ui`, `sans-serif`, etc.) are matched
-        case-insensitively at parse time and stored
-        lowercase-canonical. This is the ONE exception to rule
-        1.ii and is necessary because CSS generic identifiers are
-        a closed set with a defined lowercase spelling; storing
-        `Sans-Serif` would be a category-confusion bug. Vendor-
-        prefixed identifiers (class 2: `-apple-system`,
-        `-webkit-system-font`) are likewise stored lowercase
-        because they are also a closed set.
+     3. **Class-1 and class-2 identifiers are normalized to
+        ASCII-lowercase.** The CSS generic identifiers (class 1)
+        and vendor-prefixed identifiers (class 2) are
+        recognized case-insensitively at parse time (per CSS
+        Syntax Module Level 3, `<custom-ident>` matching is
+        ASCII-case-insensitive against the closed keyword set)
+        and stored in their canonical ASCII-lowercase form. This
+        is the ONE exception to rule 1.ii and is necessary
+        because both sets are closed enumerations with a defined
+        lowercase canonical spelling; storing `Sans-Serif` or
+        `-Apple-System` would be a category-confusion bug.
+
+        **Disambiguation rule (round-N fix).** "ASCII-lowercase"
+        means each ASCII code point in the range `A`..`Z`
+        (`0x41`..`0x5A`) is mapped to the corresponding code
+        point in `a`..`z` (`0x61`..`0x7A`). No other code points
+        are altered. The match against the closed class-1 /
+        class-2 keyword set uses **simple ASCII case-folding**
+        (the Unicode `simpleLowercase(input) == keyword` test
+        restricted to ASCII), not full Unicode case-folding. This
+        guarantees implementations and tests agree on stored
+        values:
+
+          | Raw input        | Class | Stored canonical | Reason                                               |
+          | ---------------- | ----- | ---------------- | ---------------------------------------------------- |
+          | `Sans-Serif`     | 1     | `sans-serif`     | ASCII-lowercased; matches `sans-serif` keyword       |
+          | `SYSTEM-UI`      | 1     | `system-ui`      | ASCII-lowercased; matches `system-ui` keyword        |
+          | `system-UI`      | 1     | `system-ui`      | ASCII-lowercased                                     |
+          | `-APPLE-SYSTEM`  | 2     | `-apple-system`  | ASCII-lowercased; matches class-2 keyword            |
+          | `-Apple-System`  | 2     | `-apple-system`  | ASCII-lowercased                                     |
+          | `inter`          | 3     | `inter`          | NOT in class-1/class-2 set → class-3, preserved      |
+          | `Inter`          | 3     | `Inter`          | NOT in class-1/class-2 set → class-3, preserved      |
+          | `INTER`          | 3     | `INTER`          | NOT in class-1/class-2 set → class-3, preserved      |
+          | `Sans-Serif-Pro` | 3     | `Sans-Serif-Pro` | NOT in class-1 closed set (extra suffix) → preserved |
+
+        Class assignment is determined BEFORE case-normalization
+        by the ASCII-case-insensitive match against the closed
+        keyword set. Once a token is classified, the
+        case-normalization rule for its class applies. There is
+        no race / ordering ambiguity: classify first
+        (ASCII-case-insensitive), then normalize (class-1 /
+        class-2 → ASCII-lowercase; class-3 → preserve verbatim).
      4. **Quoting decision:**
         - If, after rule 1.i, the family token matches
           `<custom-ident>` (alphanumerics, underscore, hyphen, no
@@ -220,13 +251,63 @@ fall through to the appended Default stack on every render.
   `None` for this device, and a telemetry warning fires with the
   rule id (never the raw value).
 
-- B1b. **Missing-font fallback.** Resolution proceeds left-to-right
-  through the parsed family list. If no listed family matches an
-  installed font on the current OS, the platform Default stack
-  is appended as a final fallback. If the parsed family list is
-  empty after parsing, Default is used directly. The stored value
-  is never modified by fallback — it remains the user's preference
-  in canonical form.
+- B1b. **Missing-font fallback (cross-platform contract).**
+  Resolution proceeds left-to-right through the parsed family
+  list. **Generic and vendor-prefixed identifiers are not subject
+  to the "installed font" check** — they are emitted to the
+  underlying font engine as-is and resolve via the platform's
+  built-in CSS-generic mapping (see the class 1 / class 2 / class
+  3 contract in "Generic-family entries in the cascade" above).
+  The installed-font check applies ONLY to class-3 named family
+  entries.
+
+  Concrete cross-platform resolution rules (all platforms, all
+  stacks, including the macOS Default stack on Linux and vice
+  versa):
+
+  1. For each entry in the user-supplied parsed family list,
+     left-to-right, by class:
+       - **Class 1 (generic).** Emit to the CSS as the lowercase
+         keyword. The platform's font engine resolves the
+         keyword to a real font. Resolution does NOT fall
+         through this entry on any platform.
+       - **Class 2 (vendor-prefixed).** Emit to the CSS as the
+         lowercase keyword. The platform's font engine resolves
+         it on the matching platform (e.g., `-apple-system` on
+         macOS). On non-matching platforms the engine treats it
+         as missing and the cascade continues to the next entry.
+       - **Class 3 (named family).** Check installed-font set on
+         the current OS. If installed, resolve and stop. If not
+         installed, the cascade continues to the next entry.
+  2. If the cascade exhausts the user-supplied list without
+     terminating at a class-1 entry, **the platform Default stack
+     is appended** and resolution restarts at the first entry of
+     the appended Default stack (applying the same class rules).
+     The appended Default stack always terminates at its own
+     class-1 entry (every platform Default stack defined in
+     "Default font stacks" above ends in `sans-serif`).
+  3. If the parsed family list is empty after parsing, the
+     platform Default stack is used directly.
+  4. The stored value is never modified by fallback — it remains
+     the user's preference in canonical form (B1a). Fallback is
+     a render-time decision, not a storage-time decision.
+
+  Cross-platform examples (all explicitly part of the contract;
+  asserted by `T_generic_families_resolve` and the new
+  `T_cross_platform_resolution`):
+
+  | User-supplied list (after B1a)                | Linux render                                                                 | Windows render                                                          | macOS render                                                          |
+  | --------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------- |
+  | `"SF Pro Text", -apple-system, sans-serif`    | class-3 miss → class-2 miss (vendor-prefixed, unmatched platform) → class-1 hit on `sans-serif` (terminates) | class-3 miss → class-2 miss → class-1 hit on `sans-serif`               | class-3 hit (terminates) |
+  | `Inter, system-ui, sans-serif`                | class-3 hit if Inter installed; else class-1 hit on `system-ui` (terminates) | same                                                                    | same                                                                   |
+  | `"Foo Bar"` (only one class-3 entry, missing) | cascade exhausts user list → appended Linux Default stack terminates at `sans-serif` | cascade exhausts user list → appended Windows Default stack             | cascade exhausts user list → appended macOS Default stack             |
+  | `system-ui`                                   | class-1 hit (terminates)                                                     | class-1 hit (terminates)                                                | class-1 hit (terminates)                                              |
+
+  No render path is left undefined: every user-supplied list,
+  on every supported platform, either terminates at a class-1
+  hit somewhere in the user list, or falls through to the
+  appended platform Default stack which always terminates at
+  its own class-1 entry. There is no "undefined" branch.
 
 - B1c. **Per-platform sync schema.** All three settings sync as a
   per-platform map with a shared default key:
@@ -265,11 +346,32 @@ fall through to the appended Default stack on every render.
 - B1e. **Render-time CSS construction (no string interpolation,
   injection-safe at the actual insertion point).**
 
-  The threat model has two layers, and both MUST be addressed
-  because quoting alone does not protect against an HTML
-  `</style>` breakout when the CSS is later written into a
-  `<style>` text node. Round-2 review correctly noted that quoting
-  the CSS string is necessary but not sufficient.
+  **The threat model has two layers, and BOTH MUST be addressed.
+  Quoting the CSS string alone is explicitly INSUFFICIENT** —
+  this section's contract requires the renderer to use a safe
+  insertion path (CSSOM/style-property assignment) or, only as a
+  documented fallback, HTML-end-tag-escape the emitted CSS. The
+  round-N review correctly identified that the prior wording
+  ("quoted CSS strings prevent breakouts") was wrong in the
+  general case: HTML tokenizers do not understand CSS quoting.
+
+  **Net contract** (binding for V1 implementers):
+
+  1. **Quoting is necessary but NOT sufficient** to prevent
+     injection at the HTML layer.
+  2. The renderer MUST use **CSSOM / style-property assignment**
+     (path (a) below) at every V1 agent-bound insertion site,
+     including Settings panes and rendered Markdown. This is the
+     V1 default.
+  3. The renderer MUST NOT pass user-derived family strings
+     through `innerHTML`, `outerHTML`, server-side string
+     interpolation into a `<style>` tag, or any other
+     HTML-tokenizer-bound path WITHOUT the HTML-end-tag escape
+     pass in path (b).
+  4. The acceptance tests below exercise the **actual render
+     insertion path** end-to-end — not the serializer in
+     isolation — so a future regression that bypasses CSSOM and
+     reaches a `<style>` text node without escaping will fail CI.
 
   **Layer 1 — quoted CSS string serialization (necessary).** The
   renderer takes the **parsed token list** (the structured
@@ -543,6 +645,18 @@ fall through to the appended Default stack on every render.
     misses + class-1 terminator) and assert the cascade
     terminates at the class-1 entry without appending the
     Default stack a second time.
+- T_cross_platform_resolution. Drive the resolver with each row
+  of the B1b cross-platform examples table on each of macOS,
+  Windows, and Linux. For every (row, platform) pair, assert:
+  1. The cascade walk visits the expected entries in order.
+  2. The terminating class-1 entry (either in the user list or
+     in the appended platform Default stack) resolves to a real
+     font on the current OS.
+  3. No "undefined" / no-font branch is ever taken.
+  Includes a synthetic case where the user list has only
+  class-3 misses with no class-1 terminator (`"Foo Bar"`), and
+  asserts the appended platform Default stack is used and
+  itself terminates at its own class-1 entry.
 - T_canonical_case. Round-trip the user inputs in the case
   table under B1a and assert each stored value matches the
   canonical-form column byte-for-byte. Specifically:
