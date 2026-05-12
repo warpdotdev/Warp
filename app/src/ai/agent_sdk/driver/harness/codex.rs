@@ -22,6 +22,7 @@ use crate::server::server_api::ServerApi;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::CLIAgent;
+use warp_managed_secrets::ManagedSecretValue;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
@@ -87,6 +88,7 @@ impl ThirdPartyHarness for CodexHarness {
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
         resolved_env_vars: &HashMap<OsString, OsString>,
+        resolved_secrets: &HashMap<String, ManagedSecretValue>,
         resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
         third_party_harness_model_id: Option<&str>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
@@ -95,6 +97,7 @@ impl ThirdPartyHarness for CodexHarness {
             working_dir,
             system_prompt,
             resolved_env_vars,
+            resolved_secrets,
             resolved_mcp_servers,
             third_party_harness_model_id,
         )
@@ -457,13 +460,11 @@ const CODEX_MODEL_KEY: &str = "model";
 /// TODO: Ideally, we would make this server-driven so we don't depend on a client
 /// release to change this.
 const CODEX_MODEL_MIGRATIONS_TARGET: &str = "gpt-5.4";
-/// Env var name for the OpenAI base URL, set by the typed secret when a base_url is configured.
-const OPENAI_BASE_URL_ENV: &str = "OPENAI_BASE_URL";
-
 fn prepare_codex_environment_config(
     working_dir: &Path,
     system_prompt: Option<&str>,
     resolved_env_vars: &HashMap<OsString, OsString>,
+    resolved_secrets: &HashMap<String, ManagedSecretValue>,
     resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     third_party_harness_model_id: Option<&str>,
 ) -> Result<()> {
@@ -480,8 +481,10 @@ fn prepare_codex_environment_config(
         None => log::info!("No OPENAI_API_KEY available; skipping Codex auth.json seed"),
     }
 
-    // Resolve the base URL from the secret-injected env var or the process env.
-    let openai_base_url = resolve_openai_base_url(resolved_env_vars);
+    // Resolve the base URL directly from the typed OpenAI secret. This avoids
+    // leaking base_url into the child process environment and ensures we only
+    // apply it when the typed secret is the active API key source.
+    let openai_base_url = resolve_openai_base_url_from_secret(resolved_secrets, resolved_env_vars);
 
     prepare_codex_config_toml(
         &codex_dir.join(CODEX_CONFIG_TOML_FILE_NAME),
@@ -591,24 +594,36 @@ fn resolve_openai_api_key(resolved_env_vars: &HashMap<OsString, OsString>) -> Op
         .filter(|s| !s.is_empty())
 }
 
-/// Returns the OpenAI base URL if configured via the secret or process env.
+/// Returns the OpenAI base URL from the typed secret, if applicable.
 ///
-/// Same precedence as `resolve_openai_api_key`: worker-injected process env
-/// wins, then resolved secret env vars, then None (skip writing base URL).
-fn resolve_openai_base_url(resolved_env_vars: &HashMap<OsString, OsString>) -> Option<String> {
-    // Worker-injected process env wins.
-    if let Ok(value) = std::env::var(OPENAI_BASE_URL_ENV) {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_owned());
-        }
+/// The base URL is only used when the typed `OpenaiApiKey` secret is the active
+/// source of `OPENAI_API_KEY`. If a worker-injected process env already provides
+/// the API key, the typed-secret base URL is not applied (the worker controls
+/// both the key and endpoint).
+fn resolve_openai_base_url_from_secret(
+    secrets: &HashMap<String, ManagedSecretValue>,
+    resolved_env_vars: &HashMap<OsString, OsString>,
+) -> Option<String> {
+    // If the worker already injected an API key, the typed secret lost
+    // precedence — do not apply its base URL.
+    if std::env::var(OPENAI_API_KEY_ENV)
+        .ok()
+        .is_some_and(|v| !v.trim().is_empty())
+    {
+        return None;
     }
-    // Otherwise use the resolved value from the secrets map.
-    resolved_env_vars
-        .get(OsStr::new(OPENAI_BASE_URL_ENV))
-        .and_then(|v| v.to_str())
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
+
+    // Only apply when the resolved env vars actually contain OPENAI_API_KEY
+    // from the typed secret (i.e. the secret was not skipped).
+    resolved_env_vars.get(OsStr::new(OPENAI_API_KEY_ENV))?;
+
+    secrets.values().find_map(|secret| match secret {
+        ManagedSecretValue::OpenaiApiKey { base_url, .. } => base_url
+            .as_ref()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty()),
+        _ => None,
+    })
 }
 
 /// Edit `~/.codex/config.toml` via `toml_edit` to seed the harness defaults

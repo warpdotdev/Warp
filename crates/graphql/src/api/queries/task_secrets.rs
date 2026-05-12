@@ -52,7 +52,7 @@ pub enum ManagedSecretValue {
     ManagedSecretAnthropicApiKeyValue(ManagedSecretAnthropicApiKeyValue),
     ManagedSecretAnthropicBedrockAccessKeyValue(ManagedSecretAnthropicBedrockAccessKeyValue),
     ManagedSecretAnthropicBedrockApiKeyValue(ManagedSecretAnthropicBedrockApiKeyValue),
-    ManagedSecretOpenaiApiKeyValue(ManagedSecretOpenaiApiKeyValue),
+    ManagedSecretOpenAiApiKeyValue(ManagedSecretOpenAiApiKeyValue),
     #[cynic(fallback)]
     Unknown,
 }
@@ -83,7 +83,7 @@ pub struct ManagedSecretAnthropicBedrockApiKeyValue {
 }
 
 #[derive(cynic::QueryFragment, Debug)]
-pub struct ManagedSecretOpenaiApiKeyValue {
+pub struct ManagedSecretOpenAiApiKeyValue {
     pub api_key: String,
     /// Optional base URL for regional endpoints.
     pub base_url: Option<String>,

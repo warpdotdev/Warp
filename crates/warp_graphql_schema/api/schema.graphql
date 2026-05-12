@@ -2040,7 +2040,7 @@ type ManagedSecretConfig {
 }
 
 """A managed secret value representing an OpenAI API key."""
-type ManagedSecretOpenaiApiKeyValue {
+type ManagedSecretOpenAiApiKeyValue {
   apiKey: String!
   """
   Optional base URL for the OpenAI API. When set, the harness uses this
@@ -2064,7 +2064,7 @@ enum ManagedSecretType {
   RAW_VALUE
 }
 
-union ManagedSecretValue = ManagedSecretAnthropicApiKeyValue | ManagedSecretAnthropicBedrockAccessKeyValue | ManagedSecretAnthropicBedrockApiKeyValue | ManagedSecretOpenaiApiKeyValue | ManagedSecretRawValue
+union ManagedSecretValue = ManagedSecretAnthropicApiKeyValue | ManagedSecretAnthropicBedrockAccessKeyValue | ManagedSecretAnthropicBedrockApiKeyValue | ManagedSecretOpenAiApiKeyValue | ManagedSecretRawValue
 
 input ManagedSecretsInput {
   """Pagination cursor, currently unused."""

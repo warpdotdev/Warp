@@ -608,6 +608,105 @@ async fn fetch_resume_payload_maps_other_errors_to_load_failed() {
     );
 }
 
+#[test]
+#[serial_test::serial]
+fn resolve_openai_base_url_from_secret_returns_base_url_when_typed_secret_active() {
+    // When the typed OpenAI secret is the active API key source, the base URL
+    // should be extracted from the structured secret.
+    let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
+    std::env::remove_var(OPENAI_API_KEY_ENV);
+
+    let secrets = HashMap::from([(
+        "openai-key".to_string(),
+        ManagedSecretValue::openai_api_key(
+            "sk-test",
+            Some("https://us.api.openai.com/v1".to_string()),
+        ),
+    )]);
+    let resolved_env =
+        HashMap::from([(OsString::from("OPENAI_API_KEY"), OsString::from("sk-test"))]);
+
+    let result = resolve_openai_base_url_from_secret(&secrets, &resolved_env);
+
+    if let Some(v) = prev {
+        std::env::set_var(OPENAI_API_KEY_ENV, v);
+    }
+    assert_eq!(result.as_deref(), Some("https://us.api.openai.com/v1"));
+}
+
+#[test]
+#[serial_test::serial]
+fn resolve_openai_base_url_from_secret_returns_none_when_worker_env_wins() {
+    // When a worker-injected OPENAI_API_KEY already exists in process env,
+    // the typed-secret base_url should NOT be applied.
+    let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
+    std::env::set_var(OPENAI_API_KEY_ENV, "sk-worker-key");
+
+    let secrets = HashMap::from([(
+        "openai-key".to_string(),
+        ManagedSecretValue::openai_api_key(
+            "sk-secret",
+            Some("https://us.api.openai.com/v1".to_string()),
+        ),
+    )]);
+    let resolved_env = HashMap::new();
+
+    let result = resolve_openai_base_url_from_secret(&secrets, &resolved_env);
+
+    match prev {
+        Some(v) => std::env::set_var(OPENAI_API_KEY_ENV, v),
+        None => std::env::remove_var(OPENAI_API_KEY_ENV),
+    }
+    assert_eq!(result, None);
+}
+
+#[test]
+#[serial_test::serial]
+fn resolve_openai_base_url_from_secret_returns_none_when_no_base_url() {
+    // When the typed OpenAI secret has no base_url, None is returned.
+    let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
+    std::env::remove_var(OPENAI_API_KEY_ENV);
+
+    let secrets = HashMap::from([(
+        "openai-key".to_string(),
+        ManagedSecretValue::openai_api_key("sk-test", None),
+    )]);
+    let resolved_env =
+        HashMap::from([(OsString::from("OPENAI_API_KEY"), OsString::from("sk-test"))]);
+
+    let result = resolve_openai_base_url_from_secret(&secrets, &resolved_env);
+
+    if let Some(v) = prev {
+        std::env::set_var(OPENAI_API_KEY_ENV, v);
+    }
+    assert_eq!(result, None);
+}
+
+#[test]
+#[serial_test::serial]
+fn resolve_openai_base_url_from_secret_returns_none_when_api_key_not_in_resolved() {
+    // When OPENAI_API_KEY is not in the resolved env vars (e.g. the secret was
+    // skipped due to collision), the base URL should not be applied.
+    let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
+    std::env::remove_var(OPENAI_API_KEY_ENV);
+
+    let secrets = HashMap::from([(
+        "openai-key".to_string(),
+        ManagedSecretValue::openai_api_key(
+            "sk-test",
+            Some("https://us.api.openai.com/v1".to_string()),
+        ),
+    )]);
+    let resolved_env = HashMap::new();
+
+    let result = resolve_openai_base_url_from_secret(&secrets, &resolved_env);
+
+    if let Some(v) = prev {
+        std::env::set_var(OPENAI_API_KEY_ENV, v);
+    }
+    assert_eq!(result, None);
+}
+
 #[tokio::test]
 async fn fetch_resume_payload_returns_codex_variant_on_success() {
     let uuid = Uuid::new_v4();

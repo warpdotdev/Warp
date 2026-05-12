@@ -22,6 +22,7 @@ use crate::server::server_api::ServerApi;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::session::ExecuteCommandOptions;
 use crate::terminal::CLIAgent;
+use warp_managed_secrets::ManagedSecretValue;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
@@ -103,6 +104,7 @@ impl ThirdPartyHarness for ClaudeHarness {
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
         resolved_env_vars: &HashMap<OsString, OsString>,
+        _resolved_secrets: &HashMap<String, ManagedSecretValue>,
         resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
         _third_party_harness_model_id: Option<&str>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
