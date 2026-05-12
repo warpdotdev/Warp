@@ -202,6 +202,7 @@ use warp_util::{
     content_version::ContentVersion,
     file::{FileLoadError, FileSaveError},
     path::LineAndColumnArg,
+    standardized_path::StandardizedPath,
 };
 
 pub struct CodeReviewHeaderFields {
@@ -5573,7 +5574,10 @@ impl CodeReviewView {
                 .unwrap_or(GitFileStatus::Modified),
             _ => GitFileStatus::Modified,
         };
-        FileStatusInfo { path, status }
+        FileStatusInfo {
+            path: StandardizedPath::from_local_absolute_unchecked(&path),
+            status,
+        }
     }
 
     fn discard_file(&mut self, path: &Path, should_stash: bool, ctx: &mut ViewContext<Self>) {
