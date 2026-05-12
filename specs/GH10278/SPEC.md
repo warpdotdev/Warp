@@ -81,7 +81,9 @@ a bg-colored blank cell driven by an active truecolor `\x1b[48;2;R;G;Bm`
 state.
 
 Single guiding principle: **all bg-painted blank-cell production paths
-follow the active `terminal.truecolor_background_mode`. Modes apply
+follow the active `appearance.terminal.truecolor_background_mode` (the
+canonical key declared in B1; this is the same path used everywhere in
+this spec — Settings/API, UI, acceptance, and tests). Modes apply
 uniformly across all sources of bg-painted cells.**
 
 The covered paths are:
@@ -119,7 +121,9 @@ The covered paths are:
 6. **Cursor save/restore (DECSC / DECRC, `\x1b[s` / `\x1b[u`).** Saving
    and restoring cursor state does **not** alter the active mode and
    does not itself paint bg cells. The mode that applies after a
-   restore is the currently configured `terminal.truecolor_background_mode`.
+   restore is the currently configured
+   `appearance.terminal.truecolor_background_mode` (canonical key from
+   B1; all references in this spec use the full `appearance.*` form).
 7. **256-color and 16-color BCE.** Out of scope of this setting in all
    modes — see B7. Only truecolor (24-bit) bg fills are gated.
 
