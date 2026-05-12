@@ -1,5 +1,12 @@
 # Product Spec: Horizontal scrolling per terminal pane (GH-9828)
 
+> **Spec convention.** This spec follows the repository convention
+> `specs/GH<issue>/product.md` (product requirements) and
+> `specs/GH<issue>/tech.md` (technical contract). It is **not**
+> a single `SPEC.md` file. Downstream spec-discovery and
+> implementation tooling that walks `specs/GH*/{product,tech}.md`
+> will find this spec correctly.
+
 ## Problem
 
 Wide diff hunks, long log lines, and `tree` output regularly
