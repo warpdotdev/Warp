@@ -17,6 +17,7 @@
 #
 # Usage:
 #   script/deploy_remote_server_to_test_vm
+#   script/deploy_remote_server_to_test_vm cleanup
 
 set -euo pipefail
 
@@ -46,6 +47,12 @@ REMOTE_USERS=(bash zsh)
 REMOTE_HOST="ssh-remote-server-testing"
 REMOTE_PORT="22"
 PROXY_COMMAND="gcloud compute start-iap-tunnel ssh-remote-server-testing ${REMOTE_PORT} --listen-on-stdin --project=warp-ssh-integration-testing --zone=us-east4-b"
+TEST_USER_UID="test_user_uid"
+
+# The test VM uses password auth (same as the SSH integration tests).
+# sshpass provides the password non-interactively for SSH/SCP.
+SSH_PASSWORD="password"
+SSH_OPTS=(-p "$REMOTE_PORT" -o "ProxyCommand=$PROXY_COMMAND" -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -111,6 +118,111 @@ app_version() {
     | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "remote_server" and p["manifest_path"].endswith("/crates/remote_server/Cargo.toml")))'
 }
 
+remote_server_identity_key() {
+  if [[ -n "${WARP_REMOTE_SERVER_TEST_RUN_ID:-}" ]]; then
+    echo "${TEST_USER_UID}-${WARP_REMOTE_SERVER_TEST_RUN_ID}"
+  else
+    echo "$TEST_USER_UID"
+  fi
+}
+
+remote_server_identity_dir_name() {
+  python3 - "$1" <<'PY'
+import sys
+
+identity_key = sys.argv[1]
+encoded = []
+for byte in identity_key.encode():
+    if (
+        ord("a") <= byte <= ord("z")
+        or ord("A") <= byte <= ord("Z")
+        or ord("0") <= byte <= ord("9")
+        or byte in (ord("-"), ord("_"))
+    ):
+        encoded.append(chr(byte))
+    else:
+        encoded.append(f"%{byte:02X}")
+print("".join(encoded))
+PY
+}
+
+setup_ssh_commands() {
+  if command -v sshpass &>/dev/null; then
+    export SSHPASS="$SSH_PASSWORD"
+    SSH_CMD=(sshpass -e ssh)
+    SCP_CMD=(sshpass -e scp)
+  else
+    echo "Warning: sshpass not found, SSH/SCP will prompt for password interactively." >&2
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      echo "Install it with: brew install hudochenkov/sshpass/sshpass" >&2
+    elif [[ "$(uname -s)" == "Linux" ]]; then
+      echo "Install it with: sudo apt-get install sshpass" >&2
+    fi
+    SSH_CMD=(ssh)
+    SCP_CMD=(scp)
+  fi
+}
+
+cleanup_remote_artifacts() {
+  local remote_user="$1"
+  local identity_key="$2"
+  local identity_dir_name="$3"
+  local github_run_id="${GITHUB_RUN_ID:-local}"
+
+  echo "==> Cleaning remote-server test artifacts for ${remote_user}"
+  "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "${remote_user}@${REMOTE_HOST}" \
+    "bash -s -- '$REMOTE_DIR' '$BINARY_NAME' '$identity_key' '$identity_dir_name' '$github_run_id'" <<'REMOTE_SCRIPT'
+set -euo pipefail
+
+REMOTE_ROOT="$HOME/$1"
+BINARY_NAME="$2"
+IDENTITY_KEY="$3"
+IDENTITY_DIR_NAME="$4"
+GITHUB_RUN_ID="$5"
+DAEMON_DIR="$REMOTE_ROOT/$IDENTITY_DIR_NAME"
+
+mkdir -p "$REMOTE_ROOT"
+
+if [[ -f "$DAEMON_DIR/server.pid" ]]; then
+  PID="$(cat "$DAEMON_DIR/server.pid" 2>/dev/null || true)"
+  if [[ "$PID" =~ ^[0-9]+$ ]] && [[ -d "/proc/$PID" ]]; then
+    CMDLINE="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
+    if [[ "$CMDLINE" == *remote-server-daemon* ]] && [[ "$CMDLINE" == *"--identity-key $IDENTITY_KEY"* ]]; then
+      echo "Stopping remote-server daemon for this test run, pid $PID"
+      kill "$PID" 2>/dev/null || true
+
+      for _ in {1..50}; do
+        if ! kill -0 "$PID" 2>/dev/null; then
+          break
+        fi
+        sleep 0.1
+      done
+
+      if kill -0 "$PID" 2>/dev/null; then
+        echo "Force-stopping remote-server daemon for this test run, pid $PID"
+        kill -9 "$PID" 2>/dev/null || true
+      fi
+    fi
+  fi
+fi
+
+rm -rf "$DAEMON_DIR"
+rm -f "$REMOTE_ROOT/$BINARY_NAME" "$REMOTE_ROOT/$BINARY_NAME.tmp.$GITHUB_RUN_ID".*
+REMOTE_SCRIPT
+}
+
+BINARY_NAME="oz-integration-$(app_version)"
+REMOTE_SERVER_IDENTITY_KEY="$(remote_server_identity_key)"
+REMOTE_SERVER_IDENTITY_DIR_NAME="$(remote_server_identity_dir_name "$REMOTE_SERVER_IDENTITY_KEY")"
+setup_ssh_commands
+
+if [[ "${1:-}" == "cleanup" ]]; then
+  for REMOTE_USER in "${REMOTE_USERS[@]}"; do
+    cleanup_remote_artifacts "$REMOTE_USER" "$REMOTE_SERVER_IDENTITY_KEY" "$REMOTE_SERVER_IDENTITY_DIR_NAME"
+  done
+  exit 0
+fi
+
 # ── Preflight checks ──────────────────────────────────────────────
 
 MUSL_LINKER="$(detect_musl_linker)"
@@ -121,8 +233,6 @@ if ! rustup target list --installed 2>/dev/null | grep -q "$TARGET"; then
   echo "Install it with: rustup target add $TARGET" >&2
   exit 1
 fi
-
-BINARY_NAME="oz-integration-$(app_version)"
 
 # ── Build ─────────────────────────────────────────────────────────
 
@@ -152,65 +262,19 @@ BINARY_SIZE=$(du -h "$BUILT_BINARY" | cut -f1)
 echo "==> Build complete ($BINARY_SIZE)"
 
 # ── Upload via SCP through GCP IAP tunnel ─────────────────────────
-# The test VM uses password auth (same as the SSH integration tests).
-# sshpass provides the password non-interactively for SSH/SCP.
-SSH_PASSWORD="password"
-SSH_OPTS=(-p "$REMOTE_PORT" -o "ProxyCommand=$PROXY_COMMAND" -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
-
-if command -v sshpass &>/dev/null; then
-  export SSHPASS="$SSH_PASSWORD"
-  SSH_CMD=(sshpass -e ssh)
-  SCP_CMD=(sshpass -e scp)
-else
-  echo "Warning: sshpass not found, SSH/SCP will prompt for password interactively." >&2
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    echo "Install it with: brew install hudochenkov/sshpass/sshpass" >&2
-  elif [[ "$(uname -s)" == "Linux" ]]; then
-    echo "Install it with: sudo apt-get install sshpass" >&2
-  fi
-  SSH_CMD=(ssh)
-  SCP_CMD=(scp)
-fi
 
 for REMOTE_USER in "${REMOTE_USERS[@]}"; do
   echo "==> Ensuring remote directory exists for ${REMOTE_USER}"
   "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p ~/$REMOTE_DIR"
-  echo "==> Stopping stale remote server daemons for ${REMOTE_USER}"
-  "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "bash -s -- '$REMOTE_DIR'" <<'REMOTE_SCRIPT'
+  echo "==> Removing stale temp uploads for ${REMOTE_USER}"
+  "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "bash -s -- '$REMOTE_DIR' '$BINARY_NAME' '${GITHUB_RUN_ID:-local}'" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
 REMOTE_ROOT="$HOME/$1"
+BINARY_NAME="$2"
+GITHUB_RUN_ID="$3"
 mkdir -p "$REMOTE_ROOT"
-
-shopt -s nullglob
-for PID_FILE in "$REMOTE_ROOT"/*/server.pid; do
-  DAEMON_DIR="$(dirname "$PID_FILE")"
-  PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-
-  if [[ "$PID" =~ ^[0-9]+$ ]] && [[ -d "/proc/$PID" ]]; then
-    CMDLINE="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
-    if [[ "$CMDLINE" == *remote-server-daemon* ]]; then
-      echo "Stopping stale remote-server daemon pid $PID"
-      kill "$PID" 2>/dev/null || true
-
-      for _ in {1..50}; do
-        if ! kill -0 "$PID" 2>/dev/null; then
-          break
-        fi
-        sleep 0.1
-      done
-
-      if kill -0 "$PID" 2>/dev/null; then
-        echo "Force-stopping stale remote-server daemon pid $PID"
-        kill -9 "$PID" 2>/dev/null || true
-      fi
-    fi
-  fi
-
-  rm -f "$DAEMON_DIR/server.sock" "$DAEMON_DIR/server.pid"
-done
-
-rm -f "$REMOTE_ROOT"/oz-integration-*.tmp.*
+rm -f "$REMOTE_ROOT/$BINARY_NAME.tmp.$GITHUB_RUN_ID".*
 REMOTE_SCRIPT
 
   TMP_BINARY_NAME="$BINARY_NAME.tmp.${GITHUB_RUN_ID:-local}.$$.${REMOTE_USER}"
