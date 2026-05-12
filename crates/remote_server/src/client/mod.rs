@@ -652,6 +652,20 @@ impl RemoteServerClient {
                      status_count={}",
                     statuses.len()
                 );
+                for status in &statuses {
+                    log::info!(
+                        "[Remote codebase indexing] Client received codebase index status in snapshot: \
+                         repo_path={} state={:?} root_hash_present={} \
+                         progress_completed={:?} progress_total={:?} \
+                         failure_message={:?}",
+                        status.repo_path,
+                        status.state,
+                        status.root_hash.is_some(),
+                        status.progress_completed,
+                        status.progress_total,
+                        status.failure_message,
+                    );
+                }
                 Some(ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses })
             }
             server_message::Message::CodebaseIndexStatusUpdated(update) => {

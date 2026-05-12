@@ -337,18 +337,11 @@ fn availability_from_status(
                     message: "The remote codebase index is missing its root hash.".to_string(),
                 };
             };
-            let Some(embedding_config) = embedding_config_from_status(status) else {
-                return RemoteCodebaseSearchAvailability::Unavailable {
-                    repo_path,
-                    message: "The remote codebase index is missing its embedding config."
-                        .to_string(),
-                };
-            };
             RemoteCodebaseSearchAvailability::Ready(RemoteCodebaseSearchContext {
                 host_id,
                 repo_path,
                 root_hash,
-                embedding_config,
+                embedding_config: EmbeddingConfig::default(),
             })
         }
         RemoteCodebaseIndexState::Queued | RemoteCodebaseIndexState::Indexing => {
@@ -373,34 +366,6 @@ fn availability_from_status(
     }
 }
 
-fn embedding_config_from_status(status: &RemoteCodebaseIndexStatus) -> Option<EmbeddingConfig> {
-    let model = status.embedding_model.as_deref()?.to_ascii_lowercase();
-    let dimensions = status.embedding_dimensions;
-    match (model.as_str(), dimensions) {
-        ("openaitextsmall3_256", Some(256))
-        | ("openai_text_small_3", Some(256))
-        | ("openai-text-small-3", Some(256))
-        | ("text-embedding-3-small", Some(256))
-        | ("openai_text_small_3_256", _)
-        | ("openai-text-small-3-256", _)
-        | ("openaitextsmall3256", _) => Some(EmbeddingConfig::OpenAiTextSmall3_256),
-        ("voyagecode3_512", Some(512))
-        | ("voyage_code_3", Some(512))
-        | ("voyage-code-3", Some(512))
-        | ("voyage_code_3_512", _)
-        | ("voyage-code-3-512", _)
-        | ("voyagecode3512", _) => Some(EmbeddingConfig::VoyageCode3_512),
-        ("voyage3_5_lite_512", Some(512))
-        | ("voyage_3_5_lite", Some(512))
-        | ("voyage-3.5-lite", Some(512))
-        | ("voyage35lite512", _) => Some(EmbeddingConfig::Voyage3_5_Lite_512),
-        ("voyage3_5_512", Some(512))
-        | ("voyage_3_5", Some(512))
-        | ("voyage-3.5", Some(512))
-        | ("voyage35512", _) => Some(EmbeddingConfig::Voyage3_5_512),
-        _ => None,
-    }
-}
 fn should_auto_index_remote_codebase(ctx: &mut ModelContext<RemoteCodebaseIndexModel>) -> bool {
     remote_auto_indexing_enabled(
         UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx),
@@ -444,8 +409,6 @@ mod tests {
             root_hash: Some(
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
             ),
-            embedding_model: Some("voyage-3.5".to_string()),
-            embedding_dimensions: Some(512),
         }
     }
 
@@ -503,9 +466,9 @@ mod tests {
     }
 
     #[test]
-    fn missing_embedding_config_is_unavailable() {
+    fn missing_root_hash_is_unavailable() {
         let mut status = ready_status("/repo");
-        status.embedding_model = None;
+        status.root_hash = None;
 
         let availability = availability_from_status(host(), &status);
 

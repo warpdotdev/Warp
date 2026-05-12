@@ -20,7 +20,10 @@ use super::codebase_index_status::{
 };
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
 use ::ai::index::full_source_code_embedding::manager::{
-    CodebaseIndexManager, CodebaseIndexManagerEvent,
+    CodebaseIndexManager, CodebaseIndexManagerEvent, FragmentMetadataLookupError,
+};
+use ::ai::index::full_source_code_embedding::{
+    ContentHash, FragmentMetadata as LocalFragmentMetadata, NodeHash,
 };
 use warp_files::{FileModel, FileModelEvent};
 use warp_util::content_version::ContentVersion;
@@ -38,6 +41,7 @@ use super::proto::{
     CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
     DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess, DropCodebaseIndex, ErrorCode,
     ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, GetDiffStateResponse,
+    FragmentMetadata as ProtoFragmentMetadata,
     GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse, IndexCodebase, Initialize,
     InitializeResponse, MissingFragmentMetadata, NavigatedToDirectory, NavigatedToDirectoryResponse,
     OpenBuffer, OpenBufferResponse, ReadFileContextResponse, ResolveConflict,
@@ -708,7 +712,7 @@ impl ServerModel {
                 self.handle_drop_codebase_index(msg, &request_id, conn_id, ctx)
             }
             Some(client_message::Message::GetFragmentMetadataFromHash(msg)) => {
-                self.handle_get_fragment_metadata_from_hash(msg, &request_id, conn_id)
+                self.handle_get_fragment_metadata_from_hash(msg, &request_id, conn_id, ctx)
             }
             None => {
                 log::warn!(
@@ -962,29 +966,93 @@ impl ServerModel {
         msg: GetFragmentMetadataFromHash,
         request_id: &RequestId,
         conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
     ) -> HandlerOutcome {
         log::info!(
-            "[Remote codebase indexing] Daemon handling GetFragmentMetadataFromHash placeholder: \
+            "[Remote codebase indexing] Daemon handling GetFragmentMetadataFromHash: \
              request_id={request_id} conn_id={conn_id} repo_path={} root_hash={} hash_count={}",
             msg.repo_path,
             msg.root_hash,
             msg.content_hashes.len()
         );
+
+        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: "Remote codebase indexing is not enabled".to_string(),
+            }));
+        }
+
+        let repo_path = match canonicalize_index_repo_path(&msg.repo_path) {
+            Ok(repo_path) => repo_path,
+            Err(error) => {
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: error,
+                }));
+            }
+        };
+        let root_hash = match msg.root_hash.parse::<NodeHash>() {
+            Ok(root_hash) => root_hash,
+            Err(error) => {
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: format!("Invalid root_hash: {error}"),
+                }));
+            }
+        };
+
+        let mut valid_hashes = Vec::new();
+        let mut missing_hashes = Vec::new();
+        for content_hash in msg.content_hashes {
+            match content_hash.parse::<ContentHash>() {
+                Ok(parsed_hash) => valid_hashes.push((content_hash, parsed_hash)),
+                Err(error) => missing_hashes.push(missing_fragment_metadata(
+                    content_hash,
+                    format!("Invalid content hash: {error}"),
+                )),
+            }
+        }
+
+        let content_hashes = valid_hashes
+            .iter()
+            .map(|(_, hash)| hash.clone())
+            .collect::<Vec<_>>();
+        let metadata_by_hash = match CodebaseIndexManager::handle(ctx)
+            .as_ref(ctx)
+            .fragment_metadatas_from_hashes(&repo_path, &root_hash, &content_hashes, ctx)
+        {
+            Ok(metadata_by_hash) => metadata_by_hash,
+            Err(error) => {
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: fragment_metadata_lookup_error_message(error),
+                }));
+            }
+        };
+
+        let mut fragments = Vec::new();
+        for (content_hash_string, content_hash) in valid_hashes {
+            match metadata_by_hash.get(&content_hash) {
+                Some(metadata) => {
+                    fragments.extend(
+                        metadata
+                            .iter()
+                            .map(|metadata| fragment_metadata_to_proto(&content_hash, metadata)),
+                    );
+                }
+                None => missing_hashes.push(missing_fragment_metadata(
+                    content_hash_string,
+                    "No fragment metadata found for content hash".to_string(),
+                )),
+            }
+        }
+
         HandlerOutcome::Sync(
             server_message::Message::GetFragmentMetadataFromHashResponse(
                 GetFragmentMetadataFromHashResponse {
-                    fragments: Vec::new(),
-                    missing_hashes: msg
-                        .content_hashes
-                        .into_iter()
-                        .map(|content_hash| MissingFragmentMetadata {
-                            content_hash,
-                            error: Some(FileOperationError {
-                                message: "Remote fragment metadata lookup is not available yet"
-                                    .to_string(),
-                            }),
-                        })
-                        .collect(),
+                    fragments,
+                    missing_hashes,
                 },
             ),
         )
@@ -2273,6 +2341,39 @@ fn canonicalize_index_repo_path(repo_path: &str) -> Result<PathBuf, String> {
     Ok(standardized_path
         .to_local_path()
         .unwrap_or_else(|| standardized_path.to_local_path_lossy()))
+}
+
+fn missing_fragment_metadata(content_hash: String, message: String) -> MissingFragmentMetadata {
+    MissingFragmentMetadata {
+        content_hash,
+        error: Some(FileOperationError { message }),
+    }
+}
+
+fn fragment_metadata_lookup_error_message(error: FragmentMetadataLookupError) -> String {
+    match error {
+        FragmentMetadataLookupError::IndexNotFound => "Codebase index not found".to_string(),
+        FragmentMetadataLookupError::IndexNotSynced => {
+            "Codebase index has no synced root hash".to_string()
+        }
+        FragmentMetadataLookupError::RootHashMismatch { requested, current } => {
+            format!("Codebase index root hash mismatch: requested {requested}, current {current}")
+        }
+    }
+}
+
+fn fragment_metadata_to_proto(
+    content_hash: &ContentHash,
+    metadata: &LocalFragmentMetadata,
+) -> ProtoFragmentMetadata {
+    ProtoFragmentMetadata {
+        content_hash: content_hash.to_string(),
+        path: metadata.absolute_path.to_string_lossy().to_string(),
+        start_line: metadata.location.start_line as u32,
+        end_line: metadata.location.end_line as u32,
+        byte_start: metadata.location.byte_range.start.as_usize() as u64,
+        byte_end: metadata.location.byte_range.end.as_usize() as u64,
+    }
 }
 
 /// Converts a [`ReadFileContextResult`] into its protobuf equivalent.

@@ -15,7 +15,7 @@ pub use sync_client::SyncTask;
 pub use codebase_index::{CodebaseIndex, RetrievalID, SyncProgress};
 pub use merkle_tree::{ContentHash, NodeHash};
 
-use fragment_metadata::FragmentMetadata;
+pub use fragment_metadata::FragmentMetadata;
 use string_offset::ByteOffset;
 use thiserror::Error;
 use warp_graphql::queries::rerank_fragments::FragmentLocationInput;
