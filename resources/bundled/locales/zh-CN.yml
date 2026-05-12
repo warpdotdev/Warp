@@ -645,6 +645,48 @@ zh-CN:
     apply_link: "应用链接"
     link_copied: "链接已复制到剪贴板"
 
+  # ── 引导 ──
+  onboarding:
+    welcome_title: "欢迎使用 Warp"
+    back: "返回"
+    next: "下一步"
+    skip: "跳过"
+    get_started: "开始使用"
+    get_warping: "开始使用 Warp"
+    enabled: "启用"
+    disabled: "禁用"
+    intro:
+      subtitle: "内置先进智能体的现代终端。"
+      already_have_account: "已有账号？"
+      log_in: "登录"
+    intention:
+      subtitle: "你想怎样工作？"
+      agent_title: "使用 AI 智能体更快构建"
+      agent_description: "以智能体为核心，同时保留一流终端体验。可使用这些终端与智能体驱动开发能力："
+      terminal_title: "只使用终端"
+      no_ai_features: "不启用 AI 功能"
+      terminal_description: "为速度、上下文和掌控感优化的现代终端，不启用 AI。"
+    features:
+      warp_agents: "Warp 智能体"
+      oz_cloud_agents: "Oz 云端智能体平台"
+      next_command_predictions: "下一条命令预测"
+      prompt_suggestions: "提示词建议"
+      codebase_context: "代码库上下文"
+      remote_control: "通过 Claude Code、Codex 等智能体远程控制"
+      agents_over_ssh: "SSH 上的智能体"
+    customize:
+      title: "自定义你的 Warp"
+      subtitle: "按你的工作方式调整功能和界面。"
+      tab_styling: "标签页样式"
+      vertical: "垂直"
+      horizontal: "水平"
+      tools_panel: "工具面板"
+      code_review: "代码审查"
+      conversation_history: "会话历史"
+      file_explorer: "文件浏览器"
+      global_file_search: "全局文件搜索"
+      warp_drive: "Warp Drive"
+
   # ── 通用 ──
   common:
     show: "显示"

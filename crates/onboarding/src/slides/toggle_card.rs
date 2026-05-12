@@ -4,14 +4,12 @@ use warp_core::ui::{appearance::Appearance, theme::color::internal_colors};
 use warpui::prelude::Align;
 use warpui::{
     elements::{
-        Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex,
-        FormattedTextElement, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-        ParentElement, Radius, Shrinkable, Text, Wrap,
+        Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Hoverable,
+        MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
+        Wrap,
     },
-    fonts::Weight,
     platform::Cursor,
     presenter::EventContext,
-    text_layout::TextAlignment,
     AppContext, Element,
 };
 
@@ -20,7 +18,7 @@ pub(super) type HoverCallback =
     Box<dyn FnMut(bool, &mut EventContext, &AppContext, Vector2F) + 'static>;
 
 pub(super) struct ChipSpec {
-    pub label: &'static str,
+    pub label: String,
     pub is_enabled: bool,
     pub mouse_state: MouseStateHandle,
     pub on_click: ClickCallback,
@@ -28,11 +26,11 @@ pub(super) struct ChipSpec {
 }
 
 pub(super) struct ToggleCardSpec {
-    pub title: &'static str,
+    pub title: String,
     pub is_expanded: bool,
     pub is_left_selected: bool,
-    pub left_label: &'static str,
-    pub right_label: &'static str,
+    pub left_label: String,
+    pub right_label: String,
     pub card_mouse_state: MouseStateHandle,
     pub on_expand: ClickCallback,
     pub left_mouse: MouseStateHandle,
@@ -68,7 +66,7 @@ fn collapsed_subtitle(
     let enabled_labels: Vec<&str> = chips
         .iter()
         .filter(|c| c.is_enabled)
-        .map(|c| c.label)
+        .map(|c| c.label.as_str())
         .collect();
     if enabled_labels.is_empty() {
         return left_label.to_string();
@@ -88,17 +86,15 @@ fn render_collapsed(appearance: &Appearance, spec: ToggleCardSpec) -> Box<dyn El
     let border_color = Fill::Solid(internal_colors::neutral_4(theme));
     let subtitle = collapsed_subtitle(
         spec.is_left_selected,
-        spec.left_label,
-        spec.right_label,
+        spec.left_label.as_str(),
+        spec.right_label.as_str(),
         &spec.chips,
     );
     let mut on_expand = spec.on_expand;
 
     Hoverable::new(spec.card_mouse_state, move |_| {
-        let title_el = FormattedTextElement::from_str(spec.title, ui_font_family, 16.)
+        let title_el = Text::new(spec.title.clone(), ui_font_family, 16.)
             .with_color(text_color)
-            .with_weight(Weight::Normal)
-            .with_alignment(TextAlignment::Left)
             .with_line_height_ratio(1.0)
             .finish();
 
@@ -134,10 +130,8 @@ fn render_expanded(appearance: &Appearance, spec: ToggleCardSpec) -> Box<dyn Ele
     let border_color = theme.accent();
     let background = internal_colors::accent_overlay_1(theme);
 
-    let title_el = FormattedTextElement::from_str(spec.title, ui_font_family, 16.)
+    let title_el = Text::new(spec.title, ui_font_family, 16.)
         .with_color(text_color)
-        .with_weight(Weight::Normal)
-        .with_alignment(TextAlignment::Left)
         .with_line_height_ratio(1.0)
         .finish();
 
@@ -174,8 +168,8 @@ fn render_expanded(appearance: &Appearance, spec: ToggleCardSpec) -> Box<dyn Ele
 pub(super) fn render_inline_segmented_control(
     appearance: &Appearance,
     is_left_selected: bool,
-    left_label: &'static str,
-    right_label: &'static str,
+    left_label: String,
+    right_label: String,
     enabled_mouse: MouseStateHandle,
     disabled_mouse: MouseStateHandle,
     on_left: ClickCallback,
@@ -188,15 +182,13 @@ pub(super) fn render_inline_segmented_control(
     let text_sub = internal_colors::text_sub(theme, theme.background().into_solid());
     let control_bg = internal_colors::fg_overlay_1(theme);
 
-    let build_option = move |label: &'static str,
+    let build_option = move |label: String,
                              is_selected: bool,
                              mouse: MouseStateHandle,
                              mut callback: ClickCallback| {
         let option = Hoverable::new(mouse, move |_| {
-            let label_el = FormattedTextElement::from_str(label, ui_font_family, 14.)
+            let label_el = Text::new(label.clone(), ui_font_family, 14.)
                 .with_color(if is_selected { text_main } else { text_sub })
-                .with_weight(Weight::Normal)
-                .with_alignment(TextAlignment::Center)
                 .with_line_height_ratio(1.0)
                 .finish();
 
@@ -271,10 +263,8 @@ fn render_chip(appearance: &Appearance, mut chip: ChipSpec) -> Box<dyn Element> 
     let label = chip.label;
 
     let mut hoverable = Hoverable::new(chip.mouse_state, move |_| {
-        let label_el = FormattedTextElement::from_str(label, ui_font_family, 14.)
+        let label_el = Text::new(label.clone(), ui_font_family, 14.)
             .with_color(text_color)
-            .with_weight(Weight::Normal)
-            .with_alignment(TextAlignment::Center)
             .with_line_height_ratio(1.0)
             .finish();
 

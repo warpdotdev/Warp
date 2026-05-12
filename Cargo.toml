@@ -78,6 +78,7 @@ remote_server = { path = "crates/remote_server" }
 warp_files = { path = "crates/warp_files" }
 warp_graphql = { path = "crates/graphql" }
 warp_graphql_schema = { path = "crates/warp_graphql_schema" }
+warp_i18n = { path = "crates/i18n" }
 warp_isolation_platform = { path = "crates/isolation_platform" }
 warp_js = { path = "crates/warp_js" }
 warp_logging = { path = "crates/warp_logging" }
@@ -350,6 +351,7 @@ warp-command-signatures = { git = "https://github.com/warpdotdev/command-signatu
 winit = { git = "https://github.com/warpdotdev/winit.git", rev = "7ef01853ae3fe952e6014080a88dc4352662dfb1" }
 x11rb = "0.13.0"
 mockito = "1.7.0"
+sys-locale = "0.3.2"
 sysinfo = { version = "0.37.0", default-features = false, features = [
   "system",
   "multithread",
