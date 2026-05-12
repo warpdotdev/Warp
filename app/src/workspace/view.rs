@@ -5925,9 +5925,21 @@ impl Workspace {
                 // responder chain and the action would be silently dropped. The
                 // direct-call shape matches the other arms in this match block
                 // (`open_code`, `open_file_notebook`, etc.).
-                let image =
-                    build_image_preview_entry(&path, MAX_PREVIEW_FILE_BYTES, MAX_ERROR_MESSAGE_LEN);
-                self.open_lightbox(vec![image], 0, ctx);
+                //
+                // GH9729 (post-tier2): instead of opening with a single image,
+                // discover supported sibling images in the same directory and
+                // hand the lightbox the full list. The optional vertical
+                // thumbnail rail then renders one entry per sibling and the
+                // user can hop between them by clicking. See
+                // `build_sibling_image_entries` for the discovery rules and the
+                // memory-bounding sibling cap.
+                let (images, initial_index) = build_sibling_image_entries(
+                    &path,
+                    MAX_PREVIEW_FILE_BYTES,
+                    MAX_ERROR_MESSAGE_LEN,
+                    MAX_RAIL_SIBLINGS,
+                );
+                self.open_lightbox(images, initial_index, ctx);
             }
         }
     }
@@ -24643,6 +24655,23 @@ const MAX_PREVIEW_FILE_BYTES: u64 = 64 * 1024 * 1024;
 /// button or triggering expensive text shaping.
 const MAX_ERROR_MESSAGE_LEN: usize = 256;
 
+/// GH9729 (post-tier2): upper bound on how many siblings the file-tree
+/// arm hands to the Lightbox for the optional thumbnail rail.
+///
+/// Each rail entry asks the image cache for an Original-quality decode
+/// (no thumbnail-downsample variant exists yet — that's tracked under
+/// `tech.md §706 "Disk-backed thumbnail cache"`). The existing decode-
+/// time pixel cap bounds each individual image's RAM cost but the rail
+/// would still scale linearly, so a directory with 500 supported images
+/// would blow past any sensible budget. Cap at 100 closest-by-name
+/// siblings around the clicked entry; the user gets meaningful
+/// neighbouring context without the rail trying to materialise an
+/// arbitrary-size sibling set into the asset cache.
+///
+/// "Closest" is name-alphabetical (case-insensitive), which is also
+/// the rendering order in the rail itself.
+const MAX_RAIL_SIBLINGS: usize = 100;
+
 /// Build the single Lightbox entry for a `FileTarget::ImagePreview` click.
 ///
 /// Performs a synchronous `metadata` stat to decide between
@@ -24685,6 +24714,139 @@ fn build_image_preview_entry(path: &Path, max_bytes: u64, max_message_len: usize
             description: filename,
         },
     }
+}
+
+/// GH9729 (post-tier2): build the full sibling-image list for the
+/// optional vertical thumbnail rail when a single image is clicked in
+/// the file tree.
+///
+/// Behaviour:
+///   * Read `clicked_path`'s parent directory; filter to supported
+///     image extensions via `is_supported_image_file` (same predicate
+///     the click-routing uses). Hidden files (leading `.`) are
+///     INCLUDED — users frequently store icons or screenshots with
+///     dotted-prefixed names.
+///   * Sort case-insensitive alphabetical by filename.
+///   * Cap at `cap` siblings closest to the clicked entry in that
+///     ordering. When the cap is hit, take a centered window so the
+///     clicked image sits mid-list rather than at an edge.
+///   * For each retained sibling, delegate to `build_image_preview_entry`
+///     so the per-entry cap + sanitisation contract from
+///     `tech.md §119` applies uniformly.
+///   * If anything goes wrong (parent missing, `read_dir` fails,
+///     clicked file not found in its own dir after stat), fall back to
+///     a single-image list so the lightbox still opens — graceful
+///     degradation matches the v1 single-image behaviour.
+///
+/// Returns `(images, initial_index)`. `initial_index` is the position
+/// of the clicked file in the returned `images` vec (NOT in the
+/// original directory listing — important when the cap window shifts).
+fn build_sibling_image_entries(
+    clicked_path: &Path,
+    max_bytes: u64,
+    max_message_len: usize,
+    cap: usize,
+) -> (Vec<LightboxImage>, usize) {
+    // Lazy single-image fallback used by every error/edge case below.
+    // Built lazily because the happy path doesn't need it and the
+    // `LightboxImage` construction performs a `stat` (cheap, but no
+    // need to do it twice on the happy path).
+    let fallback_single = || {
+        (
+            vec![build_image_preview_entry(
+                clicked_path,
+                max_bytes,
+                max_message_len,
+            )],
+            0_usize,
+        )
+    };
+
+    let Some(parent) = clicked_path.parent() else {
+        return fallback_single();
+    };
+
+    let read_dir = match std::fs::read_dir(parent) {
+        Ok(rd) => rd,
+        Err(err) => {
+            log::warn!(
+                "GH9729: could not list parent dir for image preview rail: {}",
+                err
+            );
+            return fallback_single();
+        }
+    };
+
+    let mut sibling_paths: Vec<PathBuf> = read_dir
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| crate::util::openable_file_type::is_supported_image_file(p))
+        .collect();
+
+    // Case-insensitive lexicographic sort by filename. We intentionally
+    // sort by the last path segment rather than the full path so the
+    // ordering matches what the user sees in the file tree.
+    sibling_paths.sort_by(|a, b| {
+        let an = a
+            .file_name()
+            .map(|n| n.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        let bn = b
+            .file_name()
+            .map(|n| n.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        an.cmp(&bn)
+    });
+
+    // Locate the clicked path in the sorted list. Compare by full path
+    // so symlinks / different cases in the user-typed input still
+    // resolve correctly. If we can't find it (e.g. the path was deleted
+    // between the file-tree click and now), bail to the single-image
+    // fallback so the user still gets the image they actually clicked.
+    let Some(clicked_pos) = sibling_paths.iter().position(|p| p == clicked_path) else {
+        return fallback_single();
+    };
+
+    // Apply the centered-window cap so the rail's memory cost stays
+    // bounded for very large directories. See `MAX_RAIL_SIBLINGS` for
+    // the underlying reason. When `cap == 0` we just return the single
+    // image (defensive — current callers never pass 0).
+    let (windowed_paths, current_index) =
+        center_window(&sibling_paths, clicked_pos, cap.max(1));
+
+    let images: Vec<LightboxImage> = windowed_paths
+        .iter()
+        .map(|p| build_image_preview_entry(p, max_bytes, max_message_len))
+        .collect();
+
+    (images, current_index)
+}
+
+/// GH9729 (post-tier2): return a contiguous slice-window of `items`
+/// around `target` of at most `max_len` entries, plus the position of
+/// the original `target` inside that window.
+///
+/// When `items.len() <= max_len` the function returns everything and
+/// `target` is returned unchanged. Otherwise the window is centered on
+/// `target`, then clamped to `[0, items.len())` so we don't overflow at
+/// the edges (start-of-list and end-of-list clicks still return
+/// exactly `max_len` entries, just shifted off-center).
+///
+/// Pure function for ease of unit testing.
+fn center_window<T: Clone>(items: &[T], target: usize, max_len: usize) -> (Vec<T>, usize) {
+    if items.len() <= max_len || max_len == 0 {
+        return (items.to_vec(), target);
+    }
+    let half = max_len / 2;
+    let start = target.saturating_sub(half);
+    let mut end = start + max_len;
+    let start = if end > items.len() {
+        end = items.len();
+        end.saturating_sub(max_len)
+    } else {
+        start
+    };
+    let slice = items[start..end].to_vec();
+    (slice, target - start)
 }
 
 /// Truncate an error message to at most `max_len` Unicode scalar values,

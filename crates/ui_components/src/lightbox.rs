@@ -4,13 +4,17 @@ use instant::Instant;
 use pathfinder_geometry::vector::{Vector2F, vec2f};
 use warp_core::ui::{Icon, appearance::Appearance};
 use warpui::{
-    AfterLayoutContext, AppContext, ClipBounds, Element, EventContext, LayoutContext,
-    PaintContext, SizeConstraint,
+    AfterLayoutContext, AppContext, ClipBounds, Element, EventContext, LayoutContext, PaintContext,
+    SizeConstraint,
     assets::asset_cache::AssetSource,
-    elements::{CacheOption, Dismiss, Image, Point, Shrinkable},
+    elements::{
+        CacheOption, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
+        DispatchEventResult, Dismiss, EventHandler, Fill, Image, Point, ScrollbarWidth, Shrinkable,
+    },
     event::{DispatchedEvent, Event, ModifiersState},
     keymap::Keystroke,
     prelude::{stack::*, *},
+    scene::Border,
 };
 
 use crate::{Component, Options as _, button};
@@ -53,6 +57,26 @@ const SCRIM_BUTTON_INSET: f32 = 12.;
 /// continuous-touch scroll events report values well below 1.0 at
 /// rest and above 1.0 during deliberate gestures.
 const SCROLL_ZOOM_DEAD_ZONE: f32 = 1.0;
+
+/// GH9729 (post-tier2): vertical thumbnail-rail constants. Side rail
+/// shown when the lightbox is opened with > 1 sibling images so the
+/// user can hop between them by clicking; aligns with Warp's vertical-
+/// tabs UX direction (user feedback: "on the side is better since that
+/// allows for a natural scroll and warp recently introduced vertical
+/// tab layout").
+///
+/// The rail consumes width on the left of the scrim's content area
+/// (the image still centers in the *remaining* viewport). Sized so a
+/// 72-px square thumbnail fits with ~12 px padding either side, plus
+/// room for the highlight border.
+const RAIL_WIDTH: f32 = 96.;
+const RAIL_THUMB_SIZE: f32 = 72.;
+const RAIL_THUMB_SPACING: f32 = 8.;
+const RAIL_OUTER_PADDING: f32 = 12.;
+const RAIL_HIGHLIGHT_BORDER_WIDTH: f32 = 2.;
+/// Single rail row's effective height: thumb + spacing between rows.
+/// Used by the view-side scroll-to-current helper.
+pub const RAIL_ROW_PITCH: f32 = RAIL_THUMB_SIZE + RAIL_THUMB_SPACING;
 
 /// GH9729 §698 / t2-19: a viewport that lets its child render at any
 /// size (potentially larger than the viewport itself), centers it, and
@@ -410,6 +434,30 @@ pub enum NavigationDirection {
 /// A handler invoked when the user navigates between images.
 pub type NavigateHandler = Arc<dyn Fn(NavigationDirection, &mut EventContext, &AppContext)>;
 
+/// GH9729 (post-tier2): handler invoked when the user clicks a
+/// thumbnail in the optional vertical rail. Receives the index of the
+/// clicked image in `Params::images`.
+pub type ThumbnailSelectHandler = Arc<dyn Fn(usize, &mut EventContext, &AppContext)>;
+
+/// GH9729 (post-tier2): configuration for the optional vertical
+/// thumbnail rail displayed on the left edge of the lightbox.
+///
+/// The rail renders one square thumbnail per `LightboxImage` in
+/// `Params::images`, highlights `current_index`, and dispatches
+/// `on_select` when the user clicks a thumbnail. The scroll position is
+/// owned by the caller via `scroll_state` so it survives re-renders
+/// (the rail is rebuilt every `render()`; per-element state would be
+/// lost).
+///
+/// Sibling discovery (which files end up in `Params::images`) and
+/// auto-scroll-to-current (callers invoke `scroll_state.scroll_to(..)`
+/// after computing the right pixel offset) both live on the caller's
+/// side — the component just renders what it's handed.
+pub struct ThumbnailRail {
+    pub on_select: ThumbnailSelectHandler,
+    pub scroll_state: ClippedScrollStateHandle,
+}
+
 /// A lightbox component for displaying images in a full-window overlay.
 ///
 /// The lightbox displays one or more images centered on screen with a semi-transparent scrim
@@ -508,6 +556,15 @@ pub struct Params<'a> {
     /// `Translate`/`Offset` primitive that lets us shift an element
     /// during paint without an upstream addition.
     pub zoom_factor: f32,
+
+    /// GH9729 (post-tier2): optional vertical thumbnail rail rendered
+    /// on the left edge. `None` matches v1 behaviour (no rail); `Some`
+    /// renders the rail iff `images.len() > 1`. When the rail is
+    /// active the existing prev/next arrow buttons are suppressed (the
+    /// rail is the primary navigation surface in that mode); the
+    /// keyboard arrow bindings registered by `LightboxView::init` keep
+    /// working as a secondary affordance.
+    pub thumbnail_rail: Option<ThumbnailRail>,
 
     /// Optional configuration for the lightbox.
     pub options: Options,
@@ -702,8 +759,29 @@ impl Component for Lightbox {
 
         let centered_content = Align::new(content_with_description).finish();
 
+        // GH9729 (post-tier2): if the caller supplied a thumbnail rail
+        // AND we have more than one image, splice a vertical rail in on
+        // the left of the centered content via a Flex::row. The rail
+        // and the image area both live inside the Dismiss scope so the
+        // scrim-click dismiss only fires for clicks on the dark space
+        // outside both regions.
+        let show_rail = params.thumbnail_rail.is_some() && image_count > 1;
+        let scrim_content: Box<dyn Element> =
+            match (params.thumbnail_rail, show_rail) {
+                (Some(rail), true) => {
+                    let rail_element =
+                        build_thumbnail_rail(appearance, params.images, current_index, rail);
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                        .with_child(rail_element)
+                        .with_child(Shrinkable::new(1.0, centered_content).finish())
+                        .finish()
+                }
+                _ => centered_content,
+            };
+
         let scrim = Container::new(
-            Dismiss::new(centered_content)
+            Dismiss::new(scrim_content)
                 .prevent_interaction_with_other_elements()
                 .on_dismiss(move |ctx, app| on_dismiss(ctx, app))
                 .finish(),
@@ -724,8 +802,13 @@ impl Component for Lightbox {
             ),
         );
 
-        // Navigation arrows (only shown when there are multiple images).
+        // Navigation arrows (only shown when there are multiple images,
+        // a navigate handler is supplied, AND the thumbnail rail is NOT
+        // active — see GH9729 (post-tier2): the rail is the primary
+        // navigation surface in that mode and the arrows would be
+        // redundant).
         if image_count > 1
+            && !show_rail
             && let Some(on_navigate) = params.options.on_navigate
         {
             // Previous button (hidden on first image).
@@ -912,6 +995,160 @@ fn loading_element(appearance: &Appearance) -> Box<dyn Element> {
     )
     .with_color(ColorU::white())
     .finish()
+}
+
+/// GH9729 (post-tier2): construct the vertical thumbnail rail rendered
+/// on the left of the lightbox. One square thumbnail per
+/// `LightboxImage`; current entry gets a coloured highlight border; the
+/// whole column is wrapped in a vertical `ClippedScrollable` so a
+/// directory with many siblings scrolls naturally.
+///
+/// Click on a thumbnail dispatches `rail.on_select(index, …)`. The
+/// thumbnail bytes share `AssetCache` with the main display, so opening
+/// the rail does not double-decode the currently-shown image.
+///
+/// Memory caveat: each thumbnail asks the image cache for an
+/// `Original`-quality decode (the cache currently has no thumbnail-
+/// downsample variant). For very large sibling sets this can push
+/// memory hard — sibling discovery on the caller's side caps the list
+/// at a centered window for that reason. A proper thumbnail cache is
+/// tracked under `tech.md` §706 "Disk-backed thumbnail cache".
+fn build_thumbnail_rail(
+    appearance: &Appearance,
+    images: &[LightboxImage],
+    current_index: usize,
+    rail: ThumbnailRail,
+) -> Box<dyn Element> {
+    let mut column = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_spacing(RAIL_THUMB_SPACING);
+
+    for (index, image) in images.iter().enumerate() {
+        let thumbnail = build_thumbnail_cell(
+            appearance,
+            image,
+            index == current_index,
+            index,
+            rail.on_select.clone(),
+        );
+        column = column.with_child(thumbnail);
+    }
+
+    let column_element = column.finish();
+
+    // GH9729 (post-tier2): wrap in a vertical scrollable so long sibling
+    // lists scroll inside the rail rather than overflowing the scrim.
+    // Use the caller-supplied scroll-state handle so position survives
+    // re-renders (the column above is rebuilt every render() and any
+    // per-element scroll state would reset on `ctx.notify()`).
+    //
+    // Scrollbar fill colours: a faintly-white thumb against transparent
+    // track keeps the scrollbar legible against the dark scrim without
+    // competing with the close button / metadata text for attention.
+    let scrollable = ClippedScrollable::vertical(
+        rail.scroll_state,
+        column_element,
+        ScrollbarWidth::Auto,
+        Fill::Solid(ColorU::new(255, 255, 255, 64)),
+        Fill::Solid(ColorU::new(255, 255, 255, 128)),
+        Fill::None,
+    )
+    .finish();
+
+    // Constrain rail to its fixed width AND let it stretch full-height
+    // of the scrim's centred content area; pad horizontally so the
+    // thumbnails don't kiss the scrim edge.
+    ConstrainedBox::new(
+        Container::new(scrollable)
+            .with_horizontal_padding(RAIL_OUTER_PADDING)
+            .finish(),
+    )
+    .with_max_width(RAIL_WIDTH + 2. * RAIL_OUTER_PADDING)
+    .with_min_width(RAIL_WIDTH + 2. * RAIL_OUTER_PADDING)
+    .finish()
+}
+
+/// GH9729 (post-tier2): build one clickable thumbnail cell. The image
+/// is rendered through the standard `Image::contain()` path so the
+/// existing decode + size caps + animation behaviour apply (the rail
+/// is opted out of `enable_animation_with_start_time` so animated
+/// siblings render as their first frame in the rail — only the
+/// currently-displayed image animates).
+///
+/// Current-entry highlight: a coloured `Border` outline. Non-current
+/// entries get the same border at 0 alpha so layout doesn't shift
+/// between the two states.
+fn build_thumbnail_cell(
+    appearance: &Appearance,
+    image: &LightboxImage,
+    is_current: bool,
+    index: usize,
+    on_select: ThumbnailSelectHandler,
+) -> Box<dyn Element> {
+    // The thumbnail surface depends on the image source state. Loading /
+    // error entries render as a placeholder rather than a broken-image
+    // glyph; clicking still selects them so the user gets the same
+    // main-area error or spinner they'd see by other means.
+    let inner: Box<dyn Element> = match &image.source {
+        LightboxImageSource::Resolved { asset_source } => Image::new(
+            asset_source.clone(),
+            CacheOption::Original,
+        )
+        .contain()
+        .before_load(Align::new(loading_element(appearance)).finish())
+        .finish(),
+        LightboxImageSource::Loading => Align::new(loading_element(appearance)).finish(),
+        LightboxImageSource::Error { .. } => {
+            // A tiny "!" placeholder keeps the rail visually tidy
+            // without leaking the underlying error string into the rail
+            // (the error is surfaced in the main image area when the
+            // entry is selected).
+            Align::new(
+                Text::new(
+                    "!".to_string(),
+                    appearance.ui_font_family(),
+                    lightbox_text_size(appearance),
+                )
+                .with_color(ColorU::new(255, 255, 255, 178))
+                .finish(),
+            )
+            .finish()
+        }
+    };
+
+    // Highlight the current entry with a coloured border. Non-current
+    // entries get the same border at 0 alpha so the layout doesn't
+    // shift between current and not-current (the border reserves
+    // `RAIL_HIGHLIGHT_BORDER_WIDTH` px in either case).
+    let border = Border {
+        width: RAIL_HIGHLIGHT_BORDER_WIDTH,
+        color: Fill::Solid(if is_current {
+            ColorU::new(255, 255, 255, 255)
+        } else {
+            ColorU::new(255, 255, 255, 0)
+        }),
+        top: true,
+        left: true,
+        bottom: true,
+        right: true,
+        dash: None,
+    };
+
+    let sized = ConstrainedBox::new(inner)
+        .with_max_width(RAIL_THUMB_SIZE)
+        .with_min_width(RAIL_THUMB_SIZE)
+        .with_max_height(RAIL_THUMB_SIZE)
+        .with_min_height(RAIL_THUMB_SIZE)
+        .finish();
+
+    let bordered = Container::new(sized).with_border(border).finish();
+
+    Box::new(
+        EventHandler::new(bordered).on_left_mouse_down(move |ctx, app, _position| {
+            on_select(index, ctx, app);
+            DispatchEventResult::StopPropagation
+        }),
+    )
 }
 
 fn lightbox_text_size(appearance: &Appearance) -> f32 {

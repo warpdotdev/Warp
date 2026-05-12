@@ -7,6 +7,8 @@ use warpui::assets::asset_cache::{AssetCache, AssetSource, AssetState};
 use warpui::image_cache::ImageType;
 use warpui::keymap::{FixedBinding, Keystroke};
 use warpui::prelude::*;
+use warpui::elements::ClippedScrollStateHandle;
+use warpui::units::Pixels;
 use warpui::{AppContext, BlurContext, Element, Entity, SingletonEntity, View, ViewContext};
 
 use crate::appearance::Appearance;
@@ -98,6 +100,12 @@ pub enum LightboxViewAction {
         tap_offset_from_center_x: f32,
         tap_offset_from_center_y: f32,
     },
+    /// GH9729 (post-tier2): jump to the image at `index` in the current
+    /// `params.images` list. Dispatched by clicks on the optional
+    /// vertical thumbnail rail. No-op if the index is the current one
+    /// or out of bounds. Resets per-image state on success so the
+    /// freshly-displayed image starts at native zoom / no pan / frame 0.
+    SelectImage(usize),
 }
 
 /// A view that renders a full-window lightbox overlay.
@@ -127,6 +135,14 @@ pub struct LightboxView {
     /// lightbox component clamps the actual paint offset so the user
     /// can't drag the visible edge past viewport center.
     pan_offset: Vector2F,
+    /// GH9729 (post-tier2): scroll position for the optional vertical
+    /// thumbnail rail. Owned here on the persistent view so position
+    /// survives the rail's per-`render()` rebuild (same lifetime
+    /// reasoning as `drag_state` for `PanClippedImage`). Reset to top
+    /// + scrolled to current on `update_params`; survives clicks
+    /// inside the rail so the user's hand-driven scroll doesn't snap
+    /// back when they pick a thumbnail near the bottom.
+    rail_scroll_state: ClippedScrollStateHandle,
 }
 
 impl LightboxView {
@@ -134,6 +150,8 @@ impl LightboxView {
         let initial_index = params
             .initial_index
             .min(params.images.len().saturating_sub(1));
+        let image_count = params.images.len();
+        let rail_scroll_state = ClippedScrollStateHandle::new();
         let mut view = Self {
             params,
             current_index: initial_index,
@@ -141,8 +159,18 @@ impl LightboxView {
             animation_start_time: Instant::now(),
             zoom_factor: 1.0,
             pan_offset: Vector2F::zero(),
+            rail_scroll_state,
         };
         view.start_asset_loads(ctx);
+        // GH9729 (post-tier2): scroll the rail so the initially-selected
+        // thumbnail is visible. We don't know the rail's viewport height
+        // at this point so we approximate with a half-window of rows
+        // above the current entry. This is a one-shot scroll on open;
+        // after that the user's manual scrolling is respected.
+        if image_count > 1 {
+            view.rail_scroll_state
+                .scroll_to(initial_rail_scroll_target(initial_index));
+        }
         view
     }
 
@@ -151,10 +179,18 @@ impl LightboxView {
         let initial_index = params
             .initial_index
             .min(params.images.len().saturating_sub(1));
+        let image_count = params.images.len();
         self.params = params;
         self.current_index = initial_index;
         self.reset_per_image_state();
         self.start_asset_loads(ctx);
+        // GH9729 (post-tier2): re-anchor the rail scroll on a fresh
+        // params update (different image clicked while the lightbox
+        // was already open). Same rationale as `new`.
+        if image_count > 1 {
+            self.rail_scroll_state
+                .scroll_to(initial_rail_scroll_target(initial_index));
+        }
     }
 
     /// GH9729 §697 + §698 + §698/t2-19: reset the per-image transient
@@ -483,6 +519,24 @@ impl View for LightboxView {
                 // and file size are deferred — see `TIER2_TODO::t2-8-r2`.
                 metadata_line: current_image_native_size
                     .map(|size| format_metadata_line(size, self.zoom_factor)),
+                // GH9729 (post-tier2): expose the vertical thumbnail
+                // rail when there's more than one image to navigate.
+                // Click on a thumbnail dispatches `SelectImage(idx)`,
+                // which handles the model update and per-image reset.
+                // For single-image lightboxes (the artifacts/screenshots
+                // call sites, and file-tree clicks where the directory
+                // has exactly one supported image) the rail is `None`
+                // and the existing centered-image layout is unchanged.
+                thumbnail_rail: if self.params.images.len() > 1 {
+                    Some(lightbox::ThumbnailRail {
+                        on_select: Arc::new(|index, ctx, _| {
+                            ctx.dispatch_typed_action(LightboxViewAction::SelectImage(index));
+                        }),
+                        scroll_state: self.rail_scroll_state.clone(),
+                    })
+                } else {
+                    None
+                },
                 options: lightbox::Options {
                     dismiss_keystroke: Keystroke::parse("escape").ok(),
                     on_navigate: Some(Arc::new(|direction, ctx, _| match direction {
@@ -606,8 +660,39 @@ impl TypedActionView for LightboxView {
                     ctx.notify();
                 }
             }
+            LightboxViewAction::SelectImage(index) => {
+                if *index < self.params.images.len() && *index != self.current_index {
+                    self.current_index = *index;
+                    self.reset_per_image_state();
+                    // Note: deliberately do NOT call
+                    // `rail_scroll_state.scroll_to(...)` here. The user
+                    // just chose a thumbnail that was already visible
+                    // by definition (they clicked on it). Re-anchoring
+                    // would yank the rail under their cursor.
+                    ctx.notify();
+                }
+            }
         }
     }
+}
+
+/// GH9729 (post-tier2): compute the initial vertical scroll offset (in
+/// pixels) for the thumbnail rail so the entry at `index` appears
+/// roughly centered in the rail viewport.
+///
+/// Because we don't know the rail viewport height at construction time,
+/// we approximate "centered" as ~3 rows above the target — large enough
+/// to give spatial context, small enough that it doesn't over-scroll
+/// past the top when the current entry sits near the start of a short
+/// list. The scrollable element clamps to `[0, max_scroll]` so passing
+/// a negative-ish value here lands at top (which is what we want for
+/// the first few entries anyway).
+fn initial_rail_scroll_target(index: usize) -> Pixels {
+    // 3 rows of headroom. RAIL_ROW_PITCH lives on the component so the
+    // view side and the renderer agree on row geometry.
+    const HEADROOM_ROWS: f32 = 3.0;
+    let offset = (index as f32 - HEADROOM_ROWS).max(0.0) * lightbox::RAIL_ROW_PITCH;
+    Pixels::new(offset)
 }
 
 #[cfg(test)]

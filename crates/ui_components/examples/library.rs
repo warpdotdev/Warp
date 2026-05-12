@@ -567,6 +567,7 @@ impl RootView {
                 zoom_factor: 1.0,
                 pan_offset: pathfinder_geometry::vector::Vector2F::zero(),
                 metadata_line: None,
+                thumbnail_rail: None,
                 options: lightbox::Options {
                     on_zoom: None,
                     on_pan: None,
@@ -607,6 +608,7 @@ impl RootView {
                 zoom_factor: 1.0,
                 pan_offset: pathfinder_geometry::vector::Vector2F::zero(),
                 metadata_line: None,
+                thumbnail_rail: None,
                 options: lightbox::Options {
                     on_zoom: None,
                     on_pan: None,
