@@ -5491,7 +5491,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 EnablementState::Flag(FeatureFlag::FullScreenZenMode)
             }
             Self::UpdateAltScreenPaddingMode => EnablementState::Always,
-            Self::AddTabWithShell => EnablementState::Flag(FeatureFlag::ShellSelector),
+            Self::AddTabWithShell => EnablementState::Always,
             Self::AgentModeSurfacedCitations | Self::AgentModeOpenedCitation => {
                 EnablementState::Always
             }

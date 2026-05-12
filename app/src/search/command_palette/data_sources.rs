@@ -53,9 +53,8 @@ impl DataSourceStore {
 
         let launch_config_data_source = ctx.add_model(launch_config::DataSource::new);
 
-        let new_session_data_source = (FeatureFlag::ShellSelector.is_enabled()
-            && cfg!(feature = "local_tty"))
-        .then_some(ctx.add_model(|ctx| NewSessionDataSource::new(binding_source, ctx)));
+        let new_session_data_source = cfg!(feature = "local_tty")
+            .then_some(ctx.add_model(|ctx| NewSessionDataSource::new(binding_source, ctx)));
 
         let historical_conversation_data_source: ModelHandle<conversations::DataSource> =
             ctx.add_model(|_| conversations::DataSource::historical());

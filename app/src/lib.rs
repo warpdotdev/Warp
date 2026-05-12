@@ -2510,8 +2510,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AIRules,
         #[cfg(feature = "ssh_tmux_wrapper")]
         FeatureFlag::SSHTmuxWrapper,
-        #[cfg(feature = "shell_selector")]
-        FeatureFlag::ShellSelector,
         #[cfg(feature = "integration_command")]
         FeatureFlag::IntegrationCommand,
         #[cfg(feature = "artifact_command")]

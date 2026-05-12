@@ -3785,8 +3785,6 @@ pub fn test_add_windows_correct_position_and_cascade() -> Builder {
 }
 
 pub fn test_open_new_tab_with_specific_shell_from_new_session_menu() -> Builder {
-    FeatureFlag::ShellSelector.set_enabled(true);
-
     // Consults the AvailableShells model to find a shell based on the shell type,
     // gets the display name, and then clicks on that entry in the new session menu.
     fn new_tab_with_click_on_shell(shell: ShellType) -> TestStep {
