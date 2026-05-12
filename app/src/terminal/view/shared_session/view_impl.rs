@@ -747,7 +747,7 @@ impl TerminalView {
             }
         }
         #[cfg(not(target_arch = "wasm32"))]
-        if self.active_viewer_driven_size.is_some() {
+        if self.active_viewer_driven_size.is_some() && !self.is_shared_session_for_ambient_agent() {
             self.restore_pty_to_sharer_size(ctx);
         }
 
