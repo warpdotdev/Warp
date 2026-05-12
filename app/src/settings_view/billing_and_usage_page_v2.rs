@@ -86,9 +86,9 @@ const RESTRICTED_BILLING_USAGE_WARNING_STRING: &str =
 
 const HEADER_FONT_SIZE: f32 = 16.;
 
-const CARD_BORDER_COLOR: ColorU = ColorU::new(43, 43, 43, 255);
-const BASE_CREDITS_DOT_COLOR: ColorU = ColorU::new(0, 194, 255, 255);
-const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU::new(255, 165, 100, 255);
+const CARD_BORDER_COLOR: ColorU = ColorU { r: 43, g: 43, b: 43, a: 255 };
+const BASE_CREDITS_DOT_COLOR: ColorU = ColorU { r: 0, g: 194, b: 255, a: 255 };
+const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU { r: 255, g: 165, b: 100, a: 255 };
 const DEFAULT_MAX_MONTHLY_SPEND_CENTS: i32 = 20_000;
 
 #[derive(Default)]
@@ -1599,6 +1599,15 @@ impl TypedActionView for BillingAndUsagePageV2View {
                         ctx,
                     );
                 });
+                let toast_message = if *enabled {
+                    let credits = auto_reload_denomination_credits
+                        .map(|c| c.separate_with_commas())
+                        .unwrap_or_else(|| "your selected".to_string());
+                    format!("Auto-reload enabled. We'll refill with {credits} credits when your balance runs low.")
+                } else {
+                    "Auto-reload disabled.".to_string()
+                };
+                self.show_toast(&toast_message, ToastFlavor::Success, ctx);
             }
             BillingAndUsagePageAction::DismissAmbientAgentTrialWidget => {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
