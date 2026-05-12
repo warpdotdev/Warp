@@ -219,6 +219,10 @@ pub(super) async fn handle_daemon_connection(
             if let Err(e2) =
                 remote_server::protocol::write_server_message(&mut writer, &error_msg).await
             {
+                if !e2.is_write_recoverable() {
+                    log::error!("Daemon: failed to send error response on conn {conn_id}: {e2}");
+                    break;
+                }
                 log::warn!("Daemon: failed to send error response on conn {conn_id}: {e2}");
                 continue;
             }
