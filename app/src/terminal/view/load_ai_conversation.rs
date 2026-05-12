@@ -892,16 +892,12 @@ impl TerminalView {
     }
 
     /// Process code diffs from AI output messages and apply them to the AI block for rendering.
-    /// Command blocks should already exist in the blocklist (inserted by
-    /// `to_serialized_blocklist_items` + `insert_restored_block` before AI blocks are created).
-    /// If `should_create_requested_command_block` is true, it means the command block was not
-    /// found in the blocklist, which is unexpected — we log a warning and create a fallback block.
+    /// Command blocks should already exist in the blocklist (extracted via 
+    /// `conversation.to_serialized_blocklist_items`) before AI blocks are created.
     fn process_restored_outputs(
         &mut self,
         ai_block: &mut AIBlock,
         output: &AIAgentOutput,
-        conversation_id: AIConversationId,
-        should_create_requested_command_block: bool,
         ctx: &mut ViewContext<AIBlock>,
     ) {
         for message in &output.messages {
@@ -916,25 +912,6 @@ impl TerminalView {
                     ..
                 } => {
                     ai_block.set_restored_file_edits(id, file_edits.clone(), ctx);
-                }
-                AIAgentOutputMessage {
-                    message:
-                        AIAgentOutputMessageType::Action(AIAgentAction {
-                            action: AIAgentActionType::RequestCommandOutput { command, .. },
-                            id,
-                            ..
-                        }),
-                    id: msg_id,
-                    ..
-                } if should_create_requested_command_block => {
-                    // This path should not normally be reached — command blocks should have been
-                    // inserted into the blocklist before AI blocks are created. Log a warning
-                    // and create a fallback block without timestamps.
-                    log::warn!(
-                        "process_restored_outputs: unexpectedly creating command block for \
-                         RequestCommandOutput (msg_id: {msg_id:?}, action_id: {id:?}). \
-                         Command blocks should be pre-inserted via to_serialized_blocklist_items."
-                    );
                 }
                 _ => {}
             }
@@ -1091,15 +1068,10 @@ impl TerminalView {
         if let Some(output) = exchange.output_status.output() {
             // Process code diffs for the AI block
             let ai_block_handle = restored_block_view_handle.clone();
-            // If we have command_block_index, we already have a real block for the requested command.
-            // So we only create the requested command block if command_block_index is None.
-            let should_create_requested_command_block = command_block_index.is_none();
             ai_block_handle.update(ctx, |ai_block, block_ctx| {
                 self.process_restored_outputs(
                     ai_block,
                     &output.get(),
-                    conversation_id,
-                    should_create_requested_command_block,
                     block_ctx,
                 );
             });

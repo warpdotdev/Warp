@@ -3112,29 +3112,6 @@ impl AIConversation {
         s.replace('\n', "\r\n").into_bytes()
     }
 
-    /// Finds the RunShellCommand result for a given tool_call_id.
-    /// Returns both the result and the message ID of the result message.
-    pub(crate) fn find_run_shell_command_result(
-        &self,
-        tool_call_id: &str,
-    ) -> Option<(api::RunShellCommandResult, String)> {
-        let root_task = self.get_root_task()?;
-        let api_task = root_task.source()?;
-
-        // Find the last tool call result with this tool call ID
-        api_task.messages.iter().rev().find_map(|msg| {
-            let result = msg.tool_call_result()?;
-            if result.tool_call_id == tool_call_id {
-                if let Some(api::message::tool_call_result::Result::RunShellCommand(cmd_result)) =
-                    &result.result
-                {
-                    return Some((cmd_result.clone(), msg.id.clone()));
-                }
-            }
-            None
-        })
-    }
-
     /// Extracts all shell command blocks, in order, from the conversation's API task
     /// messages.
     ///
