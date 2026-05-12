@@ -20,7 +20,8 @@ use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
 
 use crate::ai::blocklist::agent_view::agent_input_footer::AgentInputButtonTheme;
-use crate::ai::harness_display::{display_name, icon_for};
+use crate::ai::harness_availability::{HarnessAvailability, HarnessAvailabilityModel};
+use crate::ai::harness_display::{brand_color, icon_for};
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
@@ -91,6 +92,7 @@ impl HarnessSelector {
             ActionButton::new("", AgentInputButtonTheme)
                 .with_size(ButtonSize::AgentInputButton)
                 .with_menu(true)
+                .with_disabled_theme(AgentInputButtonTheme)
                 .with_tooltip(BUTTON_TOOLTIP)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(HarnessSelectorAction::ToggleMenu);
@@ -120,6 +122,14 @@ impl HarnessSelector {
             me.refresh_menu(ctx);
         });
 
+        ctx.subscribe_to_model(
+            &HarnessAvailabilityModel::handle(ctx),
+            |me, _, _event, ctx| {
+                me.refresh_menu(ctx);
+                me.refresh_button(ctx);
+            },
+        );
+
         let mut me = Self {
             button,
             menu,
@@ -138,6 +148,9 @@ impl HarnessSelector {
 
     /// Programmatically opens the harness selector popover. No-op if already open.
     pub fn open_menu(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.is_locked_to_oz(ctx) {
+            return;
+        }
         self.set_menu_visibility(true, ctx);
     }
 
@@ -152,17 +165,18 @@ impl HarnessSelector {
         });
     }
 
-    pub fn set_button_theme(
-        &self,
-        theme: impl ActionButtonTheme + 'static,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    pub fn set_button_theme<T>(&self, theme: T, ctx: &mut ViewContext<Self>)
+    where
+        T: ActionButtonTheme + Clone + 'static,
+    {
         self.button.update(ctx, |button, ctx| {
-            button.set_theme(theme, ctx);
+            button.set_theme(theme.clone(), ctx);
+            button.set_disabled_theme(theme, ctx);
         });
     }
 
     fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
+        let is_open = is_open && !self.is_locked_to_oz(ctx);
         if self.is_menu_open == is_open {
             return;
         }
@@ -175,14 +189,36 @@ impl HarnessSelector {
         ctx.notify();
     }
 
+    fn is_locked_to_oz(&self, app: &AppContext) -> bool {
+        self.ambient_agent_model
+            .as_ref(app)
+            .is_local_to_cloud_handoff()
+    }
+
     fn refresh_button(&mut self, ctx: &mut ViewContext<Self>) {
+        let is_locked_to_oz = self.is_locked_to_oz(ctx);
         let harness = self.ambient_agent_model.as_ref(ctx).selected_harness();
-        let label = display_name(harness).to_string();
+        let label = HarnessAvailabilityModel::as_ref(ctx)
+            .display_name_for(harness)
+            .to_string();
         let icon = icon_for(harness);
         self.button.update(ctx, |button, ctx| {
             button.set_label(label, ctx);
             button.set_icon(Some(icon), ctx);
+            button.set_has_menu(!is_locked_to_oz, ctx);
+            button.set_disabled(is_locked_to_oz, ctx);
+            button.set_tooltip(
+                Some(if is_locked_to_oz {
+                    "This conversation is with the Warp Agent, so the cloud handoff will also use Warp"
+                } else {
+                    BUTTON_TOOLTIP
+                }),
+                ctx,
+            );
         });
+        if is_locked_to_oz {
+            self.set_menu_visibility(false, ctx);
+        }
     }
 
     fn refresh_menu(&mut self, ctx: &mut ViewContext<Self>) {
@@ -190,8 +226,15 @@ impl HarnessSelector {
         let theme = appearance.theme();
         let hover_background: Fill = internal_colors::neutral_4(theme).into();
         let header_text_color = theme.disabled_text_color(theme.surface_2()).into_solid();
+        let disabled_text_color = theme.disabled_text_color(theme.surface_2()).into_solid();
         let border = Border::all(1.).with_border_fill(theme.outline());
-        let items = build_menu_items(hover_background, header_text_color);
+        let availability_model = HarnessAvailabilityModel::as_ref(ctx);
+        let items = build_menu_items(
+            availability_model.available_harnesses(),
+            hover_background,
+            header_text_color,
+            disabled_text_color,
+        );
         self.menu.update(ctx, |menu, ctx| {
             menu.set_border(Some(border));
             menu.set_items(items, ctx);
@@ -216,13 +259,12 @@ impl HarnessSelector {
     }
 }
 
-/// Builds the menu items for the harness selector. The first item is a
-/// non-clickable header; the remaining items are the available harnesses.
-/// Item text colors are left as theme defaults; the header uses the theme's
-/// disabled-text color, and hovered/selected rows use `neutral_4`.
+/// Builds the menu items from server-provided harness availability data.
 fn build_menu_items(
+    harnesses: &[HarnessAvailability],
     hover_background: Fill,
     header_text_color: pathfinder_color::ColorU,
+    disabled_text_color: pathfinder_color::ColorU,
 ) -> Vec<MenuItem<HarnessSelectorAction>> {
     let header = MenuItem::Header {
         fields: MenuItemFields::new(MENU_HEADER_LABEL)
@@ -234,25 +276,31 @@ fn build_menu_items(
         right_side_fields: None,
     };
 
-    let item_for = |harness: Harness| {
-        MenuItem::Item(
-            MenuItemFields::new(display_name(harness))
-                .with_icon(icon_for(harness))
-                .with_icon_size_override(ITEM_ICON_SIZE)
-                .with_font_size_override(ITEM_FONT_SIZE)
-                .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
-                .with_override_hover_background_color(hover_background)
-                .with_on_select_action(HarnessSelectorAction::SelectHarness(harness)),
-        )
-    };
+    let mut items = vec![header];
 
-    vec![
-        header,
-        item_for(Harness::Oz),
-        item_for(Harness::Claude),
-        item_for(Harness::Gemini),
-        item_for(Harness::Codex),
-    ]
+    for entry in harnesses {
+        let harness = entry.harness;
+        let is_disabled = !entry.enabled;
+        let mut fields = MenuItemFields::new(entry.display_name.clone())
+            .with_icon(icon_for(harness))
+            .with_icon_size_override(ITEM_ICON_SIZE)
+            .with_font_size_override(ITEM_FONT_SIZE)
+            .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+            .with_override_hover_background_color(hover_background)
+            .with_on_select_action(HarnessSelectorAction::SelectHarness(harness));
+        if let Some(color) = brand_color(harness) {
+            fields = fields.with_override_icon_color(Fill::from(color));
+        }
+        if is_disabled {
+            fields = fields
+                .with_disabled(true)
+                .with_override_text_color(disabled_text_color)
+                .with_tooltip("Disabled by your administrator");
+        }
+        items.push(MenuItem::Item(fields));
+    }
+
+    items
 }
 
 impl Entity for HarnessSelector {
@@ -265,10 +313,18 @@ impl TypedActionView for HarnessSelector {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             HarnessSelectorAction::ToggleMenu => {
+                if self.is_locked_to_oz(ctx) {
+                    self.set_menu_visibility(false, ctx);
+                    return;
+                }
                 let new_state = !self.is_menu_open;
                 self.set_menu_visibility(new_state, ctx);
             }
             HarnessSelectorAction::SelectHarness(harness) => {
+                if self.is_locked_to_oz(ctx) {
+                    self.set_menu_visibility(false, ctx);
+                    return;
+                }
                 let harness = *harness;
                 self.ambient_agent_model.update(ctx, |model, ctx| {
                     model.set_harness(harness, ctx);

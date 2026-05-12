@@ -13,7 +13,10 @@ use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
-use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
+use crate::util::openable_file_type::{
+    is_file_openable_in_warp, is_markdown_file, is_runnable_shell_script, starts_with_shebang,
+};
+use crate::workspace::util::PaneViewLocator;
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
 use crate::{drive::OpenWarpDriveObjectArgs, view_components::DismissibleToast};
@@ -30,7 +33,7 @@ use anyhow::{anyhow, ensure, Result};
 use itertools::Itertools;
 use session_sharing_protocol::common::SessionId;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use url::Url;
 use warpui::notification::UserNotification;
@@ -78,6 +81,8 @@ pub enum UriHost {
     Codex,
     /// Actions triggered from Linear integrations (e.g. work on issue).
     Linear,
+    /// Focuses a specific terminal pane by its persistent session UUID.
+    Session,
 }
 
 impl FromStr for UriHost {
@@ -99,6 +104,7 @@ impl FromStr for UriHost {
             "mcp" => Ok(Self::Mcp),
             "codex" => Ok(Self::Codex),
             "linear" => Ok(Self::Linear),
+            "session" => Ok(Self::Session),
             _ => Err(anyhow!("Received url with unexpected host: {}", s)),
         }
     }
@@ -256,7 +262,7 @@ impl UriHost {
                 // For folder links, we expect an additional query parameter primary_object_id which refers to the id object
                 // that should be opened
                 // When the user is directed here via the request access flow, we expect an additional query parameter invitee_email
-                // If this paramter is present, we will open the sharing dialog with the email filled in.
+                // If this parameter is present, we will open the sharing dialog with the email filled in.
                 let object_type = url
                     .path_segments()
                     .into_iter()
@@ -450,11 +456,59 @@ impl UriHost {
                     log::warn!("{err}");
                 }
             },
+            UriHost::Session => {
+                let uuid_hex = url
+                    .path_segments()
+                    .into_iter()
+                    .flatten()
+                    .last()
+                    .unwrap_or("");
+
+                let Some(uuid_bytes) = decode_uuid_hex(uuid_hex) else {
+                    log::warn!(
+                        "session deep link received invalid UUID hex (safe: len={})",
+                        uuid_hex.len()
+                    );
+                    return;
+                };
+
+                let result = WorkspaceRegistry::as_ref(ctx)
+                    .all_workspaces(ctx)
+                    .iter()
+                    .find_map(|(win_id, workspace)| {
+                        workspace.as_ref(ctx).tab_views().find_map(|pane_group| {
+                            let pane_id = pane_group
+                                .as_ref(ctx)
+                                .find_terminal_pane_by_session_uuid(&uuid_bytes)?;
+                            Some((
+                                *win_id,
+                                PaneViewLocator {
+                                    pane_group_id: pane_group.id(),
+                                    pane_id,
+                                },
+                            ))
+                        })
+                    });
+
+                if let Some((window_id, locator)) = result {
+                    ctx.windows().show_window_and_focus_app(window_id);
+                    if let Some(root_view_id) = ctx.root_view_id(window_id) {
+                        ctx.dispatch_action_for_view(
+                            window_id,
+                            root_view_id,
+                            "root_view:handle_pane_navigation_event",
+                            &locator,
+                        );
+                    }
+                } else {
+                    log::warn!("session deep link could not find pane with given UUID");
+                }
+            }
         }
     }
 
     /// When handling this URI action, determine which window(s) should be focused.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
@@ -472,6 +526,7 @@ impl UriHost {
             Self::Codex => W::default(),
             // Linear deeplink opens a new tab with agent view
             Self::Linear => W::default(),
+            Self::Session => W::Nothing,
         }
     }
 }
@@ -498,7 +553,7 @@ impl Default for WindowBehaviorHint {
 impl WindowBehaviorHint {
     /// Perform the desired window focus behavior for the URI being handled. This may change the
     /// "primary window" if a new one has to be created. Return the new primary WindowId.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn resolve(
         self,
         primary_window_id: Option<WindowId>,
@@ -546,7 +601,7 @@ enum WindowActivationFallbackBehavior {
 impl WindowActivationFallbackBehavior {
     /// Perform the desired window fallback behavior for the URI being handled. This may change the
     /// "primary window" if a new one has to be created. Return the new primary WindowId.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn resolve(self, primary_window_id: WindowId, ctx: &mut AppContext) -> Option<WindowId> {
         match self {
             WindowActivationFallbackBehavior::Notify { title, description } => {
@@ -704,7 +759,7 @@ impl Action {
     }
 
     fn handle(&self, primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         let primary_window_id = self.window_behavior_hint().resolve(primary_window_id, ctx);
         match self {
             Self::NewTab | Self::NewWindow => {
@@ -910,7 +965,7 @@ impl Action {
     }
 
     /// When handling this URI action, determine which window(s) should be focused.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
@@ -961,7 +1016,7 @@ pub fn handle_incoming_uri(url: &Url, ctx: &mut AppContext) {
 
     match validate_custom_uri(url) {
         Ok(host) => {
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", target_os = "freebsd", windows))]
             let primary_window_id = host.window_behavior_hint().resolve(primary_window_id, ctx);
             host.handle(primary_window_id, url, ctx);
         }
@@ -1004,6 +1059,39 @@ fn get_primary_window(
     non_quake_mode_windows.next()
 }
 
+/// What `open_file` should do with an incoming `file://` URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenFileAction {
+    /// Open in the markdown notebook pane.
+    Notebook,
+    /// Open in Warp's code/text editor pane.
+    Editor,
+    /// Open a session at the parent directory and queue the file as the pending command,
+    /// or just open a session at the directory path if `path` is a directory.
+    ExecuteInSession,
+}
+
+/// Pure routing decision for `open_file`. Extracted so it can be unit-tested without
+/// standing up a full `AppContext`.
+fn classify_open_file_action(path: &Path) -> OpenFileAction {
+    if is_markdown_file(path) {
+        return OpenFileAction::Notebook;
+    }
+    if path.is_file() {
+        if is_runnable_shell_script(path) {
+            return OpenFileAction::ExecuteInSession;
+        }
+        // Anything we can show in the editor opens there. The second branch catches
+        // shebang scripts that `is_file_openable_in_warp` rejects on extension alone
+        // (e.g. an extensionless `#!/bin/sh` file without the user-execute bit) so
+        // they don't fall through to the executor and produce a `permission denied`.
+        if is_file_openable_in_warp(path).is_some() || starts_with_shebang(path) {
+            return OpenFileAction::Editor;
+        }
+    }
+    OpenFileAction::ExecuteInSession
+}
+
 /// Handle an incoming `file://` URL.
 /// * Markdown files are opened as notebook panes.
 /// * For directories, open a new session at the directory path.
@@ -1015,7 +1103,8 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
             .map(|view_id| (window_id, view_id))
     });
 
-    if is_markdown_file(&path) {
+    let action = classify_open_file_action(&path);
+    if action == OpenFileAction::Notebook {
         if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
             ctx.dispatch_action(
                 primary_window_id,
@@ -1027,7 +1116,7 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
         } else {
             ctx.dispatch_global_action("root_view:open_new_with_file_notebook", &path);
         }
-    } else if path.is_file() && is_file_openable_in_warp(&path).is_some() {
+    } else if action == OpenFileAction::Editor {
         #[cfg(feature = "local_fs")]
         {
             use crate::code::editor_management::CodeSource;
@@ -1305,7 +1394,8 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
         | UriHost::Settings
         | UriHost::Mcp
         | UriHost::Codex
-        | UriHost::Linear => true,
+        | UriHost::Linear
+        | UriHost::Session => true,
         // Auth and Home only allow the desktop redirect path
         UriHost::Auth | UriHost::Home => false,
     };
@@ -1341,6 +1431,21 @@ fn safe_url_log_fields(url: &Url) -> String {
     )
 }
 
+fn decode_uuid_hex(hex: &str) -> Option<Vec<u8>> {
+    let hex = hex.as_bytes();
+    if hex.len() != 32 {
+        return None;
+    }
+
+    hex.chunks_exact(2)
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16)?;
+            let low = (pair[1] as char).to_digit(16)?;
+            Some(((high << 4) | low) as u8)
+        })
+        .collect()
+}
+
 #[cfg(test)]
-#[path = "uri_test.rs"]
+#[path = "uri_tests.rs"]
 mod tests;

@@ -272,3 +272,7 @@ async fn fuzzy_match_files_query(
         .k_largest_relaxed_by_key(MAX_RESULTS, |item| item.score())
         .collect()
 }
+
+#[cfg(test)]
+#[path = "data_source_tests.rs"]
+mod tests;

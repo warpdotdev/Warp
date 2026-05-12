@@ -332,7 +332,10 @@ fn test_sync_local_pref_to_cloud_after_initial_sync() {
 
         let mut server_api = mock_object_client_with_base_expectations();
         let is_mac = cfg!(all(not(target_family = "wasm"), target_os = "macos"));
-        let is_linux = cfg!(all(not(target_family = "wasm"), target_os = "linux"));
+        let is_linux = cfg!(all(
+            not(target_family = "wasm"),
+            any(target_os = "linux", target_os = "freebsd")
+        ));
 
         let mut all_client_ids = expect_sync_preferences_setting(&mut server_api);
         all_client_ids.append(&mut expect_sync_server_stored_privacy_settings(
@@ -429,7 +432,10 @@ fn test_sync_local_pref_to_cloud_after_initial_sync() {
                     .set_value(true, ctx);
                 if cfg!(all(not(target_family = "wasm"), target_os = "macos")) {
                     let _ = test_settings.mac_only_cloud_setting.set_value(true, ctx);
-                } else if cfg!(all(not(target_family = "wasm"), target_os = "linux")) {
+                } else if cfg!(all(
+                    not(target_family = "wasm"),
+                    any(target_os = "linux", target_os = "freebsd")
+                )) {
                     let _ = test_settings.linux_only_cloud_setting.set_value(true, ctx);
                 }
                 let _ = test_settings.non_cloud_setting.set_value(true, ctx);
@@ -455,7 +461,10 @@ fn run_initial_sync_test(is_onboarded: bool) {
 
         let mut server_api = mock_object_client_with_base_expectations();
         let is_mac = cfg!(all(not(target_family = "wasm"), target_os = "macos"));
-        let is_linux = cfg!(all(not(target_family = "wasm"), target_os = "linux"));
+        let is_linux = cfg!(all(
+            not(target_family = "wasm"),
+            any(target_os = "linux", target_os = "freebsd")
+        ));
 
         let mut all_client_ids = expect_sync_preferences_setting(&mut server_api);
 
@@ -748,7 +757,10 @@ fn test_sync_cloud_pref_to_local_on_initial_load_or_collab_update() {
         .await;
 
         let is_mac = cfg!(all(not(target_family = "wasm"), target_os = "macos"));
-        let is_linux = cfg!(all(not(target_family = "wasm"), target_os = "linux"));
+        let is_linux = cfg!(all(
+            not(target_family = "wasm"),
+            any(target_os = "linux", target_os = "freebsd")
+        ));
         app.read(|ctx| {
             let settings = TestSettings::as_ref(ctx);
             assert!(
@@ -856,7 +868,10 @@ fn test_cloud_preferences_setting_initial_load_skipped_when_setting_is_off() {
         });
 
         let is_mac = cfg!(all(not(target_family = "wasm"), target_os = "macos"));
-        let is_linux = cfg!(all(not(target_family = "wasm"), target_os = "linux"));
+        let is_linux = cfg!(all(
+            not(target_family = "wasm"),
+            any(target_os = "linux", target_os = "freebsd")
+        ));
         app.read(|ctx| {
             let settings = TestSettings::as_ref(ctx);
             assert!(

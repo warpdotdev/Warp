@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
 use futures::executor::block_on;
 
 use super::*;

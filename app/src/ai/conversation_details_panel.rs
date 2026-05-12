@@ -9,7 +9,6 @@ use pathfinder_color::ColorU;
 use warp_cli::agent::Harness;
 use warp_cli::skill::SkillSpec;
 use warp_core::channel::ChannelState;
-use warp_core::features::FeatureFlag;
 use warp_core::ui::color::coloru_with_opacity;
 use warpui::{
     clipboard::ClipboardContent,
@@ -28,10 +27,9 @@ use warpui::{
 };
 
 use crate::ai::agent::api::ServerConversationToken;
-#[cfg(target_family = "wasm")]
 use crate::ai::agent::conversation::AIConversation;
-use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
-use crate::ai::agent_conversations_model::AgentRunDisplayStatus;
+use crate::ai::agent::conversation::{AIConversationId, ConversationStatus, StatusColorStyle};
+use crate::ai::agent_conversations_model::{AgentConversationEntry, AgentRunDisplayStatus};
 use crate::ai::agent_management::details_action_buttons::{
     ActionButtonsConfig, AgentDetailsButtonEvent, ConversationActionButtonsRow,
 };
@@ -40,9 +38,9 @@ use crate::ai::ambient_agents::{cancel_task_with_toast, AmbientAgentTaskId};
 use crate::ai::artifacts::{Artifact, ArtifactButtonsRow, ArtifactButtonsRowEvent};
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironment};
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::harness_display;
 use crate::appearance::Appearance;
-#[cfg(target_family = "wasm")]
 use crate::auth::UserUid;
 use crate::notebooks::NotebookId;
 use crate::send_telemetry_from_ctx;
@@ -64,12 +62,13 @@ use crate::view_components::copyable_text_field::{
 };
 use crate::view_components::DismissibleToast;
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
-#[cfg(target_family = "wasm")]
 use crate::workspaces::user_profiles::UserProfiles;
 
 const FIELD_SPACING: f32 = 16.0;
 const HEADER_SPACING: f32 = 12.0;
 const STATUS_ICON_SIZE: f32 = 12.0;
+const HARNESS_CIRCLE_SIZE: f32 = 16.0;
+const HARNESS_ICON_IN_CIRCLE: f32 = 9.0;
 const LABEL_VALUE_GAP: f32 = 4.0;
 const SECTION_HEADER_GAP: f32 = 8.0;
 
@@ -161,7 +160,6 @@ impl CreatorInfo {
     }
 
     /// Create a CreatorInfo with just the first character as a fallback.
-    #[cfg(target_family = "wasm")]
     pub fn from_uid_fallback(uid: &str) -> Self {
         let first_char = uid.chars().next().unwrap_or('?').to_uppercase().to_string();
         Self::new(first_char, None)
@@ -224,7 +222,10 @@ impl ConversationDetailsData {
                     .and_then(|metadata| metadata.initial_working_directory.clone())
             })
     }
-    #[cfg(target_family = "wasm")]
+
+    /// Build details data from an in-memory `AIConversation`. Used both by the WASM
+    /// transcript/shared-session details panel and by the native pane-level details panel
+    /// when the active conversation is a local (non-cloud) Warp Agent run.
     pub fn from_conversation(conversation: &AIConversation, app: &AppContext) -> Self {
         let mut directory = None;
         let mut conversation_id = None;
@@ -371,6 +372,97 @@ impl ConversationDetailsData {
         }
     }
 
+    pub fn from_agent_conversation_entry(
+        entry: &AgentConversationEntry,
+        task: Option<&AmbientAgentTask>,
+        open_action: Option<WorkspaceAction>,
+        copy_link_url: Option<String>,
+    ) -> Self {
+        let creator = entry
+            .display
+            .creator
+            .name
+            .clone()
+            .map(|name| CreatorInfo::new(name, None));
+        let created_at = Some(entry.display.created_at.with_timezone(&Local));
+        let source_prompt = entry.display.initial_query.clone();
+        let harness = entry.display.harness;
+
+        if let Some(task_id) = entry.identity.ambient_agent_task_id {
+            let error_message = task.and_then(|task| {
+                task.state
+                    .is_failure_like()
+                    .then(|| task.status_message.as_ref().map(|m| m.message.clone()))
+                    .flatten()
+            });
+            let credits = task.and_then(|task| {
+                task.active_run_execution().request_usage.and_then(|u| {
+                    Some(CreditsInfo::AmbientConversation {
+                        inference: u.inference_cost? as f32,
+                        compute: u.compute_cost? as f32,
+                    })
+                })
+            });
+            let skill_spec = task
+                .and_then(|task| task.agent_config_snapshot.as_ref())
+                .and_then(|config| config.skill_spec.as_ref())
+                .and_then(|spec_str| SkillSpec::from_str(spec_str).ok());
+
+            return ConversationDetailsData {
+                mode: PanelMode::Task {
+                    task_id: Some(task_id),
+                    directory: entry.display.working_directory.clone(),
+                    display_status: Some(entry.display.status.clone()),
+                    error_message,
+                    environment_id: entry.display.environment_id.clone(),
+                    conversation_id: entry
+                        .identity
+                        .server_conversation_token
+                        .as_ref()
+                        .map(|token| token.as_str().to_string()),
+                },
+                title: entry.display.title.clone(),
+                creator,
+                created_at,
+                credits,
+                run_time: task.and_then(AmbientAgentTask::run_time),
+                artifacts: entry.display.artifacts.clone(),
+                open_action,
+                source_prompt,
+                copy_link_url,
+                skill_spec,
+                harness,
+            };
+        }
+
+        ConversationDetailsData {
+            mode: PanelMode::Conversation {
+                directory: entry.display.working_directory.clone(),
+                server_conversation_id: entry
+                    .identity
+                    .server_conversation_token
+                    .as_ref()
+                    .map(|token| token.as_str().to_string()),
+                ai_conversation_id: entry.identity.local_conversation_id,
+                status: Some(entry.display.status.to_conversation_status()),
+            },
+            title: entry.display.title.clone(),
+            creator,
+            created_at,
+            credits: entry
+                .display
+                .request_usage
+                .map(CreditsInfo::LocalConversation),
+            run_time: None,
+            artifacts: entry.display.artifacts.clone(),
+            open_action,
+            source_prompt,
+            copy_link_url,
+            skill_spec: None,
+            harness,
+        }
+    }
+
     /// Minimal details data for when we only know the task id (e.g. shared sessions)
     /// but have not loaded the full `AmbientAgentTask` yet.
     pub fn from_task_id(task_id: AmbientAgentTaskId) -> Self {
@@ -398,6 +490,7 @@ impl ConversationDetailsData {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
     /// Used to populate the details panel from the management view, where we don't always have access
     /// to the full `AIConversation`.
     pub fn from_conversation_metadata(
@@ -559,6 +652,14 @@ impl ConversationDetailsPanel {
         self.set_action_buttons(&data, ctx);
         self.data = data;
         ctx.notify();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn task_display_status_for_test(&self) -> Option<AgentRunDisplayStatus> {
+        match &self.data.mode {
+            PanelMode::Task { display_status, .. } => display_status.clone(),
+            PanelMode::Conversation { .. } => None,
+        }
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -935,7 +1036,7 @@ impl ConversationDetailsPanel {
             }
             PanelMode::Conversation { status, .. } => {
                 let status = status.as_ref()?;
-                let (icon, color) = status.status_icon_and_color(theme);
+                let (icon, color) = status.status_icon_and_color(theme, StatusColorStyle::Standard);
                 (icon, color, status.to_string())
             }
         };
@@ -975,8 +1076,13 @@ impl ConversationDetailsPanel {
         )
     }
 
-    fn render_harness_section(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
-        if !FeatureFlag::AgentHarness.is_enabled() {
+    fn render_harness_section(
+        &self,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        let availability = HarnessAvailabilityModel::as_ref(app);
+        if !availability.should_show_harness_selector() {
             return None;
         }
         let harness = self.data.harness?;
@@ -991,21 +1097,27 @@ impl ConversationDetailsPanel {
         .with_color(blended_colors::text_sub(theme, theme.surface_1()))
         .finish();
 
-        let icon_tint = harness_display::brand_color(harness)
-            .map(Into::into)
-            .unwrap_or_else(|| theme.foreground());
-
-        let icon = ConstrainedBox::new(
+        let circle_bg = harness_display::circle_background(harness, theme);
+        let icon_fill = harness_display::icon_fill_on_circle(harness, theme);
+        let icon_glyph = ConstrainedBox::new(
             harness_display::icon_for(harness)
-                .to_warpui_icon(icon_tint)
+                .to_warpui_icon(icon_fill)
                 .finish(),
         )
-        .with_width(16.)
-        .with_height(16.)
+        .with_width(HARNESS_ICON_IN_CIRCLE)
+        .with_height(HARNESS_ICON_IN_CIRCLE)
         .finish();
+        let icon_padding = (HARNESS_CIRCLE_SIZE - HARNESS_ICON_IN_CIRCLE) / 2.;
+        let icon = Container::new(icon_glyph)
+            .with_uniform_padding(icon_padding)
+            .with_background(circle_bg)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                HARNESS_CIRCLE_SIZE / 2.,
+            )))
+            .finish();
 
         let name = Text::new(
-            harness_display::display_name(harness).to_string(),
+            availability.display_name_for(harness).to_string(),
             appearance.ui_font_family(),
             ui_font_size,
         )
@@ -1652,7 +1764,7 @@ impl View for ConversationDetailsPanel {
             );
         }
 
-        if let Some(harness_section) = self.render_harness_section(appearance) {
+        if let Some(harness_section) = self.render_harness_section(appearance, app) {
             content.add_child(
                 Container::new(harness_section)
                     .with_margin_bottom(FIELD_SPACING)

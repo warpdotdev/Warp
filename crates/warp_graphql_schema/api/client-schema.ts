@@ -97,6 +97,7 @@ const clientQueries = [
   'getIntegrationsUsingEnvironment',
   'scheduledAgentHistory',
   'task',
+  'taskGitCredentials',
   'taskSecrets',
   'listAIConversations',
   'suggestCloudEnvironmentImage'

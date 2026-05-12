@@ -8,10 +8,10 @@ use session_sharing_protocol::common::SessionId;
 
 use crate::ai::agent::UserQueryMode;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
-use crate::server::server_api::ai::{MockAIClient, SpawnAgentResponse};
+use crate::server::server_api::ai::{MockAIClient, SpawnAgentResponse, TaskStatusMessage};
 use crate::terminal::shared_session;
 
-use super::{spawn_task, AmbientAgentEvent, SessionJoinInfo};
+use super::{spawn_task, submit_run_followup, AmbientAgentEvent, SessionJoinInfo};
 
 fn task_with(
     state: AmbientAgentTaskState,
@@ -43,6 +43,499 @@ fn task_with(
 }
 
 #[tokio::test]
+async fn followup_submits_before_polling_and_ignores_previous_session_id() {
+    use futures::StreamExt;
+
+    let previous_session_id = SessionId::new();
+    let new_session_id = SessionId::new();
+    let submitted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let mut mock = MockAIClient::new();
+
+    mock.expect_submit_run_followup().times(1).returning({
+        let submitted = submitted.clone();
+        move |observed_run_id, request| {
+            assert_eq!(observed_run_id.to_string(), run_id().to_string());
+            assert_eq!(request.message, "continue from here");
+            submitted.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    });
+
+    mock.expect_get_ambient_agent_task().returning({
+        let submitted = submitted.clone();
+        let call_count = call_count.clone();
+        move |observed_run_id| {
+            assert!(submitted.load(Ordering::SeqCst));
+            assert_eq!(observed_run_id.to_string(), run_id().to_string());
+            let idx = call_count.fetch_add(1, Ordering::SeqCst);
+            let (session_id, session_link) = if idx == 0 {
+                (
+                    previous_session_id.to_string(),
+                    "https://example.com/session/previous".to_string(),
+                )
+            } else {
+                (
+                    new_session_id.to_string(),
+                    "https://example.com/session/new".to_string(),
+                )
+            };
+
+            Ok(task_with(
+                AmbientAgentTaskState::InProgress,
+                Some(session_id),
+                Some(session_link),
+            ))
+        }
+    });
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue from here".to_string(),
+        run_id(),
+        Some(previous_session_id),
+        ai_client,
+        None,
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected state changed")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::InProgress,
+            ..
+        }
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected session started")
+        .expect("expected ok");
+    let AmbientAgentEvent::SessionStarted { session_join_info } = event else {
+        panic!("Expected SessionStarted event");
+    };
+    assert_eq!(session_join_info.session_id, Some(new_session_id));
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn followup_api_error_does_not_poll() {
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+    mock.expect_submit_run_followup()
+        .times(1)
+        .returning(|_, _| Err(anyhow::anyhow!("follow-up rejected")));
+    mock.expect_get_ambient_agent_task().times(0);
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue".to_string(),
+        run_id(),
+        Some(SessionId::new()),
+        ai_client,
+        None,
+    ));
+
+    let err = stream
+        .next()
+        .await
+        .expect("expected error")
+        .expect_err("expected follow-up error");
+    assert_eq!(err.to_string(), "follow-up rejected");
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn followup_terminal_failure_surfaces_status_message() {
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+    mock.expect_submit_run_followup()
+        .times(1)
+        .returning(|_, _| Ok(()));
+    mock.expect_get_ambient_agent_task()
+        .times(1)
+        .returning(|_| {
+            let mut task = task_with(AmbientAgentTaskState::Error, None, None);
+            task.status_message = Some(TaskStatusMessage {
+                message: "failed to provision runtime".to_string(),
+            });
+            Ok(task)
+        });
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue".to_string(),
+        run_id(),
+        Some(SessionId::new()),
+        ai_client,
+        None,
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected state changed")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::Error,
+            ..
+        }
+    ));
+
+    let err = stream
+        .next()
+        .await
+        .expect("expected terminal error")
+        .expect_err("expected terminal error");
+    assert_eq!(err.to_string(), "failed to provision runtime");
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn followup_without_previous_session_id_accepts_joinable_session() {
+    use futures::StreamExt;
+
+    let session_id = SessionId::new();
+    let expected_session_id = session_id;
+    let mut mock = MockAIClient::new();
+
+    mock.expect_submit_run_followup()
+        .times(1)
+        .returning(|_, _| Ok(()));
+    mock.expect_get_ambient_agent_task()
+        .times(1)
+        .returning(move |_| {
+            Ok(task_with(
+                AmbientAgentTaskState::InProgress,
+                Some(session_id.to_string()),
+                Some("https://example.com/session/joinable".to_string()),
+            ))
+        });
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue".to_string(),
+        run_id(),
+        None,
+        ai_client,
+        None,
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected state changed")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::InProgress,
+            ..
+        }
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected session started")
+        .expect("expected ok");
+    let AmbientAgentEvent::SessionStarted { session_join_info } = event else {
+        panic!("Expected SessionStarted event");
+    };
+    assert_eq!(session_join_info.session_id, Some(expected_session_id));
+    assert_eq!(
+        session_join_info.session_link,
+        "https://example.com/session/joinable"
+    );
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn followup_without_previous_session_id_errors_if_run_finishes_before_session() {
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+
+    mock.expect_submit_run_followup()
+        .times(1)
+        .returning(|_, _| Ok(()));
+    mock.expect_get_ambient_agent_task()
+        .times(1)
+        .returning(|_| Ok(task_with(AmbientAgentTaskState::Succeeded, None, None)));
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue".to_string(),
+        run_id(),
+        None,
+        ai_client,
+        None,
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected state changed")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::Succeeded,
+            ..
+        }
+    ));
+
+    let err = stream
+        .next()
+        .await
+        .expect("expected terminal error")
+        .expect_err("expected terminal error");
+    assert_eq!(
+        err.to_string(),
+        "Cloud follow-up finished before a new session became available"
+    );
+    assert!(stream.next().await.is_none());
+}
+
+fn run_id() -> crate::ai::ambient_agents::AmbientAgentTaskId {
+    "550e8400-e29b-41d4-a716-446655440000".parse().unwrap()
+}
+
+fn transient_http_error() -> anyhow::Error {
+    use crate::server::server_api::presigned_upload::HttpStatusError;
+    anyhow::Error::new(HttpStatusError {
+        status: 429,
+        body: "Too Many Requests".to_string(),
+    })
+    .context("API request failed with status 429 Too Many Requests")
+}
+
+fn permanent_http_error() -> anyhow::Error {
+    use crate::server::server_api::presigned_upload::HttpStatusError;
+    anyhow::Error::new(HttpStatusError {
+        status: 403,
+        body: "Forbidden".to_string(),
+    })
+    .context("API request failed with status 403 Forbidden")
+}
+
+#[tokio::test]
+async fn poll_retries_transient_429_errors() {
+    use crate::server::retry_strategies::MAX_ATTEMPTS;
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+    let call_count = Arc::new(AtomicUsize::new(0));
+
+    mock.expect_spawn_agent().returning(|_| {
+        Ok(SpawnAgentResponse {
+            task_id: "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            run_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            at_capacity: false,
+        })
+    });
+
+    // First (MAX_ATTEMPTS - 1) calls return 429, then succeed.
+    mock.expect_get_ambient_agent_task().returning({
+        let call_count = call_count.clone();
+        move |_task_id| {
+            let idx = call_count.fetch_add(1, Ordering::SeqCst);
+            if idx < MAX_ATTEMPTS - 1 {
+                Err(transient_http_error())
+            } else {
+                Ok(task_with(AmbientAgentTaskState::Succeeded, None, None))
+            }
+        }
+    });
+
+    let ai_client = Arc::new(mock);
+    let request = crate::server::server_api::ai::SpawnAgentRequest {
+        prompt: "test".to_string(),
+        mode: crate::ai::agent::UserQueryMode::Normal,
+        config: None,
+        title: None,
+        team: None,
+        agent_identity_uid: None,
+        skill: None,
+        attachments: vec![],
+        interactive: None,
+        parent_run_id: None,
+        runtime_skills: vec![],
+        referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
+    };
+
+    let mut stream = Box::pin(spawn_task(request, ai_client, None));
+
+    // First event: TaskSpawned
+    let event = stream
+        .next()
+        .await
+        .expect("expected event")
+        .expect("expected ok");
+    assert!(matches!(event, AmbientAgentEvent::TaskSpawned { .. }));
+
+    // After retrying through the 429s, we should get a StateChanged(Succeeded)
+    let event = stream
+        .next()
+        .await
+        .expect("expected event")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::Succeeded,
+            ..
+        }
+    ));
+
+    // Stream should end (no more events)
+    assert!(stream.next().await.is_none());
+    // Verify we made MAX_ATTEMPTS calls ((MAX_ATTEMPTS - 1) failed + 1 succeeded)
+    assert_eq!(call_count.load(Ordering::SeqCst), MAX_ATTEMPTS);
+}
+
+#[tokio::test]
+async fn poll_fails_on_permanent_http_error() {
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+
+    mock.expect_spawn_agent().returning(|_| {
+        Ok(SpawnAgentResponse {
+            task_id: "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            run_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            at_capacity: false,
+        })
+    });
+
+    // Return a 403, which is not transient and should fail immediately.
+    mock.expect_get_ambient_agent_task()
+        .times(1)
+        .returning(|_task_id| Err(permanent_http_error()));
+
+    let ai_client = Arc::new(mock);
+    let request = crate::server::server_api::ai::SpawnAgentRequest {
+        prompt: "test".to_string(),
+        mode: crate::ai::agent::UserQueryMode::Normal,
+        config: None,
+        title: None,
+        team: None,
+        agent_identity_uid: None,
+        skill: None,
+        attachments: vec![],
+        interactive: None,
+        parent_run_id: None,
+        runtime_skills: vec![],
+        referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
+    };
+
+    let mut stream = Box::pin(spawn_task(request, ai_client, None));
+
+    // First event: TaskSpawned
+    let event = stream
+        .next()
+        .await
+        .expect("expected event")
+        .expect("expected ok");
+    assert!(matches!(event, AmbientAgentEvent::TaskSpawned { .. }));
+
+    // Next event should be an error (no retry for 403)
+    let err = stream
+        .next()
+        .await
+        .expect("expected error")
+        .expect_err("expected permanent error");
+    assert!(
+        err.to_string().contains("403"),
+        "error should mention 403: {err}"
+    );
+
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn poll_gives_up_after_max_transient_retries() {
+    use crate::server::retry_strategies::MAX_ATTEMPTS;
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+    let call_count = Arc::new(AtomicUsize::new(0));
+
+    mock.expect_spawn_agent().returning(|_| {
+        Ok(SpawnAgentResponse {
+            task_id: "550e8400-e29b-41d4-a716-446655440000".parse().unwrap(),
+            run_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            at_capacity: false,
+        })
+    });
+
+    // Always return 429 - should give up after MAX_ATTEMPTS.
+    mock.expect_get_ambient_agent_task().returning({
+        let call_count = call_count.clone();
+        move |_task_id| {
+            call_count.fetch_add(1, Ordering::SeqCst);
+            Err(transient_http_error())
+        }
+    });
+
+    let ai_client = Arc::new(mock);
+    let request = crate::server::server_api::ai::SpawnAgentRequest {
+        prompt: "test".to_string(),
+        mode: crate::ai::agent::UserQueryMode::Normal,
+        config: None,
+        title: None,
+        team: None,
+        agent_identity_uid: None,
+        skill: None,
+        attachments: vec![],
+        interactive: None,
+        parent_run_id: None,
+        runtime_skills: vec![],
+        referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
+    };
+
+    let mut stream = Box::pin(spawn_task(request, ai_client, None));
+
+    // First event: TaskSpawned
+    let event = stream
+        .next()
+        .await
+        .expect("expected event")
+        .expect("expected ok");
+    assert!(matches!(event, AmbientAgentEvent::TaskSpawned { .. }));
+
+    // Should eventually fail after exhausting retries
+    let err = stream
+        .next()
+        .await
+        .expect("expected error")
+        .expect_err("expected error after max retries");
+    assert!(
+        err.to_string().contains("429"),
+        "error should mention 429: {err}"
+    );
+
+    assert!(stream.next().await.is_none());
+    // with_bounded_retry makes exactly MAX_ATTEMPTS calls before giving up.
+    assert_eq!(call_count.load(Ordering::SeqCst), MAX_ATTEMPTS);
+}
+
+#[tokio::test]
 async fn poll_stops_on_terminal_failure_like_state() {
     use futures::StreamExt;
 
@@ -67,12 +560,15 @@ async fn poll_stops_on_terminal_failure_like_state() {
         config: None,
         title: None,
         team: None,
+        agent_identity_uid: None,
         skill: None,
         attachments: vec![],
         interactive: None,
         parent_run_id: None,
         runtime_skills: vec![],
         referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
     };
 
     let mut stream = Box::pin(spawn_task(request, ai_client, None));
@@ -101,16 +597,42 @@ async fn poll_stops_on_terminal_failure_like_state() {
 }
 
 #[test]
-fn session_join_info_prefers_session_link_and_tolerates_missing_session_id() {
+fn session_join_info_requires_session_id() {
+    // session_link without session_id is not actionable for the cloud-mode pane
+    // (the GET task handler may overwrite session_link with a conversation link
+    // for tasks with synced conversation data, e.g. local-to-cloud handoff forks).
     let task = task_with(
         AmbientAgentTaskState::InProgress,
         None,
         Some("https://example.com/session/abc".to_string()),
     );
+    assert!(SessionJoinInfo::from_task(&task).is_none());
+}
+
+#[test]
+fn session_join_info_prefers_server_session_link_when_session_id_is_present() {
+    let task = task_with(
+        AmbientAgentTaskState::InProgress,
+        Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
+        Some("https://example.com/session/abc".to_string()),
+    );
 
     let join_info = SessionJoinInfo::from_task(&task).expect("expected join info");
     assert_eq!(join_info.session_link, "https://example.com/session/abc");
-    assert!(join_info.session_id.is_none());
+    assert!(join_info.session_id.is_some());
+}
+
+#[test]
+fn session_join_info_constructs_link_from_session_id_when_link_missing() {
+    let task = task_with(
+        AmbientAgentTaskState::InProgress,
+        Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
+        None,
+    );
+
+    let join_info = SessionJoinInfo::from_task(&task).expect("expected join info");
+    assert!(!join_info.session_link.is_empty());
+    assert!(join_info.session_id.is_some());
 }
 
 #[test]
@@ -167,7 +689,7 @@ async fn poll_for_session_join_info_waits_until_link_is_available() {
             } else {
                 task_with(
                     AmbientAgentTaskState::InProgress,
-                    None,
+                    Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
                     Some("https://example.com/session/ready".to_string()),
                 )
             };
@@ -183,12 +705,15 @@ async fn poll_for_session_join_info_waits_until_link_is_available() {
         config: None,
         title: None,
         team: None,
+        agent_identity_uid: None,
         skill: None,
         attachments: vec![],
         interactive: None,
         parent_run_id: None,
         runtime_skills: vec![],
         referenced_attachments: vec![],
+        conversation_id: None,
+        initial_snapshot_token: None,
     };
 
     let mut stream = Box::pin(spawn_task(request, ai_client, None));

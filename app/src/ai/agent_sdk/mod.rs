@@ -67,9 +67,7 @@ use crate::ai::skills::{
     clone_repo_for_skill, resolve_skill_spec, ResolveSkillError, ResolvedSkill,
 };
 
-pub(crate) use driver::harness::{
-    task_env_vars, validate_cli_installed, ClaudeHarness, ThirdPartyHarness,
-};
+pub(crate) use driver::harness::{task_env_vars, validate_cli_installed, ClaudeHarness};
 pub use driver::AgentDriver;
 use telemetry::CliTelemetryEvent;
 use warp_cli::agent::{Harness, Prompt, RunAgentArgs};
@@ -343,15 +341,28 @@ fn build_merged_config_and_task(
         None => (None, None),
     };
 
+    // When a non-Oz harness is active, --model targets the harness rather than the Oz model.
+    let harness_model_id = if args.harness != Harness::Oz {
+        args.model.model.clone()
+    } else {
+        None
+    };
     let harness_override = (args.harness != Harness::Oz).then_some(HarnessConfig {
         harness_type: args.harness,
+        model_id: harness_model_id,
     });
+
+    let oz_model = if args.harness == Harness::Oz {
+        args.model.model.clone().or(file_merged.model_id)
+    } else {
+        None
+    };
 
     let mut merged_config = AgentConfigSnapshot {
         // CLI name > skill name > file name
         name: args.name.clone().or(skill_name).or(file_merged.name),
         environment_id: args.environment.clone().or(file_merged.environment_id),
-        model_id: args.model.model.clone().or(file_merged.model_id),
+        model_id: oz_model,
         // Skill base_prompt takes precedence over file base_prompt
         base_prompt: runtime_base_prompt.clone().or(file_merged.base_prompt),
         mcp_servers: config_file::merge_mcp_servers(file_merged.mcp_servers, cli_mcp_servers),
@@ -374,6 +385,7 @@ fn build_merged_config_and_task(
     let model_override: Option<LLMId> = merged_config
         .model_id
         .as_deref()
+        .filter(|_| args.harness == Harness::Oz)
         .map(|model_id| common::validate_agent_mode_base_model_id(model_id, ctx))
         .transpose()?;
 
@@ -420,15 +432,24 @@ fn build_server_side_task(
         None => Vec::new(),
     };
 
-    let model_override: Option<LLMId> = args
-        .model
-        .model
-        .as_deref()
-        .map(|model_id| common::validate_agent_mode_base_model_id(model_id, ctx))
-        .transpose()?;
+    let harness_model_id = if args.harness != Harness::Oz {
+        args.model.model.clone()
+    } else {
+        None
+    };
+    let model_override: Option<LLMId> = if args.harness == Harness::Oz {
+        args.model
+            .model
+            .as_deref()
+            .map(|model_id| common::validate_agent_mode_base_model_id(model_id, ctx))
+            .transpose()?
+    } else {
+        None
+    };
 
     let harness_override = (args.harness != Harness::Oz).then_some(HarnessConfig {
         harness_type: args.harness,
+        model_id: harness_model_id,
     });
 
     let skill_name = resolved_skill.as_ref().map(|s| s.name.clone());
@@ -464,6 +485,24 @@ fn build_server_side_task(
     };
 
     Ok((config, task))
+}
+
+fn reconcile_task_harness(
+    task_id: &str,
+    selected_harness: &mut Harness,
+    task_harness: Harness,
+) -> Result<HarnessKind, AgentDriverError> {
+    if *selected_harness == Harness::Oz {
+        *selected_harness = task_harness;
+    } else if task_harness != *selected_harness {
+        return Err(AgentDriverError::TaskHarnessMismatch {
+            task_id: task_id.to_string(),
+            expected: task_harness.to_string(),
+            got: selected_harness.to_string(),
+        });
+    }
+
+    harness_kind(*selected_harness)
 }
 
 /// Resolve a `Prompt` to a plain string.
@@ -570,21 +609,23 @@ impl AgentDriverRunner {
             // Pull relevant variables out of args before moving it into the closure.
             let share_requests = args.share.share.clone();
             let bedrock_inference_role = args.bedrock_inference_role.clone();
+            let has_task_id = args.task_id.is_some();
             let args_harness = args.harness;
-
             // `--conversation` path (user-invoked local resume): validate before any task side
             // effects so mismatches fail fast. The `--task-id` path derives its conversation id
             // from the server-side task metadata inside `build_driver_options_and_task`. Both
             // can currently be passed together (the worker server-side appends `--conversation`
             // alongside `--task-id` for Slack/Linear followups); when both are set, the explicit
             // `--conversation` value wins via the merge below.
-            if let Some(conversation_id) = args.conversation.as_deref() {
-                common::fetch_and_validate_conversation_harness(
-                    server_api.clone(),
-                    conversation_id,
-                    args_harness,
-                )
-                .await?;
+            if !has_task_id {
+                if let Some(conversation_id) = args.conversation.as_deref() {
+                    common::fetch_and_validate_conversation_harness(
+                        server_api.clone(),
+                        conversation_id,
+                        args_harness,
+                    )
+                    .await?;
+                }
             }
             let resume_conversation_id = args.conversation.clone();
 
@@ -784,6 +825,10 @@ impl AgentDriverRunner {
                 let should_share = (args.share.is_shared() || args.task_id.is_some())
                     && FeatureFlag::AgentSharedSessions.is_enabled();
 
+                let third_party_harness_model_id = merged_config
+                    .harness
+                    .as_ref()
+                    .and_then(|h| h.model_id.clone());
                 let driver_options = driver::AgentDriverOptions {
                     working_dir: working_dir.clone(),
                     task_id,
@@ -795,6 +840,7 @@ impl AgentDriverRunner {
                     cloud_providers: Vec::new(),
                     environment: None,
                     selected_harness: args.harness,
+                    third_party_harness_model_id,
                     snapshot_disabled: args.snapshot.no_snapshot.then_some(true),
                     snapshot_upload_timeout: args
                         .snapshot
@@ -847,7 +893,6 @@ impl AgentDriverRunner {
             .await?;
             None
         };
-
         // Resolve environment and cloud providers.
         Self::resolve_environment(foreground, environment_id, &mut driver_options).await?;
 
@@ -976,19 +1021,50 @@ impl AgentDriverRunner {
             )
             .await
         };
-        let (secrets_result, attachments_result, task_metadata_result, handoff_snapshot_result) =
-            futures::future::join4(
-                task_secrets,
-                driver::attachments::fetch_and_download_attachments(
-                    ai_client.clone(),
-                    server_api.clone(),
-                    task_id_str.clone(),
-                    attachments_download_dir.clone(),
-                ),
-                task_metadata,
-                handoff_snapshot,
-            )
-            .await;
+
+        // Fetch a fresh GitHub token from the server so the driver can configure git
+        // and gh credentials without relying on environment variable injection.
+        let git_creds_ai_client = ai_client.clone();
+        let git_creds_task_id = task_id_str.clone();
+        let git_credentials = async move {
+            if !FeatureFlag::GitCredentialRefresh.is_enabled() {
+                return Ok(vec![]);
+            }
+            let workload_token = match warp_isolation_platform::issue_workload_token(Some(
+                std::time::Duration::from_secs(5 * 60),
+            ))
+            .await
+            {
+                Ok(token) => token.token,
+                Err(e) => {
+                    // Not in an isolated environment — no workload token available.
+                    log::debug!("Skipping git credentials fetch: {e}");
+                    return Ok(vec![]);
+                }
+            };
+            git_creds_ai_client
+                .get_task_git_credentials(git_creds_task_id, workload_token)
+                .await
+        };
+
+        let (
+            secrets_result,
+            attachments_result,
+            task_metadata_result,
+            handoff_snapshot_result,
+            git_credentials_result,
+        ) = futures::join!(
+            task_secrets,
+            driver::attachments::fetch_and_download_attachments(
+                ai_client.clone(),
+                server_api.clone(),
+                task_id_str.clone(),
+                attachments_download_dir.clone(),
+            ),
+            task_metadata,
+            handoff_snapshot,
+            git_credentials,
+        );
 
         // Extract attachments_dir from successful result, log errors
         let mut attachments_dir = match attachments_result {
@@ -1010,6 +1086,27 @@ impl AgentDriverRunner {
                 log::warn!("Failed to fetch handoff snapshot attachments: {e:#}");
             }
         }
+
+        if FeatureFlag::GitCredentialRefresh.is_enabled() {
+            match git_credentials_result {
+                Ok(credentials) if !credentials.is_empty() => {
+                    driver::git_credentials::setup_git_config(&credentials);
+                    driver::git_credentials::configure_git_identity(&credentials);
+                    if let Err(e) = driver::git_credentials::write_git_credentials(&credentials) {
+                        log::warn!("Failed to write git credentials: {e:#}");
+                    } else {
+                        log::info!("Git credentials configured from taskGitCredentials");
+                    }
+                }
+                Ok(_) => {
+                    log::debug!("No git credentials returned; skipping credential file setup");
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch git credentials: {e:#}");
+                }
+            }
+        }
+
         let secrets = match secrets_result {
             Ok(secrets) => secrets,
             Err(err) => {
@@ -1028,40 +1125,43 @@ impl AgentDriverRunner {
                 }
             }
         };
-        let (parent_run_id, task_conversation_id, task_harness) = match task_metadata_result {
-            Ok(Some(task_metadata)) => {
-                // The task's harness is stored on the snapshot; if absent, it's the default Oz.
-                let task_harness = task_metadata
-                    .agent_config_snapshot
-                    .as_ref()
-                    .and_then(|c| c.harness.as_ref())
-                    .map(|h| h.harness_type)
-                    .unwrap_or(Harness::Oz);
-                (
-                    task_metadata.parent_run_id,
-                    task_metadata.conversation_id,
-                    Some(task_harness),
-                )
-            }
-            Ok(None) => (None, None, None),
-            Err(err) => {
-                log::warn!("Failed to fetch task metadata: {err:#}");
-                (None, None, None)
-            }
-        };
+        let (parent_run_id, task_conversation_id, task_harness, task_harness_model_id) =
+            match task_metadata_result {
+                Ok(Some(task_metadata)) => {
+                    // The task's harness is stored on the snapshot; if absent, it's the default Oz.
+                    let task_harness_config = task_metadata
+                        .agent_config_snapshot
+                        .as_ref()
+                        .and_then(|c| c.harness.as_ref());
+                    let task_harness = task_harness_config
+                        .map(|h| h.harness_type)
+                        .unwrap_or(Harness::Oz);
+                    let task_harness_model_id =
+                        task_harness_config.and_then(|h| h.model_id.clone());
+                    (
+                        task_metadata.parent_run_id,
+                        task_metadata.conversation_id,
+                        Some(task_harness),
+                        task_harness_model_id,
+                    )
+                }
+                Ok(None) => (None, None, None, None),
+                Err(err) => {
+                    log::warn!("Failed to fetch task metadata: {err:#}");
+                    (None, None, None, None)
+                }
+            };
 
         // Validate the requested `--harness` against the task's harness setting. This avoids the
         // extra conversation-metadata roundtrip that would otherwise be needed downstream when the
         // task is linked to an existing conversation, since task harness and conversation harness
         // always match (the task spawned the conversation).
         if let Some(task_harness) = task_harness {
-            if task_harness != driver_options.selected_harness {
-                return Err(AgentDriverError::TaskHarnessMismatch {
-                    task_id: task_id_str,
-                    expected: task_harness.to_string(),
-                    got: driver_options.selected_harness.to_string(),
-                });
-            }
+            task.harness = reconcile_task_harness(
+                &task_id_str,
+                &mut driver_options.selected_harness,
+                task_harness,
+            )?;
         }
 
         // Set the task ID on the ServerApi so it's sent with all subsequent requests.
@@ -1077,6 +1177,10 @@ impl AgentDriverRunner {
         driver_options.task_id = parsed_task_id;
         driver_options.parent_run_id = parent_run_id;
         driver_options.secrets = secrets;
+        // CLI flags continue to take precedence so users can still override per-invocation.
+        if driver_options.third_party_harness_model_id.is_none() {
+            driver_options.third_party_harness_model_id = task_harness_model_id;
+        }
 
         // Update the task prompt to include the downloaded attachments dir
         if let AgentRunPrompt::ServerSide {
@@ -1133,7 +1237,6 @@ impl AgentDriverRunner {
                         "Failed to convert conversation data to AIConversation".into(),
                     )
                 })?;
-
                 Ok(Some(driver::ResumeOptions::Oz(Box::new(
                     ConversationRestorationInNewPaneType::Historical {
                         conversation,
@@ -1496,6 +1599,9 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
                 CliTelemetryEvent::HarnessSupportFinishTask {
                     success: finish_args.status == TaskStatus::Success,
                 }
+            }
+            HarnessSupportCommand::ReportShutdown(_) => {
+                CliTelemetryEvent::HarnessSupportReportShutdown
             }
         },
         CliCommand::Artifact(artifact_cmd) => match artifact_cmd {

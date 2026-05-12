@@ -260,7 +260,7 @@ impl TestContext {
         let (window_id, _) = app.add_window(WindowStyle::NotStealFocus, |_| TestView);
         let state = create_loaded_state_with_editors(app, window_id, vec![(file_path, editor)]);
 
-        let diff_state_model = app.add_model(|ctx| DiffStateModel::new(None, ctx));
+        let diff_state_model = app.add_model(DiffStateModel::new_for_test);
 
         let working_directories_model = app.add_model(|_| WorkingDirectoriesModel::new());
         let code_review_comment_batch =
@@ -862,27 +862,13 @@ fn test_on_close_then_on_open_reinitializes_repo_state() {
 
         // Re-open the view
         ctx.code_review_view.update(&mut app, |view, view_ctx| {
-            view.on_open(Some(repo_path.clone()), view_ctx);
+            view.on_open(view_ctx);
 
             assert!(view.is_open, "View should be open after on_open");
             assert_eq!(
                 view.repo_path(),
                 Some(&repo_path),
-                "Repo path should be set after on_open"
-            );
-
-            // available_branches should be empty after on_open resets the repo state,
-            // because update_current_repo creates a fresh RepositoryState.
-            // The async fetch_branches_and_rebuild_diff_selector has been initiated
-            // but hasn't completed yet (git command will fail in test env).
-            let branches_count = view
-                .active_repo
-                .as_ref()
-                .map(|repo| repo.available_branches.len())
-                .unwrap_or(0);
-            assert_eq!(
-                branches_count, 0,
-                "Branches should be empty immediately after on_open (async fetch pending)"
+                "Repo path should be preserved after on_open (set at construction)"
             );
         });
     });

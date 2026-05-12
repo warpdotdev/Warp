@@ -1,13 +1,99 @@
 #!/usr/bin/env bash
+set -eo pipefail
+
+# Bootstrap dispatches to the platform-specific install scripts. Each step
+# that needs root sources `script/warp_sudo` and asks for confirmation
+# before running. Pass -y / --yes (or set WARP_SKIP_SUDO_PROMPT=1) to skip
+# the prompts in unattended environments.
 
 OS_TYPE="$(uname -s)"
+INSTALL_COMMON_SKILLS=0
+PLATFORM_ARGS=()
+
+usage() {
+  cat <<EOF
+Usage: ./script/bootstrap [options]
+
+Prepare this checkout for Warp development by running the platform-specific bootstrap steps.
+
+Options:
+  -h, --help               Show this help message.
+  --install-common-skills  Install or update common agent skills from skills-lock.json.
+
+Environment:
+  WARP_SKIP_COMMON_SKILLS_INSTALL=1
+      Skip installing common agent skills, even when --install-common-skills is provided.
+EOF
+}
+
+print_bootstrap_preview() {
+  local platform="$1"
+
+  echo "Warp bootstrap is starting for ${platform}."
+  echo "It will:"
+
+  if [[ "${platform}" = "macOS" ]]; then
+    echo "  - Configure Xcode as the active developer directory."
+    echo "  - Install or update Cargo, Homebrew, PowerShell, Docker, gcloud, and related development tools."
+    echo "  - Add the aarch64-apple-darwin Rust target."
+  elif [[ "${platform}" = "Linux" ]]; then
+    echo "  - Update apt package metadata."
+    echo "  - Install dependencies needed to build, run, and test Warp."
+    echo "  - Install linuxdeploy and check gcloud authentication."
+  fi
+
+  if [[ "${INSTALL_COMMON_SKILLS}" -eq 0 ]]; then
+    echo "  - Skip common agent skills unless --install-common-skills is provided."
+  elif [[ "${WARP_SKIP_COMMON_SKILLS_INSTALL:-}" = "1" ]]; then
+    echo "  - Skip common agent skills because WARP_SKIP_COMMON_SKILLS_INSTALL=1."
+  else
+    echo "  - Install or update common agent skills from skills-lock.json if needed."
+  fi
+  echo "Run ./script/bootstrap --help to see options and environment overrides."
+  echo
+}
+
+for arg in "$@"; do
+  case "${arg}" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -y|--yes)
+      export WARP_SKIP_SUDO_PROMPT=1
+      if [[ ! "$OS_TYPE" =~ ^(MINGW64_NT|MSYS_NT) ]]; then
+        PLATFORM_ARGS+=("${arg}")
+      fi
+      ;;
+    --install-common-skills)
+      INSTALL_COMMON_SKILLS=1
+      ;;
+    *)
+      PLATFORM_ARGS+=("${arg}")
+      ;;
+  esac
+done
+
+maybe_install_common_skills() {
+  if [[ "${INSTALL_COMMON_SKILLS}" -eq 1 ]]; then
+    ./script/install_common_skills --if-needed
+  fi
+}
 
 if [[ "$OS_TYPE" = "Darwin" ]]; then
-  ./script/macos/bootstrap "$@"
+  print_bootstrap_preview "macOS"
+  ./script/macos/bootstrap "${PLATFORM_ARGS[@]}"
+  maybe_install_common_skills
 elif [[ "$OS_TYPE" = "Linux" ]]; then
-  ./script/linux/bootstrap "$@"
-elif [[ "$OS_TYPE" =~ ^[MINGW64_NT|MSYS_NT] ]]; then
-  ./script/windows/bootstrap.ps1 "$@"
+  print_bootstrap_preview "Linux"
+  ./script/linux/bootstrap "${PLATFORM_ARGS[@]}"
+  maybe_install_common_skills
+elif [[ "$OS_TYPE" =~ ^(MINGW64_NT|MSYS_NT) ]]; then
+  if [[ "${INSTALL_COMMON_SKILLS}" -eq 1 ]]; then
+    ./script/windows/bootstrap.ps1 "${PLATFORM_ARGS[@]}" -InstallCommonSkills
+  else
+    ./script/windows/bootstrap.ps1 "${PLATFORM_ARGS[@]}"
+  fi
 else
   echo "No bootstrap script defined for the current platform!"
   exit 1

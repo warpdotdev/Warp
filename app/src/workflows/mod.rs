@@ -390,5 +390,5 @@ impl From<&CloudWorkflow> for Workflow {
 }
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "mod_tests.rs"]
 mod tests;
