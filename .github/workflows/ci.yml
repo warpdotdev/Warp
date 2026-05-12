@@ -522,7 +522,7 @@ jobs:
       - name: Run remote-server integration tests
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} -E "package(integration) and test(/remote_server/)"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} --test-threads=1 -E "package(integration) and test(/remote_server/)"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_bash.outputs.default_bash_path }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
