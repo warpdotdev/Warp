@@ -6,8 +6,8 @@ use crate::{
 use warp_core::ui::theme::color::internal_colors;
 use warpui::{
     elements::{
-        ChildView, Container, CornerRadius, Dismiss, Empty, Flex, ParentElement, Radius,
-        Text, Border,
+        Border, ChildView, Container, CornerRadius, Dismiss, Empty, Flex, ParentElement, Radius,
+        Text,
     },
     fonts::{Properties, Weight},
     ui_components::components::UiComponent,

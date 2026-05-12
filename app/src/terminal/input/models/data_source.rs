@@ -213,6 +213,7 @@ struct ModelSearchItem {
     provider_icon: Option<Icon>,
     display_text: String,
     is_selected: bool,
+    is_custom_endpoint: bool,
     disable_reason: Option<DisableReason>,
     name_match_result: Option<FuzzyMatchResult>,
     score: OrderedFloat<f64>,
@@ -232,6 +233,9 @@ impl ModelSearchItem {
         } else {
             llm.disable_reason.clone()
         };
+        let is_custom_endpoint = LLMPreferences::as_ref(app)
+            .custom_llm_info_for_id(&llm.id)
+            .is_some();
         Self {
             id: llm.id.clone(),
             provider: llm.provider.clone(),
@@ -239,6 +243,7 @@ impl ModelSearchItem {
             provider_icon: llm.provider.icon(),
             display_text: llm.display_name.clone(),
             is_selected: &llm.id == active_llm_id,
+            is_custom_endpoint,
             disable_reason,
             name_match_result: None,
             score: OrderedFloat(f64::MIN),
@@ -330,7 +335,7 @@ impl SearchItem for ModelSearchItem {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(text.finish());
 
-        if is_using_api_key_for_provider(&self.provider, app) {
+        if self.is_custom_endpoint || is_using_api_key_for_provider(&self.provider, app) {
             let key_icon =
                 ConstrainedBox::new(Icon::Key.to_warpui_icon(secondary_text_color).finish())
                     .with_width(font_size)
@@ -424,7 +429,8 @@ impl SearchItem for ModelSearchItem {
         };
         let header = render_model_spec_header(title, description, app);
 
-        let is_using_api_key = is_using_api_key_for_provider(&self.provider, app);
+        let is_using_api_key =
+            self.is_custom_endpoint || is_using_api_key_for_provider(&self.provider, app);
         let cost_row = if is_using_api_key {
             let manage_button = appearance
                 .ui_builder()

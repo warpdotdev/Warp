@@ -5,7 +5,7 @@ use crate::{
     editor::{EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions},
 };
 use warp_editor::editor::NavigationKey;
-use warpui::elements::{CrossAxisAlignment, Expanded, MainAxisSize};
+use warpui::elements::{ConstrainedBox, CrossAxisAlignment, Expanded, MainAxisSize};
 use warpui::{
     elements::{Container, Empty, Flex, MouseStateHandle, ParentElement, Text},
     fonts::FamilyId,
@@ -20,6 +20,11 @@ use ::ai::api_keys::CustomEndpoint;
 
 const LABEL_FONT_SIZE: f32 = 12.;
 const INPUT_WIDTH: f32 = 680.;
+
+const MODEL_ROW_SPACING: f32 = 16.;
+const REMOVE_MODEL_BUTTON_COL_WIDTH: f32 = 32.;
+const MODEL_INPUT_WIDTH: f32 =
+    (INPUT_WIDTH - MODEL_ROW_SPACING - REMOVE_MODEL_BUTTON_COL_WIDTH) / 2.;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CustomEndpointModalEvent {
@@ -310,6 +315,7 @@ impl CustomEndpointModal {
 
     pub fn on_open(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.focus(&self.endpoint_name_editor);
+        ctx.notify();
     }
 
     pub fn on_close(&mut self, ctx: &mut ViewContext<Self>) {
@@ -635,82 +641,81 @@ impl View for CustomEndpointModal {
         );
 
         // Model rows
-        for (i, row) in self.model_rows.iter().enumerate() {
-            let mut model_column = Flex::column();
-
-            // Model name label + input
-            model_column.add_child(
-                Container::new(label("Model name"))
-                    .with_margin_bottom(4.)
-                    .finish(),
-            );
-            model_column.add_child(
-                Container::new(
-                    appearance
-                        .ui_builder()
-                        .text_input(row.name_editor.clone())
-                        .with_style(input_style.clone())
-                        .build()
-                        .finish(),
-                )
-                .with_margin_bottom(12.)
-                .finish(),
-            );
-
-            // Model alias label + input
-            model_column.add_child(
-                Container::new(label("Model alias (optional)"))
-                    .with_margin_bottom(4.)
-                    .finish(),
-            );
-            model_column.add_child(
-                appearance
-                    .ui_builder()
-                    .text_input(row.alias_editor.clone())
-                    .with_style(input_style.clone())
-                    .build()
-                    .finish(),
-            );
-
-            // Remove button row (only when >1 model)
-            if self.model_rows.len() > 1 {
-                model_column.add_child(
-                    Container::new(
-                        Flex::row()
-                            .with_main_axis_size(MainAxisSize::Max)
-                            .with_child(
-                                Expanded::new(1., Empty::new().finish()).finish(),
-                            )
-                            .with_child(
-                                appearance
-                                    .ui_builder()
-                                    .button(ButtonVariant::Secondary, row.remove_mouse_state.clone())
-                                    .with_text_label("×".to_string())
-                                    .with_style(UiComponentStyles {
-                                        font_size: Some(16.),
-                                        padding: Some(Coords::uniform(4.)),
-                                        ..Default::default()
-                                    })
-                                    .build()
-                                    .on_click(move |ctx, _, _| {
-                                        ctx.dispatch_typed_action(CustomEndpointModalAction::RemoveModel(
-                                            i,
-                                        ));
-                                    })
-                                    .finish(),
-                            )
+        column.add_child(
+            Container::new(
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(MODEL_ROW_SPACING)
+                    .with_child(
+                        ConstrainedBox::new(label("Model name"))
+                            .with_width(MODEL_INPUT_WIDTH)
                             .finish(),
                     )
-                    .with_margin_top(4.)
+                    .with_child(
+                        ConstrainedBox::new(label("Model alias (optional)"))
+                            .with_width(MODEL_INPUT_WIDTH)
+                            .finish(),
+                    )
+                    .with_child(
+                        ConstrainedBox::new(Empty::new().finish())
+                            .with_width(REMOVE_MODEL_BUTTON_COL_WIDTH)
+                            .finish(),
+                    )
                     .finish(),
-                );
-            }
+            )
+            .with_margin_bottom(4.)
+            .finish(),
+        );
 
-            column.add_child(
-                Container::new(model_column.finish())
-                    .with_margin_bottom(12.)
-                    .finish(),
-            );
+        for (i, row) in self.model_rows.iter().enumerate() {
+            let name_input = appearance
+                .ui_builder()
+                .text_input(row.name_editor.clone())
+                .with_style(UiComponentStyles {
+                    width: Some(MODEL_INPUT_WIDTH),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+
+            let alias_input = appearance
+                .ui_builder()
+                .text_input(row.alias_editor.clone())
+                .with_style(UiComponentStyles {
+                    width: Some(MODEL_INPUT_WIDTH),
+                    ..Default::default()
+                })
+                .build()
+                .finish();
+
+            let remove_button = if self.model_rows.len() > 1 {
+                appearance
+                    .ui_builder()
+                    .close_button(20., row.remove_mouse_state.clone())
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(CustomEndpointModalAction::RemoveModel(i));
+                    })
+                    .finish()
+            } else {
+                Empty::new().finish()
+            };
+
+            let row = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(MODEL_ROW_SPACING)
+                .with_child(name_input)
+                .with_child(alias_input)
+                .with_child(
+                    ConstrainedBox::new(remove_button)
+                        .with_width(REMOVE_MODEL_BUTTON_COL_WIDTH)
+                        .finish(),
+                )
+                .finish();
+
+            column.add_child(Container::new(row).with_margin_bottom(12.).finish());
         }
 
         // + Add model button
@@ -852,8 +857,9 @@ impl CustomEndpointModalViewState {
     }
 
     pub fn set_title<T: View>(&mut self, title: Option<String>, ctx: &mut ViewContext<T>) {
-        self.state.view.update(ctx, |modal, _ctx| {
+        self.state.view.update(ctx, |modal, ctx| {
             modal.set_title(title);
+            ctx.notify();
         });
     }
 

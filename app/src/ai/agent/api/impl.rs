@@ -64,6 +64,7 @@ pub async fn generate_multi_agent_output(
         settings: Some(api::request::Settings {
             model_config: Some(api::request::settings::ModelConfig {
                 base: params.model.into(),
+                coding: params.coding_model.into(),
                 cli_agent: params.cli_agent_model.into(),
                 computer_use_agent: params.computer_use_model.into(),
                 base_model_context_window_limit: if FeatureFlag::ConfigurableContextWindow
