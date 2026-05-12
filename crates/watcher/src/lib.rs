@@ -238,9 +238,7 @@ impl DebounceEventHandler for WatcherEventHandler {
     fn handle_event(&mut self, result: DebounceEventResult) {
         match result {
             Ok(debounce_events) => {
-                if let Ok(config_event) =
-                    deduplicate_and_merge_raw_notifier_events(&debounce_events)
-                {
+                if let Ok(config_event) = deduplicate_and_merge_notifier_events(&debounce_events) {
                     if let Err(e) = self.tx.try_send(config_event) {
                         log::warn!("Failed to send WatcherEvent: {e:?}");
                     }
@@ -254,14 +252,8 @@ impl DebounceEventHandler for WatcherEventHandler {
 }
 
 /// Dedupe and standardize the raw notifier events into a BulkFilesystemWatcherEvent.
-fn deduplicate_and_merge_raw_notifier_events(
+fn deduplicate_and_merge_notifier_events(
     raw_fs_events: &[DebouncedEvent],
-) -> Result<BulkFilesystemWatcherEvent> {
-    deduplicate_and_merge_notifier_events(raw_fs_events.iter().map(|event| &event.event))
-}
-
-fn deduplicate_and_merge_notifier_events<'a>(
-    raw_fs_events: impl IntoIterator<Item = &'a notify::Event>,
 ) -> Result<BulkFilesystemWatcherEvent> {
     let mut update = BulkFilesystemWatcherEvent::default();
 
@@ -391,8 +383,11 @@ mod tests {
 
     use super::*;
 
-    fn rename_event(mode: RenameMode, path: &str) -> Event {
-        Event::new(EventKind::Modify(ModifyKind::Name(mode))).add_path(PathBuf::from(path))
+    fn rename_event(mode: RenameMode, path: &str) -> DebouncedEvent {
+        DebouncedEvent::new(
+            Event::new(EventKind::Modify(ModifyKind::Name(mode))).add_path(PathBuf::from(path)),
+            instant::Instant::now(),
+        )
     }
 
     #[test]

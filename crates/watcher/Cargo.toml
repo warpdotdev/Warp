@@ -13,3 +13,6 @@ log.workspace = true
 anyhow.workspace = true
 notify-debouncer-full.workspace = true
 futures.workspace = true
+
+[dev-dependencies]
+instant.workspace = true
