@@ -1626,6 +1626,7 @@ impl AISettingsPageView {
         self.custom_endpoint_modal_state.prefill(None, None, ctx);
         self.custom_endpoint_modal_state.open(ctx);
         eprintln!("[OPEN_DEBUG 3.1] show_add_custom_endpoint_modal() modal opened, calling ctx.notify()");
+        ctx.emit(AISettingsPageEvent::ShowModal);
         ctx.notify();
     }
 
@@ -1653,6 +1654,7 @@ impl AISettingsPageView {
             .prefill(endpoint.as_ref(), Some(index), ctx);
         self.custom_endpoint_modal_state.open(ctx);
         eprintln!("[EDIT_DEBUG 3.2] show_edit_custom_endpoint_modal() modal opened, calling ctx.notify()");
+        ctx.emit(AISettingsPageEvent::ShowModal);
         ctx.notify();
     }
 
@@ -1660,6 +1662,7 @@ impl AISettingsPageView {
         eprintln!("[CLOSE_DEBUG 4] hide_custom_endpoint_modal() called");
         self.custom_endpoint_modal_state.close(ctx);
         eprintln!("[CLOSE_DEBUG 16] modal_state.close() returned, calling ctx.notify()");
+        ctx.emit(AISettingsPageEvent::HideModal);
         ctx.notify();
         eprintln!("[CLOSE_DEBUG 17] hide_custom_endpoint_modal() finished");
     }
@@ -2559,6 +2562,8 @@ pub enum AISettingsPageEvent {
     OpenMCPServerCollection,
     OpenExecutionProfileEditor(ClientProfileId),
     SignupAnonymousUser,
+    ShowModal,
+    HideModal,
 }
 
 impl Entity for AISettingsPageView {
