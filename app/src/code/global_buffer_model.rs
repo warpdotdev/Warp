@@ -2382,7 +2382,9 @@ impl SingletonEntity for GlobalBufferModel {}
 impl GlobalBufferModel {
     /// Test-only: seeds a Remote buffer with the given content and sync clock,
     /// bypassing `open_remote` (which requires `RemoteServerManager`).
-    pub fn seed_remote_buffer_for_test(
+    /// `pub(crate)` because it's used by both `buffer_location_tests` and
+    /// `global_buffer_model_tests`.
+    pub(crate) fn seed_remote_buffer_for_test(
         &mut self,
         host_id: HostId,
         path: warp_util::standardized_path::StandardizedPath,
@@ -2417,64 +2419,13 @@ impl GlobalBufferModel {
     }
 
     /// Test-only: returns the `SyncClock` for a Remote buffer.
-    pub fn sync_clock_for_remote_test(&self, file_id: FileId) -> Option<&SyncClock> {
+    /// `pub(crate)` because it's used by both `buffer_location_tests` and
+    /// `global_buffer_model_tests`.
+    pub(crate) fn sync_clock_for_remote_test(&self, file_id: FileId) -> Option<&SyncClock> {
         let state = self.buffers.get(&file_id)?;
         match &state.source {
             BufferSource::Remote { sync_clock, .. } => sync_clock.as_ref(),
             _ => None,
-        }
-    }
-
-    /// Test-only: returns whether a pending edit batch exists for a Remote buffer.
-    pub fn has_pending_batch_for_test(&self, file_id: FileId) -> bool {
-        self.buffers
-            .get(&file_id)
-            .is_some_and(|state| matches!(&state.source, BufferSource::Remote { pending_batch, .. } if pending_batch.is_some()))
-    }
-
-    /// Test-only: returns the number of edits in the pending batch, or 0 if none.
-    pub fn pending_batch_edit_count_for_test(&self, file_id: FileId) -> usize {
-        self.buffers
-            .get(&file_id)
-            .and_then(|state| match &state.source {
-                BufferSource::Remote { pending_batch, .. } => {
-                    pending_batch.as_ref().map(|b| b.edits.len())
-                }
-                _ => None,
-            })
-            .unwrap_or(0)
-    }
-
-    /// Test-only: inserts a fake pending batch so tests can verify discard/flush
-    /// behavior without needing a real `RemoteServerClient` or the `ContentChanged`
-    /// subscription path.
-    pub fn insert_pending_batch_for_test(
-        &mut self,
-        file_id: FileId,
-        expected_server_version: u64,
-        edits: Vec<remote_server::proto::TextEdit>,
-        client_version: ContentVersion,
-    ) {
-        let Some(state) = self.buffers.get_mut(&file_id) else {
-            return;
-        };
-        if let BufferSource::Remote {
-            pending_batch,
-            sync_clock,
-            ..
-        } = &mut state.source
-        {
-            // Also update sync_clock.client_version to match what the real
-            // ContentChanged handler does.
-            if let Some(clock) = sync_clock.as_mut() {
-                clock.client_version = client_version;
-            }
-            *pending_batch = Some(PendingEditBatch {
-                expected_server_version,
-                edits,
-                latest_client_version: client_version,
-                debounce_timer: None,
-            });
         }
     }
 }

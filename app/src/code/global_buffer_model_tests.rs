@@ -9,8 +9,69 @@ use warp_util::host_id::HostId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::{App, ModelHandle, SingletonEntity};
 
-use super::{CharOffsetEdit, GlobalBufferModel};
+use super::{BufferSource, CharOffsetEdit, GlobalBufferModel, PendingEditBatch};
 use crate::test_util::settings::initialize_settings_for_tests;
+
+// ── Test-only helpers on GlobalBufferModel ────────────────────────
+// These live here (child module) rather than in global_buffer_model.rs
+// to keep test infrastructure out of the production source file.
+//
+// Note: `seed_remote_buffer_for_test` and `sync_clock_for_remote_test`
+// are `pub(crate)` in global_buffer_model.rs because they're shared
+// with `buffer_location_tests`.
+
+impl GlobalBufferModel {
+    /// Returns whether a pending edit batch exists for a Remote buffer.
+    fn has_pending_batch_for_test(&self, file_id: warp_util::file::FileId) -> bool {
+        self.buffers.get(&file_id).is_some_and(|state| {
+            matches!(&state.source, BufferSource::Remote { pending_batch, .. } if pending_batch.is_some())
+        })
+    }
+
+    /// Returns the number of edits in the pending batch, or 0 if none.
+    fn pending_batch_edit_count_for_test(&self, file_id: warp_util::file::FileId) -> usize {
+        self.buffers
+            .get(&file_id)
+            .and_then(|state| match &state.source {
+                BufferSource::Remote { pending_batch, .. } => {
+                    pending_batch.as_ref().map(|b| b.edits.len())
+                }
+                _ => None,
+            })
+            .unwrap_or(0)
+    }
+
+    /// Inserts a fake pending batch so tests can verify discard/flush
+    /// behavior without needing a real `RemoteServerClient` or the
+    /// `ContentChanged` subscription path.
+    fn insert_pending_batch_for_test(
+        &mut self,
+        file_id: warp_util::file::FileId,
+        expected_server_version: u64,
+        edits: Vec<remote_server::proto::TextEdit>,
+        client_version: ContentVersion,
+    ) {
+        let Some(state) = self.buffers.get_mut(&file_id) else {
+            return;
+        };
+        if let BufferSource::Remote {
+            pending_batch,
+            sync_clock,
+            ..
+        } = &mut state.source
+        {
+            if let Some(clock) = sync_clock.as_mut() {
+                clock.client_version = client_version;
+            }
+            *pending_batch = Some(PendingEditBatch {
+                expected_server_version,
+                edits,
+                latest_client_version: client_version,
+                debounce_timer: None,
+            });
+        }
+    }
+}
 
 // ── Test setup ────────────────────────────────────────────────────
 
