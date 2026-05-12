@@ -90,7 +90,8 @@ where
         options.path_prefix.unwrap_or_default(),
         &operation_name
     );
-    eprintln!("[AGENT_SERVER_DEBUG 7] GraphQL POST {graphql_endpoint}");
+    let payload_json = serde_json::to_string(&operation).unwrap_or_else(|_| "<serialization failed>".to_string());
+    eprintln!("[AGENT_SERVER_DEBUG 7] GraphQL POST {graphql_endpoint} payload={payload_json}");
 
     let mut req = client.post(&graphql_endpoint).json(&operation);
 

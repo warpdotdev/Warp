@@ -1236,7 +1236,8 @@ impl ServerApi {
             .map_err(Into::into)
             .map_err(Arc::new)?;
 
-        eprintln!("[AGENT_SERVER_DEBUG 8] POST {url} (multi-agent/proto)");
+        let request_debug = format!("{request:?}");
+        eprintln!("[AGENT_SERVER_DEBUG 8] POST {url} (multi-agent/proto) payload={request_debug}");
         let mut request_builder = self
             .client
             .post(url)
