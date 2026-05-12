@@ -909,7 +909,7 @@ impl SecretRedactionWidget {
 
         if enterprise_regex_list.is_empty() {
             return ui_builder
-                .paragraph("No enterprise regexes have been configured by your organization.")
+                .paragraph(t!("settings.no_enterprise_regexes").to_string())
                 .with_style(UiComponentStyles {
                     font_color: Some(description_text_color),
                     ..Default::default()
@@ -1009,7 +1009,7 @@ impl SecretRedactionWidget {
                         .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
                         .with_child(
-                            self.render_section_title("Recommended".to_string(), appearance),
+                            self.render_section_title(t!("settings.recommended").to_string(), appearance),
                         )
                         .with_child(
                             Container::new(
@@ -1019,7 +1019,7 @@ impl SecretRedactionWidget {
                                         self.add_all_button_mouse_state.clone(),
                                     )
                                     .with_text_and_icon_label(Self::add_button(
-                                        "Add all", appearance,
+                                        t!("settings.add_all"), appearance,
                                     ))
                                     .with_style(Self::add_button_style())
                                     .build()

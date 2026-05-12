@@ -150,7 +150,7 @@ pub(super) fn new_state(
     });
 
     let commit_button = ctx.add_typed_action_view(|_ctx| {
-        ActionButton::new("Commit", SecondaryTheme)
+        ActionButton::new(t!("code_review_ext.commit"), SecondaryTheme)
             .with_size(ButtonSize::XSmall)
             .with_height(32.)
             .with_icon(Icon::GitCommit)
@@ -174,7 +174,7 @@ pub(super) fn new_state(
 
     let commit_and_create_pr_button = if allow_create_pr {
         Some(ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Commit and create PR", SecondaryTheme)
+            ActionButton::new(t!("code_review_ext.commit_and_create_pr"), SecondaryTheme)
                 .with_size(ButtonSize::XSmall)
                 .with_height(32.)
                 .with_icon(Icon::Github)
@@ -442,10 +442,10 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
             };
             match result {
                 Ok(CommitOutcome::Committed) => {
-                    show_toast("Changes successfully committed.", ctx);
+                    show_toast(t!("code_review_ext.changes_committed"), ctx);
                 }
                 Ok(CommitOutcome::Pushed) => {
-                    show_toast("Changes committed and pushed.", ctx);
+                    show_toast(t!("code_review_ext.changes_committed_pushed"), ctx);
                 }
                 Ok(CommitOutcome::PrCreated(pr)) => {
                     show_pr_created_toast(&pr, ctx);

@@ -155,7 +155,7 @@ impl CreateApiKeyModal {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("Warp API Key", ctx);
+            editor.set_placeholder_text(&t!("platform_ext.warp_api_key").to_string(), ctx);
             editor
         });
 
@@ -320,7 +320,7 @@ impl CreateApiKeyModal {
         let name = self.name_editor.as_ref(ctx).buffer_text(ctx);
 
         let final_name = if name.trim().is_empty() {
-            "Warp API Key".to_string()
+            t!("platform_ext.warp_api_key").to_string()
         } else {
             name.trim().to_string()
         };
@@ -344,7 +344,7 @@ impl CreateApiKeyModal {
                 None => {
                     self.request_state = RequestState::Idle;
                     ctx.emit(CreateApiKeyModalEvent::Error {
-                        message: "Please select an agent.".to_string(),
+                        message: t!("platform_ext.please_select_agent").to_string(),
                     });
                     ctx.notify();
                     return;
@@ -393,7 +393,7 @@ impl CreateApiKeyModal {
                     }
                     Ok(warp_graphql::mutations::generate_api_key::GenerateApiKeyResult::Unknown) | Err(_) => {
                         me.request_state = RequestState::Idle;
-                        ctx.emit(CreateApiKeyModalEvent::Error { message: "Failed to create API key. Please try again.".to_string() });
+                        ctx.emit(CreateApiKeyModalEvent::Error { message: t!("platform_ext.failed_create_key").to_string() });
                         ctx.notify();
                     }
                 }
@@ -542,7 +542,7 @@ impl CreateApiKeyModal {
                 ButtonVariant::Accent,
                 self.cancel_button_mouse_state.clone(),
             )
-            .with_text_label("Done".to_string())
+            .with_text_label(t!("platform_ext.done").to_string())
             .with_style(button_style)
             .build()
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(CreateApiKeyModalAction::Cancel))
@@ -622,7 +622,7 @@ impl View for CreateApiKeyModal {
                         ButtonVariant::Secondary,
                         self.cancel_button_mouse_state.clone(),
                     )
-                    .with_text_label("Cancel".to_string())
+                    .with_text_label(t!("common.cancel").to_string())
                     .with_style(button_style)
                     .build()
                     .on_click(move |ctx, _, _| {
@@ -640,9 +640,9 @@ impl View for CreateApiKeyModal {
                         self.create_button_mouse_state.clone(),
                     )
                     .with_text_label(if is_pending {
-                        "Creating…".to_string()
+                        t!("platform_ext.creating").to_string()
                     } else {
-                        "Create key".to_string()
+                        t!("platform_ext.create_key").to_string()
                     })
                     .with_style(button_style)
                     .build()
@@ -712,7 +712,7 @@ impl View for CreateApiKeyModal {
                                 ButtonVariant::Secondary,
                                 self.create_agent_button_mouse_state.clone(),
                             )
-                            .with_text_label("Create agent".to_string())
+                            .with_text_label(t!("platform_ext.create_agent").to_string())
                             .with_style(button_style)
                             .build()
                             .on_click(|ctx, _, _| {
