@@ -129,9 +129,7 @@ fn main() -> Result<()> {
         // See https://github.com/rust-lang/cargo/issues/9661.
         //
         // Cargo defaults to the `debug` profile.
-        let cargo_full_profile = env::var("CARGO_FULL_PROFILE").unwrap_or(String::from("debug"));
-        let target_dir =
-            app_target_dir(&cargo_full_profile).expect("Could not get app target directory");
+        let target_dir = cargo_output_target_dir().expect("Could not get Cargo output directory");
         copy_windows_assets(&target_dir);
 
         #[cfg(windows)]
@@ -454,6 +452,11 @@ fn copy_windows_assets(target_dir: &Path) {
     fs::create_dir_all(&new_platform_dir).expect("Could not create new platform directory");
     fs::copy(old_open_console_exe, new_open_console_exe)
         .expect("Could not copy platform OpenConsole.exe");
+}
+
+fn cargo_output_target_dir() -> Option<PathBuf> {
+    let out_dir = PathBuf::from(env::var("OUT_DIR").ok()?);
+    out_dir.ancestors().nth(3).map(Path::to_path_buf)
 }
 
 #[cfg(windows)]
