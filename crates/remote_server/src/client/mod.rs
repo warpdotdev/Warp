@@ -15,9 +15,10 @@ use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
     client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
-    DeleteFile, ErrorCode, Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
+    DeleteFile, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, ErrorCode,
+    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
     NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
-    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, ServerMessage,
+    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
     SessionBootstrapped, TextEdit, WriteFile,
 };
 
@@ -87,7 +88,19 @@ pub enum ClientEvent {
         expected_client_version: u64,
         edits: Vec<crate::proto::TextEdit>,
     },
+    /// The file changed on disk while the client had unsaved edits.
+    /// The server did NOT apply the change; the client should show a
+    /// conflict resolution banner.
+    BufferConflictDetected { path: String },
+    /// A full diff state snapshot was pushed by the server (NewDiffsComputed).
+    DiffStateSnapshotReceived { snapshot: DiffStateSnapshot },
+    /// A metadata-only diff state update was pushed by the server
+    /// (MetadataRefreshed or CurrentBranchChanged).
+    DiffStateMetadataUpdateReceived { update: DiffStateMetadataUpdate },
+    /// A single-file diff delta was pushed by the server (SingleFileUpdated).
+    DiffStateFileDeltaReceived { delta: DiffStateFileDelta },
 }
+
 /// Parameters for the `Initialize` handshake, sent to the daemon at
 /// connection time.
 pub struct InitializeParams {
@@ -401,11 +414,21 @@ impl RemoteServerClient {
     }
 
     /// Opens a buffer on the remote host for bidirectional syncing.
-    pub async fn open_buffer(&self, path: String) -> Result<OpenBufferResponse, ClientError> {
+    ///
+    /// When `force_reload` is true, the server discards any in-memory buffer
+    /// state and re-reads the file from disk. Used to resolve conflicts.
+    pub async fn open_buffer(
+        &self,
+        path: String,
+        force_reload: bool,
+    ) -> Result<OpenBufferResponse, ClientError> {
         let request_id = RequestId::new();
         let msg = ClientMessage {
             request_id: request_id.to_string(),
-            message: Some(client_message::Message::OpenBuffer(OpenBuffer { path })),
+            message: Some(client_message::Message::OpenBuffer(OpenBuffer {
+                path,
+                force_reload,
+            })),
         };
         let response = self.send_request(request_id, msg).await?;
         match response.message {
@@ -435,6 +458,28 @@ impl RemoteServerClient {
             })),
         };
         self.send_notification(msg);
+    }
+
+    /// Saves a buffer on the remote host to disk.
+    pub async fn save_buffer(&self, path: String) -> Result<(), ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::SaveBuffer(SaveBuffer { path })),
+        };
+        let response = self.send_request(request_id, msg).await?;
+        match response.message {
+            Some(server_message::Message::SaveBufferResponse(resp)) => match resp.result {
+                Some(crate::proto::save_buffer_response::Result::Success(_)) | None => Ok(()),
+                Some(crate::proto::save_buffer_response::Result::Error(e)) => {
+                    Err(ClientError::FileOperationFailed(e.message))
+                }
+            },
+            other => {
+                log::error!("Unexpected response variant for SaveBuffer: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
     }
 
     /// Tells the remote host to close a buffer (stop watching).
@@ -497,6 +542,18 @@ impl RemoteServerClient {
                 expected_client_version: push.expected_client_version,
                 edits: push.edits,
             }),
+            server_message::Message::BufferConflictDetected(push) => {
+                Some(ClientEvent::BufferConflictDetected { path: push.path })
+            }
+            server_message::Message::DiffStateSnapshot(snapshot) => {
+                Some(ClientEvent::DiffStateSnapshotReceived { snapshot })
+            }
+            server_message::Message::DiffStateMetadataUpdate(update) => {
+                Some(ClientEvent::DiffStateMetadataUpdateReceived { update })
+            }
+            server_message::Message::DiffStateFileDelta(delta) => {
+                Some(ClientEvent::DiffStateFileDeltaReceived { delta })
+            }
             other => {
                 safe_warn!(
                     safe: ("Unhandled push message variant"),

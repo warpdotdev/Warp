@@ -165,7 +165,8 @@ impl Sessions {
                     sessions.set_remote_server_setup_state(*session_id, state.clone());
                     ctx.notify();
                 }
-                RemoteServerManagerEvent::BufferUpdated { .. } => {
+                RemoteServerManagerEvent::BufferUpdated { .. }
+                | RemoteServerManagerEvent::BufferConflictDetected { .. } => {
                     // Handled directly by GlobalBufferModel's subscription.
                 }
                 RemoteServerManagerEvent::SessionConnecting { .. }
@@ -182,7 +183,10 @@ impl Sessions {
                 | RemoteServerManagerEvent::BinaryCheckComplete { .. }
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }
-                | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
+                | RemoteServerManagerEvent::ServerMessageDecodingError { .. }
+                | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
+                | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
+                | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. } => {}
                 RemoteServerManagerEvent::SessionReconnected {
                     session_id: sid,
                     client,

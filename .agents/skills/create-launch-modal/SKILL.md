@@ -1,11 +1,11 @@
 ---
 name: create-launch-modal
-description: Create a one-time launch modal in the Warp client (feature announcement, onboarding, etc.). Use when adding a new modal that should appear exactly once per user on startup, gated by a feature flag.
+description: Create a one-time launch modal in the Warp client (feature announcement, onboarding, etc.). Use when adding a new modal that should appear exactly once per user on startup, gated by a feature flag, with colors sourced from Warp theme tokens and terminal theme colors.
 ---
 
 # create-launch-modal
 
-Create a one-time launch modal — the dark-background design used for feature announcements like "Orchestrate any agent, anywhere" or "Warp is now open-source."
+Create a one-time launch modal — the feature-announcement design used for launches like "Orchestrate any agent, anywhere" or "Warp is now open-source."
 
 ## Reference implementation
 
@@ -200,6 +200,18 @@ pub use view::{init, <Name>LaunchModal, <Name>LaunchModalEvent};
 
 Create `app/src/workspace/view/<name>_launch_modal/view.rs`. Copy from `orchestration_launch_modal/view.rs` and adapt. Key details:
 
+### Color sources (important)
+
+- Prefer Warp theme tokens for modal backgrounds, text, overlays, and borders:
+  - background surfaces: `appearance.theme().surface_3()` (or another `surface_*` token when needed)
+  - primary/subtext: `appearance.theme().main_text_color(...)` and `appearance.theme().sub_text_color(...)`
+  - overlays/hover fills: `appearance.theme().surface_overlay_1()` / `surface_overlay_2()`
+  - subtle borders: `appearance.theme().outline()`
+- Use terminal theme colors for terminal-color accents (for example, magenta launch badge accents):
+  - `appearance.theme().terminal_colors().normal.magenta`
+  - `appearance.theme().ansi_overlay_1(magenta)` for low-alpha backgrounds
+- Avoid hardcoded hex colors.
+
 ### Hero image
 
 - Store at `app/assets/async/png/onboarding/<name>_launch_banner.png`
@@ -231,12 +243,13 @@ fn render_hero(&self) -> Box<dyn Element> {
 
 ### "New" badge
 
-Use the standard badge — 24 px tall, 8 px horizontal padding, 14 px font, pill corners, magenta colors from `PhenomenonStyle`:
+Use the standard badge — 24 px tall, 8 px horizontal padding, 14 px font, pill corners, with magenta sourced from terminal theme colors:
 
 ```rust
 fn render_badge(appearance: &Appearance) -> Box<dyn Element> {
+    let magenta = appearance.theme().terminal_colors().normal.magenta;
     let text = Text::new_inline("New".to_string(), appearance.ui_font_family(), 14.)
-        .with_color(PhenomenonStyle::modal_badge_text())
+        .with_color(magenta.into())
         .finish();
     ConstrainedBox::new(
         Container::new(
@@ -247,7 +260,7 @@ fn render_badge(appearance: &Appearance) -> Box<dyn Element> {
                 .finish(),
         )
         .with_horizontal_padding(8.)
-        .with_background(Fill::Solid(PhenomenonStyle::modal_badge_background()))
+        .with_background(Fill::Solid(appearance.theme().ansi_overlay_1(magenta)))
         .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
         .finish(),
     )
@@ -255,8 +268,6 @@ fn render_badge(appearance: &Appearance) -> Box<dyn Element> {
     .finish()
 }
 ```
-
-Badge colors come from `PhenomenonStyle` in `crates/warp_core/src/ui/theme/phenomenon.rs` — a pre-existing module that defines the color palette for these dark modals (named after the Warp "Phenomenon" built-in theme, not something we own). `modal_badge_background` is `#BF409D` at 10% alpha; `modal_badge_text` is `#BF409D` opaque. The hex value is also available as `warp_core::ui::color::MAGENTA`.
 
 ### URLs
 

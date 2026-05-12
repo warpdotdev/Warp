@@ -322,6 +322,24 @@ fn install_script_avoids_pattern_substitution_for_tilde_expansion() {
 }
 
 #[test]
+fn parse_uname_linux_amd64() {
+    let platform = parse_uname_output("Linux amd64").unwrap();
+    assert_eq!(platform.os, RemoteOs::Linux);
+    assert_eq!(platform.arch, RemoteArch::X86_64);
+}
+
+#[test]
+fn parse_uname_unsupported_armv7l() {
+    let result = parse_uname_output("Linux armv7l");
+    match result {
+        Err(crate::transport::Error::UnsupportedArch { arch }) => {
+            assert_eq!(arch, "armv7l");
+        }
+        other => panic!("expected UnsupportedArch, got {other:?}"),
+    }
+}
+
+#[test]
 fn parse_preinstall_missing_status_falls_open() {
     // Garbled / partial script output — missing status field. Confirms
     // the fail-open invariant: anything we can't positively classify as
