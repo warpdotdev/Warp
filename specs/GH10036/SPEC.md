@@ -130,6 +130,52 @@ use by other code-editor settings in this surface, with the
   Acceptance B5 is the conjunction of B5.1–B5.4. Each sub-rule has
   a corresponding test in the Test plan.
 
+#### Reconciliation with the existing state machine (B5 pre-flight)
+
+The reviewer flagged that the default-off contract may conflict with
+what the current right-panel state machine does today for the
+close-then-reopen-after-maximise sequence. This subsection makes the
+conflict (or lack thereof) explicit and pins the V1 outcome:
+
+1. **Current behavior (master, pre-V1):** The in-memory flag
+   `PaneGroup::is_right_panel_maximized` (view.rs:910) is owned by
+   the active pane group. When the panel is closed (the right-panel
+   slot becomes `None`), the pane group does NOT retain the flag for
+   a subsequent reopen — the next open call into
+   `setup_code_review_panel` (view.rs:8001) constructs a fresh right
+   panel and `set_maximized` is invoked only via the snapshot path or
+   an explicit user toggle. There is no "remember in-session
+   maximise across an explicit close" code path today.
+2. **Implication for the default-off contract:** Because today's
+   close-then-reopen already drops to side-panel (no in-memory
+   carry-over and no setting yet), the V1 default-off behavior is
+   pixel-identical to the current master behavior on this sequence.
+   B3 ("no behavior change when setting is `false`") therefore holds
+   without a regression.
+3. **Pre-flight verification step in the V1 PR.** Before adding the
+   setting, the V1 PR adds a regression test
+   `T_close_reopen_baseline` against current master behavior that
+   asserts close-then-reopen lands in side-panel state with no
+   snapshot and no setting. The test stays in the tree after the
+   setting lands and continues to pass with setting OFF, codifying
+   that V1 preserves the pre-V1 contract.
+4. **What does change.** The only new behavior with setting ON is
+   that the fresh-open seed for `is_right_panel_maximized` reads
+   `true` from the setting before `setup_code_review_panel` returns.
+   The state machine itself is not modified; the new code only
+   writes to `is_right_panel_maximized` on the same fresh-open path
+   the snapshot writer already uses (apply_right_panel_snapshot at
+   view.rs:3847).
+5. **If the pre-flight test reveals the current code DOES carry the
+   flag across close (i.e., the description in (1) is wrong),** the
+   V1 PR is blocked. The spec author must update B5.4 to match the
+   real state machine — either by preserving the pre-V1 close-then-
+   reopen-maximise behavior under setting OFF (treating the
+   in-memory flag as authoritative) or by explicitly calling out
+   that V1 introduces a deliberate behavior change. This decision is
+   logged in the PR description and approved by a code-review owner
+   before the setting code lands.
+
 ## Acceptance criteria
 
 - A1. With setting OFF (default), starting from no prior state
@@ -256,6 +302,62 @@ appears in any file other than
     `OpenCodeReviewPanelMaximized` action variant; we seed the
     state on the existing path.
 
+#### Full button-click → open-and-maximise call chain
+
+The reviewer flagged that `setup_code_review_panel` and
+`open_code_review_panel_from_arg` are too far downstream to be the
+sole "where the seed lands" answer. The button is upstream; the
+state transition that opens-and-maximises is downstream. This
+section enumerates the full chain end-to-end so the implementer
+modifies the one node that owns the shared transition:
+
+1. **Top-bar button — visual entry point.** The code-review button
+   on the top right is rendered by the top-bar widget in
+   `app/src/terminal/title_bar/` (the renderer for the button
+   already exists; the implementer locates it via `git grep -n
+   show_code_review_button app/src/terminal/title_bar/`). On click,
+   it dispatches `workspace::OpenCodeReviewPanel` (the existing
+   action used by the keyboard shortcut and command palette).
+2. **Action handler — `OpenCodeReviewPanel`.** The handler lives in
+   `app/src/workspace/view.rs` and is registered alongside the
+   other workspace actions (locate via `git grep -n
+   "OpenCodeReviewPanel" app/src/workspace/view.rs`). The handler
+   calls `setup_code_review_panel(...)` after resolving the active
+   pane group.
+3. **`setup_code_review_panel` (view.rs:8001) — the shared
+   transition owner.** This function is the single node that every
+   open path (button click, keyboard action, command-palette entry,
+   `open_code_review_panel_from_arg` for URL/IPC entries, and the
+   review-skill auto-open in
+   `auto_open_code_review_pane_on_first_agent_change`) funnels
+   through. It owns:
+   - constructing the `RightPanel` instance,
+   - writing `pane_group.is_right_panel_maximized`,
+   - calling `view.set_maximized(...)` (lines 8123 / 8288).
+
+   Because every open path funnels here, this is the correct and
+   only seed point for the setting. The implementer reads
+   `code_settings.review_panel_open_maximized` here, gated by the
+   "no snapshot already applied" branch from the bullet above.
+4. **Toggle action — `workspace:toggle_maximize_code_review_panel`
+   (right_panel.rs lines 351, 407, 1042).** Unchanged by V1. This
+   is the in-session maximise/restore affordance referenced in A2's
+   "Esc / un-maximise" path. It does not read the setting.
+5. **What the implementer must NOT do.** Do not seed the setting in
+   the button's click handler, in the keyboard-shortcut dispatcher,
+   in `OpenCodeReviewPanel`'s action handler, or in
+   `open_code_review_panel_from_arg` directly. Seeding upstream of
+   `setup_code_review_panel` would (a) duplicate the seed logic
+   across every open path, and (b) bypass the snapshot precedence
+   in B5.2 / A4. The shared transition node is the only correct
+   site.
+
+The V1 PR's diff therefore touches exactly: the settings group in
+`general_settings.rs`, the widget vector in `code_page.rs`, and a
+single read-then-write block inside `setup_code_review_panel` in
+`view.rs`. The top-bar button renderer is not modified; the
+existing dispatch path is reused.
+
 - The action `workspace:toggle_maximize_code_review_panel` (right_panel.rs
   lines 351, 407, 1042) is unmodified — it continues to flip
   `is_right_panel_maximized` for the current panel and is the
@@ -293,11 +395,45 @@ appears in any file other than
   `app/src/settings_view/code_page.rs` (lines 297/301 and 421/425),
   inside the `Category::new("Code Editor and Review", ...)` group
   — not in any new category.
-- T8. Grep test: no occurrence of `editor.review_panel_open_maximized`,
+- T8. Grep test — scoped to implementation artifacts only.
+
+  **Scope:** The grep runs against the following paths:
+  - `app/**/*.rs`
+  - `crates/**/*.rs`
+  - `app/**/*.toml`, `crates/**/*.toml` (settings TOML fixtures only)
+  - `app/**/snapshots/**`, `crates/**/snapshots/**`
+  - The PR description and commit messages (via the
+    `T_pr_description_audit` script invoked as a CI step, not a
+    Cargo test).
+
+  **Explicitly excluded from the grep:** `specs/**` (this spec file
+  and every other spec prose document), `docs/**` markdown, and any
+  `CHANGELOG.md` prose that discusses the rejected variants for
+  historical context. Spec prose is permitted to enumerate the
+  rejected key spellings because that is how the rejection list is
+  communicated to reviewers and future implementers; an in-spec
+  occurrence is documentation, not a leak into shipped artifacts.
+
+  **Assertion:** Within the scoped paths above, no occurrence of
+  `editor.review_panel_open_maximized`,
   `code.editor.reviewPanel.openMaximized`,
-  `code_editor.review_panel.open_maximized`, or any other variant
-  appears in the diff. Only the canonical
-  `code.editor.review_panel.open_maximized` is present.
+  `code_editor.review_panel.open_maximized`, or any other
+  case/separator variant appears. Only the canonical
+  `code.editor.review_panel.open_maximized` is present in scoped
+  artifacts.
+
+  **Why the scoping matters:** Without the spec/docs exclusion, the
+  grep would self-fail because this spec lists the rejected
+  spellings in the "Canonical setting key" section as part of the
+  rejection contract. The scope above narrows the contract to "no
+  rejected variant ships in code, config, fixtures, snapshots, PR
+  metadata, or changelog entries" while permitting spec prose to
+  document what is rejected. The implementation is a simple
+  `ripgrep` invocation with `--glob '!specs/**' --glob '!docs/**'
+  --glob '!CHANGELOG.md'` against the variant list; the script
+  source lives at `scripts/audit_review_panel_key.sh` and is
+  invoked from both a Cargo test (for the Rust scope) and a CI
+  step (for the PR-description scope).
 
 ## Out of scope
 
