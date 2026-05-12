@@ -1119,10 +1119,8 @@ fn initialize_app(
 
     let agent_source = determine_agent_source(launch_mode);
 
-    let server_api_provider = ctx
-        .add_singleton_model(|ctx| ServerApiProvider::new(auth_state.clone(), agent_source, ctx));
-    let server_api = server_api_provider.as_ref(ctx).get();
-    let ai_client = server_api_provider.as_ref(ctx).get_ai_client();
+    ctx.add_singleton_model(|_ctx| ServerApiProvider::new(auth_state.clone(), agent_source));
+    let update_http_client = Arc::new(http_client::Client::new());
 
     // OpenWarp:保留 AuthStateProvider singleton 仅用于遗留调用点读取本地占位用户态。
     ctx.add_singleton_model(|_ctx| AuthStateProvider::new(auth_state.clone()));
@@ -1239,7 +1237,7 @@ fn initialize_app(
     // be initialized after it.
     ctx.add_singleton_model(|ctx| ServerExperiments::new_from_cache(experiments, ctx));
 
-    ctx.add_singleton_model(|ctx| AIRequestUsageModel::new(ai_client, ctx));
+    ctx.add_singleton_model(AIRequestUsageModel::new);
 
     ctx.add_singleton_model(|ctx| {
         UserWorkspaces::new(cached_workspaces, current_workspace_uid, ctx)
@@ -1305,9 +1303,11 @@ fn initialize_app(
     ctx.add_singleton_model(|_| AIFactManager::new());
     ctx.add_singleton_model(|_| ExecutionProfileEditorManager::default());
     ctx.add_singleton_model(|_| pricing::PricingInfoModel::new());
-    ctx.add_singleton_model(|ctx| {
-        // Not using the *Provider types isn't ideal, but it's worth it for the ability to move managed secrets to a separate crate.
-        ManagedSecretManager::new(server_api_provider.as_ref(ctx).get(), auth_state.clone())
+    ctx.add_singleton_model(|_| {
+        ManagedSecretManager::new(
+            Arc::new(server::server_api::managed_secrets::DisabledManagedSecretsClient),
+            auth_state.clone(),
+        )
     });
 
     #[cfg(target_os = "macos")]
@@ -1334,8 +1334,7 @@ fn initialize_app(
 
     ctx.add_singleton_model(remote_server::manager::RemoteServerManager::new);
     // OpenWarp Wave 6-1:`remote_server::wire_auth_token_rotation(ctx)` 调用随
-    // `ServerApiEvent::AccessTokenRefreshed` variant + `wire_auth_token_rotation`
-    // 函数本体一同物理删。
+    // server API token rotation 事件 + `wire_auth_token_rotation` 函数本体一同物理删。
 
     log::info!(
         "Starting warp with channel state {} and version {:?}",
@@ -1501,11 +1500,8 @@ fn initialize_app(
 
     ctx.add_singleton_model(CustomSecretRegexUpdater::new);
 
-    // Register the `TelemetryCollection` singleton model.
-    let server_api_clone = server_api.clone();
     // OpenWarp(本地化,Phase 5):`TelemetryCollector` 已物理删除。原负责 RudderStack 上报
     // 调度与持久化,本地化场景下 telemetry 宏全 no-op,不需要上报调度器。
-    let _ = server_api_clone;
     timer.mark_interval_end("INITIALIZE_TELEMETRY_COLLECTION");
 
     // Register initial keybindings prior to creating menus
@@ -1564,7 +1560,7 @@ fn initialize_app(
     ctx.add_singleton_model(|_| DisplayCount(display_count));
 
     ctx.add_singleton_model(|_| RelaunchModel::new());
-    ctx.add_singleton_model(|_| ChangelogModel::new(server_api.clone()));
+    ctx.add_singleton_model(|_| ChangelogModel::new(update_http_client.clone()));
     ctx.add_singleton_model(|_| GitHubAuthNotifier::new());
     ctx.add_singleton_model(|_| NetworkStatus::new());
     ctx.add_singleton_model(|_| SystemStats::new());
@@ -1592,7 +1588,6 @@ fn initialize_app(
         // OpenWarp(本地化,Phase 4):原默认注入 `ServerVoiceTranscriber` 走云端 Wispr STT。
         // 本地化场景下云端语音转写不可用,改为 `disabled()` 让上层 `transcriber()` 返 None,
         // 语音输入 UI 变为只采集不转写(后续接入本地 STT 补上)。
-        let _ = server_api;
         VoiceTranscriber::disabled()
     });
 
@@ -1759,7 +1754,7 @@ fn initialize_app(
     ctx.add_singleton_model(EnvVarCollectionManager::new);
     ctx.add_singleton_model(WorkflowManager::new);
 
-    AutoupdateState::register(ctx, server_api.clone());
+    AutoupdateState::register(ctx, update_http_client.clone());
 
     ctx.add_singleton_model(LocalWorkflows::new);
 

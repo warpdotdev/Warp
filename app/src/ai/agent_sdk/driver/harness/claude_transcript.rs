@@ -12,8 +12,8 @@
 //!   versions vary in how they use this index (claude-code#33912, #39667, #5768); we write
 //!   a conservative entry and log on failure.
 //!
-//! Split out from `claude_code.rs` so the `AIClient` transcript-fetch impl can deserialize
-//! envelopes without pulling in the rest of the harness runner.
+//! Split out from `claude_code.rs` so transcript rehydration can stay independent from the
+//! rest of the harness runner.
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};

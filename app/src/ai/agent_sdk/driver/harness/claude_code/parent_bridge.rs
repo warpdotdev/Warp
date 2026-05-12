@@ -29,7 +29,6 @@ use crate::ai::agent_events::{
     AgentEventDriverConfig, AgentEventSource, AgentEventSourceItem, MessageHydrator,
 };
 use crate::ai::agent_sdk::driver::{AgentDriver, OZ_MESSAGE_LISTENER_STATE_ROOT_ENV};
-use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::ai::AgentRunEvent;
 use crate::server::server_api::AgentEventStreamClient;
 
@@ -238,12 +237,12 @@ impl MessageBridge {
         Ok(())
     }
 
-    pub(super) async fn handle_session_update(&self, ai_client: Arc<dyn AIClient>) -> Result<()> {
+    pub(super) async fn handle_session_update(&self) -> Result<()> {
         if !self.state_dir.exists() {
             return Ok(());
         }
 
-        let hydrator = MessageHydrator::new(ai_client);
+        let hydrator = MessageHydrator::new();
         let _guard = self.state_lock.lock().await;
         acknowledge_parent_bridge_hook_output(&hydrator, &self.state_dir).await?;
         prepare_parent_bridge_hook_output(
@@ -254,12 +253,12 @@ impl MessageBridge {
         .await
     }
 
-    pub(super) async fn flush_acks(&self, ai_client: Arc<dyn AIClient>) -> Result<()> {
+    pub(super) async fn flush_acks(&self) -> Result<()> {
         if !self.state_dir.exists() {
             return Ok(());
         }
 
-        let hydrator = MessageHydrator::new(ai_client);
+        let hydrator = MessageHydrator::new();
         let _guard = self.state_lock.lock().await;
         acknowledge_parent_bridge_hook_output(&hydrator, &self.state_dir).await
     }
@@ -487,22 +486,12 @@ async fn hydrate_parent_bridge_message_record(
     hydrator: &MessageHydrator,
     record: &MessageBridgeMessageRecord,
 ) -> Result<MessageBridgeMessageRecord> {
+    let _ = hydrator;
     if !record.sender_run_id.is_empty() {
         return Ok(record.clone());
     }
 
-    let message = hydrator
-        .read_message_with_timeout(&record.message_id)
-        .await
-        .with_context(|| format!("Failed to read lead-agent message {}", record.message_id))?;
-    Ok(MessageBridgeMessageRecord {
-        sequence: record.sequence,
-        message_id: message.message_id,
-        sender_run_id: message.sender_run_id,
-        subject: message.subject,
-        body: message.body,
-        occurred_at: record.occurred_at.clone(),
-    })
+    Ok(record.clone())
 }
 
 async fn select_parent_bridge_messages_for_hook_output(

@@ -4,15 +4,12 @@ use anyhow::Result;
 use channel_versions::{Changelog, ChannelVersions};
 use rand::{distributions::Alphanumeric, thread_rng, Rng as _};
 
-use crate::{
-    channel::{Channel, ChannelState},
-    server::server_api::ServerApi,
-};
+use crate::channel::{Channel, ChannelState};
 
 use super::channel_versions::fetch_channel_versions;
 use super::release_assets_directory_url;
 
-pub async fn get_current_changelog(server_api: Arc<ServerApi>) -> Result<Option<Changelog>> {
+pub async fn get_current_changelog(client: Arc<http_client::Client>) -> Result<Option<Changelog>> {
     let rand: String = {
         let mut rng = thread_rng();
         iter::repeat(())
@@ -26,7 +23,7 @@ pub async fn get_current_changelog(server_api: Arc<ServerApi>) -> Result<Option<
 
     if should_fetch_changelog_json(channel) {
         log::info!("Attempting to fetch changelog.json");
-        match fetch_current_changelog(server_api.http_client(), rand.as_str()).await {
+        match fetch_current_changelog(client.as_ref(), rand.as_str()).await {
             changelog_result @ Ok(_) => {
                 return changelog_result.map(Option::Some);
             }
@@ -35,7 +32,7 @@ pub async fn get_current_changelog(server_api: Arc<ServerApi>) -> Result<Option<
     }
 
     let versions: ChannelVersions =
-        fetch_channel_versions(rand.as_str(), server_api, true, false).await?;
+        fetch_channel_versions(rand.as_str(), client.as_ref(), true, false).await?;
 
     let res = versions.changelogs.and_then(|changelogs| {
         match channel {

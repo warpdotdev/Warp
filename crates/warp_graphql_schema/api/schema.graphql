@@ -449,10 +449,6 @@ type AvailableLlms {
   preferredCodexModelId: String
 }
 
-type AwsProviderConfig {
-  roleArn: String!
-}
-
 type BillingCycleUsageHistory {
   summaries: [BillingCycleUsageSummary!]!
 }
@@ -598,42 +594,6 @@ type CloudConversationStorageSettings {
 
 input CloudConversationStorageSettingsInput {
   setting: AdminEnablementSetting
-}
-
-type CloudEnvironment {
-  config: CloudEnvironmentConfig!
-  creator: PublicUserProfile
-  lastEditor: PublicUserProfile
-
-  """The most recently created task for this environment, if any."""
-  lastTaskCreated: AgentTask
-  lastTaskRunTimestamp: Time
-  lastUpdated: Time!
-  scope: Space!
-
-  """
-  True when the most recent task for this environment failed during setup
-  (i.e., it was created but never started running).
-  """
-  setupFailed: Boolean!
-  uid: ID!
-}
-
-type CloudEnvironmentConfig {
-  description: String
-  dockerImage: String!
-  githubRepos: [GitHubRepo!]!
-  name: String!
-  providers: ProvidersConfig
-  setupCommands: [String!]
-}
-
-enum CloudEnvironmentSortBy {
-  """Sort by most recently updated first"""
-  LAST_UPDATED
-
-  """Sort alphabetically by environment name"""
-  NAME
 }
 
 union CloudObject = AIConversation | Folder | GenericStringObject | Notebook | Workflow
@@ -1275,12 +1235,6 @@ type FreeAvailableModelsOutput implements Response {
 
 union FreeAvailableModelsResult = FreeAvailableModelsOutput | UserFacingError
 
-type GcpProviderConfig {
-  projectNumber: String!
-  workloadIdentityFederationPoolId: String!
-  workloadIdentityFederationProviderId: String!
-}
-
 input GenerateApiKeyInput {
   expiresAt: Time
   name: String!
@@ -1456,7 +1410,6 @@ type GenericStringObject {
 enum GenericStringObjectFormat {
   JsonAIExecutionProfile
   JsonAIFact
-  JsonCloudEnvironment
   JsonEnvVarCollection
   JsonMCPServer
   JsonPreference
@@ -1492,13 +1445,6 @@ type GenericStringObjectUpdateRejected {
   conflictingGenericStringObject: GenericStringObject!
   revisionTs: Time!
 }
-
-type GetCloudEnvironmentsOutput implements Response {
-  cloudEnvironments: [CloudEnvironment!]!
-  responseContext: ResponseContext!
-}
-
-union GetCloudEnvironmentsResult = GetCloudEnvironmentsOutput | UserFacingError
 
 input GetIntegrationsUsingEnvironmentInput {
   environmentId: String!
@@ -1573,15 +1519,6 @@ type GithubInstallation {
   associatedTeamUids: [String!]!
   id: ID!
   repositorySelection: String
-}
-
-"""
-GithubReposLanguageStat represents detected language usage for a set of repos.
-"""
-type GithubReposLanguageStat {
-  bytes: Int!
-  language: String!
-  percentage: Float!
 }
 
 """
@@ -2345,11 +2282,6 @@ input ProvideNegativeFeedbackResponseForAiConversationInput {
   requestIds: [ID!]!
 }
 
-type ProvidersConfig {
-  aws: AwsProviderConfig
-  gcp: GcpProviderConfig
-}
-
 """
 PublicUserProfile holds public information about a user that can be shown to other users.
 """
@@ -2695,11 +2627,6 @@ type RootQuery {
   """
   freeAvailableModels(input: FreeAvailableModelsInput!, requestContext: RequestContext!): FreeAvailableModelsResult!
 
-  """
-  Get cloud environments accessible to the principal.
-  Defaults to LAST_UPDATED sorting if not specified.
-  """
-  getCloudEnvironments(requestContext: RequestContext!, sortBy: CloudEnvironmentSortBy): GetCloudEnvironmentsResult!
   getIntegrationsUsingEnvironment(input: GetIntegrationsUsingEnvironmentInput!, requestContext: RequestContext!): GetIntegrationsUsingEnvironmentResult!
   getOAuthConnectTxStatus(input: GetOAuthConnectTxStatusInput!, requestContext: RequestContext!): GetOAuthConnectTxStatusResult!
   getRelevantFragments(input: GetRelevantFragmentsInput!, requestContext: RequestContext!): GetRelevantFragmentsResult!
@@ -2717,8 +2644,6 @@ type RootQuery {
   """Retrieve execution history for a scheduled agent."""
   scheduledAgentHistory(input: ScheduledAgentHistoryInput!, requestContext: RequestContext!): ScheduledAgentHistoryResult!
   simpleIntegrations(input: SimpleIntegrationsInput!, requestContext: RequestContext!): SimpleIntegrationsResult!
-  suggestCloudEnvironmentImage(input: SuggestCloudEnvironmentImageInput!, requestContext: RequestContext!): SuggestCloudEnvironmentImageResult!
-
   """
   Syncs the client merkle tree with the server merkle tree, returning the nodes that have changed.
   """
@@ -3038,26 +2963,6 @@ enum StripeSubscriptionPlan {
   TEAM
   TURBO
 }
-
-type SuggestCloudEnvironmentImageAuthRequiredOutput implements Response {
-  authUrl: String!
-  responseContext: ResponseContext!
-  txId: ID!
-}
-
-input SuggestCloudEnvironmentImageInput {
-  repos: [RepoInput!]!
-}
-
-type SuggestCloudEnvironmentImageOutput implements Response {
-  detectedLanguages: [GithubReposLanguageStat!]!
-  image: String!
-  needsCustomImage: Boolean!
-  reason: String!
-  responseContext: ResponseContext!
-}
-
-union SuggestCloudEnvironmentImageResult = SuggestCloudEnvironmentImageAuthRequiredOutput | SuggestCloudEnvironmentImageOutput | UserFacingError
 
 """Structured survey responses input with type-safe fields per question"""
 input SurveyResponsesInput {

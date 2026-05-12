@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, ffi::OsString, path::PathBuf};
 
 use shell_words::quote as shell_quote;
 use uuid::Uuid;
@@ -12,7 +12,6 @@ use crate::ai::{
     },
     ambient_agents::{task::HarnessConfig, AgentConfigSnapshot, AmbientAgentTaskId},
 };
-use crate::server::server_api::ai::AIClient;
 use crate::terminal::cli_agent_sessions::plugin_manager::plugin_manager_for;
 use crate::terminal::shell::ShellType;
 
@@ -73,7 +72,6 @@ pub(super) async fn prepare_local_harness_child_launch(
     parent_run_id: Option<String>,
     shell_type: Option<ShellType>,
     startup_directory: Option<PathBuf>,
-    ai_client: Arc<dyn AIClient>,
 ) -> Result<PreparedLocalHarnessLaunch, String> {
     let Some(harness) = normalize_local_child_harness(&harness_type) else {
         let harness_name = harness_type.trim();
@@ -128,8 +126,7 @@ pub(super) async fn prepare_local_harness_child_launch(
 
     // OpenWarp(本地化,Phase 3b-4):本地 harness 启动子 task 不再走云端
     // `create_agent_task` mutation,直接本地生成 UUID v4 作为 task_id。
-    // `ai_client` 与 `local_child_task_config(harness)` 参数不再使用。
-    let _ = ai_client;
+    // `local_child_task_config(harness)` 参数不再使用。
     let _ = local_child_task_config(harness);
     let task_id = AmbientAgentTaskId::new_local();
 

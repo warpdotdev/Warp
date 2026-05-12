@@ -1,6 +1,6 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::{cmp::Ordering, sync::Arc};
 
 use itertools::Itertools;
 use pathfinder_geometry::vector::vec2f;
@@ -50,7 +50,6 @@ use crate::{
     server::{
         cloud_objects::update_manager::UpdateManager,
         ids::{ClientId, ServerId, SyncId},
-        server_api::ai::AIClient,
     },
     themes::theme::AnsiColorIdentifier,
     ui_components::{
@@ -152,7 +151,6 @@ pub struct WorkflowModal {
     pub(super) arguments_rows: Vec<ArgumentEditorRow>,
     show_unsaved_changes_dialog: bool,
     revision_ts: Option<Revision>,
-    pub(super) ai_client: Arc<dyn AIClient>,
     pub(super) ai_metadata_assist_state: AiAssistState,
     breadcrumbs: Option<Vec<BreadcrumbState<ContainingObject>>>,
     /// ID of the breadcrumb space/folder a user clicked on before the unsaved dialog popped up
@@ -213,7 +211,7 @@ impl WorkflowEditorErrorState {
 }
 
 impl WorkflowModal {
-    pub fn new(ai_client: Arc<dyn AIClient>, ctx: &mut ViewContext<Self>) -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let appearance = Appearance::as_ref(ctx);
         let header_font_size = appearance.header_font_size();
         let ui_font_family = appearance.ui_font_family();
@@ -292,7 +290,6 @@ impl WorkflowModal {
             arguments_rows: Vec::new(),
             show_unsaved_changes_dialog: false,
             revision_ts: None,
-            ai_client,
             ai_metadata_assist_state: AiAssistState::PreRequest,
             breadcrumbs: Default::default(),
             clicked_breadcrumb: None,

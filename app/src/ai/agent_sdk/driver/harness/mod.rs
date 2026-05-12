@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use tempfile::NamedTempFile;
 use warp_cli::agent::Harness;
@@ -15,11 +15,9 @@ use warpui::{ModelHandle, ModelSpawner, SingletonEntity};
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::server::server_api::ai::AIClient;
-use crate::server::server_api::harness_support::{upload_to_target, HarnessSupportClient};
+use crate::server::server_api::harness_support::HarnessSupportClient;
 use crate::server::server_api::AgentEventStreamClient;
 use crate::terminal::cli_agent_sessions::{CLIAgentSessionStatus, CLIAgentSessionsModel};
-use crate::terminal::model::block::{BlockId, SerializedBlock};
 use crate::terminal::CLIAgent;
 use crate::util::path::resolve_executable;
 use warp_cli::{
@@ -50,7 +48,7 @@ use gemini::GeminiHarness;
 /// launches. Harnesses match on the variant they produce and ignore others; new CLIs that
 /// want resume support add a new variant and override [`ThirdPartyHarness::fetch_resume_payload`].
 pub(crate) enum ResumePayload {
-    /// Claude Code session state fetched from the server's transcript endpoint.
+    /// Claude Code session state rehydrated from a stored transcript payload.
     Claude(ClaudeResumeInfo),
 }
 
@@ -94,10 +92,8 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
     /// matches the stored conversation's harness. Harnesses that don't support resume
     /// use the default impl, which returns `Ok(None)` and causes the run to start fresh.
     ///
-    /// Implementations download the raw transcript via [`HarnessSupportClient::fetch_transcript`]
-    /// (which derives the conversation from the current task's `agent_conversation_id`) and
-    /// own all harness-specific deserialization and error mapping (e.g. a 404 maps to
-    /// [`AgentDriverError::ConversationResumeStateMissing`] tagged with the harness label).
+    /// OpenWarp no longer downloads cloud transcript payloads; harnesses that cannot restore
+    /// from local state return `Ok(None)` and start fresh.
     async fn fetch_resume_payload(
         &self,
         _conversation_id: &AIConversationId,
@@ -125,7 +121,6 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         working_dir: &Path,
         task_id: Option<AmbientAgentTaskId>,
         harness_support_client: Arc<dyn HarnessSupportClient>,
-        ai_client: Arc<dyn AIClient>,
         agent_event_stream_client: Arc<dyn AgentEventStreamClient>,
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
@@ -347,7 +342,7 @@ pub(crate) trait HarnessRunner: Send + Sync {
         foreground: &ModelSpawner<AgentDriver>,
     ) -> Result<CommandHandle, AgentDriverError>;
 
-    /// Save the current conversation state (transcript upload, etc.).
+    /// Save the current conversation state.
     async fn save_conversation(
         &self,
         save_point: SavePoint,
@@ -412,51 +407,6 @@ pub(super) fn write_temp_file(
         ))
     })?;
     Ok(file)
-}
-
-/// Upload a [`SerializedBlock`] as the JSON block snapshot for a third-party harness conversation.
-pub(crate) async fn upload_block_snapshot(
-    client: &dyn HarnessSupportClient,
-    conversation_id: AIConversationId,
-    block: SerializedBlock,
-) -> Result<()> {
-    log::info!("Uploading block snapshot for CLI agent to conversation {conversation_id}");
-    let target = client
-        .get_block_snapshot_upload_target(&conversation_id)
-        .await
-        .with_context(|| {
-            format!("Unable to get block upload slot for conversation {conversation_id}")
-        })?;
-
-    let body = block
-        .to_json()
-        .with_context(|| format!("Unable to serialize block for conversation {conversation_id}"))?;
-
-    upload_to_target(client.http_client(), &target, body).await
-}
-
-/// Fetch the current block snapshot for `block_id` and upload it to the server.
-///
-/// If the snapshot cannot be fetched, logs a warning and returns `Ok(())`.
-pub(super) async fn upload_current_block_snapshot(
-    foreground: &ModelSpawner<AgentDriver>,
-    terminal_driver: &ModelHandle<TerminalDriver>,
-    client: &dyn HarnessSupportClient,
-    conversation_id: AIConversationId,
-    block_id: BlockId,
-) -> Result<()> {
-    let td = terminal_driver.clone();
-    let snapshot = foreground
-        .spawn(move |_, ctx| td.as_ref(ctx).block_snapshot(&block_id, ctx))
-        .await
-        .map_err(|_| anyhow::anyhow!("Agent driver dropped"))?;
-    match snapshot {
-        Some(block) => upload_block_snapshot(client, conversation_id, block).await,
-        None => {
-            log::warn!("No block snapshot found for harness command");
-            Ok(())
-        }
-    }
 }
 
 #[cfg(test)]

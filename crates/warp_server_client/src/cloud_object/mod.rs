@@ -790,7 +790,7 @@ impl From<GenericStringObjectFormat>
                 GraphQLFormat::JsonTemplatableMCPServer
             }
             GenericStringObjectFormat::Json(JsonObjectType::CloudEnvironment) => {
-                GraphQLFormat::JsonCloudEnvironment
+                panic!("OpenWarp 已删除 CloudEnvironment GraphQL 格式")
             }
         }
     }

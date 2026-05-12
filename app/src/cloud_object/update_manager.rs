@@ -2,7 +2,6 @@
 use crate::ai::mcp::templatable::{CloudTemplatableMCPServerModel, TemplatableMCPServer};
 use crate::{
     ai::{
-        cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironmentModel},
         execution_profiles::{AIExecutionProfile, CloudAIExecutionProfileModel},
         facts::{AIFact, CloudAIFactModel},
     },
@@ -19,9 +18,9 @@ use crate::{
         CloudModelType, CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation,
         GenericCloudObject, GenericServerObject, GenericStringObjectFormat, JsonObjectType,
         ObjectIdType, ObjectType, Owner, Revision, ServerAIExecutionProfile, ServerAIFact,
-        ServerAmbientAgentEnvironment, ServerCloudObject, ServerEnvVarCollection, ServerFolder,
-        ServerMCPServer, ServerMetadata, ServerNotebook, ServerObject, ServerPreference,
-        ServerTemplatableMCPServer, ServerWorkflow, ServerWorkflowEnum, Space,
+        ServerCloudObject, ServerEnvVarCollection, ServerFolder, ServerMCPServer, ServerMetadata,
+        ServerNotebook, ServerObject, ServerPreference, ServerTemplatableMCPServer, ServerWorkflow,
+        ServerWorkflowEnum, Space,
     },
     drive::{
         folders::{CloudFolderModel, FolderId},
@@ -453,19 +452,7 @@ impl UpdateManager {
                     ));
                 }
                 GenericStringObjectFormat::Json(JsonObjectType::CloudEnvironment) => {
-                    let typed_objects = objects
-                        .iter()
-                        .filter_map(|obj| {
-                            let server_obj: Option<&ServerAmbientAgentEnvironment> = obj.into();
-                            server_obj.cloned()
-                        })
-                        .collect::<Vec<_>>();
-                    sqlite_events.push(Self::handle_object_updates(
-                        typed_objects,
-                        force_refresh,
-                        !is_first_load,
-                        ctx,
-                    ));
+                    let _ = objects;
                 }
             }
         }
@@ -751,21 +738,6 @@ impl UpdateManager {
         self.update_object(
             CloudEnvVarCollectionModel::new(env_var_collection),
             env_var_collection_id,
-            revision_ts,
-            ctx,
-        );
-    }
-
-    pub fn update_ambient_agent_environment(
-        &mut self,
-        environment: AmbientAgentEnvironment,
-        environment_id: SyncId,
-        revision_ts: Option<Revision>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.update_object(
-            CloudAmbientAgentEnvironmentModel::new(environment),
-            environment_id,
             revision_ts,
             ctx,
         );
@@ -1214,28 +1186,6 @@ impl UpdateManager {
             initiated_by,
             ctx,
         );
-    }
-
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    pub fn create_ambient_agent_environment(
-        &mut self,
-        ambient_agent_environment: AmbientAgentEnvironment,
-        client_id: ClientId,
-        owner: Owner,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.create_object(
-            CloudAmbientAgentEnvironmentModel::new(ambient_agent_environment),
-            owner,
-            client_id,
-            Default::default(),
-            false,
-            None,
-            // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-            // This can be changed to InitiatedBy::System if this action was automatically kicked off by the system and we do not want a user facing toast.
-            InitiatedBy::User,
-            ctx,
-        )
     }
 
     #[allow(dead_code)]

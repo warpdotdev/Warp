@@ -5,7 +5,6 @@ use std::fmt::Write;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::Arc;
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_sdk::driver::harness::{harness_kind, HarnessKind};
@@ -16,7 +15,6 @@ use crate::ai::aws_credentials::refresh_aws_credentials;
 use crate::ai::llms::LLMId;
 use crate::auth::{AuthManager, AuthManagerEvent};
 use crate::cloud_object::model::persistence::CloudModel;
-use crate::server::server_api::ai::AIClient;
 use crate::workflows::workflow::Workflow;
 use ai::api_keys::{ApiKeyManager, AwsCredentialsRefreshStrategy};
 use anyhow::Context;
@@ -43,7 +41,7 @@ use warpui::ModelSpawner;
 use warpui::{platform::TerminationMode, AppContext, SingletonEntity};
 
 use crate::{
-    ai::ambient_agents::{task::HarnessConfig, AmbientAgentTaskId},
+    ai::ambient_agents::task::HarnessConfig,
     auth::AuthStateProvider,
     send_telemetry_sync_from_app_ctx,
     server::server_api::{ai::AgentConfigSnapshot, ServerApiProvider},
@@ -64,7 +62,6 @@ use warp_cli::agent::{Harness, Prompt, RunAgentArgs};
 use warp_cli::OZ_HARNESS_ENV;
 
 mod admin;
-mod agent_config;
 mod ambient;
 mod artifact;
 mod common;
@@ -225,8 +222,6 @@ fn run_agent(
                 ));
             }
 
-            let server_api = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
-
             // Start the agent driver runner, which will handle the rest of the setup steps
             // (managing both sync and async steps) as well as triggering the driver.
             let runner = ctx.add_singleton_model(|_| AgentDriverRunner);
@@ -236,7 +231,6 @@ fn run_agent(
                     AgentDriverRunner::setup_and_run_driver(
                         spawner,
                         args,
-                        server_api,
                         global_options.output_format,
                     ),
                     |_, result, _ctx| {
@@ -249,24 +243,13 @@ fn run_agent(
 
             Ok(())
         }
-        AgentCommand::RunCloud(args) => {
-            if args.conversation.is_some() {
-                return Err(anyhow::anyhow!(
-                    "unexpected argument '--conversation' found"
-                ));
-            }
-            if args.harness != Harness::Oz && !FeatureFlag::AgentHarness.is_enabled() {
-                return Err(anyhow::anyhow!("unexpected argument '--harness' found"));
-            }
-            if args.claude_auth_secret.is_some() && args.harness != Harness::Claude {
-                return Err(anyhow::anyhow!(
-                    "--claude-auth-secret is only valid with --harness claude."
-                ));
-            }
-            ambient::run_ambient_agent(ctx, args)
+        AgentCommand::RunCloud(_) => {
+            Err(anyhow::anyhow!("Cloud agent runs are disabled in OpenWarp"))
         }
         AgentCommand::Profile(sub) => profiles::run(ctx, global_options, sub),
-        AgentCommand::List(args) => agent_config::list_agents(ctx, args),
+        AgentCommand::List(_) => Err(anyhow::anyhow!(
+            "Cloud agent skill listing is disabled in OpenWarp"
+        )),
     }
 }
 
@@ -474,7 +457,6 @@ impl AgentDriverRunner {
     async fn setup_and_run_driver(
         foreground: ModelSpawner<Self>,
         args: RunAgentArgs,
-        server_api: Arc<dyn AIClient>,
         output_format: OutputFormat,
     ) -> Result<(), AgentDriverError> {
         // Ensure we've synced team state before starting the driver.
@@ -491,13 +473,6 @@ impl AgentDriverRunner {
             return Err(AgentDriverError::WarpDriveSyncFailed);
         }
 
-        // Extract the task ID if available, so that if there are setup errors and we have
-        // a server-provided task ID, we can report them. If we create a task for a local CLI
-        // run, its ID will be stored in the inner future.
-        let mut task_id: Option<AmbientAgentTaskId> =
-            args.task_id.as_deref().and_then(|s| s.parse().ok());
-
-        // Set up and run the driver, reporting any errors back to the server.
         let result: Result<(), AgentDriverError> = async {
             // Pull relevant variables out of args before moving it into the closure.
             let share_requests = args.share.share.clone();
@@ -512,7 +487,6 @@ impl AgentDriverRunner {
             // `--conversation` value wins via the merge below.
             if let Some(conversation_id) = args.conversation.as_deref() {
                 common::fetch_and_validate_conversation_harness(
-                    server_api.clone(),
                     conversation_id,
                     args_harness,
                 )
@@ -520,21 +494,9 @@ impl AgentDriverRunner {
             }
             let resume_conversation_id = args.conversation.clone();
 
-            // Build driver options and task, handling task creation or existing task setup.
-            // For the `--task-id` path, `task_conversation_id` is the `conversation_id` read off
-            // the fetched `AmbientAgentTask` (set by the server when linking the task to an
-            // existing conversation, e.g. via `run-cloud --conversation`).
             let (mut driver_options, task, task_conversation_id) =
-                Self::build_driver_options_and_task(&foreground, args, &server_api).await?;
+                Self::build_driver_options_and_task(&foreground, args).await?;
 
-            // Update the effective task ID so errors are reported correctly.
-            // This only matters if we created a task ID locally.
-            task_id = driver_options.task_id.or(task_id);
-
-            // The `--task-id` branch already validated `args_harness` against the task's harness
-            // setting inside `build_driver_options_and_task`; the conversation that the task spawned
-            // necessarily uses the same harness, so no extra conversation-metadata roundtrip is
-            // needed here. Just merge the task's linked conversation id into the resume target.
             let resume_conversation_id = resume_conversation_id.or(task_conversation_id);
 
             let bedrock_task_id = driver_options.task_id.map(|id| id.to_string());
@@ -611,11 +573,6 @@ impl AgentDriverRunner {
         }
         .await;
 
-        if let Err(ref err) = result {
-            if let Some(task_id) = task_id {
-                driver::report_driver_error(task_id, err, &server_api).await;
-            }
-        }
         result
     }
 
@@ -687,7 +644,6 @@ impl AgentDriverRunner {
     async fn build_driver_options_and_task(
         foreground: &ModelSpawner<Self>,
         args: RunAgentArgs,
-        server_api: &Arc<dyn AIClient>,
     ) -> Result<(AgentDriverOptions, Task, Option<String>), AgentDriverError> {
         // Get the working directory
         let working_dir = match args.cwd.as_ref() {
@@ -762,7 +718,6 @@ impl AgentDriverRunner {
 
             Self::initialize_new_task(
                 foreground,
-                server_api,
                 prompt_for_task_creation,
                 merged_config,
                 &mut driver_options,
@@ -788,7 +743,6 @@ impl AgentDriverRunner {
     /// 汇报状态时使用。
     async fn initialize_new_task(
         foreground: &ModelSpawner<Self>,
-        _server_api: &Arc<dyn AIClient>,
         _prompt: String,
         _merged_config: AgentConfigSnapshot,
         driver_options: &mut AgentDriverOptions,
@@ -805,28 +759,21 @@ impl AgentDriverRunner {
         Ok(())
     }
 
-    /// 从既有 task_id 启动 agent run 时,拉取 secrets 和 task metadata 并更新
-    /// driver options。
+    /// 从既有 task_id 启动 agent run 时,仅拉取本地可用 secrets 并更新 driver options。
     ///
-    /// 如果服务端 task 已关联既有 AI conversation,返回它的 `conversation_id`。
-    /// 调用方用它恢复 transcript,无需额外 `--conversation` CLI 参数。
+    /// OpenWarp 不再拉取云端 task metadata,因此不会从 task 自动恢复云端 conversation。
     async fn fetch_secrets_and_task_metadata(
         foreground: &ModelSpawner<Self>,
         task_id_str: String,
         driver_options: &mut AgentDriverOptions,
     ) -> Result<Option<String>, AgentDriverError> {
-        let (task_secrets, ai_client) = foreground
+        let task_secrets = foreground
             .spawn({
                 let task_id_str = task_id_str.clone();
                 move |_, ctx| {
-                    let task_secrets = ManagedSecretManager::handle(ctx)
+                    ManagedSecretManager::handle(ctx)
                         .as_ref(ctx)
-                        .get_task_secrets(task_id_str);
-                    let ai_client = ServerApiProvider::handle(ctx)
-                        .as_ref(ctx)
-                        .get_ai_client()
-                        .clone();
-                    (task_secrets, ai_client)
+                        .get_task_secrets(task_id_str)
                 }
             })
             .await?;
@@ -839,20 +786,7 @@ impl AgentDriverRunner {
             }
         };
 
-        let task_ai_client = ai_client.clone();
-        let task_metadata = async {
-            match parsed_task_id {
-                Some(task_id) => task_ai_client
-                    .get_ambient_agent_task(&task_id)
-                    .await
-                    .map(Some),
-                None => Ok(None),
-            }
-        };
-
-        let (secrets_result, task_metadata_result) =
-            futures::future::join(task_secrets, task_metadata).await;
-        let secrets = match secrets_result {
+        let secrets = match task_secrets.await {
             Ok(secrets) => secrets,
             Err(err) => {
                 // Ignore errors due to running in a non-isolated environment.
@@ -870,41 +804,8 @@ impl AgentDriverRunner {
                 }
             }
         };
-        let (parent_run_id, task_conversation_id, task_harness) = match task_metadata_result {
-            Ok(Some(task_metadata)) => {
-                // The task's harness is stored on the snapshot; if absent, it's the default Oz.
-                let task_harness = task_metadata
-                    .agent_config_snapshot
-                    .as_ref()
-                    .and_then(|c| c.harness.as_ref())
-                    .map(|h| h.harness_type)
-                    .unwrap_or(Harness::Oz);
-                (
-                    task_metadata.parent_run_id,
-                    task_metadata.conversation_id,
-                    Some(task_harness),
-                )
-            }
-            Ok(None) => (None, None, None),
-            Err(err) => {
-                log::warn!("Failed to fetch task metadata: {err:#}");
-                (None, None, None)
-            }
-        };
-
-        // Validate the requested `--harness` against the task's harness setting. This avoids the
-        // extra conversation-metadata roundtrip that would otherwise be needed downstream when the
-        // task is linked to an existing conversation, since task harness and conversation harness
-        // always match (the task spawned the conversation).
-        if let Some(task_harness) = task_harness {
-            if task_harness != driver_options.selected_harness {
-                return Err(AgentDriverError::TaskHarnessMismatch {
-                    task_id: task_id_str,
-                    expected: task_harness.to_string(),
-                    got: driver_options.selected_harness.to_string(),
-                });
-            }
-        }
+        let parent_run_id = None;
+        let task_conversation_id = None;
 
         // Set the task ID on the ServerApi so it's sent with all subsequent requests.
         foreground

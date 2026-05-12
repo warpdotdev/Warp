@@ -1,4 +1,3 @@
-pub mod generate_commands;
 pub mod generate_metadata_for_command;
 // OpenWarp Wave1-2:`give_up_notebook_edit_access` / `grab_notebook_edit_access` /
 // `leave_object` / `record_object_action` / `remove_object_guest` 5 个 mutation
@@ -17,10 +16,9 @@ pub mod generate_metadata_for_command;
 // `confirm_file_artifact_upload` / `create_file_artifact_upload_target`
 // / `delete_ai_conversation` / `generate_dialogue` / `request_bonus`
 // (`provideNegativeFeedbackResponseForAiConversation`) — 唯一消费方
-// `AIClient impl for ServerApi` 已本地 stub Err。
-// `generate_commands` / `generate_metadata_for_command` 有复用类型被
-// `app/src/ai_assistant` / `app/src/drive/workflows/ai_assist.rs` import,
-// 保留 operation 文件;Wave 3 裁掉调用方后可进一步删除。
+// 旧云端 AI RPC 已下线。
+// `generate_metadata_for_command` 有复用类型被
+// `app/src/drive/workflows/ai_assist.rs` import,保留 operation 文件。
 //
 // OpenWarp Wave 3-1:再删 4 个 auth-only mutation —
 // `create_anonymous_user` / `expire_api_key` / `generate_api_key` /

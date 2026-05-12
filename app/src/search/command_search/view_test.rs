@@ -44,9 +44,8 @@ fn test_render_view() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
-        let (_window_id, _view) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-            CommandSearchView::new(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
-        });
+        let (_window_id, _view) =
+            app.add_window(WindowStyle::NotStealFocus, CommandSearchView::new);
 
         app.update(|_| {
             // This will force a redraw of the window, which lays out the

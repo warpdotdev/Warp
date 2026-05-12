@@ -5,7 +5,7 @@
 // OpenWarp Wave 2-2:再删 6 个 AI query —
 // `free_available_models` / `get_feature_model_choices` / `get_request_limit_info`
 // / `task_attachments` / `get_ai_conversation_format` / `list_ai_conversations`
-// — 唯一消费方 `AIClient impl for ServerApi` 已本地 stub Err。
+// — 唯一消费方旧云端 AI RPC 已下线。
 //
 // OpenWarp Wave 7-1:再删 `get_scheduled_agent_history` query —
 // 其唯一消费方 `ai/ambient_agents/scheduled.rs` 与 `agent_sdk/schedule.rs`

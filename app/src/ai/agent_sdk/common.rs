@@ -1,7 +1,6 @@
 //! Common utilities for agent SDK commands.
 
 use std::future::Future;
-use std::sync::Arc;
 use std::time::Duration;
 
 use futures::TryFutureExt;
@@ -18,7 +17,6 @@ use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::Owner;
-use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::ServerApiProvider;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -150,7 +148,6 @@ pub fn refresh_warp_drive(
 /// the harness: `Harness::Oz` default with a Claude conversation id is treated as a mismatch
 /// and errors out.
 pub(super) async fn fetch_and_validate_conversation_harness(
-    _ai_client: Arc<dyn AIClient>,
     conversation_id: &str,
     _args_harness: Harness,
 ) -> Result<ServerAIConversationMetadata, AgentDriverError> {

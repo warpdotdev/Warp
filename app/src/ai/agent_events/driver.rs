@@ -9,7 +9,7 @@ use instant::Instant;
 use warpui::r#async::Timer;
 
 use crate::server::server_api::ai::AgentRunEvent;
-use crate::server::server_api::ServerApi;
+use crate::server::server_api::AgentEventStreamClient;
 
 pub(crate) const DEFAULT_AGENT_EVENT_RECONNECT_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
 pub(crate) const DEFAULT_AGENT_EVENT_PROACTIVE_RECONNECT: Duration = Duration::from_secs(14 * 60);
@@ -102,27 +102,27 @@ pub(crate) trait AgentEventSource: Send + Sync {
     ) -> Result<AgentEventSourceStream>;
 }
 
-/// [`AgentEventSource`] backed by [`ServerApi::stream_agent_events`].
-pub(crate) struct ServerApiAgentEventSource {
-    server_api: Arc<ServerApi>,
+/// 由 [`AgentEventStreamClient`] 提供底层流的 [`AgentEventSource`]。
+pub(crate) struct AgentEventStreamClientEventSource {
+    client: Arc<dyn AgentEventStreamClient>,
 }
 
-impl ServerApiAgentEventSource {
-    pub(crate) fn new(server_api: Arc<ServerApi>) -> Self {
-        Self { server_api }
+impl AgentEventStreamClientEventSource {
+    pub(crate) fn new(client: Arc<dyn AgentEventStreamClient>) -> Self {
+        Self { client }
     }
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl AgentEventSource for ServerApiAgentEventSource {
+impl AgentEventSource for AgentEventStreamClientEventSource {
     async fn open_stream(
         &self,
         run_ids: &[String],
         since_sequence: i64,
     ) -> Result<AgentEventSourceStream> {
         let stream = self
-            .server_api
+            .client
             .stream_agent_events(run_ids, since_sequence)
             .await?;
 

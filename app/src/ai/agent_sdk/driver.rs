@@ -54,7 +54,6 @@ use crate::{
     server::{
         ids::{ServerId, SyncId},
         server_api::{
-            ai::AIClient,
             harness_support::{ResolvePromptAttachedSkill, ResolvePromptRequest},
             ServerApiProvider,
         },
@@ -74,7 +73,6 @@ use warp_cli::agent::{Harness, OutputFormat};
 use warp_cli::mcp::MCPSpec;
 use warp_cli::share::ShareRequest;
 use warp_core::{features::FeatureFlag, report_error, report_if_error, safe_debug, safe_info};
-use warp_graphql::ai::AgentTaskState;
 use warp_managed_secrets::ManagedSecretValue;
 use warpui::{
     r#async::{FutureExt, TimeoutError},
@@ -82,7 +80,6 @@ use warpui::{
 };
 
 pub(crate) mod attachments;
-mod error_classification;
 pub(crate) mod harness;
 pub(super) mod output;
 mod snapshot;
@@ -578,8 +575,8 @@ impl AgentDriver {
         )?;
 
         // Subscribe to TerminalDriver events for task-specific handling.
-        ctx.subscribe_to_model(&terminal_driver, |me, event, ctx| {
-            me.handle_terminal_driver_event(event, ctx);
+        ctx.subscribe_to_model(&terminal_driver, |me, event, _| {
+            me.handle_terminal_driver_event(event);
         });
 
         Ok(Self {
@@ -621,29 +618,10 @@ impl AgentDriver {
     ) -> impl Future<Output = Result<(), AgentDriverError>> {
         let (tx, rx) = oneshot::channel();
         let foreground = ctx.spawner();
-        let server_api = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let task_id = self.task_id;
         let idle_on_complete = self.idle_on_complete;
 
         ctx.spawn(
             async move {
-                // Mark the task as IN_PROGRESS before starting work. This covers
-                // the gap during environment setup, MCP startup, etc. — before any
-                // conversation exists and TaskStatusSyncModel can fire.
-                if let Some(task_id) = task_id {
-                    if let Err(e) = server_api
-                        .update_agent_task(
-                            task_id,
-                            Some(AgentTaskState::InProgress),
-                            None,
-                            None,
-                            None,
-                        )
-                        .await
-                    {
-                        log::error!("Failed to update agent task state to InProgress: {e}");
-                    }
-                }
                 let result = Self::run_internal(task, foreground.clone()).await;
 
                 // Run the snapshot upload before signaling the caller. The caller resumes and
@@ -661,7 +639,7 @@ impl AgentDriver {
             |_, _, _| {},
         );
 
-        let server_api_for_error = ServerApiProvider::as_ref(ctx).get_ai_client();
+        let task_id = self.task_id;
 
         async move {
             if let Some(ref task_id) = task_id {
@@ -676,13 +654,7 @@ impl AgentDriver {
                 }
             };
 
-            // Report driver-level errors directly to the server. These errors
-            // occur before or outside a conversation (e.g. bootstrap, MCP startup,
-            // environment setup) so TaskStatusSyncModel never fires for them.
-            // Success/blocked/cancelled are handled by TaskStatusSyncModel.
-            if let (Some(task_id), Err(err)) = (task_id, &result) {
-                report_driver_error(task_id, err, &server_api_for_error).await;
-
+            if let (Some(_task_id), Err(err)) = (task_id, &result) {
                 // Keep the session alive after environment setup failures so
                 // the viewer can connect, receive scrollback, and see the error.
                 if let (Some(idle_timeout), true) = (
@@ -1291,7 +1263,6 @@ impl AgentDriver {
         let (
             working_dir,
             task_id,
-            ai_client,
             harness_support_client,
             agent_event_stream_client,
             terminal_driver,
@@ -1307,7 +1278,6 @@ impl AgentDriver {
                 Ok((
                     me.working_dir.clone(),
                     me.task_id,
-                    ServerApiProvider::as_ref(ctx).get_ai_client(),
                     ServerApiProvider::as_ref(ctx).get_harness_support_client(),
                     ServerApiProvider::as_ref(ctx).get_agent_event_stream_client(),
                     me.terminal_driver.clone(),
@@ -1374,7 +1344,6 @@ impl AgentDriver {
                 &working_dir,
                 task_id,
                 harness_support_client,
-                ai_client,
                 agent_event_stream_client,
                 terminal_driver,
                 resume,
@@ -1507,11 +1476,6 @@ impl AgentDriver {
         let conversation_id_cell = Arc::new(Mutex::new(Option::<String>::None));
         let conversation_id_cell_for_handler = Arc::clone(&conversation_id_cell);
 
-        // Get the server API from context
-        let server_api = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let server_api_for_conversation_update = server_api.clone();
-        let task_id_for_conversation_update = self.task_id;
-
         ctx.subscribe_to_model(&history_model_handle, move |me, event, ctx| {
             if event.terminal_view_id().is_some_and(|id| id != terminal_id) {
                 return;
@@ -1566,9 +1530,6 @@ impl AgentDriver {
                         return;
                     };
 
-                    // Track whether we should spawn an async task to update the server.
-                    let mut pending_conversation_update: Option<String> = None;
-
                     if !written_conversation_id {
                         if let Some(token) = token_opt {
                             report_if_error!(output::with_stdout_buffered(|buf| match me.output_format {
@@ -1577,13 +1538,8 @@ impl AgentDriver {
                             }).context("Failed to write conversation ID"));
                             written_conversation_id = true;
 
-                            // Store the server conversation token and record that we should update the task
                             if let Ok(mut guard) = conversation_id_cell_for_handler.lock() {
-                                *guard = Some(token.clone());
-
-                                if task_id_for_conversation_update.is_some() {
-                                    pending_conversation_update = Some(token);
-                                }
+                                *guard = Some(token);
                             }
                         }
                     }
@@ -1595,30 +1551,6 @@ impl AgentDriver {
                             .context("Failed to write exchange output"));
                     }
 
-                    // Perform task update after all immutable borrows end
-                    if let (Some(task_id), Some(conversation_id_str)) = (
-                        task_id_for_conversation_update,
-                        pending_conversation_update,
-                    ) {
-                        let server_api = server_api_for_conversation_update.clone();
-                        ctx.spawn(
-                            async move {
-                                if let Err(e) = server_api
-                                    .update_agent_task(
-                                        task_id,
-                                        None, // Don't change state, just update conversation ID
-                                        None, // Don't update session_id from CLI context
-                                        Some(conversation_id_str),
-                                        None,
-                                    )
-                                    .await
-                                {
-                                    log::error!("Failed to update agent task with conversation ID: {e}");
-                                }
-                            },
-                            |_, _, _| {},
-                        );
-                    }
                 }
 
                 BlocklistAIHistoryEvent::UpdatedConversationStatus { terminal_view_id: conversation_terminal_id, conversation_id, .. } => {
@@ -1881,11 +1813,7 @@ impl AgentDriver {
     }
 
     /// Handle events re-emitted by the `TerminalDriver`.
-    fn handle_terminal_driver_event(
-        &mut self,
-        event: &TerminalDriverEvent,
-        ctx: &mut ModelContext<Self>,
-    ) {
+    fn handle_terminal_driver_event(&mut self, event: &TerminalDriverEvent) {
         match event {
             TerminalDriverEvent::SlowBootstrap => {
                 eprintln!(
@@ -1893,25 +1821,10 @@ impl AgentDriver {
                 );
             }
             TerminalDriverEvent::EstablishedSharedSession {
-                session_id,
+                session_id: _,
                 join_url,
             } => {
                 write_session_joined(join_url, self.output_format);
-
-                // If running as part of a task, store the session-sharing link.
-                if let Some(task_id) = self.task_id {
-                    let server_api = ServerApiProvider::as_ref(ctx).get_ai_client();
-                    let session_id = *session_id;
-                    ctx.spawn(
-                        async move {
-                            report_if_error!(server_api
-                                .update_agent_task(task_id, None, Some(session_id), None, None)
-                                .await
-                                .context("Error setting ambient agent shared session ID"));
-                        },
-                        |_, _, _| {},
-                    );
-                }
             }
         }
     }
@@ -1991,27 +1904,6 @@ pub(super) fn write_run_started(run_id: &str, output_format: OutputFormat) {
         OutputFormat::Text | OutputFormat::Pretty => output::text::run_started(run_id, buf),
     })
     .context("Failed to write run ID"));
-}
-
-/// Report a driver-level error to the server for the given task.
-///
-/// Used for errors that occur before or outside a conversation. Errors
-/// that occur while the agent is running should be reported through
-/// the `TaskStatusSyncModel`.
-pub(super) async fn report_driver_error(
-    task_id: AmbientAgentTaskId,
-    err: &AgentDriverError,
-    server_api: &Arc<dyn AIClient>,
-) {
-    let (state, status_update) = error_classification::classify_driver_error(err);
-    if let Err(e) = server_api
-        .update_agent_task(task_id, Some(state), None, None, Some(status_update))
-        .await
-    {
-        report_error!(
-            anyhow!(e).context(format!("Failed to report driver error for task {task_id}"))
-        );
-    }
 }
 
 /// Write the session URL to stdout using the appropriate output format

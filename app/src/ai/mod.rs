@@ -44,7 +44,6 @@ pub mod execution_profiles;
 pub mod facts;
 // OpenWarp Wave 6-8:`generate_block_title` 随 `BlockClient::generate_shared_block_title`
 // stub 一同移除 —— 唯一消费点是 BlockClient trait 签名,本地无其他代码路径。
-pub(crate) mod generate_code_review_content;
 pub(crate) mod loading;
 pub mod mcp;
 

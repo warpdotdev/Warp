@@ -11,7 +11,8 @@ pub(crate) use driver::{
 };
 pub(crate) use driver::{
     run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
-    AgentEventDriverConfig, AgentEventSource, AgentEventSourceItem, ServerApiAgentEventSource,
+    AgentEventDriverConfig, AgentEventSource, AgentEventSourceItem,
+    AgentEventStreamClientEventSource,
 };
 pub(crate) use message_hydrator::MessageHydrator;
 

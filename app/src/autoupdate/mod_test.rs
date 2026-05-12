@@ -1,11 +1,10 @@
 use chrono::{Local, TimeZone};
-use warpui::{App, ModelHandle, ReadModel, UpdateModel};
+use std::sync::Arc;
+use warpui::{App, ModelHandle, UpdateModel};
 
 use crate::{
     auth::{AuthManager, AuthStateProvider},
-    server::{
-        server_api::ServerApiProvider, telemetry::context_provider::AppTelemetryContextProvider,
-    },
+    server::telemetry::context_provider::AppTelemetryContextProvider,
     settings::AutoupdateSettings,
 };
 
@@ -18,16 +17,11 @@ fn initialize_app(app: &mut App) -> ModelHandle<AutoupdateState> {
     app.add_singleton_model(|_| SettingsManager::default());
     app.update(crate::settings::init_and_register_user_preferences);
     AutoupdateSettings::register(app);
-    let server_api_provider = app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
 
-    let server_api = app.read_model(&server_api_provider, |server_api_provider, _| {
-        server_api_provider.get()
-    });
-
-    app.add_model(|_| AutoupdateState::new(server_api))
+    app.add_model(|_| AutoupdateState::new(Arc::new(http_client::Client::new())))
 }
 
 #[test]

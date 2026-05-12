@@ -1,23 +1,14 @@
-// TODO(roland): Delete all of this once agent mode fully replaces the AI assistant panel.
-// app/src/ai/request_usage_model duplicates much of this logic.
-use std::sync::Arc;
-
 use chrono::{OutOfRangeError, Utc};
 use futures::stream::AbortHandle;
 
 use warp_core::user_preferences::GetUserPreferences as _;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+use warpui::{AppContext, Entity, ModelContext};
 
 use crate::{
     ai::{RequestLimitInfo, RequestUsageInfo},
     ai_assistant::utils::{AssistantTranscriptPart, TranscriptPartSubType},
-    auth::AuthStateProvider,
     send_telemetry_from_ctx,
-    server::{
-        server_api::{ai::AIClient, ServerApi},
-        telemetry::{TelemetryEvent, WarpAIRequestResult},
-    },
-    workspaces::user_workspaces::UserWorkspaces,
+    server::telemetry::{TelemetryEvent, WarpAIRequestResult},
 };
 
 use super::{
@@ -60,22 +51,7 @@ fn get_cached_request_limit_info(app_mut: &mut AppContext) -> Option<RequestLimi
         .and_then(|serialized| serde_json::from_str(serialized.as_str()).ok())
 }
 
-#[derive(Debug, Clone)]
-pub enum GenerateDialogueResult {
-    Success {
-        answer: String,
-        truncated: bool,
-        request_limit_info: RequestLimitInfo,
-        transcript_summarized: bool,
-    },
-    Failure {
-        request_limit_info: RequestLimitInfo,
-    },
-}
-
 pub struct Requests {
-    server_api: Arc<ServerApi>,
-    ai_client: Arc<dyn AIClient>,
     request_status: RequestStatus,
     request_limit_info: RequestLimitInfo,
 
@@ -89,8 +65,6 @@ pub struct Requests {
     /// the previous transcript parts for things like suggestions.
     /// This list is mutually exclusive from current_transcript.  
     old_transcript_parts: Vec<TranscriptPart>,
-
-    ai_execution_context: Option<WarpAiExecutionContext>,
 }
 
 impl Entity for Requests {
@@ -114,11 +88,7 @@ impl Requests {
 
 /// Public interface.
 impl Requests {
-    pub fn new(
-        server_api: Arc<ServerApi>,
-        ai_client: Arc<dyn AIClient>,
-        ctx: &mut ModelContext<Self>,
-    ) -> Self {
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         // Check if the user has cached request limit info from before.
         // If not, let's just make an assumption about the server's default request limit
         // and fetch the true request limit later.
@@ -126,14 +96,11 @@ impl Requests {
         let request_limit_info = cached_request_limit_info.unwrap_or_default();
 
         let requests = Self {
-            server_api,
-            ai_client,
             current_transcript: Vec::new(),
             current_transcript_summarized: false,
             old_transcript_parts: Vec::new(),
             request_status: RequestStatus::NotInFlight,
             request_limit_info,
-            ai_execution_context: None,
         };
 
         // OpenWarp:无 Warp Inc 云后端,初始 request_limit_info 不再向服务端拉取;
@@ -144,9 +111,8 @@ impl Requests {
 
     pub fn update_ai_execution_context(
         &mut self,
-        ai_execution_context: Option<WarpAiExecutionContext>,
+        _ai_execution_context: Option<WarpAiExecutionContext>,
     ) {
-        self.ai_execution_context = ai_execution_context;
     }
 
     pub fn update_request_limit_info(
@@ -168,168 +134,42 @@ impl Requests {
 
     /// Starts a Warp AI request against the server with the given request prompt.
     pub fn issue_request(&mut self, request: String, ctx: &mut ModelContext<Self>) {
-        let ai_client = self.ai_client.clone();
         let raw_request = request.trim();
-        let request_for_api = raw_request.to_string();
-        let transcript = self.current_transcript.clone();
-        let transcript_part_index = transcript.len();
-        let ai_execution_context = self.ai_execution_context.clone();
+        let transcript_part_index = self.current_transcript.len();
 
         let request_in_markdown = markdown_segments_from_text(
             transcript_part_index,
             TranscriptPartSubType::Question,
             raw_request,
         );
-
-        let future_handle = ctx.spawn(
-            async move {
-                let start_time = Utc::now();
-                (
-                    start_time,
-                    ai_client
-                        .generate_dialogue_answer(transcript, request_for_api, ai_execution_context)
-                        .await,
-                )
-            },
-            move |model, (start_time, response), ctx| {
-                let succeeded = response.is_ok();
-                let end_time = Utc::now();
-                let mut current_request_status = RequestStatus::NotInFlight;
-                std::mem::swap(&mut model.request_status, &mut current_request_status);
-                if let RequestStatus::InFlight { request, .. } = current_request_status {
-                    match response {
-                        Ok(GenerateDialogueResult::Success {
-                            mut answer,
-                            truncated,
-                            request_limit_info,
-                            transcript_summarized,
-                        }) => {
-                            if truncated {
-                                answer.push_str("...");
-                            }
-
-                            let trimmed_response = answer.trim();
-                            let response_in_markdown = markdown_segments_from_text(
-                                transcript_part_index,
-                                TranscriptPartSubType::Answer,
-                                trimmed_response,
-                            );
-                            model.current_transcript.push(TranscriptPart {
-                                user: request,
-                                assistant: AssistantTranscriptPart {
-                                    is_error: false,
-                                    copy_all_tooltip_and_button_mouse_handles: Some((Default::default(), Default::default())),
-                                    formatted_message: FormattedTranscriptMessage {
-                                        markdown: response_in_markdown,
-                                        raw: trimmed_response.to_string(),
-                                    },
-                                },
-                            });
-
-                            cache_request_limit_info(request_limit_info, ctx);
-                            model.request_limit_info = request_limit_info;
-
-                            // If the transcript was already marked as summarized before,
-                            // it will remain so until it's reset.
-                            model.current_transcript_summarized |= transcript_summarized;
-
-
-                            let req_latency = end_time.signed_duration_since(start_time).num_milliseconds();
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::WarpAIRequestIssued { result: WarpAIRequestResult::Succeeded { latency_ms: req_latency, truncated }},
-                                ctx
-                            );
-                        }
-                        Ok(GenerateDialogueResult::Failure { request_limit_info }) if request_limit_info.limit <= request_limit_info.num_requests_used_since_refresh => {
-                            cache_request_limit_info(request_limit_info, ctx);
-                            model.request_limit_info = request_limit_info;
-                            let next_time = if let Some(next_refresh_time) = model.serialized_time_until_refresh() {
-                                format!("after {next_refresh_time}")
-                            } else {
-                                String::from("later")
-                            };
-
-                            let auth_state = AuthStateProvider::as_ref(ctx).get();
-                            let response = if let Some(team) = UserWorkspaces::as_ref(ctx).current_team() {
-                                let current_user_email = auth_state.user_email().unwrap_or_default();
-                                let has_admin_permissions = team.has_admin_permissions(&current_user_email);
-                                if team.billing_metadata.can_upgrade_to_higher_tier_plan() {
-                                    if has_admin_permissions {
-                                        let upgrade_url = UserWorkspaces::upgrade_link_for_team(team.uid);
-                                        format!("It seems you're out of credits. Please try again {next_time}.\n\n[Upgrade]({upgrade_url}) for more credits.")
-                                    } else {
-                                        format!("It seems you're out of credits. Please try again {next_time}.\n\nContact a team admin to upgrade for more credits.")
-                                    }
-                                } else {
-                                    format!("It seems you're out of credits. Please try again {next_time}.")
-                                }
-                            } else {
-                                let user_id = auth_state.user_id().unwrap_or_default();
-                                let upgrade_url = UserWorkspaces::upgrade_link(user_id);
-                                format!("It seems you're out of credits. Please try again {next_time}.\n\n[Upgrade]({upgrade_url}) for more credits.")
-                            };
-                            let response_in_markdown = markdown_segments_from_text(
-                                transcript_part_index,
-                                TranscriptPartSubType::Answer,
-                                &response,
-                            );
-                            model.current_transcript.push(TranscriptPart {
-                                user: request,
-                                assistant: AssistantTranscriptPart {
-                                    is_error: true,
-                                    copy_all_tooltip_and_button_mouse_handles: None,
-                                    formatted_message: FormattedTranscriptMessage {
-                                        markdown: response_in_markdown,
-                                        raw: response,
-                                    },
-                                },
-                            });
-
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::WarpAIRequestIssued { result: WarpAIRequestResult::OutOfRequests},
-                                ctx
-                            );
-                        }
-                        _ => {
-                            let response = "We're experiencing technical difficulties right now. Please try again later.".to_owned();
-                            let response_in_markdown = markdown_segments_from_text(
-                                transcript_part_index,
-                                TranscriptPartSubType::Answer,
-                                &response,
-                            );
-                            model.current_transcript.push(TranscriptPart {
-                                user: request,
-                                assistant: AssistantTranscriptPart {
-                                    is_error: true,
-                                    copy_all_tooltip_and_button_mouse_handles: None,
-                                    formatted_message: FormattedTranscriptMessage {
-                                        markdown: response_in_markdown,
-                                        raw: response,
-                                    },
-                                },
-                            });
-
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::WarpAIRequestIssued { result: WarpAIRequestResult::Failed},
-                                ctx
-                            );
-                        }
-                    }
-                }
-
-                ctx.emit(Event::RequestFinished { succeeded });
-                ctx.notify();
-            },
+        let response = "Warp AI Assistant cloud requests are disabled in OpenWarp. Use Agent Mode with a configured BYOP model instead.".to_owned();
+        let response_in_markdown = markdown_segments_from_text(
+            transcript_part_index,
+            TranscriptPartSubType::Answer,
+            &response,
         );
-
-        self.request_status = RequestStatus::InFlight {
-            request: FormattedTranscriptMessage {
+        self.current_transcript.push(TranscriptPart {
+            user: FormattedTranscriptMessage {
                 markdown: request_in_markdown,
                 raw: raw_request.to_string(),
             },
-            abort_handle: future_handle.abort_handle(),
-        };
-
+            assistant: AssistantTranscriptPart {
+                is_error: true,
+                copy_all_tooltip_and_button_mouse_handles: None,
+                formatted_message: FormattedTranscriptMessage {
+                    markdown: response_in_markdown,
+                    raw: response,
+                },
+            },
+        });
+        self.request_status = RequestStatus::NotInFlight;
+        send_telemetry_from_ctx!(
+            TelemetryEvent::WarpAIRequestIssued {
+                result: WarpAIRequestResult::Failed
+            },
+            ctx
+        );
+        ctx.emit(Event::RequestFinished { succeeded: false });
         ctx.notify();
     }
 
@@ -419,17 +259,12 @@ impl Requests {
 #[cfg(test)]
 impl Requests {
     pub fn new_with_transcript(transcript: Vec<TranscriptPart>) -> Self {
-        use crate::server::server_api::ServerApiProvider;
-
         Self {
-            server_api: ServerApiProvider::new_for_test().get(),
-            ai_client: ServerApiProvider::new_for_test().get_ai_client(),
             current_transcript: transcript,
             current_transcript_summarized: false,
             old_transcript_parts: Vec::new(),
             request_status: RequestStatus::NotInFlight,
             request_limit_info: RequestLimitInfo::default(),
-            ai_execution_context: None,
         }
     }
 }

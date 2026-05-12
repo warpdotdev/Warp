@@ -28,8 +28,6 @@ pub enum GenericStringObjectFormat {
     JsonAIExecutionProfile,
     #[cynic(rename = "JsonTemplatableMCPServer")]
     JsonTemplatableMCPServer,
-    #[cynic(rename = "JsonCloudEnvironment")]
-    JsonCloudEnvironment,
 }
 
 #[derive(cynic::InputObject, Debug)]
@@ -54,7 +52,6 @@ impl std::fmt::Display for GenericStringObjectFormat {
             GenericStringObjectFormat::JsonMCPServer => "JsonMCPServer",
             GenericStringObjectFormat::JsonAIExecutionProfile => "JsonAIExecutionProfile",
             GenericStringObjectFormat::JsonTemplatableMCPServer => "JsonTemplatableMCPServer",
-            GenericStringObjectFormat::JsonCloudEnvironment => "JsonCloudEnvironment",
         };
         write!(f, "{s}")
     }

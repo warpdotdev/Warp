@@ -158,9 +158,7 @@ fn ai_conversation_new_restored_preserves_last_event_sequence() {
 #[test]
 fn restored_inprogress_parent_defers_delivery_until_success() {
     use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
-    use crate::server::server_api::ai::MockAIClient;
     use crate::server::server_api::ServerApiProvider;
-    use std::sync::Arc;
     use warpui::App;
 
     App::test((), |mut app| async move {
@@ -185,14 +183,11 @@ fn restored_inprogress_parent_defers_delivery_until_success() {
             );
         });
 
-        let mut mock = MockAIClient::new();
-        mock.expect_update_event_sequence_on_server()
-            .returning(|_, _| Ok(()));
-        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
-        let server_api = ServerApiProvider::new_for_test().get();
+        let agent_event_stream_client =
+            ServerApiProvider::new_for_test().get_agent_event_stream_client();
 
         let streamer = app.add_singleton_model(|ctx| {
-            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(agent_event_stream_client, ctx)
         });
 
         // Synchronous part of `on_restored_conversations`: cursor seeded,
@@ -237,9 +232,7 @@ fn restored_inprogress_parent_defers_delivery_until_success() {
 #[test]
 fn restored_parent_registers_local_child_run_ids() {
     use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
-    use crate::server::server_api::ai::MockAIClient;
     use crate::server::server_api::ServerApiProvider;
-    use std::sync::Arc;
     use warpui::App;
 
     App::test((), |mut app| async move {
@@ -269,12 +262,11 @@ fn restored_parent_registers_local_child_run_ids() {
             );
         });
 
-        let mock = MockAIClient::new();
-        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
-        let server_api = ServerApiProvider::new_for_test().get();
+        let agent_event_stream_client =
+            ServerApiProvider::new_for_test().get_agent_event_stream_client();
 
         let streamer = app.add_singleton_model(|ctx| {
-            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(agent_event_stream_client, ctx)
         });
 
         streamer.update(&mut app, |me, ctx| {
@@ -301,11 +293,9 @@ fn restored_parent_registers_local_child_run_ids() {
 fn handle_event_batch_persists_max_seq_to_history_model() {
     use crate::ai::agent::conversation::{AIConversation, AIConversationId};
     use crate::persistence::ModelEvent;
-    use crate::server::server_api::ai::MockAIClient;
     use crate::server::server_api::ServerApiProvider;
     use crate::test_util::settings::initialize_settings_for_tests;
     use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
-    use std::sync::Arc;
     use warpui::App;
 
     App::test((), |mut app| async move {
@@ -330,15 +320,11 @@ fn handle_event_batch_persists_max_seq_to_history_model() {
             model.restore_conversations(terminal_view_id, vec![conversation], ctx);
         });
 
-        let mut mock = MockAIClient::new();
-        // The fire-and-forget server PATCH should be issued; permissive Ok.
-        mock.expect_update_event_sequence_on_server()
-            .returning(|_, _| Ok(()));
-        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
-        let server_api = ServerApiProvider::new_for_test().get();
+        let agent_event_stream_client =
+            ServerApiProvider::new_for_test().get_agent_event_stream_client();
 
         let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(agent_event_stream_client, ctx)
         });
 
         // Build a poll batch with max sequence = 42. Use an unrecognized

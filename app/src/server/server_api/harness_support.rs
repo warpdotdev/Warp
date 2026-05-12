@@ -1,23 +1,21 @@
 // OpenWarp:HarnessSupportClient impl 已本地化为 stub。
 // 历史职责:通过 warp.dev 后端 `/public_api/harness-support/*` REST 端点支撑
 // "cloud agent harness"——即在远端机房跑 Claude Code/Gemini/Codex CLI 的 BYOH
-// 协议(create_external_conversation / get_transcript_upload_target / resolve_prompt /
-// report_artifact / notify_user / finish_task / get_snapshot_upload_targets /
-// fetch_transcript)。OpenWarp 只跑本地 BYOP harness,无云端 harness 需求。
+// 协议(resolve_prompt / report_artifact / notify_user / finish_task /
+// get_snapshot_upload_targets)。OpenWarp 只跑本地 BYOP harness,无云端 harness 需求。
 //
 // 保留:
-//   - `HarnessSupportClient` trait 本身、所有方法签名、相关 request/response 数据类型
+//   - `HarnessSupportClient` trait 本身、仍被调用的方法签名、相关 request/response 数据类型
 //     (`UploadTarget`、`SnapshotUploadRequest`、`SnapshotFileInfo`、`SnapshotUploadResponse`、
 //     `ResolvePromptAttachedSkill`、`ResolvePromptRequest`、`ResolvedHarnessPrompt`、
 //     `ReportArtifactResponse`):被 agent_sdk/driver/{snapshot,harness/*}、agent_sdk/harness_support.rs
 //     等多处导入使用,trait 路径不可断。
-//   - 顶层 `upload_to_target` 包装:维持公共 API 供 agent_sdk/driver/{harness,snapshot}
+//   - 顶层 `upload_to_target` 包装:维持公共 API 供 agent_sdk/driver/snapshot.rs
 //     调用,内部委托给 presigned_upload(同样已 stub 返回错误)。
 // 改造:
 //   - `HarnessSupportClient for ServerApi` 所有方法返回
 //     "Cloud harness support disabled in OpenWarp" 错误。
-//   - 删 fetch_transcript 中的 with_bounded_retry 重试逻辑(已永远失败,无重试意义);
-//     同时不再 import `with_bounded_retry`。
+//   - 删 conversation/transcript/block snapshot 上传相关云端方法。
 
 #![cfg_attr(target_family = "wasm", expect(dead_code))]
 
@@ -29,7 +27,6 @@ use async_trait::async_trait;
 use mockall::automock;
 
 use super::ServerApi;
-use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::artifacts::Artifact;
 
 /// A presigned upload target returned by the server.
@@ -102,21 +99,6 @@ pub struct ReportArtifactResponse {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 pub trait HarnessSupportClient: 'static + Send + Sync {
-    /// Create a new external conversation for a third-party harness.
-    async fn create_external_conversation(&self, format: &str) -> Result<AIConversationId>;
-
-    /// Get a presigned upload target for the conversation's raw transcript.
-    async fn get_transcript_upload_target(
-        &self,
-        conversation_id: &AIConversationId,
-    ) -> Result<UploadTarget>;
-
-    /// Get a presigned upload target for the conversation's block snapshot.
-    async fn get_block_snapshot_upload_target(
-        &self,
-        conversation_id: &AIConversationId,
-    ) -> Result<UploadTarget>;
-
     /// Resolve the prompt for a third-party harness run for a task stored on the server.
     async fn resolve_prompt(&self, request: ResolvePromptRequest) -> Result<ResolvedHarnessPrompt>;
 
@@ -135,10 +117,6 @@ pub trait HarnessSupportClient: 'static + Send + Sync {
         request: &SnapshotUploadRequest,
     ) -> Result<Vec<UploadTarget>>;
 
-    /// Download the raw third-party harness transcript bytes for the current task's
-    /// conversation.
-    async fn fetch_transcript(&self) -> Result<bytes::Bytes>;
-
     /// Get an HTTP client to use with [`UploadTarget`]s for saving blobs.
     fn http_client(&self) -> &http_client::Client;
 }
@@ -146,24 +124,6 @@ pub trait HarnessSupportClient: 'static + Send + Sync {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl HarnessSupportClient for ServerApi {
-    async fn create_external_conversation(&self, _format: &str) -> Result<AIConversationId> {
-        Err(anyhow!("Cloud harness support disabled in OpenWarp"))
-    }
-
-    async fn get_transcript_upload_target(
-        &self,
-        _conversation_id: &AIConversationId,
-    ) -> Result<UploadTarget> {
-        Err(anyhow!("Cloud harness support disabled in OpenWarp"))
-    }
-
-    async fn get_block_snapshot_upload_target(
-        &self,
-        _conversation_id: &AIConversationId,
-    ) -> Result<UploadTarget> {
-        Err(anyhow!("Cloud harness support disabled in OpenWarp"))
-    }
-
     async fn resolve_prompt(
         &self,
         _request: ResolvePromptRequest,
@@ -190,10 +150,6 @@ impl HarnessSupportClient for ServerApi {
         Err(anyhow!("Cloud harness support disabled in OpenWarp"))
     }
 
-    async fn fetch_transcript(&self) -> Result<bytes::Bytes> {
-        Err(anyhow!("Cloud harness support disabled in OpenWarp"))
-    }
-
     fn http_client(&self) -> &http_client::Client {
         &self.client
     }
@@ -203,8 +159,7 @@ impl HarnessSupportClient for ServerApi {
 ///
 /// OpenWarp:转发到已 stub 化的 `presigned_upload::upload_to_target`,返回
 /// "Presigned upload disabled in OpenWarp" 错误。保留入口以维持 agent_sdk
-/// 内 `harness::*` / `snapshot.rs` 等模块对 `harness_support::upload_to_target`
-/// 的 import 路径。
+/// 内 `snapshot.rs` 对 `harness_support::upload_to_target` 的 import 路径。
 pub async fn upload_to_target(
     http_client: &http_client::Client,
     target: &UploadTarget,

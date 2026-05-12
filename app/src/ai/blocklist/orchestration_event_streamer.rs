@@ -6,10 +6,10 @@ use crate::ai::agent::{
 };
 use crate::ai::agent_events::{
     run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
-    AgentEventDriverConfig, MessageHydrator, ServerApiAgentEventSource,
+    AgentEventDriverConfig, AgentEventStreamClientEventSource, MessageHydrator,
 };
-use crate::server::server_api::ai::{AIClient, AgentRunEvent};
-use crate::server::server_api::{ServerApi, ServerApiProvider};
+use crate::server::server_api::ai::AgentRunEvent;
+use crate::server::server_api::{AgentEventStreamClient, ServerApiProvider};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -79,8 +79,7 @@ impl AgentEventConsumer for SseForwardingConsumer {
 /// for deduplication, lifecycle reporting, and delivery confirmation.
 /// SSE retries with exponential backoff on failure.
 pub struct OrchestrationEventStreamer {
-    ai_client: Arc<dyn AIClient>,
-    server_api: Arc<ServerApi>,
+    agent_event_stream_client: Arc<dyn AgentEventStreamClient>,
     watched_run_ids: HashMap<AIConversationId, HashSet<String>>,
     event_cursor: HashMap<AIConversationId, i64>,
     pending_delivery: HashMap<AIConversationId, PendingDeliveryConfirmation>,
@@ -99,15 +98,13 @@ pub enum OrchestrationEventStreamerEvent {
 impl OrchestrationEventStreamer {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let provider = ServerApiProvider::as_ref(ctx);
-        let ai_client = provider.get_ai_client();
-        let server_api = provider.get();
+        let agent_event_stream_client = provider.get_agent_event_stream_client();
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         ctx.subscribe_to_model(&history_model, |me, event, ctx| {
             me.handle_history_event(event, ctx);
         });
         Self {
-            ai_client,
-            server_api,
+            agent_event_stream_client,
             watched_run_ids: HashMap::new(),
             event_cursor: HashMap::new(),
             pending_delivery: HashMap::new(),
@@ -117,13 +114,10 @@ impl OrchestrationEventStreamer {
         }
     }
 
-    /// Constructs a streamer wired to the supplied (mock) clients instead of
-    /// looking them up via `ServerApiProvider`. Lets unit tests inject a
-    /// `MockAIClient` while still subscribing to `BlocklistAIHistoryModel`.
+    /// 用显式传入的事件流客户端构造 streamer,避免测试里从 `ServerApiProvider` 查询。
     #[cfg(test)]
     pub(super) fn new_with_clients_for_test(
-        ai_client: Arc<dyn AIClient>,
-        server_api: Arc<ServerApi>,
+        agent_event_stream_client: Arc<dyn AgentEventStreamClient>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
@@ -131,8 +125,7 @@ impl OrchestrationEventStreamer {
             me.handle_history_event(event, ctx);
         });
         Self {
-            ai_client,
-            server_api,
+            agent_event_stream_client,
             watched_run_ids: HashMap::new(),
             event_cursor: HashMap::new(),
             pending_delivery: HashMap::new(),
@@ -416,7 +409,7 @@ impl OrchestrationEventStreamer {
             }
         }
 
-        let hydrator = MessageHydrator::new(self.ai_client.clone());
+        let hydrator = MessageHydrator::new();
         ctx.spawn(
             async move {
                 hydrator
@@ -456,33 +449,6 @@ impl OrchestrationEventStreamer {
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
             model.update_event_sequence(conversation_id, max_seq, ctx);
         });
-
-        // Also persist the cursor to the server so driver / cloud restarts
-        // can resume without local SQLite state. Fire-and-forget: log on
-        // failure, don't block event delivery. The server persists the
-        // cursor on `ai_tasks.last_event_sequence`.
-        let own_run_id = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&conversation_id)
-            .and_then(|c| c.run_id());
-        if let Some(run_id) = own_run_id {
-            // TODO: consider debouncing this server write (see
-            // specs/replay-agent-events-on-restore/TECH.md Risks).
-            let ai_client = self.ai_client.clone();
-            ctx.spawn(
-                async move {
-                    ai_client
-                        .update_event_sequence_on_server(&run_id, max_seq)
-                        .await
-                },
-                move |_, result, _| {
-                    if let Err(err) = result {
-                        log::warn!(
-                            "Failed to persist event cursor to server for {conversation_id:?}: {err:#}"
-                        );
-                    }
-                },
-            );
-        }
 
         // Track message IDs for server-side mark_delivered calls.
         let message_ids: Vec<String> = events
@@ -543,9 +509,7 @@ impl OrchestrationEventStreamer {
             .copied()
             .unwrap_or(0);
 
-        let server_api = self.server_api.clone();
-        let ai_client = self.ai_client.clone();
-
+        let agent_event_stream_client = self.agent_event_stream_client.clone();
         let self_run_id = BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&conversation_id)
             .and_then(|c| c.run_id())
@@ -570,8 +534,8 @@ impl OrchestrationEventStreamer {
         );
 
         let config = AgentEventDriverConfig::retry_forever(watched.clone(), cursor);
-        let source = ServerApiAgentEventSource::new(server_api);
-        let hydrator = MessageHydrator::new(ai_client);
+        let source = AgentEventStreamClientEventSource::new(agent_event_stream_client);
+        let hydrator = MessageHydrator::new();
 
         ctx.spawn(
             async move {

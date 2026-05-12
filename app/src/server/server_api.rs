@@ -16,9 +16,6 @@ pub(crate) mod presigned_upload;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::auth::AuthState;
 use crate::server::graphql::default_request_options;
-use ai::{AIClient, LocalAIClient};
-use channel_versions::{ChannelChangelogs, ChannelVersion, ChannelVersions, VersionInfo};
-use futures::StreamExt;
 use warpui::{r#async::BoxFuture, ModelContext};
 
 // OpenWarp Wave 5-3:原 `AMBIENT_WORKLOAD_TOKEN_HEADER` 随 `generate_multi_agent_output` 云端
@@ -28,23 +25,19 @@ use warpui::{r#async::BoxFuture, ModelContext};
 /// Header key for the cloud agent task ID attached to requests from ambient agents.
 pub const CLOUD_AGENT_ID_HEADER: &str = "X-Warp-Cloud-Agent-ID";
 
-use crate::settings::PrivacySettingsSnapshot;
 use crate::settings_view;
-
-use crate::ChannelState;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset};
 use instant::Instant;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
 use warp_core::errors::{AnyhowErrorExt, ErrorExt};
 use warp_core::register_error;
-use warp_core::telemetry::TelemetryEvent;
 use warpui::Entity;
 use warpui::SingletonEntity;
 
@@ -55,7 +48,7 @@ use super::graphql::GraphQLError;
 pub const FETCH_CHANNEL_VERSIONS_TIMEOUT: std::time::Duration = Duration::from_secs(60);
 
 // openWarp 闭源遥测剥离 P4b:`X-Warp-Experiment-Id` HTTP header 原本携带 anonymous_id
-// 注入到 /client/login、fetch_channel_versions、GraphQL 等请求,服务端用于实验分组 +
+// 注入到 GraphQL 等请求,服务端用于实验分组 +
 // 跨会话追踪。P0 后值已是 nil-UUID,P4b 直接删 header 注入,服务端见到的请求里就
 // 不再有这个字段。注入点(共 3 处)同步删除。
 
@@ -121,6 +114,13 @@ pub struct ServerTime {
 }
 
 impl ServerTime {
+    pub fn local_now() -> Self {
+        Self {
+            time_at_fetch: chrono::Utc::now().into(),
+            fetched_at: Instant::now(),
+        }
+    }
+
     pub fn current_time(&self) -> DateTime<FixedOffset> {
         let elapsed = chrono::Duration::from_std(self.fetched_at.elapsed())
             .expect("duration should not be bigger than limit");
@@ -331,33 +331,6 @@ pub enum TranscribeError {
     Other(#[from] anyhow::Error),
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(target_family = "wasm")] {
-        // The WASM version of this type has no bound on `Send`, which is not implemented on
-        // `wasm_bindgen::JsValue`, which is ultimately used in reqwest_eventsource::Error. Furthermore,
-        // `Send` is an unnecessary bound when targeting wasm because the browser is single-threaded (and
-        // we don't leverage WebWorkers for async execution in WoW).
-        pub type AIOutputStream<T> = futures::stream::LocalBoxStream<'static, Result<T, Arc<AIApiError>>>;
-    } else {
-        pub type AIOutputStream<T> = futures::stream::BoxStream<'static, Result<T, Arc<AIApiError>>>;
-    }
-}
-
-/// An event related to the server API itself (and not a particular API call).
-/// Most errors should be handled in callbacks to individual APIs, rather than sent over the
-/// server API channel.
-//
-// OpenWarp Wave 6-1:`NeedsReauth` 与 `AccessTokenRefreshed` 两个 variant 在 Wave 3-1
-// 删 auth 子系统后已无任何 emit 点(全仓 0 处 `try_send`),订阅链(`wire_auth_token_rotation`
-// + `ServerApiProvider::new` 内 match 分支)随之物理删。
-#[derive(Clone, Debug)]
-pub enum ServerApiEvent {
-    /// We made a staging API call that was blocked, which may indicate a firewall misconfiguration.
-    StagingAccessBlocked,
-    /// The user's account has been disabled.
-    UserAccountDisabled,
-}
-
 /// An API wrapper struct with methods to requests to warp-server.
 ///
 /// Prefer NOT adding new methods directly on this struct; instead, add to one of the existing
@@ -366,12 +339,10 @@ pub enum ServerApiEvent {
 pub struct ServerApi {
     client: Arc<http_client::Client>,
     auth_state: Arc<AuthState>,
-    event_sender: async_channel::Sender<ServerApiEvent>,
     // OpenWarp Wave 5-2:`telemetry_api: TelemetryApi` 字段物理删 — TelemetryApi
     // 以全 no-op 实现存在于 `server/telemetry/mod.rs`，但 `flush_telemetry_events` /
     // `flush_and_persist_events` / `flush_persisted_events_to_rudder` 均 0 外部消费，
     // `send_telemetry_event` 仅 view.rs:25525 一处调用，直接折 no-op 到本 struct。
-    last_server_time: Arc<Mutex<Option<ServerTime>>>,
     // OpenWarp Wave 3-1:原 `oauth_client: self::auth::OAuth2Client` 随 auth.rs 一同
     // 物理删。CLI headless device auth 路径在 OpenWarp 下线。
     // OpenWarp Wave 6-1:`ambient_workload_token: Arc<Mutex<Option<WorkloadToken>>>` 字段
@@ -421,11 +392,7 @@ pub trait AgentEventStreamClient: 'static + Send + Sync {
 }
 
 impl ServerApi {
-    fn new(
-        auth_state: Arc<AuthState>,
-        event_sender: async_channel::Sender<ServerApiEvent>,
-        agent_source: Option<ai::AgentSource>,
-    ) -> Self {
+    fn new(auth_state: Arc<AuthState>, agent_source: Option<ai::AgentSource>) -> Self {
         // We generate a random user ID for evals so we can run evals in parallel.
         #[cfg(feature = "agent_mode_evals")]
         let oauth_user_id = {
@@ -436,8 +403,6 @@ impl ServerApi {
         Self {
             client: Arc::new(http_client::Client::new()),
             auth_state,
-            event_sender,
-            last_server_time: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
             agent_source,
             #[cfg(feature = "agent_mode_evals")]
@@ -447,13 +412,9 @@ impl ServerApi {
 
     #[cfg(test)]
     fn new_for_test() -> Self {
-        let (tx, _) = async_channel::unbounded();
-
         Self {
             client: Arc::new(http_client::Client::new_for_test()),
             auth_state: Arc::new(AuthState::new_for_test()),
-            event_sender: tx,
-            last_server_time: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
             agent_source: None,
             #[cfg(feature = "agent_mode_evals")]
@@ -515,7 +476,6 @@ impl ServerApi {
         timeout: Option<Duration>,
     ) -> BoxFuture<'a, Result<QF>> {
         let client = self.client.clone();
-        let event_sender = self.event_sender.clone();
 
         #[cfg(feature = "agent_mode_evals")]
         let headers = if let Some(eval_user_id) = self.eval_user_id {
@@ -553,7 +513,6 @@ impl ServerApi {
             let response = match operation.send_request(client, options).await {
                 Ok(response) => response,
                 Err(GraphQLError::StagingAccessBlocked) => {
-                    let _ = event_sender.try_send(ServerApiEvent::StagingAccessBlocked);
                     anyhow::bail!(GraphQLError::StagingAccessBlocked)
                 }
                 Err(err) => anyhow::bail!(err),
@@ -574,7 +533,6 @@ impl ServerApi {
                     .any(|error| error.message.contains("User not in context: Not found"))
                 {
                     log::error!("GraphQL request failed due to unauthenticated user");
-                    let _ = event_sender.try_send(ServerApiEvent::UserAccountDisabled);
                 }
             }
 
@@ -636,23 +594,6 @@ impl ServerApi {
 
     // OpenWarp Wave 4-1:`notify_login` (原向 /client/login 发生命令心跳) 0 消费方，物理删。
 
-    /// 向 远端 Rudderstack 发送 [`TelemetryEvent`]。
-    ///
-    /// OpenWarp Wave 5-2：Rudder 网络层在 Phase 4-2(commit 60e37e160)中已全部物理删。
-    /// 本方法仅为保留 `terminal/view.rs:25525` 一处现有调用点的调用签名兼容 —
-    /// 方法体仅做轻量类型检查 + drain，返回 `Ok(())`。后续如果以后只剩
-    /// 零 个调用点可连同该方法一同删。隔层的 `TelemetryApi` struct 与
-    /// `flush_telemetry_events` / `flush_and_persist_events` / `flush_persisted_events_to_rudder`
-    /// 均 0 外部消费 — 随本 PR 一起物理删。
-    pub async fn send_telemetry_event(
-        &self,
-        event: impl TelemetryEvent,
-        _settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<()> {
-        let _ = event.name();
-        Ok(())
-    }
-
     // OpenWarp Wave 5-2：`flush_telemetry_events` 及 `flush_persisted_events_to_rudder` /
     // `persist_telemetry_events` 等均 0 外部消费，随 `TelemetryApi` 一同物理删。
     // 历史语义：本地落盘 telemetry batch 回放 → Rudderstack。
@@ -662,108 +603,10 @@ impl ServerApi {
     // `TranscribeRequest` / `TranscribeResponse` import。`TranscribeError` enum 本身
     // 保留,继续被 `voice/transcriber.rs` 消费。
 
-    pub async fn generate_multi_agent_output(
-        &self,
-        _request: &warp_multi_agent_api::Request,
-    ) -> std::result::Result<AIOutputStream<warp_multi_agent_api::ResponseEvent>, Arc<AIApiError>>
-    {
-        // OpenWarp Wave 5-3:`generate_multi_agent_output` 是云端 agent SSE 端点
-        // (`/ai/multi-agent` 与 `/ai/passive-suggestions`) 的唯一入口。OpenWarp 主走
-        // BYOP 路径(`crate::ai::agent_providers::chat_stream::generate_byop_output`),
-        // 本方法仅在 `byop_dispatch_info` 返回 `None` 时被调用作为 fallback,
-        // 但云端已剩离,fallback 会被 dns 拒绝 / 404 拒绝 — 直接 stub
-        // 为返回 `Disabled` 错误流。
-        //
-        // 所有消费点都通过 `take_until(cancellation_rx)` 或 channel 包装
-        // graceful 处理 stream Err:
-        // - `ai/agent/api/impl.rs:139` -> err event 走 channel
-        // - `blocklist/controller/response_stream.rs:269/375` -> response_stream_result
-        //   会走 retry/error handling
-        // - `blocklist/passive_suggestions/maa.rs:177` -> passive suggestion 提取到 None
-        //   后静默退出
-        //
-        // BYOP 主路径已配 provider 用户 → 不受影响(走不到本方法)。
-        // 未配 BYOP 用户 → 立即报错而非超时拒绝,UX 改进。
-        log::debug!("generate_multi_agent_output disabled in OpenWarp (BYOP-only)");
-        let error_stream = futures::stream::once(async {
-            Err(Arc::new(AIApiError::Other(anyhow!(
-                "Cloud multi-agent endpoint disabled in OpenWarp — configure a BYOP provider in Settings"
-            ))))
-        });
-        cfg_if::cfg_if! {
-            if #[cfg(target_family = "wasm")] {
-                Ok(error_stream.boxed_local())
-            } else {
-                Ok(error_stream.boxed())
-            }
-        }
-    }
-
-    fn set_server_time(&self, server_time: ServerTime) {
-        let mut last_server_time = self.last_server_time.lock();
-        *last_server_time = Some(server_time);
-    }
-
-    fn cached_server_time(&self) -> Option<ServerTime> {
-        let last_server_time = self.last_server_time.lock();
-        last_server_time.as_ref().cloned()
-    }
-
     /// Returns the inner `http_client::Client` used by the `ServerApi`. Callers can use this long-lived
     /// client to make requests without having to create a new client.
     pub fn http_client(&self) -> &http_client::Client {
         &self.client
-    }
-
-    /// 返回用于计算 autoupdate update-by 截止时间的「服务器时间」。
-    ///
-    /// OpenWarp Wave 5-3:原实现 GET `云端/current_time` 端点进行时钟同步,
-    /// OpenWarp 剩离云端 → 该端点不可达。唯一消费方 `root_view.rs::server_time_updated`
-    /// 是在 autoupdate ready + 有 `update_by` 时以服务器时间为准决定是否马上重启,
-    /// 不依赖时钟「权威」ⓓⓒⓓ。1987·仅为防本地时钟被用户手动拨后。OpenWarp
-    /// 环境下允许使用本地时钟 → 返回本地 [`Utc::now()`] 包装的 [`ServerTime`],
-    /// autoupdate 逻辑不变,且不再产生云端 HTTP 请求。
-    pub async fn server_time(&self) -> Result<ServerTime> {
-        if let Some(cached) = self.cached_server_time() {
-            return Ok(cached);
-        }
-
-        let server_time = ServerTime {
-            time_at_fetch: chrono::Utc::now().into(),
-            fetched_at: Instant::now(),
-        };
-        self.set_server_time(server_time.clone());
-        Ok(server_time)
-    }
-
-    /// Fetches updated Warp Channel Versions from Warp Server. If it is the first such request of
-    /// the current calendar day, first attempts to call the '/client_version/daily'. If that call
-    /// fails or if it not the first request of the calendar day, returns the result of a call to
-    /// `/client_version'. The caller can specify whether or not changelog information should be
-    /// included in the response based on whether or not it will be used.
-    pub async fn fetch_channel_versions(
-        &self,
-        include_changelogs: bool,
-        is_daily: bool,
-    ) -> Result<ChannelVersions> {
-        let _ = is_daily;
-        let version = ChannelState::app_version()
-            .unwrap_or("v0.local.testing.string_00")
-            .to_string();
-        let channel_version = ChannelVersion::new(VersionInfo::new(version));
-        let changelogs = include_changelogs.then(|| ChannelChangelogs {
-            dev: std::collections::HashMap::new(),
-            preview: std::collections::HashMap::new(),
-            stable: std::collections::HashMap::new(),
-        });
-        let versions = ChannelVersions {
-            dev: channel_version.clone(),
-            preview: channel_version.clone(),
-            stable: channel_version,
-            changelogs,
-        };
-        log::info!("OpenWarp 本地版跳过远端 channel versions 请求，返回本地版本快照");
-        Ok(versions)
     }
 }
 
@@ -793,37 +636,13 @@ impl AgentEventStreamClient for ServerApi {
 /// and the few trait-object facades still retained in OpenWarp.
 pub struct ServerApiProvider {
     server_api: Arc<ServerApi>,
-    ai_client: Arc<dyn AIClient>,
 }
 
 impl ServerApiProvider {
     /// Constructs a new ServerApiProvider.
-    pub fn new(
-        auth_state: Arc<AuthState>,
-        agent_source: Option<ai::AgentSource>,
-        ctx: &mut ModelContext<Self>,
-    ) -> Self {
-        let (event_sender, event_receiver) = async_channel::bounded(10);
-        let server_api = Arc::new(ServerApi::new(
-            auth_state.clone(),
-            event_sender,
-            agent_source,
-        ));
-        let ai_client: Arc<dyn AIClient> = Arc::new(LocalAIClient::new());
-
-        // OpenWarp Wave 6-1:原 `NeedsReauth` 分支调 `AuthManager::set_needs_reauth(true)`,
-        // Wave 6-1 删 `ServerApiEvent::NeedsReauth` variant 后,剩余 variant 全部走
-        // re-emit 路径,match 简化为直传。`AuthManager::set_needs_reauth` 函数本体保留
-        // (`root_view.rs` web handoff 路径仍调,但已是 no-op)。
-        ctx.spawn_stream_local(
-            event_receiver,
-            move |_, event, ctx| ctx.emit(event),
-            |_, _| {},
-        );
-        Self {
-            server_api,
-            ai_client,
-        }
+    pub fn new(auth_state: Arc<AuthState>, agent_source: Option<ai::AgentSource>) -> Self {
+        let server_api = Arc::new(ServerApi::new(auth_state, agent_source));
+        Self { server_api }
     }
 
     /// Handles fetching server-side experiments by updating the appropriate app state.
@@ -844,7 +663,6 @@ impl ServerApiProvider {
     pub fn new_for_test() -> Self {
         Self {
             server_api: Arc::new(ServerApi::new_for_test()),
-            ai_client: Arc::new(LocalAIClient::new()),
         }
     }
 
@@ -855,21 +673,6 @@ impl ServerApiProvider {
     }
 
     /// 兼容仍未迁出的本地 transport 调用点。新增代码应优先使用窄接口。
-    pub fn get(&self) -> Arc<ServerApi> {
-        self.server_api.clone()
-    }
-
-    // OpenWarp Wave 3-1:`get_auth_client()` 随 `AuthClient` trait 一同物理删,
-    // 所有外部原调用方改为本地 stub (返回 `AuthToken::NoAuth` / `Ok(())`)。
-    // OpenWarp Wave 6-8:`get_referrals_client()` / `get_block_client()` 随对应
-    // trait 与设置页 UI 一同物理删。C5 再删通用 `get()`:
-    // `agent_sdk` 仅能按用途获取 `ai_client` / `harness_support` / `local_client`
-    // / `agent_event_stream` 四个最小切面。
-
-    pub fn get_ai_client(&self) -> Arc<dyn AIClient> {
-        self.ai_client.clone()
-    }
-
     pub fn get_harness_support_client(&self) -> Arc<dyn harness_support::HarnessSupportClient> {
         self.server_api.clone()
     }
@@ -880,7 +683,7 @@ impl ServerApiProvider {
 }
 
 impl Entity for ServerApiProvider {
-    type Event = ServerApiEvent;
+    type Event = ();
 }
 
 impl SingletonEntity for ServerApiProvider {}

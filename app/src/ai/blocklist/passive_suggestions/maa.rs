@@ -15,7 +15,6 @@ use crate::ai::blocklist::{
 };
 use crate::ai::paths::host_native_absolute_path;
 use crate::auth::AuthStateProvider;
-use crate::server::server_api::ServerApiProvider;
 use crate::settings::AISettings;
 use crate::terminal::event::{BlockType, UserBlockCompleted};
 use crate::terminal::model::session::active_session::ActiveSession;
@@ -168,13 +167,12 @@ impl PassiveSuggestionsModel {
             return;
         };
 
-        let server_api = ServerApiProvider::as_ref(ctx).get();
         let (cancellation_tx, cancellation_rx) = futures::channel::oneshot::channel();
 
         let stream_handle = ctx.spawn(
             async move {
                 let stream_result =
-                    generate_multi_agent_output(server_api, request_params, cancellation_rx).await;
+                    generate_multi_agent_output(request_params, cancellation_rx).await;
                 extract_suggestion_from_stream(stream_result).await
             },
             move |me, result, ctx| {

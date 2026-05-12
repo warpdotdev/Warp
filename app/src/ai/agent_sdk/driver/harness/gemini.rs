@@ -14,7 +14,6 @@ use warpui::{ModelHandle, ModelSpawner};
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::harness_support::HarnessSupportClient;
 use crate::server::server_api::AgentEventStreamClient;
 use crate::terminal::model::block::BlockId;
@@ -27,8 +26,6 @@ use super::{write_temp_file, HarnessRunner, ResumePayload, SavePoint, ThirdParty
 
 pub(crate) struct GeminiHarness;
 
-/// Format slug sent to the server when creating a Gemini conversation.
-const GEMINI_CLI_FORMAT: &str = "gemini_cli";
 /// Slash command Gemini's TUI recognises as a graceful shutdown.
 const GEMINI_EXIT_COMMAND: &str = "/quit";
 
@@ -68,8 +65,7 @@ impl ThirdPartyHarness for GeminiHarness {
         _resumption_prompt: Option<&str>,
         working_dir: &Path,
         _task_id: Option<AmbientAgentTaskId>,
-        harness_support_client: Arc<dyn HarnessSupportClient>,
-        _ai_client: Arc<dyn AIClient>,
+        _harness_support_client: Arc<dyn HarnessSupportClient>,
         _agent_event_stream_client: Arc<dyn AgentEventStreamClient>,
         terminal_driver: ModelHandle<TerminalDriver>,
         _resume: Option<ResumePayload>,
@@ -82,7 +78,6 @@ impl ThirdPartyHarness for GeminiHarness {
             prompt,
             system_prompt,
             working_dir,
-            harness_support_client,
             terminal_driver,
         )?))
     }
@@ -108,7 +103,6 @@ struct GeminiHarnessRunner {
     command: String,
     /// Held so the temp file is cleaned up when the runner is dropped.
     _temp_prompt_file: NamedTempFile,
-    client: Arc<dyn HarnessSupportClient>,
     terminal_driver: ModelHandle<TerminalDriver>,
     state: Mutex<GeminiRunnerState>,
 }
@@ -119,7 +113,6 @@ impl GeminiHarnessRunner {
         prompt: &str,
         _system_prompt: Option<&str>,
         _working_dir: &Path,
-        client: Arc<dyn HarnessSupportClient>,
         terminal_driver: ModelHandle<TerminalDriver>,
     ) -> Result<Self, AgentDriverError> {
         let temp_file = write_temp_file("oz_prompt_", prompt)?;
@@ -128,7 +121,6 @@ impl GeminiHarnessRunner {
         Ok(Self {
             command: gemini_command(cli_command, &prompt_path),
             _temp_prompt_file: temp_file,
-            client,
             terminal_driver,
             state: Mutex::new(GeminiRunnerState::Preexec),
         })
@@ -142,16 +134,8 @@ impl HarnessRunner for GeminiHarnessRunner {
         &self,
         foreground: &ModelSpawner<AgentDriver>,
     ) -> Result<CommandHandle, AgentDriverError> {
-        // Create the external conversation record on the server.
-        let conversation_id = self
-            .client
-            .create_external_conversation(GEMINI_CLI_FORMAT)
-            .await
-            .map_err(|e| {
-                log::error!("Failed to create external conversation: {e}");
-                AgentDriverError::ConfigBuildFailed(e)
-            })?;
-        log::info!("Created external conversation {conversation_id}");
+        let conversation_id = AIConversationId::new();
+        log::info!("Created local Gemini conversation {conversation_id}");
 
         let command = self.command.clone();
         let terminal_driver = self.terminal_driver.clone();
@@ -207,15 +191,9 @@ impl HarnessRunner for GeminiHarnessRunner {
             } => (*conversation_id, block_id.clone()),
         };
 
-        // TODO(REMOTE-1408) Also save the conversation transcript.
-        super::upload_current_block_snapshot(
-            foreground,
-            &self.terminal_driver,
-            self.client.as_ref(),
-            conversation_id,
-            block_id,
-        )
-        .await
+        let _ = (foreground, conversation_id, block_id);
+        log::debug!("Skipping Gemini block snapshot upload in OpenWarp");
+        Ok(())
     }
 }
 

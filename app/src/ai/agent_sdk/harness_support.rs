@@ -50,28 +50,24 @@ pub fn run(
 fn ping(
     ctx: &mut AppContext,
     runner: ModelHandle<HarnessSupportRunner>,
-    task_id: AmbientAgentTaskId,
+    _task_id: AmbientAgentTaskId,
     output_format: OutputFormat,
 ) -> Result<()> {
     runner.update(ctx, |_, ctx| {
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-
         ctx.spawn(
             async move {
-                let task = ai_client.get_ambient_agent_task(&task_id).await?;
-                Ok(task)
+                Err::<(), _>(anyhow::anyhow!(
+                    "Cloud agent harness ping is disabled in OpenWarp"
+                ))
             },
             move |_, result, ctx| match result {
-                Ok(task) => {
+                Ok(()) => {
                     match output_format {
                         OutputFormat::Json | OutputFormat::Ndjson => {
-                            let json = serde_json::to_string(&task).unwrap_or_else(|e| {
-                                serde_json::json!({"error": e.to_string()}).to_string()
-                            });
-                            println!("{json}");
+                            println!("{{}}");
                         }
                         OutputFormat::Pretty | OutputFormat::Text => {
-                            super::ambient::print_tasks(&[task]);
+                            println!("Cloud agent harness ping is disabled in OpenWarp.");
                         }
                     }
                     ctx.terminate_app(TerminationMode::ForceTerminate, None);

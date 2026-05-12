@@ -1,26 +1,21 @@
 //! Stream-based API for spawning and monitoring ambient agents.
 #![cfg_attr(target_family = "wasm", expect(dead_code))]
 
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, time::Duration};
 
-use futures::{select, FutureExt, Stream};
+use futures::Stream;
 use session_sharing_protocol::common::SessionId;
 
 use super::AmbientAgentTaskId;
 use super::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::{
-    server::server_api::ai::{AIClient, SpawnAgentRequest, TaskStatusMessage},
+    server::server_api::ai::{SpawnAgentRequest, TaskStatusMessage},
     terminal::shared_session,
 };
 
 /// How long to poll for the agent to be ready.
 /// This should be long enough that the shared session will be joinable.
 pub const TASK_STATUS_POLLING_DURATION: Duration = Duration::from_secs(80);
-
-#[cfg(not(test))]
-const TASK_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(1);
-#[cfg(test)]
-const TASK_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
 /// Information about a session join link for an ambient agent task.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,87 +85,10 @@ pub enum AmbientAgentEvent {
 ///
 /// If `timeout` is `None`, there is no timeout.
 pub fn spawn_task(
-    request: SpawnAgentRequest,
-    ai_client: Arc<dyn AIClient>,
-    timeout: Option<Duration>,
+    _request: SpawnAgentRequest,
+    _timeout: Option<Duration>,
 ) -> impl Stream<Item = Result<AmbientAgentEvent, anyhow::Error>> {
-    // We can't use try_stream! because of the select! macro invocation.
-    // See https://github.com/tokio-rs/async-stream/issues/63.
     async_stream::stream! {
-        // First, spawn the ambient agent task.
-        let (task_id, run_id, at_capacity) = match ai_client.spawn_agent(request).await {
-            Ok(response) => (response.task_id, response.run_id, response.at_capacity),
-            Err(err) => {
-                yield Err(err);
-                return;
-            },
-        };
-
-        yield Ok(AmbientAgentEvent::TaskSpawned { task_id, run_id });
-
-        // Emit AtCapacity event if the server indicates capacity limit reached.
-        if at_capacity {
-            yield Ok(AmbientAgentEvent::AtCapacity);
-        }
-
-        // Poll for the task until it completes OR has session join info.
-        // We use a timeout to ensure we don't wait indefinitely for session info.
-        // If no timeout is provided, we use a future that never completes.
-        let mut timeout_timer = match timeout {
-            Some(d) => warpui::r#async::Timer::after(d),
-            None => warpui::r#async::Timer::never(),
-        }.fuse();
-        let mut last_state = None;
-        loop {
-            let mut poll_timer = warpui::r#async::Timer::after(TASK_STATUS_POLL_INTERVAL).fuse();
-
-            select! {
-                _ = timeout_timer => {
-                    yield Ok(AmbientAgentEvent::TimedOut);
-                    return;
-                }
-                _ = poll_timer => {
-                    match ai_client.get_ambient_agent_task(&task_id).await {
-                        Ok(task) => {
-                            // Only emit a state-change event if the state has changed.
-                            if last_state.as_ref() != Some(&task.state) {
-                                last_state = Some(task.state.clone());
-                                yield Ok(AmbientAgentEvent::StateChanged {
-                                    state: task.state.clone(),
-                                    status_message: task.status_message.clone(),
-                                });
-                            }
-
-                            // Check if the task has completed or started sharing its session.
-                            if task.state.is_terminal() {
-                                // Task completed, stream ends.
-                                return;
-                            }
-
-                            if task.state == AmbientAgentTaskState::InProgress {
-                                if let Some(session_join_info) = SessionJoinInfo::from_task(&task) {
-                                    yield Ok(AmbientAgentEvent::SessionStarted {
-                                        session_join_info,
-                                    });
-                                    return;
-                                }
-                                // Continue polling.
-                            } else {
-                                log::info!("Agent {task_id} state: {:?}", task.state);
-                                // Continue polling.
-                            }
-                        }
-                        Err(err) => {
-                            yield Err(err);
-                            return;
-                        },
-                    }
-                }
-            }
-        }
+        yield Err(anyhow::anyhow!("Cloud agent spawning is disabled in OpenWarp"));
     }
 }
-
-#[cfg(test)]
-#[path = "spawn_tests.rs"]
-mod tests;

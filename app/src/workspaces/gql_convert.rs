@@ -34,9 +34,8 @@ use crate::{
 };
 use crate::{
     cloud_object::{
-        ServerAmbientAgentEnvironment, ServerCloudObject, ServerEnvVarCollection, ServerFolder,
-        ServerMCPServer, ServerNotebook, ServerPreference, ServerTemplatableMCPServer,
-        ServerWorkflow, ServerWorkflowEnum,
+        ServerCloudObject, ServerEnvVarCollection, ServerFolder, ServerMCPServer, ServerNotebook,
+        ServerPreference, ServerTemplatableMCPServer, ServerWorkflow, ServerWorkflowEnum,
     },
     convert_to_server_experiment,
 };
@@ -1098,23 +1097,6 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     }
 }
 
-impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
-    for ServerAmbientAgentEnvironment
-{
-    type Error = anyhow::Error;
-
-    fn try_from(
-        gso: warp_graphql::generic_string_object::GenericStringObject,
-    ) -> Result<Self, Self::Error> {
-        ServerAmbientAgentEnvironment::try_from_graphql_fields(
-            ServerId::from_string_lossy(gso.metadata.uid.inner()),
-            Some(gso.serialized_model),
-            gso.metadata.try_into()?,
-            gso.permissions.try_into()?,
-        )
-    }
-}
-
 impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
     type Error = anyhow::Error;
 
@@ -1148,9 +1130,6 @@ impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
                         Ok(ServerCloudObject::TemplatableMCPServer(gso.try_into()?))
-                    }
-                    warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
-                        Ok(ServerCloudObject::AmbientAgentEnvironment(gso.try_into()?))
                     }
                 }
             }
@@ -1199,9 +1178,6 @@ impl TryFrom<CloudObjectWithDescendants> for ServerCloudObject {
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
                     Ok(ServerCloudObject::TemplatableMCPServer(gso.try_into()?))
-                }
-                warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
-                    Ok(ServerCloudObject::AmbientAgentEnvironment(gso.try_into()?))
                 }
             }
             CloudObjectWithDescendants::Notebook(notebook) => Ok(ServerCloudObject::Notebook(notebook.try_into()?)),

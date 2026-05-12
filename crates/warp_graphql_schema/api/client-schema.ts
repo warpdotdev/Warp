@@ -91,14 +91,12 @@ const clientQueries = [
   'userRepoAuthStatus',
   'apiKeys',
   'getOAuthConnectTxStatus',
-  'getCloudEnvironments',
   'simpleIntegrations',
   'getIntegrationsUsingEnvironment',
   'scheduledAgentHistory',
   'task',
   'taskSecrets',
   'listAIConversations',
-  'suggestCloudEnvironmentImage'
 ];
 
 const clientSubscriptions = ['warpDriveUpdates'];

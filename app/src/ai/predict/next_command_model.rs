@@ -2,7 +2,7 @@ use crate::ai::block_context::BlockContext;
 use crate::ai_assistant::execution_context::WarpAiExecutionContext;
 use crate::completer::SessionContext;
 use crate::report_error;
-use crate::server::server_api::{AIApiError, ServerApi};
+use crate::server::server_api::AIApiError;
 use crate::settings::AISettings;
 use crate::terminal::event::UserBlockCompleted;
 use crate::terminal::input::{CompleterData, IntelligentAutosuggestionResult};
@@ -183,7 +183,6 @@ pub struct ZeroStateSuggestionInfo {
 pub struct NextCommandModel {
     sessions: ModelHandle<Sessions>,
     model: Arc<FairMutex<TerminalModel>>,
-    server_api: Arc<ServerApi>,
     #[cfg(feature = "local_fs")]
     conn: Option<Arc<Mutex<SqliteConnection>>>,
 
@@ -204,11 +203,7 @@ pub enum NextCommandModelEvent {
 }
 
 impl NextCommandModel {
-    pub fn new(
-        sessions: ModelHandle<Sessions>,
-        model: Arc<FairMutex<TerminalModel>>,
-        server_api: Arc<ServerApi>,
-    ) -> Self {
+    pub fn new(sessions: ModelHandle<Sessions>, model: Arc<FairMutex<TerminalModel>>) -> Self {
         #[cfg(feature = "local_fs")]
         let conn = crate::persistence::database_file_path()
             .to_str()
@@ -220,7 +215,6 @@ impl NextCommandModel {
         Self {
             sessions,
             model,
-            server_api,
             #[cfg(feature = "local_fs")]
             conn,
             next_command_state: NextCommandSuggestionState::None,
@@ -393,7 +387,6 @@ impl NextCommandModel {
         previous_result: Option<IntelligentAutosuggestionResult>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let _server_api = self.server_api.clone(); // BYOP 接管后不再使用,保留以避免改动它处
         let terminal_model = self.model.clone();
         let cached_next_command_context = self.cached_zerostate_next_command_context.clone();
         // BYOP cfg 必须在 spawn 前解出(spawn 内拿不到 &AppContext)。

@@ -5,19 +5,13 @@ use crate::{
     ai::{RequestLimitInfo, RequestLimitRefreshDuration},
     server::telemetry::OpenedWarpAISource,
     terminal::model::terminal_model::BlockIndex,
-    workflows::workflow::{Argument, Workflow},
 };
-use itertools::Itertools;
 use lazy_static::lazy_static;
 use pathfinder_color::ColorU;
-use serde::{Deserialize, Serialize};
 use warp_core::command::ExitCode;
-use warp_graphql::{
-    ai::{
-        RequestLimitInfo as RequestLimitInfoGraphql,
-        RequestLimitRefreshDuration as RequestLimitRefreshDurationGraphql,
-    },
-    mutations::generate_commands::{GenerateCommandsFailureType, GeneratedCommand},
+use warp_graphql::ai::{
+    RequestLimitInfo as RequestLimitInfoGraphql,
+    RequestLimitRefreshDuration as RequestLimitRefreshDurationGraphql,
 };
 
 pub mod execution_context;
@@ -77,71 +71,6 @@ impl From<&AskAIType> for OpenedWarpAISource {
                 OpenedWarpAISource::HelpWithBlock
             }
             AskAIType::FromTextSelection { .. } => OpenedWarpAISource::HelpWithTextSelection,
-        }
-    }
-}
-
-pub struct AIGeneratedCommand {
-    command: String,
-    description: String,
-    parameters: Vec<AIGeneratedCommandParameter>,
-}
-
-pub struct AIGeneratedCommandParameter {
-    id: String,
-    description: String,
-}
-
-impl From<AIGeneratedCommand> for Workflow {
-    fn from(ai_command: AIGeneratedCommand) -> Self {
-        // Note that we use the AI generated description as the _title_ of the workflow.
-        Workflow::new(ai_command.description, ai_command.command).with_arguments(
-            ai_command
-                .parameters
-                .into_iter()
-                .map(|p| Argument {
-                    name: p.id,
-                    description: Some(p.description),
-                    default_value: None,
-                    arg_type: Default::default(),
-                })
-                .collect_vec(),
-        )
-    }
-}
-
-impl From<GeneratedCommand> for AIGeneratedCommand {
-    fn from(value: GeneratedCommand) -> Self {
-        AIGeneratedCommand {
-            command: value.command,
-            description: value.description,
-            parameters: value
-                .parameters
-                .into_iter()
-                .map(|p| AIGeneratedCommandParameter {
-                    id: p.id,
-                    description: p.description,
-                })
-                .collect_vec(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum GenerateCommandsFromNaturalLanguageError {
-    BadPrompt,
-    AiProviderError,
-    RateLimited,
-    Other,
-}
-
-impl From<GenerateCommandsFailureType> for GenerateCommandsFromNaturalLanguageError {
-    fn from(value: GenerateCommandsFailureType) -> Self {
-        match value {
-            GenerateCommandsFailureType::BadPrompt => Self::BadPrompt,
-            GenerateCommandsFailureType::AiProviderError => Self::AiProviderError,
-            GenerateCommandsFailureType::RateLimited => Self::RateLimited,
-            GenerateCommandsFailureType::Other => Self::Other,
         }
     }
 }

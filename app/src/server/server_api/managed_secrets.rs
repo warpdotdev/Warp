@@ -1,4 +1,4 @@
-// OpenWarp:`ManagedSecretsClient for ServerApi` 已本地化为 stub。
+// OpenWarp:`ManagedSecretsClient` 已本地化为 stub。
 // 历史职责:通过 warp.dev 后端 GraphQL 维护"团队/用户托管密钥"——
 // CRUD(create/update/delete)、列表(list_secrets)、配置查询
 // (get_managed_secret_configs)、按云端任务取密钥(get_task_secrets)、
@@ -20,13 +20,13 @@ use warp_graphql::managed_secrets::{ManagedSecret, ManagedSecretType};
 use warp_graphql::queries::task_secrets::ManagedSecretValue;
 use warp_managed_secrets::client::{SecretOwner, TaskIdentityToken};
 
-use super::ServerApi;
-
 pub use warp_managed_secrets::client::{ManagedSecretConfigs, ManagedSecretsClient};
+
+pub struct DisabledManagedSecretsClient;
 
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
-impl ManagedSecretsClient for ServerApi {
+impl ManagedSecretsClient for DisabledManagedSecretsClient {
     async fn get_managed_secret_configs(&self) -> Result<ManagedSecretConfigs> {
         Ok(ManagedSecretConfigs {
             user_secrets: None,

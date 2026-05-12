@@ -16,7 +16,6 @@ use crate::{
     ai::blocklist::BlocklistAIHistoryModel,
     network::NetworkStatus,
     report_error, send_telemetry_from_ctx,
-    server::server_api::ServerApiProvider,
 };
 use warpui::SingletonEntity;
 
@@ -232,7 +231,6 @@ impl ResponseStream {
         can_attempt_resume_on_error: bool,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        let server_api = ServerApiProvider::as_ref(ctx).get();
         let (cancellation_tx, cancellation_rx) = oneshot::channel();
         let start_time = Local::now();
 
@@ -266,7 +264,7 @@ impl ResponseStream {
                     )
                     .await
                 } else {
-                    generate_multi_agent_output(server_api, params_clone, cancellation_rx).await
+                    generate_multi_agent_output(params_clone, cancellation_rx).await
                 }
             },
             move |me, stream, ctx| {
@@ -349,7 +347,6 @@ impl ResponseStream {
         let request_id = Uuid::new_v4();
         self.current_request_id = Some(request_id);
         let params = self.params.clone();
-        let server_api = ServerApiProvider::as_ref(ctx).get();
         let byop_dispatch = byop_dispatch_info(&params, &self.ai_identifiers, ctx);
         let _ = ctx.spawn(
             async move {
@@ -372,7 +369,7 @@ impl ResponseStream {
                     )
                     .await
                 } else {
-                    generate_multi_agent_output(server_api, params, cancellation_rx).await
+                    generate_multi_agent_output(params, cancellation_rx).await
                 }
             },
             move |me, stream, ctx| {
