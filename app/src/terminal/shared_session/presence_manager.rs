@@ -10,7 +10,7 @@ use pathfinder_color::ColorU;
 use rand::Rng;
 use session_sharing_protocol::common::{
     InputReplicaId, ParticipantInfo, ParticipantList, ParticipantPresenceUpdate, PresenceUpdate,
-    Role, RoleRequestId, Selection,
+    Role, RoleRequestId, Selection, Viewer,
 };
 
 use asset_cache::AssetCacheExt as _;
@@ -97,7 +97,7 @@ const PRESET_COLORS: &[ColorU] = &[
 ];
 
 /// Helper struct containing participant info and anything else necessary for rendering
-/// for an present participant.
+/// for a present participant.
 #[derive(Clone)]
 pub struct Participant {
     pub info: ParticipantInfo,
@@ -333,11 +333,6 @@ impl PresenceManager {
     /// `None` if the viewer does not have a pending request.
     pub fn get_role_request(&self, participant_id: &ParticipantId) -> Option<&RoleRequestId> {
         self.role_requests.get(participant_id)
-    }
-
-    /// Returns the number of present viewers (not including ourselves).
-    pub(crate) fn present_viewer_count(&self) -> usize {
-        self.present_viewers.len()
     }
 
     /// Returns the present viewers of this shared session, not including ourselves.
@@ -769,6 +764,32 @@ impl PresenceManager {
     /// Firebase UID.
     pub fn present_viewer_id_for_uid(&self, viewer_uid: UserUid) -> Option<&ParticipantId> {
         self.present_viewer_ids_for_uid(viewer_uid).next()
+    }
+
+    /// Returns the only distinct present viewer UID. Multiple present viewers
+    /// with the same UID count as one user.
+    pub fn single_distinct_present_viewer_uid(&self) -> Option<&str> {
+        Self::single_distinct_uid(
+            self.get_present_viewers()
+                .map(|v| v.info.profile_data.firebase_uid.as_str()),
+        )
+    }
+
+    /// Like `single_distinct_present_viewer_uid`, but reads directly from a
+    /// participant list before the presence manager finishes processing it.
+    pub(crate) fn single_distinct_present_viewer_uid_from_viewers<'a>(
+        viewers: impl Iterator<Item = &'a Viewer>,
+    ) -> Option<&'a str> {
+        Self::single_distinct_uid(
+            viewers
+                .filter(|v| v.is_present)
+                .map(|v| v.info.profile_data.firebase_uid.as_str()),
+        )
+    }
+
+    fn single_distinct_uid<'a>(mut uids: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+        let uid = uids.next()?;
+        uids.all(|other_uid| other_uid == uid).then_some(uid)
     }
 }
 

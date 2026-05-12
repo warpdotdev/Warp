@@ -17,7 +17,6 @@ use async_broadcast::InactiveReceiver;
 use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::collections::HashSet;
 use std::sync::mpsc::{SendError, SyncSender};
 use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::Arc, thread::JoinHandle};
 
@@ -31,6 +30,7 @@ use crate::editor::CrdtOperation;
 use crate::network::{NetworkStatusEvent, NetworkStatusKind};
 use crate::terminal::available_shells::{AvailableShell, AvailableShells};
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
+use crate::terminal::shared_session::presence_manager::PresenceManager;
 use crate::terminal::ShellLaunchData;
 use crate::terminal::ShellLaunchState;
 use crate::view_components::ToastFlavor;
@@ -1675,17 +1675,17 @@ impl TerminalManager {
                     let is_ambient_agent = terminal_view
                         .as_ref(ctx)
                         .is_shared_session_for_ambient_agent();
-                    // We never want to reset back to the sharer size if we are a cloud agent, since that was a default.
+                    // We never want to reset back to the sharer size if we are a cloud agent,
+                    // since it was a default. Prefer to keep the viewer-set size for transcript
+                    // persistence.
                     if !is_ambient_agent {
-                        let sharer_uid = &participant_list.sharer.info.profile_data.firebase_uid;
-                        let distinct_viewer_uids: HashSet<_> = participant_list
-                            .viewers
-                            .iter()
-                            .filter(|v| v.is_present)
-                            .map(|v| &v.info.profile_data.firebase_uid)
-                            .collect();
-                        let still_eligible = distinct_viewer_uids.len() == 1
-                            && distinct_viewer_uids.contains(sharer_uid);
+                        let sharer_uid =
+                            participant_list.sharer.info.profile_data.firebase_uid.as_str();
+                        let still_eligible =
+                            PresenceManager::single_distinct_present_viewer_uid_from_viewers(
+                                participant_list.viewers.iter(),
+                            )
+                            .is_some_and(|viewer_uid| viewer_uid == sharer_uid);
                         if !still_eligible {
                             terminal_view.update(ctx, |view, ctx| {
                                 view.restore_pty_to_sharer_size(ctx);
