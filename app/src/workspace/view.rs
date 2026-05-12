@@ -13158,7 +13158,9 @@ impl Workspace {
         let window_id = ctx.window_id();
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
             toast_stack.add_ephemeral_toast(
-                DismissibleToast::success("Handing off to cloud".to_owned()),
+                DismissibleToast::default(
+                    "Starting cloud environment for this session...".to_owned(),
+                ),
                 window_id,
                 ctx,
             );
