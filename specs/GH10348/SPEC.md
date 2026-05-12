@@ -36,15 +36,25 @@ A new setting `editor.word_delimiters` (string of characters) defines the global
 
 `/`, `.`, `-`, `_`, `:`, `=`, space, tab (U+0009), newline (U+000A), carriage return (U+000D), vertical tab (U+000B), form feed (U+000C).
 
-Expressed as a valid TOML basic string (see B6.2 for the full escape rules — note that **`\xXX` is NOT a valid TOML escape**; vertical tab and form feed must be encoded with the Unicode `\u00XX` form):
+Expressed as a valid TOML basic string. The full encoding (including VT/FF
+explicitly) uses ONLY TOML-valid escapes — `\t`, `\n`, `\r`, `\f`, and
+the 4-hex-digit Unicode form `\u00XX`. **`\xXX` is NOT a valid TOML escape
+and MUST NOT appear in this value** (TOML basic strings reject `\xXX`; the
+parser will raise an error). See B6.2 for the canonical escape table:
 
 ```toml
-editor.word_delimiters = "/.-_:= \t\n\r"
+# Authoritative literal default — TOML-valid encoding of the full set,
+# including VT (U+000B via \u000B) and FF (U+000C via \f).
+editor.word_delimiters = "/.-_:= \t\n\r\u000B\f"
 ```
 
-A simplified equivalent that omits the rarely-hand-typed VT/FF characters (they remain in the runtime default via the whitespace floor in B5):
+A pragmatic shorter form that omits the rarely-hand-typed VT and FF
+characters is also valid; VT and FF are added back at runtime by the B5
+whitespace floor regardless of whether the user-supplied value includes
+them. Either form is accepted:
 
 ```toml
+# Equivalent at runtime (VT/FF added back by the B5 whitespace floor).
 editor.word_delimiters = "/.-_:= \t\n\r"
 ```
 
@@ -169,10 +179,51 @@ The hyphen in TOML basic strings is just a literal hyphen — no escape is neede
 
 #### B6.3. Settings UI (single-line text field)
 
-The Settings text field accepts characters either literally (e.g., typing `/`) or as escape sequences (e.g., typing `\t`). Two display modes:
+The Settings text field is a SINGLE-LINE text input (no multi-line
+textarea). It accepts characters either literally (e.g., typing `/`) or
+as escape sequences (e.g., typing `\t`). The single-line nature
+constrains how line-break characters can be entered and displayed:
 
-- **Literal mode (default).** Whitespace characters render as themselves. Tabs and newlines may be hard to see but are still present in the value.
-- **"Show escapes" toggle.** When enabled, whitespace and control characters in the rendered field are shown as their escape representations (`\t`, `\n`, `\r`, `\v`, `\f`, space rendered as a visible middle-dot or similar) so the user can see and edit them precisely.
+- **Literal Enter / Return key is intercepted, not inserted.** Pressing
+  Enter inside the field commits the current value (same as Tab-out)
+  and does NOT insert a literal U+000A newline into the string. This
+  matches every other single-line text field in the Settings UI.
+- **Literal Tab key is also intercepted, not inserted.** Pressing Tab
+  moves focus to the next control. To include a tab character in the
+  delimiter set, the user types the two-character escape sequence
+  `\t`. The same applies to other line-break characters: a literal
+  CR (U+000D), VT (U+000B), or FF (U+000C) cannot be typed directly
+  into the field; the user types `\r`, `\v`, or `\f` instead.
+- **Escape sequences typed in the field are interpreted.** When the
+  user types the literal two-character sequence `\t`, the stored
+  value contains a U+0009 tab. The same applies to `\n`, `\r`,
+  `\v`, `\f`, `\b`, `\\`, and the Unicode forms `\uXXXX` /
+  `\UXXXXXXXX`. The character set of accepted escapes mirrors the
+  TOML basic-string escape table in B6.2 (so a value the user types
+  in the UI round-trips identically through the on-disk TOML).
+- **Pasting a multi-line string into the field is collapsed.** If a
+  user pastes a string that contains literal U+000A or U+000D bytes
+  (e.g., copied from another editor), each such byte is REPLACED in
+  the stored value with its escape representation (`\n` for U+000A,
+  `\r` for U+000D) so the field content remains a single visual line.
+  An inline tooltip explains the substitution: "Newlines in pasted
+  text were converted to `\n` escapes — they're still part of your
+  delimiter set."
+
+Two display modes:
+
+- **Literal mode (default).** Printable characters render as
+  themselves. Whitespace and control characters are present in the
+  value but invisible in the field; the live preview below the field
+  (see Settings / API surface) is the canonical way to confirm they
+  are present.
+- **"Show escapes" toggle.** When enabled, whitespace and control
+  characters in the rendered field are shown as their escape
+  representations (`\t`, `\n`, `\r`, `\v`, `\f`, space rendered as a
+  visible middle-dot or similar) so the user can see and edit them
+  precisely. With the toggle ON, typing the literal characters of an
+  escape sequence (`\` then `t`) and a real tab character render
+  identically.
 
 A "Reset to default" button restores the documented default string.
 
@@ -183,30 +234,62 @@ A "Reset to default" button restores the documented default string.
 
 #### B6.5. Missing / empty / whitespace-only / invalid fallback
 
-**Empty value behavior (single source of truth — no error on empty):**
+**Single source of truth — fallback chain by key.** Resolution depends on
+WHICH key is being resolved. The B4 chain is authoritative. The
+"built-in default from B1" is ONLY used at the END of the chain — never
+as a shortcut that skips the per-context fallthrough. Concretely:
 
-The "missing" and "empty string" cases are treated **identically** as "use the built-in default from B1". This applies whether the value is absent from the TOML config OR the user clears the Settings UI text field. Specifically:
+- For `editor.word_delimiters` (the global key): the chain is
+  `(user value) → B1 built-in default`. Missing or empty resolves
+  directly to the B1 default. There is no intermediate step because
+  `editor.word_delimiters` is itself the editor-level key.
+- For `terminal.word_delimiters` and `agent.word_delimiters` (the
+  per-context keys): the chain is
+  `(user value) → editor.word_delimiters (resolved) → B1 built-in default`.
+  Missing or empty falls THROUGH to the resolved
+  `editor.word_delimiters` (which itself may be a user value or the B1
+  default). It does NOT shortcut directly to B1.
 
-- The runtime resolves an empty/absent value to the B1 default — no warning, no error.
-- The Settings UI text field, when empty (because the user cleared it OR the key is absent), renders the **default value populated as a visible hint inside the field** with a **"Reset to default" indicator** present. The stored value remains empty/absent. A small subtitle reads "Empty = default delimiters".
-- There is **no inline error** for the empty case. Earlier drafts that suggested showing an error when the field is empty are superseded by this section.
+The "missing" and "empty string" cases are **always** treated as
+"unset" — they are indistinguishable to the resolver. There is no
+warning and no error for the empty case, regardless of which key is
+empty. Specifically:
+
+- The runtime resolves an empty/absent value by walking the chain above
+  (per-key) — no warning, no error.
+- The Settings UI text field, when empty (because the user cleared it
+  OR the key is absent), renders the value the next step of the chain
+  resolves to as a visible hint inside the field. For
+  `editor.word_delimiters` that hint is the B1 default; for
+  `terminal.word_delimiters` / `agent.word_delimiters` that hint is the
+  current resolved value of `editor.word_delimiters`. A
+  "Reset to default" indicator is present. Subtitle reads
+  "Empty = inherits from editor default" (per-context) or
+  "Empty = default delimiters" (editor).
+- There is **no inline error** for the empty case. Earlier drafts that
+  suggested showing an error when the field is empty are superseded by
+  this section.
 
 The only invalid cases that DO show inline errors are (a) whitespace-only values and (b) values containing disallowed control characters.
 
-| Stored value                              | Treated as                                           | Runtime fallback                  | Settings UI                              |
-| ----------------------------------------- | ---------------------------------------------------- | --------------------------------- | ---------------------------------------- |
-| Key absent / unset                        | "Use default" — same as empty                        | Built-in default from B1; no warning | Field is empty; default rendered as visible hint; "Reset to default" indicator; subtitle "Empty = default delimiters". No error. |
-| `""` (empty string)                       | "Use default" — same as missing                      | Built-in default from B1; no warning | Same as above. No error.                 |
-| Whitespace-only (e.g., `" "`, `"\t\n"`)   | **Invalid** — effectively empty given the whitespace floor in B5 | Built-in default from B1; warning logged | Inline error: "Add at least one non-whitespace delimiter, or clear the field to use the default." |
-| Some non-whitespace + any standard whitespace | Valid                                                | Effective `D` = user set ∪ whitespace floor | Accepted                                  |
-| Contains disallowed control char          | **Invalid**                                          | Built-in default from B1; warning logged | Inline error; save disabled              |
+Authoritative table — note that the "Runtime fallback" column is
+key-aware:
+
+| Stored value                              | Editor key (`editor.word_delimiters`)                                | Per-context key (`terminal.word_delimiters`, `agent.word_delimiters`)                                                                                                                                | Settings UI                              |
+| ----------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Key absent / unset                        | "Use default" — same as empty; B1 built-in default; no warning       | "Inherit from editor" — falls through to resolved `editor.word_delimiters`; no warning                                                                                                               | Field is empty; chain target rendered as visible hint; "Reset to default" indicator; subtitle "Empty = default delimiters" (editor) or "Empty = inherits from editor default" (per-context). No error. |
+| `""` (empty string)                       | Same as missing                                                      | Same as missing                                                                                                                                                                                       | Same as above. No error.                 |
+| Whitespace-only (e.g., `" "`, `"\t\n"`)   | **Invalid** — B1 built-in default; warning logged                    | **Invalid** — falls through to resolved `editor.word_delimiters` (NOT directly to B1 default); warning logged                                                                                         | Inline error: "Add at least one non-whitespace delimiter, or clear the field to use the default." |
+| Some non-whitespace + any standard whitespace | Valid; effective `D` = user set ∪ whitespace floor                 | Valid; same as editor                                                                                                                                                                                 | Accepted                                  |
+| Contains disallowed control char          | **Invalid** — B1 built-in default; warning logged                    | **Invalid** — falls through to resolved `editor.word_delimiters` (NOT directly to B1 default); warning logged                                                                                         | Inline error; save disabled              |
 
 In all "valid" cases, B5's whitespace floor still applies — whitespace IS forced into the effective set even if the user did not include it.
 
-For per-context overrides (`terminal.word_delimiters`, `agent.word_delimiters`):
-
-- Missing or empty: fall through to `editor.word_delimiters` per B4.
-- Whitespace-only or disallowed-control: invalid; runtime falls through to `editor.word_delimiters` per B4 (NOT to the global default directly), with a warning. Settings UI shows the same inline error.
+This subsumes any earlier per-context fallback wording. The single
+authoritative rule is: "for any per-context key that is missing /
+empty / whitespace-only / contains a disallowed control char, the
+fallback target is the RESOLVED `editor.word_delimiters` value, not
+the B1 built-in default." Tests T9d and T9g pin this contract.
 
 ### B7. Delimiter run collapse
 
@@ -325,7 +408,34 @@ All tests assume the canonical algorithm in B2.
 ### Move Cursor Word Left / Right
 
 - **T7.** Move Cursor Word Left / Right land at the same boundaries Delete Word Left / Right would operate on, for identical input and setting (per A9 / B3). Verify on the A1 and A2 examples.
-- **T7a.** Move Cursor Word Right on `foo|/bar/baz` with default set lands at `foo/|bar/baz` after the first press, `foo/bar/|baz` after the second, `foo/bar/baz|` after the third.
+- **T7a.** **Authoritative Move Cursor Word Right parity test.** On
+  `foo|/bar/baz` with default set, the cursor walks per the B3 parity
+  rule: each press lands the cursor where the equivalent Delete Word
+  Right would have left it, i.e. at the END of the consumed region.
+  Char immediately right of the cursor at press 1 is `/` (∈ D), so the
+  "otherwise" branch in B2 applies: the press consumes the entire
+  delimiter run AND the following non-delimiter run together. Concretely:
+  - State 0 (start): `foo|/bar/baz`
+  - After press 1: `foo/bar|/baz` (DWR would consume `/` then `bar`,
+    leaving cursor at the end of `bar` — i.e. between `bar` and the
+    next `/`)
+  - After press 2: `foo/bar/baz|` (DWR would consume `/` then `baz`,
+    leaving cursor at end-of-line)
+  - After press 3: `foo/bar/baz|` (no-op — at end-of-line)
+
+  Earlier drafts that asserted MWR lands BETWEEN the delimiter run and
+  the non-delimiter run on each press (e.g. `foo/|bar/baz` after press
+  1) are superseded by this test. Those positions correspond to a
+  different algorithm (consume delim run only, OR stop at every
+  delimiter boundary) that is NOT the canonical algorithm in B2 and
+  would diverge from Delete Word Right. T7a as written above matches
+  B3's parity rule and the canonical B2 algorithm.
+- **T7b.** Mid-non-delim parity for Move Cursor Word Right: on
+  `foo|bar/baz` with default set, char right = `b` (∉ D) and the
+  cursor is inside the non-delim run `foobar`. DWR's "mid-non-delim"
+  branch applies: consume from cursor to end of run (`bar`). MWR
+  parity → cursor lands at `foobar|/baz`. The following delim run `/`
+  is NOT crossed on this press. (Mirrors T8d for DWR.)
 
 ### Settings resolution
 
