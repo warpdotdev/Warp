@@ -146,7 +146,7 @@ fn create_classifiers(args: &Args) -> Vec<(&'static str, Box<dyn InputClassifier
 
     #[cfg(feature = "onnx")]
     if args.onnx || use_all {
-        match OnnxClassifier::new(OnnxModel::BertTiny) {
+        match OnnxClassifier::new(OnnxModel::BertTinyV1) {
             Ok(classifier) => {
                 classifiers.push(("onnx", Box::new(classifier)));
             }
