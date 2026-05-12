@@ -447,6 +447,7 @@ const CODEX_TRUST_LEVEL_TRUSTED: &str = "trusted";
 /// Top-level config key codex reads to override the built-in `openai` provider's base URL
 /// (codex `core/src/config/mod.rs`).
 const CODEX_OPENAI_BASE_URL_KEY: &str = "openai_base_url";
+const CODEX_CHECK_FOR_UPDATE_ON_STARTUP_KEY: &str = "check_for_update_on_startup";
 const CODEX_MODEL_KEY: &str = "model";
 /// Target model for the `[notice.model_migrations]` table that suppresses Codex's
 /// "choose a newer model" upgrade prompt at session launch. We stamp this for any
@@ -594,6 +595,7 @@ fn resolve_openai_api_key(resolved_env_vars: &HashMap<OsString, OsString>) -> Op
 ///   set the projects to `trusted`.
 /// - base URL: set `openai_base_url = "<US data-residency endpoint>"` so we
 ///   hit the regional host our API keys require.
+/// - update checks: disable Codex's startup update prompt for unattended runs.
 /// - model override: when a non-default `third_party_harness_model_id` is
 ///   supplied, write the top-level `model` key so Codex pins the chosen model
 ///   for new sessions.
@@ -621,6 +623,7 @@ fn prepare_codex_config_toml(
     })?;
 
     set_codex_openai_base_url(&mut doc, CODEX_OPENAI_BASE_URL);
+    set_codex_check_for_update_on_startup(&mut doc, false);
     set_codex_model(&mut doc, third_party_harness_model_id);
 
     let canonical = working_dir.canonicalize().with_context(|| {
@@ -658,6 +661,10 @@ fn prepare_codex_config_toml(
 /// Set the top-level `openai_base_url` key, overwriting any existing value.
 fn set_codex_openai_base_url(doc: &mut toml_edit::DocumentMut, base_url: &str) {
     doc[CODEX_OPENAI_BASE_URL_KEY] = toml_edit::value(base_url);
+}
+
+fn set_codex_check_for_update_on_startup(doc: &mut toml_edit::DocumentMut, enabled: bool) {
+    doc[CODEX_CHECK_FOR_UPDATE_ON_STARTUP_KEY] = toml_edit::value(enabled);
 }
 
 fn set_codex_model(doc: &mut toml_edit::DocumentMut, third_party_harness_model_id: Option<&str>) {
