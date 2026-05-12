@@ -9,9 +9,10 @@ This change adds a third source of agent-rule context that sits alongside the ex
 - **Cloud rules** (`AIFact`s) — created in-app, persisted as cloud objects, and applied server-side when `rules_enabled: true` is set on the request. The client only ships an enable flag; the server has the contents.
 - **File-based global rules** (this feature) — a Markdown file at a well-known home location (`~/.agents/AGENTS.md`). Indexed and shipped by value the same way project rules are.
 
-The bulk of the implementation lives in two files. Relevant code:
+Relevant code:
 
-- `crates/ai/src/project_context/model.rs` — `ProjectContextModel` already owns project-rule indexing via `path_to_rules: HashMap<PathBuf, ProjectRules>` and watches each project repo via `repo_metadata::DirectoryWatcher`. It already exposes `find_applicable_rules(path)` returning a `ProjectRulesResult` and `index_and_store_rules(root)` for ad-hoc indexing.
+- `crates/ai/src/project_context/model.rs` — `ProjectContextModel` owns project-rule indexing via `path_to_rules: HashMap<PathBuf, ProjectRules>` and watches each project repo via `repo_metadata::DirectoryWatcher`. It exposes the public rule facade: `find_applicable_rules(path)`, `find_applicable_project_rules(path)`, `global_rule_paths()`, and `index_and_store_rules(root)`.
+- `crates/ai/src/project_context/global_rules.rs` — owns file-based global-rule source metadata, cached global file contents, home-subdir watcher state, the update channel, and the global-rule `RepositorySubscriber`.
 - `app/src/ai/blocklist/context_model.rs:398-451` — calls `find_applicable_rules` and packs the result into `AIAgentContext::ProjectRules { active_rules, additional_rule_paths, root_path }`.
 - `app/src/ai/agent/api/convert_to.rs:763` — serializes `AIAgentContext::ProjectRules` into `api::input_context::ProjectRules { active_rule_files, ... }`. The server appends `active_rule_files` to the prompt directly.
 - `app/src/ai/mcp/file_mcp_watcher.rs` — pre-existing pattern for watching a known home subdir (e.g. `~/.codex`) plus the home directory itself for subdir creation/deletion. Reused as a template for the global-rule watchers.
@@ -23,21 +24,26 @@ The bulk of the implementation lives in two files. Relevant code:
 
 ### Model
 
-`ProjectContextModel` (`crates/ai/src/project_context/model.rs`) gains:
+`ProjectContextModel` (`crates/ai/src/project_context/model.rs`) remains the rule-context facade, but file-based global rules are isolated behind `GlobalRules` in `crates/ai/src/project_context/global_rules.rs`.
+
+`GlobalRules` owns:
 
 - A `GlobalRuleSource` enum that enumerates known global locations via `strum::EnumIter`. Variants expose `name() / home_subdir() / file_pattern()` accessors. Today there is one variant, `Agents` → `~/.agents/AGENTS.md`. Adding a new global source = one variant + one match arm in each accessor.
-- `global_rules: BTreeMap<PathBuf, ProjectRule>` — discovered file contents, sorted by path so iteration is deterministic.
-- `global_source_watchers: HashMap<PathBuf, GlobalSourceWatcherState>` (gated on `local_fs`) — keyed by the absolute home subdir path so duplicate registrations naturally dedup.
-- `global_updates_tx: Option<Sender<GlobalRulesUpdate>>` — single channel that all per-source `RepositorySubscriber` instances push into; tagged with the originating `GlobalRuleSource`.
-- `index_global_rules(ctx)` (gated on `local_fs`) — invoked once at startup. For each `GlobalRuleSource`:
+- `rules: BTreeMap<PathBuf, ProjectRule>` — discovered file contents, sorted by path so iteration is deterministic.
+- `source_watchers: HashMap<PathBuf, GlobalSourceWatcherState>` (gated on `local_fs`) — keyed by the absolute home subdir path so duplicate registrations naturally dedup.
+- `updates_tx: Option<Sender<GlobalRulesUpdate>>` — single channel that all per-source `RepositorySubscriber` instances push into; tagged with the originating `GlobalRuleSource`.
+
+`ProjectContextModel` owns one `global_rules: GlobalRules` field and exposes thin integration methods:
+
+- `index_global_rules(ctx)` (gated on `local_fs`) — invoked once at startup and delegated to `GlobalRules::index`. For each `GlobalRuleSource`, the delegated logic:
   1. Spawns an async read of the target file via `ctx.spawn`. The callback inserts into `global_rules` and emits `GlobalRulesChanged`.
   2. Subscribes to `HomeDirectoryWatcher` to react to creation/deletion of the subdir at runtime.
   3. If the subdir exists, registers a `repo_metadata::DirectoryWatcher` on it and starts a `GlobalRulesRepositorySubscriber` that funnels per-file events back through the channel.
 - Home-subdir watcher events handle deletions before additions so bundled create+delete events do not leave stale watchers or cached rule state behind.
 - `find_applicable_rules` is extended to layer global rules on top of project rules in the returned `ProjectRulesResult.active_rules`. Globals iterate via `BTreeMap` order (deterministic). The `pending_context()` consumer in `BlocklistAIContextModel` is unchanged.
 - A separate `find_applicable_project_rules(path)` accessor returns *only* indexed project rules — globals are deliberately not layered in. This is the signal callers should use when they want to know "does this repo itself have rules indexed?" rather than "what rules apply to this path?". Two such callers exist today (PRODUCT.md invariant 13): `app/src/terminal/view/init_project/model.rs:189-202` (`should_have_available_steps`) and `app/src/code_review/code_review_view.rs:4505-4534` ("Repo is initialized with a {file_name} file." hint). Both were migrated as part of this change so a stray `~/.agents/AGENTS.md` does not flip every repo into the "already initialized" state. `find_applicable_rules` continues to be the right entry point for the agent-context packing path in `BlocklistAIContextModel::pending_context`.
-- `spawn_global_rule_read` reacts to a failed re-read by removing any previously cached entry for that path and emitting a `GlobalRulesChanged` deletion delta. This covers cases where the FS event arrives but the read fails (file deleted between event and read, perms revoked, replaced with a non-regular file) — silently keeping stale rule text active would surprise users who had thought they removed it. PRODUCT.md invariant 4 is the user-visible promise this enforces.
-- The `safe_warn!` calls in `register_global_source_watcher` keep the underlying error in the `full:` (dogfood) branch only; the `safe:` branch never includes the error or the path because both can embed the user's home directory.
+- `GlobalRules::spawn_global_rule_read` reacts to a failed re-read by removing any previously cached entry for that path and emitting a `GlobalRulesChanged` deletion delta. This covers cases where the FS event arrives but the read fails (file deleted between event and read, perms revoked, replaced with a non-regular file) — silently keeping stale rule text active would surprise users who had thought they removed it. PRODUCT.md invariant 4 is the user-visible promise this enforces.
+- The `safe_warn!` calls in `GlobalRules::register_global_source_watcher` keep the underlying error in the `full:` (dogfood) branch only; the `safe:` branch never includes the error or the path because both can embed the user's home directory.
 - A new event variant `ProjectContextModelEvent::GlobalRulesChanged(GlobalRulesDelta)` is emitted whenever the set of indexed global rules changes (initial read, FS update, subdir deletion, or a previously-known file becoming unreadable).
 - A `pub fn global_rule_paths(&self)` accessor is added for the settings view to read without exposing the full `ProjectRule` content.
 
@@ -66,7 +72,7 @@ The implementation deliberately does **not** persist global rule paths to SQLite
 ## Testing and validation
 
 ### Unit tests
-Located in `crates/ai/src/project_context/model_tests.rs`. They populate `ProjectContextModel.global_rules` and `path_to_rules` directly via test helpers, so they exercise the layering logic without spinning up the watcher infrastructure (which requires the warpui runtime).
+Located in `crates/ai/src/project_context/model_tests.rs`. They populate `ProjectContextModel` through test helpers (`GlobalRules::insert_for_test` for globals and `path_to_rules` for project rules), so they exercise the layering logic without spinning up the watcher infrastructure (which requires the warpui runtime).
 
 - Global rule alone, no project rules → `find_applicable_rules` returns it. Covers PRODUCT invariants 8, 10.
 - Global rule + project `WARP.md` for the same path → both appear in `active_rules`, ordered global first. Covers invariants 8, 9.
@@ -93,7 +99,7 @@ Maps directly to the PRODUCT.md behavior section:
 9. With both cloud and file-based empty, the zero-state copy mentions `~/.agents/AGENTS.md`. (Invariant 18.)
 
 ### Lint / format
-`cargo fmt` and `cargo clippy -p warp --all-targets --tests -- -D warnings` clean (and `-p ai --all-features --tests -- -D warnings` for the model crate). Tests already pass.
+`cargo fmt`, `cargo nextest run -p ai --features local_fs project_context`, and `cargo clippy -p ai --all-features --tests -- -D warnings` pass.
 
 ## Follow-ups
 - Decide whether the `MemoryEnabled` toggle should also gate file-based global rules (currently it does not — see PRODUCT.md invariant 19). Either gate `find_applicable_rules` on the setting in `BlocklistAIContextModel::pending_context`, or add a separate file-rule toggle.
