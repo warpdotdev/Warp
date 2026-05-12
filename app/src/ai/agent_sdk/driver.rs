@@ -25,7 +25,7 @@ use oneshot::{Canceled, Receiver, Sender};
 use repo_metadata::{local_model::IndexedRepoState, RepoMetadataModel, RepositoryIdentifier};
 use uuid::Uuid;
 
-use ai::skills::ParsedSkill;
+use ai::skills::{ParsedSkill, SKILL_PROVIDER_DEFINITIONS};
 use warp_cli::agent::{Harness, OutputFormat};
 use warp_cli::mcp::MCPSpec;
 use warp_cli::share::ShareRequest;
@@ -43,7 +43,8 @@ use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEve
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::ai::mcp::{JSONMCPServer, MCPServerState};
 use crate::ai::skills::{
-    filter_explicit_global_skills, resolve_skill_repos, SkillManager, SkillWatcher,
+    filter_skills_by_spec, read_skills_from_directories, resolve_skill_repos, SkillManager,
+    SkillWatcher,
 };
 use crate::ai::{
     agent::conversation::AIConversationId,
@@ -366,17 +367,6 @@ pub struct Task {
 struct GlobalSkillResolution {
     specs: Vec<SkillSpec>,
     repos: Vec<GithubRepo>,
-}
-
-/// Configuration for which skills in a repository should be loaded.
-enum SkillRepoLoadMode {
-    All,
-    ExplicitGlobal(Vec<SkillSpec>),
-}
-
-struct SkillRepoLoadRequest {
-    repo: GithubRepo,
-    load_mode: SkillRepoLoadMode,
 }
 
 /// Prompt that we initialize an agent driver with. Can represent either a local prompt or
@@ -1273,6 +1263,11 @@ impl AgentDriver {
     }
 
     /// Clone all passed-in global skill repositories.
+    ///
+    /// These repositories are not registered with the `DetectedRepositories`
+    /// model, so that we don't automatically detect *all* skills they contain.
+    /// This is important when using registry-like skill repos where loading all
+    /// skills would bloat the context window.
     async fn clone_global_skill_repos(
         foreground: &ModelSpawner<Self>,
         global_skill_repos: &[GithubRepo],
@@ -1285,15 +1280,7 @@ impl AgentDriver {
                     let working_dir = me.working_dir.clone();
                     me.terminal_driver.update(ctx, |_, ctx| {
                         let spawner = ctx.spawner();
-                        async move {
-                            environment::ensure_repo_cloned(
-                                &repo,
-                                &working_dir,
-                                false, /* is_sandbox */
-                                &spawner,
-                            )
-                            .await
-                        }
+                        async move { environment::clone_repo(&repo, &working_dir, &spawner).await }
                     })
                 })
                 .await?;
@@ -1306,79 +1293,35 @@ impl AgentDriver {
         Ok(())
     }
 
-    fn skill_repo_load_requests(
-        environment_repos: Vec<GithubRepo>,
-        global_skill_repos: Vec<GithubRepo>,
-        global_skill_specs: &[SkillSpec],
-    ) -> Vec<SkillRepoLoadRequest> {
-        let mut requests = environment_repos
-            .into_iter()
-            .map(|repo| SkillRepoLoadRequest {
-                repo,
-                load_mode: SkillRepoLoadMode::All,
-            })
-            .collect::<Vec<_>>();
-
-        for repo in global_skill_repos {
-            if requests.iter().any(|request| request.repo == repo) {
-                continue;
-            }
-
-            let explicit_global_specs = global_skill_specs
-                .iter()
-                .filter(|spec| {
-                    spec.org.as_deref() == Some(repo.owner.as_str())
-                        && spec.repo.as_deref() == Some(repo.repo.as_str())
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-
-            if explicit_global_specs.is_empty() {
-                continue;
-            }
-
-            requests.push(SkillRepoLoadRequest {
-                repo,
-                load_mode: SkillRepoLoadMode::ExplicitGlobal(explicit_global_specs),
-            });
-        }
-
-        requests
-    }
-
-    /// Scan cloned GitHub repositories for their skills.
-    async fn load_skills_from_repos(
-        foreground: &ModelSpawner<Self>,
-        repos: Vec<SkillRepoLoadRequest>,
-    ) {
+    /// Load skills from environment repositories.
+    ///
+    /// It's assumed that `prepare_environment` registers all cloned repositories
+    /// with the `DetectedRepositories` model, so that we can scan for skills
+    // here.
+    async fn load_environment_skills(foreground: &ModelSpawner<Self>, repos: Vec<GithubRepo>) {
         if repos.is_empty() {
-            log::info!("No repositories found for skill loading");
+            log::info!("No environment repositories for skill loading");
             return;
         }
         safe_info!(
-            safe: ("Loading skills from {} repositories", repos.len()),
+            safe: ("Loading skills from {} environment repositories", repos.len()),
             full: (
-                "Loading skills from repositories: {}",
-                repos.iter().map(|request| &request.repo).format(", ")
+                "Loading environment skills from repositories: {}",
+                repos.iter().format(", ")
             )
         );
 
+        // Skill-scanning depends on the in-memory RepoMetadataModel index, so wait for
+        // initial indexing of all repos to complete.
         let repo_index_waits = foreground
             .spawn(move |me, ctx| {
-                let repo_loads = repos
-                    .into_iter()
-                    .map(|request| (me.working_dir.join(&request.repo.repo), request.load_mode))
-                    .collect::<Vec<_>>();
-                log::debug!(
-                    "Repository paths for skill loading: {}",
-                    repo_loads
-                        .iter()
-                        .map(|(repo_path, _)| repo_path.display())
-                        .format(", ")
-                );
+                let repo_paths: Vec<PathBuf> = repos
+                    .iter()
+                    .map(|repo| me.working_dir.join(&repo.repo))
+                    .collect();
                 let repo_metadata = RepoMetadataModel::handle(ctx);
                 let mut repo_index_waits = Vec::new();
-                for (repo_path, _) in &repo_loads {
+                for repo_path in &repo_paths {
                     let Some(id) = RepositoryIdentifier::try_local(repo_path) else {
                         log::warn!(
                             "Cannot wait for repository metadata indexing for non-local path {}",
@@ -1391,14 +1334,14 @@ impl AgentDriver {
                     });
                     repo_index_waits.push((repo_path.clone(), id, wait));
                 }
-                (repo_loads, repo_index_waits)
+                (repo_paths, repo_index_waits)
             })
             .await;
 
-        let (repo_loads, repo_index_waits) = match repo_index_waits {
+        let (repo_paths, repo_index_waits) = match repo_index_waits {
             Ok(result) => result,
             Err(err) => {
-                log::warn!("Failed to prepare repository skill loading: {err}");
+                log::warn!("Failed to prepare environment skill loading: {err}");
                 return;
             }
         };
@@ -1418,10 +1361,9 @@ impl AgentDriver {
                     let repo_metadata = RepoMetadataModel::handle(ctx);
                     repo_index_targets
                         .into_iter()
-                        .map(|(repo_path, id)| {
-                            let repo_id_path = match &id {
-                                RepositoryIdentifier::Local(path) => path,
-                                RepositoryIdentifier::Remote(remote_id) => &remote_id.path,
+                        .filter_map(|(repo_path, id)| {
+                            let RepositoryIdentifier::Local(repo_id_path) = &id else {
+                                return None;
                             };
                             let error = match repo_metadata.as_ref(ctx).repository_state(&id, ctx) {
                                 Some(IndexedRepoState::Indexed(_)) => None,
@@ -1433,7 +1375,7 @@ impl AgentDriver {
                                 }
                                 None => Some(format!("Repository not found: {repo_id_path}")),
                             };
-                            (repo_path, error)
+                            Some((repo_path, error))
                         })
                         .collect::<Vec<_>>()
                 })
@@ -1458,32 +1400,13 @@ impl AgentDriver {
 
         let load_skills_result = foreground
             .spawn(move |_, ctx| {
-                let mut skills = Vec::new();
-                for (repo_path, load_mode) in repo_loads {
-                    let repo_skills =
-                        SkillWatcher::read_skills_for_repos(std::slice::from_ref(&repo_path), ctx);
-                    match load_mode {
-                        SkillRepoLoadMode::All => skills.extend(repo_skills),
-                        SkillRepoLoadMode::ExplicitGlobal(explicit_global_specs) => {
-                            // We filter down to the requested skills after scanning the repository. Since
-                            // the scan is based on an in-memory index of the repository contents, it's not
-                            // much more performant to locate the requested skills directly.
-                            skills.extend(filter_explicit_global_skills(
-                                &repo_path,
-                                repo_skills,
-                                &explicit_global_specs,
-                            ));
-                        }
-                    }
-                }
+                let skills = SkillWatcher::read_skills_for_repos(&repo_paths, ctx);
                 if !skills.is_empty() {
-                    log::info!("Loaded {} skill(s) from repositories", skills.len());
+                    log::info!("Loaded {} environment skill(s)", skills.len());
                 } else {
-                    log::info!("No repository skills found");
+                    log::info!("No environment skills found");
                 }
                 SkillManager::handle(ctx).update(ctx, |manager, _| {
-                    // All repo skills should be in scope regardless of cwd when
-                    // an environment or global skill repo is configured.
                     manager.set_cloud_environment(true);
                     manager.handle_skills_added(skills);
                 });
@@ -1491,7 +1414,71 @@ impl AgentDriver {
             .await;
 
         if let Err(err) = load_skills_result {
-            log::warn!("Failed to load repository skills: {err}");
+            log::warn!("Failed to load environment skills: {err}");
+        }
+    }
+
+    /// Load explicitly requested global skills by reading directly from disk.
+    async fn load_global_skills(
+        foreground: &ModelSpawner<Self>,
+        specs: Vec<SkillSpec>,
+        repos: Vec<GithubRepo>,
+    ) {
+        if specs.is_empty() || repos.is_empty() {
+            return;
+        }
+        safe_info!(
+            safe: ("Loading {} global skill(s) from {} repo(s)", specs.len(), repos.len()),
+            full: (
+                "Loading global skills {} from repos: {}",
+                specs.iter().map(|s| &s.skill_identifier).format(", "),
+                repos.iter().format(", ")
+            )
+        );
+
+        let load_result = foreground
+            .spawn(move |me, _| {
+                let mut all_skills = Vec::new();
+                for repo in &repos {
+                    let repo_path = me.working_dir.join(&repo.repo);
+                    // Read skills from all known provider directories on disk,
+                    // without depending on RepoMetadataModel.
+                    let skill_dirs = SKILL_PROVIDER_DEFINITIONS
+                        .iter()
+                        .map(|def| repo_path.join(&def.skills_path));
+                    let repo_skills = read_skills_from_directories(skill_dirs);
+                    let filtered = filter_skills_by_spec(&repo_path, repo_skills, &specs);
+                    all_skills.extend(filtered);
+                }
+                all_skills
+            })
+            .await;
+
+        let skills = match load_result {
+            Ok(skills) => skills,
+            Err(err) => {
+                log::warn!("Failed to load global skills: {err}");
+                return;
+            }
+        };
+
+        if skills.is_empty() {
+            log::info!("No global skills matched the requested specs");
+            return;
+        }
+
+        log::info!("Loaded {} global skill(s)", skills.len());
+        let add_result = foreground
+            .spawn(move |_, ctx| {
+                SkillManager::handle(ctx).update(ctx, |manager, _| {
+                    manager.set_cloud_environment(true);
+                    manager.handle_skills_added(skills);
+                });
+            })
+            .await;
+
+        if let Err(err) = add_result {
+            log::warn!("Failed to add global skills to SkillManager: {err}");
         }
     }
 
@@ -1590,18 +1577,12 @@ impl AgentDriver {
             })
             .await?
             .await?;
-        let global_skill_resolution = if matches!(&task.harness, HarnessKind::Oz) {
-            let global_skill_resolution = Self::resolve_global_skills(&foreground).await?;
-            // Clone global skill repos before environment prep can change the
-            // terminal's cwd into a single environment repo.
-            Self::clone_global_skill_repos(&foreground, &global_skill_resolution.repos).await?;
-            global_skill_resolution
-        } else {
-            GlobalSkillResolution {
-                specs: Vec::new(),
-                repos: Vec::new(),
-            }
-        };
+        let global_skill_resolution = Self::resolve_global_skills(&foreground).await?;
+        // Clone global skill repos before environment prep can change the
+        // terminal's cwd into a single environment repo.
+        // We do this for all harnesses, so that the skills *may* be discovered by third-party
+        // harnesses if appropriate.
+        Self::clone_global_skill_repos(&foreground, &global_skill_resolution.repos).await?;
         let mut environment_skill_repos = Vec::new();
 
         let environment_opt = foreground.spawn(|me, _| me.environment.clone()).await?;
@@ -1697,15 +1678,11 @@ impl AgentDriver {
                 specs: global_skill_specs,
                 repos: global_skill_repos,
             } = global_skill_resolution;
-            let skill_load_requests = Self::skill_repo_load_requests(
-                environment_skill_repos,
-                global_skill_repos,
-                &global_skill_specs,
-            );
-            Self::load_skills_from_repos(&foreground, skill_load_requests).await;
+            Self::load_environment_skills(&foreground, environment_skill_repos).await;
+            Self::load_global_skills(&foreground, global_skill_specs, global_skill_repos).await;
         }
 
-         let (task_id_for_refresh, ai_client_for_refresh) = foreground
+        let (task_id_for_refresh, ai_client_for_refresh) = foreground
             .spawn(|me, ctx| {
                 let task_id = if FeatureFlag::GitCredentialRefresh.is_enabled() {
                     me.task_id.map(|id| id.to_string())

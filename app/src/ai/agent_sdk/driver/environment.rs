@@ -122,18 +122,12 @@ async fn prepare_environment_impl(
 
     for repo in github_repos {
         ensure_repo_cloned(repo, working_dir, is_sandbox, spawner).await?;
-        if !is_sandbox {
-            if should_index_codebase {
-                let receiver = index_repo_codebase(
-                    &repo.repo,
-                    working_dir,
-                    Arc::clone(&repo_channels),
-                    spawner,
-                )
-                .await?;
-                if let Some(receiver) = receiver {
-                    codebase_context_receivers.push(receiver);
-                }
+        if !is_sandbox && should_index_codebase {
+            let receiver =
+                index_repo_codebase(&repo.repo, working_dir, Arc::clone(&repo_channels), spawner)
+                    .await?;
+            if let Some(receiver) = receiver {
+                codebase_context_receivers.push(receiver);
             }
         }
     }
@@ -225,12 +219,11 @@ async fn prepare_environment_impl(
     Ok(())
 }
 
-/// Ensure that a GitHub repository has been cloned to `{working_dir}/{repo.repo}`. This will not
-/// overwrite existing clones.
-pub(super) async fn ensure_repo_cloned(
+/// Clone a GitHub repository to `{working_dir}/{repo.repo}` if it does not already exist.
+/// This only performs the clone -- it does NOT register the repo with `DetectedRepositories`.
+pub(super) async fn clone_repo(
     repo: &GithubRepo,
     working_dir: &Path,
-    is_sandbox: bool,
     spawner: &ModelSpawner<TerminalDriver>,
 ) -> Result<(), PrepareEnvironmentError> {
     let repo_name = format!("{}/{}", repo.owner, repo.repo);
@@ -282,6 +275,21 @@ pub(super) async fn ensure_repo_cloned(
             full: ("Successfully cloned: {repo_name}")
         );
     }
+
+    Ok(())
+}
+
+/// Clone a GitHub repository and register it with `DetectedRepositories` so that
+/// the skill watcher and other repo-aware subsystems can discover it.
+pub(super) async fn ensure_repo_cloned(
+    repo: &GithubRepo,
+    working_dir: &Path,
+    is_sandbox: bool,
+    spawner: &ModelSpawner<TerminalDriver>,
+) -> Result<(), PrepareEnvironmentError> {
+    clone_repo(repo, working_dir, spawner).await?;
+
+    let repo_dir = working_dir.join(&repo.repo);
 
     // Register the repo with DetectedRepositories so that the skill watcher
     // and other repo-aware subsystems can discover it before the first query.

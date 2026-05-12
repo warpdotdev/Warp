@@ -1,5 +1,5 @@
-//! Helpers for resolving service-account "global" skill specs into repos to
-//! ensure are available on disk before agent runs.
+//! Helpers for resolving per-agent "global" skill specs into repos to
+//! ensure are available on disk before the agent runs.
 
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -12,11 +12,12 @@ use warp_cli::skill::SkillSpec;
 
 use crate::ai::cloud_environments::GithubRepo;
 
-/// Parse raw skill spec strings into skill specs.
+/// Parse raw skill spec strings and resolve the unique set of GitHub repos they reference.
 ///
-/// Specs that fail to parse are logged and skipped.
-fn parse_global_skill_specs(raw_specs: &[String]) -> Vec<SkillSpec> {
-    raw_specs
+/// Specs without an org/repo qualifier are not cloneable, so they are skipped
+/// for repo resolution and left to normal on-disk skill discovery.
+pub fn resolve_skill_repos(raw_specs: &[String]) -> (Vec<SkillSpec>, Vec<GithubRepo>) {
+    let specs: Vec<SkillSpec> = raw_specs
         .iter()
         .filter_map(|raw| match SkillSpec::from_str(raw) {
             Ok(spec) => Some(spec),
@@ -25,15 +26,7 @@ fn parse_global_skill_specs(raw_specs: &[String]) -> Vec<SkillSpec> {
                 None
             }
         })
-        .collect()
-}
-
-/// Parse raw skill spec strings and resolve the unique set of GitHub repos they reference.
-///
-/// Specs without an org/repo qualifier are not cloneable, so they are skipped
-/// for repo resolution and left to normal on-disk skill discovery.
-pub fn resolve_skill_repos(raw_specs: &[String]) -> (Vec<SkillSpec>, Vec<GithubRepo>) {
-    let specs = parse_global_skill_specs(raw_specs);
+        .collect();
     let mut seen = BTreeSet::new();
     let mut repos = Vec::new();
     for spec in &specs {
@@ -49,12 +42,12 @@ pub fn resolve_skill_repos(raw_specs: &[String]) -> (Vec<SkillSpec>, Vec<GithubR
     (specs, repos)
 }
 
-/// Returns the subset of skills that were explicitly requested by parsed global skill specs.
+/// Returns the subset of skills that were explicitly requested by the given skill specs.
 ///
 /// For simple skill names, this mirrors cached skill resolution by checking parsed skill names
 /// in provider precedence order. For full-path specs, it matches the exact path relative to the
 /// repo root.
-pub fn filter_explicit_global_skills(
+pub fn filter_skills_by_spec(
     repo_path: &Path,
     skills: Vec<ParsedSkill>,
     specs: &[SkillSpec],
