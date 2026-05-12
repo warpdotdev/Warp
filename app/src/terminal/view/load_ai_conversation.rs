@@ -328,28 +328,6 @@ impl TerminalView {
             .insert_restored_block(&block);
     }
 
-    /// Stamps the restored CLI agent harness conversation's title onto the freshly
-    /// created vehicle agent-view conversation as a fallback display title. Without
-    /// this, pane/tab chrome and the ambient agent entry block fall back to the
-    /// generic "New cloud agent" placeholder for 3p cloud agent transcripts (which
-    /// have no materialized [`AIConversation`] of their own to derive a title from).
-    pub(crate) fn apply_restored_cli_agent_title_to_vehicle_conversation(
-        fallback_title: String,
-        vehicle_conversation_id: AIConversationId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let trimmed = fallback_title.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-        let title = trimmed.to_owned();
-        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
-            if let Some(conversation) = history.conversation_mut(&vehicle_conversation_id) {
-                conversation.set_fallback_display_title(title);
-            }
-        });
-    }
-
     /// Get AIConversations to restore given conversation IDs.
     pub(super) fn get_conversations_to_restore(
         conversation_ids: &[AIConversationId],
