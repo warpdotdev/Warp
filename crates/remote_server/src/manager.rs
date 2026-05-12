@@ -975,6 +975,24 @@ impl RemoteServerManager {
                     "Remote server stale binary removal failed: session={session_id:?} error={e:#}"
                 );
             }
+
+            // Also stop the running daemon process. The daemon is
+            // long-lived and was likely started from the old binary,
+            // so it will keep reporting the old version. Without
+            // stopping it, the next proxy invocation finds the old
+            // daemon still alive (via PID file) and connects to it,
+            // producing the same version mismatch in a loop.
+            if let Err(e) = transport
+                .stop_remote_server_daemon()
+                .with_timeout(REMOVAL_TIMEOUT)
+                .await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out after {REMOVAL_TIMEOUT:?}")))
+            {
+                log::warn!(
+                    "Remote server stale daemon stop failed: session={session_id:?} error={e:#}"
+                );
+            }
+
             return Err(ConnectAndHandshakeError::Initialize(anyhow::anyhow!(
                 "remote server version mismatch (client: {client_version:?}, \
                  server: {:?}); reconnect to reinstall",

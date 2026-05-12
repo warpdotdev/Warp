@@ -266,6 +266,25 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
         &self,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
 
+    /// Stop the remote server daemon process and clean up its PID/socket
+    /// files.
+    ///
+    /// Called by the manager alongside [`remove_remote_server_binary`]
+    /// when the initialize handshake reveals a version mismatch. The
+    /// daemon is a long-lived process that outlives individual proxy
+    /// connections; if we only remove the binary without stopping the
+    /// daemon, the next proxy invocation will find the old daemon still
+    /// running (via its PID file) and connect to it, producing the same
+    /// version mismatch in a loop.
+    ///
+    /// Best-effort: failures are logged but do not prevent the caller
+    /// from proceeding.
+    ///
+    /// [`remove_remote_server_binary`]: RemoteTransport::remove_remote_server_binary
+    fn stop_remote_server_daemon(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
+
     /// Returns `true` if the transport considers a reconnect viable after
     /// a spontaneous disconnect with the given exit status.
     ///

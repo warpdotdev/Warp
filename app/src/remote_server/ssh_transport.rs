@@ -337,6 +337,44 @@ impl RemoteTransport for SshTransport {
         })
     }
 
+    fn stop_remote_server_daemon(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
+        let ssh_socket_path = self.socket_path.clone();
+        let pid_path = self.remote_daemon_pid_path();
+        let daemon_socket_path = self.remote_daemon_socket_path();
+        Box::pin(async move {
+            // Read the PID, kill the daemon, and clean up its files in a
+            // single SSH round-trip. The tilde-safe expansion mirrors
+            // install_remote_server.sh: use `case` + `${var#~}` instead
+            // of `${var/~/...}` to avoid bash version quirks.
+            let cmd = format!(
+                "pid_path={pid_path}; \
+                 case \"$pid_path\" in \"~\"|\"~/\"*) pid_path=\"${{HOME}}${{pid_path#\\~}}\";; esac; \
+                 sock_path={daemon_socket_path}; \
+                 case \"$sock_path\" in \"~\"|\"~/\"*) sock_path=\"${{HOME}}${{sock_path#\\~}}\";; esac; \
+                 if [ -f \"$pid_path\" ]; then \
+                   pid=$(cat \"$pid_path\" 2>/dev/null) && \
+                   [ -n \"$pid\" ] && kill \"$pid\" 2>/dev/null; \
+                 fi; \
+                 rm -f \"$pid_path\" \"$sock_path\""
+            );
+            log::info!("Stopping stale remote server daemon: {cmd}");
+            let output = remote_server::ssh::run_ssh_command(
+                &ssh_socket_path,
+                &cmd,
+                remote_server::setup::CHECK_TIMEOUT,
+            )
+            .await?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(anyhow::anyhow!("Failed to stop daemon: {stderr}"))
+            }
+        })
+    }
+
     /// SSH exit code 255 indicates a connection-level error (broken pipe,
     /// connection reset, host unreachable) — the ControlMaster's TCP
     /// connection is dead. A signal kill also suggests the transport was
