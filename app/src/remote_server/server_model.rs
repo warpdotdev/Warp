@@ -12,26 +12,33 @@ use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::platform::TerminationMode;
 use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
-use warpui::{Entity, ModelContext, SingletonEntity};
+use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
 use warp_files::{FileModel, FileModelEvent};
 use warp_util::content_version::ContentVersion;
 use warp_util::file::FileId;
 
+use super::diff_state_proto;
+use super::diff_state_tracker::{
+    DiffModelKey, DiffStateUpdate, RemoteDiffStateManager, SubscribeOutcome,
+};
 use super::proto::{
-    client_message, delete_file_response, resolve_conflict_response, run_command_response,
-    save_buffer_response, server_message, write_file_response, Abort, Authenticate, BufferEdit,
-    BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatusesSnapshot, DeleteFile,
-    DeleteFileResponse, DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead,
-    FileContextProto, FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
-    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
-    ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, RunCommandError,
-    RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
-    SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
-    WriteFileResponse, WriteFileSuccess,
+    client_message, delete_file_response, discard_files_response, get_diff_state_response,
+    resolve_conflict_response, run_command_response, save_buffer_response, server_message,
+    write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush, ClientMessage,
+    CloseBuffer, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
+    DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess, ErrorCode, ErrorResponse,
+    FailedFileRead, FileContextProto, FileOperationError, GetDiffStateResponse, Initialize,
+    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
+    OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
+    ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
+    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
+    ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
+
+use crate::code_review::diff_state::{DiffMode, FileStatusInfo};
 
 /// How long the daemon waits with no connections before exiting.
 pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 * 60);
@@ -178,6 +185,8 @@ pub struct ServerModel {
     /// Tracks open buffers, per-buffer connection sets, and pending async
     /// buffer requests (OpenBuffer, SaveBuffer).
     buffers: ServerBufferTracker,
+    /// Manages per-(repo, mode) diff state models and per-connection subscriptions.
+    diff_states: ModelHandle<RemoteDiffStateManager>,
 }
 
 impl Entity for ServerModel {
@@ -204,6 +213,7 @@ impl ServerModel {
             pending_file_ops: PendingFileOps::new(),
             auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             buffers: ServerBufferTracker::new(),
+            diff_states: ctx.add_model(|_| RemoteDiffStateManager::new()),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -507,6 +517,14 @@ impl ServerModel {
                 }
             });
         }
+        // Subscribe to diff state manager events — convert domain dispatches
+        // to proto messages and send them to connected clients.
+        {
+            let diff_states = model.diff_states.clone();
+            ctx.subscribe_to_model(&diff_states, |me, dispatch, _ctx| {
+                me.handle_diff_state_update(dispatch);
+            });
+        }
         // Start the grace timer immediately so the daemon exits if no proxy
         // connects within GRACE_PERIOD. In practice the spawning proxy connects
         // within milliseconds, so the risk of premature shutdown is negligible;
@@ -552,6 +570,11 @@ impl ServerModel {
         // Remove this connection from all buffer connection sets.
         // Orphaned buffers (no connections left) are deallocated automatically.
         self.buffers.remove_connection(conn_id, ctx);
+
+        // Remove this connection from diff state subscriptions.
+        // Orphaned models (no subscribers) are dropped automatically.
+        self.diff_states
+            .update(ctx, |mgr, _| mgr.remove_connection(conn_id));
 
         let remaining = self.connection_senders.len();
         log::info!("Daemon: connection {conn_id} deregistered — {remaining} active remaining");
@@ -615,7 +638,7 @@ impl ServerModel {
                 return;
             }
             Some(client_message::Message::Abort(abort)) => {
-                self.handle_abort(abort, &request_id);
+                self.handle_abort(abort, &request_id, ctx);
                 return;
             }
             Some(client_message::Message::RunCommand(req)) => {
@@ -653,10 +676,16 @@ impl ServerModel {
             Some(client_message::Message::ResolveConflict(msg)) => {
                 self.handle_resolve_conflict(msg, &request_id, conn_id, ctx)
             }
-            // TODO: implement diff state handlers
-            Some(client_message::Message::GetDiffState(_)) => return,
-            Some(client_message::Message::UnsubscribeDiffState(_)) => return,
-            Some(client_message::Message::DiscardFiles(_)) => return,
+            Some(client_message::Message::GetDiffState(msg)) => {
+                self.handle_get_diff_state(msg, &request_id, conn_id, ctx)
+            }
+            Some(client_message::Message::UnsubscribeDiffState(msg)) => {
+                self.handle_unsubscribe_diff_state(msg, conn_id, ctx);
+                return; // fire-and-forget notification
+            }
+            Some(client_message::Message::DiscardFiles(msg)) => {
+                self.handle_discard_files(msg, &request_id, ctx)
+            }
             None => {
                 log::warn!(
                     "Received ClientMessage with no message variant (request_id={request_id})"
@@ -870,8 +899,10 @@ impl ServerModel {
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.
+    /// Checks `ServerModel`'s own in-progress map first, then delegates to
+    /// the diff state manager for content reload requests.
     /// This is a notification — no response is sent.
-    fn handle_abort(&mut self, abort: Abort, request_id: &RequestId) {
+    fn handle_abort(&mut self, abort: Abort, request_id: &RequestId, ctx: &mut ModelContext<Self>) {
         let target_id = RequestId::from(abort.request_id_to_abort);
         if let Some(handle) = self.in_progress.remove(&target_id) {
             log::info!(
@@ -880,10 +911,15 @@ impl ServerModel {
             );
             handle.abort();
         } else {
-            log::info!(
-                "Abort for unknown/completed request (request_id={target_id}, \
-                 abort_request_id={request_id})"
-            );
+            let found = self
+                .diff_states
+                .update(ctx, |mgr, _| mgr.abort_request(&target_id));
+            if !found {
+                log::info!(
+                    "Abort for unknown/completed request (request_id={target_id}, \
+                     abort_request_id={request_id})"
+                );
+            }
         }
     }
 
@@ -1646,6 +1682,291 @@ impl ServerModel {
     ) {
         log::info!("Handling CloseBuffer path={} conn={conn_id}", msg.path);
         self.buffers.close_buffer(&msg.path, conn_id, ctx);
+    }
+
+    /// Handles `GetDiffState` — subscribe to a (repo, mode) pair.
+    fn handle_get_diff_state(
+        &mut self,
+        msg: super::proto::GetDiffState,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        // Proto3 message fields are always optional on the wire, so `mode`
+        // cannot be made required at the schema level — validate at runtime.
+        let Some(mode_proto) = &msg.mode else {
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: "Missing mode in GetDiffState".to_string(),
+            }));
+        };
+
+        let std_path = match StandardizedPath::from_local_canonicalized(Path::new(&msg.repo_path)) {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("Invalid repo_path for GetDiffState: {e}");
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: format!("Invalid repo_path: {e}"),
+                }));
+            }
+        };
+
+        let mode: DiffMode = mode_proto.into();
+
+        log::info!(
+            "Handling GetDiffState repo={} mode={mode:?} (request_id={request_id})",
+            msg.repo_path,
+        );
+
+        let outcome = self.diff_states.update(ctx, |mgr, ctx| {
+            mgr.subscribe(std_path, mode, request_id, conn_id, ctx)
+        });
+
+        match outcome {
+            SubscribeOutcome::RespondWithSnapshot {
+                key,
+                state,
+                metadata,
+            } => {
+                let snapshot = diff_state_proto::build_diff_state_snapshot(
+                    key.repo_path.as_str(),
+                    &key.mode,
+                    metadata.as_ref(),
+                    &state,
+                    None,
+                );
+                HandlerOutcome::Sync(server_message::Message::GetDiffStateResponse(
+                    GetDiffStateResponse {
+                        result: Some(get_diff_state_response::Result::Snapshot(snapshot)),
+                    },
+                ))
+            }
+            SubscribeOutcome::Async => HandlerOutcome::Async(None),
+        }
+    }
+
+    /// Handles `UnsubscribeDiffState` — notification (fire-and-forget).
+    fn handle_unsubscribe_diff_state(
+        &mut self,
+        msg: super::proto::UnsubscribeDiffState,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(mode_proto) = &msg.mode else {
+            log::warn!("UnsubscribeDiffState from conn={conn_id}: missing mode");
+            return;
+        };
+        let Ok(std_path) = StandardizedPath::from_local_canonicalized(Path::new(&msg.repo_path))
+        else {
+            log::warn!(
+                "UnsubscribeDiffState from conn={conn_id}: invalid repo_path={}",
+                msg.repo_path
+            );
+            return;
+        };
+
+        let key = DiffModelKey {
+            repo_path: std_path,
+            mode: mode_proto.into(),
+        };
+
+        log::info!(
+            "Handling UnsubscribeDiffState repo={} mode={:?} conn={conn_id}",
+            msg.repo_path,
+            key.mode
+        );
+
+        self.diff_states
+            .update(ctx, |mgr, _| mgr.unsubscribe_connection(&key, conn_id));
+    }
+
+    /// Converts a domain-level diff state dispatch to proto messages
+    /// and sends them to the appropriate connections.
+    fn handle_diff_state_update(&self, update: &DiffStateUpdate) {
+        match update {
+            DiffStateUpdate::Snapshot {
+                repo_path,
+                mode,
+                state,
+                metadata,
+                diffs,
+                subscribers,
+            } => {
+                let snapshot = diff_state_proto::build_diff_state_snapshot(
+                    repo_path,
+                    mode,
+                    metadata.as_ref(),
+                    state,
+                    diffs.as_deref(),
+                );
+                for (conn_id, request_id) in subscribers {
+                    if let Some(request_id) = request_id {
+                        self.send_server_message(
+                            Some(*conn_id),
+                            Some(request_id),
+                            server_message::Message::GetDiffStateResponse(GetDiffStateResponse {
+                                result: Some(get_diff_state_response::Result::Snapshot(
+                                    snapshot.clone(),
+                                )),
+                            }),
+                        );
+                    } else {
+                        self.send_server_message(
+                            Some(*conn_id),
+                            None,
+                            server_message::Message::DiffStateSnapshot(snapshot.clone()),
+                        );
+                    }
+                }
+            }
+            DiffStateUpdate::MetadataUpdate {
+                repo_path,
+                mode,
+                metadata,
+                subscribers,
+            } => {
+                let update = diff_state_proto::build_diff_state_metadata_update(
+                    repo_path.as_str(),
+                    mode,
+                    metadata,
+                );
+                for conn_id in subscribers {
+                    self.send_server_message(
+                        Some(*conn_id),
+                        None,
+                        server_message::Message::DiffStateMetadataUpdate(update.clone()),
+                    );
+                }
+            }
+            DiffStateUpdate::FileDelta {
+                repo_path,
+                mode,
+                path,
+                diff,
+                metadata,
+                subscribers,
+            } => {
+                let delta = diff_state_proto::build_diff_state_file_delta(
+                    repo_path.as_str(),
+                    mode,
+                    path,
+                    diff.as_deref(),
+                    metadata.as_ref(),
+                );
+                for conn_id in subscribers {
+                    self.send_server_message(
+                        Some(*conn_id),
+                        None,
+                        server_message::Message::DiffStateFileDelta(delta.clone()),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Handles `DiscardFilesRequest` — request/response.
+    ///
+    /// Runs git restore/stash on the remote filesystem for the specified files.
+    /// The model's `discard_files` spawns async git operations internally.
+    /// On success it reloads diffs, which triggers `NewDiffsComputed` pushes
+    /// to subscribed connections. On failure it logs the error.
+    ///
+    /// We respond with success synchronously after delegating to the model,
+    /// since `discard_files` does not surface completion status to the caller.
+    fn handle_discard_files(
+        &mut self,
+        msg: super::proto::DiscardFilesRequest,
+        request_id: &RequestId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        log::info!(
+            "Handling DiscardFiles repo={} files={} (request_id={request_id})",
+            msg.repo_path,
+            msg.files.len()
+        );
+
+        let std_path = match StandardizedPath::from_local_canonicalized(Path::new(&msg.repo_path)) {
+            Ok(p) => p,
+            Err(e) => {
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: format!("Invalid repo_path: {e}"),
+                }));
+            }
+        };
+
+        let Some(mode_proto) = &msg.mode else {
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: "Missing mode in DiscardFiles".to_string(),
+            }));
+        };
+
+        let key = DiffModelKey {
+            repo_path: std_path,
+            mode: mode_proto.into(),
+        };
+
+        let model = self
+            .diff_states
+            .update(ctx, |mgr, _| mgr.get_model(&key).cloned());
+        let Some(model) = model else {
+            return HandlerOutcome::Sync(server_message::Message::DiscardFilesResponse(
+                DiscardFilesResponse {
+                    result: Some(discard_files_response::Result::Error(DiscardFilesError {
+                        message: format!(
+                            "No active diff state model for repo={} mode={:?}",
+                            msg.repo_path, key.mode
+                        ),
+                    })),
+                },
+            ));
+        };
+
+        if msg.files.is_empty() {
+            return HandlerOutcome::Sync(server_message::Message::DiscardFilesResponse(
+                DiscardFilesResponse {
+                    result: Some(discard_files_response::Result::Error(DiscardFilesError {
+                        message: "No files specified in DiscardFilesRequest".to_string(),
+                    })),
+                },
+            ));
+        }
+
+        let file_infos: Vec<_> = msg
+            .files
+            .iter()
+            .filter_map(|f| match FileStatusInfo::try_from(f) {
+                Ok(info) => Some(info),
+                Err(e) => {
+                    log::warn!("DiscardFiles: {e}");
+                    None
+                }
+            })
+            .collect();
+
+        if file_infos.is_empty() {
+            return HandlerOutcome::Sync(server_message::Message::DiscardFilesResponse(
+                DiscardFilesResponse {
+                    result: Some(discard_files_response::Result::Error(DiscardFilesError {
+                        message: "No valid files after path validation".to_string(),
+                    })),
+                },
+            ));
+        }
+
+        model.update(ctx, |m, ctx| {
+            m.discard_files(file_infos, msg.should_stash, msg.branch_name, ctx);
+        });
+
+        HandlerOutcome::Sync(server_message::Message::DiscardFilesResponse(
+            DiscardFilesResponse {
+                result: Some(discard_files_response::Result::Success(
+                    DiscardFilesSuccess {},
+                )),
+            },
+        ))
     }
 }
 
