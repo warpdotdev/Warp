@@ -15239,15 +15239,26 @@ impl Workspace {
         //      session as if it were focusable. Returning the busy session would
         //      reintroduce #9100 by letting callers act on a session they can't
         //      actually type into.
+        //
+        // For `OpenIfNone` specifically: if an existing session was found but its
+        // input box is not visible (e.g. alt-screen application, SSH choice block,
+        // AI confirmation block, init-project step, cloud-agent pre-first-exchange),
+        // we do NOT create a new pane — `OpenIfNone` only creates when there is no
+        // active session at all. We also must NOT return the unfocusable existing
+        // session: callers would proceed as if they had a focusable input and the
+        // user would see no effect. Return `None` instead so the caller can decide.
         let needs_new_pane = existing_terminal_view_handle.is_none()
             || fallback_behavior == TerminalSessionFallbackBehavior::OpenIfNeeded;
         if needs_new_pane {
             active_pane_group.update(ctx, |pane_group, ctx| {
                 pane_group.add_terminal_pane(Direction::Right, None /*chosen_shell*/, ctx);
             });
+            return active_pane_group.as_ref(ctx).active_session_view(ctx);
         }
 
-        active_pane_group.as_ref(ctx).active_session_view(ctx)
+        // `OpenIfNone` with an existing-but-unfocusable session: signal "no usable
+        // session" to the caller rather than returning the unfocusable handle.
+        None
     }
 
     /// Decide whether the "A command in this session is still running." toast should
