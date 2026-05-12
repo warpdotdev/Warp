@@ -744,9 +744,6 @@ impl View for BillingAndUsagePageView {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
-        if FeatureFlag::BillingAndUsagePageV2.is_enabled() {
-            return billing_and_usage_page_v2::render_page(self, app);
-        }
         self.page.render(self, app)
     }
 }
@@ -3694,9 +3691,6 @@ impl SettingsWidget for PlanWidget {
         col.finish()
     }
 }
-
-#[path = "billing_and_usage_page_v2.rs"]
-mod billing_and_usage_page_v2;
 
 #[cfg(test)]
 #[path = "billing_and_usage_page_tests.rs"]
