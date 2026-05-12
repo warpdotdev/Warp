@@ -380,8 +380,8 @@ impl SearchCodebaseExecutor {
                     ));
                 };
                 let store_client = ServerApiProvider::as_ref(ctx).get();
-                ActionExecution::Async {
-                    execute_future: Box::pin(async move {
+                ActionExecution::new_async(
+                    async move {
                         let result = execute_remote_codebase_search(
                             query,
                             partial_paths,
@@ -395,18 +395,15 @@ impl SearchCodebaseExecutor {
                             message: e.to_string(),
                         });
                         Ok(result)
-                    }),
-                    on_complete: Box::new(
-                        |res: Result<SearchCodebaseResult, oneshot::Canceled>, _ctx| {
-                            let action_result =
-                                res.unwrap_or_else(|e| SearchCodebaseResult::Failed {
-                                    reason: SearchCodebaseFailureReason::ClientError,
-                                    message: e.to_string(),
-                                });
-                            AIAgentActionResultType::SearchCodebase(action_result)
-                        },
-                    ),
-                }
+                    },
+                    |res: Result<SearchCodebaseResult, oneshot::Canceled>, _ctx| {
+                        let action_result = res.unwrap_or_else(|e| SearchCodebaseResult::Failed {
+                            reason: SearchCodebaseFailureReason::ClientError,
+                            message: e.to_string(),
+                        });
+                        AIAgentActionResultType::SearchCodebase(action_result)
+                    },
+                )
             }
             availability @ RemoteCodebaseSearchAvailability::NotIndexed { .. } => {
                 let explicit_repo_path = explicit_repo_path.map(ToOwned::to_owned);
