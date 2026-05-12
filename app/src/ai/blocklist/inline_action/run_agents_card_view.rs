@@ -12,6 +12,7 @@ use ai::agent::orchestration_config::{
 };
 
 use crate::ai::agent::conversation::AIConversationId;
+use crate::BlocklistAIHistoryModel;
 use ai::skills::SkillReference;
 use pathfinder_geometry::vector::vec2f;
 use std::rc::Rc;
@@ -508,12 +509,13 @@ impl RunAgentsCardView {
         conversation_id: AIConversationId,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Refresh active_config: at card construction time plan_id may
-        // have been empty (not yet streamed) so active_config was None.
-        // Now that streaming is complete the full plan_id is available
-        // and the OrchestrationConfigSnapshot should already be hydrated.
-        if self.active_config.is_none() && !self.state.plan_id.is_empty() {
-            self.active_config = crate::BlocklistAIHistoryModel::as_ref(ctx)
+        // Always refresh active_config from the conversation on stream
+        // complete. At card construction time plan_id may have been empty
+        // (not yet streamed), and even if it was present the user may have
+        // toggled approval mid-stream. Re-reading ensures we have the
+        // latest snapshot.
+        if !self.state.plan_id.is_empty() {
+            self.active_config = BlocklistAIHistoryModel::as_ref(ctx)
                 .conversation(&conversation_id)
                 .and_then(|conv| {
                     conv.orchestration_config_for_plan(&self.state.plan_id)
