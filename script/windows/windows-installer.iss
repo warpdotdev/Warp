@@ -212,7 +212,19 @@ begin
         Sleep(1000);
       end
       else
+      begin
         Log('Warp has exited; proceeding with file installation.');
+        { The minidump crash-reporter is a child process (same exe name) that
+          may outlive the main Warp process. It holds the executable file open,
+          which causes the file-copy step to fail with "Access is denied".
+          We identify it by the "minidump-server" argument in its command line. }
+        Exec('powershell.exe',
+          '-NoProfile -NoLogo -Command "Get-CimInstance Win32_Process -Filter \"Name=''''{#MyAppExeName}'''' and CommandLine like ''''%minidump-server%''''\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        if ResultCode <> 0 then
+          Log('minidump-server cleanup failed (exit code: ' + IntToStr(ResultCode) + ')');
+        Sleep(500);
+      end;
     end;
   end;
 
