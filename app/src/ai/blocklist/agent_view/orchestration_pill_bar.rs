@@ -37,6 +37,9 @@ use crate::ai::agent::conversation::{
 };
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_id;
+use crate::ai::blocklist::agent_view::orchestration_pin_model::{
+    OrchestrationPinEvent, OrchestrationPinModel,
+};
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::ai::harness_display;
@@ -151,14 +154,13 @@ enum PillKind {
     Child,
 }
 
-/// Whether this pill's conversation lives in another visible terminal view
-/// (a separate pane or tab). Pinned pills focus that other view instead of
-/// switching in place. Pin detection is currently disabled (see `pill_specs`).
+/// Whether the user has pinned this pill to the leading "pinned" section
+/// of the bar. Pinned child pills sit between the orchestrator and a
+/// vertical divider; unpinned pills sit to the right of the divider.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 enum PillPinState {
     Unpinned,
-    PinnedInOtherPane,
+    Pinned,
 }
 
 /// Pre-computed data for one pill in the bar.
@@ -268,6 +270,10 @@ pub enum OrchestrationPillBarAction {
     /// Menu item: focus the existing pane/tab that already owns the
     /// child agent's transcript instead of splitting/opening a new one.
     FocusOpenedConversation(AIConversationId),
+    /// Toggle the user-driven pin state for the given child conversation.
+    /// Pinned children render in the leading "pinned" section of the bar,
+    /// to the left of the vertical divider.
+    TogglePin(AIConversationId),
 }
 
 /// Renders the pill bar above the agent view: one pill for the orchestrator
@@ -279,6 +285,11 @@ pub struct OrchestrationPillBar {
     mouse_states: RefCell<HashMap<AIConversationId, MouseStateHandle>>,
     /// Hover state per child pill's 3-dot button (separate from the pill body).
     overflow_button_mouse_states: RefCell<HashMap<AIConversationId, MouseStateHandle>>,
+    /// Hover state per child pill's pin button area (the avatar/pin glyph at
+    /// the leading edge). Independent of the pill body and the 3-dot button
+    /// so the pin glyph can show its own hover background without
+    /// interfering with either.
+    pin_button_mouse_states: RefCell<HashMap<AIConversationId, MouseStateHandle>>,
     /// Shared dropdown menu rebuilt per-open with the targeted child's id.
     menu: ViewHandle<Menu<OrchestrationPillBarAction>>,
     /// `Some(id)` when the 3-dot menu is open targeting that child.
@@ -332,6 +343,14 @@ impl OrchestrationPillBar {
                 this.overflow_button_mouse_states
                     .borrow_mut()
                     .remove(conversation_id);
+                this.pin_button_mouse_states
+                    .borrow_mut()
+                    .remove(conversation_id);
+                // Pruning the conversation from the shared
+                // `OrchestrationPinModel` is handled by that singleton's own
+                // subscription to the history model — we don't need to
+                // touch it from every pill bar instance.
+                //
                 // If the menu was open for a child that just disappeared,
                 // close it so we don't leave a dangling menu pointing at a
                 // dead conversation id.
@@ -350,6 +369,7 @@ impl OrchestrationPillBar {
             ) {
                 this.mouse_states.borrow_mut().clear();
                 this.overflow_button_mouse_states.borrow_mut().clear();
+                this.pin_button_mouse_states.borrow_mut().clear();
                 this.menu_open_for = None;
             }
             this.ensure_mouse_states(ctx);
@@ -371,10 +391,21 @@ impl OrchestrationPillBar {
             MenuEvent::ItemSelected | MenuEvent::ItemHovered => {}
         });
 
+        // Subscribe to the shared pin-state singleton so every pill bar
+        // re-renders when any pane pins or unpins a child. Without this
+        // re-render hook, only the pane that dispatched `TogglePin` would
+        // see the new partition; sibling panes would still show the old
+        // pin state until something else triggered a redraw.
+        let pin_model = OrchestrationPinModel::handle(ctx);
+        ctx.subscribe_to_model(&pin_model, |_, _, event, ctx| match event {
+            OrchestrationPinEvent::PinSetChanged => ctx.notify(),
+        });
+
         Self {
             agent_view_controller,
             mouse_states: RefCell::new(HashMap::new()),
             overflow_button_mouse_states: RefCell::new(HashMap::new()),
+            pin_button_mouse_states: RefCell::new(HashMap::new()),
             menu,
             menu_open_for: None,
             hovered_pill: None,
@@ -500,12 +531,22 @@ impl OrchestrationPillBar {
         }
         let mut mouse_states = self.mouse_states.borrow_mut();
         let mut overflow_states = self.overflow_button_mouse_states.borrow_mut();
+        let mut pin_states = self.pin_button_mouse_states.borrow_mut();
         for id in &alive {
             mouse_states.entry(*id).or_default();
             overflow_states.entry(*id).or_default();
+            pin_states.entry(*id).or_default();
         }
         mouse_states.retain(|id, _| alive.contains(id));
         overflow_states.retain(|id, _| alive.contains(id));
+        pin_states.retain(|id, _| alive.contains(id));
+        // NOTE: we deliberately do *not* prune
+        // `OrchestrationPinModel` from here. That set is shared across
+        // every pane, and `alive` only reflects this pane's orchestrator
+        // tree — pruning by it would clobber pins owned by orchestrators
+        // visible in other panes. The singleton handles
+        // conversation-deletion cleanup via its own subscription to
+        // `BlocklistAIHistoryModel`.
     }
 
     /// Builds the ordered pill list, or `None` when nothing should render.
@@ -555,15 +596,23 @@ impl OrchestrationPillBar {
             is_remote_child: false,
         });
 
-        // Then a pill per descendant child. Pin detection is currently
-        // disabled — restoring it requires plumbing pane visibility into
-        // the active views model so we can distinguish hidden vs. visible
-        // child panes.
+        // Then a pill per descendant child, marking each as pinned when
+        // its id is in the shared `OrchestrationPinModel` singleton (so
+        // pin state stays consistent across every pane that's rendering
+        // any part of this orchestration tree). The partitioning into
+        // pinned/unpinned sections happens at the layout layer in
+        // `View::render`; here we just stamp the spec.
+        let pin_model = OrchestrationPinModel::as_ref(app);
         for child in children {
             let name = child
                 .agent_name()
                 .filter(|n| !n.is_empty())
                 .unwrap_or("Agent");
+            let pin_state = if pin_model.is_pinned(&child.id()) {
+                PillPinState::Pinned
+            } else {
+                PillPinState::Unpinned
+            };
             specs.push(PillSpec {
                 conversation_id: child.id(),
                 label: name.to_string(),
@@ -572,7 +621,7 @@ impl OrchestrationPillBar {
                 status: Some(child.status().clone()),
                 is_selected: child.id() == active_id,
                 kind: PillKind::Child,
-                pin_state: PillPinState::Unpinned,
+                pin_state,
                 is_remote_child: child.is_remote_child(),
             });
         }
@@ -691,6 +740,17 @@ impl TypedActionView for OrchestrationPillBar {
             OrchestrationPillBarAction::SetHoveredPill(id) => {
                 self.set_hovered_pill(*id, ctx);
             }
+            OrchestrationPillBarAction::TogglePin(id) => {
+                // Mutate the shared singleton so every pill bar in every
+                // pane sees the new pin state. Each pill bar (including
+                // this one) re-renders via its subscription to
+                // `OrchestrationPinEvent::PinSetChanged`, so we don't
+                // need to also call `ctx.notify()` here.
+                let id = *id;
+                OrchestrationPinModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.toggle_pin(id, ctx);
+                });
+            }
             OrchestrationPillBarAction::FocusOpenedConversation(id) => {
                 self.close_menu(ctx);
                 // "Focus pane" is purely a focus operation: the
@@ -799,6 +859,7 @@ impl View for OrchestrationPillBar {
         // mouse-down.
         let mut mouse_states = self.mouse_states.borrow_mut();
         let mut overflow_states = self.overflow_button_mouse_states.borrow_mut();
+        let mut pin_states = self.pin_button_mouse_states.borrow_mut();
         let menu_open_for = self.menu_open_for;
         // Cache this view's terminal_view_id once so each pill click can
         // cheaply check whether its target conversation is currently
@@ -806,6 +867,14 @@ impl View for OrchestrationPillBar {
         // the orchestrator pane, so any child whose owner differs from
         // this id has been split off into another pane/tab.
         let self_terminal_view_id = self.agent_view_controller.as_ref(app).terminal_view_id();
+        // Partition the pills into three buckets so the layout can place
+        // the orchestrator first, then the pinned children, then a
+        // vertical divider (when there's something on both sides), then
+        // the unpinned children. Spawn order within each child bucket is
+        // preserved by iterating `specs` in order.
+        let mut orchestrator_pill: Option<Box<dyn Element>> = None;
+        let mut pinned_pills: Vec<Box<dyn Element>> = Vec::new();
+        let mut unpinned_pills: Vec<Box<dyn Element>> = Vec::new();
         for spec in specs {
             let mouse_state = mouse_states
                 .entry(spec.conversation_id)
@@ -820,18 +889,52 @@ impl View for OrchestrationPillBar {
                 .entry(spec.conversation_id)
                 .or_default()
                 .clone();
+            // Likewise, each pill gets its own pin-button mouse state so the
+            // leading avatar/pin area has its own hover highlight
+            // independent of the pill body. Orchestrator pills don't render
+            // a pin button but we maintain the entry for symmetry.
+            let pin_mouse_state = pin_states.entry(spec.conversation_id).or_default().clone();
             let menu_is_open_for_this = menu_open_for == Some(spec.conversation_id);
-            row.add_child(render_pill(
+            let kind = spec.kind;
+            let pin_state = spec.pin_state;
+            let pill = render_pill(
                 spec,
                 mouse_state,
                 overflow_mouse_state,
+                pin_mouse_state,
                 menu_is_open_for_this,
                 self_terminal_view_id,
                 app,
-            ));
+            );
+            match (kind, pin_state) {
+                (PillKind::Orchestrator, _) => orchestrator_pill = Some(pill),
+                (PillKind::Child, PillPinState::Pinned) => pinned_pills.push(pill),
+                (PillKind::Child, PillPinState::Unpinned) => unpinned_pills.push(pill),
+            }
         }
         drop(mouse_states);
         drop(overflow_states);
+        drop(pin_states);
+
+        if let Some(pill) = orchestrator_pill {
+            row.add_child(pill);
+        }
+        let has_pinned = !pinned_pills.is_empty();
+        let has_unpinned = !unpinned_pills.is_empty();
+        for pill in pinned_pills {
+            row.add_child(pill);
+        }
+        // Vertical divider sits between the pinned section and the
+        // unpinned section, but only when both sides have at least one
+        // pill. With no pinned pills the bar looks like the original
+        // unpinned-only layout; with everything pinned the divider would
+        // sit awkwardly at the trailing edge with nothing after it.
+        if has_pinned && has_unpinned {
+            row.add_child(render_pinned_divider(theme));
+        }
+        for pill in unpinned_pills {
+            row.add_child(pill);
+        }
 
         // Wrap in a container with a touch of horizontal padding so the bar
         // doesn't sit flush against the pane edges, and with the same overlay
@@ -1336,10 +1439,74 @@ fn navigation_action_for_pill(kind: PillKind, conversation_id: AIConversationId)
     }
 }
 
+/// Renders the vertical 1px divider that separates the pinned section of
+/// the bar from the unpinned section. Sized to match the pill height so
+/// it reads as part of the row rather than the bar's chrome.
+fn render_pinned_divider(theme: &WarpTheme) -> Box<dyn Element> {
+    const DIVIDER_HEIGHT: f32 = 14.;
+    ConstrainedBox::new(
+        Container::new(Empty::new().finish())
+            .with_background(theme.outline())
+            .finish(),
+    )
+    .with_width(1.)
+    .with_height(DIVIDER_HEIGHT)
+    .finish()
+}
+
+/// Renders the pin glyph centered inside an `AVATAR_SIZE`-sized box so it
+/// occupies the same hit target as the avatar disc it replaces on hover.
+/// The inner glyph is scaled to match the proportion used by avatar discs
+/// (`size * 0.625`) so the pin reads at the same visual weight as the
+/// initial letter glyphs sitting in sibling pills.
+///
+/// `is_pinned` selects between `Icon::PinFilled` (solid — currently
+/// pinned, click to unpin) and `Icon::Pin` (outline — currently unpinned,
+/// click to pin). Both glyphs are recolored to `icon_color` by the icon
+/// renderer, so this stays fully theme-driven.
+fn render_pin_glyph_centered(is_pinned: bool, icon_color: ColorU) -> Box<dyn Element> {
+    // Match `render_avatar_disc`'s inner-glyph proportion so the pin reads
+    // at the same weight as the initial letters in sibling pills.
+    let glyph_size = AVATAR_SIZE * 0.625;
+    let icon_variant = if is_pinned {
+        Icon::PinFilled
+    } else {
+        Icon::Pin
+    };
+    let glyph: Box<dyn Element> =
+        ConstrainedBox::new(icon_variant.to_warpui_icon(icon_color.into()).finish())
+            .with_width(glyph_size)
+            .with_height(glyph_size)
+            .finish();
+
+    // Center the smaller glyph inside an `AVATAR_SIZE` box so the pin
+    // button retains the same hit target as the avatar disc it replaces
+    // on hover. Without this wrapper the inner Hoverable would shrink
+    // to the glyph size and sibling pill widths would jitter on hover.
+    let centered = Flex::column()
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_main_axis_alignment(MainAxisAlignment::Center)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::Center)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(glyph)
+                .finish(),
+        )
+        .finish();
+    ConstrainedBox::new(centered)
+        .with_width(AVATAR_SIZE)
+        .with_height(AVATAR_SIZE)
+        .finish()
+}
+
 fn render_pill(
     spec: PillSpec,
     mouse_state: MouseStateHandle,
     overflow_mouse_state: MouseStateHandle,
+    pin_button_mouse_state: MouseStateHandle,
     menu_is_open_for_this: bool,
     self_terminal_view_id: warpui::EntityId,
     app: &AppContext,
@@ -1350,8 +1517,11 @@ fn render_pill(
     let kind = spec.kind;
     let is_selected = spec.is_selected;
     let pin_state = spec.pin_state;
-    let is_pinned = matches!(pin_state, PillPinState::PinnedInOtherPane);
+    let is_pinned = matches!(pin_state, PillPinState::Pinned);
     let show_overflow_button = matches!(kind, PillKind::Child);
+    // Only child pills participate in pinning — the orchestrator is
+    // always anchored at the leading edge with no pin affordance.
+    let supports_pinning = matches!(kind, PillKind::Child);
     // `spec` is owned by value, so we can move `label` directly into the
     // build closure below without cloning.
     let label = spec.label;
@@ -1437,28 +1607,95 @@ fn render_pill(
                 .finish()
         };
 
-        // Pinned pills swap the avatar for a pin glyph (per Figma); unpinned
-        // child pills delegate to the shared icon-with-status helper so cloud
-        // and local children get the same badge treatment as other surfaces.
-        let leading: Box<dyn Element> = match (is_pinned, status.as_ref()) {
-            (true, _) => ConstrainedBox::new(Icon::Pin.to_warpui_icon(text_color.into()).finish())
-                .with_width(AVATAR_SIZE)
-                .with_height(AVATAR_SIZE)
-                .finish(),
-            (false, Some(status)) => render_avatar_with_status_overlay(
-                avatar_color,
-                avatar_glyph,
-                status.clone(),
-                is_remote_child,
-                background,
-                theme,
-                appearance,
-            ),
-            (false, None) => {
-                render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance)
+        // Child pills: the leading area is a pin button that overlays the
+        // avatar slot on hover. At rest — regardless of pin state — the
+        // avatar (with status overlay) is shown; the visual indicator of
+        // "this is pinned" is the pill's position to the left of the
+        // divider, not the icon. On pill hover, the leading area swaps
+        // to a pin glyph the user can click to toggle pin state:
+        // `Icon::PinFilled` when currently pinned (click = unpin) or
+        // `Icon::Pin` (outline) when currently unpinned (click = pin).
+        // Orchestrator pills bypass all of this and render a plain
+        // avatar disc — they don't pin.
+        let outer_pill_hovered = hover_state.is_hovered() || hover_state.is_clicked();
+        let show_pin_glyph = supports_pinning && outer_pill_hovered;
+        let leading: Box<dyn Element> = match kind {
+            PillKind::Orchestrator => match status.as_ref() {
+                // Orchestrator currently has `status = None` in `pill_specs`,
+                // so this status arm is defensive; if a future change starts
+                // populating it, we'd render the badge consistently with
+                // child pills.
+                Some(status) => render_avatar_with_status_overlay(
+                    avatar_color,
+                    avatar_glyph,
+                    status.clone(),
+                    is_remote_child,
+                    background,
+                    theme,
+                    appearance,
+                ),
+                None => {
+                    render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance)
+                }
+            },
+            PillKind::Child => {
+                let pin_button_mouse_state = pin_button_mouse_state.clone();
+                // Clone status so the outer build closure can still read
+                // `status.is_some()` below for `leading_label_spacing`.
+                let status_for_pin = status.clone();
+                Hoverable::new(pin_button_mouse_state, move |pin_hover_state| {
+                    let pin_button_hovered =
+                        pin_hover_state.is_hovered() || pin_hover_state.is_clicked();
+                    let glyph: Box<dyn Element> = if show_pin_glyph {
+                        render_pin_glyph_centered(is_pinned, text_color)
+                    } else if let Some(ref status) = status_for_pin {
+                        render_avatar_with_status_overlay(
+                            avatar_color,
+                            avatar_glyph,
+                            status.clone(),
+                            is_remote_child,
+                            background,
+                            theme,
+                            appearance,
+                        )
+                    } else {
+                        render_avatar_disc(
+                            avatar_color,
+                            avatar_glyph,
+                            AVATAR_SIZE,
+                            theme,
+                            appearance,
+                        )
+                    };
+                    // Hover background only paints when the pin glyph is
+                    // the visible content; rendering it behind the avatar
+                    // would shove a colored square behind the disc and
+                    // look like a layout bug.
+                    let mut container = Container::new(glyph)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+                    if show_pin_glyph && pin_button_hovered {
+                        container = container.with_background(internal_colors::fg_overlay_1(theme));
+                    }
+                    container.finish()
+                })
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _app, _| {
+                    // Outer pill body uses `with_defer_events_to_children`,
+                    // so this consumes the click without also switching
+                    // the agent view in place.
+                    ctx.dispatch_typed_action(OrchestrationPillBarAction::TogglePin(
+                        conversation_id,
+                    ));
+                })
+                .finish()
             }
         };
-        let leading_label_spacing = if !is_pinned && status.is_some() {
+        // Spacing collapses to the status-aware tighter value only when
+        // we're actually rendering the avatar-with-status overlay (which
+        // is intrinsically wider). When the pin glyph is on screen —
+        // transiently on hover — the leading element is `AVATAR_SIZE`
+        // square, so the regular `PILL_GAP` applies.
+        let leading_label_spacing = if !show_pin_glyph && status.is_some() {
             PILL_GAP_WITH_STATUS
         } else {
             PILL_GAP

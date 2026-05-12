@@ -1664,6 +1664,13 @@ pub(crate) fn initialize_app(
         let conversations = &multi_agent_conversations;
         ctx.add_singleton_model(move |_| BlocklistAIHistoryModel::new(ai_queries, conversations));
     }
+    // OrchestrationPinModel holds the cross-pane set of pinned child
+    // agent conversations. Registered after BlocklistAIHistoryModel since
+    // it subscribes to history events to prune pinned ids when a
+    // conversation is removed.
+    ctx.add_singleton_model(
+        ai::blocklist::agent_view::orchestration_pin_model::OrchestrationPinModel::new,
+    );
     ctx.add_singleton_model(move |_| RestoredAgentConversations::new(multi_agent_conversations));
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
     // ActiveAgentViewsModel is used to track active agent conversations and notify listeners when they change.
