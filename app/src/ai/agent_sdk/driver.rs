@@ -54,8 +54,11 @@ use crate::{
     server::{
         ids::{ServerId, SyncId},
         server_api::{
-            harness_support::{ResolvePromptAttachedSkill, ResolvePromptRequest},
-            ServerApiProvider,
+            harness_support::{
+                DisabledHarnessSupportClient, HarnessSupportClient, ResolvePromptAttachedSkill,
+                ResolvePromptRequest,
+            },
+            DisabledAgentEventStreamClient,
         },
     },
     terminal::view::ConversationRestorationInNewPaneType,
@@ -1267,7 +1270,7 @@ impl AgentDriver {
             agent_event_stream_client,
             terminal_driver,
         ) = foreground
-            .spawn(|me, ctx| {
+            .spawn(|me, _| {
                 if me.harness.is_some() {
                     log::error!(
                         "Attempted to prepare a third-party harness, but one was already configured"
@@ -1278,8 +1281,8 @@ impl AgentDriver {
                 Ok((
                     me.working_dir.clone(),
                     me.task_id,
-                    ServerApiProvider::as_ref(ctx).get_harness_support_client(),
-                    ServerApiProvider::as_ref(ctx).get_agent_event_stream_client(),
+                    Arc::new(DisabledHarnessSupportClient::new()) as Arc<dyn HarnessSupportClient>,
+                    Arc::new(DisabledAgentEventStreamClient),
                     me.terminal_driver.clone(),
                 ))
             })
@@ -1858,10 +1861,9 @@ impl AgentDriver {
         }
 
         let Ok((working_dir, client)) = spawner
-            .spawn(|me, ctx| {
-                let client: std::sync::Arc<
-                    dyn crate::server::server_api::harness_support::HarnessSupportClient,
-                > = ServerApiProvider::as_ref(ctx).get_harness_support_client();
+            .spawn(|me, _ctx| {
+                let client: Arc<dyn HarnessSupportClient> =
+                    Arc::new(DisabledHarnessSupportClient::new());
                 (me.working_dir.clone(), client)
             })
             .await

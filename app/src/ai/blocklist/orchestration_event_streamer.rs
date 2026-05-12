@@ -9,7 +9,7 @@ use crate::ai::agent_events::{
     AgentEventDriverConfig, AgentEventStreamClientEventSource, MessageHydrator,
 };
 use crate::server::server_api::ai::AgentRunEvent;
-use crate::server::server_api::{AgentEventStreamClient, ServerApiProvider};
+use crate::server::server_api::{AgentEventStreamClient, DisabledAgentEventStreamClient};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -97,8 +97,7 @@ pub enum OrchestrationEventStreamerEvent {
 
 impl OrchestrationEventStreamer {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        let provider = ServerApiProvider::as_ref(ctx);
-        let agent_event_stream_client = provider.get_agent_event_stream_client();
+        let agent_event_stream_client = Arc::new(DisabledAgentEventStreamClient);
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         ctx.subscribe_to_model(&history_model, |me, event, ctx| {
             me.handle_history_event(event, ctx);

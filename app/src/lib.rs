@@ -243,7 +243,6 @@ use channel::ChannelState;
 use interval_timer::IntervalTimer;
 use itertools::Itertools;
 use rust_embed::RustEmbed;
-use server::server_api::ServerApiProvider;
 use settings::{ExtraMetaKeys, PrivacySettings};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -1097,7 +1096,6 @@ fn initialize_app(
     let auth_state = Arc::new(AuthState::initialize(ctx, api_key));
     timer.mark_interval_end("AUTH_MANAGER_SET_USER");
 
-    ctx.add_singleton_model(|_ctx| ServerApiProvider::new());
     let update_http_client = Arc::new(http_client::Client::new());
 
     // OpenWarp:保留 AuthStateProvider singleton 仅用于遗留调用点读取本地占位用户态。

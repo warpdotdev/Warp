@@ -16,7 +16,9 @@ use warpui::{platform::TerminationMode, AppContext, ModelHandle, SingletonEntity
 use super::common::set_ambient_task_context_from_run_id;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::artifacts::Artifact;
-use crate::server::server_api::ServerApiProvider;
+use crate::server::server_api::harness_support::{
+    DisabledHarnessSupportClient, HarnessSupportClient,
+};
 
 /// Run harness-support commands.
 pub fn run(
@@ -90,9 +92,8 @@ fn report_artifact(
     output_format: OutputFormat,
 ) -> Result<()> {
     runner.update(ctx, |_, ctx| {
-        let client: std::sync::Arc<
-            dyn crate::server::server_api::harness_support::HarnessSupportClient,
-        > = ServerApiProvider::as_ref(ctx).get_harness_support_client();
+        let client: std::sync::Arc<dyn HarnessSupportClient> =
+            std::sync::Arc::new(DisabledHarnessSupportClient::new());
 
         let artifact = match args.command {
             ReportArtifactCommand::PullRequest(pr_args) => Artifact::PullRequest {
@@ -138,9 +139,8 @@ fn notify_user(
     output_format: OutputFormat,
 ) -> Result<()> {
     runner.update(ctx, |_, ctx| {
-        let client: std::sync::Arc<
-            dyn crate::server::server_api::harness_support::HarnessSupportClient,
-        > = ServerApiProvider::as_ref(ctx).get_harness_support_client();
+        let client: std::sync::Arc<dyn HarnessSupportClient> =
+            std::sync::Arc::new(DisabledHarnessSupportClient::new());
 
         ctx.spawn(
             async move { client.notify_user(&args.message).await },
@@ -174,9 +174,8 @@ fn finish_task(
     output_format: OutputFormat,
 ) -> Result<()> {
     runner.update(ctx, |_, ctx| {
-        let client: std::sync::Arc<
-            dyn crate::server::server_api::harness_support::HarnessSupportClient,
-        > = ServerApiProvider::as_ref(ctx).get_harness_support_client();
+        let client: std::sync::Arc<dyn HarnessSupportClient> =
+            std::sync::Arc::new(DisabledHarnessSupportClient::new());
 
         ctx.spawn(
             async move {

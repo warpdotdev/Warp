@@ -44,7 +44,10 @@ use crate::{
     ai::ambient_agents::task::HarnessConfig,
     auth::AuthStateProvider,
     send_telemetry_sync_from_app_ctx,
-    server::server_api::{ai::AgentConfigSnapshot, ServerApiProvider},
+    server::server_api::{
+        ai::AgentConfigSnapshot,
+        harness_support::{DisabledHarnessSupportClient, HarnessSupportClient},
+    },
 };
 use driver::AgentDriverError;
 use warp_graphql::object_permissions::OwnerType;
@@ -548,12 +551,8 @@ impl AgentDriverRunner {
 
             // Pull conversation information, if we have it
             if let Some(conversation_id) = resume_conversation_id {
-                driver_options.resume = Self::load_conversation_information(
-                    &foreground,
-                    conversation_id,
-                    &task.harness,
-                )
-                .await?;
+                driver_options.resume =
+                    Self::load_conversation_information(conversation_id, &task.harness).await?;
             }
 
             // Run the driver
@@ -795,7 +794,6 @@ impl AgentDriverRunner {
     /// owns its server call and error mapping. Returns `None` if a third-party harness has no
     /// resume payload to surface.
     async fn load_conversation_information(
-        foreground: &ModelSpawner<Self>,
         conversation_id: String,
         harness: &HarnessKind,
     ) -> Result<Option<driver::ResumeOptions>, AgentDriverError> {
@@ -808,14 +806,8 @@ impl AgentDriverRunner {
                 )))
             }
             HarnessKind::ThirdParty(h) => {
-                let harness_support_client = foreground
-                    .spawn(|_, ctx| {
-                        let harness_support_client: std::sync::Arc<
-                            dyn crate::server::server_api::harness_support::HarnessSupportClient,
-                        > = ServerApiProvider::as_ref(ctx).get_harness_support_client();
-                        harness_support_client
-                    })
-                    .await?;
+                let harness_support_client: std::sync::Arc<dyn HarnessSupportClient> =
+                    std::sync::Arc::new(DisabledHarnessSupportClient::new());
                 let resume_conversation_id = AIConversationId::try_from(conversation_id.clone())
                     .map_err(|err| AgentDriverError::ConversationLoadFailed(format!("{err:#}")))?;
                 Ok(
