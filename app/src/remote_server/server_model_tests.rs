@@ -4,6 +4,7 @@ use std::sync::Arc;
 use warpui::App;
 
 use super::super::diff_state_tracker::RemoteDiffStateManager;
+
 use super::super::proto::{Authenticate, Initialize};
 use super::super::server_buffer_tracker::ServerBufferTracker;
 use super::{PendingFileOps, ServerModel};

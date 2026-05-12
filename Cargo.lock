@@ -14274,7 +14274,6 @@ dependencies = [
  "enclose",
  "enum-iterator",
  "env_logger",
- "event-listener",
  "field_mask",
  "firebase",
  "flate2",

@@ -103,7 +103,6 @@ email_address = { git = "https://github.com/warpdotdev/rust-email_address", bran
 embed_plist = "1.2"
 enclose = "1.1.8"
 enum-iterator.workspace = true
-event-listener = "5.4.0"
 field_mask.workspace = true
 firebase.workspace = true
 flate2 = "1.0.17"
@@ -745,6 +744,8 @@ predict_am_queries = []
 quake_mode = []
 record_app_active_events = []
 recording_mode = []
+remote_codebase_indexing = ["full_source_code_embedding"]
+
 # This feature should only be enabled when building a release bundle with
 # the bundle script, and can be used to conditionally enable functionality
 # accordingly.

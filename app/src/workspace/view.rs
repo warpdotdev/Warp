@@ -13153,6 +13153,74 @@ impl Workspace {
         });
     }
 
+    /// Spawns the async snapshot upload pipeline for a handoff pane. Derives the
+    /// touched workspace from `paths`, uploads repo patches + orphan files, sets
+    /// environment overlap, and settles the snapshot status on the model. Shared
+    /// by both the conversation-fork and fresh-launch handoff paths.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn spawn_handoff_snapshot_upload(
+        paths: Vec<PathBuf>,
+        pane_view: ViewHandle<TerminalView>,
+        model_handle: ModelHandle<AmbientAgentViewModel>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let server_api_provider = ServerApiProvider::as_ref(ctx);
+        let ai_client = server_api_provider.get_ai_client();
+        let http = server_api_provider.get_http_client();
+        ctx.spawn(
+            async move {
+                let workspace = derive_touched_workspace(paths).await;
+                let repo_paths: Vec<_> =
+                    workspace.repos.iter().map(|r| r.git_root.clone()).collect();
+                let upload_result = upload_snapshot_for_handoff(
+                    repo_paths,
+                    workspace.orphan_files.clone(),
+                    ai_client,
+                    http.as_ref(),
+                )
+                .await;
+                (workspace, upload_result)
+            },
+            move |_workspace, (derived_workspace, upload_result), ctx| {
+                model_handle.update(ctx, |model, model_ctx| {
+                    if !model.is_local_to_cloud_handoff() {
+                        return;
+                    }
+                    if !model.pending_handoff_has_explicit_environment() {
+                        let mut envs = CloudAmbientAgentEnvironment::get_all(model_ctx);
+                        sort_environments_by_recency(&mut envs);
+                        if let Some(overlap_env) =
+                            pick_handoff_overlap_env(&derived_workspace, envs)
+                        {
+                            model.set_environment_id(Some(overlap_env), model_ctx);
+                        }
+                    }
+                    model.set_pending_handoff_workspace(derived_workspace, model_ctx);
+                    match upload_result {
+                        Ok(Some(initial_snapshot_token)) => {
+                            model.set_pending_handoff_snapshot_upload(
+                                SnapshotUploadStatus::Uploaded(initial_snapshot_token),
+                                model_ctx,
+                            );
+                        }
+                        Ok(None) => {
+                            model.set_pending_handoff_snapshot_upload(
+                                SnapshotUploadStatus::SkippedEmptyWorkspace,
+                                model_ctx,
+                            );
+                        }
+                        Err(err) => {
+                            log::warn!("Handoff snapshot upload failed: {err:#}");
+                            model
+                                .record_handoff_snapshot_upload_failed(format!("{err}"), model_ctx);
+                        }
+                    }
+                });
+                Self::maybe_auto_submit_handoff(&pane_view, &model_handle, ctx);
+            },
+        );
+    }
+
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn show_handoff_success_toast(ctx: &mut ViewContext<Self>) {
         let window_id = ctx.window_id();
@@ -13168,6 +13236,8 @@ impl Workspace {
     }
 
     /// Opens a cloud pane without forking when there is no local conversation to hand off.
+    /// Still snapshots the source pane's pwd so the cloud agent receives the local repo's
+    /// branch info and uncommitted diffs.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn start_fresh_cloud_launch(
         &mut self,
@@ -13177,7 +13247,7 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         // Push a cloud-mode pane for the fresh launch.
-        let Some((_new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
+        let Some((new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
             view.start_local_to_cloud_handoff_pane(view_ctx)
         }) else {
             log::warn!("start_local_to_cloud_handoff: failed to push fresh cloud-mode pane");
@@ -13186,18 +13256,32 @@ impl Workspace {
             return;
         };
 
-        if let Some(environment_id) = explicit_environment_id {
+        if let Some(env_id) = explicit_environment_id {
             model_handle.update(ctx, |model, ctx| {
-                model.set_environment_id(Some(environment_id), ctx);
+                model.set_environment_id(Some(env_id), ctx);
             });
         }
         Self::show_handoff_success_toast(ctx);
 
-        if let Some(launch) = launch {
-            model_handle.update(ctx, |model, ctx| {
-                model.spawn_agent(launch.prompt, launch.attachments.request_attachments, ctx);
-            });
-        }
+        let pending = PendingHandoff {
+            forked_conversation_id: None,
+            title: None,
+            touched_workspace: None,
+            snapshot_upload: SnapshotUploadStatus::Pending,
+            submission_state: HandoffSubmissionState::Idle,
+            auto_submit: launch,
+            explicit_environment_id,
+        };
+        model_handle.update(ctx, |model, model_ctx| {
+            model.set_pending_handoff(Some(pending), model_ctx);
+        });
+        model_handle.update(ctx, |model, ctx| {
+            model.queue_handoff_auto_submit(ctx);
+        });
+
+        let source_pwd = source_view.as_ref(ctx).active_session_path_if_local(ctx);
+        let paths: Vec<PathBuf> = source_pwd.into_iter().collect();
+        Self::spawn_handoff_snapshot_upload(paths, new_pane_view, model_handle, ctx);
     }
 
     /// Opens a local-to-cloud handoff pane in place over the active local pane.
@@ -13376,7 +13460,7 @@ impl Workspace {
 
         // Keep handoff state on the cloud model until snapshot prep and submit finish.
         let pending = PendingHandoff {
-            forked_conversation_id: forked_conversation_id.clone(),
+            forked_conversation_id: Some(forked_conversation_id.clone()),
             title: title_override,
             touched_workspace: None,
             snapshot_upload: SnapshotUploadStatus::Pending,
@@ -13393,65 +13477,18 @@ impl Workspace {
             model.queue_handoff_auto_submit(ctx);
         });
 
-        let async_pane_view = new_pane_view.clone();
-        let async_model_handle = model_handle.clone();
-        let server_api_provider = ServerApiProvider::as_ref(ctx);
-        let ai_client = server_api_provider.get_ai_client();
-        let http = server_api_provider.get_http_client();
+        let source_pwd = source_view.as_ref(ctx).active_session_path_if_local(ctx);
         // Derive touched repos and upload the initial snapshot off the UI thread.
-        ctx.spawn(
-            async move {
-                let paths = extract_paths_from_conversation(&source_conversation);
-                let workspace = derive_touched_workspace(paths).await;
-                let repo_paths: Vec<_> =
-                    workspace.repos.iter().map(|r| r.git_root.clone()).collect();
-                let upload_result = upload_snapshot_for_handoff(
-                    repo_paths,
-                    workspace.orphan_files.clone(),
-                    ai_client,
-                    http.as_ref(),
-                )
-                .await;
-                (workspace, upload_result)
-            },
-            move |_workspace, (derived_workspace, upload_result), ctx| {
-                async_model_handle.update(ctx, |model, model_ctx| {
-                    if !model.is_local_to_cloud_handoff() {
-                        return;
-                    }
-                    if !model.pending_handoff_has_explicit_environment() {
-                        let mut envs = CloudAmbientAgentEnvironment::get_all(model_ctx);
-                        sort_environments_by_recency(&mut envs);
-                        if let Some(overlap_env) =
-                            pick_handoff_overlap_env(&derived_workspace, envs)
-                        {
-                            model.set_environment_id(Some(overlap_env), model_ctx);
-                        }
-                    }
-                    model.set_pending_handoff_workspace(derived_workspace, model_ctx);
-                    match upload_result {
-                        Ok(Some(initial_snapshot_token)) => {
-                            model.set_pending_handoff_snapshot_upload(
-                                SnapshotUploadStatus::Uploaded(initial_snapshot_token),
-                                model_ctx,
-                            );
-                        }
-                        Ok(None) => {
-                            model.set_pending_handoff_snapshot_upload(
-                                SnapshotUploadStatus::SkippedEmptyWorkspace,
-                                model_ctx,
-                            );
-                        }
-                        Err(err) => {
-                            log::warn!("Handoff snapshot upload failed: {err:#}");
-                            model
-                                .record_handoff_snapshot_upload_failed(format!("{err}"), model_ctx);
-                        }
-                    }
-                });
-                Self::maybe_auto_submit_handoff(&async_pane_view, &async_model_handle, ctx);
-            },
-        );
+        // The paths list is built from the conversation's write actions plus the
+        // source pane's pwd (so the current repo is always captured).
+        let paths = {
+            let mut p = extract_paths_from_conversation(&source_conversation);
+            if let Some(pwd) = source_pwd {
+                p.push(pwd);
+            }
+            p
+        };
+        Self::spawn_handoff_snapshot_upload(paths, new_pane_view, model_handle, ctx);
     }
 
     pub(crate) fn handle_file_tree_event(

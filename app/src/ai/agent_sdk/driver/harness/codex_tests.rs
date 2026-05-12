@@ -183,6 +183,7 @@ fn prepare_codex_config_toml_writes_fresh_config() {
     let canonical = working_dir.canonicalize().unwrap();
     let key = canonical.to_string_lossy().into_owned();
     let cfg = read_codex_config(&config_path);
+    assert_eq!(cfg["check_for_update_on_startup"].as_bool(), Some(false));
     assert_eq!(
         cfg["projects"][&key]["trust_level"].as_str(),
         Some("trusted")

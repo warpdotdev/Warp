@@ -34,6 +34,8 @@ message ClientMessage {
     GetDiffState get_diff_state = 18;
     UnsubscribeDiffState unsubscribe_diff_state = 19;
     DiscardFilesRequest discard_files = 20;
+    IndexCodebase index_codebase = 21;
+    DropCodebaseIndex drop_codebase_index = 22;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -329,16 +331,35 @@ message FileContextProto {
 
 // ── Remote codebase indexing status ───────────────────────────────
 
+message IndexCodebase {
+  string repo_path = 1;
+  string auth_token = 2;
+}
+
+message DropCodebaseIndex {
+  string repo_path = 1;
+  string auth_token = 2;
+}
+
 enum CodebaseIndexStatusState {
   CODEBASE_INDEX_STATUS_STATE_UNSPECIFIED = 0;
   CODEBASE_INDEX_STATUS_STATE_NOT_ENABLED = 1;
   CODEBASE_INDEX_STATUS_STATE_UNAVAILABLE = 2;
+  CODEBASE_INDEX_STATUS_STATE_DISABLED = 3;
+  CODEBASE_INDEX_STATUS_STATE_QUEUED = 4;
+  CODEBASE_INDEX_STATUS_STATE_INDEXING = 5;
+  CODEBASE_INDEX_STATUS_STATE_READY = 6;
+  CODEBASE_INDEX_STATUS_STATE_STALE = 7;
+  CODEBASE_INDEX_STATUS_STATE_FAILED = 8;
 }
 
 message CodebaseIndexStatus {
   string repo_path = 1;
   CodebaseIndexStatusState state = 2;
   optional uint64 last_updated_epoch_millis = 3;
+  optional uint64 progress_completed = 4;
+  optional uint64 progress_total = 5;
+  optional string failure_message = 6;
 }
 
 message CodebaseIndexStatusesSnapshot {

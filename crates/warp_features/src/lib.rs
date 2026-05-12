@@ -252,6 +252,9 @@ pub enum FeatureFlag {
     /// Enables full source code embedding of repos when using codebase context.
     FullSourceCodeEmbedding,
 
+    /// Enables codebase indexing inside remote server daemon processes.
+    RemoteCodebaseIndexing,
+
     /// If enabled, command palette searches will use Tantivy search instead of the default fuzzy search.
     UseTantivySearch,
 
