@@ -117,7 +117,9 @@ use crate::code::view::CodeView;
 use crate::drive::items::WarpDriveItemId;
 use crate::drive::{CloudObjectTypeAndId, OpenWarpDriveObjectArgs};
 use crate::features::FeatureFlag;
-use crate::launch_configs::launch_config::{self, PaneMode, PaneTemplateType};
+use crate::launch_configs::launch_config::{
+    self, CommandExecutionMode, PaneMode, PaneTemplateType,
+};
 use crate::persistence::ModelEvent;
 use crate::report_if_error;
 use crate::resource_center::{
@@ -1312,6 +1314,7 @@ impl PaneGroup {
             PaneTemplateType::PaneTemplate {
                 cwd,
                 commands,
+                command_execution_mode,
                 is_focused,
                 pane_mode,
                 shell,
@@ -1350,19 +1353,32 @@ impl PaneGroup {
                     ),
                 };
 
+                let has_commands = !commands.is_empty();
+
                 // Runs saved commands on start (terminal and agent modes only).
-                if !commands.is_empty() && !matches!(pane_mode, PaneMode::Cloud) {
-                    let exec = commands.iter().map(|cmd| &cmd.exec).join(" && ");
-                    view.update(ctx, |terminal, ctx| {
-                        terminal.set_pending_command(exec.as_str(), ctx);
-                    });
+                if has_commands && !matches!(pane_mode, PaneMode::Cloud) {
+                    match command_execution_mode {
+                        CommandExecutionMode::ChainedWithAnd => {
+                            let exec = commands.iter().map(|cmd| &cmd.exec).join(" && ");
+                            view.update(ctx, |terminal, ctx| {
+                                terminal.set_pending_command(exec.as_str(), ctx);
+                            });
+                        }
+                        CommandExecutionMode::SequentialBlocks => {
+                            let command_sequence =
+                                commands.into_iter().map(|cmd| cmd.exec).collect();
+                            view.update(ctx, |terminal, ctx| {
+                                terminal.set_pending_command_sequence(command_sequence, ctx);
+                            });
+                        }
+                    }
                 }
 
                 // Agent mode: enter the agent view. When setup commands are
                 // pending (e.g. worktree creation), defer entry until they
                 // complete so they run in terminal mode.
                 if matches!(pane_mode, PaneMode::Agent) {
-                    if commands.is_empty() {
+                    if !has_commands {
                         view.update(ctx, |terminal_view, ctx| {
                             terminal_view.enter_agent_view_for_new_conversation(
                                 None,
