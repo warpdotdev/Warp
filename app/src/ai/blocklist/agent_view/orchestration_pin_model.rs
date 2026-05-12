@@ -18,7 +18,6 @@ pub(super) fn toggle_pin_in_set(pinned: &mut HashSet<AIConversationId>, id: AICo
 }
 
 /// Singleton owning the set of currently-pinned child conversation ids.
-#[derive(Default)]
 pub struct OrchestrationPinModel {
     pinned: HashSet<AIConversationId>,
 }

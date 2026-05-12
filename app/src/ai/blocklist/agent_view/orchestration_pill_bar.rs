@@ -1577,52 +1577,45 @@ fn render_pill(
                 }
             },
             PillKind::Child => {
-                let pin_button_mouse_state = pin_button_mouse_state.clone();
-                // Cloned so the outer closure can still read status below.
-                let status_for_pin = status.clone();
-                Hoverable::new(pin_button_mouse_state, move |pin_hover_state| {
-                    let pin_button_hovered =
-                        pin_hover_state.is_hovered() || pin_hover_state.is_clicked();
-                    let glyph: Box<dyn Element> = if show_pin_glyph {
-                        render_pin_glyph_centered(is_pinned, text_color)
-                    } else if let Some(ref status) = status_for_pin {
-                        render_avatar_with_status_overlay(
-                            avatar_color,
-                            avatar_glyph,
-                            status.clone(),
-                            is_remote_child,
-                            background,
-                            theme,
-                            appearance,
-                        )
-                    } else {
-                        render_avatar_disc(
-                            avatar_color,
-                            avatar_glyph,
-                            AVATAR_SIZE,
-                            theme,
-                            appearance,
-                        )
-                    };
-                    // Only paint a hover background when the pin glyph itself
-                    // is showing — painting it behind the avatar disc looks
-                    // like a layout bug.
-                    let mut container = Container::new(glyph)
-                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
-                    if show_pin_glyph && pin_button_hovered {
-                        container = container.with_background(internal_colors::fg_overlay_1(theme));
-                    }
-                    container.finish()
-                })
-                .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx, _app, _| {
-                    // Outer pill defers to children, so this click does not
-                    // also switch the agent view.
-                    ctx.dispatch_typed_action(OrchestrationPillBarAction::TogglePin(
-                        conversation_id,
-                    ));
-                })
-                .finish()
+                if show_pin_glyph {
+                    // Hovered: the leading slot becomes the clickable pin
+                    // button. We only attach the Hoverable + TogglePin
+                    // click handler here so that when the avatar is the
+                    // visible content (not hovered), clicks bubble up to
+                    // the outer pill body and navigate as expected.
+                    let pin_button_mouse_state = pin_button_mouse_state.clone();
+                    Hoverable::new(pin_button_mouse_state, move |pin_hover_state| {
+                        let pin_button_hovered =
+                            pin_hover_state.is_hovered() || pin_hover_state.is_clicked();
+                        let mut container =
+                            Container::new(render_pin_glyph_centered(is_pinned, text_color))
+                                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+                        if pin_button_hovered {
+                            container =
+                                container.with_background(internal_colors::fg_overlay_1(theme));
+                        }
+                        container.finish()
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .on_click(move |ctx, _app, _| {
+                        ctx.dispatch_typed_action(OrchestrationPillBarAction::TogglePin(
+                            conversation_id,
+                        ));
+                    })
+                    .finish()
+                } else if let Some(ref status) = status {
+                    render_avatar_with_status_overlay(
+                        avatar_color,
+                        avatar_glyph,
+                        status.clone(),
+                        is_remote_child,
+                        background,
+                        theme,
+                        appearance,
+                    )
+                } else {
+                    render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance)
+                }
             }
         };
         // Tighter spacing only applies when the wider status-overlay avatar
