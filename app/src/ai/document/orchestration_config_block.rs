@@ -395,9 +395,7 @@ impl View for OrchestrationConfigBlockView {
             let details_link_hoverable =
                 Hoverable::new(self.details_mouse_state.clone(), move |_| details_link)
                     .on_click(|ctx, _, _| {
-                        ctx.dispatch_typed_action(
-                            OrchestrationConfigBlockAction::ToggleDetails,
-                        );
+                        ctx.dispatch_typed_action(OrchestrationConfigBlockAction::ToggleDetails);
                     })
                     .with_cursor(Cursor::PointingHand)
                     .finish();
