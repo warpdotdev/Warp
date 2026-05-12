@@ -61,6 +61,26 @@ def extract_pr_number(sha: str) -> int | None:
     return None
 
 
+def get_merged_commits(sha: str) -> list[str]:
+    """For a merge commit, return the SHAs brought in by the merge.
+
+    A merge commit has two parents: the first parent is the mainline, the
+    second parent is the tip of the merged branch. The commits unique to
+    the merge are those reachable from the second parent but not the first.
+    Returns an empty list for non-merge commits.
+    """
+    parents = run(["git", "log", "-1", "--format=%P", sha]).split()
+    if len(parents) < 2:
+        return []
+    log = run(
+        ["git", "log", "--format=%H", f"{parents[0]}..{parents[1]}"],
+        check=False,
+    )
+    if not log:
+        return []
+    return log.splitlines()
+
+
 def fetch_pr_data(repo: str, pr_number: int) -> dict | None:
     """Fetch PR metadata and changed file paths via gh CLI."""
     fields = "number,title,author,body,labels,mergedAt,files"
@@ -118,15 +138,11 @@ def main() -> None:
     seen_prs: set[int] = set()
     prs: list[dict] = []
 
-    for sha in commit_shas:
-        pr_num = extract_pr_number(sha)
-        if pr_num is None or pr_num in seen_prs:
-            continue
-        seen_prs.add(pr_num)
-
+    def process_pr(pr_num: int) -> None:
+        """Fetch and record a single PR by number."""
         data = fetch_pr_data(args.repo, pr_num)
         if data is None:
-            continue
+            return
 
         author_login = ""
         if isinstance(data.get("author"), dict):
@@ -163,6 +179,22 @@ def main() -> None:
                 "changed_files": file_paths,
             }
         )
+
+    for sha in commit_shas:
+        pr_num = extract_pr_number(sha)
+        if pr_num is not None and pr_num not in seen_prs:
+            # Normal squash-merge commit
+            seen_prs.add(pr_num)
+            process_pr(pr_num)
+        else:
+            # Merge commit fallback: walk the merged-in commits for PR numbers.
+            # This handles branches merged via merge commit (e.g. security-patches)
+            # rather than the usual squash merge.
+            for merged_sha in get_merged_commits(sha):
+                inner_pr = extract_pr_number(merged_sha)
+                if inner_pr is not None and inner_pr not in seen_prs:
+                    seen_prs.add(inner_pr)
+                    process_pr(inner_pr)
 
     output = {
         "range": {"base": args.base_ref, "head": args.head_ref},
