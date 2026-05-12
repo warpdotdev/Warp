@@ -1222,7 +1222,7 @@ impl TerminalModel {
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
     ) -> Self {
-        let mut me = Self::new_internal(
+        Self::new_internal(
             None,
             sizes,
             colors,
@@ -1244,12 +1244,7 @@ impl TerminalModel {
             },
             SharedSessionStatus::ViewPending,
             true,
-        );
-        if FeatureFlag::CloudModeSetupV2.is_enabled() {
-            me.block_list_mut()
-                .set_is_executing_oz_environment_startup_commands(true);
-        }
-        me
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
