@@ -135,6 +135,7 @@ impl TombstoneDisplayData {
             self.skill_name = config.name.clone();
             #[cfg(not(target_family = "wasm"))]
             {
+                // Only desktop uses harness to decide whether "Continue locally" is allowed.
                 self.harness = Some(
                     config
                         .harness
@@ -152,6 +153,9 @@ impl TombstoneDisplayData {
             }
         }
 
+        // We update to use the task values when we have them, which includes
+        // the full credit cost (inference + compute). This matches what we show in
+        // the details panel.
         if let Some(run_time) = task.run_time() {
             self.run_time = Some(human_readable_precise_duration(run_time));
         }
@@ -159,6 +163,8 @@ impl TombstoneDisplayData {
             self.credits = Some(format_credits(credits));
         }
 
+        // Surface task artifacts (plans, PRs, files, screenshots) for third-party
+        // harness runs.
         if !task.artifacts.is_empty() {
             self.artifacts = task.artifacts;
         }
