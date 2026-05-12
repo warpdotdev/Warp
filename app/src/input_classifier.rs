@@ -26,14 +26,14 @@ impl InputClassifierModel {
 
         #[cfg(feature = "nld_classifier_v2")]
         {
-            match OnnxClassifier::new(OnnxModel::BertTinyV1) {
+            match OnnxClassifier::new(OnnxModel::BertTinyV2) {
                 Ok(classifier) => {
-                    log::info!("Loaded onnx classifier");
+                    log::info!("Loaded onnx classifier (v2)");
                     return Self {
                         classifier: Arc::new(classifier),
                     };
                 }
-                Err(e) => log::warn!("Failed to load onnx classifier: {e:#}"),
+                Err(e) => log::warn!("Failed to load onnx classifier (v2): {e:#}"),
             }
         }
 
