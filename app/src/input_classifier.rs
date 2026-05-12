@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use input_classifier::{HeuristicClassifier, InputClassifier};
-#[cfg(feature = "ml_model_input_classifier_onnx")]
+#[cfg(feature = "nld_onnx_classifier")]
 use input_classifier::{OnnxClassifier, OnnxModel};
 use warpui::{Entity, ModelContext, SingletonEntity};
 
@@ -11,7 +11,7 @@ pub struct InputClassifierModel {
 
 impl InputClassifierModel {
     pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
-        #[cfg(feature = "ml_model_input_classifier_onnx")]
+        #[cfg(feature = "nld_onnx_classifier")]
         {
             match OnnxClassifier::new(OnnxModel::BertTiny) {
                 Ok(classifier) => {

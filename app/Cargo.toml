@@ -660,13 +660,15 @@ grep_tool = []
 # for things that pull in external dependencies.
 gui = ["voice_input"]
 # Bundled ML models (ONNX / etc.).
-ml_model_input_classifier_onnx = ["input_classifier/onnx_candle"]
-bundled_app_ml_models_prod = [
-    "ml_model_input_classifier_onnx",
+nld_onnx_classifier = ["input_classifier/onnx_candle"]
+
+nld_classifier_v1 = [
+    "nld_onnx_classifier",
 ]
-bundled_app_ml_models_dogfood = [
-    "bundled_app_ml_models_prod",
+nld_classifier_v2 = [
+    "nld_classifier_v1",
 ]
+
 msys2_shells = []
 file_retrieval_tools = []
 welcome_tab = []

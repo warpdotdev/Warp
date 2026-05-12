@@ -116,9 +116,9 @@ if ("$CHANNEL" -eq 'local') {
 }
 
 if (("$CHANNEL" -eq 'local') -or ("$CHANNEL" -eq 'dev')) {
-    $FEATURES = "$FEATURES,bundled_app_ml_models_dogfood"
+    $FEATURES = "$FEATURES,nld_classifier_v2"
 } else {
-    $FEATURES = "$FEATURES,bundled_app_ml_models_prod"
+    $FEATURES = "$FEATURES,nld_classifier_v1"
 }
 
 $BINARY_PATH = "$CARGO_TARGET_OUTPUT_DIR\$BINARY_NAME"
