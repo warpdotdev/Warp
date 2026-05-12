@@ -136,6 +136,7 @@ fn test_from_task_includes_linked_directory_when_run_id_matches() {
                 run_id: Some(task_id.to_string()),
                 autoexecute_override: None,
                 last_event_sequence: None,
+                pinned: false,
             },
         );
 
@@ -346,6 +347,7 @@ fn test_from_task_includes_linked_directory_when_server_token_matches() {
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
+                pinned: false,
             },
         );
 

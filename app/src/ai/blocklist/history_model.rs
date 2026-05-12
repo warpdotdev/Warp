@@ -476,6 +476,25 @@ impl BlocklistAIHistoryModel {
         conversation.write_updated_conversation_state(ctx);
     }
 
+    /// Updates the persisted `pinned` state for a conversation and writes
+    /// the change to SQLite. Used by the orchestration pin singleton to
+    /// keep the per-conversation source of truth in sync with toggles.
+    pub fn set_conversation_pinned(
+        &mut self,
+        conversation_id: AIConversationId,
+        pinned: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
+            return;
+        };
+        if conversation.is_pinned() == pinned {
+            return;
+        }
+        conversation.set_pinned(pinned);
+        conversation.write_updated_conversation_state(ctx);
+    }
+
     /// Sets a live conversation's server token, and updates the mapping in the history
     /// model.
     pub fn set_server_conversation_token_for_conversation(
@@ -1166,6 +1185,7 @@ impl BlocklistAIHistoryModel {
             run_id: None,
             autoexecute_override: Some(source_conversation.autoexecute_override().into()),
             last_event_sequence: None,
+            pinned: false,
         };
         let forked_conversation_id = AIConversationId::new();
         if let Err(e) = sqlite_sender.send(ModelEvent::UpdateMultiAgentConversation {
@@ -1323,6 +1343,7 @@ impl BlocklistAIHistoryModel {
             run_id: None,
             autoexecute_override: Some(conversation.autoexecute_override().into()),
             last_event_sequence: None,
+            pinned: false,
         };
 
         let forked_conversation_id = AIConversationId::new();

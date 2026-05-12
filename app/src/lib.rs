@@ -1660,15 +1660,40 @@ pub(crate) fn initialize_app(
         )
     });
 
+    // Seed the orchestration pin set from persisted conversation data
+    // before the conversations vec is consumed by the singletons below.
+    // Each conversation's `AgentConversationData.pinned` is the source of
+    // truth; the singleton mirrors them in memory for fast cross-pane lookups.
+    let initial_pinned_conversations: HashSet<crate::ai::agent::conversation::AIConversationId> =
+        multi_agent_conversations
+            .iter()
+            .filter_map(|conv| {
+                let data =
+                    serde_json::from_str::<crate::persistence::model::AgentConversationData>(
+                        &conv.conversation.conversation_data,
+                    )
+                    .ok()?;
+                if !data.pinned {
+                    return None;
+                }
+                crate::ai::agent::conversation::AIConversationId::try_from(
+                    conv.conversation.conversation_id.clone(),
+                )
+                .ok()
+            })
+            .collect();
     {
         let conversations = &multi_agent_conversations;
         ctx.add_singleton_model(move |_| BlocklistAIHistoryModel::new(ai_queries, conversations));
     }
     // Cross-pane pin set for the orchestration pill bar. Registered after
     // the history model since it subscribes to history events.
-    ctx.add_singleton_model(
-        ai::blocklist::agent_view::orchestration_pin_model::OrchestrationPinModel::new,
-    );
+    ctx.add_singleton_model(move |ctx| {
+        ai::blocklist::agent_view::orchestration_pin_model::OrchestrationPinModel::new(
+            initial_pinned_conversations,
+            ctx,
+        )
+    });
     ctx.add_singleton_model(move |_| RestoredAgentConversations::new(multi_agent_conversations));
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
     // ActiveAgentViewsModel is used to track active agent conversations and notify listeners when they change.

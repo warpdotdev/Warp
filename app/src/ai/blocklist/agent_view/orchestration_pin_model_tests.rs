@@ -9,19 +9,19 @@ fn toggle_pin_in_set_flips_membership_for_each_call() {
     // Initially empty.
     assert!(!pinned.contains(&id));
 
-    // First toggle pins the id.
-    toggle_pin_in_set(&mut pinned, id);
+    // First toggle pins the id and reports the new state.
+    assert!(toggle_pin_in_set(&mut pinned, id));
     assert!(pinned.contains(&id));
     assert_eq!(pinned.len(), 1);
 
     // Second toggle unpins it.
-    toggle_pin_in_set(&mut pinned, id);
+    assert!(!toggle_pin_in_set(&mut pinned, id));
     assert!(!pinned.contains(&id));
     assert!(pinned.is_empty());
 
     // Third toggle re-pins, confirming the function is idempotent under
     // pairs and doesn't accumulate state.
-    toggle_pin_in_set(&mut pinned, id);
+    assert!(toggle_pin_in_set(&mut pinned, id));
     assert!(pinned.contains(&id));
 }
 

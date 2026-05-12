@@ -238,6 +238,10 @@ pub struct AIConversation {
     orchestration_config: Option<OrchestrationConfig>,
     orchestration_status: OrchestrationConfigStatus,
     orchestration_plan_id: Option<String>,
+
+    /// Whether the user has pinned this child agent in the orchestration
+    /// pill bar. Persisted via `AgentConversationData.pinned`.
+    pinned: bool,
 }
 
 pub(crate) fn artifact_from_fork_proto(
@@ -292,6 +296,7 @@ impl AIConversation {
             orchestration_config: None,
             orchestration_status: OrchestrationConfigStatus::default(),
             orchestration_plan_id: None,
+            pinned: false,
         }
     }
 
@@ -374,6 +379,7 @@ impl AIConversation {
             run_id,
             autoexecute_override,
             last_event_sequence,
+            pinned,
         ) = if let Some(data) = conversation_data {
             let server_conversation_token = data
                 .server_conversation_token
@@ -407,6 +413,7 @@ impl AIConversation {
                 AIConversationAutoexecuteMode::default()
             };
             let last_event_sequence = data.last_event_sequence;
+            let pinned = data.pinned;
 
             (
                 server_conversation_token,
@@ -422,6 +429,7 @@ impl AIConversation {
                 run_id,
                 autoexecute_override,
                 last_event_sequence,
+                pinned,
             )
         } else {
             (
@@ -438,6 +446,7 @@ impl AIConversation {
                 None,
                 AIConversationAutoexecuteMode::default(),
                 None,
+                false,
             )
         };
 
@@ -485,6 +494,7 @@ impl AIConversation {
             orchestration_config: None,
             orchestration_status: OrchestrationConfigStatus::default(),
             orchestration_plan_id: None,
+            pinned,
         })
     }
 
@@ -853,6 +863,18 @@ impl AIConversation {
     /// Updates the last observed v2 orchestration event sequence number.
     pub fn set_last_event_sequence(&mut self, sequence: i64) {
         self.last_event_sequence = Some(sequence);
+    }
+
+    /// Returns whether the user has pinned this conversation in the
+    /// orchestration pill bar.
+    pub fn is_pinned(&self) -> bool {
+        self.pinned
+    }
+
+    /// Sets the persisted pin state. Callers must follow up with
+    /// `write_updated_conversation_state` to push the change to SQLite.
+    pub fn set_pinned(&mut self, pinned: bool) {
+        self.pinned = pinned;
     }
 
     /// Returns true if this conversation was spawned by a parent orchestrator agent.
@@ -2972,6 +2994,7 @@ impl AIConversation {
                 run_id: self.task_id.map(|id| id.to_string()),
                 autoexecute_override: Some(self.autoexecute_override.into()),
                 last_event_sequence: self.last_event_sequence,
+                pinned: self.pinned,
             },
         };
         ctx.spawn(
