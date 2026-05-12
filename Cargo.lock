@@ -15295,7 +15295,6 @@ dependencies = [
  "anyhow",
  "async-channel",
  "futures",
- "instant",
  "log",
  "notify-debouncer-full",
  "warpui",
