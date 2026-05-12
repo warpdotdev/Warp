@@ -1023,6 +1023,8 @@ impl TerminalView {
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
+            local_claude_session_id: None,
+            local_claude_working_dir: None,
             autoexecute_override: None,
             last_event_sequence: None,
         };

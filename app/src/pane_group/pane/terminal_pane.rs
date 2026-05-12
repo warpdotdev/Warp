@@ -66,7 +66,9 @@ use crate::server::server_api::ServerApiProvider;
 use warp_core::execution_mode::AppExecutionMode;
 
 #[cfg(not(target_family = "wasm"))]
-use super::local_harness_launch::{prepare_local_harness_child_launch, PreparedLocalHarnessLaunch};
+use super::local_harness_launch::{
+    prepare_local_harness_child_launch, LocalHarnessChildLaunchRequest, PreparedLocalHarnessLaunch,
+};
 use super::{
     DetachType, PaneConfiguration, PaneContent, PaneId, PaneStackEvent, PaneView, ShareableLink,
     ShareableLinkError, TerminalPaneId,
@@ -1649,7 +1651,10 @@ fn launch_local_harness_child(
     ctx: &mut ViewContext<PaneGroup>,
 ) {
     let startup_directory = group.startup_path_for_new_session(Some(terminal_pane_id), ctx);
-    let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
+    let server_api_provider = ServerApiProvider::handle(ctx);
+    let server_api = server_api_provider.as_ref(ctx);
+    let ai_client = server_api.get_ai_client();
+    let harness_support_client = server_api.get_harness_support_client();
     let request_id = request.id;
     let request_name = request.name.clone();
     let parent_conversation_id = request.parent_conversation_id;
@@ -1665,15 +1670,16 @@ fn launch_local_harness_child(
     let model_id_for_harness_env = model_id.clone();
     let _ = ctx.spawn(
         async move {
-            prepare_local_harness_child_launch(
+            prepare_local_harness_child_launch(LocalHarnessChildLaunchRequest {
                 prompt,
                 harness_type,
-                model_id_for_harness_env,
+                model_id: model_id_for_harness_env,
                 parent_run_id,
                 shell_type,
                 startup_directory,
                 ai_client,
-            )
+                harness_support_client,
+            })
             .await
         },
         move |group, result, ctx| match result {
@@ -1683,6 +1689,8 @@ fn launch_local_harness_child(
                     env_vars,
                     run_id,
                     task_id,
+                    local_claude_external_conversation_id,
+                    local_claude_harness_metadata,
                 } = launch;
                 if let Some(HiddenChildAgentConversation {
                     terminal_view: new_terminal_view,
@@ -1719,6 +1727,22 @@ fn launch_local_harness_child(
                             terminal_view_id,
                             ctx,
                         );
+                        if let Some(external_conversation_id) =
+                            local_claude_external_conversation_id
+                        {
+                            history_model.set_server_conversation_token_for_conversation(
+                                conversation_id,
+                                external_conversation_id.to_string(),
+                            );
+                        }
+                        if let Some(metadata) = local_claude_harness_metadata {
+                            history_model.set_local_claude_harness_metadata_for_conversation(
+                                conversation_id,
+                                metadata,
+                                terminal_view_id,
+                                ctx,
+                            );
+                        }
                     });
 
                     register_legacy_local_lifecycle_subscription(

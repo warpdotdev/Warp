@@ -13,6 +13,8 @@ pub use load_ai_conversation::ConversationRestorationInNewPaneType;
 // TODO(advait): if we align on prompt suggestions banner in Input, move code out of inline_banner mod.
 pub(crate) mod init_environment;
 mod init_project;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent_sdk::driver::harness::claude_code::upload_claude_transcript;
 use crate::ai::block_context::BlockContext;
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
@@ -192,6 +194,8 @@ use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, Child
 use warpui::fonts::Properties;
 use warpui::{ViewHandle, WeakModelHandle};
 
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent::conversation::LocalClaudeHarnessMetadata;
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 
 #[cfg(any(test, feature = "integration_tests"))]
@@ -444,6 +448,8 @@ use crate::pane_group::{
 use crate::resource_center::{
     mark_feature_used_and_write_to_user_defaults, Tip, TipHint, TipsCompleted,
 };
+#[cfg(not(target_family = "wasm"))]
+use crate::server::server_api::ServerApiProvider;
 use crate::server::telemetry::{
     self, AgentModeAttachContextMethod, AgentModeEntrypoint, AgentModeRewindEntrypoint,
     AnonymousUserSignupEntrypoint, InteractionSource, LinkOpenMethod, NotificationAgentVariant,
@@ -12216,6 +12222,87 @@ impl TerminalView {
             .then_some(child_conversation_id)
     }
 
+    #[cfg(not(target_family = "wasm"))]
+    fn upload_local_claude_child_transcript(
+        &self,
+        conversation_id: AIConversationId,
+        session_context: &CLIAgentSessionContext,
+        claude_version: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some((existing_metadata, server_conversation_token)) =
+            BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&conversation_id)
+                .and_then(|conversation| {
+                    Some((
+                        conversation.local_claude_harness_metadata()?.clone(),
+                        conversation.server_conversation_token()?.clone(),
+                    ))
+                })
+        else {
+            return;
+        };
+        let Ok(external_conversation_id) =
+            AIConversationId::try_from(server_conversation_token.as_str().to_string())
+        else {
+            log::warn!(
+                "Could not parse local Claude external conversation id from server token: {}",
+                server_conversation_token.as_str(),
+            );
+            return;
+        };
+
+        // Prefer live plugin-reported session details when present. Claude can
+        // report a different session id than the one we seeded if it resumes
+        // or rotates the underlying session, and upload should follow the
+        // transcript Claude actually wrote.
+        let session_id = session_context
+            .session_id
+            .as_deref()
+            .and_then(|id| Uuid::try_parse(id).ok())
+            .unwrap_or(existing_metadata.session_id);
+        let working_dir = session_context
+            .cwd
+            .as_deref()
+            .map(str::trim)
+            .filter(|cwd| !cwd.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| existing_metadata.working_dir.clone());
+        let metadata = LocalClaudeHarnessMetadata {
+            session_id,
+            working_dir,
+        };
+        if metadata != existing_metadata {
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                history_model.set_local_claude_harness_metadata_for_conversation(
+                    conversation_id,
+                    metadata.clone(),
+                    self.view_id,
+                    ctx,
+                );
+            });
+        }
+
+        let harness_support_client = ServerApiProvider::as_ref(ctx).get_harness_support_client();
+        ctx.spawn(
+            async move {
+                upload_claude_transcript(
+                    harness_support_client.as_ref(),
+                    external_conversation_id,
+                    metadata.session_id,
+                    &metadata.working_dir,
+                    claude_version,
+                )
+                .await
+            },
+            |_, result, _| {
+                if let Err(error) = result {
+                    log::warn!("Failed to upload local Claude child transcript: {error:#}");
+                }
+            },
+        );
+    }
+
     /// If the startup auto-open setting is enabled, auto-opens rich input for a
     /// CLI agent session. Called after creating a command-detected session or
     /// registering a listener so rich input is shown immediately.
@@ -12296,7 +12383,8 @@ impl TerminalView {
             return;
         }
 
-        if let Some(conversation_id) = self.child_conversation_id_for_cli_status_updates(ctx) {
+        let child_conversation_id = self.child_conversation_id_for_cli_status_updates(ctx);
+        if let Some(conversation_id) = child_conversation_id {
             BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
                 history_model.update_conversation_status(
                     self.view_id,
@@ -12305,6 +12393,19 @@ impl TerminalView {
                     ctx,
                 );
             });
+
+            #[cfg(not(target_family = "wasm"))]
+            if *agent == CLIAgent::Claude && matches!(status, CLIAgentSessionStatus::Success) {
+                let claude_version = CLIAgentSessionsModel::as_ref(ctx)
+                    .session(self.view_id)
+                    .and_then(|session| session.plugin_version.clone());
+                self.upload_local_claude_child_transcript(
+                    conversation_id,
+                    session_context.as_ref(),
+                    claude_version,
+                    ctx,
+                );
+            }
         }
 
         // Auto-show/hide rich input based on the setting.

@@ -32,7 +32,6 @@ pub(crate) struct HiddenChildAgentConversationRequest {
     pub env_vars: HashMap<OsString, OsString>,
     pub task_context: Option<HiddenChildAgentTaskContext>,
 }
-
 pub(crate) struct ErrorChildAgentConversationRequest {
     pub parent_pane_id: PaneId,
     pub name: String,

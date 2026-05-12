@@ -32,6 +32,34 @@ fn build_start_agent_action(
 }
 
 #[test]
+fn canonical_local_child_harness_type_uses_claude_code_identifier() {
+    assert_eq!(
+        canonical_local_child_harness_type("claude"),
+        Some("claude-code".to_string())
+    );
+    assert_eq!(
+        canonical_local_child_harness_type("claude-code"),
+        Some("claude-code".to_string())
+    );
+    assert_eq!(
+        canonical_local_child_harness_type("claude_code"),
+        Some("claude-code".to_string())
+    );
+}
+
+#[test]
+fn canonical_orchestration_harness_type_uses_claude_code_identifier() {
+    assert_eq!(
+        canonical_orchestration_harness_type("claude"),
+        Some("claude-code".to_string())
+    );
+    assert_eq!(
+        canonical_orchestration_harness_type("claude-code"),
+        Some("claude-code".to_string())
+    );
+}
+
+#[test]
 fn execute_returns_error_when_child_startup_is_blocked_before_initialization() {
     App::test((), |mut app| async move {
         let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);

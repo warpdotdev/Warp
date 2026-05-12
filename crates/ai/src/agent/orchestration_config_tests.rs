@@ -81,6 +81,12 @@ fn different_harness_mismatches() {
     let request = make_request("auto", "claude", false);
     assert!(!matches_active_config(&request, &config));
 }
+#[test]
+fn claude_code_harness_aliases_match_active_config() {
+    let config = make_config("auto", "claude-code", false);
+    let request = make_request("auto", "claude", false);
+    assert!(matches_active_config(&request, &config));
+}
 
 #[test]
 fn execution_mode_variant_mismatch() {
@@ -155,10 +161,18 @@ fn proto_round_trip_config_local() {
     let round_tripped = OrchestrationConfig::from_proto(&proto);
     assert_eq!(config, round_tripped);
 }
+#[test]
+fn proto_round_trip_config_normalizes_legacy_claude_alias() {
+    let config = make_config("auto", "claude", true);
+    let proto = config.to_proto();
+    let round_tripped = OrchestrationConfig::from_proto(&proto);
+
+    assert_eq!(round_tripped.harness_type, "claude-code");
+}
 
 #[test]
 fn proto_round_trip_config_remote() {
-    let config = make_config("auto", "claude", true);
+    let config = make_config("auto", "claude-code", true);
     let proto = config.to_proto();
     let round_tripped = OrchestrationConfig::from_proto(&proto);
     assert_eq!(config, round_tripped);

@@ -10,7 +10,10 @@ use crate::{
     ai::{
         agent::{
             api::ServerConversationToken,
-            conversation::{AIAgentHarness, AIConversationId, ServerAIConversationMetadata},
+            conversation::{
+                AIAgentHarness, AIConversationId, LocalClaudeHarnessMetadata,
+                ServerAIConversationMetadata,
+            },
             AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus,
             FinishedAIAgentOutput, Shared, UserQueryMode,
         },
@@ -997,6 +1000,90 @@ fn test_update_event_sequence_persists_updated_conversation_state() {
 }
 
 #[test]
+fn set_local_claude_harness_metadata_updates_token_index_and_persistence() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+        let external_conversation_id =
+            AIConversationId::try_from("550e8400-e29b-41d4-a716-446655440001".to_string()).unwrap();
+        let session_id = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let working_dir = std::path::PathBuf::from("/tmp/local-claude-child");
+
+        let conversation_id = history_model.update(&mut app, |history_model, ctx| {
+            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+        });
+
+        history_model.update(&mut app, |history_model, ctx| {
+            history_model.set_server_conversation_token_for_conversation(
+                conversation_id,
+                external_conversation_id.to_string(),
+            );
+            history_model.set_local_claude_harness_metadata_for_conversation(
+                conversation_id,
+                LocalClaudeHarnessMetadata {
+                    session_id,
+                    working_dir: working_dir.clone(),
+                },
+                terminal_view_id,
+                ctx,
+            );
+        });
+
+        let event = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        let ModelEvent::UpdateMultiAgentConversation {
+            conversation_id: persisted_conversation_id,
+            conversation_data,
+            ..
+        } = event
+        else {
+            panic!("expected UpdateMultiAgentConversation event");
+        };
+
+        let external_conversation_id_string = external_conversation_id.to_string();
+        let session_id_string = session_id.to_string();
+
+        assert_eq!(persisted_conversation_id, conversation_id.to_string());
+        assert_eq!(
+            conversation_data.server_conversation_token.as_deref(),
+            Some(external_conversation_id_string.as_str())
+        );
+        assert_eq!(
+            conversation_data.local_claude_session_id.as_deref(),
+            Some(session_id_string.as_str())
+        );
+        assert_eq!(
+            conversation_data.local_claude_working_dir.as_deref(),
+            working_dir.to_str()
+        );
+        let token = ServerConversationToken::new(external_conversation_id_string);
+        history_model.read(&app, |history_model, _| {
+            assert_eq!(
+                history_model.find_conversation_id_by_server_token(&token),
+                Some(conversation_id)
+            );
+
+            let conversation = history_model
+                .conversation(&conversation_id)
+                .expect("conversation should exist");
+            assert_eq!(
+                conversation.local_claude_harness_metadata(),
+                Some(&LocalClaudeHarnessMetadata {
+                    session_id,
+                    working_dir,
+                })
+            );
+        });
+    });
+}
+
+#[test]
 fn test_find_by_token_after_merge_cloud_metadata() {
     App::test((), |mut app| async move {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
@@ -1250,6 +1337,8 @@ fn test_find_by_token_after_insert_forked_conversation_from_tasks() {
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
+            local_claude_session_id: None,
+            local_claude_working_dir: None,
             autoexecute_override: None,
             last_event_sequence: None,
         };
@@ -1442,6 +1531,8 @@ fn test_fork_then_bind_handoff_token_resolves_to_forked_conversation() {
                 parent_conversation_id: None,
                 is_remote_child: false,
                 run_id: None,
+                local_claude_session_id: None,
+                local_claude_working_dir: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
             }),
@@ -1539,6 +1630,8 @@ fn test_fork_conversation_preserves_task_ids_when_requested() {
                 parent_conversation_id: None,
                 is_remote_child: false,
                 run_id: None,
+                local_claude_session_id: None,
+                local_claude_working_dir: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
             }),
@@ -1625,6 +1718,8 @@ fn test_fork_conversation_title_override_replaces_prefix() {
                 parent_conversation_id: None,
                 is_remote_child: false,
                 run_id: None,
+                local_claude_session_id: None,
+                local_claude_working_dir: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
             }),

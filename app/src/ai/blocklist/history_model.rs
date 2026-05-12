@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use diesel::SqliteConnection;
 
 use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent::conversation::{ConversationStatus, LocalClaudeHarnessMetadata};
 use crate::ai::agent::conversation::{ServerAIConversationMetadata, UpdateConversationError};
 use crate::ai::agent::task::helper::{MessageExt, ToolCallExt};
 use crate::ai::agent::task::TaskId;
@@ -486,6 +486,7 @@ impl BlocklistAIHistoryModel {
         let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
             return;
         };
+        let old_agent_id_key = agent_id_key(conversation);
 
         // Drop the old entry only if it still points at the given conversation_id,
         // so we don't wrongly remove an entry that's been remapped.
@@ -496,10 +497,19 @@ impl BlocklistAIHistoryModel {
                 }
             }
         }
+        if let Some(old_key) = old_agent_id_key {
+            if self.agent_id_to_conversation_id.get(&old_key) == Some(&conversation_id) {
+                self.agent_id_to_conversation_id.remove(&old_key);
+            }
+        }
 
         conversation.set_server_conversation_token(token.clone());
         self.server_token_to_conversation_id
             .insert(ServerConversationToken::new(token), conversation_id);
+        if let Some(key) = agent_id_key(conversation) {
+            self.agent_id_to_conversation_id
+                .insert(key, conversation_id);
+        }
     }
 
     /// Sets server metadata for a conversation and emits the ConversationMetadataUpdated event.
@@ -1001,6 +1011,43 @@ impl BlocklistAIHistoryModel {
         });
     }
 
+    pub fn set_local_claude_harness_metadata_for_conversation(
+        &mut self,
+        conversation_id: AIConversationId,
+        metadata: LocalClaudeHarnessMetadata,
+        terminal_view_id: EntityId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
+            log::warn!(
+                "set_local_claude_harness_metadata_for_conversation: conversation {conversation_id:?} not found"
+            );
+            return;
+        };
+        let had_token_before = conversation.server_conversation_token().is_some();
+        conversation.set_local_claude_harness_metadata(metadata);
+        let has_token_after = conversation.server_conversation_token().is_some();
+
+        if let Some(key) = agent_id_key(conversation) {
+            self.agent_id_to_conversation_id
+                .insert(key, conversation_id);
+        }
+
+        if let Some(token) = conversation.server_conversation_token() {
+            self.server_token_to_conversation_id
+                .insert(token.clone(), conversation_id);
+        }
+
+        conversation.write_updated_conversation_state(ctx);
+
+        if !had_token_before && has_token_after {
+            ctx.emit(BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+                conversation_id,
+                terminal_view_id,
+            });
+        }
+    }
+
     /// Resolves a server-side agent identifier to a local conversation ID.
     /// The identifier may be a server conversation token (v1) or a run_id (v2).
     pub fn conversation_id_for_agent_id(&self, agent_id: &str) -> Option<AIConversationId> {
@@ -1164,6 +1211,8 @@ impl BlocklistAIHistoryModel {
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
+            local_claude_session_id: None,
+            local_claude_working_dir: None,
             autoexecute_override: Some(source_conversation.autoexecute_override().into()),
             last_event_sequence: None,
         };
@@ -1321,6 +1370,8 @@ impl BlocklistAIHistoryModel {
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
+            local_claude_session_id: None,
+            local_claude_working_dir: None,
             autoexecute_override: Some(conversation.autoexecute_override().into()),
             last_event_sequence: None,
         };
