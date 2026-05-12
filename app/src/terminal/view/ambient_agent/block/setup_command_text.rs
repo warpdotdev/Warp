@@ -35,6 +35,7 @@ pub struct SetupCommandState {
     next_group_id: u64,
     expanded_groups: HashMap<SetupCommandGroupId, bool>,
     running_group_id: Option<SetupCommandGroupId>,
+    failed_group_id: Option<SetupCommandGroupId>,
 }
 
 impl Default for SetupCommandState {
@@ -48,6 +49,7 @@ impl Default for SetupCommandState {
             next_group_id: 1,
             expanded_groups,
             running_group_id: Some(current_group_id),
+            failed_group_id: None,
         }
     }
 }
@@ -83,6 +85,7 @@ impl SetupCommandState {
         self.did_execute_a_setup_command = false;
         self.expanded_groups.insert(group_id, true);
         self.running_group_id = Some(group_id);
+        self.failed_group_id = None;
         group_id
     }
 
@@ -90,6 +93,16 @@ impl SetupCommandState {
         if self.running_group_id == Some(group_id) {
             self.running_group_id = None;
         }
+    }
+
+    pub fn mark_group_failed(&mut self, group_id: SetupCommandGroupId) {
+        self.failed_group_id = Some(group_id);
+        self.running_group_id = None;
+        self.expanded_groups.insert(group_id, true);
+    }
+
+    pub fn is_failed(&self, group_id: SetupCommandGroupId) -> bool {
+        self.failed_group_id == Some(group_id)
     }
 }
 
@@ -168,16 +181,27 @@ impl View for CloudModeSetupTextBlock {
 
         let appearance = Appearance::as_ref(app);
         let icon_size = inline_action_icons::icon_size(app);
-        let text_color = appearance
-            .theme()
-            .disabled_text_color(agent_view_bg_color(app).into())
-            .into_solid();
+        let setup_state = self
+            .ambient_agent_view_model
+            .as_ref(app)
+            .setup_command_state();
+        let is_failed = setup_state.is_failed(self.group_id);
+        let text_color = if is_failed {
+            appearance.theme().ui_error_color()
+        } else {
+            appearance
+                .theme()
+                .disabled_text_color(agent_view_bg_color(app).into())
+                .into_solid()
+        };
         let expandable = Hoverable::new(self.mouse_state.clone(), move |_is_hovered| {
             Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(
                     Text::new(
-                        if self
+                        if is_failed {
+                            "Setup failed"
+                        } else if self
                             .ambient_agent_view_model
                             .as_ref(app)
                             .setup_command_state()

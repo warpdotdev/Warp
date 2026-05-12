@@ -26175,7 +26175,17 @@ impl View for TerminalView {
                         column.add_child(ChildView::new(&self.use_agent_footer).finish());
                     }
 
-                    if self.is_input_box_visible(&model, app) {
+                    if let Some(error_message) = self
+                        .ambient_agent_view_model
+                        .as_ref()
+                        .and_then(|m| m.as_ref(app).setup_failure_error())
+                    {
+                        column.add_child(ambient_agent::render_error_footer(
+                            "Environment setup failed",
+                            error_message,
+                            appearance,
+                        ));
+                    } else if self.is_input_box_visible(&model, app) {
                         column.add_child(self.render_input());
                     } else if !model.is_read_only()
                         && ambient_agent::is_cloud_agent_pre_first_exchange(

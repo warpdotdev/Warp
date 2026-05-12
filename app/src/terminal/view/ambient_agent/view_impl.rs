@@ -379,6 +379,10 @@ impl TerminalView {
                 // triggers a re-render of pane chrome.
                 ctx.notify();
             }
+            AmbientAgentViewModelEvent::EnvironmentSetupFailed => {
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
+                ctx.notify();
+            }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility
             | AmbientAgentViewModelEvent::AuthSecretSelected => (),
         }
@@ -468,12 +472,40 @@ impl TerminalView {
                 ctx,
             )
         });
-        ctx.subscribe_to_view(&setup_command_block, |me, _, event, _| {
-            let super::CloudModeSetupCommandBlockEvent::ToggleBlockVisibility(block_id) = event;
-            me.model
-                .lock()
-                .block_list_mut()
-                .toggle_visibility_of_block(block_id);
+        ctx.subscribe_to_view(&setup_command_block, |me, _, event, ctx| match event {
+            super::CloudModeSetupCommandBlockEvent::ToggleBlockVisibility(block_id) => {
+                me.model
+                    .lock()
+                    .block_list_mut()
+                    .toggle_visibility_of_block(block_id);
+            }
+            super::CloudModeSetupCommandBlockEvent::SetupCommandFailed(block_id) => {
+                let conversation_id = me
+                    .agent_view_controller
+                    .as_ref(ctx)
+                    .agent_view_state()
+                    .active_conversation_id();
+                {
+                    let mut model = me.model.lock();
+                    if model
+                        .block_list()
+                        .is_executing_oz_environment_startup_commands()
+                    {
+                        model
+                            .block_list_mut()
+                            .finish_oz_environment_startup_commands_at_block(
+                                block_id,
+                                conversation_id,
+                            );
+                    }
+                }
+                me.remove_pending_user_query_block(ctx);
+                if let Some(ambient_agent_view_model) = me.ambient_agent_view_model.clone() {
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.record_environment_setup_failure(ctx);
+                    });
+                }
+            }
         });
         self.insert_rich_content(
             None,

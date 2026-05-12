@@ -11,6 +11,7 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::{conversation::AIConversationId, extract_user_query_mode};
+use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentConversationsModelEvent};
 use crate::ai::ambient_agents::spawn::{spawn_task, submit_run_followup, AmbientAgentEvent};
 use crate::ai::ambient_agents::task::{HarnessAuthSecretsConfig, HarnessConfig};
 use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
@@ -197,6 +198,11 @@ pub struct AmbientAgentViewModel {
     /// The task ID for the current cloud agent task, if one has been spawned.
     task_id: Option<AmbientAgentTaskId>,
 
+    /// Error message from the server when environment setup failed during the V2
+    /// inline setup phase. Set after detecting a failed setup command and fetching
+    /// the task's `status_message` from `AgentConversationsModel`.
+    setup_failure_error: Option<String>,
+
     /// The local conversation associated with this cloud agent run, if any.
     /// Set for remote child agents spawned via `start_agent` so the `run_id`
     /// from the server response can be wired back to the conversation.
@@ -275,6 +281,7 @@ impl AmbientAgentViewModel {
             ui_state,
             setup_commands_state: Default::default(),
             task_id: None,
+            setup_failure_error: None,
             conversation_id: None,
             harness,
             worker_host: None,
@@ -727,6 +734,11 @@ impl AmbientAgentViewModel {
         self.task_id
     }
 
+    /// Returns the setup failure error message, if environment setup failed.
+    pub fn setup_failure_error(&self) -> Option<&str> {
+        self.setup_failure_error.as_deref()
+    }
+
     /// Whether or not this terminal session is in the setup state (first-time environment creation).
     pub fn is_in_setup(&self) -> bool {
         matches!(self.status, Status::Setup)
@@ -941,11 +953,70 @@ impl AmbientAgentViewModel {
             )
     }
 
+    /// Records that environment setup failed during the V2 inline setup phase.
+    /// Marks the current setup command group as failed, then tries to read the
+    /// server error from `AgentConversationsModel`. If the task data isn't cached
+    /// yet, subscribes to `TasksUpdated` to pick it up when it arrives.
+    pub(super) fn record_environment_setup_failure(&mut self, ctx: &mut ModelContext<Self>) {
+        let group_id = self.setup_commands_state.current_group_id();
+        self.setup_commands_state.mark_group_failed(group_id);
+        ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+
+        self.try_resolve_setup_failure_error(ctx);
+    }
+
+    /// Attempts to read the task's `status_message` from `AgentConversationsModel`.
+    /// If the data is available, sets `setup_failure_error` and emits
+    /// `EnvironmentSetupFailed`. Otherwise, subscribes to `TasksUpdated` for
+    /// a deferred resolution.
+    fn try_resolve_setup_failure_error(&mut self, ctx: &mut ModelContext<Self>) {
+        let Some(task_id) = self.task_id else {
+            self.setup_failure_error = Some(Self::generic_setup_failure_message().to_string());
+            ctx.emit(AmbientAgentViewModelEvent::EnvironmentSetupFailed);
+            return;
+        };
+
+        let task = AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
+            model.get_or_async_fetch_task_data(&task_id, ctx)
+        });
+
+        if let Some(task) = task {
+            let error = task
+                .status_message
+                .as_ref()
+                .filter(|msg| !msg.message.is_empty())
+                .map(|msg| msg.message.clone())
+                .unwrap_or_else(|| Self::generic_setup_failure_message().to_string());
+            self.setup_failure_error = Some(error);
+            ctx.emit(AmbientAgentViewModelEvent::EnvironmentSetupFailed);
+        } else {
+            // Task data not cached yet — subscribe for when it arrives.
+            ctx.subscribe_to_model(
+                &AgentConversationsModel::handle(ctx),
+                move |me, event, ctx| {
+                    if !matches!(event, AgentConversationsModelEvent::TasksUpdated) {
+                        return;
+                    }
+                    // Already resolved.
+                    if me.setup_failure_error.is_some() {
+                        return;
+                    }
+                    me.try_resolve_setup_failure_error(ctx);
+                },
+            );
+        }
+    }
+
+    fn generic_setup_failure_message() -> &'static str {
+        "Environment setup failed. Check your environment's repository URLs and setup commands."
+    }
+
     /// Reset cloud-specific prompt state so a retained cloud view can compose a new task.
     pub fn reset_for_new_cloud_prompt(&mut self, ctx: &mut ModelContext<Self>) {
         self.status = Status::Composing;
         self.environment_id = None;
         self.task_id = None;
+        self.setup_failure_error = None;
         self.conversation_id = None;
         self.harness_model_id = None;
         self.harness_command_started = false;
@@ -1572,6 +1643,9 @@ pub enum AmbientAgentViewModelEvent {
     UpdatedSetupCommandVisibility,
     /// The selected harness auth secret changed.
     AuthSecretSelected,
+    /// Environment setup failed during the V2 inline setup phase.
+    /// The error message is available via `setup_failure_error()`.
+    EnvironmentSetupFailed,
 }
 
 impl Entity for AmbientAgentViewModel {
