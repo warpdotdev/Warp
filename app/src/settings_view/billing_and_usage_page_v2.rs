@@ -54,7 +54,7 @@ use crate::{
     workspaces::{
         update_manager::TeamUpdateManager,
         user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
-        workspace::{CustomerType, Workspace},
+        workspace::{CustomerType, Workspace, WorkspaceUid},
     },
     WorkspaceAction,
 };
@@ -86,9 +86,30 @@ const RESTRICTED_BILLING_USAGE_WARNING_STRING: &str =
 
 const HEADER_FONT_SIZE: f32 = 16.;
 
-const CARD_BORDER_COLOR: ColorU = ColorU { r: 43, g: 43, b: 43, a: 255 };
-const BASE_CREDITS_DOT_COLOR: ColorU = ColorU { r: 0, g: 194, b: 255, a: 255 };
-const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU { r: 255, g: 165, b: 100, a: 255 };
+const CARD_BORDER_COLOR: ColorU = ColorU {
+    r: 43,
+    g: 43,
+    b: 43,
+    a: 255,
+};
+const BASE_CREDITS_DOT_COLOR: ColorU = ColorU {
+    r: 0,
+    g: 194,
+    b: 255,
+    a: 255,
+};
+const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU {
+    r: 255,
+    g: 165,
+    b: 100,
+    a: 255,
+};
+const CLOUD_CREDITS_DOT_COLOR: ColorU = ColorU {
+    r: 147,
+    g: 112,
+    b: 219,
+    a: 255,
+};
 const DEFAULT_MAX_MONTHLY_SPEND_CENTS: i32 = 20_000;
 
 #[derive(Default)]
@@ -127,6 +148,86 @@ struct UsageHistoryState {
     entry_mouse_states: RefCell<HashMap<String, MouseStateHandle>>,
     tooltip_mouse_states: RefCell<HashMap<String, MouseStateHandle>>,
     load_more_button: ViewHandle<ActionButton>,
+}
+
+struct GrantBucket {
+    grants: Vec<BonusGrant>,
+}
+
+impl GrantBucket {
+    fn is_empty(&self) -> bool {
+        self.grants.is_empty()
+    }
+
+    fn total_balance(&self) -> i64 {
+        self.grants
+            .iter()
+            .map(|g| g.request_credits_remaining as i64)
+            .sum()
+    }
+
+    fn expiry_label(&self) -> String {
+        let expiries: Vec<_> = self.grants.iter().filter_map(|g| g.expiration).collect();
+        if expiries.is_empty() {
+            return String::new();
+        }
+        let first = expiries[0];
+        if expiries
+            .iter()
+            .all(|e| e.date_naive() == first.date_naive())
+        {
+            let local = first.with_timezone(&Local);
+            format!("Expires {}", local.format("%b %d, %Y"))
+        } else {
+            String::new()
+        }
+    }
+}
+
+struct ClassifiedGrants {
+    personal: GrantBucket,
+    team: GrantBucket,
+    cloud: GrantBucket,
+}
+
+impl ClassifiedGrants {
+    fn new(grants: &[BonusGrant], workspace_uid: Option<WorkspaceUid>) -> Self {
+        let now = chrono::Utc::now();
+        let mut personal = Vec::new();
+        let mut team = Vec::new();
+        let mut cloud = Vec::new();
+
+        for grant in grants {
+            if grant.expiration.is_some_and(|exp| now >= exp) {
+                continue;
+            }
+            if grant.request_credits_remaining <= 0 {
+                continue;
+            }
+            let in_user_scope = grant.scope == BonusGrantScope::User;
+            let in_workspace_scope =
+                workspace_uid.is_some_and(|uid| grant.scope == BonusGrantScope::Workspace(uid));
+            if grant.grant_type == BonusGrantType::AmbientOnly {
+                if in_user_scope || in_workspace_scope {
+                    cloud.push(grant.clone());
+                }
+            } else if in_user_scope {
+                personal.push(grant.clone());
+            } else if in_workspace_scope {
+                team.push(grant.clone());
+            }
+        }
+
+        Self {
+            personal: GrantBucket { grants: personal },
+            team: GrantBucket { grants: team },
+            cloud: GrantBucket { grants: cloud },
+        }
+    }
+
+    fn has_any(&self) -> bool {
+        !self.personal.is_empty() || !self.team.is_empty() || !self.cloud.is_empty()
+    }
 }
 
 pub struct BillingAndUsagePageV2View {
@@ -466,7 +567,7 @@ impl BillingAndUsagePageV2View {
                     && team.has_billing_history
                 {
                     let team_uid = team.uid;
-                    let fg_color = appearance.theme().foreground();
+                    let fg_color = appearance.theme().active_ui_text_color();
                     right_side.add_child(
                         Container::new(
                             appearance
@@ -506,7 +607,7 @@ impl BillingAndUsagePageV2View {
                 }
 
                 let team_uid = team.uid;
-                let fg_color = appearance.theme().foreground();
+                let fg_color = appearance.theme().active_ui_text_color();
                 right_side.add_child(
                     Container::new(
                         appearance
@@ -588,13 +689,18 @@ impl BillingAndUsagePageV2View {
                             TextAndIcon::new(
                                 TextAndIconAlignment::IconFirst,
                                 "Compare plans",
-                                Icon::CoinsStacked.to_warpui_icon(appearance.theme().accent()),
+                                Icon::CoinsStacked
+                                    .to_warpui_icon(appearance.theme().active_ui_text_color()),
                                 MainAxisSize::Min,
                                 MainAxisAlignment::Center,
                                 vec2f(14., 14.),
                             )
                             .with_inner_padding(4.),
                         )
+                        .with_style(UiComponentStyles {
+                            font_color: Some(appearance.theme().active_ui_text_color().into()),
+                            ..Default::default()
+                        })
                         .build()
                         .on_click(move |ctx, _, _| {
                             ctx.dispatch_typed_action(BillingAndUsagePageAction::Upgrade {
@@ -630,21 +736,9 @@ impl BillingAndUsagePageV2View {
         let workspace_uid = UserWorkspaces::as_ref(app)
             .current_workspace()
             .map(|ws| ws.uid);
+        let classified = ClassifiedGrants::new(grants, workspace_uid);
 
-        let has_personal_grants = grants.iter().any(|g| {
-            g.scope == BonusGrantScope::User
-                && g.grant_type != BonusGrantType::AmbientOnly
-                && g.request_credits_remaining > 0
-        });
-        let has_team_grants = workspace_uid.is_some_and(|uid| {
-            grants.iter().any(|g| {
-                g.scope == BonusGrantScope::Workspace(uid)
-                    && g.grant_type != BonusGrantType::AmbientOnly
-                    && g.request_credits_remaining > 0
-            })
-        });
-
-        if !has_base_credits && !has_personal_grants && !has_team_grants {
+        if !has_base_credits && !classified.has_any() {
             return None;
         }
 
@@ -676,9 +770,7 @@ impl BillingAndUsagePageV2View {
             );
         }
 
-        if has_personal_grants {
-            let personal_balance = ai_model.total_user_interactive_bonus_credits_remaining() as i64;
-            let personal_expiry = uniform_grant_expiry(grants, |s| *s == BonusGrantScope::User);
+        if !classified.personal.is_empty() {
             cards_row.add_child(
                 Expanded::new(
                     1.,
@@ -686,8 +778,8 @@ impl BillingAndUsagePageV2View {
                         appearance,
                         BONUS_CREDITS_DOT_COLOR,
                         "Personal credits",
-                        &personal_expiry,
-                        personal_balance,
+                        &classified.personal.expiry_label(),
+                        classified.personal.total_balance(),
                         CARD_BORDER_COLOR,
                     ),
                 )
@@ -695,13 +787,7 @@ impl BillingAndUsagePageV2View {
             );
         }
 
-        if has_team_grants {
-            let team_balance = workspace_uid
-                .map(|uid| ai_model.total_workspace_bonus_credits_remaining(uid) as i64)
-                .unwrap_or(0);
-            let team_expiry = uniform_grant_expiry(grants, move |s| {
-                workspace_uid.is_some_and(|uid| *s == BonusGrantScope::Workspace(uid))
-            });
+        if !classified.team.is_empty() {
             cards_row.add_child(
                 Expanded::new(
                     1.,
@@ -709,8 +795,25 @@ impl BillingAndUsagePageV2View {
                         appearance,
                         BONUS_CREDITS_DOT_COLOR,
                         "Team credits",
-                        &team_expiry,
-                        team_balance,
+                        &classified.team.expiry_label(),
+                        classified.team.total_balance(),
+                        CARD_BORDER_COLOR,
+                    ),
+                )
+                .finish(),
+            );
+        }
+
+        if !classified.cloud.is_empty() {
+            cards_row.add_child(
+                Expanded::new(
+                    1.,
+                    render_balance_card(
+                        appearance,
+                        CLOUD_CREDITS_DOT_COLOR,
+                        "Cloud credits",
+                        &classified.cloud.expiry_label(),
+                        classified.cloud.total_balance(),
                         CARD_BORDER_COLOR,
                     ),
                 )
@@ -1728,34 +1831,6 @@ fn render_balance_card(
     .with_horizontal_padding(16.)
     .with_vertical_padding(12.)
     .finish()
-}
-
-fn uniform_grant_expiry(
-    grants: &[BonusGrant],
-    scope_filter: impl Fn(&BonusGrantScope) -> bool,
-) -> String {
-    let now = chrono::Utc::now();
-    let expiries: Vec<_> = grants
-        .iter()
-        .filter(|g| scope_filter(&g.scope))
-        .filter(|g| g.grant_type != BonusGrantType::AmbientOnly)
-        .filter(|g| g.expiration.is_none_or(|exp| now < exp))
-        .filter(|g| g.request_credits_remaining > 0)
-        .filter_map(|g| g.expiration)
-        .collect();
-    if expiries.is_empty() {
-        return String::new();
-    }
-    let first = expiries[0];
-    if expiries
-        .iter()
-        .all(|e| e.date_naive() == first.date_naive())
-    {
-        let local = first.with_timezone(&Local);
-        format!("Expires {}", local.format("%b %d, %Y"))
-    } else {
-        String::new()
-    }
 }
 
 impl From<warpui::ViewHandle<BillingAndUsagePageV2View>> for SettingsPageViewHandle {
