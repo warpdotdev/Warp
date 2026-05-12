@@ -1,7 +1,4 @@
-use warpui::{
-    elements::Empty,
-    AppContext, Element, Entity, View, ViewContext,
-};
+use warpui::{elements::Empty, AppContext, Element, Entity, View, ViewContext};
 
 use super::{
     settings_page::{MatchData, SettingsPageMeta, SettingsPageViewHandle},
