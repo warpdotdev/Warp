@@ -22,9 +22,19 @@ GFM convention used heavily in agent outputs and open-source READMEs.
 
 ## Goals
 
-- Render `<details>` / `<summary>` as collapsible disclosure widgets across
-  every markdown surface the renderer is used in.
-- Preserve the `open` attribute.
+- Render `<details>` / `<summary>` as collapsible disclosure widgets in every
+  markdown surface that renders in **interactive mode** per B9.1 (agent
+  message bodies, README previews, changelog entries, login failure
+  notifications, and any other surface where `FormattedText` is the primary
+  read target). Surfaces that render in **non-interactive mode** per B9.1
+  (notably the conversation list row preview) render `<details>` as inert
+  inline summary text with no disclosure widget; this is by design and is
+  the SOLE departure from the "collapsible disclosure widget" model. There
+  is no third "partial widget" mode — every rendering surface picks exactly
+  one of `Interactive` or `NonInteractivePreview` at the call site.
+- Preserve the `open` attribute in interactive mode. In non-interactive
+  mode the `open` attribute is ignored per B9.1 (the body is always
+  collapsed and never emitted into the DOM in that mode).
 - Support nested `<details>` UP TO a hard cap of 32 levels (B5, B8.1). Levels
   beyond the cap fall through to plain-text rendering deterministically.
 - Keep sanitization safe — no event handler attributes, no broader HTML
@@ -369,13 +379,47 @@ The change is internal to the markdown rendering pipeline:
   `warp-details-2`, …). When the native `<details>` / `<summary>` semantics
   path is taken, the renderer SKIPS identifier generation:
   `crates/warpui_core/src/elements/formatted_text_element.rs`.
-- Renderer call sites (no per-call changes expected; listed so reviewers can
-  spot-check that the new variant is exercised everywhere `FormattedText` is
-  rendered):
-  `app/src/resource_center/section_views/changelog_section.rs`,
-  `app/src/launch_configs/save_modal.rs`,
-  `app/src/auth/login_failure_notification.rs`,
-  `app/src/changelog_model.rs`.
+- Renderer call sites — B9.1 mode selection. B9.1 makes `DetailsRenderMode`
+  an EXPLICIT per-call parameter, so every existing `FormattedText` render
+  site must opt in to `Interactive` or `NonInteractivePreview`. The default
+  for a freshly-added render site is `Interactive`; the
+  `NonInteractivePreview` call sites are enumerated below and MUST pass the
+  mode explicitly (the renderer MUST NOT infer mode from surface heuristics,
+  per B9.1 "decided at the call site, not inferred from heuristics"):
+  - **`Interactive` (default mode)** — these surfaces render `FormattedText`
+    as the primary read target and pass `Interactive` (either explicitly or
+    by relying on the default):
+    `app/src/resource_center/section_views/changelog_section.rs` (changelog
+    entry bodies),
+    `app/src/launch_configs/save_modal.rs` (launch-config save modal
+    description),
+    `app/src/auth/login_failure_notification.rs` (login failure
+    notification body),
+    `app/src/changelog_model.rs` (changelog model render entry point),
+    and any agent message body / README preview render site reachable from
+    `crates/warpui_core/src/elements/formatted_text_element.rs`.
+  - **`NonInteractivePreview` (MUST pass explicitly)** — these surfaces
+    render `FormattedText` as a SECONDARY preview where the row/cell's own
+    click target is the primary interaction. They MUST pass
+    `NonInteractivePreview` at the call site:
+    - Conversation list row preview (the canonical case from B9.1). The
+      conversation-list row renders a one-line preview of the latest
+      message; the row's click target is "open this conversation", and
+      the preview MUST NOT introduce a competing toggle target. Search
+      anchor for reviewers: the conversation-list row view that renders
+      the latest-message preview via `FormattedText` (the renderer call
+      that produces the inline preview text inside the row).
+    - Any future preview surface where `FormattedText` is rendered inside
+      a row/cell whose own click handler owns the primary interaction
+      (e.g. search-result row previews, history-list row previews). When
+      adding such a surface, the call site MUST pass
+      `NonInteractivePreview`; reviewers should flag any new render site
+      that omits the mode argument and accepts the `Interactive` default
+      where the surrounding row owns the click.
+  - Reviewers should spot-check that (a) the new `Details` variant is
+    exercised everywhere `FormattedText` is rendered, and (b) every
+    `NonInteractivePreview` call site above is wired with the explicit
+    mode argument and not relying on the default.
 - Sanitization / attribute allowlist (today's allowlist for HTML-in-markdown
   is implemented inside `html_parser.rs`; this is where `details: [open]`
   and `summary: []` are wired. The sanitizer here MUST drop `on*` event
