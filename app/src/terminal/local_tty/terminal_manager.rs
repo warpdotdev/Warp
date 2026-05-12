@@ -128,11 +128,13 @@ type RemoteServerController =
 
 const ACL_UPDATE_FAILURE_RESPONSE: &str = "Something went wrong. Please try again.";
 
-/// Whether the given CRDT operation is a selection-only update. In ambient
-/// agent sessions the sharer is a headless worker — forwarding its selection
-/// ops would produce a phantom cursor on the viewer side.
-fn is_sharer_selection_op(op: &CrdtOperation) -> bool {
-    matches!(op, CrdtOperation::UpdateSelections(_))
+/// Whether the given CRDT operation should be dropped when broadcasting
+/// sharer input to viewers. In ambient agent sessions the sharer is a
+/// headless worker — forwarding its selection ops would produce a phantom
+/// cursor on the viewer side. Content ops (Edit / Undo) are kept so the
+/// buffer stays in sync.
+fn should_skip_sharer_op(is_ambient_session: bool, op: &CrdtOperation) -> bool {
+    is_ambient_session && matches!(op, CrdtOperation::UpdateSelections(_))
 }
 
 /// The TerminalManager is responsible for
@@ -1483,15 +1485,13 @@ impl TerminalManager {
 
                 // Flush the initial input operations that the sharer performed
                 // in the latest buffer before the share was started.
-                // For ambient agent sessions, filter out selection ops to
-                // avoid a phantom cursor from the headless worker.
                 let is_ambient = model.lock().is_shared_ambient_agent_session();
                 let init_input_ops: Vec<CrdtOperation> = terminal_view
                     .as_ref(ctx)
                     .input()
                     .as_ref(ctx)
                     .latest_buffer_operations()
-                    .filter(|op| !is_ambient || !is_sharer_selection_op(op))
+                    .filter(|op| !should_skip_sharer_op(is_ambient, op))
                     .cloned()
                     .collect();
                 if !init_input_ops.is_empty() {
@@ -2332,29 +2332,18 @@ impl TerminalManager {
                     return;
                 }
 
-                // In ambient agent sessions the sharer is a headless worker;
-                // filter out selection ops to avoid a phantom cursor on the
-                // viewer side, but keep content ops so the buffer stays in sync.
                 let is_ambient = model.lock().is_shared_ambient_agent_session();
-                if is_ambient {
-                    let filtered: Vec<_> = operations
-                        .iter()
-                        .filter(|op| !is_sharer_selection_op(op))
-                        .collect();
-                    if filtered.is_empty() {
-                        return;
-                    }
-                    if let Some(network) = session_sharer.borrow().as_ref() {
-                        network.update(ctx, |network, _| {
-                            network.send_input_update(block_id, filtered.into_iter());
-                        });
-                    }
-                } else {
-                    if let Some(network) = session_sharer.borrow().as_ref() {
-                        network.update(ctx, |network, _| {
-                            network.send_input_update(block_id, operations.iter());
-                        });
-                    }
+                let filtered: Vec<_> = operations
+                    .iter()
+                    .filter(|op| !should_skip_sharer_op(is_ambient, op))
+                    .collect();
+                if filtered.is_empty() {
+                    return;
+                }
+                if let Some(network) = session_sharer.borrow().as_ref() {
+                    network.update(ctx, |network, _| {
+                        network.send_input_update(block_id, filtered.into_iter());
+                    });
                 }
             }
             TerminalViewEvent::UpdateSessionLinkPermissions { role } => {
