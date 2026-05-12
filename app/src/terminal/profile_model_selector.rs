@@ -867,12 +867,9 @@ impl ProfileModelSelector {
                 right_side_fields: None,
             });
             for llm in &custom_choices {
-                let mut fields = MenuItemFields::new(llm.menu_display_name())
-                    .with_icon(Icon::Key)
+                let fields = MenuItemFields::new(llm.menu_display_name())
+                    .with_right_side_icon(Icon::Key)
                     .with_on_select_action(ProfileModelSelectorAction::SelectModel(llm.id.clone()));
-                if llm.id == active_llm.id {
-                    fields = fields.with_icon(Icon::Check);
-                }
                 items.push(MenuItem::Item(fields));
             }
         }
