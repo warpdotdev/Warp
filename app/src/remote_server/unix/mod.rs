@@ -174,7 +174,9 @@ pub(super) async fn handle_daemon_connection(
                 }
                 Err(e) => {
                     if is_disconnect_error(&e) {
-                        log::warn!("Daemon: read error from conn {conn_id} (client disconnected): {e}");
+                        log::warn!(
+                            "Daemon: read error from conn {conn_id} (client disconnected): {e}"
+                        );
                     } else {
                         log::error!("Daemon: fatal read error from conn {conn_id}: {e}");
                     }
