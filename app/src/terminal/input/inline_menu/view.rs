@@ -1,4 +1,5 @@
 //! Generic inline menu view for rendering search results with selection and navigation.
+use std::ops::Range;
 use std::sync::LazyLock;
 
 use itertools::Itertools;
@@ -229,6 +230,59 @@ impl<A: InlineMenuAction> QueryResultRenderer<A> {
             result_container
         }
     }
+}
+
+fn render_result_elements<A, T>(
+    handle: Option<ViewHandle<InlineMenuView<A, T>>>,
+    range: Range<usize>,
+    selected_idx: Option<usize>,
+    should_render_results_in_reverse: bool,
+    app: &AppContext,
+) -> Vec<Box<dyn Element>>
+where
+    A: InlineMenuAction,
+    T: 'static + Send + Sync,
+{
+    let Some(handle) = handle else {
+        return Vec::new();
+    };
+    let me = handle.as_ref(app);
+
+    let result_count = me.result_renderers.len();
+    range
+        .filter_map(|idx| {
+            let logical_idx = if should_render_results_in_reverse {
+                reverse_index(idx, result_count)
+            } else {
+                idx
+            };
+            let result_renderer = me.result_renderers.get(logical_idx)?;
+            Some(
+                SavePosition::new(
+                    EventHandler::new(result_renderer.render_inline(
+                        logical_idx,
+                        selected_idx == Some(logical_idx),
+                        app,
+                    ))
+                    .on_mouse_in(
+                        move |ctx, _, _| {
+                            ctx.dispatch_typed_action(InlineMenuRowAction::<A>::HoverItem {
+                                result_index: logical_idx,
+                            });
+                            DispatchEventResult::PropagateToParent
+                        },
+                        Some(MouseInBehavior {
+                            fire_on_synthetic_events: false,
+                            fire_when_covered: true,
+                        }),
+                    )
+                    .finish(),
+                    result_renderer.position_id.as_str(),
+                )
+                .finish(),
+            )
+        })
+        .collect_vec()
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -867,47 +921,14 @@ impl<A: InlineMenuAction, T: 'static + Send + Sync> InlineMenuView<A, T> {
                 self.state_handles.uniform_list.clone(),
                 self.result_renderers.len(),
                 move |range, app| {
-                    let handle = weak_handle.upgrade(app).expect("Handle is upgradeable");
-                    let me = handle.as_ref(app);
-
-                    let result_count = me.result_renderers.len();
-                    range
-                        .filter_map(|idx| {
-                            let logical_idx = if should_render_results_in_reverse {
-                                reverse_index(idx, result_count)
-                            } else {
-                                idx
-                            };
-                            let result_renderer = me.result_renderers.get(logical_idx)?;
-                            Some(
-                                SavePosition::new(
-                                    EventHandler::new(result_renderer.render_inline(
-                                        logical_idx,
-                                        selected_idx == Some(logical_idx),
-                                        app,
-                                    ))
-                                    .on_mouse_in(
-                                        move |ctx, _, _| {
-                                            ctx.dispatch_typed_action(
-                                                InlineMenuRowAction::<A>::HoverItem {
-                                                    result_index: logical_idx,
-                                                },
-                                            );
-                                            DispatchEventResult::PropagateToParent
-                                        },
-                                        Some(MouseInBehavior {
-                                            fire_on_synthetic_events: false,
-                                            fire_when_covered: true,
-                                        }),
-                                    )
-                                    .finish(),
-                                    result_renderer.position_id.as_str(),
-                                )
-                                .finish(),
-                            )
-                        })
-                        .collect_vec()
-                        .into_iter()
+                    render_result_elements(
+                        weak_handle.upgrade(app),
+                        range,
+                        selected_idx,
+                        should_render_results_in_reverse,
+                        app,
+                    )
+                    .into_iter()
                 },
             )
             .finish_scrollable(),
@@ -1264,4 +1285,29 @@ impl<A: InlineMenuAction, T: 'static + Send + Sync> Entity for InlineMenuView<A,
 
 mod styles {
     pub const DETAILS_PANE_PADDING: f32 = 8.;
+}
+
+#[cfg(test)]
+mod tests {
+    use warpui::App;
+
+    use super::*;
+
+    #[derive(Clone, Debug)]
+    struct TestInlineMenuAction;
+
+    impl InlineMenuAction for TestInlineMenuAction {
+        const MENU_TYPE: InlineMenuType = InlineMenuType::InlineHistoryMenu;
+    }
+
+    #[test]
+    fn test_render_result_elements_handles_stale_view_handle() {
+        App::test((), |app| async move {
+            let elements = app.read(|app| {
+                render_result_elements::<TestInlineMenuAction, ()>(None, 0..1, None, false, app)
+            });
+
+            assert!(elements.is_empty());
+        });
+    }
 }
