@@ -193,6 +193,7 @@ use warpui::platform::app::ApproveTerminateResult;
 use window_settings::WindowSettings;
 use workflows::manager::WorkflowManager;
 
+use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::facts::manager::AIFactManager;
@@ -221,6 +222,7 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::manager::NotebookManager;
 use crate::notebooks::CloudNotebook;
 use crate::palette::PaletteMode;
+use crate::persistence::model::AgentConversationData;
 use crate::persistence::PersistenceWriter;
 use crate::projects::ProjectManagementModel;
 use crate::server::cloud_objects::{listener::Listener, update_manager::UpdateManager};
@@ -1664,24 +1666,18 @@ pub(crate) fn initialize_app(
     // before the conversations vec is consumed by the singletons below.
     // Each conversation's `AgentConversationData.pinned` is the source of
     // truth; the singleton mirrors them in memory for fast cross-pane lookups.
-    let initial_pinned_conversations: HashSet<crate::ai::agent::conversation::AIConversationId> =
-        multi_agent_conversations
-            .iter()
-            .filter_map(|conv| {
-                let data =
-                    serde_json::from_str::<crate::persistence::model::AgentConversationData>(
-                        &conv.conversation.conversation_data,
-                    )
+    let initial_pinned_conversations: HashSet<AIConversationId> = multi_agent_conversations
+        .iter()
+        .filter_map(|conv| {
+            let data =
+                serde_json::from_str::<AgentConversationData>(&conv.conversation.conversation_data)
                     .ok()?;
-                if !data.pinned {
-                    return None;
-                }
-                crate::ai::agent::conversation::AIConversationId::try_from(
-                    conv.conversation.conversation_id.clone(),
-                )
-                .ok()
-            })
-            .collect();
+            if !data.pinned {
+                return None;
+            }
+            AIConversationId::try_from(conv.conversation.conversation_id.clone()).ok()
+        })
+        .collect();
     {
         let conversations = &multi_agent_conversations;
         ctx.add_singleton_model(move |_| BlocklistAIHistoryModel::new(ai_queries, conversations));
