@@ -7,6 +7,9 @@ pub struct RemoteCodebaseIndexStatus {
     pub repo_path: String,
     pub state: RemoteCodebaseIndexState,
     pub last_updated_epoch_millis: Option<u64>,
+    pub progress_completed: Option<u64>,
+    pub progress_total: Option<u64>,
+    pub failure_message: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +32,9 @@ impl From<&RemoteCodebaseIndexStatus> for proto::CodebaseIndexStatus {
             repo_path: status.repo_path.clone(),
             state: proto_state(status.state) as i32,
             last_updated_epoch_millis: status.last_updated_epoch_millis,
+            progress_completed: status.progress_completed,
+            progress_total: status.progress_total,
+            failure_message: status.failure_message.clone(),
         }
     }
 }
@@ -66,6 +72,9 @@ pub fn proto_to_codebase_index_status(
         repo_path: status.repo_path.clone(),
         state: proto_to_state(proto::CodebaseIndexStatusState::try_from(status.state).ok()?)?,
         last_updated_epoch_millis: status.last_updated_epoch_millis,
+        progress_completed: status.progress_completed,
+        progress_total: status.progress_total,
+        failure_message: status.failure_message.clone(),
     })
 }
 
@@ -107,6 +116,9 @@ mod tests {
             repo_path: "/repo".to_string(),
             state,
             last_updated_epoch_millis: Some(42),
+            progress_completed: None,
+            progress_total: None,
+            failure_message: None,
         }
     }
 
@@ -130,11 +142,40 @@ mod tests {
     }
 
     #[test]
+    fn indexing_status_round_trips_progress() {
+        let status = RemoteCodebaseIndexStatus {
+            progress_completed: Some(7),
+            progress_total: Some(11),
+            ..status(RemoteCodebaseIndexState::Indexing)
+        };
+
+        let proto = proto::CodebaseIndexStatus::from(&status);
+        assert_eq!(proto.progress_completed, Some(7));
+        assert_eq!(proto.progress_total, Some(11));
+        assert_eq!(proto_to_codebase_index_status(&proto), Some(status));
+    }
+
+    #[test]
+    fn failed_status_round_trips_failure_message() {
+        let status = RemoteCodebaseIndexStatus {
+            failure_message: Some("failed to sync".to_string()),
+            ..status(RemoteCodebaseIndexState::Failed)
+        };
+
+        let proto = proto::CodebaseIndexStatus::from(&status);
+        assert_eq!(proto.failure_message.as_deref(), Some("failed to sync"));
+        assert_eq!(proto_to_codebase_index_status(&proto), Some(status));
+    }
+
+    #[test]
     fn unspecified_status_state_is_ignored() {
         let status = proto::CodebaseIndexStatus {
             repo_path: "/repo".to_string(),
             state: proto::CodebaseIndexStatusState::Unspecified as i32,
             last_updated_epoch_millis: None,
+            progress_completed: None,
+            progress_total: None,
+            failure_message: None,
         };
 
         assert_eq!(proto_to_codebase_index_status(&status), None);

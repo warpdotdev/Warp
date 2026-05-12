@@ -357,6 +357,9 @@ message CodebaseIndexStatus {
   string repo_path = 1;
   CodebaseIndexStatusState state = 2;
   optional uint64 last_updated_epoch_millis = 3;
+  optional uint64 progress_completed = 4;
+  optional uint64 progress_total = 5;
+  optional string failure_message = 6;
 }
 
 message CodebaseIndexStatusesSnapshot {

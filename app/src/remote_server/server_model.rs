@@ -16,7 +16,11 @@ use warpui::platform::TerminationMode;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
-use ::ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
+use ::ai::index::full_source_code_embedding::manager::{
+    CodebaseIndexFinishedStatus, CodebaseIndexManager, CodebaseIndexManagerEvent,
+    CodebaseIndexStatus as LocalCodebaseIndexStatus,
+};
+use ::ai::index::full_source_code_embedding::SyncProgress;
 use warp_files::{FileModel, FileModelEvent};
 use warp_util::content_version::ContentVersion;
 use warp_util::file::FileId;
@@ -321,6 +325,10 @@ impl ServerModel {
                 } => {}
             });
         }
+        let index_manager = CodebaseIndexManager::handle(ctx);
+        ctx.subscribe_to_model(&index_manager, |me, event, ctx| {
+            me.handle_codebase_index_manager_event(event, ctx);
+        });
         // Subscribe to GlobalBufferModel events for server-local buffers.
         {
             let gbm = GlobalBufferModel::handle(ctx);
@@ -715,7 +723,7 @@ impl ServerModel {
                     Some(&request_id),
                     server_message::Message::InitializeResponse(response),
                 );
-                self.push_codebase_index_statuses_snapshot(conn_id);
+                self.push_codebase_index_statuses_snapshot(conn_id, ctx);
             }
             HandlerOutcome::Sync(message) => {
                 self.send_server_message(Some(conn_id), Some(&request_id), message);
@@ -730,14 +738,72 @@ impl ServerModel {
         }
     }
 
-    fn push_codebase_index_statuses_snapshot(&self, conn_id: ConnectionId) {
+    fn handle_codebase_index_manager_event(
+        &mut self,
+        event: &CodebaseIndexManagerEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+            return;
+        }
+
+        match event {
+            CodebaseIndexManagerEvent::SyncStateUpdated
+            | CodebaseIndexManagerEvent::IndexMetadataUpdated { .. }
+            | CodebaseIndexManagerEvent::NewIndexCreated => {
+                self.push_all_codebase_index_statuses(ctx);
+            }
+            CodebaseIndexManagerEvent::RemoveExpiredIndexMetadata { expired_metadata } => {
+                for repo_path in expired_metadata.iter() {
+                    self.send_server_message(
+                        None,
+                        None,
+                        server_message::Message::CodebaseIndexStatusUpdated(
+                            CodebaseIndexStatusUpdated {
+                                status: Some(disabled_codebase_index_status(
+                                    repo_path.to_string_lossy().to_string(),
+                                )),
+                            },
+                        ),
+                    );
+                }
+            }
+            CodebaseIndexManagerEvent::RetrievalRequestCompleted { .. }
+            | CodebaseIndexManagerEvent::RetrievalRequestFailed { .. } => {}
+        }
+    }
+
+    fn push_all_codebase_index_statuses(&self, ctx: &mut ModelContext<Self>) {
+        let snapshot = self.codebase_index_statuses_snapshot(ctx);
+        for status in snapshot.statuses {
+            log::info!(
+                "[Remote codebase indexing] Daemon pushing codebase index status update: repo_path={} state={:?}",
+                status.repo_path,
+                CodebaseIndexStatusState::try_from(status.state)
+                    .unwrap_or(CodebaseIndexStatusState::Unspecified),
+            );
+            self.send_server_message(
+                None,
+                None,
+                server_message::Message::CodebaseIndexStatusUpdated(CodebaseIndexStatusUpdated {
+                    status: Some(status),
+                }),
+            );
+        }
+    }
+
+    fn push_codebase_index_statuses_snapshot(
+        &self,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
         if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
             log::info!(
                 "[Remote codebase indexing] Daemon skipping bootstrap codebase index statuses snapshot because remote indexing is disabled: conn_id={conn_id}"
             );
             return;
         }
-        let snapshot = self.codebase_index_statuses_snapshot();
+        let snapshot = self.codebase_index_statuses_snapshot(ctx);
         if snapshot.statuses.is_empty() {
             log::info!(
                 "[Remote codebase indexing] Daemon skipping empty bootstrap codebase index statuses snapshot: conn_id={conn_id}"
@@ -754,11 +820,17 @@ impl ServerModel {
             server_message::Message::CodebaseIndexStatusesSnapshot(snapshot),
         );
     }
-
-    fn codebase_index_statuses_snapshot(&self) -> CodebaseIndexStatusesSnapshot {
-        CodebaseIndexStatusesSnapshot {
-            statuses: Vec::new(),
-        }
+    fn codebase_index_statuses_snapshot(
+        &self,
+        ctx: &mut ModelContext<Self>,
+    ) -> CodebaseIndexStatusesSnapshot {
+        let index_manager = CodebaseIndexManager::handle(ctx);
+        let statuses = index_manager
+            .as_ref(ctx)
+            .get_codebase_index_statuses(ctx)
+            .map(|(repo_path, status)| codebase_index_status_to_proto(repo_path.as_path(), &status))
+            .collect();
+        CodebaseIndexStatusesSnapshot { statuses }
     }
 
     fn handle_index_codebase(
@@ -2143,7 +2215,81 @@ fn base_codebase_index_status(
         repo_path,
         state: state.into(),
         last_updated_epoch_millis: Some(current_epoch_millis()),
+        progress_completed: None,
+        progress_total: None,
+        failure_message: None,
     }
+}
+
+fn codebase_index_status_to_proto(
+    repo_path: &Path,
+    status: &LocalCodebaseIndexStatus,
+) -> CodebaseIndexStatus {
+    let state = codebase_index_status_state(status);
+    let (progress_completed, progress_total) = progress_from_codebase_index_status(status);
+
+    CodebaseIndexStatus {
+        repo_path: repo_path.to_string_lossy().to_string(),
+        state: state.into(),
+        last_updated_epoch_millis: Some(current_epoch_millis()),
+        progress_completed,
+        progress_total,
+        failure_message: failure_message_from_codebase_index_status(status),
+    }
+}
+
+fn codebase_index_status_state(status: &LocalCodebaseIndexStatus) -> CodebaseIndexStatusState {
+    codebase_index_status_state_from_parts(
+        status.has_pending(),
+        status.has_synced_version(),
+        status.last_sync_result(),
+    )
+}
+
+fn codebase_index_status_state_from_parts(
+    has_pending: bool,
+    has_synced_version: bool,
+    last_sync_result: Option<&CodebaseIndexFinishedStatus>,
+) -> CodebaseIndexStatusState {
+    match (has_pending, has_synced_version, last_sync_result) {
+        (true, true, _) => CodebaseIndexStatusState::Stale,
+        (true, false, _) => CodebaseIndexStatusState::Indexing,
+        (false, _, Some(CodebaseIndexFinishedStatus::Completed)) => CodebaseIndexStatusState::Ready,
+        (false, _, Some(CodebaseIndexFinishedStatus::Failed(_))) => {
+            CodebaseIndexStatusState::Failed
+        }
+        (false, _, None) => CodebaseIndexStatusState::Queued,
+    }
+}
+
+fn progress_from_sync_progress(sync_progress: Option<&SyncProgress>) -> (Option<u64>, Option<u64>) {
+    match sync_progress {
+        Some(SyncProgress::Discovering { total_nodes }) => (Some(0), Some(*total_nodes as u64)),
+        Some(SyncProgress::Syncing {
+            completed_nodes,
+            total_nodes,
+        }) => (Some(*completed_nodes as u64), Some(*total_nodes as u64)),
+        None => (None, None),
+    }
+}
+
+fn progress_from_codebase_index_status(
+    status: &LocalCodebaseIndexStatus,
+) -> (Option<u64>, Option<u64>) {
+    progress_from_sync_progress(status.sync_progress())
+}
+
+fn failure_message_from_last_sync_result(
+    last_sync_result: Option<&CodebaseIndexFinishedStatus>,
+) -> Option<String> {
+    match last_sync_result {
+        Some(CodebaseIndexFinishedStatus::Failed(error)) => Some(error.to_string()),
+        Some(CodebaseIndexFinishedStatus::Completed) | None => None,
+    }
+}
+
+fn failure_message_from_codebase_index_status(status: &LocalCodebaseIndexStatus) -> Option<String> {
+    failure_message_from_last_sync_result(status.last_sync_result())
 }
 
 /// Converts a [`ReadFileContextResult`] into its protobuf equivalent.
