@@ -214,6 +214,8 @@ pub struct ConversationDetailsData {
     skill_spec: Option<SkillSpec>,
     /// Execution harness for this conversation/task.
     harness: Option<Harness>,
+    /// Error message displayed when the API call to fetch run data failed.
+    fetch_error: Option<String>,
 }
 
 impl ConversationDetailsData {
@@ -323,6 +325,7 @@ impl ConversationDetailsData {
             copy_link_url,
             skill_spec: None,
             harness,
+            fetch_error: None,
         }
     }
 
@@ -384,6 +387,7 @@ impl ConversationDetailsData {
             copy_link_url,
             skill_spec,
             harness,
+            fetch_error: None,
         }
     }
 
@@ -455,6 +459,7 @@ impl ConversationDetailsData {
                 copy_link_url,
                 skill_spec,
                 harness,
+                fetch_error: None,
             };
         }
 
@@ -481,12 +486,13 @@ impl ConversationDetailsData {
             copy_link_url,
             skill_spec: None,
             harness,
+            fetch_error: None,
         }
     }
 
     /// Minimal details data for when we only know the task id (e.g. shared sessions)
     /// but have not loaded the full `AmbientAgentTask` yet.
-    pub fn from_task_id(task_id: AmbientAgentTaskId) -> Self {
+    pub fn from_task_id(task_id: AmbientAgentTaskId, fetch_failed: bool) -> Self {
         ConversationDetailsData {
             mode: PanelMode::Task {
                 task_id: Some(task_id),
@@ -508,6 +514,7 @@ impl ConversationDetailsData {
             copy_link_url: None,
             skill_spec: None,
             harness: None,
+            fetch_error: fetch_failed.then(|| "Failed to load run details".to_string()),
         }
     }
 
@@ -549,6 +556,7 @@ impl ConversationDetailsData {
             copy_link_url,
             skill_spec: None,
             harness,
+            fetch_error: None,
         }
     }
 }
@@ -1749,6 +1757,40 @@ impl View for ConversationDetailsPanel {
             .with_margin_bottom(FIELD_SPACING)
             .finish(),
         );
+
+        // Fetch error banner (shown when the API call to load run data failed)
+        if let Some(fetch_error) = &self.data.fetch_error {
+            let error_icon = ConstrainedBox::new(
+                Icon::Triangle
+                    .to_warpui_icon(theme.ansi_fg_red().into())
+                    .finish(),
+            )
+            .with_width(STATUS_ICON_SIZE)
+            .with_height(STATUS_ICON_SIZE)
+            .finish();
+            let error_text = Text::new(
+                fetch_error.clone(),
+                appearance.ui_font_family(),
+                ui_font_size,
+            )
+            .with_color(theme.ansi_fg_red())
+            .finish();
+            let error_row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(Container::new(error_icon).with_margin_right(4.).finish())
+                .with_child(error_text)
+                .finish();
+            let error_banner = Container::new(error_row)
+                .with_uniform_padding(8.)
+                .with_background(coloru_with_opacity(theme.ansi_fg_red(), 10))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .finish();
+            content.add_child(
+                Container::new(error_banner)
+                    .with_margin_bottom(FIELD_SPACING)
+                    .finish(),
+            );
+        }
 
         // Status section
         if let Some(status_section) = self.render_status_section(appearance) {

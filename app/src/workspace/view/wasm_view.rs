@@ -194,6 +194,17 @@ impl Workspace {
                     ctx.notify();
                     return;
                 }
+
+                // Task not yet available - check if the fetch failed and show error state
+                let fetch_failed = conversations_model_handle
+                    .as_ref(ctx)
+                    .is_task_fetch_failed(&task_id);
+                if fetch_failed {
+                    let details = ConversationDetailsData::from_task_id(task_id, true);
+                    panel.set_conversation_details(details, ctx);
+                    ctx.notify();
+                    return;
+                }
             }
 
             // Otherwise, populate from conversation

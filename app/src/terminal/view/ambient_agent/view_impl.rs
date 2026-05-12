@@ -912,15 +912,21 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
-            let task = crate::ai::agent_conversations_model::AgentConversationsModel::handle(ctx)
-                .update(ctx, |model, ctx| {
-                    model.get_or_async_fetch_task_data(&task_id, ctx)
-                });
+            let conversations_handle =
+                crate::ai::agent_conversations_model::AgentConversationsModel::handle(ctx);
+            let task = conversations_handle.update(ctx, |model, ctx| {
+                model.get_or_async_fetch_task_data(&task_id, ctx)
+            });
 
             let data = task
                 .as_ref()
                 .map(|task| ConversationDetailsData::from_task(task, None, None, ctx))
-                .unwrap_or_else(|| ConversationDetailsData::from_task_id(task_id));
+                .unwrap_or_else(|| {
+                    let fetch_failed = conversations_handle
+                        .as_ref(ctx)
+                        .is_task_fetch_failed(&task_id);
+                    ConversationDetailsData::from_task_id(task_id, fetch_failed)
+                });
             self.conversation_details_panel.update(ctx, |panel, ctx| {
                 panel.set_conversation_details(data, ctx);
             });

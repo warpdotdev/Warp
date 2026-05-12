@@ -1392,6 +1392,16 @@ impl AgentConversationsModel {
         self.tasks.get(task_id).cloned()
     }
 
+    /// Returns `true` when the most recent fetch for `task_id` ended in a permanent
+    /// or transient failure and the cooldown has not yet elapsed. The caller can use
+    /// this to display an error state in the details panel.
+    pub fn is_task_fetch_failed(&self, task_id: &AmbientAgentTaskId) -> bool {
+        matches!(
+            self.task_fetch_state.get(task_id),
+            Some(TaskFetchState::PermanentlyFailedAt(_) | TaskFetchState::TransientlyFailedAt(_))
+        )
+    }
+
     /// Get raw task data by task ID, fetching from server if not in memory.
     /// If the task is already in memory, returns it immediately.
     /// If not, spawns an async task to fetch it from the server, stores it in memory,
