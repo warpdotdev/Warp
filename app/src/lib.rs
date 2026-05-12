@@ -1664,10 +1664,8 @@ pub(crate) fn initialize_app(
         let conversations = &multi_agent_conversations;
         ctx.add_singleton_model(move |_| BlocklistAIHistoryModel::new(ai_queries, conversations));
     }
-    // OrchestrationPinModel holds the cross-pane set of pinned child
-    // agent conversations. Registered after BlocklistAIHistoryModel since
-    // it subscribes to history events to prune pinned ids when a
-    // conversation is removed.
+    // Cross-pane pin set for the orchestration pill bar. Registered after
+    // the history model since it subscribes to history events.
     ctx.add_singleton_model(
         ai::blocklist::agent_view::orchestration_pin_model::OrchestrationPinModel::new,
     );
