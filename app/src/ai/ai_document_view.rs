@@ -304,6 +304,8 @@ impl AIDocumentView {
                             // sends the orchestration config).
                             if me.orchestration_config_block.is_none() {
                                 let conv_id = *cid;
+                                // TODO: introduce DocumentId / PlanId newtypes to make this 
+                                // conversion type-safe.
                                 let plan_id = document_id.to_string();
                                 me.orchestration_config_block =
                                     Some(ctx.add_typed_action_view(move |ctx| {
