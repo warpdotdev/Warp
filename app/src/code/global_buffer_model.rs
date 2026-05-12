@@ -2008,15 +2008,19 @@ impl GlobalBufferModel {
                         text: content,
                     }];
 
-                    ctx.emit(GlobalBufferModelEvent::BufferLoaded {
-                        file_id,
-                        content_version: new_version,
-                    });
+                    // Emit ServerLocalBufferUpdated BEFORE BufferLoaded so that
+                    // the ServerModel's handler can peek at pending OpenBuffer
+                    // requests to exclude the requesting connection from the
+                    // broadcast. BufferLoaded consumes those pending requests.
                     ctx.emit(GlobalBufferModelEvent::ServerLocalBufferUpdated {
                         file_id,
                         edits: char_offset_edits,
                         new_server_version,
                         expected_client_version,
+                    });
+                    ctx.emit(GlobalBufferModelEvent::BufferLoaded {
+                        file_id,
+                        content_version: new_version,
                     });
                 }
                 Err(e) => {
@@ -2180,6 +2184,16 @@ impl GlobalBufferModel {
                 content_version: new_version,
             });
         } else {
+            // Check if the push is stale — its server version is already
+            // consumed (e.g. via an OpenBufferResponse from a force-reload).
+            if new_server_version <= sync_clock.server_version.as_u64() {
+                log::info!(
+                    "[remote-buffer] Dropping stale BufferUpdatedPush for {path}: \
+                     push_sv={new_server_version} <= local_sv={:?}",
+                    sync_clock.server_version
+                );
+                return;
+            }
             // Conflict — local edits diverged from server.
             log::warn!(
                 "[remote-buffer] CONFLICT for {path}: push expected C={expected_client_version}, \
