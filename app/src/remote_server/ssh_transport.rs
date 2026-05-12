@@ -355,7 +355,7 @@ impl RemoteTransport for SshTransport {
                  case \"$sock_path\" in \"~\"|\"~/\"*) sock_path=\"${{HOME}}${{sock_path#\\~}}\";; esac; \
                  if [ -f \"$pid_path\" ]; then \
                    pid=$(cat \"$pid_path\" 2>/dev/null) && \
-                   [ -n \"$pid\" ] && kill \"$pid\" 2>/dev/null; \
+                   case \"$pid\" in ''|*[!0-9]*|0) ;; *) kill \"$pid\" 2>/dev/null;; esac; \
                  fi; \
                  rm -f \"$pid_path\" \"$sock_path\""
             );
