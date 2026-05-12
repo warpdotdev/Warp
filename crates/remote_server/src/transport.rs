@@ -281,9 +281,8 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// from proceeding.
     ///
     /// [`remove_remote_server_binary`]: RemoteTransport::remove_remote_server_binary
-    fn stop_remote_server_daemon(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
+    fn stop_remote_server_daemon(&self)
+        -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
 
     /// Returns `true` if the transport considers a reconnect viable after
     /// a spontaneous disconnect with the given exit status.
