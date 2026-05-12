@@ -486,6 +486,10 @@ impl BlocklistAIHistoryModel {
         ctx: &mut ModelContext<Self>,
     ) {
         let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
+            log::warn!(
+                "set_conversation_pinned called for conversation {conversation_id:?} that is \
+                 not loaded; pin state change to {pinned} will not be persisted."
+            );
             return;
         };
         if conversation.is_pinned() == pinned {

@@ -76,6 +76,14 @@ impl OrchestrationPinModel {
         });
         ctx.emit(OrchestrationPinEvent::PinSetChanged);
     }
+
+    /// Clears the in-memory pinned set. Invoked from `log_out` so the next
+    /// user does not inherit the previous account's pins. The persisted
+    /// per-conversation `pinned` flags are wiped by the sqlite reset that
+    /// runs alongside logout.
+    pub fn reset(&mut self) {
+        self.pinned.clear();
+    }
 }
 
 impl Entity for OrchestrationPinModel {

@@ -278,6 +278,7 @@ fn test_from_conversation_populates_local_conversation_fields() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 is_remote_child: false,
+                pinned: false,
             },
         );
 
