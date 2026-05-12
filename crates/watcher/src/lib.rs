@@ -17,7 +17,7 @@ use notify_debouncer_full::{
     notify::{
         self,
         event::{ModifyKind, RenameMode},
-        Event, EventKind, RecommendedWatcher, RecursiveMode, WatchFilter,
+        EventKind, RecommendedWatcher, RecursiveMode, WatchFilter,
     },
     DebounceEventHandler, DebounceEventResult, DebouncedEvent, Debouncer, NoCache,
 };
@@ -255,12 +255,6 @@ impl DebounceEventHandler for WatcherEventHandler {
 fn deduplicate_and_merge_notifier_events(
     raw_fs_events: &[DebouncedEvent],
 ) -> Result<BulkFilesystemWatcherEvent> {
-    deduplicate_and_merge_notify_events(raw_fs_events.iter().map(|fs_event| &fs_event.event))
-}
-
-fn deduplicate_and_merge_notify_events<'a>(
-    raw_fs_events: impl IntoIterator<Item = &'a Event>,
-) -> Result<BulkFilesystemWatcherEvent> {
     let mut update = BulkFilesystemWatcherEvent::default();
 
     let mut created: HashSet<PathBuf> = HashSet::new();
@@ -389,8 +383,15 @@ mod tests {
 
     use super::*;
 
-    fn rename_event(mode: RenameMode, path: &str) -> Event {
-        Event::new(EventKind::Modify(ModifyKind::Name(mode))).add_path(PathBuf::from(path))
+    #[allow(
+        clippy::disallowed_types,
+        reason = "DebouncedEvent requires this time type."
+    )]
+    fn rename_event(mode: RenameMode, path: &str) -> DebouncedEvent {
+        DebouncedEvent::new(
+            Event::new(EventKind::Modify(ModifyKind::Name(mode))).add_path(PathBuf::from(path)),
+            std::time::Instant::now(),
+        )
     }
 
     #[test]
@@ -402,7 +403,7 @@ mod tests {
             rename_event(RenameMode::To, "/repo/subdir/file2.txt"),
         ];
 
-        let update = deduplicate_and_merge_notify_events(&events).unwrap();
+        let update = deduplicate_and_merge_notifier_events(&events).unwrap();
 
         assert_eq!(
             update.moved.get(&PathBuf::from("/repo/subdir/file1.txt")),
