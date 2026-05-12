@@ -24,8 +24,8 @@ const OZ_AMBIENT_BACKGROUND_COLOR: ColorU = ColorU {
 // Sub-component size ratios, expressed as fractions of `total_size`. The brand circle is
 // ~76% wide and the status badge is ~57% wide, with the badge's bottom-right anchored at
 // the box's bottom-right corner. With these ratios the badge center sits *inside* the
-// brand circle (not on its edge).
-/// Fraction of `total_size` taken up by the brand circle.
+// brand circle (not on its edge). `CIRCLE_RATIO` is `pub(crate)` so callers that
+// pre-render their own avatar can size it consistently with the other variants.
 pub(crate) const CIRCLE_RATIO: f32 = 0.76;
 const ICON_RATIO: f32 = 0.43;
 const BADGE_RATIO: f32 = 0.57;

@@ -551,7 +551,7 @@ impl OrchestrationPillBar {
             is_selected: orchestrator_id == active_id,
             kind: PillKind::Orchestrator,
             pin_state: PillPinState::Unpinned,
-            // Orchestrators always run locally.
+            // Unused: orchestrator pills don't render a status overlay.
             is_remote_child: false,
         });
 
