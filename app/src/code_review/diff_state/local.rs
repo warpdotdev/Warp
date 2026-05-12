@@ -2798,6 +2798,57 @@ impl LocalDiffStateModel {
         Ok(diff_metadata)
     }
 
+    /// Variant of [`Self::get_diff_metadata_using_numstat`] that compares the
+    /// index against HEAD (`git diff --numstat --cached`).
+    ///
+    /// Used as a fallback in [`diff_metadata_against_head`] so files whose
+    /// worktree matches HEAD but whose index differs (the staged-then-reverted
+    /// scenario from #10512) still contribute non-zero line counts to the
+    /// panel header / git chip / agent footer aggregate. This helper does not
+    /// itself enforce eligibility — callers must gate it with
+    /// [`Self::should_retry_with_staged`] to match the per-file fallback in
+    /// [`Self::get_file_diff`].
+    async fn get_staged_diff_metadata_using_numstat(
+        repo_path: &Path,
+    ) -> Result<HashMap<PathBuf, GitNumStatMetadata>> {
+        log::debug!(
+            "[GIT OPERATION] local.rs get_staged_diff_metadata_using_numstat git diff --numstat --cached"
+        );
+        let numstat_output =
+            match run_git_command(repo_path, &["diff", "--numstat", "--cached"]).await {
+                Ok(output) => output,
+                Err(_) => {
+                    // If numstat fails, return empty set
+                    return Ok(HashMap::new());
+                }
+            };
+
+        let mut diff_metadata = std::collections::HashMap::new();
+
+        for line in numstat_output.lines() {
+            if line.is_empty() {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 {
+                let additions = parts[0];
+                let deletions = parts[1];
+                let filename = parts[2];
+
+                let metadata = GitNumStatMetadata {
+                    lines_added: additions.parse().unwrap_or(0),
+                    lines_removed: deletions.parse().unwrap_or(0),
+                    is_binary_file: additions == "-" && deletions == "-",
+                };
+
+                diff_metadata.insert(PathBuf::from(filename), metadata);
+            }
+        }
+
+        Ok(diff_metadata)
+    }
+
     /// Get binary files using git diff --numstat against a specific commit
     async fn get_binary_files_vs_commit(
         repo_path: &Path,
@@ -2855,6 +2906,14 @@ pub(crate) async fn diff_metadata_against_head(
     let changed_files = LocalDiffStateModel::parse_git_status(&status_output)?;
     let num_stat_metadata =
         LocalDiffStateModel::get_diff_metadata_using_numstat(repo_path, "HEAD").await?;
+    // Fallback for staged-then-reverted files (see #10512): worktree == HEAD
+    // so `git diff --numstat HEAD` emits no line, but `git status` still
+    // lists the file. Mirror the per-file `--cached` fallback in
+    // [`LocalDiffStateModel::get_file_diff`] so the aggregate header / chip /
+    // footer agree with the file list rendered in the panel.
+    //
+    // Computed lazily so repos with no missing entries pay nothing.
+    let mut staged_num_stat_metadata: Option<HashMap<PathBuf, GitNumStatMetadata>> = None;
 
     let mut total_additions = 0;
     let mut total_deletions = 0;
@@ -2868,6 +2927,19 @@ pub(crate) async fn diff_metadata_against_head(
                 LocalDiffStateModel::num_lines_in_file_if_non_binary(&repo_path.join(file_path))
                     .await?;
             total_additions += num_lines.unwrap_or(0);
+        } else if LocalDiffStateModel::should_retry_with_staged(status) {
+            if staged_num_stat_metadata.is_none() {
+                staged_num_stat_metadata = Some(
+                    LocalDiffStateModel::get_staged_diff_metadata_using_numstat(repo_path).await?,
+                );
+            }
+            if let Some(metadata) = staged_num_stat_metadata
+                .as_ref()
+                .and_then(|m| m.get(file_path))
+            {
+                total_additions += metadata.lines_added;
+                total_deletions += metadata.lines_removed;
+            }
         }
     }
 

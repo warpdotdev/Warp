@@ -410,6 +410,70 @@ async fn retrieve_diff_state_keeps_binary_staged_then_reverted_file() {
 
 #[cfg(feature = "local_fs")]
 #[tokio::test]
+async fn diff_metadata_against_head_counts_staged_then_reverted_lines() {
+    // Regression: the panel header / git chip / agent footer pull from
+    // `diff_metadata_against_head`, which runs `git diff --numstat HEAD`
+    // (worktree vs HEAD) and so misses staged-then-reverted files for the
+    // same reason `get_file_diff` did before the #10512 `--cached` fallback.
+    //
+    // The per-file path now surfaces `foo.txt +1 -1`; without mirroring the
+    // fallback here the aggregate would still report `1 file changed, +0 -0`
+    // and disagree with the file list rendered in the same panel.
+    let dir = init_repo_with_initial_commit("foo.txt", "v1\n").await;
+    let repo = dir.path();
+
+    std::fs::write(repo.join("foo.txt"), "v2\n").expect("write v2");
+    run_git(repo, &["add", "foo.txt"]).await;
+    std::fs::write(repo.join("foo.txt"), "v1\n").expect("revert worktree");
+
+    let metadata = diff_metadata_against_head(repo)
+        .await
+        .expect("diff_metadata_against_head");
+
+    assert_eq!(metadata.aggregate_stats.files_changed, 1);
+    assert_eq!(
+        metadata.aggregate_stats.total_additions, 1,
+        "expected staged numstat fallback to contribute +1; got {metadata:?}"
+    );
+    assert_eq!(
+        metadata.aggregate_stats.total_deletions, 1,
+        "expected staged numstat fallback to contribute -1; got {metadata:?}"
+    );
+}
+
+#[cfg(feature = "local_fs")]
+#[tokio::test]
+async fn diff_metadata_against_head_prefers_worktree_numstat_over_staged() {
+    // Control: when the worktree diverges from both the index and HEAD,
+    // numstat HEAD reports the worktree delta and the staged fallback must
+    // not double-count. Stage v2 then edit the worktree to a 3-line v3 (no
+    // re-add): worktree-vs-HEAD numstat is +1 -1 (one line replaced) plus
+    // two new lines, totalling +3 -1. The staged fallback would have
+    // returned +1 -1 against v2 — observably different.
+    let dir = init_repo_with_initial_commit("foo.txt", "v1\n").await;
+    let repo = dir.path();
+
+    std::fs::write(repo.join("foo.txt"), "v2\n").expect("write v2");
+    run_git(repo, &["add", "foo.txt"]).await;
+    std::fs::write(repo.join("foo.txt"), "a\nb\nc\n").expect("write worktree v3");
+
+    let metadata = diff_metadata_against_head(repo)
+        .await
+        .expect("diff_metadata_against_head");
+
+    assert_eq!(metadata.aggregate_stats.files_changed, 1);
+    assert_eq!(
+        metadata.aggregate_stats.total_additions, 3,
+        "expected worktree numstat (+3) not staged (+1); got {metadata:?}"
+    );
+    assert_eq!(
+        metadata.aggregate_stats.total_deletions, 1,
+        "expected worktree numstat (-1); got {metadata:?}"
+    );
+}
+
+#[cfg(feature = "local_fs")]
+#[tokio::test]
 async fn diff_state_against_head_uses_worktree_when_worktree_diverges_from_index() {
     // Control case: distinguishes the primary path from the fallback by
     // staging v2, then editing the worktree to v3 *without* re-staging.
