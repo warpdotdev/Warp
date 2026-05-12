@@ -4044,6 +4044,7 @@ impl PaneGroup {
                     AIAgentHarness::Oz => None,
                     AIAgentHarness::Unknown => Some(Harness::Unknown),
                 };
+                let fallback_title = cli_conversation.metadata.title.clone();
                 terminal_view.update(ctx, |view, ctx| {
                     view.restore_conversation_and_directory_context(
                         CloudConversationData::CLIAgent(cli_conversation),
@@ -4070,6 +4071,11 @@ impl PaneGroup {
                         ctx,
                     );
                     if let Some(vehicle_conversation_id) = view.active_conversation_id(ctx) {
+                        TerminalView::apply_restored_cli_agent_title_to_vehicle_conversation(
+                            fallback_title,
+                            vehicle_conversation_id,
+                            ctx,
+                        );
                         view.model
                             .lock()
                             .block_list_mut()
@@ -5475,6 +5481,7 @@ impl PaneGroup {
                         AIAgentHarness::Oz => None,
                         AIAgentHarness::Unknown => Some(Harness::Unknown),
                     };
+                    let fallback_title = cli_conversation.metadata.title.clone();
                     view.restore_conversation_and_directory_context(
                         CloudConversationData::CLIAgent(cli_conversation),
                         true,
@@ -5496,6 +5503,11 @@ impl PaneGroup {
                         ctx,
                     );
                     if let Some(vehicle_conversation_id) = view.active_conversation_id(ctx) {
+                        TerminalView::apply_restored_cli_agent_title_to_vehicle_conversation(
+                            fallback_title,
+                            vehicle_conversation_id,
+                            ctx,
+                        );
                         view.model
                             .lock()
                             .block_list_mut()
