@@ -64,47 +64,90 @@ The following collapsible blocks within an agent message are in scope:
 
 #### B1.1. Plan-step row definition (single source of truth)
 
-A "plan-step row" is a single rendered row in the agent's plan-and-todo
-list (the UI rendered by
-`app/src/ai/blocklist/prompt/plan_and_todo_list.rs`) that corresponds to
-ONE entry in the agent's plan-or-TODO list. Each plan-step row has the
-SAME timestamp affordance as a reasoning or tool-call sub-block:
+A "plan-step row" is a single rendered row in the **agent transcript's
+TODO list** — the UI rendered by
+`app/src/ai/blocklist/block/view_impl/todos.rs` (NOT
+`app/src/ai/blocklist/prompt/plan_and_todo_list.rs`, which renders the
+prompt/context chip and is out of scope for this feature). Each
+plan-step row corresponds to ONE `AIAgentTodo` entry in the
+`AIAgentTodoList` for a given message. The timestamp affordance is
+attached to these transcript rows; the prompt-chip view is unchanged
+by this spec. Each plan-step row carries the SAME timestamp
+affordance as a reasoning or tool-call sub-block:
 
-- **Identity.** A plan-step row is identified by the `(message_id,
-  plan_step_index)` pair from the conversation event stream.
-- **Start event.** The row's start timestamp is the
-  `PlanStepStarted { message_id, plan_step_index, started_at }` event
-  emitted by the agent orchestrator (the same emitter used for
-  reasoning-phase and tool-call start events — see
-  `app/src/ai/blocklist/orchestration_events.rs`). If the orchestrator
-  emits a `PlanStepCreated` event before `PlanStepStarted`, the
-  `started_at` from `PlanStepStarted` is the authoritative start time;
-  `PlanStepCreated`'s timestamp is NOT used for the elapsed counter.
-- **Completion event.** The row's elapsed counter freezes and is
-  replaced by the final duration when a
-  `PlanStepCompleted { message_id, plan_step_index, completed_at,
-  outcome }` event arrives, where `outcome` is one of
-  `"completed"`, `"failed"`, or `"cancelled"`. All three terminal
-  outcomes freeze the elapsed counter; the row label may render
-  outcome-specific styling but the timestamp affordance is identical.
-- **Skipped / never-started rows.** A plan-step row that the agent
-  marks `skipped` without ever emitting `PlanStepStarted` shows NO
-  timestamp affordance (no collapsed timestamp, no expanded
-  `Started …`). This is the only kind of plan-step row in scope that
-  does not carry the affordance, and it is intentional — there is no
-  start time to render.
-- **Editing / re-ordering.** If the user edits the plan and the
-  orchestrator re-emits `PlanStepStarted` for an already-started row,
-  the most-recent `started_at` wins (later events supersede earlier).
-- **Pause-and-resume.** If the orchestrator emits
-  `PlanStepPaused` and later `PlanStepResumed`, the elapsed counter
-  is computed as cumulative active time (sum of resumed-minus-started
-  intervals). The `Started` label still shows the FIRST
-  `started_at` so the absolute time is stable across pauses.
+- **Identity.** A plan-step row is identified by its
+  `(message_id, AIAgentTodoId)` pair. `AIAgentTodoId` already exists
+  in `app/src/ai/agent/mod.rs` (around line 1444); `message_id` comes
+  from the enclosing agent message. The pair is stable across
+  re-renders.
+- **Start time — derived, not event-driven.** The agent orchestrator
+  does NOT today emit per-step `PlanStepStarted` events on the
+  conversation event stream
+  (`app/src/ai/blocklist/orchestration_events.rs`). Earlier drafts of
+  this spec assumed such events existed and named them
+  `PlanStepStarted` / `PlanStepCompleted` / `PlanStepPaused` /
+  `PlanStepResumed`; those events do NOT exist in the current
+  contract and this spec does NOT add them. Instead, the start
+  timestamp for a plan-step row is **derived client-side** from the
+  observable state changes that DO exist:
+  - The agent emits `TodoOperation::UpdateTodos { todos }` and
+    `TodoOperation::MarkAsCompleted { completed_todos }` (see
+    `app/src/ai/agent/mod.rs:1495`). Each todo has a derived status
+    of type `TodoStatus` (`Pending`, `InProgress`, `Completed`,
+    `Cancelled`, `Stopped`) — see
+    `app/src/ai/agent/conversation.rs:80`.
+  - The first time the client observes a given `AIAgentTodoId`
+    transition to `TodoStatus::InProgress` (or, if no `InProgress`
+    transition is ever observed because the agent reports the row as
+    already `Completed`, the first observation of any terminal status
+    on that id), the client records the local wall-clock time
+    (`SystemTime::now()`) as that row's `started_at`. The
+    `(AIAgentTodoId → started_at)` map lives in the view-model
+    container that already holds `AIAgentTodoList` state and is reset
+    when the enclosing message is cleared.
+  - This is a **client-side observation timestamp**, not an
+    authoritative server timestamp. V1 accepts this trade-off; a
+    follow-up may add an authoritative `started_at` field to the
+    persisted todo if accuracy across reconnect/replay becomes a
+    requirement (tracked in Open Questions).
+- **Completion time — derived, not event-driven.** The row's elapsed
+  counter freezes and is replaced by the final duration when the
+  client observes the todo transition to any terminal status
+  (`Completed`, `Cancelled`, or `Stopped`). The completion timestamp
+  is `SystemTime::now()` at the moment of that observation. All
+  three terminal statuses freeze the counter identically; the row
+  label may render status-specific styling, but the timestamp
+  affordance is identical across the three.
+- **Pending / never-started rows.** A plan-step row that the client
+  has only ever observed in `TodoStatus::Pending` (never
+  `InProgress` and never any terminal status) has NO recorded
+  `started_at` and therefore shows NO timestamp affordance — no
+  collapsed timestamp, no expanded `Started …` line. This is the
+  ONLY kind of plan-step row in scope that does not carry the
+  affordance, and it is intentional: there is no time to render.
+- **Editing / re-ordering.** If the agent's `UpdateTodos` operation
+  replaces a row's `AIAgentTodoId` (e.g. plan is rewritten), the row
+  is treated as new — its `started_at` is recorded the next time it
+  is observed as `InProgress`. The retired id's recorded
+  `started_at` is dropped. If the same `AIAgentTodoId` is reused
+  with a fresh transition `Pending → InProgress`, the existing
+  `started_at` is retained (the row was paused, not deleted).
+- **Pause-and-resume.** V1 does NOT model cumulative
+  active-vs-paused time. The elapsed counter is the wall-clock
+  delta between the recorded `started_at` and "now" (or the
+  recorded terminal-status time), regardless of whether the row
+  briefly returned to `Pending`. This is a deliberate
+  simplification consistent with the absence of pause/resume events
+  in the current event stream. A future revision MAY add a
+  pause-aware computation; until then, the simpler
+  `now − started_at` is the contract and is verified by tests.
 
-Any future "agent sub-block" type that has a start event in the
-conversation event stream (`orchestration_events.rs`) should adopt the
-same treatment.
+Any future "agent sub-block" type that exposes an observable status
+transition (analogous to `TodoStatus`) should adopt the same
+treatment. If a future revision introduces explicit `PlanStepStarted`
+/ `PlanStepCompleted` events on the conversation event stream, those
+SHOULD replace the client-side derivation — but doing so is out of
+scope for this spec and gated on a separate orchestrator change.
 
 ### B2. Collapsed-row format
 
@@ -149,7 +192,13 @@ collapsed and expanded rows are visually consistent.
   V1.5.
 - The locale governs the AM/PM marker only; the digit/colon
   ordering of the time portion AND the ISO date prefix are fixed
-  for parity.
+  for parity. The locale is read implicitly inside `format_absolute`
+  via the app's existing `chrono::Local` context (the same source
+  `time_format.rs` already uses) — the helper does NOT take a
+  locale parameter, and there is no per-call locale override in V1.
+  This keeps the "locale-aware" surface area small enough that the
+  helper signature `format_absolute(started_at, now, prefer_24h)`
+  in Implementation Pointers fully describes the input set.
 
 ### B2.2. Forced `relative` mode beyond 60 minutes
 
@@ -176,14 +225,23 @@ When the block is expanded, the header shows both an absolute start time and an
 elapsed counter / final duration. The same field is reused across the in-progress
 and completed states — there is NO separate `running…` placeholder.
 
-- In-progress phase: `Started 11:42:07 · <elapsed> elapsed`, where `<elapsed>`
-  is computed from the start timestamp at each tick of the existing 1 Hz
-  subscriber (B4). Examples while ticking: `1s elapsed`, `2s elapsed`,
-  `3s elapsed`, … `4s elapsed`.
-- Completed phase: `Started 11:42:07 · 4.3s` — at the moment the completion
-  event arrives, the elapsed value is replaced by the final duration string
-  (matching the precision used for completed phases elsewhere) and stops
-  updating.
+- In-progress phase: `Started 11:42:07 · <elapsed>`, where `<elapsed>` is
+  the COMPACT in-progress label produced by
+  `format_elapsed_label` (Implementation Pointers). Examples while ticking
+  at 1 Hz: `1s elapsed`, `2s elapsed`, `3s elapsed`, `4s elapsed`, …
+  `12m elapsed`, `1h elapsed`. The output format is the compact contract in
+  `format_compact_duration` + the literal suffix `" elapsed"`; it does NOT
+  use the verbose `human_readable_precise_duration` form (e.g.
+  `"3.14 sec"`).
+- Completed phase: `Started 11:42:07 · <duration>` where `<duration>` is
+  the COMPACT final duration produced by `format_compact_duration` —
+  examples: `4.3s` (sub-10-second precise), `12s`, `2m`, `1h`. At the
+  moment the completion observation arrives (per B1.1 derivation for
+  plan-step rows; per existing per-phase events for reasoning / tool
+  calls), the elapsed value is replaced by the final compact duration
+  string and stops updating. This compact form is the exclusive expanded-
+  row duration vocabulary used by this feature; `time_format.rs`'s
+  verbose helpers are NOT used here.
 
 The expanded view always displays a numeric elapsed/duration value; it never
 shows a static `running…` label. The 1 Hz ticker described in B4 is the only
@@ -360,34 +418,95 @@ No new public API. The values flow through the existing settings store.
   `app/src/ai/agent/conversation_yaml.rs`.
 - `(new module)` Time-formatting helper:
   `app/src/util/relative_time.rs`. The codebase already has
-  `app/src/util/time_format.rs` for relative human-readable durations
-  (e.g. `format_approx_duration_from_now`); the new module is dedicated to
-  this feature's per-sub-block needs and MUST be the SINGLE shared helper used
-  by reasoning, tool-call, and plan-step rendering — no duplicated formatters.
-  Module exposes:
+  `app/src/util/time_format.rs` whose existing helpers
+  (`format_approx_duration_from_now`, `human_readable_precise_duration`,
+  `human_readable_approx_duration`) produce **verbose** forms like
+  `"3.14 sec"`, `"5 min"`, `"2 hours"`, `"2 days ago"`, `"just now"`.
+  Those verbose forms are NOT used by this feature directly: the
+  collapsed-row, expanded-row, and aria-label strings in B2 / B2.2 / B3
+  are COMPACT (`34s ago`, `2m ago`, `2h ago`, `4.3s`, `1s elapsed`).
+  The new `relative_time.rs` module is therefore dedicated to this
+  feature's compact forms and MUST be the SINGLE shared helper used by
+  reasoning, tool-call, and plan-step rendering — no duplicated
+  formatters. It is intentionally separate from `time_format.rs`;
+  earlier drafts implied the existing `human_readable_precise_duration`
+  could be reused directly, which is wrong (its output does not match
+  the compact contract in B2.2 / B3 — e.g. `human_readable_precise_duration`
+  returns `"4.3 sec"`, whereas this feature renders `4.3s`). Module
+  exposes the following exact signatures and output contracts:
+
   - `fn format_relative_auto(now: SystemTime, started_at: SystemTime) -> RelativeOrAbsolute`
-    (caps at 60 min, then signals fallthrough to absolute).
+    — implements B2's auto rule. Returns the
+    `RelativeOrAbsolute::Relative(String)` variant with one of the
+    compact forms below when `now - started_at < 60 min`; returns
+    `RelativeOrAbsolute::Absolute` (a marker — the caller then invokes
+    `format_absolute`) when `now - started_at >= 60 min`.
+    The compact relative forms returned (exactly these strings, no
+    pluralization, no spaces between number and unit):
+    `"just now"` (< 5 s); `"<N>s ago"` (5 s – < 60 s); `"<N>m ago"`
+    (60 s – < 60 min).
   - `fn format_relative_extended(now: SystemTime, started_at: SystemTime) -> String`
-    (implements B2.2 ranges past 60 min; used only for forced `"relative"`).
+    — implements B2.2. Returns the compact forms `"<N>m ago"`,
+    `"<N>h ago"`, `"<N>d ago"`, `"<N>w ago"` per the B2.2 range table.
+    Floor division, no pluralization, no spaces between number and
+    unit. Examples: `"60m ago"`, `"119m ago"`, `"2h ago"`,
+    `"47h ago"`, `"2d ago"`, `"1w ago"`, `"12w ago"`.
   - `fn format_absolute(started_at: SystemTime, now: SystemTime, prefer_24h: bool) -> String`
-    (implements B2.1). The clock is INJECTED via `now` so the date-prefix
-    branch (`now - started_at > 24 h`) is fully deterministic and unit-testable
-    without depending on the system clock. Behavior:
+    — implements B2.1. The clock is INJECTED via `now` so the
+    date-prefix branch (`now - started_at > 24 h`) is fully
+    deterministic and unit-testable without depending on the system
+    clock. Behavior:
     - When `now - started_at <= 24 h`: time-only form per B2.1
-      (`HH:MM:SS` or `h:MM:SS AM/PM`).
-    - When `now - started_at > 24 h`: date-prefixed form per B2.1.
+      (`"11:42:07"` or `"11:42:07 AM"`).
+    - When `now - started_at > 24 h`: date-prefixed form
+      (`"2026-05-08 11:42:07"` or `"2026-05-08 11:42:07 AM"`).
+    - Locale governs ONLY the AM/PM marker in 12-hour mode (per the
+      app's existing chrono locale handling, the same source
+      `time_format.rs` uses for `DateTime<Local>`); the digit/colon
+      ordering of the time portion and the ISO date prefix are fixed
+      regardless of locale. This is the entire surface area of
+      "locale-aware" behavior in V1 — earlier wording implying the
+      helper takes a locale parameter is superseded; the only
+      locale-sensitive output is the AM/PM marker, which is obtained
+      from the active `chrono::Local` formatting context inside the
+      helper, NOT a separate parameter.
+  - `fn format_compact_duration(duration: Duration) -> String`
+    — implements the expanded-row compact duration shown in B3 (e.g.
+    `"4.3s"`, `"1s"`, `"2s"`, `"3s"`, `"12m"`, `"1h"`). Output
+    contract: durations < 60 s render as `"<N>s"` for integer seconds
+    or `"<N.M>s"` (one decimal) for sub-10-second precise final
+    durations like `4.3s`; durations 60 s – < 60 min render as
+    `"<N>m"`; durations ≥ 60 min render as `"<N>h"`. No spaces, no
+    pluralization, no "sec"/"min"/"hours" expansions — this is the
+    explicit divergence from `human_readable_precise_duration` and
+    the reason this helper exists.
+  - `fn format_elapsed_label(duration: Duration) -> String`
+    — wraps `format_compact_duration` for the in-progress label per
+    B3: appends `" elapsed"` (e.g. `"1s elapsed"`, `"2s elapsed"`,
+    `"12m elapsed"`). The 1 s ticker invokes THIS helper on every
+    tick; it does NOT invoke `human_readable_precise_duration`
+    (earlier drafts said it did — that was wrong, since the verbose
+    output `"3.14 sec"` does not match the compact `"3s elapsed"`
+    contract).
   - `(internal)` `fn format_date_prefix(date: SystemTime) -> String`
     used by `format_absolute` only. V1 always returns the ISO-8601
     short date `YYYY-MM-DD` (locale-independent). The locale parameter
     is intentionally NOT taken — V1 does not use a locale-aware short
-    date per B2.1. A locale-aware variant may be added in V1.5 behind a
-    separate setting; until then, ISO-8601 is the single rendered form.
-- A SINGLE shared helper rule: all sub-block renderers (reasoning, tool-call,
-  plan-step) call into `relative_time.rs` for both the collapsed and expanded
-  forms. No renderer should hand-roll its own time string. The expanded view's
-  in-progress elapsed counter (B3) calls `human_readable_precise_duration`
-  from `app/src/util/time_format.rs` once per 1 Hz tick — do NOT introduce a
-  parallel implementation.
+    date per B2.1. A locale-aware variant may be added in V1.5 behind
+    a separate setting; until then, ISO-8601 is the single rendered
+    form.
+- A SINGLE shared helper rule: all sub-block renderers (reasoning,
+  tool-call, plan-step) call into `relative_time.rs` for the
+  collapsed-row compact form (`format_relative_auto` /
+  `format_relative_extended`), the absolute time
+  (`format_absolute`), AND the expanded-row in-progress / completed
+  duration (`format_compact_duration` /
+  `format_elapsed_label`). No renderer hand-rolls its own time string,
+  and no renderer reaches into `time_format.rs`'s verbose helpers for
+  the affordance defined by this spec. The existing
+  `time_format.rs` helpers remain in use ONLY for their pre-existing
+  call sites (message-level relative times, etc.) and are unchanged
+  by this spec.
 - `(new module or co-located in agent_view)` Coalesced ticker for
   live-update cadence — a single PAIR of subscribers per conversation
   list: ONE with a 1-second period (the "1 s ticker") and ONE with a
@@ -401,11 +520,32 @@ No new public API. The values flow through the existing settings store.
   re-render of every other visible relative timestamp. No per-row
   timers.
 - Tool-call and plan-step rendering: tool calls flow through the same agent
-  output renderer above (`view_impl/output.rs`); plan-step UI is rendered via
-  `app/src/ai/blocklist/prompt/plan_and_todo_list.rs`. Both pick up the
-  resolved `subblock_timestamp_format` via the existing settings context.
-- Sub-blocks' start time must come from the existing conversation event stream;
-  do not introduce a parallel timing source.
+  output renderer above (`view_impl/output.rs`). The transcript todo / plan-
+  step UI is rendered in
+  **`app/src/ai/blocklist/block/view_impl/todos.rs`** — this is the file
+  that draws the per-row TODO entries inside an agent message block and is
+  where the per-row timestamp affordance is wired. The prompt/context chip
+  rendered by `app/src/ai/blocklist/prompt/plan_and_todo_list.rs` is OUT
+  OF SCOPE for this feature and is NOT modified. Earlier drafts of this
+  spec pointed at `plan_and_todo_list.rs`; that pointer was wrong (it
+  targets the prompt chip, not the transcript todo rows) and is superseded
+  by this entry. The renderer in `todos.rs` reads the resolved
+  `subblock_timestamp_format` via the existing settings context.
+- Plan-step start time is **derived client-side** from `TodoStatus`
+  transitions observed on `TodoOperation::UpdateTodos` /
+  `MarkAsCompleted` (see B1.1). The view-model container holding
+  `AIAgentTodoList` gains a sibling `HashMap<AIAgentTodoId, SystemTime>`
+  (call it `todo_started_at`) and a `HashMap<AIAgentTodoId, SystemTime>`
+  for terminal-status observation time (`todo_finished_at`). Both maps
+  are populated by an observer registered against the existing
+  `TodoOperation` stream; no new event types are added to
+  `orchestration_events.rs`. The observer runs alongside the existing
+  todos-update consumer in `todos.rs`.
+- Reasoning-phase and tool-call sub-blocks continue to read their start
+  times from the existing per-phase start / completion events on the
+  conversation event stream (`orchestration_events.rs` and
+  `conversation_yaml.rs`). Do not introduce a parallel timing source for
+  those sub-block types.
 
 ## Tests
 
@@ -416,10 +556,25 @@ No new public API. The values flow through the existing settings store.
 - T3. Expanded view shows the final duration string (e.g. `4.3s`) once a phase
   emits a completion event, replacing the prior elapsed counter at the exact
   tick the completion arrives.
-- T4. In-progress phase shows the elapsed counter (`1s elapsed`, `2s elapsed`,
-  …) and the value advances on each 1 Hz tick of the ticker. Test asserts the
-  text never reads `running…` — the elapsed counter is the only in-progress
-  affordance.
+- T4. In-progress phase shows the elapsed counter produced by
+  `format_elapsed_label` (`1s elapsed`, `2s elapsed`, …) and the value
+  advances on each 1 Hz tick of the ticker. Test asserts the text never
+  reads `running…` — the elapsed counter is the only in-progress
+  affordance. Test also asserts the rendered string matches the compact
+  `format_compact_duration` contract (`"3s elapsed"`, NOT
+  `"3.00 sec elapsed"`); the verbose `human_readable_precise_duration`
+  output is explicitly disallowed in this code path.
+- T4.1. Plan-step row derived start time (per B1.1). Feed a synthetic
+  `TodoOperation::UpdateTodos` stream into the view-model with a single
+  todo transitioning `Pending → InProgress → Completed`. Assert: (a)
+  `todo_started_at[id]` is recorded the moment `InProgress` is
+  observed; (b) `todo_finished_at[id]` is recorded the moment a
+  terminal status is observed; (c) the elapsed counter renders only
+  while `InProgress`; (d) a todo that is observed only in `Pending`
+  has neither a collapsed-row timestamp nor an expanded `Started …`
+  line. Test also verifies the spec does NOT depend on any
+  `PlanStepStarted` / `PlanStepCompleted` event types — those are not
+  added to `orchestration_events.rs`.
 - T5. Setting format `"off"` removes the timestamp DOM/aria-label entirely
   from BOTH collapsed and expanded views, regardless of `show_in_expanded`.
 - T6. Setting `"absolute"` and `"relative"` force the corresponding format
