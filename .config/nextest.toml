@@ -23,6 +23,12 @@ filter = 'package(integration)'
 # flaky tests.
 retries = 2
 
+[[profile.ci.overrides]]
+filter = 'package(integration) and test(/remote_server/)'
+# Remote-server tests include GCP setup, SSH login, and remote-server
+# initialization; give them a larger per-test budget than the default 60s.
+slow-timeout = { period = "60s", terminate-after = 2 }
+
 [profile.ci.junit]
 # Output nextest results in junit format (for uploading to buildpulse).
 # If `--profile ci` is selected on the command line, then the JUnit report will

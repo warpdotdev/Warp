@@ -1,10 +1,13 @@
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
 use remote_server::auth::RemoteServerAuthContext;
+use warp_core::channel::{Channel, ChannelState};
 use warpui::r#async::BoxFuture;
 
 use crate::auth::auth_state::AuthState;
 use crate::server::server_api::auth::AuthClient;
+
+const REMOTE_SERVER_TEST_RUN_ID_ENV: &str = "WARP_REMOTE_SERVER_TEST_RUN_ID";
 
 /// Builds the app-wide auth context used by remote-server connections.
 pub fn server_api_auth_context(
@@ -50,12 +53,28 @@ fn use_authenticated_user_identity(auth_state: &AuthState) -> bool {
 }
 
 fn remote_server_identity_key(auth_state: &AuthState) -> String {
-    if use_authenticated_user_identity(auth_state) {
+    let identity_key = if use_authenticated_user_identity(auth_state) {
         auth_state
             .user_id()
             .map(|uid| uid.as_string())
             .unwrap_or_else(|| auth_state.anonymous_id())
     } else {
         auth_state.anonymous_id()
+    };
+
+    match ChannelState::channel() {
+        Channel::Integration => {
+            let Ok(test_run_id) = env::var(REMOTE_SERVER_TEST_RUN_ID_ENV) else {
+                return identity_key;
+            };
+            if test_run_id.is_empty() {
+                identity_key
+            } else {
+                format!("{identity_key}-{test_run_id}")
+            }
+        }
+        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Local | Channel::Oss => {
+            identity_key
+        }
     }
 }

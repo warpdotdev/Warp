@@ -108,11 +108,12 @@ pub fn record_remote_server_lazy_load_events() -> TestStep {
     )
 }
 /// Returns a `TestStep` that polls until the remote server setup state for
-/// the active session reaches `Ready`. Times out after 60 seconds to allow
-/// for the full check → install → connect → handshake flow.
+/// the active session reaches `Ready`. This timeout is intentionally below the
+/// remote-server nextest timeout so CI reports the actual setup state instead
+/// of terminating the whole test first.
 pub fn wait_for_remote_server_ready(tab_idx: usize) -> TestStep {
     TestStep::new("Wait for remote server setup to be Ready")
-        .set_timeout(Duration::from_secs(60))
+        .set_timeout(Duration::from_secs(90))
         .add_assertion(assert_remote_server_setup_ready(tab_idx))
 }
 

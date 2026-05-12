@@ -449,11 +449,9 @@ jobs:
     runs-on: ubuntu-latest-large
     needs: params
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-    concurrency:
-      # The dedicated VM uses a fixed binary path, so serialize remote-server
-      # deploy/test jobs across workflow runs to avoid cross-run clobbering.
-      group: remote-server-test-vm
-      cancel-in-progress: false
+    env:
+      WARP_REMOTE_SERVER_TEST_RUN_ID: ci-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+      GIT_RELEASE_TAG: ci-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: 'read'
       id-token: 'write'
@@ -521,10 +519,14 @@ jobs:
       - name: Run remote-server integration tests
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} -E "package(integration) and test(/remote_server/)"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} --test-threads=1 -E "package(integration) and test(/remote_server/)"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_bash.outputs.default_bash_path }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up remote-server test VM artifacts
+        if: ${{ always() }}
+        run: script/deploy_remote_server_to_test_vm cleanup
 
       - name: Upload results of remote-server integration tests to trunk.io
         if: ${{ !cancelled() }}
