@@ -74,8 +74,6 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          lfs: true
 
       - name: Get channel configuration
         id: get-config
@@ -156,8 +154,6 @@ jobs:
             dmg_name_suffix: x86_64
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
 
       - uses: ./.github/actions/prepare_environment
         with:
@@ -278,8 +274,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
 
       - uses: ./.github/actions/prepare_environment
         with:
@@ -427,8 +421,6 @@ jobs:
           - arch: x86_64
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
 
       - uses: ./.github/actions/prepare_environment
         with:
@@ -535,8 +527,6 @@ jobs:
       SETTINGS_SCHEMA_CACHE: ${{ github.workspace }}/.settings_schema_cache.json
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
 
       - uses: ./.github/actions/prepare_environment
         with:
@@ -691,8 +681,6 @@ jobs:
       SETTINGS_SCHEMA_CACHE: ${{ github.workspace }}/.settings_schema_cache.json
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
 
       - uses: ./.github/actions/prepare_environment
         with:
@@ -872,8 +860,6 @@ jobs:
       SETTINGS_SCHEMA_CACHE: ${{ github.workspace }}/.settings_schema_cache.json
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
 
       - uses: ./.github/actions/prepare_environment
         with:
@@ -963,8 +949,6 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
 
       - uses: ./.github/actions/prepare_environment
         with:
@@ -1048,7 +1032,6 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          lfs: true
           ref: ${{ needs.prepare_release.outputs.release_branch }}
 
       - name: Get channel configuration
@@ -1304,8 +1287,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
 
       - uses: ./.github/actions/prepare_environment
         with:
@@ -1431,8 +1412,6 @@ jobs:
       TRUSTED_SIGNING_CERT_PROFILE: warpterminal
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          lfs: true
 
       - uses: ./.github/actions/prepare_environment
         with:
@@ -1656,7 +1635,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         name: Checkout sources
         with:
-          lfs: true
           # Fetch history for all tags and branches so we can compare revisions
           # in order to generate the changelog.
           fetch-depth: 0
