@@ -19,7 +19,8 @@ use crate::{
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
 };
 
-use ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent};
+use ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent, CustomEndpoint, CustomEndpointModel};
+use warp_core::features::FeatureFlag;
 
 use super::execution_profiles::profiles::AIExecutionProfilesModel;
 
@@ -552,6 +553,14 @@ pub struct LLMPreferences {
     // from the base LLM for the active profile. This means that if the user selects the
     // profile's default model and changes their profile, the model will update to that profile's default.
     base_llm_for_terminal_view: HashMap<EntityId, LLMId>,
+    /// Synthetic `LLMInfo` entries built from the user's `ApiKeyManager.custom_endpoints` so
+    /// custom models surface in the model picker and resolve through `info_for_id` lookups.
+    /// Each entry's `id` is the model's `config_key` (UUID), which is also what flows out to
+    /// `Request.Settings.custom_model_providers.providers[*].models[*].config_key`.
+    ///
+    /// Rebuilt from scratch on every `ApiKeyManagerEvent::KeysUpdated`, so adds, edits, and
+    /// removals all immediately propagate to the picker.
+    custom_llms: Vec<LLMInfo>,
 }
 
 impl LLMPreferences {
@@ -585,19 +594,25 @@ impl LLMPreferences {
 
         // Re-reconcile disabled model preferences when BYOK keys change, since
         // RequiresUpgrade models may become usable or unusable.
+        // Also rebuild `custom_llms` so adds/edits/removals to the user's custom endpoints
+        // immediately flow through to the model picker.
         ctx.subscribe_to_model(
             &ApiKeyManager::handle(ctx),
             |me, _event: &ApiKeyManagerEvent, ctx| {
+                me.rebuild_custom_llms(ctx);
                 me.reconcile_disabled_model_preferences(ctx);
+                ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
             },
         );
 
         let base_llm_for_terminal_view = HashMap::new();
+        let custom_llms = build_custom_llm_infos(ApiKeyManager::as_ref(ctx).keys());
 
         let me = Self {
             models_by_feature,
             last_update: None,
             base_llm_for_terminal_view,
+            custom_llms,
         };
 
         // In agent mode eval builds, eagerly kick off a fetch of the model list from the server
@@ -628,7 +643,12 @@ impl LLMPreferences {
         if let Some(terminal_view_id) = terminal_view_id {
             let raw_override = self.base_llm_for_terminal_view.get(&terminal_view_id);
             if let Some(llm_id) = raw_override {
-                if let Some(llm_info) = self.models_by_feature.agent_mode.info_for_id(llm_id) {
+                if let Some(llm_info) = self
+                    .models_by_feature
+                    .agent_mode
+                    .info_for_id(llm_id)
+                    .or_else(|| self.custom_llm_info_for_id(llm_id))
+                {
                     return llm_info;
                 }
             }
@@ -640,7 +660,12 @@ impl LLMPreferences {
             .data()
             .base_model
             .clone()
-            .and_then(|id| self.models_by_feature.agent_mode.info_for_id(&id))
+            .and_then(|id| {
+                self.models_by_feature
+                    .agent_mode
+                    .info_for_id(&id)
+                    .or_else(|| self.custom_llm_info_for_id(&id))
+            })
             .unwrap_or_else(|| self.models_by_feature.agent_mode.default_llm_info())
     }
 
@@ -664,7 +689,12 @@ impl LLMPreferences {
             .data()
             .coding_model
             .clone()
-            .and_then(|id| self.models_by_feature.coding.info_for_id(&id))
+            .and_then(|id| {
+                self.models_by_feature
+                    .coding
+                    .info_for_id(&id)
+                    .or_else(|| self.custom_llm_info_for_id(&id))
+            })
             .unwrap_or_else(|| self.models_by_feature.coding.default_llm_info())
     }
 
@@ -676,6 +706,7 @@ impl LLMPreferences {
             .choices
             .iter()
             .filter(|llm| !matches!(llm.disable_reason, Some(DisableReason::AdminDisabled)))
+            .chain(self.custom_llm_choices())
     }
 
     /// Returns the set of LLMs available for coding.
@@ -686,11 +717,15 @@ impl LLMPreferences {
             .choices
             .iter()
             .filter(|llm| !matches!(llm.disable_reason, Some(DisableReason::AdminDisabled)))
+            .chain(self.custom_llm_choices())
     }
 
     /// Returns the set of LLMs available for CLI agent.
     pub fn get_cli_agent_llm_choices(&self) -> impl Iterator<Item = &LLMInfo> {
-        self.get_cli_agent_available().choices.iter()
+        self.get_cli_agent_available()
+            .choices
+            .iter()
+            .chain(self.custom_llm_choices())
     }
 
     /// Returns the `LLMInfo` for the CLI agent model.
@@ -706,7 +741,11 @@ impl LLMPreferences {
             .data()
             .cli_agent_model
             .clone()
-            .and_then(|id| available.info_for_id(&id))
+            .and_then(|id| {
+                available
+                    .info_for_id(&id)
+                    .or_else(|| self.custom_llm_info_for_id(&id))
+            })
             .unwrap_or_else(|| available.default_llm_info())
     }
 
@@ -725,7 +764,10 @@ impl LLMPreferences {
 
     /// Returns the set of LLMs available for computer use agent.
     pub fn get_computer_use_llm_choices(&self) -> impl Iterator<Item = &LLMInfo> {
-        self.get_computer_use_available().choices.iter()
+        self.get_computer_use_available()
+            .choices
+            .iter()
+            .chain(self.custom_llm_choices())
     }
 
     /// Returns the `LLMInfo` for the computer use agent model.
@@ -741,7 +783,11 @@ impl LLMPreferences {
             .data()
             .computer_use_model
             .clone()
-            .and_then(|id| available.info_for_id(&id))
+            .and_then(|id| {
+                available
+                    .info_for_id(&id)
+                    .or_else(|| self.custom_llm_info_for_id(&id))
+            })
             .unwrap_or_else(|| available.default_llm_info())
     }
 
@@ -761,8 +807,38 @@ impl LLMPreferences {
     }
 
     /// Returns metadata about an LLM, if the client knows about it.
+    /// Falls back to the user's custom-endpoint LLMs when the id isn't a server-known model
+    /// id (e.g. when it's a `config_key` UUID).
     pub fn get_llm_info(&self, id: &LLMId) -> Option<&LLMInfo> {
-        self.models_by_feature.info_for_id(id)
+        self.models_by_feature
+            .info_for_id(id)
+            .or_else(|| self.custom_llm_info_for_id(id))
+    }
+
+    /// Resolves an `LLMId` against the user's custom-endpoint LLMs.
+    /// Returns `None` if the id isn't a known custom model `config_key`.
+    pub fn custom_llm_info_for_id(&self, id: &LLMId) -> Option<&LLMInfo> {
+        self.custom_llms.iter().find(|info| info.id == *id)
+    }
+
+    /// Iterator over the user's custom-endpoint LLMs, gated on the feature flag so the picker
+    /// doesn't surface custom rows when the feature is disabled (even if the user has
+    /// somehow already persisted custom endpoints).
+    pub fn custom_llm_choices(&self) -> std::slice::Iter<'_, LLMInfo> {
+        if FeatureFlag::CustomInferenceEndpoints.is_enabled() {
+            self.custom_llms.iter()
+        } else {
+            // Empty slice with a matching element type so the return type stays consistent
+            // across both branches.
+            (&[] as &[LLMInfo]).iter()
+        }
+    }
+
+    /// Reads the user's current `ApiKeyManager.custom_endpoints` and replaces `custom_llms`
+    /// with synthetic `LLMInfo`s. Called on every `ApiKeyManagerEvent::KeysUpdated`, so adds,
+    /// edits, and removals all propagate immediately.
+    fn rebuild_custom_llms(&mut self, app: &AppContext) {
+        self.custom_llms = build_custom_llm_infos(ApiKeyManager::as_ref(app).keys());
     }
 
     /// Returns the default base model as a fallback.
@@ -1126,6 +1202,52 @@ fn get_new_agent_mode_choices(
         .filter(|info| !old_ids.contains(&info.id))
         .cloned()
         .collect()
+}
+
+/// Builds synthetic [`LLMInfo`]s from the user's persisted custom endpoints.
+///
+/// One entry per `CustomEndpointModel`. The display label is the **alias** when present,
+/// falling back to the raw model name. The `id` is the model's `config_key` UUID, which is
+/// also what flows out to `Request.Settings.custom_model_providers` so the server can map
+/// a `ModelConfig.{base,coding,cli_agent,computer_use_agent}` selection back to the
+/// user-provided endpoint.
+///
+/// Endpoints with empty URL or API key, and models with empty name or config_key, are
+/// skipped — they shouldn't surface in the picker until the user finishes configuring them.
+fn build_custom_llm_infos(keys: &ai::api_keys::ApiKeys) -> Vec<LLMInfo> {
+    keys.custom_endpoints
+        .iter()
+        .filter(|ep| !ep.url.trim().is_empty() && !ep.api_key.is_empty())
+        .flat_map(|endpoint| {
+            endpoint
+                .models
+                .iter()
+                .filter(|m| !m.name.trim().is_empty() && !m.config_key.is_empty())
+                .map(move |model| custom_llm_info_from(endpoint, model))
+        })
+        .collect()
+}
+
+fn custom_llm_info_from(endpoint: &CustomEndpoint, model: &CustomEndpointModel) -> LLMInfo {
+    let label = model.display_label().to_owned();
+    LLMInfo {
+        display_name: label.clone(),
+        base_model_name: label,
+        id: model.config_key.clone().into(),
+        reasoning_level: None,
+        usage_metadata: LLMUsageMetadata {
+            request_multiplier: 1,
+            credit_multiplier: None,
+        },
+        description: Some(format!("Custom · {}", endpoint.name)),
+        disable_reason: None,
+        vision_supported: false,
+        spec: None,
+        provider: LLMProvider::Unknown,
+        host_configs: HashMap::new(),
+        discount_percentage: None,
+        context_window: LLMContextWindow::default(),
+    }
 }
 
 /// Gets the last cached LLM metadata.
