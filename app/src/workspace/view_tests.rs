@@ -3058,3 +3058,79 @@ fn test_tab_mru_order() {
         });
     });
 }
+
+// ---------------------------------------------------------------------------
+// `focus_terminal_input` with `OpenIfNeeded` MUST create a new pane when the
+// existing session is unavailable (e.g. busy with a running command). The
+// fallthrough at the end of the function previously only created a new pane
+// when there was no existing session at all, silently returning the busy
+// session otherwise. See #9100 and the round-2 oz-bot review.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn focus_terminal_input_open_if_needed_creates_new_pane_when_existing_session_busy() {
+    use crate::terminal::model::ansi::{BootstrappedValue, InitShellValue};
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        // Make the active session busy with a long-running command. This hides
+        // the input box for command-execution reasons (the very case the toast
+        // gate is designed for).
+        workspace.update(&mut app, |workspace, ctx| {
+            let terminal_view = workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .focused_session_view(ctx)
+                .expect("workspace should have an initial terminal session");
+            terminal_view.update(ctx, |view, _ctx| {
+                let mut model = view.model.lock();
+                model.init_shell(InitShellValue {
+                    session_id: 0.into(),
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                model.bootstrapped(BootstrappedValue {
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                model.simulate_long_running_block("sleep 10", "running");
+            });
+        });
+
+        // Snapshot pane count before calling `focus_terminal_input`.
+        let pane_count_before = workspace.read(&app, |workspace, ctx| {
+            workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .pane_ids()
+                .count()
+        });
+        assert_eq!(pane_count_before, 1);
+
+        // Call the path under test: `OpenIfNeeded` must create a new pane,
+        // not return the busy existing session as a fallback.
+        let returned_handle = workspace.update(&mut app, |workspace, ctx| {
+            workspace.focus_terminal_input(None, TerminalSessionFallbackBehavior::OpenIfNeeded, ctx)
+        });
+
+        // A non-None handle must be returned, AND a new pane must exist.
+        assert!(
+            returned_handle.is_some(),
+            "OpenIfNeeded must return a usable terminal view handle"
+        );
+        let pane_count_after = workspace.read(&app, |workspace, ctx| {
+            workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .pane_ids()
+                .count()
+        });
+        assert_eq!(
+            pane_count_after, 2,
+            "OpenIfNeeded must create a new pane when the existing session is unavailable"
+        );
+    });
+}

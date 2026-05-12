@@ -15230,7 +15230,18 @@ impl Workspace {
             return None;
         }
 
-        if existing_terminal_view_handle.is_none() {
+        // We reach here in one of two cases:
+        //   1. There is no existing session at all → create one.
+        //   2. There IS an existing session but it was not usable above (input box
+        //      not visible, not an env-var block, busy toast was suppressed by
+        //      `OpenIfNeeded`). Per the `OpenIfNeeded` contract, we must create
+        //      a new pane in this case rather than silently returning the busy
+        //      session as if it were focusable. Returning the busy session would
+        //      reintroduce #9100 by letting callers act on a session they can't
+        //      actually type into.
+        let needs_new_pane = existing_terminal_view_handle.is_none()
+            || fallback_behavior == TerminalSessionFallbackBehavior::OpenIfNeeded;
+        if needs_new_pane {
             active_pane_group.update(ctx, |pane_group, ctx| {
                 pane_group.add_terminal_pane(Direction::Right, None /*chosen_shell*/, ctx);
             });
