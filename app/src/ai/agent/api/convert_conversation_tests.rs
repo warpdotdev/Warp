@@ -1979,4 +1979,3 @@ fn test_create_then_edit_then_create_version_tracking() {
         "Created doc B should have default version (v1), independent of doc A"
     );
 }
-

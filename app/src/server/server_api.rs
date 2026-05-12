@@ -592,6 +592,12 @@ impl ServerApi {
                 ..default_request_options()
             };
 
+            eprintln!(
+                "[AGENT_SERVER_DEBUG 1] GraphQL operation={} server={}",
+                operation_name.as_deref().unwrap_or("unknown"),
+                ChannelState::server_root_url()
+            );
+
             let response = match operation.send_request(client, options).await {
                 Ok(response) => response,
                 Err(GraphQLError::StagingAccessBlocked) => {
@@ -696,6 +702,7 @@ impl ServerApi {
             .context("Failed to get access token for API request")?;
 
         let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
+        eprintln!("[AGENT_SERVER_DEBUG 2] GET {url}");
 
         let mut request = self.client.get(&url);
         if let Some(token) = auth_token.as_bearer_token() {
@@ -762,6 +769,7 @@ impl ServerApi {
             "{}/api/v1/agent/events/stream?{run_ids_param}&since={since_sequence}",
             ChannelState::rtc_http_url()
         );
+        eprintln!("[AGENT_SERVER_DEBUG 5] SSE GET {url}");
 
         let mut request = self.client.get(&url);
         if let Some(token) = auth_token.as_bearer_token() {
@@ -796,6 +804,7 @@ impl ServerApi {
             "{}/api/v1/agent/events/stream?{run_ids_param}&since={since_sequence}",
             ChannelState::rtc_http_url()
         );
+        eprintln!("[AGENT_SERVER_DEBUG 6] SSE GET {url}");
 
         let mut request = self.client.get(&url);
         if let Some(token) = auth_token.as_bearer_token() {
@@ -824,6 +833,9 @@ impl ServerApi {
             .context("Failed to get access token for API request")?;
 
         let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
+        let body_json =
+            serde_json::to_string(body).unwrap_or_else(|_| "<serialization failed>".to_string());
+        eprintln!("[AGENT_SERVER_DEBUG 3] POST {url} body={body_json}");
 
         let mut request = self.client.post(&url).json(body);
         if let Some(token) = auth_token.as_bearer_token() {
@@ -920,6 +932,9 @@ impl ServerApi {
             .context("Failed to get access token for API request")?;
 
         let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
+        let body_json =
+            serde_json::to_string(body).unwrap_or_else(|_| "<serialization failed>".to_string());
+        eprintln!("[AGENT_SERVER_DEBUG 4] PATCH {url} body={body_json}");
 
         let mut request = self.client.patch(&url).json(body);
         if let Some(token) = auth_token.as_bearer_token() {
@@ -1221,6 +1236,7 @@ impl ServerApi {
             .map_err(Into::into)
             .map_err(Arc::new)?;
 
+        eprintln!("[AGENT_SERVER_DEBUG 8] POST {url} (multi-agent/proto)");
         let mut request_builder = self
             .client
             .post(url)

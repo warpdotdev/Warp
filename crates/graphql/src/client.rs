@@ -90,6 +90,7 @@ where
         options.path_prefix.unwrap_or_default(),
         &operation_name
     );
+    eprintln!("[AGENT_SERVER_DEBUG 7] GraphQL POST {graphql_endpoint}");
 
     let mut req = client.post(&graphql_endpoint).json(&operation);
 

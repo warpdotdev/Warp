@@ -171,7 +171,7 @@ pub(super) fn render_model_chips(
     appearance: &Appearance,
     text_color: warp_core::ui::theme::Fill,
 ) -> Box<dyn Element> {
-    use warpui::elements::{Flex, Text, Container, Border, CornerRadius, Radius, ParentElement};
+    use warpui::elements::{Border, Container, CornerRadius, Flex, ParentElement, Radius, Text};
 
     let theme = appearance.theme();
     let chip_bg = internal_colors::fg_overlay_2(theme);
@@ -181,9 +181,13 @@ pub(super) fn render_model_chips(
     for label in labels {
         chips.add_child(
             Container::new(
-                Text::new_inline(label, appearance.ui_font_family(), appearance.ui_font_size())
-                    .with_color(text_color.into())
-                    .finish(),
+                Text::new_inline(
+                    label,
+                    appearance.ui_font_family(),
+                    appearance.ui_font_size(),
+                )
+                .with_color(text_color.into())
+                .finish(),
             )
             .with_uniform_padding(6.)
             .with_background(chip_bg)

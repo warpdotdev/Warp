@@ -117,9 +117,9 @@ pub struct RequestParams {
 
     /// User-provided API keys for AI providers (BYO API Key).
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
-    /// `true` when ≥1 custom endpoint is saved AND BYO keys are enabled.
-    /// TODO(proto): wire into the proto ApiKeys message once the field lands.
-    pub custom_inference_enabled: bool,
+    /// User-provided custom model providers (BYOK endpoints).
+    pub custom_model_providers:
+        Option<warp_multi_agent_api::request::settings::CustomModelProviders>,
     pub allow_use_of_warp_credits_with_byok: bool,
     pub autonomy_level: warp_multi_agent_api::AutonomyLevel,
     pub isolation_level: warp_multi_agent_api::IsolationLevel,
@@ -244,7 +244,8 @@ impl RequestParams {
             is_byo_enabled,
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
-        let custom_inference_enabled = api_key_manager.custom_inference_enabled(is_byo_enabled);
+        let custom_model_providers =
+            api_key_manager.custom_model_providers_for_request(is_byo_enabled);
         let allow_use_of_warp_credits_with_byok =
             *AISettings::as_ref(app).can_use_warp_credits_with_byok;
 
@@ -327,7 +328,7 @@ impl RequestParams {
             planning_enabled: true,
             should_redact_secrets,
             api_keys,
-            custom_inference_enabled,
+            custom_model_providers,
             allow_use_of_warp_credits_with_byok,
             autonomy_level,
             isolation_level,

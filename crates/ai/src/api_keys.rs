@@ -1,5 +1,6 @@
 pub use crate::aws_credentials::{AwsCredentials, AwsCredentialsState};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use warp_multi_agent_api as api;
 use warpui::{Entity, ModelContext, SingletonEntity};
 use warpui_extras::secure_storage::{self, AppContextExt};
@@ -49,11 +50,21 @@ pub struct CustomEndpoint {
 pub struct CustomEndpointModel {
     pub name: String,
     pub alias: Option<String>,
+    /// Stable identifier used as `ModelConfig.{base,coding,cli_agent,computer_use_agent}` and
+    /// as the `CustomModelProviders.providers[*].models[*].config_key` on the request wire.
+    /// Generated as a UUIDv4 at model creation; legacy payloads without it are migrated lazily
+    /// on load (see `ApiKeyManager::load_keys_from_secure_storage`).
+    pub config_key: String,
 }
 
-impl CustomInference {
-    fn is_effectively_empty(&self) -> bool {
-        self.endpoint.is_empty() && self.model.is_empty() && self.api_key.is_empty()
+impl CustomEndpointModel {
+    /// Picker label: prefer the user-provided alias; fall back to the raw model name
+    /// so a row is never blank.
+    pub fn display_label(&self) -> &str {
+        match self.alias.as_deref() {
+            Some(alias) if !alias.trim().is_empty() => alias,
+            _ => &self.name,
+        }
     }
 }
 
@@ -74,8 +85,6 @@ impl ApiKeys {
     }
 
     /// Returns `true` when the user has at least one custom endpoint configured.
-    /// Used alongside `include_byo_keys` to decide whether to set the
-    /// `custom_inference_enabled` flag on the request.
     pub fn has_custom_endpoints(&self) -> bool {
         !self.custom_endpoints.is_empty()
     }
@@ -168,7 +177,7 @@ impl ApiKeyManager {
         name: String,
         url: String,
         api_key: String,
-        models: Vec<(String, Option<String>)>,
+        models: Vec<(String, Option<String>, Option<String>)>,
         ctx: &mut ModelContext<Self>,
     ) {
         self.keys.custom_endpoints.push(CustomEndpoint {
@@ -177,7 +186,13 @@ impl ApiKeyManager {
             api_key,
             models: models
                 .into_iter()
-                .map(|(name, alias)| CustomEndpointModel { name, alias })
+                .map(|(name, alias, config_key)| CustomEndpointModel {
+                    name,
+                    alias,
+                    config_key: config_key
+                        .filter(|k| !k.is_empty())
+                        .unwrap_or_else(|| Uuid::new_v4().to_string()),
+                })
                 .collect(),
         });
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
@@ -190,7 +205,7 @@ impl ApiKeyManager {
         name: String,
         url: String,
         api_key: String,
-        models: Vec<(String, Option<String>)>,
+        models: Vec<(String, Option<String>, Option<String>)>,
         ctx: &mut ModelContext<Self>,
     ) {
         if index >= self.keys.custom_endpoints.len() {
@@ -202,7 +217,13 @@ impl ApiKeyManager {
             api_key,
             models: models
                 .into_iter()
-                .map(|(name, alias)| CustomEndpointModel { name, alias })
+                .map(|(name, alias, config_key)| CustomEndpointModel {
+                    name,
+                    alias,
+                    config_key: config_key
+                        .filter(|k| !k.is_empty())
+                        .unwrap_or_else(|| Uuid::new_v4().to_string()),
+                })
                 .collect(),
         };
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
@@ -251,11 +272,52 @@ impl ApiKeyManager {
         self.aws_credentials_refresh_strategy = strategy;
     }
 
-    /// Whether custom inference endpoints should be considered active for this
-    /// request. True when the user has saved ≥1 custom endpoint AND BYO keys
-    /// are enabled on the current plan.
-    pub fn custom_inference_enabled(&self, include_byo_keys: bool) -> bool {
-        include_byo_keys && self.keys.has_custom_endpoints()
+    /// Builds the `CustomModelProviders` registry that ships with every agent request.
+    ///
+    /// Emits one [`CustomModelProvider`] per configured [`CustomEndpoint`], each populated with
+    /// all of its [`CustomEndpointModel`]s. The per-model `config_key` is what the server uses
+    /// to map a `ModelConfig.{base,coding,cli_agent,computer_use_agent}` selection back to a
+    /// user-provided endpoint, so it MUST be the same UUID we store locally.
+    ///
+    /// Returns `None` when BYOK is disabled or no endpoint has both a non-empty URL and API key.
+    pub fn custom_model_providers_for_request(
+        &self,
+        include_byo_keys: bool,
+    ) -> Option<api::request::settings::CustomModelProviders> {
+        if !include_byo_keys {
+            return None;
+        }
+
+        let providers: Vec<_> = self
+            .keys
+            .custom_endpoints
+            .iter()
+            .filter(|endpoint| !endpoint.url.trim().is_empty() && !endpoint.api_key.is_empty())
+            .map(
+                |endpoint| api::request::settings::custom_model_providers::CustomModelProvider {
+                    base_url: endpoint.url.clone(),
+                    api_key: endpoint.api_key.clone(),
+                    models: endpoint
+                        .models
+                        .iter()
+                        .filter(|m| !m.name.trim().is_empty() && !m.config_key.is_empty())
+                        .map(
+                            |m| api::request::settings::custom_model_providers::CustomModel {
+                                slug: m.name.clone(),
+                                config_key: m.config_key.clone(),
+                            },
+                        )
+                        .collect(),
+                },
+            )
+            .filter(|provider| !provider.models.is_empty())
+            .collect();
+
+        if providers.is_empty() {
+            None
+        } else {
+            Some(api::request::settings::CustomModelProviders { providers })
+        }
     }
 
     pub fn api_keys_for_request(
@@ -279,28 +341,6 @@ impl ApiKeyManager {
             .then(|| self.keys.open_router.clone())
             .flatten()
             .unwrap_or_default();
-        let custom_inference = include_byo_keys
-            .then(|| {
-                self.keys
-                    .custom_inference
-                    .clone()
-                    .filter(|c| !c.is_effectively_empty())
-                    .or_else(|| {
-                        let endpoint = self.keys.custom_endpoints.first()?;
-                        let model = endpoint.models.first()?;
-                        Some(CustomInference {
-                            endpoint: endpoint.url.clone(),
-                            model: model.name.clone(),
-                            api_key: endpoint.api_key.clone(),
-                        })
-                    })
-            })
-            .flatten()
-            .map(|c| api::request::settings::api_keys::CustomInference {
-                endpoint: c.endpoint,
-                model: c.model,
-                api_key: c.api_key,
-            });
 
         // Also include credentials when running with OIDC-managed Bedrock inference, regardless
         // of the per-user setting flag (which only applies to the local credential chain path).
@@ -318,17 +358,10 @@ impl ApiKeyManager {
             })
             .flatten();
 
-        // TODO(proto): wire `custom_inference_enabled` into the proto ApiKeys
-        // message once the field lands in warp-proto-apis. Compute with:
-        //   let custom_inference_enabled = self.custom_inference_enabled(include_byo_keys);
-        // and set it on the returned struct.
-
         if anthropic.is_empty()
             && openai.is_empty()
             && google.is_empty()
             && open_router.is_empty()
-            && custom_inference.is_none()
-            && self.keys.custom_endpoints.is_empty()
             && aws_credentials.is_none()
         {
             None
@@ -340,7 +373,6 @@ impl ApiKeyManager {
                 open_router,
                 allow_use_of_warp_credits: false,
                 aws_credentials,
-                custom_inference,
             })
         }
     }
@@ -356,7 +388,7 @@ impl ApiKeyManager {
             }
         };
 
-        let keys = match serde_json::from_str(&key_json) {
+        let mut keys: ApiKeys = match serde_json::from_str(&key_json) {
             Ok(keys) => keys,
             Err(e) => {
                 log::error!("Failed to deserialize API keys: {e:#}");
@@ -364,7 +396,41 @@ impl ApiKeyManager {
             }
         };
 
+        // Lazy migration: stamp a UUID `config_key` on any pre-existing custom model that
+        // was persisted before this field landed. If any were filled, schedule a re-save so
+        // we don't repeat the work on the next launch.
+        let migrated = Self::backfill_missing_config_keys(&mut keys);
+        if migrated {
+            let json = match serde_json::to_string(&keys) {
+                Ok(json) => json,
+                Err(e) => {
+                    log::error!("Failed to re-serialize API keys after migration: {e:#}");
+                    return keys;
+                }
+            };
+            ctx.spawn(async move { json }, |_, json, ctx| {
+                if let Err(e) = ctx.secure_storage().write_value(SECURE_STORAGE_KEY, &json) {
+                    log::error!("Failed to write migrated API keys to secure storage: {e:#}");
+                }
+            });
+        }
+
         keys
+    }
+
+    /// Fills missing `config_key`s on persisted custom models. Returns `true` when any model
+    /// was updated, so the caller can persist the migrated payload.
+    fn backfill_missing_config_keys(keys: &mut ApiKeys) -> bool {
+        let mut migrated = false;
+        for endpoint in &mut keys.custom_endpoints {
+            for model in &mut endpoint.models {
+                if model.config_key.is_empty() {
+                    model.config_key = Uuid::new_v4().to_string();
+                    migrated = true;
+                }
+            }
+        }
+        migrated
     }
 
     fn write_keys_to_secure_storage(&mut self, ctx: &mut ModelContext<Self>) {

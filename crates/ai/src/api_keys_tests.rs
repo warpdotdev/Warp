@@ -8,16 +8,43 @@ fn make_manager(keys: ApiKeys) -> ApiKeyManager {
     }
 }
 
-fn endpoint(name: &str, url: &str, api_key: &str, models: &[(&str, Option<&str>)]) -> CustomEndpoint {
+fn endpoint(
+    name: &str,
+    url: &str,
+    api_key: &str,
+    models: &[(&str, Option<&str>)],
+) -> CustomEndpoint {
+    endpoint_with_keys(
+        name,
+        url,
+        api_key,
+        &models
+            .iter()
+            .enumerate()
+            .map(|(i, (n, a))| (*n, *a, format!("cfg-{i}")))
+            .collect::<Vec<_>>()
+            .iter()
+            .map(|(n, a, k)| (*n, *a, k.as_str()))
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn endpoint_with_keys(
+    name: &str,
+    url: &str,
+    api_key: &str,
+    models: &[(&str, Option<&str>, &str)],
+) -> CustomEndpoint {
     CustomEndpoint {
         name: name.into(),
         url: url.into(),
         api_key: api_key.into(),
         models: models
             .iter()
-            .map(|(n, a)| CustomEndpointModel {
+            .map(|(n, a, cfg)| CustomEndpointModel {
                 name: (*n).into(),
                 alias: a.map(|s| s.into()),
+                config_key: (*cfg).into(),
             })
             .collect(),
     }
@@ -157,31 +184,178 @@ fn has_custom_endpoints_true_when_present() {
     assert!(keys.has_custom_endpoints());
 }
 
-// ── custom_inference_enabled ────────────────────────────────────
+// ── custom_model_providers_for_request ──────────────────────────
 
 #[test]
-fn custom_inference_enabled_false_no_endpoints() {
+fn custom_model_providers_none_when_empty() {
     let mgr = make_manager(ApiKeys::default());
-    assert!(!mgr.custom_inference_enabled(true));
-    assert!(!mgr.custom_inference_enabled(false));
+    assert!(mgr.custom_model_providers_for_request(true).is_none());
 }
 
 #[test]
-fn custom_inference_enabled_false_when_byo_disabled() {
+fn custom_model_providers_none_when_byo_disabled() {
     let mgr = make_manager(ApiKeys {
         custom_endpoints: vec![endpoint("ep", "https://a.io", "k", &[("m", None)])],
         ..Default::default()
     });
-    assert!(!mgr.custom_inference_enabled(false));
+    assert!(mgr.custom_model_providers_for_request(false).is_none());
 }
 
 #[test]
-fn custom_inference_enabled_true_when_endpoints_and_byo() {
+fn custom_model_providers_populates_single_endpoint() {
+    let mgr = make_manager(ApiKeys {
+        custom_endpoints: vec![endpoint_with_keys(
+            "My EP",
+            "https://custom.io/v1",
+            "ep-key",
+            &[("big-model", Some("alias"), "uuid-1")],
+        )],
+        ..Default::default()
+    });
+    let result = mgr.custom_model_providers_for_request(true).unwrap();
+    assert_eq!(result.providers.len(), 1);
+    let p = &result.providers[0];
+    assert_eq!(p.base_url, "https://custom.io/v1");
+    assert_eq!(p.api_key, "ep-key");
+    assert_eq!(p.models.len(), 1);
+    assert_eq!(p.models[0].slug, "big-model");
+    assert_eq!(p.models[0].config_key, "uuid-1");
+}
+
+#[test]
+fn multiple_endpoints_all_serialize() {
+    let mgr = make_manager(ApiKeys {
+        custom_endpoints: vec![
+            endpoint_with_keys(
+                "ep1",
+                "https://a.io",
+                "k1",
+                &[("gpt-4", Some("fast"), "uuid-a")],
+            ),
+            endpoint_with_keys(
+                "ep2",
+                "https://b.io",
+                "k2",
+                &[
+                    ("llama-70b", None, "uuid-b"),
+                    ("mixtral", Some("mix"), "uuid-c"),
+                ],
+            ),
+        ],
+        ..Default::default()
+    });
+    let result = mgr.custom_model_providers_for_request(true).unwrap();
+    assert_eq!(result.providers.len(), 2);
+    assert_eq!(result.providers[0].base_url, "https://a.io");
+    assert_eq!(result.providers[0].models[0].config_key, "uuid-a");
+    assert_eq!(result.providers[1].base_url, "https://b.io");
+    assert_eq!(result.providers[1].models.len(), 2);
+    assert_eq!(result.providers[1].models[0].slug, "llama-70b");
+    assert_eq!(result.providers[1].models[0].config_key, "uuid-b");
+    assert_eq!(result.providers[1].models[1].config_key, "uuid-c");
+}
+
+#[test]
+fn byok_disabled_returns_none_even_with_endpoints() {
     let mgr = make_manager(ApiKeys {
         custom_endpoints: vec![endpoint("ep", "https://a.io", "k", &[("m", None)])],
         ..Default::default()
     });
-    assert!(mgr.custom_inference_enabled(true));
+    assert!(mgr.custom_model_providers_for_request(false).is_none());
+}
+
+#[test]
+fn empty_api_key_endpoints_are_skipped() {
+    let mgr = make_manager(ApiKeys {
+        custom_endpoints: vec![
+            endpoint_with_keys("empty", "https://a.io", "", &[("m", None, "uuid-x")]),
+            endpoint_with_keys("ok", "https://b.io", "k", &[("m", None, "uuid-y")]),
+        ],
+        ..Default::default()
+    });
+    let result = mgr.custom_model_providers_for_request(true).unwrap();
+    assert_eq!(result.providers.len(), 1);
+    assert_eq!(result.providers[0].base_url, "https://b.io");
+}
+
+#[test]
+fn endpoints_with_only_empty_models_are_skipped() {
+    let mgr = make_manager(ApiKeys {
+        custom_endpoints: vec![endpoint_with_keys(
+            "ep",
+            "https://a.io",
+            "k",
+            &[("", None, "uuid-z")],
+        )],
+        ..Default::default()
+    });
+    assert!(mgr.custom_model_providers_for_request(true).is_none());
+}
+
+// ── config_key migration / generation ──────────────────────────
+
+#[test]
+fn legacy_payload_without_config_key_gets_uuid_on_load() {
+    // Simulates a payload persisted before `config_key` existed.
+    let legacy_json = r#"{
+        "custom_endpoints": [{
+            "name": "old",
+            "url": "https://a.io",
+            "api_key": "k",
+            "models": [{"name": "m", "alias": null}]
+        }]
+    }"#;
+    let mut keys: ApiKeys = serde_json::from_str(legacy_json).unwrap();
+    assert!(keys.custom_endpoints[0].models[0].config_key.is_empty());
+    assert!(ApiKeyManager::backfill_missing_config_keys(&mut keys));
+    assert!(!keys.custom_endpoints[0].models[0].config_key.is_empty());
+}
+
+#[test]
+fn backfill_is_noop_when_all_keys_present() {
+    let mut keys = ApiKeys {
+        custom_endpoints: vec![endpoint_with_keys(
+            "ep",
+            "https://a.io",
+            "k",
+            &[("m", None, "already-set")],
+        )],
+        ..Default::default()
+    };
+    assert!(!ApiKeyManager::backfill_missing_config_keys(&mut keys));
+    assert_eq!(keys.custom_endpoints[0].models[0].config_key, "already-set");
+}
+
+// ── display_label fallback ─────────────────────────────────────
+
+#[test]
+fn display_label_uses_alias_when_present() {
+    let m = CustomEndpointModel {
+        name: "raw-name".into(),
+        alias: Some("My Alias".into()),
+        config_key: "k".into(),
+    };
+    assert_eq!(m.display_label(), "My Alias");
+}
+
+#[test]
+fn display_label_falls_back_to_name_when_alias_missing() {
+    let m = CustomEndpointModel {
+        name: "raw-name".into(),
+        alias: None,
+        config_key: "k".into(),
+    };
+    assert_eq!(m.display_label(), "raw-name");
+}
+
+#[test]
+fn display_label_falls_back_to_name_when_alias_is_whitespace() {
+    let m = CustomEndpointModel {
+        name: "raw-name".into(),
+        alias: Some("   ".into()),
+        config_key: "k".into(),
+    };
+    assert_eq!(m.display_label(), "raw-name");
 }
 
 // ── api_keys_for_request ────────────────────────────────────────
@@ -216,48 +390,10 @@ fn api_keys_for_request_omits_keys_when_byo_disabled() {
 }
 
 #[test]
-fn api_keys_for_request_populates_custom_inference_from_endpoint() {
-    let mgr = make_manager(ApiKeys {
-        custom_endpoints: vec![endpoint(
-            "My EP",
-            "https://custom.io/v1",
-            "ep-key",
-            &[("big-model", Some("alias"))],
-        )],
-        ..Default::default()
-    });
-    let result = mgr.api_keys_for_request(true, false).unwrap();
-    let ci = result.custom_inference.unwrap();
-    assert_eq!(ci.endpoint, "https://custom.io/v1");
-    assert_eq!(ci.model, "big-model");
-    assert_eq!(ci.api_key, "ep-key");
-}
-
-#[test]
-fn api_keys_for_request_prefers_legacy_custom_inference_over_endpoint() {
-    let mgr = make_manager(ApiKeys {
-        custom_inference: Some(CustomInference {
-            endpoint: "https://legacy.io".into(),
-            model: "legacy-m".into(),
-            api_key: "legacy-k".into(),
-        }),
-        custom_endpoints: vec![endpoint("ep", "https://new.io", "new-k", &[("new-m", None)])],
-        ..Default::default()
-    });
-    let result = mgr.api_keys_for_request(true, false).unwrap();
-    let ci = result.custom_inference.unwrap();
-    assert_eq!(ci.endpoint, "https://legacy.io");
-    assert_eq!(ci.model, "legacy-m");
-}
-
-#[test]
-fn api_keys_for_request_skips_custom_inference_when_byo_disabled() {
+fn api_keys_for_request_none_for_custom_endpoints_only() {
     let mgr = make_manager(ApiKeys {
         custom_endpoints: vec![endpoint("ep", "https://a.io", "k", &[("m", None)])],
         ..Default::default()
     });
-    // BYO disabled but endpoints exist → still returns Some (endpoint list is non-empty
-    // in the none-check), but custom_inference should be None.
-    let result = mgr.api_keys_for_request(false, false).unwrap();
-    assert!(result.custom_inference.is_none());
+    assert!(mgr.api_keys_for_request(true, false).is_none());
 }

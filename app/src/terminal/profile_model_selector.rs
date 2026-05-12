@@ -790,11 +790,29 @@ impl ProfileModelSelector {
             .cloned()
             .collect();
 
+        // Partition into server-provided choices (subject to auto/reasoning collapsing) and
+        // custom-endpoint choices (rendered separately under a `Custom models` sub-header so
+        // the server-curated list stays visually distinct).
+        let custom_ids: std::collections::HashSet<LLMId> = llm_preferences
+            .custom_llm_choices()
+            .map(|info| info.id.clone())
+            .collect();
+        let server_choices: Vec<&LLMInfo> = self
+            .all_model_choices
+            .iter()
+            .filter(|llm| !custom_ids.contains(&llm.id))
+            .collect();
+        let custom_choices: Vec<&LLMInfo> = self
+            .all_model_choices
+            .iter()
+            .filter(|llm| custom_ids.contains(&llm.id))
+            .collect();
+
         // Group models by base_model_name to collapse reasoning variants.
         // Use "auto" as the key for all auto models so they collapse together.
         // Only group models that have reasoning levels - others stay separate.
         let mut groups: IndexMap<String, Vec<&LLMInfo>> = IndexMap::new();
-        for llm in &self.all_model_choices {
+        for llm in &server_choices {
             let key = if is_auto(llm) {
                 "auto".to_string()
             } else if llm.has_reasoning_level() {
@@ -802,7 +820,7 @@ impl ProfileModelSelector {
             } else {
                 llm.id.to_string()
             };
-            groups.entry(key).or_default().push(llm);
+            groups.entry(key).or_default().push(*llm);
         }
 
         // Build collapsed list: for each group, take first model (preserves server order)
@@ -811,7 +829,7 @@ impl ProfileModelSelector {
             .filter_map(|(_, variants)| variants.into_iter().next())
             .collect();
 
-        let items = available_model_menu_items(
+        let mut items = available_model_menu_items(
             choices,
             |llm| {
                 let all_refs: Vec<_> = self.all_model_choices.iter().collect();
@@ -831,6 +849,33 @@ impl ProfileModelSelector {
             true,
             ctx,
         );
+
+        // Append the "Custom models" section when the user has any custom endpoints configured.
+        // Each row gets its own atomic `SelectModel(config_key)` action; no auto/reasoning
+        // collapsing applies.
+        if !custom_choices.is_empty() {
+            let appearance = Appearance::as_ref(ctx);
+            items.push(MenuItem::Separator);
+            items.push(MenuItem::Header {
+                fields: MenuItemFields::new("Custom models").with_override_text_color(
+                    appearance
+                        .theme()
+                        .sub_text_color(appearance.theme().background())
+                        .into_solid(),
+                ),
+                clickable: false,
+                right_side_fields: None,
+            });
+            for llm in &custom_choices {
+                let mut fields = MenuItemFields::new(llm.menu_display_name())
+                    .with_icon(Icon::Key)
+                    .with_on_select_action(ProfileModelSelectorAction::SelectModel(llm.id.clone()));
+                if llm.id == active_llm.id {
+                    fields = fields.with_icon(Icon::Check);
+                }
+                items.push(MenuItem::Item(fields));
+            }
+        }
 
         let selected_index = Self::find_selected_index(&items, active_llm);
         self.model_dropdown.update(ctx, |menu, ctx| {
