@@ -6056,7 +6056,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             #[cfg(windows)]
             Self::AutoupdateForcekillFailed { .. } => "Windows Autoupdate: Forcekill Failed",
             #[cfg(windows)]
-            Self::AutoupdateMinidumpCleanupFailed { .. } => "Windows Autoupdate: Minidump Cleanup Failed",
+            Self::AutoupdateMinidumpCleanupFailed { .. } => {
+                "Windows Autoupdate: Minidump Cleanup Failed"
+            }
             Self::ToggleCodebaseContext => "Toggle Agent Mode Codebase Context",
             Self::ToggleAutoIndexing => "Toggle Codebase Context Autoindexing",
             Self::ActiveIndexedReposChanged => "Active Indexed Repos Changed",
