@@ -1158,9 +1158,9 @@ fn build_thumbnail_cell(
         }
     };
 
-    // Fixed-size square for the thumb itself. The 2 px ring lives on
-    // this container so it traces the thumb's exact edges (vs. the
-    // outer pill, which is intentionally wider).
+    // 64x64 square for the thumb itself, with optional 2px accent ring
+    // drawn AS the Container's border — traces the thumb's exact
+    // edges (the pill below is intentionally wider).
     let ring = Border {
         width: RAIL_HIGHLIGHT_RING_WIDTH,
         color: Fill::Solid(if is_current {
@@ -1181,51 +1181,61 @@ fn build_thumbnail_cell(
         .with_min_height(RAIL_THUMB_SIZE)
         .finish();
 
-    // Soft "pill behind the thumb" highlight. Sized RAIL_HIGHLIGHT_INSET
-    // px larger than the thumb on every side; rounded corners; soft
-    // accent-blue fill at low alpha. Non-current entries get the
-    // same dimensions with a transparent fill so layout doesn't
-    // shift between selection states (the cell's bounding box never
-    // changes).
+    // Soft "pill behind the thumb" highlight. Using `Container` with
+    // `with_uniform_padding(RAIL_HIGHLIGHT_INSET)` is the deterministic
+    // way to make the pill exactly `RAIL_HIGHLIGHT_INSET` px wider
+    // than its child on every side — Container sizes to
+    // `child + padding`, the background_color fills that bounding box,
+    // and the rounded-corner mask is applied at that exact rect.
+    //
+    // (Earlier draft wrapped in `Align` + outer ConstrainedBox; that
+    // pattern leaked the parent's available width through Align and
+    // the pill rendered at the full rail width on selected entries.)
+    //
+    // Non-current entries reserve the same outer rect with a
+    // transparent fill so the cell's bounding box never changes
+    // between selection states — layout doesn't shift.
     let pill_fill = if is_current {
         rail_accent_fill_color()
     } else {
         ColorU::new(0, 0, 0, 0)
     };
-    let pill = Container::new(Align::new(ringed_thumb).finish())
+    let pill = Container::new(ringed_thumb)
         .with_background_color(pill_fill)
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
             RAIL_HIGHLIGHT_CORNER_RADIUS,
         )))
-        .finish();
-    let pill_sized = ConstrainedBox::new(pill)
-        .with_max_width(RAIL_THUMB_SIZE + 2. * RAIL_HIGHLIGHT_INSET)
-        .with_min_width(RAIL_THUMB_SIZE + 2. * RAIL_HIGHLIGHT_INSET)
-        .with_max_height(RAIL_THUMB_SIZE + 2. * RAIL_HIGHLIGHT_INSET)
-        .with_min_height(RAIL_THUMB_SIZE + 2. * RAIL_HIGHLIGHT_INSET)
+        .with_uniform_padding(RAIL_HIGHLIGHT_INSET)
         .finish();
 
     Box::new(
-        EventHandler::new(pill_sized).on_left_mouse_down(move |ctx, app, _position| {
+        EventHandler::new(pill).on_left_mouse_down(move |ctx, app, _position| {
             on_select(index, ctx, app);
             DispatchEventResult::StopPropagation
         }),
     )
 }
 
-/// GH9729 (post-tier2): faintly-lighter background for the rail
-/// panel, so the rail reads as a distinct region without competing
-/// with the image. Equivalent to ~6 % opacity white on top of the
-/// near-opaque black scrim.
+/// GH9729 (post-tier2): solid dark surface for the rail panel.
+///
+/// Earlier draft used a translucent white tint (alpha 16) on top of
+/// the scrim. Two problems with that: (1) the scrim itself is
+/// intentionally 98 %-opaque (t2-14 chose alpha 250 for "spatial
+/// context bleed"), so a ~6 % white overlay barely changed the net
+/// opacity and the file-tree text behind the workspace bled
+/// through the rail; (2) it didn't read as a panel — just a
+/// slightly-lighter zone of the scrim. Switching to a fully opaque
+/// near-black surface gives the rail a Material-Design "elevated
+/// surface" feel: it sits ON the scrim instead of being part of it.
 fn rail_background_color() -> ColorU {
-    ColorU::new(255, 255, 255, 16)
+    ColorU::new(24, 24, 24, 255)
 }
 
 /// GH9729 (post-tier2): 1 px hairline divider on the rail's right
-/// edge. ~12 % opacity white — visible against the rail's tinted
-/// background but not loud.
+/// edge. ~16 % opacity white — visible against the rail's dark
+/// surface but not loud.
 fn rail_divider_color() -> ColorU {
-    ColorU::new(255, 255, 255, 30)
+    ColorU::new(255, 255, 255, 40)
 }
 
 /// GH9729 (post-tier2): selection accent — macOS-system-blue-ish.
