@@ -1430,7 +1430,7 @@ impl ServerModel {
                         OpenBufferResponse {
                             result: Some(
                                 remote_server::proto::open_buffer_response::Result::Error(
-                                    FileOperationError { message: e.into() },
+                                    FileOperationError { message: e },
                                 ),
                             ),
                         },
@@ -1459,7 +1459,7 @@ impl ServerModel {
                     OpenBufferResponse {
                         result: Some(remote_server::proto::open_buffer_response::Result::Error(
                             FileOperationError {
-                                message: format!("Buffer loaded but has no file content"),
+                                message: "Buffer loaded but has no file content".to_string(),
                             },
                         )),
                     },
@@ -1474,7 +1474,7 @@ impl ServerModel {
                     OpenBufferResponse {
                         result: Some(remote_server::proto::open_buffer_response::Result::Error(
                             FileOperationError {
-                                message: format!("Buffer loaded but has no sync clock"),
+                                message: "Buffer loaded but has no sync clock".to_string(),
                             },
                         )),
                     },
