@@ -19,18 +19,80 @@ use std::time::Duration;
 
 use super::super::setup;
 
-/// Path to the daemon's Unix domain socket.
+/// Path to the daemon's Unix domain socket, versioned on release channels.
 pub(super) fn socket_path(identity_key: &str) -> PathBuf {
     let dir = setup::remote_server_daemon_dir(identity_key);
     let expanded = shellexpand::tilde(&dir).into_owned();
-    PathBuf::from(expanded).join("server.sock")
+    PathBuf::from(expanded).join(setup::daemon_socket_name())
 }
 
-/// Path to the daemon's PID file (also used as the flock target).
+/// Path to the daemon's PID file (also used as the flock target),
+/// versioned on release channels.
 pub(super) fn pid_path(identity_key: &str) -> PathBuf {
     let dir = setup::remote_server_daemon_dir(identity_key);
     let expanded = shellexpand::tilde(&dir).into_owned();
-    PathBuf::from(expanded).join("server.pid")
+    PathBuf::from(expanded).join(setup::daemon_pid_name())
+}
+
+/// Daemon directory for the given identity key (expanded, no tilde).
+fn daemon_dir(identity_key: &str) -> PathBuf {
+    let dir = setup::remote_server_daemon_dir(identity_key);
+    let expanded = shellexpand::tilde(&dir).into_owned();
+    PathBuf::from(expanded)
+}
+
+/// Scans the identity-key daemon directory and cleans up socket/PID files
+/// from previous daemon versions.
+///
+/// For each old PID file found, sends `SIGTERM` to the old daemon (if still
+/// alive) so it shuts down gracefully, then removes both the PID and socket
+/// files. Errors are logged but do not prevent the proxy from proceeding.
+fn cleanup_old_versions(identity_key: &str) {
+    let dir = daemon_dir(identity_key);
+    let current_socket = setup::daemon_socket_name();
+    let current_pid = setup::daemon_pid_name();
+
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+
+        // Match old PID files: server*.pid that aren't the current version.
+        if name_str.ends_with(".pid") && name_str.starts_with("server") && name_str != current_pid {
+            let old_pid_path = entry.path();
+            // Try to SIGTERM the old daemon.
+            if let Ok(contents) = std::fs::read_to_string(&old_pid_path) {
+                if let Ok(pid) = contents.trim().parse::<libc::pid_t>() {
+                    // SAFETY: sending SIGTERM is safe — it requests graceful
+                    // shutdown. If the process doesn't exist, kill returns -1
+                    // with ESRCH which we ignore.
+                    let ret = unsafe { libc::kill(pid, libc::SIGTERM) };
+                    if ret == 0 {
+                        log::info!(
+                            "Proxy: sent SIGTERM to old daemon (pid={pid}, file={name_str})"
+                        );
+                    }
+                }
+            }
+            let _ = std::fs::remove_file(&old_pid_path);
+        }
+
+        // Match old socket files: server*.sock that aren't the current version.
+        if name_str.ends_with(".sock")
+            && name_str.starts_with("server")
+            && name_str != current_socket
+        {
+            let old_sock_path = entry.path();
+            log::info!("Proxy: removing old socket file {name_str}");
+            let _ = std::fs::remove_file(&old_sock_path);
+        }
+    }
 }
 
 /// Ensures the daemon directory exists with owner-only permissions.
@@ -52,6 +114,10 @@ pub fn run(identity_key: &str) -> anyhow::Result<()> {
     if let Some(parent) = socket_path.parent() {
         ensure_private_daemon_dir(parent)?;
     }
+
+    // Clean up socket/PID files from previous daemon versions so stale
+    // daemons left over after autoupdate don't linger.
+    cleanup_old_versions(identity_key);
 
     // ---- Acquire exclusive flock on the PID file --------------------------------
     //

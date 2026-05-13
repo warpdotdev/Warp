@@ -343,6 +343,32 @@ pub fn remote_server_daemon_data_dir(identity_key: &str) -> String {
     format!("{}/data", remote_server_daemon_dir(identity_key))
 }
 
+/// Returns the daemon socket filename, versioned on release channels.
+///
+/// - Release channels: `server-{version}.sock`
+/// - Local / Oss:      `server.sock`
+pub fn daemon_socket_name() -> String {
+    match ChannelState::channel() {
+        Channel::Local | Channel::Oss => "server.sock".to_string(),
+        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
+            format!("server-{}.sock", pinned_version())
+        }
+    }
+}
+
+/// Returns the daemon PID filename, versioned on release channels.
+///
+/// - Release channels: `server-{version}.pid`
+/// - Local / Oss:      `server.pid`
+pub fn daemon_pid_name() -> String {
+    match ChannelState::channel() {
+        Channel::Local | Channel::Oss => "server.pid".to_string(),
+        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
+            format!("server-{}.pid", pinned_version())
+        }
+    }
+}
+
 /// Returns the binary name, keyed by channel.
 ///
 /// Matches the CLI command names: `oz` (stable), `oz-preview`, `oz-dev`.
