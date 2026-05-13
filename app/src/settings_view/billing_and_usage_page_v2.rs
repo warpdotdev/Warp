@@ -1314,10 +1314,19 @@ impl BillingAndUsagePageV2View {
                 RESTRICTED_BILLING_USAGE_WARNING_STRING.to_string(),
             ));
         } else if would_exceed {
-            let warning_text = if has_admin_permissions {
-                "This purchase would exceed your monthly limit. Increase your limit to continue."
-            } else {
-                "This purchase would exceed your team’s monthly spend limit. Contact a team admin to increase it."
+            let warning_text = match (auto_reload_enabled, has_admin_permissions) {
+                (true, true) => {
+                    "Auto-reload is paused because the next reload would exceed your monthly spend limit. Increase your limit to continue using auto-reload."
+                }
+                (true, false) => {
+                    "Auto-reload is paused because the next reload would exceed your team’s monthly spend limit."
+                }
+                (false, true) => {
+                    "This purchase would exceed your monthly limit. Increase your limit to continue."
+                }
+                (false, false) => {
+                    "This purchase would exceed your team’s monthly spend limit. Contact a team admin to increase it."
+                }
             };
             lower_children.push(self.render_warning_row(appearance, warning_text.to_string()));
         }
