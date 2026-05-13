@@ -495,7 +495,7 @@ pub fn render_participants_and_role_elements(
     }
 
     // Only render button for viewer, unless hide_role_change_button is true
-    // (e.g., in cloud mode conversations where role changes are not supported)
+    // (e.g., in ambient-agent conversations where role changes are not supported)
     if role.is_some() && !hide_role_change_button {
         row.add_child(render_viewer_role_button(
             role,
