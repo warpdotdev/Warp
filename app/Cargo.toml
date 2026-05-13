@@ -881,9 +881,6 @@ category = "public.app-category.developer-tools"
 copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Stable"
 name = "Warp"
-osx_frameworks = [
-    "frameworks/default/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
-]
 resources = ["assets/onboarding"]
 short_description = "The local-first terminal for individuals and teams, stable build."
 
@@ -892,9 +889,6 @@ category = "public.app-category.developer-tools"
 copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Preview"
 name = "WarpPreview"
-osx_frameworks = [
-    "frameworks/default/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
-]
 resources = ["assets/onboarding"]
 short_description = "The local-first terminal for individuals and teams, feature preview build."
 
@@ -903,9 +897,6 @@ category = "public.app-category.developer-tools"
 copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Dev"
 name = "WarpDev"
-osx_frameworks = [
-    "frameworks/dev/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
-]
 resources = ["assets/onboarding"]
 short_description = "The local-first terminal for individuals and teams, developer build."
 

@@ -1,12 +1,6 @@
-//! Native crash reporting adapter that uses the [`minidumper`] crate with Sentry. This allows us
-//! to capture and report application crashes due to Unix signals like SIGSEGV (segfault)
-//! or Windows exceptions [https://learn.microsoft.com/en-us/windows/win32/debug/structured-exception-handling].
-//!
-//! This is inspired by [`sentry-rust-minidump`](https://github.com/timfish/sentry-rust-minidump),
-//! with a few important changes:
-//! * Support for starting and stopping the crash-reporting process, since users can toggle crash reporting at runtime
-//! * Startup via our command-line parsing, rather than a separate hook
-//! * Use of anonymous, temporary crash dump files, to ensure they're cleaned up
+//! Native crash reporting adapter that uses the [`minidumper`] crate to write local dumps.
+//! This captures application crashes due to Unix signals like SIGSEGV (segfault) or Windows
+//! exceptions without uploading them to a remote crash service.
 
 use std::{
     collections::HashMap,
@@ -26,12 +20,10 @@ use command::blocking::Command;
 use crash_handler::{CrashContext, CrashHandler};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
-use sentry::Breadcrumb;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use warp_core::report_error;
 
-use super::ToSentryTags;
+use super::ToCrashReportTags;
 
 lazy_static! {
     static ref GUARD: Mutex<Option<MinidumpGuard>> = Mutex::new(None);
@@ -52,7 +44,7 @@ pub fn init() {
             *global_guard = Some(guard);
         }
         Err(err) => {
-            report_error!(err);
+            log::error!("Unable to initialize local minidump reporter: {err:#}");
         }
     }
 }
@@ -60,13 +52,11 @@ pub fn init() {
 /// Uninitialize the minidump reporter.
 pub fn uninit() {
     let maybe_guard = { GUARD.lock().take() };
-    // Ensure we drop the `MinidumpGuard` after releasing the GUARD mutex. If there's an
-    // error stopping the server, we should log it as a Sentry breadcrumb in the Warp
-    // process, but not forward the breadcrumb to the server process.
+    // Ensure we drop the `MinidumpGuard` after releasing the GUARD mutex.
     std::mem::drop(maybe_guard);
 }
 
-/// Set a tag to include in minidump crash reports.
+/// Set a tag to include in local minidump crash logs.
 pub fn set_tag(key: String, value: String) {
     let global_guard = GUARD.lock();
     if let Some(guard) = global_guard.as_ref() {
@@ -74,32 +64,16 @@ pub fn set_tag(key: String, value: String) {
     }
 }
 
-/// Set tags to include in minidump crash reports, using a type that implements [`ToSentryTags`].
-pub fn set_tags_from<T: ToSentryTags>(tags: &T) {
+/// Set tags to include in local minidump crash logs, using a type that implements [`ToCrashReportTags`].
+pub fn set_tags_from<T: ToCrashReportTags>(tags: &T) {
     let global_guard = GUARD.lock();
     if let Some(guard) = global_guard.as_ref() {
         let tags = tags
-            .to_sentry_tags()
+            .to_crash_report_tags()
             .into_iter()
             .map(|(k, v)| (k.to_string(), v))
             .collect();
         guard.set_tags(tags);
-    }
-}
-
-/// Set the user id to include in minidump crash reports.
-pub fn set_user_id(user_id: &str) {
-    let global_guard = GUARD.lock();
-    if let Some(guard) = global_guard.as_ref() {
-        guard.set_user_id(user_id.to_owned());
-    }
-}
-
-/// Forward a breadcrumb to attach to minidump crash reports.
-pub fn forward_breadcrumb(breadcrumb: Breadcrumb) {
-    let global_guard = GUARD.lock();
-    if let Some(guard) = global_guard.as_ref() {
-        guard.add_breadcrumb(breadcrumb);
     }
 }
 
@@ -137,14 +111,22 @@ pub fn run_server(socket_path: &Path) -> anyhow::Result<()> {
     struct Handler {
         shutdown: Arc<AtomicBool>,
         pending_crash_details: Mutex<Option<String>>,
+        pending_dump_path: Mutex<Option<PathBuf>>,
+        tags: Mutex<HashMap<String, String>>,
     }
 
     impl minidumper::ServerHandler for Handler {
         fn create_minidump_file(&self) -> Result<(File, PathBuf), io::Error> {
-            // Use an anonymous temporary file for crash dumps. The path isn't used when writing a
-            // dump, so we can use an empty value.
-            let file = tempfile::tempfile()?;
-            Ok((file, PathBuf::new()))
+            let dump_dir = warp_core::paths::state_dir()
+                .join(warp_core::paths::WARP_LOGS_DIR)
+                .join("crash-dumps");
+            std::fs::create_dir_all(&dump_dir)?;
+
+            let dump_path =
+                dump_dir.join(format!("openwarp-minidump-{}.dmp", Uuid::new_v4().simple()));
+            let file = File::create(&dump_path)?;
+            *self.pending_dump_path.lock() = Some(dump_path.clone());
+            Ok((file, dump_path))
         }
 
         fn on_minidump_created(
@@ -156,7 +138,9 @@ pub fn run_server(socket_path: &Path) -> anyhow::Result<()> {
             }
 
             let crash_details = self.pending_crash_details.lock().take();
-            send_crash_report(crash_details, result.ok());
+            let dump_path = self.pending_dump_path.lock().take();
+            let tags = self.tags.lock().clone();
+            send_crash_report(crash_details, result.as_ref().ok(), dump_path, tags);
 
             minidumper::LoopAction::Exit
         }
@@ -167,22 +151,7 @@ pub fn run_server(socket_path: &Path) -> anyhow::Result<()> {
                     self.shutdown.store(true, Ordering::Relaxed);
                 }
                 Ok(MinidumpCommand::SetTags { tags }) => {
-                    sentry::configure_scope(|scope| {
-                        for (key, value) in tags {
-                            scope.set_tag(&key, value);
-                        }
-                    });
-                }
-                Ok(MinidumpCommand::SetUser { user_id }) => {
-                    sentry::configure_scope(|scope| {
-                        scope.set_user(Some(sentry::User {
-                            id: Some(user_id),
-                            ..Default::default()
-                        }));
-                    });
-                }
-                Ok(MinidumpCommand::AddBreadcrumb { breadcrumb }) => {
-                    sentry::add_breadcrumb(breadcrumb);
+                    self.tags.lock().extend(tags);
                 }
                 Ok(MinidumpCommand::SetCrashDetails { details }) => {
                     *self.pending_crash_details.lock() = Some(details);
@@ -198,6 +167,8 @@ pub fn run_server(socket_path: &Path) -> anyhow::Result<()> {
     let handler = Box::new(Handler {
         shutdown: shutdown.clone(),
         pending_crash_details: Default::default(),
+        pending_dump_path: Default::default(),
+        tags: Default::default(),
     });
 
     log::info!(
@@ -215,24 +186,27 @@ pub fn run_server(socket_path: &Path) -> anyhow::Result<()> {
     result
 }
 
-/// openWarp 闭源遥测剥离 P2:原会把 minidump.dmp 作为 attachment 上报 Warp 官方 Sentry。
-/// 剥离后:仅 log 报告 fatal exception(message) + minidump 大小,minidump 文件本地保留
-/// (`dump.file` 仍在临时目录),用户调试时可手取。整条 send_crash_report 链路 P2 之后
-/// 实际上**不会被调用**(`init_sentry` 已不再启动 minidump server),保留实现以避免大 cascade。
-fn send_crash_report(details: Option<String>, dump: Option<minidumper::MinidumpBinary>) {
+fn send_crash_report(
+    details: Option<String>,
+    dump: Option<&minidumper::MinidumpBinary>,
+    dump_path: Option<PathBuf>,
+    tags: HashMap<String, String>,
+) {
     let message = details.as_deref().unwrap_or("Fatal exception");
-    let dump_size = dump.and_then(|d| d.contents.map(|c| c.len())).unwrap_or(0);
+    let dump_size = dump
+        .and_then(|d| d.contents.as_ref().map(|contents| contents.len()))
+        .unwrap_or(0);
+    let dump_path = dump_path
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<no dump path>".to_string());
     log::error!(
-        "openWarp: minidump crash report (message: {message}, dump bytes: {dump_size}) — 不再上报"
+        "openWarp: local minidump captured (message: {message}, dump bytes: {dump_size}, path: {dump_path}, tags: {tags:?})"
     );
 }
 
 impl MinidumpGuard {
-    // NOTE: We CANNOT use `report_error`, `report_if_error`, `log`, or similar here. Those
-    // all send information to Sentry, which can deadlock.
-
-    /// Set up minidump-backed crash reporting. This spawns a child process that reports crashes to
-    /// Sentry, and a crash handler which sends crashes to that child process.
+    /// Set up minidump-backed crash reporting. This spawns a child process that writes local
+    /// minidumps, and a crash handler which sends crashes to that child process.
     pub fn start() -> anyhow::Result<Self> {
         let socket_name = format!("wcr-{}.sock", Uuid::new_v4().simple());
         let socket_path = if cfg!(target_os = "macos") {
@@ -291,22 +265,9 @@ impl MinidumpGuard {
         Ok(guard)
     }
 
-    /// Send the user id for the minidump server to attach to Sentry events.
-    fn set_user_id(&self, user_id: String) {
-        let _ = send_command(self.client.as_ref(), MinidumpCommand::SetUser { user_id });
-    }
-
-    /// Send tags for the minidump server to attach to Sentry events.
+    /// Send tags for the minidump server to attach to local crash logs.
     fn set_tags(&self, tags: HashMap<String, String>) {
         let _ = send_command(self.client.as_ref(), MinidumpCommand::SetTags { tags });
-    }
-
-    /// Add a breadcrumb to crash reports produced by the minidump server.
-    fn add_breadcrumb(&self, breadcrumb: Breadcrumb) {
-        let _ = send_command(
-            self.client.as_ref(),
-            MinidumpCommand::AddBreadcrumb { breadcrumb },
-        );
     }
 
     /// Simulate a crash.
@@ -385,13 +346,10 @@ fn send_command(client: &minidumper::Client, command: MinidumpCommand) -> anyhow
 enum MinidumpCommand {
     Shutdown,
     SetTags { tags: HashMap<String, String> },
-    SetUser { user_id: String },
-    AddBreadcrumb { breadcrumb: Breadcrumb },
     SetCrashDetails { details: String },
 }
 
-/// Format details from a [`CrashContext`] into a Sentry error message. This information should
-/// already be in the minidump, but it's useful to surface prominently in Sentry.
+/// Format details from a [`CrashContext`] into a local crash log message.
 fn format_crash_details(crash_context: &CrashContext) -> Option<String> {
     cfg_if::cfg_if! {
         if #[cfg(target_os = "linux")] {
