@@ -1797,17 +1797,22 @@ impl Workspace {
             me.handle_tab_right_click_menu_event(event, ctx);
         });
 
-        // Currently setting the width to 300 px as a middle ground that looks
-        // ok when the shells show the path to the executables, and when they
-        // don't. Going forward we may want to enhance the menu to allow for a
-        // `max_width` and `min_width` instead, so we can allow the menu to
-        // grow as needed.
-        const NEW_SESSION_MENU_WIDTH: f32 = 300.;
+        // Width applied to *submenus* of the new-session menu — `Menu::with_width`
+        // sets the `submenu_width` field rather than the main menu's own width
+        // (see `app/src/menu.rs` for the underlying field). The main menu's own
+        // width is content-sized, which is why the `New worktree config` submenu
+        // entry can clip — that requires a `min_width` plumbed through the Menu
+        // rendering pipeline. See #10269 for the original report and the comment
+        // below for the architectural follow-up.
+        //
+        // Going forward we may want to enhance the menu to allow for a `max_width`
+        // and `min_width` instead, so we can allow the menu to grow as needed.
+        const NEW_SESSION_SUBMENU_WIDTH: f32 = 300.;
         let new_session_menu = ctx.add_typed_action_view(|ctx| {
             if FeatureFlag::ShellSelector.is_enabled() {
                 let theme = Appearance::as_ref(ctx).theme();
                 Menu::new()
-                    .with_width(NEW_SESSION_MENU_WIDTH)
+                    .with_width(NEW_SESSION_SUBMENU_WIDTH)
                     .with_border(Border::all(1.).with_border_color(theme.outline().into()))
                     .with_drop_shadow()
                     .with_safe_triangle()
@@ -1815,6 +1820,7 @@ impl Workspace {
                     .prevent_interaction_with_other_elements()
             } else {
                 Menu::new()
+                    .with_width(NEW_SESSION_SUBMENU_WIDTH)
                     .with_safe_triangle()
                     .with_ignore_hover_when_covered()
             }
