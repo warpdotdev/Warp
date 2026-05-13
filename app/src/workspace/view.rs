@@ -33,6 +33,8 @@ pub(crate) use onboarding::OnboardingTutorial;
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent::conversation::AIConversation;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::agent::CancellationReason;
 use crate::ai::agent_conversations_model::{
     AgentConversationNavigationSubject, AgentConversationsModel,
 };
@@ -13388,10 +13390,41 @@ impl Workspace {
         if source_conversation.status().is_in_progress()
             || source_conversation.status().is_blocked()
         {
-            Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
-            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
-            return;
-        };
+            let has_long_running_command = source_view
+                .as_ref(ctx)
+                .model
+                .lock()
+                .block_list()
+                .active_block()
+                .is_active_and_long_running();
+
+            if has_long_running_command {
+                Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
+                let window_id = ctx.window_id();
+                WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                    toast_stack.add_ephemeral_toast(
+                        DismissibleToast::error(
+                            "Can't hand off while a command is running. Cancel the command or wait for it to finish."
+                                .to_owned(),
+                        ),
+                        window_id,
+                        ctx,
+                    );
+                });
+                return;
+            }
+
+            let conversation_id = source_conversation.id();
+            source_view.update(ctx, |view, ctx| {
+                view.ai_controller().update(ctx, |controller, ctx| {
+                    controller.cancel_conversation_progress(
+                        conversation_id,
+                        CancellationReason::ManuallyCancelled,
+                        ctx,
+                    );
+                });
+            });
+        }
 
         let Some(source_token) = source_conversation.server_conversation_token().cloned() else {
             Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
