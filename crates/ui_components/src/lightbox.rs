@@ -981,10 +981,19 @@ impl Component for Lightbox {
                 .with_vertical_padding(ZOOM_PILL_VERTICAL_PADDING)
                 .finish();
 
+            // GH9729 (post-tier2): when the rail is shown, the Stack's
+            // bottom-middle anchor is the centre of the *workspace*,
+            // not the centre of the *image area* (which starts
+            // RAIL_WIDTH px to the right of the workspace's left
+            // edge). Offset the pill right by half the rail width so
+            // it sits centred under the actual image — the user
+            // expects "the zoom control for THIS image" to live
+            // under THIS image, not under the union of rail + image.
+            let pill_x_offset = if show_rail { RAIL_WIDTH / 2. } else { 0. };
             content.add_positioned_child(
                 pill,
                 OffsetPositioning::offset_from_parent(
-                    vec2f(0., -ZOOM_PILL_BOTTOM_INSET),
+                    vec2f(pill_x_offset, -ZOOM_PILL_BOTTOM_INSET),
                     ParentOffsetBounds::Unbounded,
                     ParentAnchor::BottomMiddle,
                     ChildAnchor::BottomMiddle,
@@ -1059,15 +1068,30 @@ fn build_thumbnail_rail(
     // rebuild of this element (rail is rebuilt every `render()`; any
     // per-element scroll state would reset on `ctx.notify()`).
     //
-    // Scrollbar styling: a faintly-white thumb against a transparent
-    // track keeps it legible on the dark scrim without competing
-    // with the close button or metadata text.
+    // Scrollbar VISIBILITY: `ScrollbarWidth::None` hides the
+    // scrollbar entirely. Three reasons:
+    //   * The default `Auto` (8 px gutter on the right) made
+    //     `CrossAxisAlignment::Center` centre the thumbnails in
+    //     `RAIL_WIDTH − 8` instead of full `RAIL_WIDTH`, so they
+    //     read as visually off-centre in the rail.
+    //   * A native-look scrollbar competes with Warp's overall
+    //     UI style.
+    //   * Modern sidebars (macOS Photos, VSCode file tree, Finder
+    //     column view) all hide the scrollbar by default — users
+    //     scroll with trackpad / mouse wheel.
+    //
+    // Hiding the scrollbar does NOT disable scrolling — the
+    // `ClippedScrollable` still consumes scroll events and the
+    // `rail_scroll_state` handle still drives the position; only
+    // the visual scrollbar widget is suppressed. Track / thumb fills
+    // are set to `Fill::None` so they have no effect even if the
+    // width were ever flipped back on.
     let scrollable = ClippedScrollable::vertical(
         rail.scroll_state,
         padded_column,
-        ScrollbarWidth::Auto,
-        Fill::Solid(ColorU::new(255, 255, 255, 64)),
-        Fill::Solid(ColorU::new(255, 255, 255, 128)),
+        ScrollbarWidth::None,
+        Fill::None,
+        Fill::None,
         Fill::None,
     )
     .finish();
