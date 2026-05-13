@@ -61,20 +61,20 @@ use crate::terminal::model::session::SessionInfo;
 use crate::terminal::shell::{ShellName, ShellType};
 
 use crate::terminal::model::secrets::ObfuscateSecrets;
-use session_sharing_protocol::sharer::SessionSourceType;
+use crate::terminal::shared_session::protocol::SessionSourceType;
 use warp_core::report_error;
 #[cfg(not(target_family = "wasm"))]
 use warpui::util::save_as_file;
 
+use crate::terminal::shared_session::protocol::{
+    AICommandMetadata, OrderedTerminalEventType, ParticipantId,
+};
 use async_channel::Sender;
 use base64::Engine;
 use hex::FromHexError;
 use instant::Instant;
 use itertools::{Either, Itertools};
 use serde::Serialize;
-use session_sharing_protocol::common::{
-    AICommandMetadata, OrderedTerminalEventType, ParticipantId,
-};
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::num::ParseIntError;
@@ -1985,7 +1985,7 @@ impl TerminalModel {
             let num_cols = size_update.new_size.columns();
             if let Some(tx) = &self.ordered_terminal_events_for_shared_session_tx {
                 if let Err(e) = tx.try_send(OrderedTerminalEventType::Resize {
-                    window_size: session_sharing_protocol::common::WindowSize {
+                    window_size: crate::terminal::shared_session::protocol::WindowSize {
                         num_rows,
                         num_cols,
                     },

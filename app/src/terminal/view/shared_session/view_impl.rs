@@ -7,6 +7,10 @@ use crate::terminal::block_list_viewport::ScrollPositionUpdate;
 use crate::terminal::model::blocks::BlockListPoint;
 use crate::terminal::model::index::Point;
 use crate::terminal::model::terminal_model::WithinBlock;
+use crate::terminal::shared_session::protocol::RoleUpdatedReason;
+use crate::terminal::shared_session::protocol::SessionSourceType;
+use crate::terminal::shared_session::protocol::{ParticipantId, Role, SessionId, WindowSize};
+use crate::terminal::shared_session::protocol::{RoleUpdateReason, SessionEndedReason};
 use crate::terminal::shared_session::settings::SharedSessionSettings;
 use crate::terminal::shared_session::{
     selections::point_to_session_sharing, SharedSessionActionSource, SharedSessionScrollbackType,
@@ -24,10 +28,6 @@ use crate::{
 };
 use chrono::{DateTime, Local};
 use itertools::Itertools;
-use session_sharing_protocol::common::{ParticipantId, Role, SessionId, WindowSize};
-use session_sharing_protocol::sharer::SessionSourceType;
-use session_sharing_protocol::sharer::{RoleUpdateReason, SessionEndedReason};
-use session_sharing_protocol::viewer::RoleUpdatedReason;
 use warpui::r#async::Timer;
 
 use settings::Setting as _;
@@ -39,8 +39,8 @@ use warpui::{ModelHandle, ViewContext};
 use crate::terminal::shared_session::participant_avatar_view::ParticipantAvatarEvent;
 use crate::terminal::shared_session::participant_avatar_view::ParticipantAvatarView;
 
-use session_sharing_protocol::common::ParticipantList;
-use session_sharing_protocol::common::ParticipantPresenceUpdate;
+use crate::terminal::shared_session::protocol::ParticipantList;
+use crate::terminal::shared_session::protocol::ParticipantPresenceUpdate;
 
 use warpui::AppContext;
 
@@ -553,7 +553,7 @@ impl TerminalView {
     pub fn get_shared_session_presence_selection(
         &self,
         ctx: &AppContext,
-    ) -> session_sharing_protocol::common::Selection {
+    ) -> crate::terminal::shared_session::protocol::Selection {
         let model_lock = self.model.lock();
         let input_mode = *InputModeSettings::as_ref(ctx).input_mode.value();
         let semantic_selection = SemanticSelection::as_ref(ctx);
@@ -565,7 +565,7 @@ impl TerminalView {
             .map(|id| id.to_string().into())
             .collect_vec();
         if !selected_block_ids.is_empty() {
-            return session_sharing_protocol::common::Selection::Blocks {
+            return crate::terminal::shared_session::protocol::Selection::Blocks {
                 block_ids: selected_block_ids,
             };
         }
@@ -575,7 +575,7 @@ impl TerminalView {
             if let Some(selection_range) =
                 model_lock.alt_screen().selection_range(semantic_selection)
             {
-                return session_sharing_protocol::common::Selection::AltScreenText {
+                return crate::terminal::shared_session::protocol::Selection::AltScreenText {
                     start: point_to_session_sharing(*selection_range.start()),
                     end: point_to_session_sharing(*selection_range.end()),
                     is_reversed: selection_range.is_reversed(),
@@ -587,19 +587,19 @@ impl TerminalView {
         {
             let Some(start) = start.to_session_sharing_block_point(model_lock.block_list()) else {
                 log::error!("Failed convert start of selection range to BlockPoint");
-                return session_sharing_protocol::common::Selection::None;
+                return crate::terminal::shared_session::protocol::Selection::None;
             };
             let Some(end) = end.to_session_sharing_block_point(model_lock.block_list()) else {
                 log::error!("Failed convert end of selection range to BlockPoint");
-                return session_sharing_protocol::common::Selection::None;
+                return crate::terminal::shared_session::protocol::Selection::None;
             };
-            return session_sharing_protocol::common::Selection::BlockText {
+            return crate::terminal::shared_session::protocol::Selection::BlockText {
                 start,
                 end,
                 is_reversed,
             };
         }
-        session_sharing_protocol::common::Selection::None
+        crate::terminal::shared_session::protocol::Selection::None
     }
 
     pub fn handle_presence_manager_event(
@@ -747,7 +747,7 @@ impl TerminalView {
                 },
                 ctx,
             );
-        } else if let session_sharing_protocol::common::Selection::BlockText {
+        } else if let crate::terminal::shared_session::protocol::Selection::BlockText {
             start,
             end,
             is_reversed,

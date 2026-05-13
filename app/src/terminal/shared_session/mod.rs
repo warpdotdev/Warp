@@ -1,13 +1,14 @@
 use byte_unit::Byte;
 use instant::Duration;
 use serde::{Deserialize, Serialize};
-use session_sharing_protocol::common::{Role, Scrollback, ScrollbackBlock};
-use session_sharing_protocol::sharer::SessionSourceType;
 use warpui::{id, keymap::ContextPredicate, AppContext};
 
 use crate::editor::{InteractionState, ReplicaId};
 
-pub use session_sharing_protocol::common::ParticipantId;
+pub mod protocol;
+pub use protocol::ParticipantId;
+
+use protocol::{Role, Scrollback, ScrollbackBlock, SessionSourceType};
 
 use super::{
     model::{block::SerializedBlock, terminal_model::BlockIndex},
@@ -307,38 +308,36 @@ impl From<EventNumber> for usize {
     }
 }
 
-impl From<GridType> for session_sharing_protocol::common::GridType {
+impl From<GridType> for protocol::GridType {
     fn from(val: GridType) -> Self {
         match val {
-            GridType::Prompt => session_sharing_protocol::common::GridType::Prompt,
-            GridType::Rprompt => session_sharing_protocol::common::GridType::Rprompt,
-            GridType::Output => session_sharing_protocol::common::GridType::Output,
-            GridType::PromptAndCommand => {
-                session_sharing_protocol::common::GridType::PromptAndCommand
-            }
+            GridType::Prompt => protocol::GridType::Prompt,
+            GridType::Rprompt => protocol::GridType::Rprompt,
+            GridType::Output => protocol::GridType::Output,
+            GridType::PromptAndCommand => protocol::GridType::PromptAndCommand,
         }
     }
 }
 
-impl From<session_sharing_protocol::common::GridType> for GridType {
-    fn from(value: session_sharing_protocol::common::GridType) -> Self {
+impl From<protocol::GridType> for GridType {
+    fn from(value: protocol::GridType) -> Self {
         match value {
-            session_sharing_protocol::common::GridType::Prompt => Self::Prompt,
-            session_sharing_protocol::common::GridType::Rprompt => Self::Rprompt,
-            session_sharing_protocol::common::GridType::Output => Self::Output,
-            session_sharing_protocol::common::GridType::PromptAndCommand => Self::PromptAndCommand,
+            protocol::GridType::Prompt => Self::Prompt,
+            protocol::GridType::Rprompt => Self::Rprompt,
+            protocol::GridType::Output => Self::Output,
+            protocol::GridType::PromptAndCommand => Self::PromptAndCommand,
         }
     }
 }
 
-impl From<ReplicaId> for session_sharing_protocol::common::InputReplicaId {
+impl From<ReplicaId> for protocol::InputReplicaId {
     fn from(value: ReplicaId) -> Self {
         value.to_string().into()
     }
 }
 
-impl From<session_sharing_protocol::common::InputReplicaId> for ReplicaId {
-    fn from(value: session_sharing_protocol::common::InputReplicaId) -> Self {
+impl From<protocol::InputReplicaId> for ReplicaId {
+    fn from(value: protocol::InputReplicaId) -> Self {
         ReplicaId::new(value)
     }
 }

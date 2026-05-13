@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use session_sharing_protocol::common::{ParticipantId, ParticipantList, SessionId};
-use session_sharing_protocol::sharer::SessionSourceType;
+use crate::terminal::shared_session::protocol::SessionSourceType;
+use crate::terminal::shared_session::protocol::{ParticipantId, ParticipantList, SessionId};
 use warpui::platform::WindowStyle;
 use warpui::{App, ViewHandle};
 

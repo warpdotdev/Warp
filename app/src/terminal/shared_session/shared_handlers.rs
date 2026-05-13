@@ -1,11 +1,11 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use input_classifier::InputType;
-use session_sharing_protocol::common::{
+use crate::terminal::shared_session::protocol::{
     CLIAgentSessionState, InputMode, InputType as ProtocolInputType, SelectedAgentModel,
     SelectedConversation, ServerConversationToken, UniversalDeveloperInputContextUpdate,
 };
+use input_classifier::InputType;
 use warp_core::features::FeatureFlag;
 use warpui::{AppContext, ModelHandle, SingletonEntity, WeakViewHandle};
 

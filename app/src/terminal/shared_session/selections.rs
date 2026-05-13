@@ -1,5 +1,5 @@
 use crate::terminal::model::{blocks::BlockList, index::Point, terminal_model::WithinBlock};
-use session_sharing_protocol::common::{BlockPoint, Point as SessionSharingPoint};
+use crate::terminal::shared_session::protocol::{BlockPoint, Point as SessionSharingPoint};
 
 fn point_from_session_sharing(point: SessionSharingPoint) -> Point {
     Point {

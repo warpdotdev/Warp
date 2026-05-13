@@ -13,12 +13,12 @@ use crate::terminal::shared_session::{
 };
 use crate::terminal::view::{TerminalAction, TerminalView};
 
+use crate::terminal::shared_session::protocol::SessionSourceType;
+use crate::terminal::shared_session::protocol::{ParticipantId, ParticipantList, Role, SessionId};
 use crate::terminal::view::throttle;
 use crate::ui_components::icons::Icon;
 use chrono::{DateTime, Local};
 use markdown_parser::FormattedTextFragment;
-use session_sharing_protocol::common::{ParticipantId, ParticipantList, Role, SessionId};
-use session_sharing_protocol::sharer::SessionSourceType;
 use std::collections::HashMap;
 use std::time::Duration;
 use warpui::{elements::MouseStateHandle, ModelHandle, ViewContext, ViewHandle};

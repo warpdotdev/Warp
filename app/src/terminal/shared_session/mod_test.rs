@@ -7,11 +7,11 @@ use crate::terminal::model::test_utils::block_size;
 use crate::uri::web_intent_parser::maybe_rewrite_web_url_to_intent;
 
 use crate::terminal::model::ObfuscateSecrets;
+use crate::terminal::shared_session::protocol::{Scrollback, ScrollbackBlock};
 use crate::terminal::TerminalModel;
 use crate::terminal::{event_listener::ChannelEventListener, model::block::SerializedBlock};
 use crate::themes::default_themes::dark_theme;
 use serde_json::Value;
-use session_sharing_protocol::common::{Scrollback, ScrollbackBlock};
 use std::sync::Arc;
 use url::Url;
 use warpui::r#async::executor::Background;

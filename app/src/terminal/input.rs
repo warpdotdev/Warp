@@ -217,6 +217,9 @@ use crate::{
     AgentModeEntrypoint,
 };
 
+use crate::terminal::shared_session::protocol::{
+    AgentAttachment, ParticipantId, ServerConversationToken,
+};
 use ai::skills::SkillReference;
 use base64::Engine as _;
 #[cfg(feature = "local_fs")]
@@ -226,7 +229,6 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use ordered_float::Float;
 use regex::Regex;
-use session_sharing_protocol::common::{AgentAttachment, ParticipantId, ServerConversationToken};
 use settings::{Setting as _, ToggleableSetting};
 use std::{
     any::Any,

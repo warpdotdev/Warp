@@ -558,7 +558,7 @@ impl AltScreenElement {
         if let Some(presence_manager) = &self.presence_manager {
             let is_self_reconnecting = presence_manager.as_ref(app).is_reconnecting();
             for participant in presence_manager.as_ref(app).all_present_participants() {
-                let session_sharing_protocol::common::Selection::AltScreenText {
+                let crate::terminal::shared_session::protocol::Selection::AltScreenText {
                     start,
                     end,
                     is_reversed,

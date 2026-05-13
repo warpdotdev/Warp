@@ -1,5 +1,6 @@
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::PaneHeaderAction;
+use crate::terminal::shared_session::protocol::{ParticipantId, ParticipantInfo, Role};
 use crate::terminal::view::TerminalAction;
 use crate::{
     appearance::Appearance,
@@ -8,7 +9,6 @@ use crate::{
 use instant::Duration;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use session_sharing_protocol::common::{ParticipantId, ParticipantInfo, Role};
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::{
     accessibility::AccessibilityContent,

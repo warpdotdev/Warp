@@ -7,10 +7,10 @@ use crate::terminal::shared_session::presence_manager::{PresenceManager, PRESET_
 use std::collections::{HashMap, HashSet};
 use std::iter;
 
-use itertools::Itertools;
-use session_sharing_protocol::common::{
+use crate::terminal::shared_session::protocol::{
     ParticipantId, ParticipantInfo, ParticipantList, ProfileData, Role, Selection, Sharer, Viewer,
 };
+use itertools::Itertools;
 use warp_core::command::ExitCode;
 use warpui::App;
 

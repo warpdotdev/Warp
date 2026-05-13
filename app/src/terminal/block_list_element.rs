@@ -34,8 +34,8 @@ use warp_util::user_input::UserInput;
 use warpui::platform::Cursor;
 use warpui::text::SelectionType;
 
+use crate::terminal::shared_session::protocol::{ParticipantId, Selection};
 use pathfinder_color::ColorU;
-use session_sharing_protocol::common::{ParticipantId, Selection};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::mem;

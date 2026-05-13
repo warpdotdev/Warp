@@ -3,8 +3,8 @@
 // and defines state used only for session sharing.
 use std::collections::HashMap;
 
+use crate::terminal::shared_session::protocol::{AgentAttachment, ServerConversationToken};
 use itertools::Itertools;
-use session_sharing_protocol::common::{AgentAttachment, ServerConversationToken};
 use warp_core::features::FeatureFlag;
 use warp_multi_agent_api::response_event::{stream_finished, ClientActions};
 use warp_multi_agent_api::{client_action::Action, message::Message};

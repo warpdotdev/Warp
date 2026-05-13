@@ -1,5 +1,5 @@
+use crate::terminal::shared_session::protocol::SessionSourceType;
 use pathfinder_geometry::vector::vec2f;
-use session_sharing_protocol::sharer::SessionSourceType;
 
 use warpui::App;
 

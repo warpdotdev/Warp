@@ -154,6 +154,7 @@ use crate::settings::CodeSettings;
 pub use action::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion, TerminalAction};
 use ai::api_keys::{ApiKeyManager, AwsCredentialsState};
 
+use crate::terminal::shared_session::protocol::{SessionEndedReason, SessionSourceType};
 pub use block_banner::{WithinBlockBanner, BLOCK_BANNER_HEIGHT};
 use block_onboarding::onboarding_agentic_suggestions_block::{
     OnboardingAgenticSuggestionsBlock, OnboardingAgenticSuggestionsBlockEvent, OnboardingChipType,
@@ -165,7 +166,6 @@ pub use init::{
 pub use inline_banner::{NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction};
 #[cfg(feature = "local_fs")]
 use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
-use session_sharing_protocol::sharer::{SessionEndedReason, SessionSourceType};
 use ssh_file_upload::{FileUpload, FileUploadEvent};
 use uuid::Uuid;
 use warp_core::channel::ChannelState;
@@ -316,6 +316,11 @@ use crate::ActiveSession as WindowActiveSession;
 use crate::{report_if_error, AIAgentActionResultType};
 use crate::{safe_error, safe_warn};
 
+use crate::terminal::shared_session::protocol::{
+    AgentAttachment, ParticipantId, Role,
+    ServerConversationToken as SessionSharingServerConversationToken,
+    WindowSize as SessionSharingWindowSize,
+};
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Local, NaiveDateTime};
 use command_corrections::rules::{Rule, RuleId as CommandCorrectionsRuleId};
@@ -330,11 +335,6 @@ use pathfinder_color::ColorU;
 use regex::Regex;
 use serde::Serialize;
 use serde_json::json;
-use session_sharing_protocol::common::{
-    AgentAttachment, ParticipantId, Role,
-    ServerConversationToken as SessionSharingServerConversationToken,
-    WindowSize as SessionSharingWindowSize,
-};
 use shared_session::{SharedSessionAdapter, Viewer};
 use std::any::Any;
 use std::borrow::Cow;

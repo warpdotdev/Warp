@@ -20,14 +20,14 @@ use crate::notebooks::notebook::NotebookView;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::pricing::PricingInfoModel;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
+use crate::terminal::shared_session::protocol::SessionSourceType;
+use crate::terminal::shared_session::protocol::{ParticipantId, ParticipantList};
 #[cfg(feature = "local_fs")]
 use crate::user_config::tab_configs_dir;
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::watcher::DirectoryWatcher;
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
-use session_sharing_protocol::common::{ParticipantId, ParticipantList};
-use session_sharing_protocol::sharer::SessionSourceType;
 use std::collections::HashMap;
 use std::sync::Arc;
 use watcher::HomeDirectoryWatcher;
@@ -67,9 +67,9 @@ use crate::{experiments, workspace, GlobalResourceHandlesProvider};
 
 // OpenWarp(本地化,Phase 5):`CloudPreferencesSyncer` 已物理删除。
 
+use crate::terminal::shared_session::protocol::SessionId;
 use ai::project_context::model::ProjectContextModel;
 use pane_group::{NotebookPane, PaneState, SplitPaneState, TerminalPaneId};
-use session_sharing_protocol::common::SessionId;
 use terminal::view::ActiveSessionState;
 use warpui::AddSingletonModel;
 use warpui::{platform::WindowStyle, App, ViewHandle};

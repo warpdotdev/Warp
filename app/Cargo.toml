@@ -183,7 +183,6 @@ serde_regex = "1.1.0"
 serde_urlencoded.workspace = true
 serde_with.workspace = true
 serde_yaml.workspace = true
-session-sharing-protocol.workspace = true
 settings.workspace = true
 settings_value = { workspace = true, features = ["derive"] }
 sha2.workspace = true
