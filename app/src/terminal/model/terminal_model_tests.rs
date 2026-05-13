@@ -71,14 +71,18 @@ fn cloud_mode_deferred_terminal_model_starts_view_pending() {
         .block_list()
         .is_executing_oz_environment_startup_commands());
 
-    model.block_list_mut().create_restored_command_block(
-        "setup-looking-command",
-        "output",
-        None,
-        0,
-        None,
-        None,
-    );
+    let restored_block = SerializedBlock {
+        id: BlockId::new(),
+        stylized_command: str_to_byte_vec("setup-looking-command"),
+        stylized_output: str_to_byte_vec("output"),
+        did_execute: true,
+        start_ts: Some(Local::now()),
+        completed_ts: Some(Local::now()),
+        ..Default::default()
+    };
+    model
+        .block_list_mut()
+        .insert_restored_block(&restored_block);
 
     let restored_command_block = model
         .block_list()

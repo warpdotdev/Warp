@@ -1929,6 +1929,7 @@ impl AISettingsPageView {
                 {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
+                widgets.push(Box::new(CloudHandoffWidget::default()));
                 widgets.push(Box::new(CLIAgentWidget::default()));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
@@ -1970,6 +1971,7 @@ impl AISettingsPageView {
                 if voice_supported {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
+                widgets.push(Box::new(CloudHandoffWidget::default()));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(AgentAttributionWidget::default()));
@@ -2698,6 +2700,8 @@ pub enum AISettingsPageAction {
     #[cfg(feature = "local_fs")]
     SetConversationLayout(crate::util::file::external_editor::settings::OpenConversationPreference),
     ToggleOrchestration,
+    ToggleCloudHandoff,
+    ToggleAmpersandHandoff,
     ToggleShowConversationHistory,
     ToggleAutoToggleRichInput,
     ToggleAutoOpenRichInputOnCLIAgentStart,
@@ -3464,6 +3468,7 @@ impl TypedActionView for AISettingsPageView {
                 });
                 ctx.notify();
             }
+<<<<<<< dagm/custom-api-endpoint
 
             AISettingsPageAction::OpenAddCustomEndpointModal => {
                 self.show_add_custom_endpoint_modal(ctx);
@@ -3472,6 +3477,24 @@ impl TypedActionView for AISettingsPageView {
                 self.show_edit_custom_endpoint_modal(*index, ctx);
             }
 
+=======
+            AISettingsPageAction::ToggleCloudHandoff => {
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .should_force_disable_cloud_handoff
+                        .toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleAmpersandHandoff => {
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .should_force_disable_ampersand_handoff
+                        .toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+>>>>>>> master
             AISettingsPageAction::ToggleAgentAttribution => {
                 // The updated value syncs to warp-server automatically via
                 // `CloudPreferencesSyncer` as a `JsonPreference` GSO keyed
@@ -6756,6 +6779,138 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
             column.add_child(render_ai_setting_description(
                 "Enable multi-agent orchestration, allowing the agent to spawn and coordinate parallel sub-agents.",
                 is_any_ai_enabled,
+                app,
+            ));
+        }
+
+        column.finish()
+    }
+}
+
+#[derive(Default)]
+struct CloudHandoffWidget {
+    handoff_toggle: SwitchStateHandle,
+    ampersand_toggle: SwitchStateHandle,
+}
+
+impl SettingsWidget for CloudHandoffWidget {
+    type View = AISettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "cloud handoff ampersand & move to cloud local"
+    }
+
+    fn should_render(&self, _app: &AppContext) -> bool {
+        FeatureFlag::OzHandoff.is_enabled() && FeatureFlag::HandoffLocalCloud.is_enabled()
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        use crate::settings::PrivacySettings;
+
+        let ai_settings = AISettings::as_ref(app);
+        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
+
+        let privacy = PrivacySettings::as_ref(app);
+        let cloud_convos_off = !privacy.is_cloud_conversation_storage_enabled
+            || matches!(
+                UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
+                AdminEnablementSetting::Disable
+            );
+        let is_force_disabled = !is_any_ai_enabled || cloud_convos_off;
+
+        let tooltip_text = if cloud_convos_off {
+            "Cloud handoff requires cloud conversations to be enabled."
+        } else {
+            ""
+        };
+
+        let ui_builder = appearance.ui_builder();
+
+        let handoff_toggle = if is_force_disabled {
+            let mut builder = ui_builder.switch(self.handoff_toggle.clone()).check(false);
+            if !tooltip_text.is_empty() {
+                builder = builder.with_tooltip(TooltipConfig {
+                    text: tooltip_text.to_string(),
+                    styles: ui_builder.default_tool_tip_styles(),
+                });
+            }
+            builder.disable().build().finish()
+        } else {
+            ui_builder
+                .switch(self.handoff_toggle.clone())
+                .check(!*ai_settings.should_force_disable_cloud_handoff)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleCloudHandoff);
+                })
+                .finish()
+        };
+
+        let handoff_row = build_toggle_element(
+            render_body_item_label::<AISettingsPageAction>(
+                "Cloud handoff".to_string(),
+                Some(styles::header_font_color(!is_force_disabled, app)),
+                None,
+                LocalOnlyIconState::Hidden,
+                ToggleState::Enabled,
+                appearance,
+            ),
+            handoff_toggle,
+            appearance,
+            None,
+        );
+
+        let mut column = Flex::column()
+            .with_child(render_separator(appearance))
+            .with_child(
+                build_sub_header(
+                    appearance,
+                    "Cloud Handoff",
+                    Some(styles::header_font_color(is_any_ai_enabled, app)),
+                )
+                .with_padding_bottom(HEADER_PADDING)
+                .finish(),
+            )
+            .with_child(handoff_row)
+            .with_child(render_ai_setting_description(
+                "Hand off local agent conversations to a cloud agent.",
+                !is_force_disabled,
+                app,
+            ));
+
+        if ai_settings.is_cloud_handoff_enabled(app) {
+            let ampersand_toggle = ui_builder
+                .switch(self.ampersand_toggle.clone())
+                .check(!*ai_settings.should_force_disable_ampersand_handoff)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleAmpersandHandoff);
+                })
+                .finish();
+
+            let ampersand_row = build_toggle_element(
+                render_body_item_label::<AISettingsPageAction>(
+                    "Use & to trigger handoff".to_string(),
+                    Some(styles::header_font_color(true, app)),
+                    None,
+                    LocalOnlyIconState::Hidden,
+                    ToggleState::Enabled,
+                    appearance,
+                ),
+                ampersand_toggle,
+                appearance,
+                None,
+            );
+
+            column.add_child(ampersand_row);
+            column.add_child(render_ai_setting_description(
+                "Type & as the first character to enter cloud handoff compose mode.",
+                true,
                 app,
             ));
         }

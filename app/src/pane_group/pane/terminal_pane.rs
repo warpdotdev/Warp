@@ -42,6 +42,7 @@ use crate::{
     server::server_api::ai::{SpawnAgentRequest, UserQueryMode},
     session_management::SessionNavigationData,
     terminal::cli_agent_sessions::CLIAgentSessionsModel,
+    terminal::view::ambient_agent::should_disable_snapshot,
     terminal::{
         general_settings::GeneralSettings,
         shared_session::{
@@ -1928,6 +1929,7 @@ fn launch_remote_child(
         conversation_id: None,
         initial_snapshot_token: None,
         agent_identity_uid: None,
+        snapshot_disabled: should_disable_snapshot(ctx).then_some(true),
     };
 
     new_terminal_view.update(ctx, |terminal_view, ctx| {

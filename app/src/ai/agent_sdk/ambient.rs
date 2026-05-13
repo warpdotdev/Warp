@@ -422,6 +422,7 @@ impl AmbientAgentRunner {
             let harness_auth_secrets = args.claude_auth_secret.clone().map(|name| {
                 crate::ai::ambient_agents::task::HarnessAuthSecretsConfig {
                     claude_auth_secret_name: Some(name),
+                    codex_auth_secret_name: None,
                 }
             });
 
@@ -493,6 +494,7 @@ impl AmbientAgentRunner {
                 referenced_attachments: vec![],
                 conversation_id: args.conversation,
                 initial_snapshot_token: None,
+                snapshot_disabled: None,
             };
 
             let should_open = args.open;

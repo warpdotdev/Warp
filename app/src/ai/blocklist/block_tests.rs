@@ -219,3 +219,29 @@ fn remote_arm_rejects_opencode() {
     .expect_err("Remote+opencode must be rejected");
     assert!(err.to_lowercase().contains("opencode"));
 }
+
+#[test]
+fn should_show_agent_mode_ask_user_question_speedbump_defaults_to_true() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        AISettings::handle(&app).read(&app, |settings, _ctx| {
+            assert!(*settings.should_show_agent_mode_ask_user_question_speedbump);
+        });
+    });
+}
+
+#[test]
+fn should_show_agent_mode_ask_user_question_speedbump_round_trips_to_false() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        AISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .should_show_agent_mode_ask_user_question_speedbump
+                .set_value(false, ctx)
+                .unwrap();
+        });
+        AISettings::handle(&app).read(&app, |settings, _ctx| {
+            assert!(!*settings.should_show_agent_mode_ask_user_question_speedbump);
+        });
+    });
+}

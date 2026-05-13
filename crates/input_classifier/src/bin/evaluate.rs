@@ -71,6 +71,12 @@ use warp_completer::{ParsedTokensSnapshot, util::parse_current_commands_and_toke
 #[cfg(feature = "onnx")]
 use input_classifier::{OnnxClassifier, OnnxModel};
 
+// Pick the ONNX model whose bytes are actually embedded in the binary
+#[cfg(feature = "nld_classifier_v1")]
+const DEFAULT_ONNX_MODEL: OnnxModel = OnnxModel::BertTinyV1;
+#[cfg(feature = "nld_classifier_v2")]
+const DEFAULT_ONNX_MODEL: OnnxModel = OnnxModel::BertTinyV2;
+
 #[derive(Parser)]
 struct InputSource {
     /// Input string to classify (use --file to read from file instead)
@@ -146,7 +152,7 @@ fn create_classifiers(args: &Args) -> Vec<(&'static str, Box<dyn InputClassifier
 
     #[cfg(feature = "onnx")]
     if args.onnx || use_all {
-        match OnnxClassifier::new(OnnxModel::BertTinyV1) {
+        match OnnxClassifier::new(DEFAULT_ONNX_MODEL) {
             Ok(classifier) => {
                 classifiers.push(("onnx", Box::new(classifier)));
             }
