@@ -2356,9 +2356,10 @@ impl AIBlock {
         // Now that streaming is complete and all RunAgents requests are
         // fully populated, re-evaluate auto-launch for any card that
         // was created during streaming with an empty agent_run_configs.
+        let conversation_id_for_auto_launch = self.client_ids.conversation_id;
         for view in self.run_agents_card_views.values() {
             view.update(ctx, |card, ctx| {
-                card.try_auto_launch_on_stream_complete(ctx);
+                card.try_auto_launch_on_stream_complete(conversation_id_for_auto_launch, ctx);
             });
         }
 
@@ -3181,7 +3182,16 @@ impl AIBlock {
                 // We only care about expansion state updates when the command
                 // is running or finished (i.e. when it has a block).
                 let action_status = self.action_model.as_ref(ctx).get_action_status(action_id);
-                if !action_status.is_some_and(|a| a.is_running() || a.is_done()) {
+                let has_finished_command_block = {
+                    let terminal_model = self.terminal_model.lock();
+                    terminal_model
+                        .block_list()
+                        .block_for_ai_action_id(action_id)
+                        .is_some_and(|block| block.finished())
+                };
+                if !has_finished_command_block
+                    && !action_status.is_some_and(|a| a.is_running() || a.is_done())
+                {
                     return;
                 }
 
@@ -6501,11 +6511,14 @@ impl AIBlock {
         let active_config = {
             let history = crate::BlocklistAIHistoryModel::as_ref(ctx);
             let conv = history.conversation(&self.client_ids.conversation_id);
-            let result = conv.and_then(|conv| {
-                conv.orchestration_config()
-                    .cloned()
-                    .map(|config| (config, conv.orchestration_status()))
-            });
+            let result = if !request.plan_id.is_empty() {
+                conv.and_then(|conv| {
+                    conv.orchestration_config_for_plan(&request.plan_id)
+                        .map(|(config, status)| (config.clone(), status))
+                })
+            } else {
+                None
+            };
             result
         };
 

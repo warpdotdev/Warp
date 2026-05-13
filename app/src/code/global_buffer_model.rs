@@ -2,6 +2,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Duration;
 
 use bimap::BiMap;
 
@@ -20,6 +21,7 @@ use warp_util::file::{FileId, FileLoadError, FileSaveError};
 use warp_util::host_id::HostId;
 use warp_util::remote_path::RemotePath;
 use warp_util::standardized_path::StandardizedPath;
+use warpui::r#async::Timer;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
 use remote_server::manager::RemoteServerManager;
@@ -54,6 +56,69 @@ struct PendingDiffParse {
     abort_handle: AbortHandle,
 }
 
+/// How long to wait after the last keystroke before sending a batched
+/// `BufferEdit` to the remote server. Long enough to coalesce rapid
+/// keystrokes, short enough for the remote view to feel responsive.
+const REMOTE_EDIT_DEBOUNCE: Duration = Duration::from_millis(200);
+
+/// Accumulates incremental edits for a single remote buffer during a
+/// debounce window before sending them as a single `BufferEdit` message.
+struct PendingEditBatch {
+    /// The server version known when the first edit in this batch was captured.
+    expected_server_version: u64,
+    /// Accumulated `TextEdit`s — each edit's offsets reference the buffer state
+    /// AFTER all previous edits in this batch have been applied.
+    edits: Vec<remote_server::proto::TextEdit>,
+    /// The client version to send (updated on each append).
+    latest_client_version: ContentVersion,
+    /// Handle to cancel the debounce timer when a new edit arrives or the
+    /// batch is flushed/discarded.
+    debounce_timer: Option<AbortHandle>,
+}
+
+impl PendingEditBatch {
+    /// Flush this batch: send accumulated edits as a single `BufferEdit`
+    /// to the remote server and cancel the debounce timer.
+    ///
+    /// Note: `send_buffer_edit` uses best-effort `try_send` on an unbounded
+    /// channel, so it can only fail if the connection is closed (in which
+    /// case the subsequent `save_buffer` would also fail).
+    fn flush(self, client: &remote_server::client::RemoteServerClient, path: &str) {
+        if let Some(timer) = &self.debounce_timer {
+            timer.abort();
+        }
+        if self.edits.is_empty() {
+            return;
+        }
+        log::debug!(
+            "[remote-buffer] Flushing batched BufferEdit: path={path} \
+             expected_sv={} new_cv={} edit_count={}",
+            self.expected_server_version,
+            self.latest_client_version.as_u64(),
+            self.edits.len()
+        );
+        client.send_buffer_edit(
+            path.to_string(),
+            self.expected_server_version,
+            self.latest_client_version.as_u64(),
+            self.edits,
+        );
+    }
+
+    /// Discard this batch without sending, cancelling the debounce timer.
+    fn discard(self) {
+        if let Some(timer) = &self.debounce_timer {
+            timer.abort();
+            log::debug!(
+                "[remote-buffer] Discarded pending batch: \
+                 expected_sv={} edit_count={}",
+                self.expected_server_version,
+                self.edits.len()
+            );
+        }
+    }
+}
+
 /// Describes the backing store for a buffer's content.
 enum BufferSource {
     /// Backed by the local filesystem (existing behavior).
@@ -68,6 +133,8 @@ enum BufferSource {
         remote_path: RemotePath,
         /// `None` while waiting for the `OpenBufferResponse`; `Some` once loaded.
         sync_clock: Option<SyncClock>,
+        /// Pending batched edits awaiting the debounce timer. `None` when idle.
+        pending_batch: Option<PendingEditBatch>,
     },
     /// Local file managed by the remote-server daemon.
     /// Owns the SyncClock for version tracking. Connection tracking
@@ -719,18 +786,24 @@ impl GlobalBufferModel {
     /// Save the content of a tracked buffer.
     ///
     /// For local buffers, saves to disk via `FileModel`.
-    /// For remote buffers, sends a `SaveBuffer` RPC to the remote server.
+    /// For remote buffers, flushes any pending edit batch first, then sends
+    /// a `SaveBuffer` RPC to the remote server.
     #[cfg(feature = "local_fs")]
     pub fn save(
-        &self,
+        &mut self,
         file_id: FileId,
         content: String,
         version: ContentVersion,
         ctx: &mut ModelContext<Self>,
     ) -> Result<(), FileSaveError> {
         // Check if this is a remote buffer — save via the remote server RPC.
-        if let Some(state) = self.buffers.get(&file_id) {
-            if let BufferSource::Remote { remote_path, .. } = &state.source {
+        if let Some(state) = self.buffers.get_mut(&file_id) {
+            if let BufferSource::Remote {
+                remote_path,
+                pending_batch,
+                ..
+            } = &mut state.source
+            {
                 let host_id = remote_path.host_id.clone();
                 let path = remote_path.path.as_str().to_string();
                 let manager = RemoteServerManager::handle(ctx);
@@ -739,6 +812,13 @@ impl GlobalBufferModel {
                         "No remote server client available".to_string(),
                     ));
                 };
+
+                // Flush any pending edit batch so the server has the latest
+                // content before persisting to disk.
+                if let Some(batch) = pending_batch.take() {
+                    batch.flush(&client, &path);
+                }
+
                 ctx.spawn(
                     async move { client.save_buffer(path).await.map_err(|e| format!("{e}")) },
                     move |_me, result, ctx| match result {
@@ -1594,25 +1674,13 @@ impl GlobalBufferModel {
                         return;
                     }
 
-                    // Look up the sync clock to get the expected server version
-                    // and bump the client version.
-                    let Some(state) = me.buffers.get_mut(&file_id) else {
-                        return;
-                    };
-                    let BufferSource::Remote { sync_clock, .. } = &mut state.source else {
-                        return;
-                    };
-                    let Some(sync_clock) = sync_clock.as_mut() else {
-                        return;
-                    };
-                    let expected_sv = sync_clock.server_version.as_u64();
-                    let new_cv = ContentVersion::new();
-                    sync_clock.client_version = new_cv;
-
                     // Build incremental edits from the ContentChanged delta.
                     // Each PreciseDelta carries the replaced range (old buffer
                     // coordinates) and the resolved range (new buffer coordinates)
                     // from which we can read the replacement text.
+                    let Some(state) = me.buffers.get(&file_id) else {
+                        return;
+                    };
                     let Some(buffer) = state.buffer.upgrade(ctx) else {
                         return;
                     };
@@ -1632,18 +1700,39 @@ impl GlobalBufferModel {
                             }
                         })
                         .collect();
-                    log::debug!(
-                        "[remote-buffer] Sending BufferEdit: path={path_for_edit} \
-                         expected_sv={expected_sv} new_cv={} edit_count={}",
-                        new_cv.as_u64(),
-                        edits.len()
+
+                    me.push_edit_to_pending_batch(file_id, edits, ctx);
+
+                    // Schedule (or reschedule) the debounce timer.
+                    // Uses the same Timer::after + abort_handle pattern as
+                    // LanguageServerShutdownManager::schedule_next_scan.
+                    let client_for_flush = client.clone();
+                    let path_for_flush = path_for_edit.clone();
+                    let handle = ctx.spawn(
+                        async {
+                            Timer::after(REMOTE_EDIT_DEBOUNCE).await;
+                        },
+                        move |me, _, _ctx| {
+                            let Some(state) = me.buffers.get_mut(&file_id) else {
+                                return;
+                            };
+                            let BufferSource::Remote { pending_batch, .. } = &mut state.source
+                            else {
+                                return;
+                            };
+                            if let Some(batch) = pending_batch.take() {
+                                batch.flush(&client_for_flush, &path_for_flush);
+                            }
+                        },
                     );
-                    client.send_buffer_edit(
-                        path_for_edit.clone(),
-                        expected_sv,
-                        new_cv.as_u64(),
-                        edits,
-                    );
+                    // Re-borrow after ctx.spawn since the closure captured `me`.
+                    if let Some(state) = me.buffers.get_mut(&file_id) {
+                        if let BufferSource::Remote { pending_batch, .. } = &mut state.source {
+                            if let Some(batch) = pending_batch.as_mut() {
+                                batch.debounce_timer = Some(handle.abort_handle());
+                            }
+                        }
+                    }
                 }
             });
         }
@@ -1659,6 +1748,7 @@ impl GlobalBufferModel {
                 source: BufferSource::Remote {
                     remote_path,
                     sync_clock: None,
+                    pending_batch: None,
                 },
             },
         );
@@ -1720,8 +1810,18 @@ impl GlobalBufferModel {
                     log::warn!("[remote-buffer] Buffer state missing for file_id={file_id:?}");
                     return;
                 };
-                if let BufferSource::Remote { sync_clock, .. } = &mut state.source {
+                if let BufferSource::Remote {
+                    sync_clock,
+                    pending_batch,
+                    ..
+                } = &mut state.source
+                {
                     *sync_clock = Some(SyncClock::from_wire(server_version, 0));
+                    // Discard any pending batch — the server just sent us fresh
+                    // content, so any in-flight edits are stale.
+                    if let Some(batch) = pending_batch.take() {
+                        batch.discard();
+                    }
                 }
                 let Some(buffer) = state.buffer.upgrade(ctx) else {
                     log::warn!("[remote-buffer] Buffer handle deallocated for file_id={file_id:?}");
@@ -2090,9 +2190,10 @@ impl GlobalBufferModel {
     ///
     /// The server detected that the file changed on disk while the client
     /// had unsaved edits. Emits `RemoteBufferConflict` so the UI shows
-    /// the conflict resolution banner.
+    /// the conflict resolution banner. Discards any pending edit batch
+    /// since conflict resolution will re-sync content.
     #[cfg_attr(not(feature = "local_tty"), allow(dead_code))]
-    fn handle_buffer_conflict_detected(
+    pub(crate) fn handle_buffer_conflict_detected(
         &mut self,
         host_id: &HostId,
         path: &str,
@@ -2104,6 +2205,15 @@ impl GlobalBufferModel {
             log::warn!("[remote-buffer] BufferConflictDetected for unknown buffer: {path}");
             return;
         };
+
+        // Discard any pending batch — conflict resolution handles re-sync.
+        if let Some(state) = self.buffers.get_mut(&file_id) {
+            if let BufferSource::Remote { pending_batch, .. } = &mut state.source {
+                if let Some(batch) = pending_batch.take() {
+                    batch.discard();
+                }
+            }
+        }
 
         ctx.emit(GlobalBufferModelEvent::RemoteBufferConflict { file_id });
     }
@@ -2138,7 +2248,12 @@ impl GlobalBufferModel {
             return;
         };
 
-        let BufferSource::Remote { sync_clock, .. } = &mut state.source else {
+        let BufferSource::Remote {
+            sync_clock,
+            pending_batch,
+            ..
+        } = &mut state.source
+        else {
             return;
         };
         let Some(sync_clock) = sync_clock.as_mut() else {
@@ -2198,13 +2313,65 @@ impl GlobalBufferModel {
                 );
                 return;
             }
-            // Conflict — local edits diverged from server.
+            // Conflict — local edits diverged from server. Discard any
+            // pending edit batch since conflict resolution will re-sync.
+            if let Some(batch) = pending_batch.take() {
+                batch.discard();
+            }
             log::info!(
                 "[remote-buffer] CONFLICT for {path}: push expected C={expected_client_version}, \
                  but local C={:?}. Emitting RemoteBufferConflict.",
                 sync_clock.client_version
             );
             ctx.emit(GlobalBufferModelEvent::RemoteBufferConflict { file_id });
+        }
+    }
+}
+
+impl GlobalBufferModel {
+    /// Accumulate edits into the pending batch for a remote buffer.
+    ///
+    /// Bumps `sync_clock.client_version` immediately so conflict detection
+    /// sees the true current C even before the batch is flushed. If no batch
+    /// exists yet, creates one capturing the current `server_version` as
+    /// `expected_server_version`. Cancels any existing debounce timer —
+    /// the caller is responsible for scheduling a new one.
+    fn push_edit_to_pending_batch(
+        &mut self,
+        file_id: FileId,
+        edits: Vec<remote_server::proto::TextEdit>,
+        _ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(state) = self.buffers.get_mut(&file_id) else {
+            return;
+        };
+        let BufferSource::Remote {
+            sync_clock,
+            pending_batch,
+            ..
+        } = &mut state.source
+        else {
+            return;
+        };
+        let Some(sync_clock) = sync_clock.as_mut() else {
+            return;
+        };
+
+        let new_cv = ContentVersion::new();
+        sync_clock.client_version = new_cv;
+
+        let batch = pending_batch.get_or_insert_with(|| PendingEditBatch {
+            expected_server_version: sync_clock.server_version.as_u64(),
+            edits: Vec::new(),
+            latest_client_version: new_cv,
+            debounce_timer: None,
+        });
+        batch.edits.extend(edits);
+        batch.latest_client_version = new_cv;
+
+        // Cancel existing debounce timer — caller will schedule a new one.
+        if let Some(timer) = batch.debounce_timer.take() {
+            timer.abort();
         }
     }
 }
@@ -2219,7 +2386,9 @@ impl SingletonEntity for GlobalBufferModel {}
 impl GlobalBufferModel {
     /// Test-only: seeds a Remote buffer with the given content and sync clock,
     /// bypassing `open_remote` (which requires `RemoteServerManager`).
-    pub fn seed_remote_buffer_for_test(
+    /// `pub(crate)` because it's used by both `buffer_location_tests` and
+    /// `global_buffer_model_tests`.
+    pub(crate) fn seed_remote_buffer_for_test(
         &mut self,
         host_id: HostId,
         path: warp_util::standardized_path::StandardizedPath,
@@ -2246,6 +2415,7 @@ impl GlobalBufferModel {
                 source: BufferSource::Remote {
                     remote_path,
                     sync_clock: Some(SyncClock::from_wire(server_version, 0)),
+                    pending_batch: None,
                 },
             },
         );
@@ -2253,7 +2423,9 @@ impl GlobalBufferModel {
     }
 
     /// Test-only: returns the `SyncClock` for a Remote buffer.
-    pub fn sync_clock_for_remote_test(&self, file_id: FileId) -> Option<&SyncClock> {
+    /// `pub(crate)` because it's used by both `buffer_location_tests` and
+    /// `global_buffer_model_tests`.
+    pub(crate) fn sync_clock_for_remote_test(&self, file_id: FileId) -> Option<&SyncClock> {
         let state = self.buffers.get(&file_id)?;
         match &state.source {
             BufferSource::Remote { sync_clock, .. } => sync_clock.as_ref(),
@@ -2261,3 +2433,7 @@ impl GlobalBufferModel {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "global_buffer_model_tests.rs"]
+mod global_buffer_model_tests;

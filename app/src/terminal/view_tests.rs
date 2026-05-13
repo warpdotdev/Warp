@@ -4894,6 +4894,79 @@ fn status_in_progress_auto_opens_rich_input_after_blocked() {
     })
 }
 
+// Regression test for https://github.com/warpdotdev/warp/issues/9059.
+// Codex's listener doesn't emit Blocked-state events (it only forwards opaque
+// OSC 9 notifications as Stop), so auto-toggling rich input would trap arrow
+// keys when Codex shows interactive option menus. Auto-toggle must not fire
+// for agents whose handlers report `supports_rich_status() == false`.
+#[test]
+fn codex_status_change_does_not_auto_open_rich_input() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+        // auto_toggle_rich_input defaults to true.
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            let listener = ctx.add_model(|ctx| {
+                CLIAgentSessionListener::new(
+                    view.view_id,
+                    CLIAgent::Codex,
+                    &view.model_events_handle,
+                    ctx,
+                )
+            });
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::Codex,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: true,
+                        listener: Some(listener),
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+            });
+
+            // Rich input starts closed. Simulating a Stop event (the only
+            // status Codex's handler ever emits) must not re-open it,
+            // because the user may be navigating Codex's option menus.
+            assert!(!view.has_active_cli_agent_input_session(ctx));
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.update_from_event(
+                    view.view_id,
+                    &CLIAgentEvent {
+                        v: 1,
+                        agent: CLIAgent::Codex,
+                        event: CLIAgentEventType::Stop,
+                        session_id: None,
+                        cwd: None,
+                        project: None,
+                        payload: CLIAgentEventPayload {
+                            query: Some("Agent turn complete".to_owned()),
+                            ..Default::default()
+                        },
+                    },
+                    ctx,
+                );
+            });
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(!view.has_active_cli_agent_input_session(ctx));
+        });
+    })
+}
+
 #[test]
 fn cli_session_status_updates_active_child_conversation() {
     App::test((), |mut app| async move {

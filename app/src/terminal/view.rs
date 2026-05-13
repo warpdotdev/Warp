@@ -140,7 +140,9 @@ use crate::terminal::cli_agent_sessions::event::{
     parse_event, CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventType,
     CLI_AGENT_NOTIFICATION_SENTINEL,
 };
-use crate::terminal::cli_agent_sessions::listener::{is_agent_supported, CLIAgentSessionListener};
+use crate::terminal::cli_agent_sessions::listener::{
+    agent_supports_rich_status, is_agent_supported, CLIAgentSessionListener,
+};
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::{plugin_manager_for, PluginModalKind};
 use crate::terminal::cli_agent_sessions::{
@@ -12317,7 +12319,11 @@ impl TerminalView {
         {
             let should_auto_toggle_input = CLIAgentSessionsModel::as_ref(ctx)
                 .session(self.view_id)
-                .is_some_and(|s| s.listener.is_some() && s.should_auto_toggle_input);
+                .is_some_and(|s| {
+                    s.listener.is_some()
+                        && s.should_auto_toggle_input
+                        && agent_supports_rich_status(&s.agent)
+                });
             if should_auto_toggle_input {
                 match status {
                     CLIAgentSessionStatus::Blocked { .. } => {
@@ -17958,6 +17964,30 @@ impl TerminalView {
         self.is_selecting
     }
 
+    /// Ensures that `block_list_mouse_states` has entries for every block index
+    /// currently in the block list. Blocks created outside the normal
+    /// `BlockCompleted` event path (e.g. restored conversation command blocks)
+    /// would otherwise lack mouse states, which prevents the label hover
+    /// tooltip, bookmark button, and filter button from rendering.
+    fn ensure_mouse_states_for_all_blocks(&mut self) {
+        let block_count = self.model.lock().block_list().active_block_index() + BlockIndex::from(1);
+        for i in 0..block_count.0 {
+            let idx = BlockIndex::from(i);
+            self.block_list_mouse_states
+                .label_mouse_states
+                .entry(idx)
+                .or_default();
+            self.block_list_mouse_states
+                .bookmark_mouse_states
+                .entry(idx)
+                .or_default();
+            self.block_list_mouse_states
+                .filter_mouse_states
+                .entry(idx)
+                .or_default();
+        }
+    }
+
     #[cfg(test)]
     pub fn clear_buffer_for_testing(&mut self, ctx: &mut ViewContext<Self>) {
         self.clear_buffer(ctx);
@@ -21969,10 +21999,10 @@ impl TerminalView {
         };
 
         let start = block.start_ts().map_or_else(String::new, |b| {
-            format!("Started at: {}", b.format("%a %b %-d at %-I:%M %p"))
+            format!("Started at: {}", b.format("%a %b %-d at %-I:%M:%S %p"))
         });
         let end = block.completed_ts().map_or_else(String::new, |b| {
-            format!("\nCompleted at: {}", b.format("%a %b %-d at %-I:%M %p"))
+            format!("\nCompleted at: {}", b.format("%a %b %-d at %-I:%M:%S %p"))
         });
         format!("{start}{end}")
     }
@@ -22312,7 +22342,7 @@ impl TerminalView {
                                 tool_tip,
                                 OffsetPositioning::offset_from_parent(
                                     Vector2F::new(30., 5.),
-                                    ParentOffsetBounds::Unbounded,
+                                    ParentOffsetBounds::ParentByPosition,
                                     ParentAnchor::BottomMiddle,
                                     ChildAnchor::TopMiddle,
                                 ),
@@ -22322,7 +22352,7 @@ impl TerminalView {
                                 tool_tip,
                                 OffsetPositioning::offset_from_parent(
                                     Vector2F::new(30., -5.),
-                                    ParentOffsetBounds::Unbounded,
+                                    ParentOffsetBounds::ParentByPosition,
                                     ParentAnchor::TopMiddle,
                                     ChildAnchor::BottomMiddle,
                                 ),

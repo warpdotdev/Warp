@@ -743,11 +743,11 @@ impl BlocklistAIController {
         };
         inputs.push(ai_input);
 
-        // Piggyback any pending orchestration config update for this conversation.
-        let taken_dirty_event = AIDocumentModel::handle(ctx).update(ctx, |model, _| {
-            model.take_dirty_orchestration_event(&conversation_id)
+        // Piggyback any pending orchestration config updates for this conversation.
+        let taken_dirty_events = AIDocumentModel::handle(ctx).update(ctx, |model, _| {
+            model.take_dirty_orchestration_events(&conversation_id)
         });
-        if let Some(ref dirty_event) = taken_dirty_event {
+        for dirty_event in &taken_dirty_events {
             inputs.push(AIAgentInput::OrchestrationConfigUpdate {
                 plan_id: dirty_event.plan_id.clone(),
                 config: dirty_event.config.clone(),
@@ -776,13 +776,13 @@ impl BlocklistAIController {
             ctx,
         );
 
-        // If the request failed, re-insert the dirty event so it isn't
+        // If the request failed, re-insert the dirty events so they aren't
         // silently lost.
         if let Err(e) = &send_result {
             log::error!("Failed to send agent request: {e:?}");
-            if let Some(dirty_event) = taken_dirty_event {
+            if !taken_dirty_events.is_empty() {
                 AIDocumentModel::handle(ctx).update(ctx, |model, _| {
-                    model.set_dirty_orchestration_event(conversation_id, dirty_event);
+                    model.set_dirty_orchestration_events(conversation_id, taken_dirty_events);
                 });
             }
         }

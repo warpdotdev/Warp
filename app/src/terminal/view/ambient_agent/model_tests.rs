@@ -24,7 +24,19 @@ fn pending_launch() -> PendingCloudLaunch {
 
 fn pending_handoff() -> PendingHandoff {
     PendingHandoff {
-        forked_conversation_id: "forked-conversation".to_owned(),
+        forked_conversation_id: Some("forked-conversation".to_owned()),
+        title: None,
+        touched_workspace: None,
+        snapshot_upload: SnapshotUploadStatus::Pending,
+        submission_state: HandoffSubmissionState::Idle,
+        auto_submit: Some(pending_launch()),
+        explicit_environment_id: None,
+    }
+}
+
+fn pending_handoff_fresh_launch() -> PendingHandoff {
+    PendingHandoff {
+        forked_conversation_id: None,
         title: None,
         touched_workspace: None,
         snapshot_upload: SnapshotUploadStatus::Pending,
@@ -102,6 +114,54 @@ fn maybe_auto_submit_handoff_waits_for_workspace_and_snapshot_then_consumes_laun
             let launch = model
                 .maybe_auto_submit_handoff(ctx)
                 .expect("ready handoff should auto-submit");
+            assert_eq!(launch.prompt, "fix tests");
+            assert!(model.maybe_auto_submit_handoff(ctx).is_none());
+        });
+    });
+}
+
+#[test]
+fn fresh_launch_queues_handoff_with_no_conversation_id() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let model = add_model(&mut app);
+
+        model.update(&mut app, |model, ctx| {
+            model.set_pending_handoff(Some(pending_handoff_fresh_launch()), ctx);
+        });
+
+        let queued = model.update(&mut app, |model, ctx| model.queue_handoff_auto_submit(ctx));
+
+        assert!(queued);
+        model.read(&app, |model, _| {
+            let request = model.request().expect("request should be populated");
+            assert_eq!(request.prompt, "fix tests");
+            assert!(request.conversation_id.is_none());
+            assert_eq!(request.attachments.len(), 1);
+        });
+    });
+}
+
+#[test]
+fn fresh_launch_auto_submits_after_snapshot_settles() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let model = add_model(&mut app);
+
+        model.update(&mut app, |model, ctx| {
+            model.set_pending_handoff(Some(pending_handoff_fresh_launch()), ctx);
+            assert!(model.maybe_auto_submit_handoff(ctx).is_none());
+
+            model.set_pending_handoff_workspace(TouchedWorkspace::default(), ctx);
+            assert!(model.maybe_auto_submit_handoff(ctx).is_none());
+
+            model.set_pending_handoff_snapshot_upload(
+                SnapshotUploadStatus::SkippedEmptyWorkspace,
+                ctx,
+            );
+            let launch = model
+                .maybe_auto_submit_handoff(ctx)
+                .expect("ready fresh-launch handoff should auto-submit");
             assert_eq!(launch.prompt, "fix tests");
             assert!(model.maybe_auto_submit_handoff(ctx).is_none());
         });
