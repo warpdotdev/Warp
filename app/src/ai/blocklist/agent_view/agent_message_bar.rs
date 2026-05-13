@@ -54,6 +54,8 @@ use crate::terminal::view::TerminalAction;
 use crate::ui_components::blended_colors;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use crate::workspace::tab_settings::{TabSettings, TabSettingsChangedEvent};
+#[cfg(not(target_family = "wasm"))]
+use crate::workspace::WorkspaceAction;
 use crate::BlocklistAIHistoryModel;
 
 const FIGMA_ICON_SIZE: f32 = 14.;
@@ -582,7 +584,7 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
         );
 
         // Handoff to cloud only available for local agents.
-        if !is_cloud_agent && AISettings::as_ref(app).is_cloud_handoff_enabled(app) {
+        if !is_cloud_agent && AISettings::as_ref(app).is_ampersand_handoff_enabled(app) {
             items.push(
                 MessageItem::clickable(
                     vec![
@@ -630,6 +632,29 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
                     mouse_states.toggle_conversation_menu.clone(),
                 ));
             }
+        }
+
+        // Code review only works locally.
+        #[cfg(not(target_family = "wasm"))]
+        if !is_cloud_agent
+            && !AISettings::as_ref(app).is_cloud_handoff_enabled(app)
+            && *TabSettings::as_ref(app).show_code_review_button
+        {
+            let code_review_keystroke = if OperatingSystem::get().is_mac() {
+                Keystroke::parse("cmd-shift-+").expect("keystroke should parse")
+            } else {
+                Keystroke::parse("ctrl-shift-+").expect("keystroke should parse")
+            };
+            items.push(MessageItem::clickable(
+                vec![
+                    MessageItem::keystroke(code_review_keystroke),
+                    MessageItem::text("for code review"),
+                ],
+                |ctx| {
+                    ctx.dispatch_typed_action(WorkspaceAction::ToggleRightPanel);
+                },
+                mouse_states.toggle_code_review.clone(),
+            ));
         }
 
         if has_plan {

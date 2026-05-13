@@ -1,4 +1,3 @@
-use crate::ai::blocklist::is_local_to_cloud_handoff_available;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::palette::PaletteMode;
 use crate::server::telemetry::PaletteSource;
@@ -422,8 +421,7 @@ impl AITip for AgentTip {
         }
         // Handoff tips only apply when the feature is available and enabled.
         if matches!(self.kind, AgentTipKind::Handoff) {
-            return is_local_to_cloud_handoff_available()
-                && AISettings::as_ref(app).is_cloud_handoff_enabled(app);
+            return AISettings::as_ref(app).is_cloud_handoff_enabled(app);
         }
         true
     }
