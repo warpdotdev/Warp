@@ -22,6 +22,7 @@ use crate::server::server_api::ServerApi;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::CLIAgent;
+use warp_managed_secrets::ManagedSecretValue;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
@@ -87,6 +88,7 @@ impl ThirdPartyHarness for CodexHarness {
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
         resolved_env_vars: &HashMap<OsString, OsString>,
+        resolved_secrets: &HashMap<String, ManagedSecretValue>,
         resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
         third_party_harness_model_id: Option<&str>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
@@ -95,6 +97,7 @@ impl ThirdPartyHarness for CodexHarness {
             working_dir,
             system_prompt,
             resolved_env_vars,
+            resolved_secrets,
             resolved_mcp_servers,
             third_party_harness_model_id,
         )
@@ -457,15 +460,11 @@ const CODEX_MODEL_KEY: &str = "model";
 /// TODO: Ideally, we would make this server-driven so we don't depend on a client
 /// release to change this.
 const CODEX_MODEL_MIGRATIONS_TARGET: &str = "gpt-5.4";
-/// US data-residency endpoint. Our OpenAI keys are issued under a US-residency project,
-/// which rejects requests to the global host with `401 incorrect_hostname`.
-/// TODO(REMOTE-1509): plumb a region-tagged auth secret instead of hardcoding the URL.
-const CODEX_OPENAI_BASE_URL: &str = "https://us.api.openai.com/v1";
-
 fn prepare_codex_environment_config(
     working_dir: &Path,
     system_prompt: Option<&str>,
     resolved_env_vars: &HashMap<OsString, OsString>,
+    resolved_secrets: &HashMap<String, ManagedSecretValue>,
     resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     third_party_harness_model_id: Option<&str>,
 ) -> Result<()> {
@@ -482,11 +481,17 @@ fn prepare_codex_environment_config(
         None => log::info!("No OPENAI_API_KEY available; skipping Codex auth.json seed"),
     }
 
+    // Resolve the base URL directly from the typed OpenAI secret. This avoids
+    // leaking base_url into the child process environment and ensures we only
+    // apply it when the typed secret is the active API key source.
+    let openai_base_url = resolve_openai_base_url_from_secret(resolved_secrets, resolved_env_vars);
+
     prepare_codex_config_toml(
         &codex_dir.join(CODEX_CONFIG_TOML_FILE_NAME),
         working_dir,
         resolved_mcp_servers,
         third_party_harness_model_id,
+        openai_base_url.as_deref(),
     )?;
     Ok(())
 }
@@ -589,12 +594,45 @@ fn resolve_openai_api_key(resolved_env_vars: &HashMap<OsString, OsString>) -> Op
         .filter(|s| !s.is_empty())
 }
 
+/// Returns the OpenAI base URL from the typed secret, if applicable.
+///
+/// The base URL is only used when the typed `OpenaiApiKey` secret is the active
+/// source of `OPENAI_API_KEY`. If a worker-injected process env already provides
+/// the API key, the typed-secret base URL is not applied (the worker controls
+/// both the key and endpoint).
+fn resolve_openai_base_url_from_secret(
+    secrets: &HashMap<String, ManagedSecretValue>,
+    resolved_env_vars: &HashMap<OsString, OsString>,
+) -> Option<String> {
+    // If the worker already injected an API key, the typed secret lost
+    // precedence — do not apply its base URL.
+    if std::env::var(OPENAI_API_KEY_ENV)
+        .ok()
+        .is_some_and(|v| !v.trim().is_empty())
+    {
+        return None;
+    }
+
+    // Only apply when the resolved env vars actually contain OPENAI_API_KEY
+    // from the typed secret (i.e. the secret was not skipped).
+    resolved_env_vars.get(OsStr::new(OPENAI_API_KEY_ENV))?;
+
+    secrets.values().find_map(|secret| match secret {
+        ManagedSecretValue::OpenaiApiKey { base_url, .. } => base_url
+            .as_ref()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty()),
+        _ => None,
+    })
+}
+
 /// Edit `~/.codex/config.toml` via `toml_edit` to seed the harness defaults
 /// while preserving anything that might already exist there. We handle:
 /// - project trust: for a working dir and all of its git repo subdirectories,
 ///   set the projects to `trusted`.
-/// - base URL: set `openai_base_url = "<US data-residency endpoint>"` so we
-///   hit the regional host our API keys require.
+/// - base URL: when `openai_base_url` is provided (from the secret's `base_url`
+///   field), write it to config.toml. When absent, skip the key entirely so
+///   Codex uses the provider's default global endpoint.
 /// - update checks: disable Codex's startup update prompt for unattended runs.
 /// - model override: when a non-default `third_party_harness_model_id` is
 ///   supplied, write the top-level `model` key so Codex pins the chosen model
@@ -604,6 +642,7 @@ fn prepare_codex_config_toml(
     working_dir: &Path,
     resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     third_party_harness_model_id: Option<&str>,
+    openai_base_url: Option<&str>,
 ) -> Result<()> {
     let existing = match fs::read_to_string(config_toml_path) {
         Ok(content) => content,
@@ -622,7 +661,10 @@ fn prepare_codex_config_toml(
         )
     })?;
 
-    set_codex_openai_base_url(&mut doc, CODEX_OPENAI_BASE_URL);
+    // Only write openai_base_url when the secret specifies one.
+    if let Some(url) = openai_base_url {
+        set_codex_openai_base_url(&mut doc, url);
+    }
     set_codex_check_for_update_on_startup(&mut doc, false);
     set_codex_model(&mut doc, third_party_harness_model_id);
 

@@ -372,19 +372,22 @@ impl TerminalManager {
                 return false;
             }
         }
+        self.connect_session(
+            session_id,
+            SharedSessionInitialLoadMode::AppendFollowupScrollback,
+            ctx,
+        );
+        self.start_cloud_mode_setup_command_tracking();
+        true
+    }
 
+    pub fn start_cloud_mode_setup_command_tracking(&mut self) {
         if FeatureFlag::CloudModeSetupV2.is_enabled() {
             self.model
                 .lock()
                 .block_list_mut()
                 .set_is_executing_oz_environment_startup_commands(true);
         }
-        self.connect_session(
-            session_id,
-            SharedSessionInitialLoadMode::AppendFollowupScrollback,
-            ctx,
-        );
-        true
     }
 
     /// Connects this terminal manager to a shared session.
@@ -897,6 +900,10 @@ impl TerminalManager {
                     if let Some(interaction_state) =
                         context_update.long_running_command_agent_interaction_state
                     {
+                        log::info!(
+                            "[viewer] UniversalDeveloperInputContextUpdated: \
+                             applying LRC interaction_state={interaction_state:?}"
+                        );
                         if let Some(view) = weak_view_handle.upgrade(ctx) {
                             view.update(ctx, |view, ctx| {
                                 view.apply_long_running_command_agent_interaction_state(

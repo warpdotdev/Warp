@@ -14,17 +14,18 @@ use futures::io::{AsyncRead, AsyncWrite};
 use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
-    client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
-    DeleteFile, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, ErrorCode,
-    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
-    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
-    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
-    SessionBootstrapped, TextEdit, WriteFile,
+    client_message, get_fragment_metadata_from_hash_response, server_message, Abort, Authenticate,
+    BufferEdit, ClientMessage, CloseBuffer, DeleteFile, DiffStateFileDelta,
+    DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex, ErrorCode,
+    FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash,
+    GetFragmentMetadataFromHashSuccess, IndexCodebase, Initialize, InitializeResponse,
+    LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse, OpenBuffer,
+    OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse, RunCommandRequest,
+    RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
-use warp_core::SessionId;
-use warp_core::{safe_error, safe_warn};
+use warp_core::{safe_error, safe_warn, SessionId};
 use warpui::r#async::TransportStream;
 
 /// Default request timeout (2 minutes).
@@ -53,6 +54,12 @@ pub enum ClientError {
 
     #[error("File operation failed: {0}")]
     FileOperationFailed(String),
+
+    #[error("Fragment metadata lookup failed ({code:?}): {message}")]
+    FragmentMetadataLookup {
+        code: FragmentMetadataLookupErrorCode,
+        message: String,
+    },
 }
 
 /// Events received from the remote server, delivered through the event
@@ -245,6 +252,139 @@ impl RemoteServerClient {
                 safe_error!(
                     safe: ("Remote server unexpected response for Initialize"),
                     full: ("Remote server unexpected response for Initialize: response={other:?}")
+                );
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Sends an `IndexCodebase` request and awaits the initial status update.
+    pub async fn index_codebase(
+        &self,
+        repo_path: String,
+        auth_token: String,
+    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
+        let request_id = RequestId::new();
+        let repo_path_for_log = repo_path.clone();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::IndexCodebase(IndexCodebase {
+                repo_path,
+                auth_token,
+            })),
+        };
+        log::info!(
+            "[Remote codebase indexing] Client sending IndexCodebase: request_id={request_id} \
+             repo_path={repo_path_for_log}"
+        );
+
+        let response = self.send_request(request_id, msg).await?;
+
+        match response.message {
+            Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
+                let status =
+                    crate::codebase_index_proto::proto_to_codebase_index_status_updated(&update)
+                        .ok_or(ClientError::UnexpectedResponse)?;
+                log::info!(
+                    "[Remote codebase indexing] Client received IndexCodebase response: \
+                     repo_path={} state={:?}",
+                    status.repo_path,
+                    status.state
+                );
+                Ok(status)
+            }
+            other => {
+                log::error!("Unexpected response variant for IndexCodebase: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Sends a `DropCodebaseIndex` request and awaits the resulting status update.
+    pub async fn drop_codebase_index(
+        &self,
+        repo_path: String,
+        auth_token: String,
+    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
+        let request_id = RequestId::new();
+        let repo_path_for_log = repo_path.clone();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::DropCodebaseIndex(
+                DropCodebaseIndex {
+                    repo_path,
+                    auth_token,
+                },
+            )),
+        };
+        log::info!(
+            "[Remote codebase indexing] Client sending DropCodebaseIndex: request_id={request_id} \
+             repo_path={repo_path_for_log}"
+        );
+
+        let response = self.send_request(request_id, msg).await?;
+
+        match response.message {
+            Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
+                let status =
+                    crate::codebase_index_proto::proto_to_codebase_index_status_updated(&update)
+                        .ok_or(ClientError::UnexpectedResponse)?;
+                log::info!(
+                    "[Remote codebase indexing] Client received DropCodebaseIndex response: \
+                     repo_path={} state={:?}",
+                    status.repo_path,
+                    status.state
+                );
+                Ok(status)
+            }
+            other => {
+                log::error!("Unexpected response variant for DropCodebaseIndex: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Maps backend content hashes to server-local fragment metadata for a synced repo snapshot.
+    pub async fn get_fragment_metadata_from_hash(
+        &self,
+        repo_path: String,
+        root_hash: String,
+        content_hashes: Vec<String>,
+    ) -> Result<GetFragmentMetadataFromHashSuccess, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::GetFragmentMetadataFromHash(
+                GetFragmentMetadataFromHash {
+                    repo_path,
+                    root_hash,
+                    content_hashes,
+                },
+            )),
+        };
+
+        let response = self.send_request(request_id, msg).await?;
+
+        match response.message {
+            Some(server_message::Message::GetFragmentMetadataFromHashResponse(resp)) => {
+                match resp.result {
+                    Some(get_fragment_metadata_from_hash_response::Result::Success(success)) => {
+                        Ok(success)
+                    }
+                    Some(get_fragment_metadata_from_hash_response::Result::Error(error)) => {
+                        let code = FragmentMetadataLookupErrorCode::try_from(error.code)
+                            .unwrap_or(FragmentMetadataLookupErrorCode::Unspecified);
+                        Err(ClientError::FragmentMetadataLookup {
+                            code,
+                            message: error.message,
+                        })
+                    }
+                    None => Err(ClientError::UnexpectedResponse),
+                }
+            }
+            other => {
+                log::error!(
+                    "Unexpected response variant for GetFragmentMetadataFromHash: {other:?}"
                 );
                 Err(ClientError::UnexpectedResponse)
             }
@@ -528,12 +668,36 @@ impl RemoteServerClient {
                 Some(ClientEvent::RepoMetadataUpdated { update })
             }
             server_message::Message::CodebaseIndexStatusesSnapshot(snapshot) => {
-                Some(ClientEvent::CodebaseIndexStatusesSnapshotReceived {
-                    statuses: proto_to_codebase_index_statuses_snapshot(&snapshot),
-                })
+                let statuses = proto_to_codebase_index_statuses_snapshot(&snapshot);
+                log::info!(
+                    "[Remote codebase indexing] Client received codebase index statuses push: \
+                     status_count={}",
+                    statuses.len()
+                );
+                for status in &statuses {
+                    log::info!(
+                        "[Remote codebase indexing] Client received codebase index status in snapshot: \
+                         repo_path={} state={:?} root_hash_present={} \
+                         progress_completed={:?} progress_total={:?} \
+                         failure_message={:?}",
+                        status.repo_path,
+                        status.state,
+                        status.root_hash.is_some(),
+                        status.progress_completed,
+                        status.progress_total,
+                        status.failure_message,
+                    );
+                }
+                Some(ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses })
             }
             server_message::Message::CodebaseIndexStatusUpdated(update) => {
                 let status = proto_to_codebase_index_status_updated(&update)?;
+                log::info!(
+                    "[Remote codebase indexing] Client received codebase index status push: \
+                     repo_path={} state={:?}",
+                    status.repo_path,
+                    status.state
+                );
                 Some(ClientEvent::CodebaseIndexStatusUpdated { status })
             }
             server_message::Message::BufferUpdated(push) => Some(ClientEvent::BufferUpdated {

@@ -304,6 +304,8 @@ elif [[ $RELEASE_CHANNEL = "stable" ]]; then
     BUNDLE_ID="dev.warp.Warp-Stable"
     WARP_APP_NAME="Warp"
     WARP_SCHEME_NAME="warp"
+    # Enable heap usage tracking & profiling using jemalloc through pprof.
+    FEATURES="$FEATURES,jemalloc_pprof,heap_usage_tracking"
 elif [[ $RELEASE_CHANNEL = "oss" ]]; then
     WARP_BIN="warp-oss"
     BUNDLE_ID="dev.warp.WarpOss"

@@ -26,6 +26,7 @@ pub use host_selector::{
     Host, HostSelector, HostSelectorAction, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loading_screen};
+pub(crate) use model::should_disable_snapshot;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 pub(crate) use model::PendingHandoff;
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
@@ -104,7 +105,9 @@ pub fn create_cloud_mode_view(
                     let append_followup_scrollback = view_model_for_subscription
                         .as_ref(ctx)
                         .is_local_to_cloud_handoff();
-                    manager.connect_to_session(*session_id, append_followup_scrollback, ctx);
+                    if manager.connect_to_session(*session_id, append_followup_scrollback, ctx) {
+                        manager.start_cloud_mode_setup_command_tracking();
+                    }
                 }
                 AmbientAgentViewModelEvent::FollowupSessionReady { session_id } => {
                     manager.attach_followup_session(*session_id, ctx);

@@ -460,14 +460,17 @@ impl LaunchMode {
         }
     }
 
-    /// Returns `true` if running in app mode or via `agent run` to permit codebase indexing.
+    /// Returns `true` if this process can build and sync codebase indices.
     fn supports_indexing(&self) -> bool {
         match self {
             LaunchMode::CommandLine { command, .. } => {
                 matches!(command, CliCommand::Agent(AgentCommand::Run { .. }))
             }
+            LaunchMode::RemoteServerDaemon { .. } => {
+                FeatureFlag::RemoteCodebaseIndexing.is_enabled()
+            }
             LaunchMode::App { .. } | LaunchMode::Test { .. } => true,
-            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => false,
+            LaunchMode::RemoteServerProxy => false,
         }
     }
 
@@ -1355,6 +1358,8 @@ pub(crate) fn initialize_app(
 
     ctx.add_singleton_model(remote_server::manager::RemoteServerManager::new);
     #[cfg(not(target_family = "wasm"))]
+    ctx.add_singleton_model(remote_server::codebase_index_model::RemoteCodebaseIndexModel::new);
+    #[cfg(not(target_family = "wasm"))]
     remote_server::wire_auth_token_rotation(ctx);
 
     log::info!(
@@ -1863,6 +1868,11 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(|ctx| {
         ProjectContextModel::new_from_persisted(persisted_project_rules, ctx)
     });
+
+    // Index global rules (e.g. ~/.agents/AGENTS.md) on a background task so
+    // they are available to subsequent agent queries.
+    ProjectContextModel::handle(ctx).update(ctx, |me, ctx| me.index_global_rules(ctx));
+
     ctx.add_singleton_model(|ctx| {
         PersistedWorkspace::new(
             persisted_workspaces,
@@ -2580,6 +2590,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::PredictAMQueries,
         #[cfg(feature = "full_source_code_embedding")]
         FeatureFlag::FullSourceCodeEmbedding,
+        #[cfg(feature = "remote_codebase_indexing")]
+        FeatureFlag::RemoteCodebaseIndexing,
         #[cfg(feature = "use_tantivy_search")]
         FeatureFlag::UseTantivySearch,
         #[cfg(feature = "grep_tool")]

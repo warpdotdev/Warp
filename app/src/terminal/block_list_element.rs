@@ -4442,7 +4442,29 @@ impl Element for BlockListElement {
             event.raw_event()
         } else {
             let Some(e) = event.at_z_index(z_index, ctx) else {
-                // Only proceed if there's a relevant event at this z-index.
+                // The event is behind an overlay. Still dispatch interactive
+                // events to rich content views so overlay children (e.g.
+                // ask-user-question speedbump dropdowns) can handle them.
+                if matches!(
+                    event.raw_event(),
+                    Event::ScrollWheel { .. }
+                        | Event::LeftMouseDown { .. }
+                        | Event::LeftMouseUp { .. }
+                        | Event::LeftMouseDragged { .. }
+                        | Event::MiddleMouseDown { .. }
+                        | Event::RightMouseDown { .. }
+                        | Event::BackMouseDown { .. }
+                        | Event::ForwardMouseDown { .. }
+                ) && self.pane_state.is_focused()
+                {
+                    let mut handled = false;
+                    for view_id in self.visible_rich_content_views() {
+                        if let Some(rich_content) = self.rich_content_elements.get_mut(&view_id) {
+                            handled |= rich_content.dispatch_event(event, ctx, app);
+                        }
+                    }
+                    return handled;
+                }
                 return false;
             };
             e

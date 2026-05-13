@@ -252,6 +252,9 @@ pub enum FeatureFlag {
     /// Enables full source code embedding of repos when using codebase context.
     FullSourceCodeEmbedding,
 
+    /// Enables codebase indexing inside remote server daemon processes.
+    RemoteCodebaseIndexing,
+
     /// If enabled, command palette searches will use Tantivy search instead of the default fuzzy search.
     UseTantivySearch,
 
@@ -926,12 +929,8 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::ConversationApi,
     FeatureFlag::RememberFastForwardState,
     FeatureFlag::HOANotifications,
-    FeatureFlag::OrchestrationV2,
-    FeatureFlag::OrchestrationPillBar,
-    FeatureFlag::RunAgentsTool,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
-    FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
@@ -940,19 +939,22 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::DragTabsToWindows,
     FeatureFlag::OrchestrationLaunchModal,
     FeatureFlag::NamedAgents,
-    FeatureFlag::GitCredentialRefresh,
     FeatureFlag::HandoffCloudCloud,
-    FeatureFlag::HarnessSessionHeader,
     FeatureFlag::SoloUserByok,
+    FeatureFlag::RemoteCodebaseIndexing,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
 /// All PREVIEW_FLAGS are also automatically added to dogfood builds (WarpDev).
 pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Orchestration,
+    FeatureFlag::OrchestrationV2,
+    FeatureFlag::OrchestrationPillBar,
+    FeatureFlag::RunAgentsTool,
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::MarkdownTables,
     FeatureFlag::GitOperationsInCodeReview,
+    FeatureFlag::GitCredentialRefresh,
 ];
 
 /// Features enabled for all release builds (i.e.: everything but WarpLocal).
@@ -1047,6 +1049,7 @@ impl FeatureFlag {
             MarkdownTables => Some("Enables rendering and interaction support for markdown tables in notebooks."),
             SettingsFile => Some("Enables configuring Warp via a user-editable `settings.toml` file, with hot reload and error reporting for invalid values."),
             GitOperationsInCodeReview => Some("Enables commit, push, and create-PR actions directly from the code review panel."),
+            OrchestrationV2 => Some("Enables orchestration of teams of agents with dedicated UI, lifecycle events and inter-agent messaging."),
             _ => None,
         }
     }

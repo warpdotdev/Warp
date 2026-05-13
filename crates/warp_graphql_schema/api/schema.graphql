@@ -1881,6 +1881,7 @@ Add self-hosted and other cloud providers here as needed.
 """
 enum LlmModelHost {
   AWS_BEDROCK
+  CUSTOM_ENDPOINT
   DIRECT_API
 }
 
@@ -2039,6 +2040,16 @@ type ManagedSecretConfig {
   publicKey: String
 }
 
+"""A managed secret value representing an OpenAI API key."""
+type ManagedSecretOpenAiApiKeyValue {
+  apiKey: String!
+  """
+  Optional base URL for the OpenAI API. When set, the harness uses this
+  instead of the provider default (e.g. for regional endpoints).
+  """
+  baseUrl: String
+}
+
 """A raw, unencrypted managed secret value."""
 type ManagedSecretRawValue {
   value: String!
@@ -2050,10 +2061,11 @@ enum ManagedSecretType {
   ANTHROPIC_BEDROCK_ACCESS_KEY
   ANTHROPIC_BEDROCK_API_KEY
   DOTENVX
+  OPENAI_API_KEY
   RAW_VALUE
 }
 
-union ManagedSecretValue = ManagedSecretAnthropicApiKeyValue | ManagedSecretAnthropicBedrockAccessKeyValue | ManagedSecretAnthropicBedrockApiKeyValue | ManagedSecretRawValue
+union ManagedSecretValue = ManagedSecretAnthropicApiKeyValue | ManagedSecretAnthropicBedrockAccessKeyValue | ManagedSecretAnthropicBedrockApiKeyValue | ManagedSecretOpenAiApiKeyValue | ManagedSecretRawValue
 
 input ManagedSecretsInput {
   """Pagination cursor, currently unused."""

@@ -44,19 +44,20 @@ impl HandoffComposeState {
         self.selected_environment_id.as_ref()
     }
 
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    pub(crate) fn explicit_environment_id(&self) -> Option<SyncId> {
-        self.has_explicit_environment_selection
-            .then_some(self.selected_environment_id)
-            .flatten()
-    }
-
     pub(crate) fn set_environment_id(
         &mut self,
         environment_id: Option<SyncId>,
         is_explicit: bool,
         ctx: &mut ModelContext<Self>,
     ) {
+        // Async/implicit updates (e.g. pwd-based overlap resolution) must not
+        // overwrite an environment the user already picked explicitly.
+        if !is_explicit && self.has_explicit_environment_selection {
+            return;
+        }
+
+        // No-op when the value is unchanged, unless this is the first explicit
+        // selection (which needs to promote `has_explicit_environment_selection`).
         if self.selected_environment_id == environment_id
             && (!is_explicit || self.has_explicit_environment_selection)
         {
