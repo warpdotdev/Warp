@@ -5454,16 +5454,6 @@ impl PaneGroup {
     ) {
         let mut conversation_id = None;
         terminal_view.update(ctx, |view, ctx| {
-            // The cloud-mode terminal model starts with
-            // `is_executing_oz_environment_startup_commands = true`. Clear it
-            // before restoring so that `maybe_insert_setup_command_blocks`
-            // doesn't wrap restored command blocks in a "Running setup
-            // commands..." group.
-            view.model
-                .lock()
-                .block_list_mut()
-                .set_is_executing_oz_environment_startup_commands(false);
-
             match cloud_conversation {
                 CloudConversationData::Oz(conversation) => {
                     let id = conversation.id();

@@ -4931,6 +4931,7 @@ impl Workspace {
             has_task.then_some(index)
         })
     }
+
     fn find_ambient_agent_terminal_view(
         &self,
         task_id: AmbientAgentTaskId,
@@ -4941,19 +4942,22 @@ impl Workspace {
 
         self.tabs.iter().enumerate().find_map(|(index, tab)| {
             let pane_group = tab.pane_group.as_ref(ctx);
-            pane_group.visible_pane_ids().into_iter().find_map(|pane_id| {
-                let terminal_view = pane_group.terminal_view_from_pane_id(pane_id, ctx)?;
-                if active_terminal_view_id == Some(terminal_view.id())
-                    || terminal_view
-                        .as_ref(ctx)
-                        .ambient_agent_task_id_for_details_panel(ctx)
-                        == Some(task_id)
-                {
-                    Some((index, terminal_view))
-                } else {
-                    None
-                }
-            })
+            pane_group
+                .visible_pane_ids()
+                .into_iter()
+                .find_map(|pane_id| {
+                    let terminal_view = pane_group.terminal_view_from_pane_id(pane_id, ctx)?;
+                    if active_terminal_view_id == Some(terminal_view.id())
+                        || terminal_view
+                            .as_ref(ctx)
+                            .ambient_agent_task_id_for_details_panel(ctx)
+                            == Some(task_id)
+                    {
+                        Some((index, terminal_view))
+                    } else {
+                        None
+                    }
+                })
         })
     }
 
