@@ -7,16 +7,19 @@ use crate::{
 use warp_editor::editor::NavigationKey;
 use warpui::elements::{ConstrainedBox, CrossAxisAlignment, Expanded, MainAxisSize};
 use warpui::{
-    elements::{Container, Empty, Flex, MouseStateHandle, ParentElement, Text},
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
+    elements::{
+        Border, Container, CornerRadius, Empty, Flex, MouseStateHandle, ParentElement, Radius, Text,
+    },
     fonts::FamilyId,
     ui_components::{
         button::ButtonVariant,
         components::{Coords, UiComponent, UiComponentStyles},
     },
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 use ::ai::api_keys::CustomEndpoint;
+use url::Url;
 
 const LABEL_FONT_SIZE: f32 = 12.;
 const INPUT_WIDTH: f32 = 680.;
@@ -73,6 +76,7 @@ pub struct CustomEndpointModal {
     add_model_button_mouse_state: MouseStateHandle,
     remove_endpoint_button_mouse_state: MouseStateHandle,
     editing_index: Option<usize>,
+    url_has_error: bool,
 }
 
 impl CustomEndpointModal {
@@ -175,6 +179,9 @@ impl CustomEndpointModal {
         ctx.subscribe_to_view(&endpoint_url_editor, |me, _, event, ctx| {
             me.handle_endpoint_url_event(event, ctx);
         });
+        // Validate initial URL (if any) so the error state is accurate on open.
+        let initial_url = endpoint_url_editor.as_ref(ctx).buffer_text(ctx);
+        let url_has_error = !initial_url.trim().is_empty() && validate_url(&initial_url).is_err();
         ctx.subscribe_to_view(&api_key_editor, |me, _, event, ctx| {
             me.handle_api_key_event(event, ctx);
         });
@@ -199,6 +206,7 @@ impl CustomEndpointModal {
             add_model_button_mouse_state: Default::default(),
             remove_endpoint_button_mouse_state: Default::default(),
             editing_index,
+            url_has_error,
         }
     }
 
@@ -418,6 +426,7 @@ impl CustomEndpointModal {
             && !url.trim().is_empty()
             && !api_key.trim().is_empty()
             && has_models
+            && !self.url_has_error
     }
 
     fn focus_next_editor(&self, current: &ViewHandle<EditorView>, ctx: &mut ViewContext<Self>) {
@@ -483,6 +492,14 @@ impl CustomEndpointModal {
             }
             EditorEvent::Escape => {
                 self.cancel(ctx);
+            }
+            EditorEvent::Edited(_) => {
+                let url = self.endpoint_url_editor.as_ref(ctx).buffer_text(ctx);
+                let had_error = self.url_has_error;
+                self.url_has_error = !url.trim().is_empty() && validate_url(&url).is_err();
+                if self.url_has_error != had_error {
+                    ctx.notify();
+                }
             }
             _ => {}
         }
@@ -608,6 +625,11 @@ impl View for CustomEndpointModal {
                 .with_margin_bottom(4.)
                 .finish(),
         );
+        let url_border_fill = if self.url_has_error {
+            theme.ui_error_color().into()
+        } else {
+            theme.outline()
+        };
         column.add_child(
             Container::new(
                 appearance
@@ -617,6 +639,8 @@ impl View for CustomEndpointModal {
                     .build()
                     .finish(),
             )
+            .with_border(Border::all(1.).with_border_fill(url_border_fill))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
             .with_margin_bottom(16.)
             .finish(),
         );
@@ -821,6 +845,20 @@ impl View for CustomEndpointModal {
     }
 }
 
+fn validate_url(url: &str) -> Result<(), &'static str> {
+    if url.trim().is_empty() {
+        return Ok(());
+    }
+    let parsed = Url::parse(url).map_err(|_| "Invalid URL")?;
+    if parsed.scheme() != "https" {
+        return Err("URL must use HTTPS");
+    }
+    if parsed.host_str().map_or(true, |h| h.is_empty()) {
+        return Err("URL must include a host");
+    }
+    Ok(())
+}
+
 impl TypedActionView for CustomEndpointModal {
     type Action = CustomEndpointModalAction;
 
@@ -838,6 +876,10 @@ impl TypedActionView for CustomEndpointModal {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "custom_inference_modal_tests.rs"]
+mod tests;
 
 pub struct CustomEndpointModalViewState {
     state: ModalViewState<Modal<CustomEndpointModal>>,
