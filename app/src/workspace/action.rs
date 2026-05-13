@@ -495,6 +495,7 @@ pub enum WorkspaceAction {
         #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
         launch: Option<()>,
         environment_id: Option<crate::server::ids::SyncId>,
+        entry_point: crate::ai::ambient_agents::telemetry::HandoffEntryPoint,
     },
     /// Show the environment creation modal during `&` handoff compose when no
     /// environments exist.
