@@ -652,14 +652,20 @@ impl GlobalBufferModel {
         state.set_base_content_version(new_version);
 
         if let Some(char_offset_edits) = char_offset_edits {
-            if let BufferSource::ServerLocal { sync_clock, .. } = &mut state.source {
-                let new_sv = sync_clock.bump_server();
-                ctx.emit(GlobalBufferModelEvent::ServerLocalBufferUpdated {
-                    file_id,
-                    edits: char_offset_edits,
-                    new_server_version: new_sv,
-                    expected_client_version: sync_clock.client_version,
-                });
+            // Skip broadcasting empty edits — the file-watcher detected a write
+            // but the content is identical (e.g. after a save). Sending an empty
+            // BufferUpdatedPush would cause clients to advance base_content_version
+            // without updating the buffer version, creating a spurious mismatch.
+            if !char_offset_edits.is_empty() {
+                if let BufferSource::ServerLocal { sync_clock, .. } = &mut state.source {
+                    let new_sv = sync_clock.bump_server();
+                    ctx.emit(GlobalBufferModelEvent::ServerLocalBufferUpdated {
+                        file_id,
+                        edits: char_offset_edits,
+                        new_server_version: new_sv,
+                        expected_client_version: sync_clock.client_version,
+                    });
+                }
             }
         } else {
             ctx.emit(GlobalBufferModelEvent::BufferUpdatedFromFileEvent {

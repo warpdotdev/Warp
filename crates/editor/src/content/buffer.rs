@@ -4493,6 +4493,8 @@ impl Buffer {
         ctx: &mut ModelContext<Self>,
     ) {
         if edits.is_empty() {
+            self.reset_undo_stack();
+            self.set_version(new_version);
             return;
         }
 
