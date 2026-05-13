@@ -1,10 +1,11 @@
+use super::{get_supported_cli_agent_tools, get_supported_tools};
 use crate::ai::agent::api::RequestParams;
 use crate::ai::blocklist::SessionContext;
 use crate::ai::llms::LLMId;
+use crate::terminal::model::session::SessionType;
 use warp_core::features::FeatureFlag;
+use warp_core::HostId;
 use warp_multi_agent_api as api;
-
-use super::get_supported_tools;
 
 fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool) -> RequestParams {
     let model = LLMId::from("test-model");
@@ -35,12 +36,23 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         web_search_enabled: false,
         computer_use_enabled: false,
         ask_user_question_enabled,
+        remote_codebase_search_available: false,
         research_agent_enabled: false,
         orchestration_enabled: false,
         supported_tools_override: None,
         parent_agent_id: None,
         agent_name: None,
     }
+}
+
+fn request_params_for_remote(remote_codebase_search_available: bool) -> RequestParams {
+    let mut params = request_params_with_ask_user_question_enabled(false);
+    params.session_context =
+        SessionContext::new_with_session_type_for_test(Some(SessionType::WarpifiedRemote {
+            host_id: Some(HostId::new("host".to_string())),
+        }));
+    params.remote_codebase_search_available = remote_codebase_search_available;
+    params
 }
 
 #[test]
@@ -79,4 +91,36 @@ fn supported_tools_omit_upload_artifact_when_feature_flag_is_disabled() {
     let supported_tools = get_supported_tools(&params);
 
     assert!(!supported_tools.contains(&api::ToolType::UploadFileArtifact));
+}
+
+#[test]
+fn remote_supported_tools_include_search_codebase_when_index_is_available() {
+    let _flag = FeatureFlag::RemoteCodebaseIndexing.override_enabled(true);
+    let params = request_params_for_remote(true);
+    let supported_tools = get_supported_tools(&params);
+    let supported_cli_agent_tools = get_supported_cli_agent_tools(&params);
+
+    assert!(supported_tools.contains(&api::ToolType::SearchCodebase));
+    assert!(supported_cli_agent_tools.contains(&api::ToolType::SearchCodebase));
+}
+#[test]
+fn remote_supported_tools_omit_search_codebase_when_feature_flag_is_disabled() {
+    let _flag = FeatureFlag::RemoteCodebaseIndexing.override_enabled(false);
+    let params = request_params_for_remote(true);
+    let supported_tools = get_supported_tools(&params);
+    let supported_cli_agent_tools = get_supported_cli_agent_tools(&params);
+
+    assert!(!supported_tools.contains(&api::ToolType::SearchCodebase));
+    assert!(!supported_cli_agent_tools.contains(&api::ToolType::SearchCodebase));
+}
+
+#[test]
+fn remote_supported_tools_omit_search_codebase_when_index_is_unavailable() {
+    let _flag = FeatureFlag::RemoteCodebaseIndexing.override_enabled(true);
+    let params = request_params_for_remote(false);
+    let supported_tools = get_supported_tools(&params);
+    let supported_cli_agent_tools = get_supported_cli_agent_tools(&params);
+
+    assert!(!supported_tools.contains(&api::ToolType::SearchCodebase));
+    assert!(!supported_cli_agent_tools.contains(&api::ToolType::SearchCodebase));
 }

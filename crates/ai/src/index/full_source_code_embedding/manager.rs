@@ -35,7 +35,7 @@ use super::{
     priority_queue::{BuildQueue, Priority},
     snapshot::*,
     store_client::StoreClient,
-    CodebaseIndex, EmbeddingConfig, Error as CodebaseIndexError, NodeHash,
+    CodebaseIndex, ContentHash, EmbeddingConfig, Error as CodebaseIndexError, NodeHash,
 };
 
 use crate::{
@@ -67,6 +67,19 @@ pub enum RetrieveFileError {
     IndexFailed(CodebaseIndexingError),
     #[error("Codebase index not found")]
     IndexNotFound,
+}
+
+#[derive(Error, Debug)]
+pub enum FragmentMetadataLookupError {
+    #[error("Codebase index not found")]
+    IndexNotFound,
+    #[error("Codebase index has no synced root hash")]
+    IndexNotSynced,
+    #[error("Codebase index root hash mismatch: requested {requested}, current {current}")]
+    RootHashMismatch {
+        requested: NodeHash,
+        current: NodeHash,
+    },
 }
 
 pub enum CodebaseIndexManagerEvent {
@@ -132,6 +145,7 @@ pub struct CodebaseIndexStatus {
     pub(super) has_synced_version: bool,
     pub(super) last_sync_successful: Option<CodebaseIndexFinishedStatus>,
     pub(super) sync_progress: Option<SyncProgress>,
+    pub(super) root_hash: Option<NodeHash>,
 }
 
 impl CodebaseIndexStatus {
@@ -155,6 +169,10 @@ impl CodebaseIndexStatus {
 
     pub fn sync_progress(&self) -> Option<&SyncProgress> {
         self.sync_progress.as_ref()
+    }
+
+    pub fn root_hash(&self) -> Option<&NodeHash> {
+        self.root_hash.as_ref()
     }
 }
 
@@ -583,6 +601,22 @@ impl CodebaseIndexManager {
             let index_state = codebase_index.as_ref(app);
             index_state.codebase_index_status()
         })
+    }
+
+    pub fn fragment_metadatas_from_hashes(
+        &self,
+        repo_path: &Path,
+        root_hash: &NodeHash,
+        content_hashes: &[ContentHash],
+        app: &AppContext,
+    ) -> Result<HashMap<ContentHash, Vec<FragmentMetadata>>, FragmentMetadataLookupError> {
+        let (codebase_index, _) = self
+            .get_codebase_index_internal(repo_path)
+            .map_err(|_| FragmentMetadataLookupError::IndexNotFound)?;
+
+        codebase_index
+            .as_ref(app)
+            .fragment_metadatas_from_hashes(root_hash, content_hashes)
     }
 
     pub fn get_codebase_paths(&self) -> impl Iterator<Item = &PathBuf> {

@@ -14092,24 +14092,20 @@ impl Workspace {
                 }
             }
             #[cfg(feature = "local_fs")]
-            pane_group::Event::RemoteRepoNavigated {
-                host_id,
-                indexed_path,
-            } => {
-                use warp_util::standardized_path::StandardizedPath;
-
-                if let Ok(std_path) = StandardizedPath::try_new(indexed_path) {
-                    let remote_id = RemoteRepositoryIdentifier::new(host_id.clone(), std_path);
-                    let pane_group_id = pane_group.id();
-                    if let Some(file_tree_view) = self
-                        .working_directories_model
-                        .as_ref(ctx)
-                        .get_file_tree_view(pane_group_id)
-                    {
-                        file_tree_view.update(ctx, |view, ctx| {
-                            view.set_remote_root_directories(std::slice::from_ref(&remote_id), ctx);
-                        });
-                    }
+            pane_group::Event::RemoteRepoNavigated { remote_path } => {
+                let remote_id = RemoteRepositoryIdentifier::new(
+                    remote_path.host_id.clone(),
+                    remote_path.path.clone(),
+                );
+                let pane_group_id = pane_group.id();
+                if let Some(file_tree_view) = self
+                    .working_directories_model
+                    .as_ref(ctx)
+                    .get_file_tree_view(pane_group_id)
+                {
+                    file_tree_view.update(ctx, |view, ctx| {
+                        view.set_remote_root_directories(std::slice::from_ref(&remote_id), ctx);
+                    });
                 }
             }
             #[cfg(not(feature = "local_fs"))]

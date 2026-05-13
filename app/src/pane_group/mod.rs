@@ -82,10 +82,10 @@ use uuid::Uuid;
 use warp_cli::agent::Harness;
 use warp_core::command::ExitCode;
 use warp_core::context_flag::ContextFlag;
-use warp_core::HostId;
 use warp_util::path::convert_wsl_to_windows_host_path;
 #[cfg(feature = "local_fs")]
 use warp_util::path::LineAndColumnArg;
+use warp_util::remote_path::RemotePath;
 use warpui::elements::{
     Clipped, CrossAxisAlignment, DispatchEventResult, EventHandler, Flex, MainAxisSize, Shrinkable,
     Stack,
@@ -581,8 +581,7 @@ pub enum Event {
     MaximizePaneToggled,
     /// A remote server resolved the repo root for a session in this pane group.
     RemoteRepoNavigated {
-        host_id: HostId,
-        indexed_path: String,
+        remote_path: RemotePath,
     },
     /// Refresh the workspace-level active session state.
     ActiveSessionChanged,
@@ -5215,13 +5214,9 @@ impl PaneGroup {
             PaneEvent::RepoChanged => {
                 ctx.emit(Event::RepoChanged);
             }
-            PaneEvent::RemoteRepoNavigated {
-                host_id,
-                indexed_path,
-            } => {
+            PaneEvent::RemoteRepoNavigated { remote_path } => {
                 ctx.emit(Event::RemoteRepoNavigated {
-                    host_id: host_id.clone(),
-                    indexed_path: indexed_path.clone(),
+                    remote_path: remote_path.clone(),
                 });
             }
         }

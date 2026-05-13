@@ -1417,6 +1417,15 @@ impl AgentInputFooter {
             return None;
         }
 
+        // Hide ShareSession for shared ambient (cloud) agent sessions —
+        // it doesn't make sense to offer remote-control when already
+        // viewing a cloud agent's shared session.
+        if matches!(item, AgentToolbarItemKind::ShareSession)
+            && self.terminal_model.lock().is_shared_ambient_agent_session()
+        {
+            return None;
+        }
+
         match item {
             AgentToolbarItemKind::ContextChip(chip_kind) => {
                 self.cli_display_chip(chip_kind.clone(), app)

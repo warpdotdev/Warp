@@ -659,8 +659,8 @@ grep_tool = []
 # For the most part, including GUI code in headless builds is fine; the main use case is
 # for things that pull in external dependencies.
 gui = ["voice_input"]
-nld_classifier_v1 = ["input_classifier/onnx_candle"]
-nld_classifier_v2 = ["input_classifier/onnx_candle"]
+nld_classifier_v1 = ["input_classifier/nld_classifier_v1"]
+nld_classifier_v2 = ["input_classifier/nld_classifier_v2"]
 msys2_shells = []
 file_retrieval_tools = []
 welcome_tab = []
