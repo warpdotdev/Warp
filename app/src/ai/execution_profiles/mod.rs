@@ -431,12 +431,12 @@ impl AIExecutionProfile {
     }
 }
 
-pub type CloudAIExecutionProfile =
-    GenericCloudObject<GenericStringObjectId, CloudAIExecutionProfileModel>;
-pub type CloudAIExecutionProfileModel = GenericStringModel<AIExecutionProfile, JsonSerializer>;
+pub type AIExecutionProfileObject =
+    GenericCloudObject<GenericStringObjectId, AIExecutionProfileObjectModel>;
+pub type AIExecutionProfileObjectModel = GenericStringModel<AIExecutionProfile, JsonSerializer>;
 
 impl StringModel for AIExecutionProfile {
-    type CloudObjectType = CloudAIExecutionProfile;
+    type CloudObjectType = AIExecutionProfileObject;
 
     fn model_type_name(&self) -> &'static str {
         "AIExecutionProfile"

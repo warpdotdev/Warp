@@ -27,7 +27,7 @@ use crate::{
 };
 
 use super::{
-    AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel, WriteToPtyPermission,
+    AIExecutionProfile, AIExecutionProfileObjectModel, ActionPermission, WriteToPtyPermission,
 };
 
 /// ExecutionProfileId is the identifier that users of the AIExecutionProfilesModel use
@@ -142,11 +142,11 @@ impl AIExecutionProfilesModel {
                 let active_profiles_per_session: HashMap<EntityId, ClientProfileId> = HashMap::new();
             } else {
                 let cloud_model = CloudModel::handle(ctx).as_ref(ctx);
-                let all_profiles_from_cloud: Vec<&super::CloudAIExecutionProfile> = cloud_model
-                    .get_all_objects_of_type::<GenericStringObjectId, CloudAIExecutionProfileModel>()
+                let all_profile_objects: Vec<&super::AIExecutionProfileObject> = cloud_model
+                    .get_all_objects_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>()
                     .collect();
 
-                let default_profile_from_cloud: Option<&super::CloudAIExecutionProfile> = all_profiles_from_cloud
+                let default_profile_object: Option<&super::AIExecutionProfileObject> = all_profile_objects
                     .iter()
                     .find(|obj| obj.model().string_model.is_default_profile)
                     .copied();
@@ -154,14 +154,16 @@ impl AIExecutionProfilesModel {
                 let mut profile_id_to_sync_id: HashMap<ClientProfileId, SyncId> = HashMap::new();
                 let active_profiles_per_session: HashMap<EntityId, ClientProfileId> = HashMap::new();
 
-                // Insert all non-default profiles from the cloud
-                for cloud_profile in all_profiles_from_cloud.iter().filter(|p| !p.model().string_model.is_default_profile) {
+                for profile_object in all_profile_objects
+                    .iter()
+                    .filter(|p| !p.model().string_model.is_default_profile)
+                {
                     let profile_id = ClientProfileId::new();
-                    profile_id_to_sync_id.insert(profile_id, cloud_profile.id);
+                    profile_id_to_sync_id.insert(profile_id, profile_object.id);
                 }
 
                 let default_profile_state = match launch_mode {
-                    LaunchMode::App { .. } | LaunchMode::Test { .. } => match default_profile_from_cloud {
+                    LaunchMode::App { .. } | LaunchMode::Test { .. } => match default_profile_object {
                         Some(p) => {
                             let execution_profile_id = ClientProfileId::new();
                             profile_id_to_sync_id.insert(execution_profile_id, p.id);
@@ -387,7 +389,7 @@ impl AIExecutionProfilesModel {
                 };
                 let cloud_model = CloudModel::as_ref(ctx);
                 let data = cloud_model
-                    .get_object_of_type::<GenericStringObjectId, CloudAIExecutionProfileModel>(
+                    .get_object_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>(
                         sync_id,
                     )
                     .map(|o| o.model().string_model.clone())
@@ -445,7 +447,7 @@ impl AIExecutionProfilesModel {
         let sync_id = self.profile_id_to_sync_id.get(&profile_id)?;
         let cloud_model = CloudModel::as_ref(ctx);
         let data = cloud_model
-            .get_object_of_type::<GenericStringObjectId, CloudAIExecutionProfileModel>(sync_id)
+            .get_object_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>(sync_id)
             .map(|o| o.model().string_model.clone())
             .unwrap_or_default();
 
@@ -1348,7 +1350,7 @@ impl AIExecutionProfilesModel {
         if let Some(sync_id) = self.profile_id_to_sync_id.get(&profile_id) {
             let cloud_model = CloudModel::as_ref(ctx);
             if let Some(object) = cloud_model
-                .get_object_of_type::<GenericStringObjectId, CloudAIExecutionProfileModel>(sync_id)
+                .get_object_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>(sync_id)
             {
                 let mut data = object.model().string_model.clone();
                 // If the edit function didn't make any changes to the profile, we should exit early
@@ -1441,7 +1443,7 @@ impl AIExecutionProfilesModel {
     fn reconcile_with_cloud_state_after_initial_load(&mut self, ctx: &mut ModelContext<Self>) {
         let cloud_model = CloudModel::as_ref(ctx);
         let all_profiles: Vec<(SyncId, bool)> = cloud_model
-            .get_all_objects_of_type::<GenericStringObjectId, CloudAIExecutionProfileModel>()
+            .get_all_objects_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>()
             .map(|o| (o.id, o.model().string_model.is_default_profile))
             .collect();
 
@@ -1469,7 +1471,7 @@ impl AIExecutionProfilesModel {
                 let profile_id = ClientProfileId::new();
                 self.profile_id_to_sync_id.insert(profile_id, sync_id);
                 log::info!(
-                    "Registered existing cloud execution profile after initial load: {sync_id:?}"
+                    "Registered existing execution profile object after initial load: {sync_id:?}"
                 );
                 added_non_default = true;
             }
@@ -1503,7 +1505,7 @@ impl AIExecutionProfilesModel {
     ) {
         let cloud_model = CloudModel::as_ref(ctx);
         let Some(object) = cloud_model
-            .get_object_of_type::<GenericStringObjectId, CloudAIExecutionProfileModel>(&sync_id)
+            .get_object_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>(&sync_id)
         else {
             log::warn!("Received ObjectCreated event for AI execution profile but object not found in CloudModel: {sync_id:?}");
             return;

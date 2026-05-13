@@ -2,7 +2,7 @@
 use crate::ai::mcp::templatable::{CloudTemplatableMCPServerModel, TemplatableMCPServer};
 use crate::{
     ai::{
-        execution_profiles::{AIExecutionProfile, CloudAIExecutionProfileModel},
+        execution_profiles::{AIExecutionProfile, AIExecutionProfileObjectModel},
         facts::{AIFact, AIFactObjectModel},
     },
     auth::TEST_USER_UID,
@@ -816,7 +816,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.create_object(
-            CloudAIExecutionProfileModel::new(ai_execution_profile),
+            AIExecutionProfileObjectModel::new(ai_execution_profile),
             owner,
             client_id,
             Default::default(),
@@ -838,7 +838,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.update_object(
-            CloudAIExecutionProfileModel::new(ai_execution_profile),
+            AIExecutionProfileObjectModel::new(ai_execution_profile),
             ai_execution_profile_id,
             revision_ts,
             ctx,

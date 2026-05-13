@@ -2,7 +2,7 @@ use warpui::{App, SingletonEntity};
 
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::{
-    AIExecutionProfile, ActionPermission, CloudAIExecutionProfile, CloudAIExecutionProfileModel,
+    AIExecutionProfile, AIExecutionProfileObject, AIExecutionProfileObjectModel, ActionPermission,
 };
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
@@ -105,21 +105,21 @@ fn reconciles_unsynced_default_profile_with_cloud_after_initial_load() {
             );
         });
 
-        // Simulate the user's existing cloud default profile arriving via
+        // Simulate the user's existing default profile object arriving via
         // initial bulk load. We construct the existing profile with
         // `apply_code_diffs = AlwaysAllow` so we can verify the model is
-        // reading that cloud object after reconciliation.
+        // reading that stored object after reconciliation.
         let cloud_uid = ServerId::from(42);
         let cloud_sync_id = SyncId::ServerId(cloud_uid);
-        let cloud_profile = AIExecutionProfile {
+        let local_profile = AIExecutionProfile {
             name: "Default".to_string(),
             is_default_profile: true,
             apply_code_diffs: ActionPermission::AlwaysAllow,
             ..Default::default()
         };
-        let cloud_object = CloudAIExecutionProfile::new(
+        let profile_object = AIExecutionProfileObject::new(
             cloud_sync_id,
-            CloudAIExecutionProfileModel::new(cloud_profile),
+            AIExecutionProfileObjectModel::new(local_profile),
             CloudObjectMetadata::mock(),
             CloudObjectPermissions::mock_personal(),
         );
@@ -127,28 +127,28 @@ fn reconciles_unsynced_default_profile_with_cloud_after_initial_load() {
         // Insert the object into CloudModel without per-object events and then
         // emit `InitialLoadCompleted` so the reconciliation handler fires.
         CloudModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
-            cloud_model.add_object(cloud_sync_id, cloud_object);
+            cloud_model.add_object(cloud_sync_id, profile_object);
             ctx.emit(CloudModelEvent::InitialLoadCompleted);
         });
 
-        // The model should now be Synced with the cloud profile's sync_id,
-        // and `default_profile` should read values from the existing cloud
+        // The model should now be Synced with the stored profile object's sync_id,
+        // and `default_profile` should read values from the existing local
         // object (proving we're not backed by a fresh client-side default).
         profile_model.read(&app, |model, ctx| {
             let info = model.default_profile(ctx);
             assert_eq!(
                 info.sync_id(),
                 Some(cloud_sync_id),
-                "model did not adopt the existing cloud default profile's sync_id"
+                "model did not adopt the existing default profile object's sync_id"
             );
             assert_eq!(
                 info.data().apply_code_diffs,
                 ActionPermission::AlwaysAllow,
-                "default profile should now surface the existing cloud value"
+                "default profile should now surface the existing stored value"
             );
         });
 
-        // Further edits should now target the existing cloud profile in
+        // Further edits should now target the existing profile object in
         // place, rather than falling through the `Unsynced` branch and
         // creating a duplicate.
         let default_profile_id = profile_model.read(&app, |model, _ctx| model.default_profile_id());
@@ -165,7 +165,7 @@ fn reconciles_unsynced_default_profile_with_cloud_after_initial_load() {
             assert_eq!(
                 info.data().apply_code_diffs,
                 ActionPermission::AlwaysAsk,
-                "edit should be reflected on the existing cloud profile"
+                "edit should be reflected on the existing profile object"
             );
         });
     })

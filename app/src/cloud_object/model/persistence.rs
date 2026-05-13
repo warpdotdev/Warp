@@ -1,4 +1,4 @@
-use crate::ai::execution_profiles::CloudAIExecutionProfile;
+use crate::ai::execution_profiles::AIExecutionProfileObject;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::{
     CloudModelType, CloudObjectLocation, GenericCloudObject, GenericStringObjectFormat,
@@ -824,7 +824,7 @@ impl CloudModel {
     pub fn get_ai_execution_profile(
         &self,
         profile_id: &SyncId,
-    ) -> Option<&CloudAIExecutionProfile> {
+    ) -> Option<&AIExecutionProfileObject> {
         self.objects_by_id
             .get(&profile_id.uid())
             .and_then(|object| object.into())
