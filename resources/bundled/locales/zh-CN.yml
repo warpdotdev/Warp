@@ -136,10 +136,6 @@ zh-CN:
     successfully_uninstalled_oz_command: "Oz 命令已卸载成功。"
     failed_uninstall_oz_command: "卸载 Oz 命令失败：{error}"
     notifications_permission_denied: "Warp 没有发送桌面通知的权限。"
-    no_settings_match: "没有匹配搜索的设置。"
-    no_settings_match_hint: "可以尝试使用不同关键词，或检查是否有拼写错误。"
-    open_settings_file: "打开设置文件"
-    workspace_override_tooltip: "此选项由你的组织设置强制执行，无法自定义。"
     close_panel: "关闭面板"
     troubleshoot_notifications: "排查通知问题"
     view_changelog: "查看更新日志"
@@ -186,6 +182,19 @@ zh-CN:
   openwarp_launch:
     title: "Warp 现已开源"
     description: "你和我们的社区可以通过 agent-first 工作流参与构建 Warp。"
+
+  orchestration_launch:
+    new_badge: "新功能"
+    title: "随时随地编排任意 Agent"
+    description: "我们大幅改进了 Warp 的云端 Agent 编排平台 Oz。"
+    learn_more: "了解更多"
+    cloud_title: "在云端运行任意 Agent harness"
+    cloud_description: "使用 Oz 在云端启动 Claude Code 或 Codex Agent；Oz 会帮助你跟踪和引导这些 Agent。"
+    multi_agent_title: "多 Agent 编排"
+    multi_agent_description: "Warp Agents 现在可以编排成群的子 Agent，帮助你并行处理任务。"
+    memory_title: "Agent 记忆"
+    memory_description: "Agents 现在可以存储并访问长期记忆，随着时间自我改进。"
+    research_preview: "研究预览"
 
   # ── 认证 ──
   auth:
@@ -689,6 +698,10 @@ zh-CN:
 
   # ── 设置 ──
   settings:
+    no_settings_match: "没有匹配搜索的设置。"
+    no_settings_match_hint: "可以尝试使用不同关键词，或检查是否有拼写错误。"
+    open_settings_file: "打开设置文件"
+    workspace_override_tooltip: "此选项由你的组织设置强制执行，无法自定义。"
     add_repo: "添加仓库"
     create_environment: "创建环境"
     selected_repos: "已选仓库"

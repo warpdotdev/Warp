@@ -136,10 +136,6 @@ en:
     successfully_uninstalled_oz_command: "Successfully uninstalled the Oz command."
     failed_uninstall_oz_command: "Failed to uninstall Oz command: {error}"
     notifications_permission_denied: "Warp doesn't have permission to send desktop notifications."
-    no_settings_match: "No settings match your search."
-    no_settings_match_hint: "You may want to try using different keywords or checking for any possible typos."
-    open_settings_file: "Open settings file"
-    workspace_override_tooltip: "This option is enforced by your organization's settings and cannot be customized."
     close_panel: "Close panel"
     troubleshoot_notifications: "Troubleshoot notifications"
     view_changelog: "View changelog"
@@ -186,6 +182,19 @@ en:
   openwarp_launch:
     title: "Warp is now open-source"
     description: "You, our community, can participate in building Warp using an agent-first workflow."
+
+  orchestration_launch:
+    new_badge: "New"
+    title: "Orchestrate any agent, anywhere"
+    description: "We've made major improvements to Warp's cloud agent orchestration platform, Oz."
+    learn_more: "Learn more"
+    cloud_title: "Run any agent harness in the cloud"
+    cloud_description: "Use Oz to spin up Claude Code or Codex agents in the cloud; Oz will help you track and steer the agents."
+    multi_agent_title: "Multi-agent orchestration"
+    multi_agent_description: "Warp Agents will now orchestrate swarms of subagents, allowing you to parallelize tasks."
+    memory_title: "Agent Memory"
+    memory_description: "Agents will now store and access long-term memories, enabling self-improvement over time."
+    research_preview: "Research preview"
 
   # ── Authentication ──
   auth:
@@ -689,6 +698,10 @@ en:
 
   # ── Settings ──
   settings:
+    no_settings_match: "No settings match your search."
+    no_settings_match_hint: "You may want to try using different keywords or checking for any possible typos."
+    open_settings_file: "Open settings file"
+    workspace_override_tooltip: "This option is enforced by your organization's settings and cannot be customized."
     add_repo: "Add repo"
     create_environment: "Create environment"
     selected_repos: "Selected repos"
