@@ -13198,14 +13198,16 @@ impl Workspace {
         else {
             return;
         };
-        let Some(model_handle) = source_view.as_ref(ctx).ambient_agent_view_model().cloned() else {
-            return;
-        };
         let modal = ctx.add_typed_action_view(HandoffEnvironmentCreationModal::new);
         ctx.subscribe_to_view(&modal, move |me, _, event, ctx| match event {
             HandoffEnvironmentCreationModalEvent::Created { env_id } => {
                 let env_id = *env_id;
                 me.handoff_environment_creation_modal = None;
+                let Some(model_handle) =
+                    source_view.as_ref(ctx).ambient_agent_view_model().cloned()
+                else {
+                    return;
+                };
                 let pending = source_view.update(ctx, |view, ctx| {
                     let input = view.input().clone();
                     input.update(ctx, |input, ctx| {
