@@ -941,7 +941,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::NamedAgents,
     FeatureFlag::GitCredentialRefresh,
     FeatureFlag::HandoffCloudCloud,
-    FeatureFlag::HarnessSessionHeader,
     FeatureFlag::SoloUserByok,
 ];
 
