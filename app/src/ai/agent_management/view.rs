@@ -685,11 +685,14 @@ impl AgentManagementView {
         let availability = HarnessAvailabilityModel::as_ref(app);
         for entry in availability.available_harnesses() {
             let harness = entry.harness;
-            let mut fields = MenuItemFields::new(entry.display_name.clone())
-                .with_icon(harness_display::icon_for(harness))
-                .with_on_select_action(DropdownAction::SelectActionAndClose(
-                    AgentManagementViewAction::SetHarnessFilter(HarnessFilter::Specific(harness)),
-                ));
+            let mut fields =
+                MenuItemFields::new(availability.display_name_for(harness).to_string())
+                    .with_icon(harness_display::icon_for(harness))
+                    .with_on_select_action(DropdownAction::SelectActionAndClose(
+                        AgentManagementViewAction::SetHarnessFilter(HarnessFilter::Specific(
+                            harness,
+                        )),
+                    ));
             if let Some(color) = harness_display::brand_color(harness) {
                 fields = fields.with_override_icon_color(Fill::from(color));
             }

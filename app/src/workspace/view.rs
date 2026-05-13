@@ -6151,7 +6151,7 @@ impl Workspace {
     /// Builds the unified new-session menu items
     /// tab bar chevron and the vertical tab bar `+` button.
     ///
-    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
+    /// Order: Agent → Terminal (sidecar) → Cloud agent → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
     fn unified_new_session_menu_items(
         &self,
         ctx: &mut ViewContext<Self>,
@@ -6233,12 +6233,12 @@ impl Workspace {
             }
         }
 
-        // 3. Cloud Oz (if flags enabled)
+        // 3. Cloud agent (if flags enabled)
         if is_any_ai_enabled
             && FeatureFlag::AgentView.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
         {
-            let mut cloud_item = MenuItemFields::new("Cloud Oz")
+            let mut cloud_item = MenuItemFields::new("Cloud agent")
                 .with_on_select_action(WorkspaceAction::AddAmbientAgentTab)
                 .with_icon(icons::Icon::LayoutAlt01);
             if effective_default == DefaultSessionMode::CloudAgent {
@@ -19077,7 +19077,7 @@ impl Workspace {
             AISettings::as_ref(app)
                 .is_any_ai_enabled(app)
                 .then(|| WorkspaceBannerButtonDetails {
-                    text: "Fix with Oz".to_owned(),
+                    text: "Fix with Warp Agent".to_owned(),
                     action: WorkspaceAction::FixSettingsWithOz {
                         error_description: error.to_string(),
                     },
@@ -23150,7 +23150,7 @@ impl View for Workspace {
                 }
             }
 
-            // Action sidecar for actionable items (Terminal, Agent, Cloud Oz, tab configs).
+            // Action sidecar for actionable items (Terminal, Agent, Cloud agent, tab configs).
             if let Some(sidecar_item) = &self.tab_config_action_sidecar_item {
                 let anchor_label = self.new_session_dropdown_menu.read(app, |menu, _| {
                     menu.hovered_index().and_then(|idx| {

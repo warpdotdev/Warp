@@ -38,7 +38,7 @@ pub struct HarnessAvailability {
 fn default_harnesses() -> Vec<HarnessAvailability> {
     vec![HarnessAvailability {
         harness: Harness::Oz,
-        display_name: "Warp".to_string(),
+        display_name: harness_display::display_name(Harness::Oz).to_string(),
         enabled: true,
         available_models: vec![],
     }]
@@ -111,6 +111,9 @@ impl HarnessAvailabilityModel {
     }
 
     pub fn display_name_for(&self, harness: Harness) -> &str {
+        if harness == Harness::Oz {
+            return harness_display::display_name(harness);
+        }
         self.harnesses
             .iter()
             .find(|h| h.harness == harness)
@@ -249,6 +252,7 @@ impl HarnessAvailabilityModel {
             async move { ai_client.get_available_harnesses().await },
             |me, result, ctx| match result {
                 Ok(new_harnesses) => {
+                    let new_harnesses = normalize_harness_display_names(new_harnesses);
                     if new_harnesses != me.harnesses {
                         me.harnesses = new_harnesses;
                         me.cache(ctx);
@@ -284,7 +288,23 @@ fn get_cached(ctx: &ModelContext<HarnessAvailabilityModel>) -> Option<Vec<Harnes
         .private_user_preferences()
         .read_value(CACHE_KEY)
         .ok()??;
-    serde_json::from_str::<Vec<HarnessAvailability>>(&raw).ok()
+    serde_json::from_str::<Vec<HarnessAvailability>>(&raw)
+        .ok()
+        .map(normalize_harness_display_names)
+}
+
+fn normalize_harness_display_names(
+    harnesses: Vec<HarnessAvailability>,
+) -> Vec<HarnessAvailability> {
+    harnesses
+        .into_iter()
+        .map(|mut harness| {
+            if harness.harness == Harness::Oz {
+                harness.display_name = harness_display::display_name(Harness::Oz).to_string();
+            }
+            harness
+        })
+        .collect()
 }
 
 fn harness_to_graphql_harness(harness: Harness) -> Option<warp_graphql::ai::AgentHarness> {
