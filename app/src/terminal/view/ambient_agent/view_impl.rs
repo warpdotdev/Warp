@@ -5,10 +5,8 @@ use warp_terminal::model::BlockId;
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::AIRequestUsageModel;
-use warp_core::features::FeatureFlag;
 use warpui::prelude::Empty;
 
-use crate::ai::ambient_agents::SpawnAgentRequest;
 use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryModel};
 use crate::terminal::view::ambient_agent::CloudModeInitialUserQuery;
 use crate::terminal::view::rich_content::RichContentInsertionPosition;
@@ -458,118 +456,6 @@ impl TerminalView {
             Harness::Gemini => matches!(cli_agent, CLIAgent::Gemini),
             Harness::Unknown => false,
         }
-    }
-
-    /// Enter cloud agent view from this existing session. Behavior depends on the current terminal state:
-    ///
-    /// 1. Already in nested cloud mode with empty convo (setup/composing): ignore.
-    /// 2. Already in nested cloud mode with convo started: pop to parent terminal and start a
-    ///    new cloud mode session there (siblings).
-    /// 3. Not in nested cloud mode: enter cloud mode from this terminal session.
-    pub(in crate::terminal::view) fn enter_cloud_agent_view(
-        &mut self,
-        initial_prompt: Option<String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let ambient_agent_view = self.ambient_agent_view_model.as_ref(ctx);
-        let is_nested_cloud_mode =
-            ambient_agent_view.is_ambient_agent() && ambient_agent_view.has_parent_terminal();
-
-        // (1) If we're currently in an empty cloud mode session (setup/composing; no
-        // dispatched query yet), do not allow creating a new cloud mode session.
-        if is_nested_cloud_mode
-            && (ambient_agent_view.is_in_setup()
-                || ambient_agent_view.is_configuring_ambient_agent())
-        {
-            return;
-        }
-
-        if is_nested_cloud_mode {
-            // (2) Start a sibling cloud mode session at the terminal level.
-            let Some(pane_stack) = self
-                .pane_stack
-                .as_ref()
-                .and_then(|handle| handle.upgrade(ctx))
-            else {
-                log::warn!(
-                    "Nested cloud mode has no pane stack; cannot pop to start sibling cloud mode session"
-                );
-                return;
-            };
-
-            if pane_stack.as_ref(ctx).depth() <= 1 {
-                log::warn!(
-                    "Nested cloud mode pane stack depth <= 1; cannot pop to start sibling cloud mode session"
-                );
-                return;
-            }
-
-            pane_stack.update(ctx, |stack, ctx| {
-                stack.pop(ctx);
-            });
-
-            let active_view = pane_stack.as_ref(ctx).active_view().clone();
-            active_view.update(ctx, |view, ctx| {
-                view.enter_cloud_mode_from_session(initial_prompt, ctx);
-            });
-
-            ctx.notify();
-            return;
-        }
-
-        // (3) Enter cloud mode from this terminal session.
-        self.enter_cloud_mode_from_session(initial_prompt, ctx);
-    }
-
-    /// Enter cloud mode from this existing session with the given initial prompt.
-    ///
-    /// If called from fullscreen agent view, this defers the cloud mode start until after the
-    /// agent view has exited so the resulting rich content is scoped to the terminal-level.
-    pub(in crate::terminal::view) fn enter_cloud_mode_from_session(
-        &mut self,
-        initial_prompt: Option<String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !(false && false) {
-            return;
-        }
-
-        // If cloud mode is started from fullscreen agent view, we must ensure the resulting
-        // rich content (ambient agent entry block) is scoped to the terminal-level.
-        if FeatureFlag::AgentView.is_enabled()
-            && self.agent_view_controller.as_ref(ctx).is_fullscreen()
-        {
-            let prompt = initial_prompt.clone();
-            self.set_pending_cloud_mode_start_callback(
-                Box::new(move |view, ctx| {
-                    view.start_cloud_mode(None, prompt, ctx);
-                }),
-                ctx,
-            );
-
-            // Starting cloud mode from agent view is analogous to starting a new agent
-            // conversation: we exit without confirmation and continue after ExitedAgentView.
-            self.agent_view_controller.update(ctx, |controller, ctx| {
-                controller.exit_agent_view_without_confirmation(ctx);
-            });
-
-            return;
-        }
-
-        self.start_cloud_mode(None, initial_prompt, ctx);
-    }
-
-    /// Start a cloud mode session nested under this one.
-    ///
-    /// If `spawn_request` is `Some`, the agent is immediately started. Otherwise, it can
-    /// further configured in the cloud mode session.
-    fn start_cloud_mode(
-        &mut self,
-        _spawn_request: Option<SpawnAgentRequest>,
-        _initial_prompt: Option<String>,
-        _ctx: &mut ViewContext<Self>,
-    ) {
-        log::warn!("Ignoring removed cloud mode start request in OpenWarp");
     }
 
     /// Renders the ambient agent progress view based on agent progress.
