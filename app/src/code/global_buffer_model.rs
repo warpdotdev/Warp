@@ -1920,8 +1920,7 @@ impl GlobalBufferModel {
                 let max_offset = buffer.max_charoffset();
                 let start =
                     CharOffset::from((edit.start_offset as usize).min(max_offset.as_usize()));
-                let end =
-                    CharOffset::from((edit.end_offset as usize).min(max_offset.as_usize()));
+                let end = CharOffset::from((edit.end_offset as usize).min(max_offset.as_usize()));
                 buffer.insert_at_char_offset_ranges(
                     vec![(start..end, edit.text.clone())],
                     ContentVersion::new(),
