@@ -21,7 +21,7 @@ use crate::{cloud_object::ObjectType, workspace::ToastStack};
 use crate::{drive::OpenWarpDriveObjectArgs, view_components::DismissibleToast};
 
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
-use crate::settings_view::{OpenTeamsSettingsModalArgs, SettingsSection};
+use crate::settings_view::SettingsSection;
 use crate::user_config::load_launch_configs;
 use crate::{
     quake_mode_window_id, quake_mode_window_is_open, safe_info, send_telemetry_from_app_ctx,
@@ -57,7 +57,6 @@ pub const CLOUD_SETUP_SOURCE: &str = "cloud_setup";
 #[derive(Debug, PartialEq, Eq)]
 pub enum UriHost {
     Auth,
-    Team,
     /// A host prefix for all actions (e.g.: new tab, new window).
     Action,
     /// A host prefix for all actions that involve launch configurations
@@ -85,7 +84,6 @@ impl FromStr for UriHost {
     fn from_str(s: &str) -> Result<Self> {
         match s {
             "auth" => Ok(Self::Auth),
-            "team" => Ok(Self::Team),
             "action" => Ok(Self::Action),
             "launch" => Ok(Self::Launch),
             "conversation" => Ok(Self::Conversation),
@@ -124,29 +122,6 @@ impl UriHost {
                             log::Level::Info,
                         );
                     });
-            }
-            UriHost::Team => {
-                match url.path_segments().into_iter().flatten().last() {
-                    // If the last segment of the URL is "settings", open the team settings page.
-                    Some("settings") => {
-                        open_window_with_action(
-                            primary_window_id,
-                            "root_view:open_team_settings_page",
-                            ctx,
-                        );
-                    }
-                    // Otherwise default to previous behavior.
-                    _ => {
-                        // TODO: Parse URL to ensure the user is logged into the right account
-                        // Shows the user the settings view of their newly joined team within the app.
-                        open_window_with_action(
-                            primary_window_id,
-                            "root_view:handle_team_intent_link_action",
-                            ctx,
-                        );
-                    }
-                };
-                send_telemetry_from_app_ctx!(TelemetryEvent::OpenTeamFromURI, ctx);
             }
             UriHost::Action => {
                 match Action::parse(url) {
@@ -281,7 +256,6 @@ impl UriHost {
             }
             UriHost::Settings => {
                 // We support opening different settings pages through URI:
-                // - warp://settings/teams?invite={email} - opens team settings with invite modal
                 // - warp://settings/environments - opens environments settings page
                 // - warp://settings/mcp - opens MCP servers settings page
                 // - warp://settings/platform - opens platform settings page
@@ -296,17 +270,6 @@ impl UriHost {
 
                 if let Some(settings_sub_page) = settings_sub_page {
                     match settings_sub_page.as_str() {
-                        "teams" => {
-                            let invite_email = query_string.get("invite").map(|s| s.to_string());
-                            let args = OpenTeamsSettingsModalArgs { invite_email };
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_team_settings_with_email_invite_in_existing_window",
-                                "root_view:open_team_settings_with_email_invite_in_new_window",
-                                &args,
-                                ctx,
-                            );
-                        }
                         "environments" => {
                             // OpenWarp Wave 7-3:warp://settings/environments URI handler 随
                             // ambient-agent UI 子系统物理删。还保留 GitHub auth completion
@@ -403,7 +366,7 @@ impl UriHost {
             Self::Auth => W::ShowPrimaryWindow(WindowActivationFallbackBehavior::NewWindow {
                 replace_existing: true,
             }),
-            Self::Team | Self::Drive | Self::Settings => W::default(),
+            Self::Drive | Self::Settings => W::default(),
             // These URLs always open new windows.
             Self::Launch | Self::Conversation | Self::Home => W::Nothing,
             // This will actually be handled by [`Action::window_behavior_hint`].
@@ -1123,7 +1086,6 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
         | UriHost::Launch
         | UriHost::Conversation
         | UriHost::Drive
-        | UriHost::Team
         | UriHost::Settings
         | UriHost::Mcp
         | UriHost::Codex

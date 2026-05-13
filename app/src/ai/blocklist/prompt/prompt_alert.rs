@@ -12,7 +12,6 @@ use crate::{
     ai::{blocklist::error_color, AIRequestUsageModel},
     auth::AuthStateProvider,
     network::NetworkStatus,
-    settings::PrivacySettings,
     settings_view::SettingsSection,
     ui_components::icons::Icon,
     workspace::WorkspaceAction,
@@ -21,9 +20,6 @@ use crate::{
 use ai::api_keys::ApiKeyManager;
 
 const ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PERCENTAGE: f32 = 0.5;
-
-const TELEMETRY_DISABLED_PRIMARY_TEXT: &str = "To use AI features,";
-const ENABLE_ANALYTICS_ACTION_TEXT: &str = "enable analytics";
 
 const NO_CONNECTION_PRIMARY_TEXT: &str = "No internet connection";
 const ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PRIMARY_TEXT: &str = "";
@@ -43,13 +39,11 @@ const NON_ADMIN_ASK_ADMIN_TO_INCREASE_OVERAGES_TEXT: &str =
 pub enum PromptAlertAction {
     SignUpClickedForAnonymousUser,
     OpenSettingsClicked,
-    OpenPrivacySettingsClicked,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptAlertEvent {
     SignupAnonymousUser,
-    OpenPrivacyPage,
 }
 
 /// The alert state of the chip that appears to the right of certain parts of the prompt.
@@ -57,9 +51,6 @@ pub enum PromptAlertEvent {
 pub enum PromptAlertState {
     /// The user is offline (no connection).
     NoConnection,
-    /// Telemetry is disabled and the user is on a free tier.
-    /// Free tier users must enable telemetry or upgrade to use AI features.
-    TelemetryDisabledOnFreeTier,
     /// An anonymous user has reached a certain percentage of requests used.
     /// This doesn't use a primary text to avoid being too in-your-face.
     AnonymousUserRequestLimitSoftGate,
@@ -87,7 +78,6 @@ impl PromptAlertView {
         let request_usage_model = AIRequestUsageModel::handle(ctx);
         let user_workspaces = UserWorkspaces::handle(ctx);
         let network_status = NetworkStatus::handle(ctx);
-        let privacy_settings = PrivacySettings::handle(ctx);
         let api_key_manager = ApiKeyManager::handle(ctx);
 
         ctx.subscribe_to_model(&request_usage_model, |me, _, _, ctx| {
@@ -105,11 +95,6 @@ impl PromptAlertView {
             ctx.notify();
         });
 
-        ctx.subscribe_to_model(&privacy_settings, |me, _, _, ctx| {
-            me.state = Self::determine_state(ctx);
-            ctx.notify();
-        });
-
         ctx.subscribe_to_model(&api_key_manager, |me, _, _, ctx| {
             me.state = Self::determine_state(ctx);
             ctx.notify();
@@ -122,28 +107,14 @@ impl PromptAlertView {
     }
 
     pub fn determine_state(app: &AppContext) -> PromptAlertState {
-        // First, if the user is offline, no AI features will work.
-        if !NetworkStatus::as_ref(app).is_online() {
-            return PromptAlertState::NoConnection;
-        }
-
         if UserWorkspaces::as_ref(app).is_byo_api_key_enabled() {
             return PromptAlertState::NoAlert;
         }
 
-        // Check if telemetry is disabled for free tier users.
-        // Free tier users must enable telemetry or upgrade to use AI features.
-        let privacy_settings = PrivacySettings::as_ref(app);
-        if !privacy_settings.is_telemetry_enabled {
-            // Fail safe: if billing status is unknown, assume paid to avoid showing confusing message to paying users
-            let is_on_paid_plan = UserWorkspaces::as_ref(app)
-                .current_workspace()
-                .map(|w| w.billing_metadata.is_user_on_paid_plan())
-                .unwrap_or(true);
-
-            if !is_on_paid_plan {
-                return PromptAlertState::TelemetryDisabledOnFreeTier;
-            }
+        // OpenWarp: BYOP/本地 provider 自行处理连接状态,包括 Ollama 这类 localhost
+        // provider。全局离线状态只阻止内置云端用量。
+        if !NetworkStatus::as_ref(app).is_online() {
+            return PromptAlertState::NoConnection;
         }
 
         let request_usage_model = AIRequestUsageModel::as_ref(app);
@@ -221,11 +192,6 @@ impl PromptAlertView {
                     NO_CONNECTION_PRIMARY_TEXT,
                 ));
             }
-            PromptAlertState::TelemetryDisabledOnFreeTier => {
-                text_fragments.push(FormattedTextFragment::plain_text(
-                    TELEMETRY_DISABLED_PRIMARY_TEXT,
-                ));
-            }
             PromptAlertState::AnonymousUserRequestLimitSoftGate => {
                 text_fragments.push(FormattedTextFragment::plain_text(
                     ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PRIMARY_TEXT,
@@ -266,16 +232,6 @@ impl PromptAlertView {
 
         match state {
             PromptAlertState::NoConnection => {}
-            PromptAlertState::TelemetryDisabledOnFreeTier => {
-                // Show "enable analytics" action link
-                text_fragments.push(FormattedTextFragment::plain_text("  "));
-                text_fragments.push(FormattedTextFragment::hyperlink_action(
-                    ENABLE_ANALYTICS_ACTION_TEXT,
-                    PromptAlertAction::OpenPrivacySettingsClicked,
-                ));
-
-                text_fragments.push(FormattedTextFragment::plain_text("."));
-            }
             PromptAlertState::AnonymousUserRequestLimitSoftGate
             | PromptAlertState::AnonymousUserRequestLimitHardGate => {
                 text_fragments.push(FormattedTextFragment::plain_text("  "));
@@ -336,7 +292,6 @@ fn does_alert_block_ai_requests(state: &PromptAlertState) -> bool {
     match state {
         PromptAlertState::AnonymousUserRequestLimitSoftGate | PromptAlertState::NoAlert => false,
         PromptAlertState::NoConnection
-        | PromptAlertState::TelemetryDisabledOnFreeTier
         | PromptAlertState::AnonymousUserRequestLimitHardGate
         | PromptAlertState::DelinquentDueToPaymentIssue
         | PromptAlertState::OveragesToggleableButNotEnabled
@@ -429,9 +384,6 @@ impl TypedActionView for PromptAlertView {
             }
             PromptAlertAction::OpenSettingsClicked => {
                 // 去云端分支:不再跳转 billing & usage
-            }
-            PromptAlertAction::OpenPrivacySettingsClicked => {
-                ctx.emit(PromptAlertEvent::OpenPrivacyPage);
             }
         }
     }

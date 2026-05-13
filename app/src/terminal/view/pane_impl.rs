@@ -140,21 +140,10 @@ impl TerminalView {
             return;
         }
 
-        // In ambient-agent, we want to preserve the shared session sharing dialog even after the shared session has ended.
-        // We need this to be able to view and change permissions on a ambient-agent shared session that failed before
-        // any conversation started, to view ambient-agent sessions that failed during setup.
-        let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
-        if !is_ambient_agent {
-            self.pane_configuration.update(ctx, |pane_config, ctx| {
-                pane_config.notify_header_content_changed(ctx);
-                pane_config.refresh_pane_header_overflow_menu_items(ctx);
-            });
-        } else {
-            self.pane_configuration.update(ctx, |pane_config, ctx| {
-                pane_config.notify_header_content_changed(ctx);
-                pane_config.refresh_pane_header_overflow_menu_items(ctx);
-            });
-        }
+        self.pane_configuration.update(ctx, |pane_config, ctx| {
+            pane_config.notify_header_content_changed(ctx);
+            pane_config.refresh_pane_header_overflow_menu_items(ctx);
+        });
     }
 
     pub(super) fn is_pane_focused(&self, app: &AppContext) -> bool {
@@ -336,30 +325,7 @@ impl TerminalView {
             None
         };
 
-        let mut left_of_overflow = self.render_shared_session_header_content(app);
-
-        let mut icon_button_count: u32 = 0;
-
-        if false {
-            let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
-            let button_element = if ambient_agent_model.is_ambient_agent()
-                && ambient_agent_model.is_waiting_for_session()
-            {
-                Some(self.render_ambient_agent_cancel_button(app))
-            } else {
-                None
-            };
-
-            if let Some(button) = button_element {
-                icon_button_count += 1;
-                if let Some(existing) = left_of_overflow {
-                    left_of_overflow =
-                        Some(Flex::row().with_child(existing).with_child(button).finish());
-                } else {
-                    left_of_overflow = Some(button);
-                }
-            }
-        }
+        let left_of_overflow = self.render_shared_session_header_content(app);
 
         let mut right_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -385,7 +351,7 @@ impl TerminalView {
                 button_size,
             ),
         );
-        icon_button_count += show_close_button as u32
+        let icon_button_count = show_close_button as u32
             + header_ctx.has_overflow_items as u32
             + has_sharing_element as u32;
 
@@ -792,8 +758,8 @@ impl TerminalView {
         ))
     }
 
-    pub fn is_ambient_agent_session(&self, ctx: &AppContext) -> bool {
-        false && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+    pub fn is_ambient_agent_session(&self, _ctx: &AppContext) -> bool {
+        false
     }
 
     fn selected_conversation_for_user_facing_chrome<'a>(

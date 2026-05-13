@@ -5245,9 +5245,6 @@ impl Input {
                     entrypoint: AnonymousUserSignupEntrypoint::SignUpAIPrompt,
                 });
             }
-            PromptAlertEvent::OpenPrivacyPage => {
-                ctx.emit(Event::OpenSettings(SettingsSection::Privacy));
-            }
         }
     }
 

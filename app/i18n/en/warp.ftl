@@ -217,7 +217,6 @@ app-menu-warp-slack-community = Warp Slack Community...
 workspace-update-and-relaunch-warp = Update and relaunch Warp
 workspace-updating-to-version = Updating to ({ $version })
 workspace-update-warp-manually = Update Warp manually
-workspace-view-all-cloud-runs = View all agent runs
 pane-get-started-title = Get started
 pane-new-tab-title = New tab
 
@@ -382,7 +381,6 @@ terminal-continue-locally = Continue locally
 terminal-fork-conversation-locally-tooltip = Fork this conversation locally
 terminal-open-in-warp = Open in Warp
 terminal-open-conversation-in-warp-tooltip = Open this conversation in the Warp desktop app
-terminal-share-session = Share session...
 terminal-stop-sharing = Stop sharing
 terminal-copy-session-sharing-link = Copy session sharing link
 terminal-shared-session-make-editor = Make editor
@@ -573,7 +571,6 @@ settings-section-keybindings = Keyboard shortcuts
 settings-section-privacy = Privacy
 settings-section-referrals = Referrals
 settings-section-shared-blocks = Shared blocks
-settings-section-teams = Teams
 settings-section-warp-drive = Warp Drive
 settings-section-warpify = Warpify
 settings-section-ai = AI
@@ -1100,94 +1097,6 @@ settings-features-linux-selection-clipboard-tooltip = Whether the Linux primary 
 settings-features-changes-apply-new-windows = Changes will apply to new windows.
 settings-features-wayland-description = Enabling this setting disables global hotkey support. When disabled, text may be blurry if your Wayland compositor is using fraction scaling (ex: 125%).
 settings-features-restart-warp-to-apply = Restart Warp for changes to take effect.
-
-# --- ANCHOR-SUB-TEAMS (agent-settings-teams) ---
-# settings_view/teams_page.rs strings (P0 + P1)
-# 命名前缀:settings-teams-*
-settings-teams-page-title = Teams
-settings-teams-create-page-subtitle = Create a team
-settings-teams-create-description = When you create a team, you can collaborate on agent-driven development by sharing local runs, automations, and artifacts. You can also create a shared knowledge store for teammates and agents alike.
-settings-teams-create-button = Create
-settings-teams-team-name-placeholder = Team name
-settings-teams-rename-placeholder = Your new team name
-settings-teams-leave-team-button = Leave team
-settings-teams-delete-team-button = Delete team
-settings-teams-emails-placeholder = Emails, comma separated
-settings-teams-domains-placeholder = Domains, comma separated
-settings-teams-set-button = Set
-settings-teams-invite-button = Invite
-settings-teams-join-button = Join
-settings-teams-contact-admin-button = Contact Admin to request access
-settings-teams-tab-link = Link
-settings-teams-tab-email = Email
-settings-teams-section-team-members = Team Members
-settings-teams-section-team-members-pricing = Team members
-settings-teams-section-invite-by-link = Invite by Link
-settings-teams-section-invite-by-email = Invite by Email
-settings-teams-section-restrict-by-domain = Restrict by domain
-settings-teams-section-make-discoverable = Make team discoverable
-settings-teams-section-plan-usage-free = Free plan usage limits
-settings-teams-section-plan-usage = Plan usage limits
-settings-teams-shared-notebooks = Shared Notebooks
-settings-teams-shared-workflows = Shared Workflows
-settings-teams-reset-links = Reset links
-settings-teams-compare-plans = Compare plans
-settings-teams-upgrade-build = Upgrade to Build
-settings-teams-upgrade-turbo = Upgrade to Turbo plan
-settings-teams-upgrade-lightspeed = Upgrade to Lightspeed plan
-settings-teams-contact-support = Contact support
-settings-teams-manage-billing = Manage billing
-settings-teams-manage-plan = Manage plan
-settings-teams-open-admin-panel = Open admin panel
-settings-teams-or-join-existing = Or, join an existing team within your company
-settings-teams-discovery-cta = Join this team and start collaborating on workflows, notebooks, and more.
-settings-teams-discovery-1-teammate = 1 teammate
-settings-teams-discovery-n-teammates = { $count } teammates
-settings-teams-transfer-modal-title = Transfer team ownership?
-settings-teams-action-cancel-invite = Cancel invite
-settings-teams-action-transfer-ownership = Transfer ownership
-settings-teams-action-demote-from-admin = Demote from admin
-settings-teams-action-promote-to-admin = Promote to admin
-settings-teams-action-remove-from-team = Remove from team
-settings-teams-action-remove-domain = Remove domain
-settings-teams-state-expired = EXPIRED
-settings-teams-state-pending = PENDING
-settings-teams-state-owner = OWNER
-settings-teams-state-admin = ADMIN
-settings-teams-badge-past-due = PAST DUE
-settings-teams-badge-unpaid = UNPAID
-settings-teams-offline = You are offline.
-settings-teams-failed-load-invite-link = Failed to load invite link.
-settings-teams-toast-link-copied = Link copied to clipboard!
-settings-teams-toast-invite-sent-one = Your invite is on the way!
-settings-teams-toast-invites-sent = Your { $count } invites are on the way!
-settings-teams-toast-domain-added = Domain restrictions added: { $count }
-settings-teams-toast-invalid-domains = Invalid domains: { $count }
-settings-teams-toast-invalid-emails = Invalid emails: { $count }
-settings-teams-toast-toggled-invite-links = Toggled invite links
-settings-teams-toast-reset-invite-links = Reset invite links
-settings-teams-toast-deleted-invite = Deleted invite
-settings-teams-toast-toggled-discoverability = Toggled team discoverability
-settings-teams-toast-joined-team = Successfully joined team
-settings-teams-toast-joined-team-named = Successfully joined { $name }
-settings-teams-toast-transferred-ownership = Successfully transferred team ownership
-settings-teams-toast-updated-role = Successfully updated team member role
-settings-teams-toast-left-team = Successfully left team
-settings-teams-toast-renamed-team = Successfully renamed team
-settings-teams-error-leave-team = Error leaving team
-settings-teams-error-rename-team = Failed to rename team
-settings-teams-error-send-invite = Failed to send invite
-settings-teams-error-toggle-invite-links = Failed to toggle invite links
-settings-teams-error-reset-invite-links = Failed to reset invite links
-settings-teams-error-delete-invite = Failed to delete invite
-settings-teams-error-add-domain = Failed to add domain restriction
-settings-teams-error-delete-domain = Failed to delete domain restriction
-settings-teams-error-upgrade-link = Failed to generate upgrade link. Please contact us at feedback@warp.dev
-settings-teams-error-billing-link = Failed to generate billing link. Please contact us at feedback@warp.dev
-settings-teams-error-toggle-discoverability = Failed to toggle team discoverability
-settings-teams-error-join-team = Failed to join team
-settings-teams-error-transfer-ownership = Failed to transfer team ownership
-settings-teams-error-update-role = Failed to update team member role
 
 # --- ANCHOR-SUB-SETTINGS-PAGE-NAV (agent-settings-page-nav) ---
 # 此锚点下放 settings_view/{settings_page,nav,delete_environment_confirmation_dialog,directory_color_add_picker,pane_manager}.rs 字符串
@@ -1743,16 +1652,10 @@ keybinding-desc-pane-group-navigate-next = Activate next pane
 
 # Mouse / Notebooks / Workflows / Folders
 keybinding-desc-workspace-toggle-mouse-reporting = Toggle Mouse Reporting
-keybinding-desc-workspace-create-team-notebook = Create a new team notebook
-keybinding-desc-workspace-create-team-notebook-menu = New Team Notebook
 keybinding-desc-workspace-create-personal-notebook = Create a new personal notebook
 keybinding-desc-workspace-create-personal-notebook-menu = New Personal Notebook
-keybinding-desc-workspace-create-team-workflow = Create a new team workflow
-keybinding-desc-workspace-create-team-workflow-menu = New Team Workflow
 keybinding-desc-workspace-create-personal-workflow = Create a new personal workflow
 keybinding-desc-workspace-create-personal-workflow-menu = New Personal Workflow
-keybinding-desc-workspace-create-team-folder = Create a new team folder
-keybinding-desc-workspace-create-team-folder-menu = New Team Folder
 keybinding-desc-workspace-create-personal-folder = Create a new personal folder
 keybinding-desc-workspace-create-personal-folder-menu = New Personal Folder
 
@@ -1841,20 +1744,15 @@ keybinding-desc-workspace-uninstall-cli = Uninstall Oz CLI command
 keybinding-desc-workspace-toggle-ai-assistant = Toggle Warp AI
 
 # Env vars / prompts
-keybinding-desc-workspace-create-team-env-vars = Create new team environment variables
-keybinding-desc-workspace-create-team-env-vars-menu = New Team Environment Variables
 keybinding-desc-workspace-create-personal-env-vars = Create new personal environment variables
 keybinding-desc-workspace-create-personal-env-vars-menu = New Personal Environment Variables
 keybinding-desc-workspace-create-personal-ai-prompt = Create a new personal prompt
 keybinding-desc-workspace-create-personal-ai-prompt-menu = New Personal Prompt
-keybinding-desc-workspace-create-team-ai-prompt = Create a new team prompt
-keybinding-desc-workspace-create-team-ai-prompt-menu = New Team Prompt
 
 # Focus / import
 keybinding-desc-workspace-shift-focus-left = Switch Focus to Left Panel
 keybinding-desc-workspace-shift-focus-right = Switch Focus to Right Panel
 keybinding-desc-workspace-import-to-personal-drive = Import To Personal Drive
-keybinding-desc-workspace-import-to-team-drive = Import To Team Drive
 
 # Drive / repository / AI rules / MCP
 keybinding-desc-workspace-open-repository = Open repository
@@ -1878,8 +1776,6 @@ keybinding-desc-workspace-show-settings-keyboard-shortcuts = Open Settings: Keyb
 keybinding-desc-workspace-show-settings-keyboard-shortcuts-menu = Configure Keyboard Shortcuts...
 keybinding-desc-workspace-show-settings-about = Open Settings: About
 keybinding-desc-workspace-show-settings-about-menu = About Warp
-keybinding-desc-workspace-show-settings-teams = Open Settings: Teams
-keybinding-desc-workspace-show-settings-teams-menu = Open Team Settings
 keybinding-desc-workspace-show-settings-privacy = Open Settings: Privacy
 keybinding-desc-workspace-show-settings-warpify = Open Settings: Warpify
 keybinding-desc-workspace-show-settings-warpify-menu = Configure Warpify...
@@ -1957,7 +1853,7 @@ keybinding-desc-terminal-find = Find in Terminal
 keybinding-desc-terminal-select-bookmark-up = Select the closest bookmark up
 keybinding-desc-terminal-select-bookmark-down = Select the closest bookmark down
 keybinding-desc-terminal-open-block-context-menu = Open block context menu
-keybinding-desc-terminal-toggle-team-workflows-modal = Toggle team workflows modal
+keybinding-desc-terminal-toggle-workflows-modal = Toggle workflows modal
 keybinding-desc-terminal-copy-git-branch = Copy git branch
 keybinding-desc-terminal-clear-blocks = Clear Blocks
 keybinding-desc-terminal-cursor-word-left = Move cursor one word to the left within an executing command
@@ -2434,7 +2330,6 @@ menu-ai-block-fork-from-query = Fork from "{ $query }"
 
 # --- tab 右键菜单(tab.rs) ---
 menu-tab-stop-sharing = Stop sharing
-menu-tab-share-session = Share session
 menu-tab-stop-sharing-all = Stop sharing all
 menu-tab-copy-link = Copy link
 menu-tab-rename = Rename tab
@@ -2566,11 +2461,6 @@ rewind-dialog-info = Rewinding does not affect files edited manually or via shel
 rewind-dialog-cancel = Cancel
 rewind-dialog-confirm = Rewind
 
-# Transfer ownership confirmation modal (app/src/settings_view/transfer_ownership_confirmation_modal.rs)
-transfer-ownership-dialog-body = Are you sure you want to transfer team ownership to { $name }? You will no longer be the owner and will not be able to take any administrative actions for this team.
-transfer-ownership-dialog-cancel = Cancel
-transfer-ownership-dialog-confirm = Transfer
-
 # --- ANCHOR-SUB-SEARCH-PALETTES ---
 # Search palettes (app/src/search/command_palette/view.rs, app/src/search/welcome_palette/view.rs)
 command-palette-search-placeholder = Search for a command
@@ -2681,11 +2571,6 @@ drive-import-folder-upload-error = Failed to upload folder to server
 
 # Drive main panel and workflow editor (app/src/drive/index.rs, app/src/drive/workflows/*)
 drive-title = Drive
-drive-create-team-text = Share commands and knowledge with your teammates.
-drive-join-team-header = Collaborate with { $count } of your { $count ->
-        [one] teammate
-       *[other] teammates
-    } already on Warp.
 drive-environment-variables = Environment variables
 drive-folder = Folder
 drive-notebook = Notebook
@@ -2706,12 +2591,6 @@ drive-trash-section-title = TRASH
 drive-trash-title = Trash
 drive-trash-deletion-warning = Items in the trash will be deleted forever after 30 days.
 drive-team-space-zero-state = Drag or move a personal workflow or notebook here to share it with your team.
-drive-create-team-button = Create team
-drive-view-teams-to-join = View { $count ->
-        [one] team
-       *[other] teams
-    } to join
-drive-or = Or
 drive-sign-up-storage-limit = Sign up for free to increase your storage limit and unlock more features.
 drive-sign-up = Sign up
 drive-copy-link = Copy link
@@ -2750,8 +2629,8 @@ drive-object-type-ai-fact = AI Fact
 drive-object-type-rules = Rules
 drive-object-type-mcp-server = MCP Server
 drive-object-type-mcp-servers = MCP Servers
-drive-shared-object-limit-hit-banner-prefix = You've run out of { $object_type }s on your plan.
-drive-shared-object-limit-hit-banner = You've run out of { $object_type }s on your plan. Upgrade for access to more notebooks, workflows, shared sessions, and AI credits.
+drive-shared-object-limit-hit-banner-prefix = You've reached the local { $object_type } limit.
+drive-shared-object-limit-hit-banner = You've reached the local { $object_type } limit.
 drive-payment-issue-banner-prefix = Shared objects have been restricted due to a subscription payment issue.
 drive-payment-issue-banner-admin = Shared objects have been restricted due to a subscription payment issue. Please update your payment information to restore access.
 drive-payment-issue-banner-admin-enterprise = Shared objects have been restricted due to a subscription payment issue. Please contact support@warp.dev to restore access.
@@ -2948,20 +2827,10 @@ wasm-nux-download-description = Warp is the intelligent terminal with AI and you
 wasm-nux-learn-more = Learn more
 wasm-nux-download-confirm = Download
 wasm-nux-object-kind-drive-objects = Warp Drive objects
-wasm-nux-object-kind-shared-sessions = shared sessions
 wasm-nux-object-kind-warp-links = Warp links
 wasm-nux-always-open-on-web-title = Always open { $object_kind } on the web?
 wasm-nux-always-open-on-web-detail = You can change this at any time in settings.
 wasm-nux-yes = Yes
-
-# Drive cloud action confirmation dialog (app/src/drive/cloud_action_confirmation_dialog.rs)
-drive-cloud-action-cancel = Cancel
-drive-cloud-action-delete-team-title = Are you sure you want to delete this team?
-drive-cloud-action-leave-team-title = Are you sure you want to leave this team?
-drive-cloud-action-delete-team-body = Deleting this team will permanently delete it and all of its related content, including billing information or credits. You will not be able to restore them.
-drive-cloud-action-leave-team-body = You will need to be reinvited in order to rejoin.
-drive-cloud-action-delete-team-confirm = Yes, delete
-drive-cloud-action-leave-team-confirm = Yes, leave
 
 # Auth override warning (app/src/auth/auth_override_warning_body.rs)
 auth-override-warning-title = New login detected

@@ -13,9 +13,7 @@ use crate::ai::conversation_details_panel::{
 };
 use crate::terminal::TerminalView;
 use crate::ui_components::icons;
-use crate::view_components::action_button::{
-    ActionButton, ButtonSize, NakedTheme, PrimaryTheme, SecondaryTheme,
-};
+use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme, PrimaryTheme};
 use crate::wasm_nux_dialog::{WasmNUXDialog, WasmNUXDialogEvent};
 use crate::workspace::action::WorkspaceAction;
 use crate::workspace::view::{NotebookSource, OpenWarpDriveObjectSettings, Workspace};
@@ -49,14 +47,6 @@ impl Workspace {
                     }
                 },
             )
-        })
-    }
-
-    pub(super) fn build_view_cloud_runs_button(
-        ctx: &mut ViewContext<Self>,
-    ) -> ViewHandle<ActionButton> {
-        ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new(crate::t!("workspace-view-all-cloud-runs"), SecondaryTheme)
         })
     }
 

@@ -15,7 +15,6 @@ use super::{
     main_page::MainSettingsPageView,
     mcp_servers_page::MCPServersSettingsPageView,
     privacy_page::PrivacyPageView,
-    teams_page::TeamsPageView,
     warp_drive_page::WarpDriveSettingsPageView,
     warpify_page::WarpifyPageView,
     SettingsSection,
@@ -105,7 +104,6 @@ pub enum SettingsPageViewHandle {
     Keybindings(ViewHandle<KeybindingsView>),
     About(ViewHandle<AboutPageView>),
     Code(ViewHandle<CodeSettingsPageView>),
-    Teams(ViewHandle<TeamsPageView>),
     // OpenWarp Wave 3-1:`OzCloudAPIKeys` variant 随 `platform_page` 一同物理删。
     // 云端 API key 管理 UI 完全代表 Warp Inc 云端账号,与 BYOP 无关。
     // OpenWarp Wave 6-8:`SharedBlocks` / `Referrals` variant 随 `ShowBlocksView` /
@@ -128,7 +126,6 @@ impl SettingsPageViewHandle {
             Keybindings(view_handle) => ChildView::new(view_handle).finish(),
             About(view_handle) => ChildView::new(view_handle).finish(),
             Code(view_handle) => ChildView::new(view_handle).finish(),
-            Teams(view_handle) => ChildView::new(view_handle).finish(),
             // OpenWarp Wave 3-1:`OzCloudAPIKeys` arm 随 `platform_page` 一同物理删。
             // OpenWarp Wave 6-8:`SharedBlocks` / `Referrals` arm 随 variant 物理删。
             // OpenWarp Wave 7-3:`CloudEnvironments` arm 随 ambient-agent UI 一同物理删。

@@ -462,8 +462,8 @@ pub fn init(app: &mut AppContext) {
             id!("Terminal") & ne!("TerminalView_BlockSelectionCardinality", "None"),
         ),
         EditableBinding::new(
-            "terminal:toggle_teams_modal",
-            crate::t!("keybinding-desc-terminal-toggle-team-workflows-modal"),
+            "terminal:toggle_workflows_modal",
+            crate::t!("keybinding-desc-terminal-toggle-workflows-modal"),
             TerminalAction::OpenWorkflowModal,
         )
         .with_key_binding(cmd_or_ctrl_shift("s"))

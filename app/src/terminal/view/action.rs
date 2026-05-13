@@ -327,14 +327,12 @@ pub enum TerminalAction {
     AttemptLoginGatedFeature,
     StartFileDropTarget,
     StopFileDropTarget,
-    OpenTeamSettingsPage,
     SetMarkedText {
         marked_text: UserInput<String>,
         selected_range: Range<usize>,
     },
     ClearMarkedText,
     SelectAgenticSuggestion(i32),
-    HideTelemetryBannerPermanently,
     ShowInitializationBlock,
     /// This is for debugging, dev only for now
     LoadAgentModeConversation,
@@ -585,14 +583,12 @@ impl fmt::Debug for TerminalAction {
             RunNativeShellCompletions { buffer_text, .. } => {
                 write!(f, "RunNativeShellCompletions({buffer_text:?})")
             }
-            OpenTeamSettingsPage => write!(f, "OpenTeamSettingsPage"),
             SetMarkedText {
                 marked_text,
                 selected_range,
             } => write!(f, "SetMarkedText {{{marked_text:?}, {selected_range:?}}}"),
             ClearMarkedText => write!(f, "ClearMarkedText"),
             SelectAgenticSuggestion(index) => write!(f, "SelectAgenticSuggestion({index:?})"),
-            HideTelemetryBannerPermanently => write!(f, "HideTelemetryBannerPermanently"),
             ShowInitializationBlock => write!(f, "ShowInitializationBlock"),
             LoadAgentModeConversation => write!(f, "LoadAgentModeConversation"),
             ShowWarpifySettings => write!(f, "ShowWarpifySettings"),

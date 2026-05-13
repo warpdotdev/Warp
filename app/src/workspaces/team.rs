@@ -43,14 +43,6 @@ impl Ord for TeamMember {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct DiscoverableTeam {
-    pub team_uid: String,
-    pub num_members: i64,
-    pub name: String,
-    pub team_accepting_invites: bool,
-}
-
 #[derive(PartialEq, Eq, Clone)]
 pub enum TeamDeleteDisabledReason {
     ActivePaidSubscription,

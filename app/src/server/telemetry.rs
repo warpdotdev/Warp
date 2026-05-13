@@ -54,7 +54,6 @@ use crate::settings::import::config::ParsedTerminalSetting;
 use crate::settings::import::config::SettingType;
 use crate::settings::import::model::TerminalType;
 use crate::settings::AgentModeCodingPermissionsType;
-use crate::settings_view::TeamsInviteOption;
 use crate::tab::TabTelemetryAction;
 use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::cli_agent_sessions::CLIAgentInputEntrypoint;
@@ -1345,7 +1344,6 @@ pub enum TelemetryEvent {
         source: LoginEventSource,
     },
     OpenNewSessionFromFilePath,
-    OpenTeamFromURI,
     ShowedSuggestedAgentModeWorkflowChip {
         logging_id: SuggestedLoggingId,
     },
@@ -1423,16 +1421,9 @@ pub enum TelemetryEvent {
         ui_location: LaunchConfigUiLocation,
         open_in_active_window: bool,
     },
-    TeamCreated,
-    TeamJoined,
-    TeamLeft,
-    TeamLinkCopied,
-    RemovedUserFromTeam,
     DeletedWorkflow,
     DeletedNotebook,
     ToggleApprovalsModal,
-    ChangedInviteViewOption(TeamsInviteOption),
-    SendEmailInvites,
     CommandCorrection {
         event: CommandCorrectionEvent,
     },
@@ -3723,7 +3714,6 @@ impl TelemetryEvent {
             | TelemetryEvent::NotificationClicked
             | TelemetryEvent::SignUpButtonClicked
             | TelemetryEvent::OpenNewSessionFromFilePath
-            | TelemetryEvent::OpenTeamFromURI
             | TelemetryEvent::SelectNavigationPaletteItem
             | TelemetryEvent::DragAndDropTab
             | TelemetryEvent::EditedInputBeforePrecmd
@@ -3733,16 +3723,9 @@ impl TelemetryEvent {
             | TelemetryEvent::ShowInFileExplorer
             | TelemetryEvent::OpenLaunchConfigSaveModal
             | TelemetryEvent::OpenLaunchConfigFile
-            | TelemetryEvent::TeamCreated
-            | TelemetryEvent::TeamJoined
-            | TelemetryEvent::TeamLeft
-            | TelemetryEvent::TeamLinkCopied
-            | TelemetryEvent::RemovedUserFromTeam
             | TelemetryEvent::DeletedWorkflow
             | TelemetryEvent::DeletedNotebook
             | TelemetryEvent::ToggleApprovalsModal
-            | TelemetryEvent::ChangedInviteViewOption(_)
-            | TelemetryEvent::SendEmailInvites
             | TelemetryEvent::ResourceCenterOpened
             | TelemetryEvent::ResourceCenterTipsCompleted
             | TelemetryEvent::ResourceCenterTipsSkipped
@@ -4341,7 +4324,6 @@ impl TelemetryEvent {
             | TelemetryEvent::LoginLaterButtonClicked { .. }
             | TelemetryEvent::LoginLaterConfirmationButtonClicked { .. }
             | TelemetryEvent::OpenNewSessionFromFilePath
-            | TelemetryEvent::OpenTeamFromURI
             | TelemetryEvent::SelectNavigationPaletteItem
             | TelemetryEvent::SelectCommandPaletteOption(_)
             | TelemetryEvent::PaletteSearchOpened { .. }
@@ -4371,16 +4353,9 @@ impl TelemetryEvent {
             | TelemetryEvent::SaveLaunchConfig { .. }
             | TelemetryEvent::OpenLaunchConfigFile
             | TelemetryEvent::OpenLaunchConfig { .. }
-            | TelemetryEvent::TeamCreated
-            | TelemetryEvent::TeamJoined
-            | TelemetryEvent::TeamLeft
-            | TelemetryEvent::TeamLinkCopied
-            | TelemetryEvent::RemovedUserFromTeam
             | TelemetryEvent::DeletedWorkflow
             | TelemetryEvent::DeletedNotebook
             | TelemetryEvent::ToggleApprovalsModal
-            | TelemetryEvent::ChangedInviteViewOption(_)
-            | TelemetryEvent::SendEmailInvites
             | TelemetryEvent::CommandCorrection { .. }
             | TelemetryEvent::SetLineHeight { .. }
             | TelemetryEvent::ResourceCenterOpened

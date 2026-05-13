@@ -342,9 +342,6 @@ impl PromptSuggestionsView {
             PromptAlertEvent::SignupAnonymousUser => {
                 ctx.emit(PromptSuggestionsEvent::SignupAnonymousUser);
             }
-            PromptAlertEvent::OpenPrivacyPage => {
-                ctx.emit(PromptSuggestionsEvent::OpenPrivacyPage);
-            }
         }
     }
 }
