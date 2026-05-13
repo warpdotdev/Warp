@@ -1,5 +1,6 @@
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_management::telemetry::{AgentManagementTelemetryEvent, ArtifactType};
+use crate::ai::ambient_agents::AmbientAgentTask;
 use crate::ai::ambient_agents::{
     conversation_output_status_from_conversation, AmbientAgentTaskId, AmbientConversationStatus,
 };
@@ -18,15 +19,12 @@ use warp_cli::agent::Harness;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::features::FeatureFlag;
 use warp_core::paths::home_relative_path;
-
-#[cfg(not(target_family = "wasm"))]
-use crate::ai::ambient_agents::AmbientAgentTask;
 use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::icons::Icon;
 use warp_core::ui::theme::{AnsiColorIdentifier, Fill};
 use warpui::elements::{
-    Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex,
-    MainAxisSize, Padding, ParentElement, Radius, Shrinkable, Text,
+    Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
+    Expanded, Flex, MainAxisSize, Padding, ParentElement, Radius, Shrinkable, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::{
@@ -34,7 +32,6 @@ use warpui::{
     ViewHandle,
 };
 
-#[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::ServerApiProvider;
 
 /// Metadata collected for display in the tombstone.
@@ -125,8 +122,6 @@ impl TombstoneDisplayData {
         }
     }
 
-    /// Update with data from an AmbientAgentTask fetch
-    #[cfg(not(target_family = "wasm"))]
     fn enrich_from_task(&mut self, task: AmbientAgentTask) {
         // Use task title if we don't have a conversation title.
         if self.title.is_none() {
@@ -138,14 +133,17 @@ impl TombstoneDisplayData {
         }
         if let Some(config) = &task.agent_config_snapshot {
             self.skill_name = config.name.clone();
-            // Default to Oz when the snapshot exists but has no explicit harness.
-            self.harness = Some(
-                config
-                    .harness
-                    .as_ref()
-                    .map(|h| h.harness_type)
-                    .unwrap_or(Harness::Oz),
-            );
+            #[cfg(not(target_family = "wasm"))]
+            {
+                // Only desktop uses harness to decide whether "Continue locally" is allowed.
+                self.harness = Some(
+                    config
+                        .harness
+                        .as_ref()
+                        .map(|h| h.harness_type)
+                        .unwrap_or(Harness::Oz),
+                );
+            }
         }
 
         if task.state.is_failure_like() {
@@ -190,9 +188,7 @@ impl ConversationEndedTombstoneView {
     pub fn new(
         ctx: &mut ViewContext<Self>,
         terminal_view_id: EntityId,
-        #[cfg_attr(target_family = "wasm", allow(unused_variables))] task_id: Option<
-            AmbientAgentTaskId,
-        >,
+        task_id: Option<AmbientAgentTaskId>,
     ) -> Self {
         let conversation_id = BlocklistAIHistoryModel::handle(ctx)
             .as_ref(ctx)
@@ -325,7 +321,6 @@ impl ConversationEndedTombstoneView {
         });
 
         // Fetch AmbientAgentTask for additional metadata (source, skill, artifacts, etc.)
-        #[cfg(not(target_family = "wasm"))]
         if let Some(task_id) = task_id {
             let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
             ctx.spawn(
@@ -592,7 +587,7 @@ impl View for ConversationEndedTombstoneView {
             .with_main_axis_size(MainAxisSize::Max)
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_spacing(12.)
-            .with_child(Shrinkable::new(1., left_column.finish()).finish())
+            .with_child(Expanded::new(1., left_column.finish()).finish())
             .with_child(self.render_action_buttons(appearance, app))
             .finish();
 

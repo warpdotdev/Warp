@@ -1,13 +1,16 @@
 #[path = "file_watchers/mod.rs"]
 mod file_watchers;
 use crate::ai::mcp::{McpIntegration, TemplatableMCPServerManager};
-pub use file_watchers::{extract_skill_parent_directory, SkillWatcher, SkillWatcherEvent};
+pub use file_watchers::{
+    extract_skill_parent_directory, read_skills_from_directories, SkillWatcher, SkillWatcherEvent,
+};
 
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
+use crate::keyboard::keybinding_file_path;
 use crate::settings::user_preferences_toml_file_path;
 
 use super::SkillDescriptor;
@@ -528,6 +531,7 @@ async fn read_bundled_skills(skills_dir: &Path) -> HashMap<String, ParsedSkill> 
 /// - `{{warp_url_scheme}}` - The URL scheme (e.g., `warp`, `warpdev`, `warppreview`)
 /// - `{{settings_schema_path}}` - Path to the bundled JSON settings schema
 /// - `{{settings_file_path}}` - Path to the user's settings TOML file
+/// - `{{keybindings_file_path}}` - Path to the user's keybindings YAML file
 fn build_bundled_skill_context() -> HashMap<String, String> {
     let mut context: HashMap<String, String> = [
         (
@@ -545,6 +549,10 @@ fn build_bundled_skill_context() -> HashMap<String, String> {
         (
             "settings_file_path".to_owned(),
             user_preferences_toml_file_path().display().to_string(),
+        ),
+        (
+            "keybindings_file_path".to_owned(),
+            keybinding_file_path().display().to_string(),
         ),
     ]
     .into_iter()

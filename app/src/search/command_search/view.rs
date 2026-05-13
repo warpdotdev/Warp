@@ -336,6 +336,9 @@ impl CommandSearchView {
                                     },
                                     ctx,
                                 );
+                                if let Some(query) = mixer.current_query().cloned() {
+                                    mixer.run_query(query, ctx);
+                                }
                                 ctx.notify();
                             }
                         }
@@ -1014,7 +1017,7 @@ impl View for CommandSearchView {
         let appearance = Appearance::as_ref(app);
         let mixer = self.mixer.as_ref(app);
 
-        let should_show_zero_state = self.search_bar_state.as_ref(app).should_show_zero_state();
+        let should_show_zero_state = self.search_bar.as_ref(app).should_show_zero_state(app);
         let panel_contents_body = if should_show_zero_state {
             ChildView::new(&self.zero_state_handle).finish()
         } else if mixer.is_loading() && mixer.are_results_empty() {
@@ -1161,5 +1164,5 @@ pub mod styles {
 }
 
 #[cfg(test)]
-#[path = "view_test.rs"]
+#[path = "view_tests.rs"]
 mod tests;

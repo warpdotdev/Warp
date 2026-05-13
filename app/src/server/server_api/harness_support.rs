@@ -94,6 +94,11 @@ pub struct ResolvedHarnessPrompt {
     /// system context. Empty when no resumption is in effect.
     #[serde(default)]
     pub resumption_prompt: Option<String>,
+    /// Optional server-retrieved context relevant to the task prompt. Each harness
+    /// decides how to inject this — typically by prepending it to the user-turn prompt
+    /// after any resumption preamble.
+    #[serde(default)]
+    pub context: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -110,6 +115,32 @@ struct NotifyUserRequest {
 struct FinishTaskRequest {
     success: bool,
     summary: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct ShutdownError {
+    category: String,
+    message: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct ReportShutdownRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<ShutdownError>,
+}
+
+impl ReportShutdownRequest {
+    /// A clean shutdown with no error payload.
+    pub fn clean() -> Self {
+        Self { error: None }
+    }
+
+    /// An abnormal shutdown carrying an error category and message.
+    pub fn abnormal(category: String, message: String) -> Self {
+        Self {
+            error: Some(ShutdownError { category, message }),
+        }
+    }
 }
 
 /// Trait for API endpoints used to support third-party agent harnesses in Oz.
@@ -144,6 +175,16 @@ pub trait HarnessSupportClient: 'static + Send + Sync {
     /// Report task completion or failure. The server derives PR links/branches from
     /// artifacts already reported via `report_artifact`.
     async fn finish_task(&self, success: bool, summary: &str) -> Result<()>;
+
+    /// Report a clean shutdown of the agent process.
+    async fn report_clean_shutdown(&self) -> Result<()>;
+
+    /// Report an error shutdown of the agent process.
+    async fn report_error_shutdown(
+        &self,
+        error_category: String,
+        error_message: String,
+    ) -> Result<()>;
 
     /// Get presigned upload targets for a workspace state snapshot.
     ///
@@ -353,6 +394,26 @@ impl HarnessSupportClient for ServerApi {
                 success,
                 summary: summary.to_string(),
             },
+        )
+        .await
+    }
+
+    async fn report_clean_shutdown(&self) -> Result<()> {
+        self.post_public_api_unit(
+            "harness-support/report-shutdown",
+            &ReportShutdownRequest::clean(),
+        )
+        .await
+    }
+
+    async fn report_error_shutdown(
+        &self,
+        error_category: String,
+        error_message: String,
+    ) -> Result<()> {
+        self.post_public_api_unit(
+            "harness-support/report-shutdown",
+            &ReportShutdownRequest::abnormal(error_category, error_message),
         )
         .await
     }

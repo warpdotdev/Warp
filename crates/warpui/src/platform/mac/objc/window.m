@@ -432,6 +432,15 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
     // We need to bypass the default performKeyEquivalent implementation which, in the case of
     // having keybinding conflicts with MacOS itself, yields priority to the OS.
     if ([event type] == NSEventTypeKeyDown) {
+        // Skip the key-equivalent priority path while the IME has marked text. Arrow keys carry
+        // NSEventModifierFlagFunction, so AppKit delivers them here before keyDown:. If we call
+        // keyDownImpl and Rust suppresses the keystroke (composing mode), we return NO, and AppKit
+        // proceeds to call keyDown: — running interpretKeyEvents a second time for the same event.
+        // See #9709.
+        if ([(WarpHostView *)self.contentView hasMarkedText]) {
+            return [super performKeyEquivalent:event];
+        }
+
         NSApplication *application = [NSApplication sharedApplication];
 
         // If we are recording a keystroke for an EditableBinding.

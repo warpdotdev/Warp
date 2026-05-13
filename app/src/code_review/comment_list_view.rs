@@ -439,14 +439,6 @@ impl CommentListView {
         ctx.notify();
     }
 
-    pub fn set_repo_path(&mut self, repo_path: PathBuf, ctx: &mut ViewContext<Self>) {
-        self.repo_path = repo_path;
-        for state in self.comments_by_id.values_mut() {
-            state.card.update_title(Some(&self.repo_path));
-        }
-        ctx.notify();
-    }
-
     pub fn expand(&mut self, ctx: &mut ViewContext<Self>) {
         if self.is_collapsed {
             self.is_collapsed = false;

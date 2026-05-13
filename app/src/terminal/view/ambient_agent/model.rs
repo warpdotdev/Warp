@@ -5,31 +5,44 @@ use session_sharing_protocol::common::SessionId;
 use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
+use warp_terminal::model::BlockId;
 use warpui::r#async::{SpawnedFutureHandle, Timer};
-use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
+use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::{conversation::AIConversationId, extract_user_query_mode};
 use crate::ai::ambient_agents::spawn::{spawn_task, submit_run_followup, AmbientAgentEvent};
-use crate::ai::ambient_agents::task::HarnessConfig;
+use crate::ai::ambient_agents::task::{HarnessAuthSecretsConfig, HarnessConfig};
 use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{
     OUT_OF_CREDITS_TASK_FAILURE_MESSAGE, SERVER_OVERLOADED_TASK_FAILURE_MESSAGE,
 };
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::touched_repos::TouchedWorkspace;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::PendingCloudLaunch;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
+use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ServerId, SyncId};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::server::server_api::ai::InitialSnapshotToken;
 use crate::server::server_api::ai::{
     AgentConfigSnapshot, AmbientAgentTaskState, AttachmentInput, SpawnAgentRequest,
 };
-use crate::server::server_api::{AIApiError, CloudAgentCapacityError, ServerApiProvider};
-use crate::terminal::view::ambient_agent::SetupCommandState;
+use crate::server::server_api::{
+    AIApiError, ClientError, CloudAgentCapacityError, ServerApiProvider,
+};
+use crate::settings::PrivacySettings;
+use crate::terminal::view::ambient_agent::{SetupCommandGroupId, SetupCommandState};
 use crate::terminal::CLIAgent;
+use crate::workspaces::user_workspaces::UserWorkspaces;
+use crate::workspaces::workspace::AdminEnablementSetting;
 
 use super::AmbientAgentProgressUIState;
 
@@ -62,6 +75,77 @@ impl AgentProgress {
 pub enum SessionStartupKind {
     InitialRun,
     Followup,
+}
+
+/// Gates `submit_handoff` against double-submits.
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) enum HandoffSubmissionState {
+    #[default]
+    Idle,
+    Queued,
+    Starting,
+}
+
+/// Outcome of the chip-click async snapshot upload.
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) enum SnapshotUploadStatus {
+    /// Upload is still in flight, or has not started yet.
+    #[default]
+    Pending,
+    /// Touched workspace was empty so no upload happened. The cloud agent will
+    /// start with no rehydration content.
+    SkippedEmptyWorkspace,
+    /// Upload succeeded; the inner token is sent to the server on spawn.
+    Uploaded(InitialSnapshotToken),
+    /// Upload failed. The error message is surfaced as a toast via
+    /// `HandoffSnapshotUploadFailed`.
+    Failed(String),
+}
+
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+impl SnapshotUploadStatus {
+    /// True when the upload has resolved to a final state. `Pending` blocks
+    /// submit; all other variants (including `Failed`) allow it to proceed.
+    /// On `Failed`, `initial_snapshot_token()` returns `None` so the cloud
+    /// run starts without a local file snapshot.
+    fn is_settled(&self) -> bool {
+        !matches!(self, Self::Pending)
+    }
+
+    /// Returns the initial snapshot token to send on spawn, if any.
+    fn initial_snapshot_token(&self) -> Option<InitialSnapshotToken> {
+        match self {
+            Self::Uploaded(token) => Some(token.clone()),
+            Self::SkippedEmptyWorkspace | Self::Pending | Self::Failed(_) => None,
+        }
+    }
+}
+
+/// Per-pane handoff context. Seeded by the chip / slash command's open path on a
+/// fresh cloud-mode pane and consumed by `submit_handoff`. Its presence is the
+/// single source of truth for "this pane is in handoff mode" via
+/// `is_local_to_cloud_handoff()`.
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+#[derive(Debug, Clone)]
+pub(crate) struct PendingHandoff {
+    /// Forked conversation id minted by `POST /agent/conversations/{conversation_id}/fork`.
+    /// Sent under `conversation_id` on the subsequent `POST /agent/runs` request.
+    /// `None` for fresh cloud launches that have no source conversation to fork.
+    pub(crate) forked_conversation_id: Option<String>,
+    /// Title override for the cloud run (e.g. "<title> (Moved to cloud)").
+    pub(crate) title: Option<String>,
+    /// `None` until `derive_touched_workspace` completes.
+    pub(crate) touched_workspace: Option<TouchedWorkspace>,
+    /// Outcome of the async snapshot upload.
+    pub(crate) snapshot_upload: SnapshotUploadStatus,
+    /// Gates submit — prevents double-submitting while the spawn is in flight.
+    pub(crate) submission_state: HandoffSubmissionState,
+    /// When the user types `& query` or `/handoff query`, the launch payload is
+    /// stashed here so `maybe_auto_submit_handoff` can consume it once
+    /// the touched workspace and snapshot upload have settled.
+    pub(crate) auto_submit: Option<PendingCloudLaunch>,
 }
 
 /// Status of the ambient agent run.
@@ -128,13 +212,14 @@ pub struct AmbientAgentViewModel {
     /// Selected worker host for the cloud agent run. Populated from the HostSelector
     /// (which resolves env var > workspace setting) and read by `spawn_agent`.
     worker_host: Option<String>,
-    /// Whether the optimistic InitialUserQuery block has been inserted for the current run.
-    has_inserted_cloud_mode_user_query_block: bool,
-    /// Whether the harness CLI (e.g. `claude`, `gemini`) has started running for a non-oz run.
+    /// Selected model id for a third-party harness (e.g. `"opus"` for Claude).
+    harness_model_id: Option<String>,
+    /// Name of the selected auth secret for the current non-Oz harness.
+    harness_auth_secret_name: Option<String>,
+    /// Whether the harness CLI
     /// Used to transition the cloud-mode setup UI out of the pre-first-exchange phase when
     /// there is no oz `AppendedExchange` to key off of.
     harness_command_started: bool,
-    optimistically_rendered_user_queries: Vec<String>,
 
     /// Session ID for the currently running ambient execution, if the run has attached to a live
     /// shared session.
@@ -145,12 +230,20 @@ pub struct AmbientAgentViewModel {
     last_ended_execution_session_id: Option<SessionId>,
     /// Prompt text for a follow-up that has been submitted but not yet attached to a new session.
     pending_followup_prompt: Option<String>,
+
+    /// See [`PendingHandoff`].
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pending_handoff: Option<PendingHandoff>,
 }
 
 impl AmbientAgentViewModel {
     pub fn new(terminal_view_id: EntityId, ctx: &mut ModelContext<Self>) -> Self {
         ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
             me.handle_cloud_model_event(event, ctx);
+        });
+
+        ctx.subscribe_to_model(&HarnessAvailabilityModel::handle(ctx), |me, _event, ctx| {
+            me.validate_selected_harness(ctx);
         });
 
         // Validate the default environment once Warp Drive sync completes.
@@ -163,6 +256,20 @@ impl AmbientAgentViewModel {
 
         let ui_state = AmbientAgentProgressUIState::new(ctx);
 
+        let harness = Harness::default();
+        let availability = HarnessAvailabilityModel::as_ref(ctx);
+        // If the default harness is not available, find the first available one.
+        let harness = if !availability.is_harness_enabled(harness) {
+            availability
+                .available_harnesses()
+                .iter()
+                .find(|h| h.enabled)
+                .map(|h| h.harness)
+                .unwrap_or(harness)
+        } else {
+            harness
+        };
+
         Self {
             status: Status::Composing,
             request: None,
@@ -173,14 +280,16 @@ impl AmbientAgentViewModel {
             setup_commands_state: Default::default(),
             task_id: None,
             conversation_id: None,
-            harness: Harness::default(),
+            harness,
             worker_host: None,
-            has_inserted_cloud_mode_user_query_block: false,
+            harness_model_id: None,
+            harness_auth_secret_name: None,
             harness_command_started: false,
-            optimistically_rendered_user_queries: vec![],
             active_execution_session_id: None,
             last_ended_execution_session_id: None,
             pending_followup_prompt: None,
+            #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+            pending_handoff: None,
         }
     }
 
@@ -196,15 +305,43 @@ impl AmbientAgentViewModel {
         &mut self.setup_commands_state
     }
 
+    pub(super) fn start_new_setup_command_group(&mut self, ctx: &mut ModelContext<Self>) {
+        self.setup_commands_state.start_new_group();
+        self.harness_command_started = false;
+        ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+    }
+
+    pub(super) fn finish_setup_command_group(
+        &mut self,
+        group_id: SetupCommandGroupId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.setup_commands_state.is_running(group_id) {
+            self.setup_commands_state.finish_group(group_id);
+            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+        }
+    }
+
+    pub(super) fn set_setup_command_group_visibility(
+        &mut self,
+        group_id: SetupCommandGroupId,
+        is_visible: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if is_visible != self.setup_commands_state.should_expand(group_id) {
+            self.setup_commands_state
+                .set_should_expand(group_id, is_visible);
+            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
+        }
+    }
+
     pub(super) fn set_setup_command_visibility(
         &mut self,
         is_visible: bool,
         ctx: &mut ModelContext<Self>,
     ) {
-        if is_visible != self.setup_commands_state.should_expand() {
-            self.setup_commands_state.set_should_expand(is_visible);
-            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
-        }
+        let group_id = self.setup_commands_state.current_group_id();
+        self.set_setup_command_group_visibility(group_id, is_visible, ctx);
     }
 
     /// Handles CloudModel events to keep environment_id in sync.
@@ -270,14 +407,29 @@ impl AmbientAgentViewModel {
     }
 
     pub fn selected_harness(&self) -> Harness {
-        self.harness
+        if self.is_local_to_cloud_handoff() {
+            Harness::Oz
+        } else {
+            self.harness
+        }
     }
 
     pub fn set_harness(&mut self, harness: Harness, ctx: &mut ModelContext<Self>) {
+        // for local to cloud handoff, oz is the only option
+        // (we'll need to update this to lock to the correct 3p harness if/when
+        // we implement local -> cloud handoff for non-oz conversations).
+        let harness = if self.is_local_to_cloud_handoff() {
+            Harness::Oz
+        } else {
+            harness
+        };
+
         if self.harness == harness {
             return;
         }
         self.harness = harness;
+        self.harness_model_id = None;
+        self.harness_auth_secret_name = None;
         ctx.emit(AmbientAgentViewModelEvent::HarnessSelected);
     }
 
@@ -285,10 +437,42 @@ impl AmbientAgentViewModel {
         self.worker_host = worker_host;
     }
 
+    pub fn selected_harness_model_id(&self) -> Option<&str> {
+        self.harness_model_id.as_deref()
+    }
+
+    pub fn set_harness_model_id(
+        &mut self,
+        harness_model_id: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.harness_model_id == harness_model_id {
+            return;
+        }
+        self.harness_model_id = harness_model_id;
+        ctx.emit(AmbientAgentViewModelEvent::HarnessModelSelected);
+    }
+
+    pub fn selected_harness_auth_secret_name(&self) -> Option<&str> {
+        self.harness_auth_secret_name.as_deref()
+    }
+
+    pub fn set_harness_auth_secret_name(
+        &mut self,
+        name: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.harness_auth_secret_name == name {
+            return;
+        }
+        self.harness_auth_secret_name = name;
+        ctx.emit(AmbientAgentViewModelEvent::AuthSecretSelected);
+    }
+
     /// True when the run is configured to use a non-Oz execution harness and the
     /// required feature flags are enabled.
     pub(super) fn is_third_party_harness(&self) -> bool {
-        FeatureFlag::AgentHarness.is_enabled() && self.harness != Harness::Oz
+        FeatureFlag::AgentHarness.is_enabled() && self.selected_harness() != Harness::Oz
     }
 
     /// Returns the [`CLIAgent`] corresponding to the currently selected harness when it is a
@@ -296,7 +480,186 @@ impl AmbientAgentViewModel {
     /// Used to drive the correct tab icon for a cloud run as soon as a non-oz harness is
     /// selected, even before the CLI session is registered with [`CLIAgentSessionsModel`].
     pub fn selected_third_party_cli_agent(&self) -> Option<CLIAgent> {
-        CLIAgent::from_harness(self.harness)
+        CLIAgent::from_harness(self.selected_harness())
+    }
+
+    /// True when this pane is a local-to-cloud handoff pane. Set when the handoff opens
+    /// the pane and stays true through and past the spawn.
+    pub(crate) fn is_local_to_cloud_handoff(&self) -> bool {
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        {
+            self.pending_handoff.is_some()
+        }
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        {
+            false
+        }
+    }
+
+    /// True when this pane is a handoff pane and the touched-workspace derivation +
+    /// snapshot upload have both settled and no submission is in flight. Used by the
+    /// input layer to gate clearing the editor buffer on submit.
+    pub(crate) fn is_handoff_ready_to_submit(&self) -> bool {
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        {
+            let Some(handoff) = self.pending_handoff.as_ref() else {
+                return false;
+            };
+            handoff.touched_workspace.is_some()
+                && handoff.snapshot_upload.is_settled()
+                && matches!(
+                    handoff.submission_state,
+                    HandoffSubmissionState::Idle | HandoffSubmissionState::Queued
+                )
+        }
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        {
+            false
+        }
+    }
+
+    /// Seeds the handoff context onto this pane. Called by the workspace bootstrap
+    /// after splitting in a fresh cloud-mode pane and entering agent view.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn set_pending_handoff(
+        &mut self,
+        pending: Option<PendingHandoff>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let previous_harness = self.selected_harness();
+        self.pending_handoff = pending;
+        if self.selected_harness() != previous_harness {
+            ctx.emit(AmbientAgentViewModelEvent::HarnessSelected);
+        }
+        ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+    }
+
+    /// Updates the touched workspace once async derivation completes.
+    /// No-op when no handoff context is set.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn set_pending_handoff_workspace(
+        &mut self,
+        workspace: TouchedWorkspace,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(handoff) = self.pending_handoff.as_mut() else {
+            return;
+        };
+        handoff.touched_workspace = Some(workspace);
+        ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+    }
+
+    /// Records the outcome of the async snapshot upload.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn set_pending_handoff_snapshot_upload(
+        &mut self,
+        snapshot_upload: SnapshotUploadStatus,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(handoff) = self.pending_handoff.as_mut() else {
+            return;
+        };
+        handoff.snapshot_upload = snapshot_upload;
+        ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+    }
+
+    /// Records a snapshot upload failure on the pending handoff. The run will
+    /// proceed without a local file snapshot (the cloud agent still has the
+    /// forked conversation context).
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn record_handoff_snapshot_upload_failed(
+        &mut self,
+        error_message: String,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.set_pending_handoff_snapshot_upload(
+            SnapshotUploadStatus::Failed(error_message.clone()),
+            ctx,
+        );
+        ctx.emit(AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { error_message });
+    }
+
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn build_handoff_spawn_request(
+        &self,
+        prompt: String,
+        attachments: Vec<AttachmentInput>,
+        forked_conversation_id: Option<String>,
+        initial_snapshot_token: Option<InitialSnapshotToken>,
+        ctx: &AppContext,
+    ) -> SpawnAgentRequest {
+        let config = Some(self.build_default_spawn_config(ctx));
+        let (prompt, mode) = extract_user_query_mode(prompt);
+        SpawnAgentRequest {
+            prompt,
+            mode,
+            config,
+            title: self.pending_handoff.as_ref().and_then(|h| h.title.clone()),
+            team: None,
+            skill: None,
+            attachments,
+            interactive: None,
+            parent_run_id: None,
+            runtime_skills: vec![],
+            referenced_attachments: vec![],
+            conversation_id: forked_conversation_id,
+            initial_snapshot_token,
+            agent_identity_uid: None,
+            snapshot_disabled: should_disable_snapshot(ctx).then_some(true),
+        }
+    }
+
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn queue_handoff_auto_submit(&mut self, ctx: &mut ModelContext<Self>) -> bool {
+        let Some((launch, forked_conversation_id)) = ({
+            let handoff = self.pending_handoff.as_mut();
+            handoff.and_then(|handoff| {
+                if !matches!(handoff.submission_state, HandoffSubmissionState::Idle) {
+                    return None;
+                }
+                let launch = handoff.auto_submit.as_ref()?.clone();
+                handoff.submission_state = HandoffSubmissionState::Queued;
+                Some((launch, handoff.forked_conversation_id.clone()))
+            })
+        }) else {
+            return false;
+        };
+
+        self.request = Some(self.build_handoff_spawn_request(
+            launch.prompt,
+            launch.attachments.request_attachments,
+            forked_conversation_id,
+            None,
+            ctx,
+        ));
+        self.status = Status::WaitingForSession {
+            progress: AgentProgress::new(),
+            kind: SessionStartupKind::InitialRun,
+        };
+        self.start_progress_timer(ctx);
+        ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+        ctx.emit(AmbientAgentViewModelEvent::DispatchedAgent);
+        true
+    }
+
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn maybe_auto_submit_handoff(
+        &mut self,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<PendingCloudLaunch> {
+        let handoff = self.pending_handoff.as_mut()?;
+        if handoff.touched_workspace.is_none()
+            || !handoff.snapshot_upload.is_settled()
+            || !matches!(
+                handoff.submission_state,
+                HandoffSubmissionState::Idle | HandoffSubmissionState::Queued
+            )
+        {
+            return None;
+        }
+        let launch = handoff.auto_submit.take()?;
+        ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+        Some(launch)
     }
 
     /// Whether the harness CLI has started running. Only meaningful for non-oz runs.
@@ -306,7 +669,11 @@ impl AmbientAgentViewModel {
 
     /// Marks the harness CLI as started and emits `HarnessCommandStarted`.
     /// Idempotent: subsequent calls after the first are no-ops and do not re-emit.
-    pub(super) fn mark_harness_command_started(&mut self, ctx: &mut ModelContext<Self>) {
+    pub(super) fn mark_harness_command_started(
+        &mut self,
+        block_id: BlockId,
+        ctx: &mut ModelContext<Self>,
+    ) {
         debug_assert!(
             self.harness != Harness::Oz,
             "harness_command_started is only meaningful for non-oz runs"
@@ -315,7 +682,7 @@ impl AmbientAgentViewModel {
             return;
         }
         self.harness_command_started = true;
-        ctx.emit(AmbientAgentViewModelEvent::HarnessCommandStarted);
+        ctx.emit(AmbientAgentViewModelEvent::HarnessCommandStarted { block_id });
     }
 
     /// Sets the selected environment ID.
@@ -335,6 +702,16 @@ impl AmbientAgentViewModel {
         ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
     }
 
+    /// Resets to the first enabled harness if the current selection is no longer enabled.
+    fn validate_selected_harness(&mut self, ctx: &mut ModelContext<Self>) {
+        let model = HarnessAvailabilityModel::as_ref(ctx);
+        if !model.is_harness_enabled(self.harness) {
+            if let Some(first_enabled) = model.available_harnesses().iter().find(|h| h.enabled) {
+                self.set_harness(first_enabled.harness, ctx);
+            }
+        }
+    }
+
     /// Whether or not this terminal session is for an ambient agent.
     pub fn is_ambient_agent(&self) -> bool {
         true
@@ -343,24 +720,6 @@ impl AmbientAgentViewModel {
     /// Returns the task ID for the current cloud agent task, if one has been spawned.
     pub fn task_id(&self) -> Option<AmbientAgentTaskId> {
         self.task_id
-    }
-
-    pub fn has_inserted_cloud_mode_user_query_block(&self) -> bool {
-        self.has_inserted_cloud_mode_user_query_block
-    }
-
-    pub fn set_has_inserted_cloud_mode_user_query_block(&mut self, has_inserted: bool) {
-        self.has_inserted_cloud_mode_user_query_block = has_inserted;
-    }
-
-    pub fn record_optimistic_user_query(&mut self, prompt: String) {
-        self.optimistically_rendered_user_queries.push(prompt);
-    }
-
-    pub fn has_optimistic_user_query(&self, prompt: &str) -> bool {
-        self.optimistically_rendered_user_queries
-            .iter()
-            .any(|query| query == prompt)
     }
 
     /// Whether or not this terminal session is in the setup state (first-time environment creation).
@@ -396,6 +755,19 @@ impl AmbientAgentViewModel {
     /// Whether or not the ambient agent is currently running.
     pub fn is_agent_running(&self) -> bool {
         matches!(self.status, Status::AgentRunning)
+    }
+
+    /// Returns true when an existing ambient task can accept a follow-up prompt.
+    ///
+    /// `AgentRunning` means this pane has moved past setup/composition into an ambient task view;
+    /// `active_execution_session_id` is the live-session signal. After a Cloud Mode execution ends,
+    /// the status stays `AgentRunning` while the active session is cleared, which is the editable
+    /// post-run state where follow-ups are allowed.
+    pub fn is_ready_for_cloud_followup_prompt(&self) -> bool {
+        self.task_id.is_some()
+            && self.active_execution_session_id.is_none()
+            && self.pending_followup_prompt.is_none()
+            && matches!(self.status, Status::AgentRunning)
     }
 
     /// Whether or not we should show a status footer (loading, error, auth, or cancelled).
@@ -570,12 +942,12 @@ impl AmbientAgentViewModel {
         self.environment_id = None;
         self.task_id = None;
         self.conversation_id = None;
-        self.has_inserted_cloud_mode_user_query_block = false;
+        self.harness_model_id = None;
         self.harness_command_started = false;
-        self.optimistically_rendered_user_queries.clear();
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
         self.pending_followup_prompt = None;
+        self.setup_commands_state = Default::default();
         self.stop_progress_timer();
         ctx.notify();
     }
@@ -585,6 +957,60 @@ impl AmbientAgentViewModel {
         self.conversation_id = id;
     }
 
+    /// Builds the default `AgentConfigSnapshot` for spawning a cloud agent from this pane.
+    ///
+    /// Reads the user's preferred model, computer-use autonomy, optional self-hosted
+    /// host (`WARP_CLOUD_MODE_DEFAULT_HOST`), and the pane's currently-selected env
+    /// and harness. Shared by `spawn_agent` and the local-to-cloud handoff path so
+    /// both flows route to the same worker host and inherit the same defaults.
+    pub(crate) fn build_default_spawn_config(&self, ctx: &AppContext) -> AgentConfigSnapshot {
+        let selected_harness = self.selected_harness();
+        let computer_use_enabled = if selected_harness == Harness::Oz {
+            // If the harness is Oz, determine computer use based on workspace AI autonomy settings.
+            let CloudAgentComputerUseState { enabled, .. } =
+                ComputerUsePermission::resolve_cloud_agent_state(ctx);
+            Some(enabled)
+        } else {
+            None
+        };
+
+        let oz_model = (selected_harness == Harness::Oz).then(|| {
+            LLMPreferences::as_ref(ctx)
+                .get_active_base_model(ctx, Some(self.terminal_view_id))
+                .id
+                .to_string()
+        });
+        let third_party_harness = (selected_harness != Harness::Oz).then(|| HarnessConfig {
+            harness_type: selected_harness,
+            model_id: self.harness_model_id.clone(),
+        });
+
+        let harness_auth_secrets =
+            self.harness_auth_secret_name
+                .as_ref()
+                .and_then(|name| match selected_harness {
+                    Harness::Claude => Some(HarnessAuthSecretsConfig {
+                        claude_auth_secret_name: Some(name.clone()),
+                        codex_auth_secret_name: None,
+                    }),
+                    Harness::Codex => Some(HarnessAuthSecretsConfig {
+                        claude_auth_secret_name: None,
+                        codex_auth_secret_name: Some(name.clone()),
+                    }),
+                    _ => None,
+                });
+
+        AgentConfigSnapshot {
+            environment_id: self.environment_id.as_ref().map(|id| id.to_string()),
+            model_id: oz_model,
+            computer_use_enabled,
+            worker_host: self.worker_host.clone(),
+            harness: third_party_harness,
+            harness_auth_secrets,
+            ..Default::default()
+        }
+    }
+
     /// Spawn an ambient agent with the given prompt and current session configuration.
     pub fn spawn_agent(
         &mut self,
@@ -592,27 +1018,7 @@ impl AmbientAgentViewModel {
         attachments: Vec<AttachmentInput>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let model_id = LLMPreferences::as_ref(ctx)
-            .get_active_base_model(ctx, Some(self.terminal_view_id))
-            .id
-            .to_string();
-
-        // Determine computer_use_enabled based on workspace AI autonomy settings
-        let CloudAgentComputerUseState { enabled, .. } =
-            ComputerUsePermission::resolve_cloud_agent_state(ctx);
-        let computer_use_enabled = Some(enabled);
-
-        let harness_override =
-            (self.harness != Harness::Oz).then(|| HarnessConfig::from_harness_type(self.harness));
-
-        let config = Some(AgentConfigSnapshot {
-            environment_id: self.environment_id.as_ref().map(|id| id.to_string()),
-            model_id: Some(model_id),
-            computer_use_enabled,
-            worker_host: self.worker_host.clone(),
-            harness: harness_override,
-            ..Default::default()
-        });
+        let config = Some(self.build_default_spawn_config(ctx));
 
         let (prompt, mode) = extract_user_query_mode(prompt);
         let request = SpawnAgentRequest {
@@ -621,12 +1027,16 @@ impl AmbientAgentViewModel {
             config,
             title: None,
             team: None,
+            agent_identity_uid: None,
             skill: None,
             attachments,
             interactive: None,
             parent_run_id: None,
             runtime_skills: vec![],
             referenced_attachments: vec![],
+            conversation_id: None,
+            initial_snapshot_token: None,
+            snapshot_disabled: should_disable_snapshot(ctx).then_some(true),
         };
 
         self.spawn_internal(request, ctx);
@@ -860,7 +1270,6 @@ impl AmbientAgentViewModel {
             ctx
         );
 
-        use crate::server::server_api::ClientError;
         if let Some(client_error) = err.downcast_ref::<ClientError>() {
             if let Some(auth_url) = &client_error.auth_url {
                 self.handle_needs_github_auth(auth_url.clone(), client_error.error.clone(), ctx);
@@ -1014,8 +1423,67 @@ impl AmbientAgentViewModel {
 
         self.status = Status::Cancelled { progress };
         self.pending_followup_prompt = None;
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        if let Some(handoff) = self.pending_handoff.as_mut() {
+            handoff.auto_submit = None;
+        }
 
         ctx.emit(AmbientAgentViewModelEvent::Cancelled);
+    }
+
+    /// Drive the local-to-cloud handoff submission for this pane. Reads the cached
+    /// forked conversation id and snapshot upload result off the pending handoff,
+    /// then routes through `spawn_agent_with_request`. Caller must check
+    /// `is_handoff_ready_to_submit`.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    pub(crate) fn submit_handoff(
+        &mut self,
+        prompt: String,
+        attachments: Vec<AttachmentInput>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(handoff) = self.pending_handoff.as_mut() else {
+            log::warn!("submit_handoff called without pending_handoff set; ignoring");
+            return;
+        };
+        if matches!(handoff.submission_state, HandoffSubmissionState::Starting) {
+            // Double-submit guard: spawn already in flight.
+            return;
+        }
+        if handoff.touched_workspace.is_none() {
+            log::warn!("submit_handoff called before touched-workspace derivation completed");
+            return;
+        }
+        if !handoff.snapshot_upload.is_settled() {
+            log::warn!(
+                "submit_handoff called with unsettled snapshot_upload: {:?}",
+                handoff.snapshot_upload
+            );
+            return;
+        }
+        let initial_snapshot_token = handoff.snapshot_upload.initial_snapshot_token();
+        let forked_conversation_id = handoff.forked_conversation_id.clone();
+        handoff.submission_state = HandoffSubmissionState::Starting;
+        ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+
+        let request = self.build_handoff_spawn_request(
+            prompt,
+            attachments,
+            forked_conversation_id,
+            initial_snapshot_token,
+            ctx,
+        );
+        self.spawn_agent_with_request(request, ctx);
+    }
+
+    #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+    pub(crate) fn submit_handoff(
+        &mut self,
+        prompt: String,
+        attachments: Vec<AttachmentInput>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.spawn_agent(prompt, attachments, ctx);
     }
 
     /// Cancels the ambient agent task if one is currently running.
@@ -1089,14 +1557,42 @@ pub enum AmbientAgentViewModelEvent {
     HarnessSelected,
     /// The selected worker host changed via the HostSelector.
     HostSelected,
+    /// The selected third-party harness model id changed (e.g. user picked `"opus"` for Claude).
+    HarnessModelSelected,
     /// The harness CLI (for non-oz runs) has started executing in the shared session.
     /// Fires once per run and signals the transition out of the pre-first-exchange phase
     /// for claude / gemini / other third-party harnesses.
-    HarnessCommandStarted,
+    HarnessCommandStarted {
+        block_id: BlockId,
+    },
+    /// The pane's `pending_handoff` was updated.
+    PendingHandoffChanged,
+    /// The async handoff snapshot upload failed. The input layer subscribes to
+    /// surface the error as a toast.
+    HandoffSnapshotUploadFailed {
+        error_message: String,
+    },
 
     UpdatedSetupCommandVisibility,
+    /// The selected harness auth secret changed.
+    AuthSecretSelected,
+}
+
+pub(crate) fn should_disable_snapshot(ctx: &AppContext) -> bool {
+    let privacy = PrivacySettings::as_ref(ctx);
+    if !privacy.is_cloud_conversation_storage_enabled {
+        return true;
+    }
+    matches!(
+        UserWorkspaces::as_ref(ctx).get_cloud_conversation_storage_enablement_setting(),
+        AdminEnablementSetting::Disable
+    )
 }
 
 impl Entity for AmbientAgentViewModel {
     type Event = AmbientAgentViewModelEvent;
 }
+
+#[cfg(test)]
+#[path = "model_tests.rs"]
+mod tests;

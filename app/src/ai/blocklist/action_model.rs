@@ -17,8 +17,8 @@ mod preprocess;
 
 use crate::ai::agent::conversation::ConversationStatus;
 use crate::ai::agent::{
-    AIAgentActionResultType, AIAgentActionType, AIAgentExchange, CancellationReason,
-    CreateDocumentsResult, EditDocumentsResult, RequestCommandOutputResult,
+    AIAgentActionResultType, AIAgentActionType, AIAgentActionTypeDiscriminants, AIAgentExchange,
+    CancellationReason, CreateDocumentsResult, EditDocumentsResult, RequestCommandOutputResult,
 };
 use crate::ai::{
     agent::AIAgentInput,
@@ -737,6 +737,40 @@ impl BlocklistAIActionModel {
         );
     }
 
+    /// Removes a pending `RunAgents` action and records a `Denied`
+    /// result. Used when the orchestration config is disapproved at
+    /// the time the action becomes blocked on user confirmation.
+    pub fn deny_run_agents(
+        &mut self,
+        action_id: &AIAgentActionId,
+        reason: String,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let mut found: Option<(AIConversationId, AIAgentAction)> = None;
+        for (conv_id, queue) in self.pending_actions.iter_mut() {
+            if let Some(idx) = queue.iter().position(|a| &a.id == action_id) {
+                if let Some(action) = queue.remove(idx) {
+                    found = Some((*conv_id, action));
+                }
+                break;
+            }
+        }
+        let Some((conversation_id, action)) = found else {
+            log::warn!(
+                "BlocklistAIActionModel::deny_run_agents: no pending action for {action_id:?}"
+            );
+            return;
+        };
+        let result = Arc::new(AIAgentActionResult {
+            id: action.id,
+            task_id: action.task_id,
+            result: AIAgentActionResultType::RunAgents(
+                ai::agent::action_result::RunAgentsResult::Denied { reason },
+            ),
+        });
+        self.handle_action_result(conversation_id, result, None, ctx);
+    }
+
     /// Attempts to execute the next pending action for the active conversation.
     pub fn execute_next_action_for_user(
         &mut self,
@@ -1065,6 +1099,13 @@ impl BlocklistAIActionModel {
             return;
         };
         for action in actions_to_cancel.drain(..).collect_vec() {
+            log::info!(
+                "Canceling pending action of type {:?} conversation_id={conversation_id:?} action_id={:?}, reason={:?}, backtrace=\n{}",
+                AIAgentActionTypeDiscriminants::from(&action.action),
+                action.id,
+                reason,
+                std::backtrace::Backtrace::force_capture()
+            );
             self.cancel_pending_action(conversation_id, action, reason, ctx);
         }
     }

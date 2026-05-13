@@ -174,6 +174,7 @@ impl From<GqlWarpAiPolicy> for WarpAiPolicy {
             is_code_suggestions_toggleable: gql_warp_ai_policy.is_code_suggestions_toggleable,
             is_prompt_suggestions_toggleable: gql_warp_ai_policy.is_prompt_suggestions_toggleable,
             is_next_command_enabled: gql_warp_ai_policy.is_next_command_enabled,
+            is_git_operations_ai_enabled: gql_warp_ai_policy.is_git_operations_ai_enabled,
             is_voice_enabled: gql_warp_ai_policy.is_voice_enabled,
         }
     }
@@ -656,6 +657,7 @@ impl From<warp_graphql::workspace::LlmModelHost> for crate::ai::llms::LLMModelHo
         match gql_host {
             GqlLlmModelHost::DirectApi => Self::DirectApi,
             GqlLlmModelHost::AwsBedrock => Self::AwsBedrock,
+            GqlLlmModelHost::CustomEndpoint => Self::CustomEndpoint,
             GqlLlmModelHost::Other(value) => {
                 report_error!(anyhow!(
                     "Unknown LlmModelHost '{value}'. Make sure to update client GraphQL types!"
