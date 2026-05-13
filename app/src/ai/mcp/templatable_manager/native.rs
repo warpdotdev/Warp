@@ -64,6 +64,7 @@ use warpui::{windowing::WindowManager, ModelContext, SingletonEntity};
 
 use super::{
     oauth::{self, AuthContext, FileBasedPersistedCredentialsMap, PersistedCredentialsMap},
+    utils::{query_resources_for, query_tools_for},
     MCPServerState, SpawnedServerInfo, TemplatableMCPServerInfo, TemplatableMCPServerManager,
     TemplatableMCPServerManagerEvent,
 };
@@ -1944,28 +1945,11 @@ async fn spawn_server(
     let server_info = service.peer_info();
     logger.log(format!("[info] MCP: Connected to server: {server_info:#?}"));
 
-    let resources = if server_info.is_some_and(|info| info.capabilities.resources.is_some()) {
-        match service.list_all_resources().await {
-            Ok(result) => result,
-            Err(err) => {
-                log::warn!("Failed to list resources for MCP server '{server_name}': {err}");
-                vec![]
-            }
-        }
-    } else {
-        vec![]
-    };
-    let tools = match service.list_all_tools().await {
-        Ok(result) => result,
-        Err(rmcp::ServiceError::McpError(rmcp::model::ErrorData { code, .. }))
-            if code == rmcp::model::ErrorCode::METHOD_NOT_FOUND =>
-        {
-            vec![]
-        }
-        Err(err) => {
-            return Err(err.into());
-        }
-    };
+    let capabilities = server_info.map(|info| &info.capabilities);
+
+    let resources =
+        query_resources_for(capabilities, &server_name, || service.list_all_resources()).await;
+    let tools = query_tools_for(capabilities, &server_name, || service.list_all_tools()).await;
 
     Ok(TemplatableMCPServerInfo {
         name: server_name,

@@ -936,9 +936,7 @@ fn finalize_stream_state_backfills_reasoning_messages_from_completed_output() {
         .messages
         .iter()
         .find_map(|message| match &message.message {
-            Some(api::message::Message::AgentReasoning(reasoning)) => {
-                Some((message, reasoning))
-            }
+            Some(api::message::Message::AgentReasoning(reasoning)) => Some((message, reasoning)),
             _ => None,
         })
         .expect("expected a backfilled reasoning message");

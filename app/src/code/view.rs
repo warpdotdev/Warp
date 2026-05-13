@@ -74,6 +74,7 @@ use crate::pane_group::{
 };
 
 use super::{
+    buffer_location::FileLocation,
     diff_viewer::DiffViewer,
     editor::view::{CodeEditorEvent, CodeEditorView},
     editor_management::{CodeManager, CodeSource},
@@ -265,9 +266,9 @@ impl CodeView {
         line_col: Option<LineAndColumnArg>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let path = source.path();
+        let location = source.location();
         let mut view = Self::new_internal(source, ctx);
-        view.open_or_focus_existing(path, line_col, ctx);
+        view.open_or_focus_existing(location, line_col, ctx);
         #[cfg(feature = "local_fs")]
         {
             view.update_markdown_mode_segmented_control(ctx);
@@ -323,7 +324,8 @@ impl CodeView {
     ) -> Self {
         let mut view = Self::new_internal(source, ctx);
         for tab_snapshot in tabs {
-            let tab_data = view.build_tab_data(tab_snapshot.path.clone(), false, ctx);
+            let location = tab_snapshot.path.clone().map(FileLocation::Local);
+            let tab_data = view.build_tab_data(location, false, ctx);
             view.tab_group.push(tab_data);
         }
         let clamped_index = if view.tab_group.is_empty() {
@@ -367,14 +369,20 @@ impl CodeView {
         }
     }
 
-    fn construct_shared_buffer_editor_from_path(
+    /// Construct an editor backed by the global shared buffer for the given location.
+    ///
+    /// For local files, additional features are wired up (selection-as-context,
+    /// find-references, footer). Remote files skip these because LSP and
+    /// related tooling run on the local machine.
+    fn construct_editor_for_location(
         &mut self,
-        path: &Path,
+        location: FileLocation,
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<LocalCodeEditorView> {
+        let is_local = matches!(location, FileLocation::Local(_));
         ctx.add_typed_action_view(|ctx| {
             let mut editor = LocalCodeEditorView::new_with_global_buffer(
-                path,
+                location,
                 |buffer_state, ctx| {
                     ctx.add_typed_action_view(|ctx| {
                         CodeEditorView::new(
@@ -395,20 +403,23 @@ impl CodeView {
                 None,
                 ctx,
             );
-            if FeatureFlag::HoaCodeReview.is_enabled() {
-                editor =
-                    editor.with_selection_as_context(Box::new(get_context_target_terminal_view));
+            if is_local {
+                if FeatureFlag::HoaCodeReview.is_enabled() {
+                    editor = editor
+                        .with_selection_as_context(Box::new(get_context_target_terminal_view));
+                }
+                let mut editor = editor.with_find_references_provider(
+                    ShowFindReferencesCard {
+                        editor_window_id: ctx.window_id(),
+                        parent_scrollable_position_id: None,
+                    },
+                    ctx,
+                );
+                editor.add_footer(ctx);
+                editor
+            } else {
+                editor
             }
-            let mut editor = editor.with_find_references_provider(
-                ShowFindReferencesCard {
-                    editor_window_id: ctx.window_id(),
-                    parent_scrollable_position_id: None,
-                },
-                ctx,
-            );
-
-            editor.add_footer(ctx);
-            editor
         })
     }
 
@@ -450,16 +461,17 @@ impl CodeView {
 
     fn build_tab_data(
         &mut self,
-        path: Option<PathBuf>,
+        location: Option<FileLocation>,
         preview: bool,
         ctx: &mut ViewContext<Self>,
     ) -> TabData {
-        // Opt out of shared buffer if we are creating a new file.
-        // TODO(kevin): Once the file is saved, we should convert that into a shared buffer.
-        let code_editor = if let Some(path) = path.as_ref() {
-            self.construct_shared_buffer_editor_from_path(path, ctx)
-        } else {
-            self.construct_new_file_editor(ctx)
+        let (code_editor, tab_path) = match location {
+            Some(loc) => {
+                let path = loc.to_local_path().map(|p| p.to_path_buf());
+                let editor = self.construct_editor_for_location(loc, ctx);
+                (editor, path)
+            }
+            None => (self.construct_new_file_editor(ctx), None),
         };
 
         let editor = code_editor.as_ref(ctx).editor().clone();
@@ -476,7 +488,7 @@ impl CodeView {
         });
 
         // For new files (CodeSource::New), mark the editor as a new file and set default directory
-        if path.is_none() && matches!(self.source, CodeSource::New { .. }) {
+        if tab_path.is_none() && matches!(self.source, CodeSource::New { .. }) {
             let default_directory = self.source.default_directory().cloned();
             code_editor.update(ctx, |local_editor, _ctx| {
                 local_editor.set_new_file(true);
@@ -574,7 +586,11 @@ impl CodeView {
                     column_num: Some(*column),
                 };
 
-                me.open_or_focus_existing(Some(path.to_path_buf()), Some(line_col), ctx);
+                me.open_or_focus_existing(
+                    Some(FileLocation::Local(path.to_path_buf())),
+                    Some(line_col),
+                    ctx,
+                );
                 if let Some(editor) = me.tab_at(me.active_tab_index()).map(|tab| &tab.editor_view) {
                     editor.update(ctx, |editor, ctx| {
                         editor.cursor_at(Point::new(line_1based as u32, *column as u32), ctx);
@@ -599,7 +615,7 @@ impl CodeView {
         });
 
         TabData {
-            path,
+            path: tab_path,
             editor_view: code_editor,
             mouse_state_handles: Default::default(),
             preview,
@@ -673,7 +689,7 @@ impl CodeView {
 
         // Find the existing preview tab (if any) and replace it with a new GlobalBuffer-backed editor
         if let Some((preview_index, _)) = self.preview_tab() {
-            let new_tab = self.build_tab_data(Some(path.clone()), true, ctx);
+            let new_tab = self.build_tab_data(Some(FileLocation::Local(path.clone())), true, ctx);
             self.tab_group[preview_index] = new_tab;
 
             GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
@@ -685,7 +701,7 @@ impl CodeView {
         }
 
         // Create a new preview tab
-        let new_tab = self.build_tab_data(Some(path.clone()), true, ctx);
+        let new_tab = self.build_tab_data(Some(FileLocation::Local(path.clone())), true, ctx);
 
         self.tab_group.push(new_tab);
         let active_tab_index = self.tab_group.len() - 1;
@@ -711,30 +727,34 @@ impl CodeView {
 
     pub fn open_or_focus_existing(
         &mut self,
-        path: Option<PathBuf>,
+        location: Option<FileLocation>,
         line_col: Option<LineAndColumnArg>,
         ctx: &mut ViewContext<Self>,
     ) {
+        let local_path = location
+            .as_ref()
+            .and_then(|loc| loc.to_local_path().map(|p| p.to_path_buf()));
+
         // If the tab already exists, focus it (and optionally jump) without re-opening from disk.
-        if let Some(existing_index) = self.focus_existing_tab_if_present(&path, ctx) {
+        if let Some(existing_index) = self.focus_existing_tab_if_present(&local_path, ctx) {
             if let Some(line_col) = line_col {
                 self.jump_to_line_col_in_tab(existing_index, line_col, ctx);
             }
             return;
         }
 
-        self.open_new_tab_for_path(path, line_col, ctx);
+        self.open_new_tab(location, local_path, line_col, ctx);
     }
 
     fn focus_existing_tab_if_present(
         &mut self,
-        path: &Option<PathBuf>,
+        local_path: &Option<PathBuf>,
         ctx: &mut ViewContext<Self>,
     ) -> Option<usize> {
         let existing_index = self
             .tab_group
             .iter()
-            .position(|tab| tab.path.as_ref() == path.as_ref())?;
+            .position(|tab| tab.path.as_ref() == local_path.as_ref())?;
         self.set_active_tab_index(existing_index, ctx);
         Some(existing_index)
     }
@@ -763,17 +783,18 @@ impl CodeView {
         });
     }
 
-    fn open_new_tab_for_path(
+    fn open_new_tab(
         &mut self,
-        path: Option<PathBuf>,
+        location: Option<FileLocation>,
+        local_path: Option<PathBuf>,
         line_col: Option<LineAndColumnArg>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let new_tab = self.build_tab_data(path.clone(), false, ctx);
+        let new_tab = self.build_tab_data(location, false, ctx);
         self.tab_group.push(new_tab);
         let active_tab_index = self.tab_group.len() - 1;
 
-        if let (Some(file_path), Some(tab)) = (path, self.tab_group.get(active_tab_index)) {
+        if let (Some(file_path), Some(tab)) = (local_path, self.tab_group.get(active_tab_index)) {
             ctx.emit(CodeViewEvent::FileOpened {
                 file_path: file_path.clone(),
                 tab_index: active_tab_index,
@@ -800,15 +821,17 @@ impl CodeView {
 
     /// Set the title of the pane, which is the file path.
     fn set_title(&self, _unsaved_changes: bool, ctx: &mut ViewContext<Self>) {
-        let file = self.local_path(ctx);
+        let file_location = self
+            .tab_at(self.active_tab_index)
+            .and_then(|t| t.editor_view.as_ref(ctx).file_location().cloned());
         let is_new = self
             .tab_at(self.active_tab_index)
             .is_some_and(|t| t.editor_view.as_ref(ctx).is_new_file());
 
-        let title = if let Some(file) = file {
-            file.display().to_string()
-        } else {
-            "Untitled".to_string()
+        let title = match &file_location {
+            Some(FileLocation::Local(path)) => path.display().to_string(),
+            Some(FileLocation::Remote(remote_path)) => remote_path.path.as_str().to_string(),
+            None => "Untitled".to_string(),
         };
 
         self.pane_configuration.update(ctx, |pane_config, ctx| {
@@ -1856,9 +1879,22 @@ impl CodeView {
         let title = self
             .tab_group
             .first()
-            .and_then(|tab| tab.path.as_ref())
-            .and_then(|path| path.file_name())
-            .map(|name| name.to_string_lossy().to_string())
+            .and_then(|tab| {
+                // For remote files, tab.path is None — derive the name from
+                // the editor's FileLocation metadata instead.
+                tab.path
+                    .as_ref()
+                    .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()))
+                    .or_else(|| {
+                        let name = tab
+                            .editor_view
+                            .as_ref(app)
+                            .file_location()
+                            .map(|loc| loc.display_name().to_string())
+                            .filter(|n| !n.is_empty());
+                        name
+                    })
+            })
             .unwrap_or_else(|| "Untitled".to_string());
 
         let appearance = Appearance::as_ref(app);

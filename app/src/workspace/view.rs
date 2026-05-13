@@ -10,6 +10,7 @@ pub(crate) mod launch_modal;
 pub(crate) mod left_panel;
 pub(crate) mod onboarding;
 pub(crate) mod openwarp_launch_modal;
+pub(crate) mod orchestration_launch_modal;
 pub(crate) mod right_panel;
 mod startup_directory;
 #[cfg(test)]
@@ -85,7 +86,7 @@ use crate::app_state::{
     PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabSnapshot,
     TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
 };
-use crate::code::buffer_location::BufferLocation;
+use crate::code::buffer_location::FileLocation;
 use crate::code_review::diff_state::DiffStateModel;
 #[cfg(feature = "local_fs")]
 use crate::code_review::CodeReviewTelemetryEvent;
@@ -147,6 +148,9 @@ use crate::workspace::view::free_tier_limit_hit_modal::{
 use crate::workspace::view::launch_modal::{LaunchModal, LaunchModalEvent, OzLaunchSlide};
 use crate::workspace::view::openwarp_launch_modal::{
     OpenWarpLaunchModal, OpenWarpLaunchModalEvent,
+};
+use crate::workspace::view::orchestration_launch_modal::{
+    OrchestrationLaunchModal, OrchestrationLaunchModalEvent,
 };
 use crate::workspace::{ForkFromExchange, ForkedConversationDestination};
 use crate::BlocklistAIHistoryModel;
@@ -1002,6 +1006,7 @@ pub struct Workspace {
     suggested_rule_modal: ViewHandle<SuggestedRuleModal>,
     oz_launch_modal: ModalWithTab<LaunchModal<OzLaunchSlide>>,
     openwarp_launch_modal: ViewHandle<OpenWarpLaunchModal>,
+    orchestration_launch_modal: ViewHandle<OrchestrationLaunchModal>,
     enable_auto_reload_modal: ViewHandle<EnableAutoReloadModal>,
     build_plan_migration_modal: ViewHandle<BuildPlanMigrationModal>,
     codex_modal: ViewHandle<CodexModal>,
@@ -2716,6 +2721,11 @@ impl Workspace {
             me.handle_openwarp_launch_modal_event(event, ctx);
         });
 
+        let orchestration_launch_view = ctx.add_typed_action_view(OrchestrationLaunchModal::new);
+        ctx.subscribe_to_view(&orchestration_launch_view, |me, _, event, ctx| {
+            me.handle_orchestration_launch_modal_event(event, ctx);
+        });
+
         let launch_config_save_modal = Self::build_launch_config_save_modal(ctx);
 
         let tab_config_params_modal = Self::build_tab_config_params_modal(ctx);
@@ -3056,6 +3066,8 @@ impl Workspace {
                         me.open_tab_and_focus_oz_launch_modal(ctx);
                     } else if model_ref.is_openwarp_launch_modal_open() {
                         me.focus_openwarp_launch_modal(ctx);
+                    } else if model_ref.is_orchestration_launch_modal_open() {
+                        me.focus_orchestration_launch_modal(ctx);
                     } else if model_ref.is_hoa_onboarding_open() {
                         me.show_hoa_onboarding_flow(ctx);
                     } else if model_ref.is_build_plan_migration_modal_open() {
@@ -3189,6 +3201,7 @@ impl Workspace {
                 tab_pane_group_id: None,
             },
             openwarp_launch_modal: openwarp_launch_view,
+            orchestration_launch_modal: orchestration_launch_view,
             enable_auto_reload_modal,
             agent_management_view,
             notification_mailbox_view,
@@ -4067,11 +4080,14 @@ impl Workspace {
 
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         let server_token = conversation_id;
+        let local_conversation_id =
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
+                history.get_or_set_canonical_conversation_id_for_server_token(&server_token)
+            });
 
         ctx.spawn(
             async move {
-                load_conversation_from_server(AIConversationId::default(), server_token, ai_client)
-                    .await
+                load_conversation_from_server(local_conversation_id, server_token, ai_client).await
             },
             move |me, cloud_conversation, ctx| {
                 let Some(cloud_conversation) = cloud_conversation else {
@@ -4868,7 +4884,7 @@ impl Workspace {
 
         self.tabs.iter().enumerate().find_map(|(index, tab)| {
             let pane_group = tab.pane_group.as_ref(ctx);
-            let has_task = pane_group.terminal_pane_ids().into_iter().any(|pane_id| {
+            let has_task = pane_group.visible_pane_ids().into_iter().any(|pane_id| {
                 pane_group
                     .terminal_view_from_pane_id(pane_id, ctx)
                     .is_some_and(|tv| {
@@ -5916,17 +5932,35 @@ impl Workspace {
                 self.handle_warp_drive_event(drive_event, ctx);
             }
             LeftPanelEvent::OpenFileWithTarget {
-                path,
+                location,
                 target,
                 line_col,
             } => {
-                self.open_file_with_target(
-                    path.clone(),
-                    target.clone(),
-                    *line_col,
-                    CodeSource::FileTree { path: path.clone() },
-                    ctx,
-                );
+                let code_source = CodeSource::FileTree {
+                    location: location.clone(),
+                };
+                match location {
+                    FileLocation::Local(path) => {
+                        self.open_file_with_target(
+                            path.clone(),
+                            target.clone(),
+                            *line_col,
+                            code_source,
+                            ctx,
+                        );
+                    }
+                    FileLocation::Remote(_) => {
+                        #[cfg(feature = "local_fs")]
+                        self.open_code(
+                            code_source,
+                            crate::util::openable_file_type::EditorLayout::SplitPane,
+                            None,
+                            false,
+                            &[],
+                            ctx,
+                        );
+                    }
+                }
             }
             LeftPanelEvent::NewConversationInNewTab => {
                 self.add_terminal_tab_with_new_agent_view(ctx);
@@ -7417,10 +7451,18 @@ impl Workspace {
                     if preview {
                         code_view.open_in_preview_or_promote_and_jump(path, line_col, ctx);
                     } else {
-                        code_view.open_or_focus_existing(Some(path), line_col, ctx);
+                        code_view.open_or_focus_existing(
+                            Some(FileLocation::Local(path)),
+                            line_col,
+                            ctx,
+                        );
                     }
                     for extra in additional_paths {
-                        code_view.open_or_focus_existing(Some(extra.clone()), None, ctx);
+                        code_view.open_or_focus_existing(
+                            Some(FileLocation::Local(extra.clone())),
+                            None,
+                            ctx,
+                        );
                     }
                 });
                 // Only focus the pane for non-preview opens
@@ -7456,7 +7498,7 @@ impl Workspace {
                                     );
                                 } else {
                                     code_view.open_or_focus_existing(
-                                        Some(path.clone()),
+                                        Some(FileLocation::Local(path.clone())),
                                         line_col,
                                         ctx,
                                     );
@@ -7464,7 +7506,7 @@ impl Workspace {
 
                                 for extra in additional_paths {
                                     code_view.open_or_focus_existing(
-                                        Some(extra.clone()),
+                                        Some(FileLocation::Local(extra.clone())),
                                         None,
                                         ctx,
                                     );
@@ -7522,7 +7564,11 @@ impl Workspace {
             if let Some(code_view) = code_view_handle {
                 code_view.update(ctx, |code_view, ctx| {
                     for path in additional_paths {
-                        code_view.open_or_focus_existing(Some(path.clone()), None, ctx);
+                        code_view.open_or_focus_existing(
+                            Some(FileLocation::Local(path.clone())),
+                            None,
+                            ctx,
+                        );
                     }
                 });
             }
@@ -8098,7 +8144,7 @@ impl Workspace {
                     let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                         self.working_directories_model.update(ctx, |model, ctx| {
                             model.get_or_create_diff_state_model(
-                                BufferLocation::Local(rp.clone()),
+                                FileLocation::Local(rp.clone()),
                                 ctx,
                             )
                         })
@@ -8145,7 +8191,7 @@ impl Workspace {
         let repo_path = panel_context.repo_path.clone();
         let diff_state_model = repo_path.as_ref().and_then(|rp| {
             self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
+                model.get_or_create_diff_state_model(FileLocation::Local(rp.clone()), ctx)
             })
         });
         let Some(diff_state_model) = diff_state_model else {
@@ -8262,7 +8308,7 @@ impl Workspace {
             |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
                 let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                     self.working_directories_model.update(ctx, |model, ctx| {
-                        model.get_or_create_diff_state_model(BufferLocation::Local(rp.clone()), ctx)
+                        model.get_or_create_diff_state_model(FileLocation::Local(rp.clone()), ctx)
                     })
                 })?;
                 Some(CodeReviewPaneContext {
@@ -11751,6 +11797,7 @@ impl Workspace {
                         fork_from.exchange_id,
                         fork_from.fork_from_exact_exchange,
                         FORK_PREFIX,
+                        None,
                         ctx,
                     )
                 } else {
@@ -11758,6 +11805,7 @@ impl Workspace {
                         &source_conversation,
                         FORK_PREFIX,
                         false, /* preserve_task_ids */
+                        None,
                         ctx,
                     )
                 }
@@ -13135,12 +13183,82 @@ impl Workspace {
         });
     }
 
+    /// Spawns the async snapshot upload pipeline for a handoff pane. Derives the
+    /// touched workspace from `paths`, uploads repo patches + orphan files, sets
+    /// environment overlap, and settles the snapshot status on the model. Shared
+    /// by both the conversation-fork and fresh-launch handoff paths.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn spawn_handoff_snapshot_upload(
+        paths: Vec<PathBuf>,
+        pane_view: ViewHandle<TerminalView>,
+        model_handle: ModelHandle<AmbientAgentViewModel>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let server_api_provider = ServerApiProvider::as_ref(ctx);
+        let ai_client = server_api_provider.get_ai_client();
+        let http = server_api_provider.get_http_client();
+        ctx.spawn(
+            async move {
+                let workspace = derive_touched_workspace(paths).await;
+                let repo_paths: Vec<_> =
+                    workspace.repos.iter().map(|r| r.git_root.clone()).collect();
+                let upload_result = upload_snapshot_for_handoff(
+                    repo_paths,
+                    workspace.orphan_files.clone(),
+                    ai_client,
+                    http.as_ref(),
+                )
+                .await;
+                (workspace, upload_result)
+            },
+            move |_workspace, (derived_workspace, upload_result), ctx| {
+                model_handle.update(ctx, |model, model_ctx| {
+                    if !model.is_local_to_cloud_handoff() {
+                        return;
+                    }
+                    if !model.pending_handoff_has_explicit_environment() {
+                        let mut envs = CloudAmbientAgentEnvironment::get_all(model_ctx);
+                        sort_environments_by_recency(&mut envs);
+                        if let Some(overlap_env) =
+                            pick_handoff_overlap_env(&derived_workspace, envs)
+                        {
+                            model.set_environment_id(Some(overlap_env), model_ctx);
+                        }
+                    }
+                    model.set_pending_handoff_workspace(derived_workspace, model_ctx);
+                    match upload_result {
+                        Ok(Some(initial_snapshot_token)) => {
+                            model.set_pending_handoff_snapshot_upload(
+                                SnapshotUploadStatus::Uploaded(initial_snapshot_token),
+                                model_ctx,
+                            );
+                        }
+                        Ok(None) => {
+                            model.set_pending_handoff_snapshot_upload(
+                                SnapshotUploadStatus::SkippedEmptyWorkspace,
+                                model_ctx,
+                            );
+                        }
+                        Err(err) => {
+                            log::warn!("Handoff snapshot upload failed: {err:#}");
+                            model
+                                .record_handoff_snapshot_upload_failed(format!("{err}"), model_ctx);
+                        }
+                    }
+                });
+                Self::maybe_auto_submit_handoff(&pane_view, &model_handle, ctx);
+            },
+        );
+    }
+
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn show_handoff_success_toast(ctx: &mut ViewContext<Self>) {
         let window_id = ctx.window_id();
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
             toast_stack.add_ephemeral_toast(
-                DismissibleToast::success("Handing off to cloud".to_owned()),
+                DismissibleToast::default(
+                    "Starting cloud environment for this session...".to_owned(),
+                ),
                 window_id,
                 ctx,
             );
@@ -13148,6 +13266,8 @@ impl Workspace {
     }
 
     /// Opens a cloud pane without forking when there is no local conversation to hand off.
+    /// Still snapshots the source pane's pwd so the cloud agent receives the local repo's
+    /// branch info and uncommitted diffs.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn start_fresh_cloud_launch(
         &mut self,
@@ -13157,7 +13277,7 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         // Push a cloud-mode pane for the fresh launch.
-        let Some((_new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
+        let Some((new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
             view.start_local_to_cloud_handoff_pane(view_ctx)
         }) else {
             log::warn!("start_local_to_cloud_handoff: failed to push fresh cloud-mode pane");
@@ -13166,18 +13286,32 @@ impl Workspace {
             return;
         };
 
-        if let Some(environment_id) = explicit_environment_id {
+        if let Some(env_id) = explicit_environment_id {
             model_handle.update(ctx, |model, ctx| {
-                model.set_environment_id(Some(environment_id), ctx);
+                model.set_environment_id(Some(env_id), ctx);
             });
         }
         Self::show_handoff_success_toast(ctx);
 
-        if let Some(launch) = launch {
-            model_handle.update(ctx, |model, ctx| {
-                model.spawn_agent(launch.prompt, launch.attachments.request_attachments, ctx);
-            });
-        }
+        let pending = PendingHandoff {
+            forked_conversation_id: None,
+            title: None,
+            touched_workspace: None,
+            snapshot_upload: SnapshotUploadStatus::Pending,
+            submission_state: HandoffSubmissionState::Idle,
+            auto_submit: launch,
+            explicit_environment_id,
+        };
+        model_handle.update(ctx, |model, model_ctx| {
+            model.set_pending_handoff(Some(pending), model_ctx);
+        });
+        model_handle.update(ctx, |model, ctx| {
+            model.queue_handoff_auto_submit(ctx);
+        });
+
+        let source_pwd = source_view.as_ref(ctx).active_session_path_if_local(ctx);
+        let paths: Vec<PathBuf> = source_pwd.into_iter().collect();
+        Self::spawn_handoff_snapshot_upload(paths, new_pane_view, model_handle, ctx);
     }
 
     /// Opens a local-to-cloud handoff pane in place over the active local pane.
@@ -13231,8 +13365,15 @@ impl Workspace {
 
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         let source_conversation_id = source_token.as_str().to_string();
+        let title_for_fork = source_conversation
+            .title()
+            .map(|t| format!("{t} (Moved to cloud)"));
         ctx.spawn(
-            async move { ai_client.fork_conversation(source_conversation_id).await },
+            async move {
+                ai_client
+                    .fork_conversation(source_conversation_id, title_for_fork)
+                    .await
+            },
             move |me, result, ctx| match result {
                 Ok(response) => {
                     me.complete_local_to_cloud_handoff_open(
@@ -13272,8 +13413,17 @@ impl Workspace {
     ) {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         // Materialize the fork locally so the new pane can restore it.
+        let title_override = source_conversation
+            .title()
+            .map(|t| format!("{t} (Moved to cloud)"));
         let local_fork = match history_model.update(ctx, |history_model, ctx| {
-            history_model.fork_conversation(&source_conversation, FORK_PREFIX, true, ctx)
+            history_model.fork_conversation(
+                &source_conversation,
+                FORK_PREFIX,
+                true,
+                title_override.as_deref(),
+                ctx,
+            )
         }) {
             Ok(forked) => forked,
             Err(err) => {
@@ -13340,7 +13490,8 @@ impl Workspace {
 
         // Keep handoff state on the cloud model until snapshot prep and submit finish.
         let pending = PendingHandoff {
-            forked_conversation_id: forked_conversation_id.clone(),
+            forked_conversation_id: Some(forked_conversation_id.clone()),
+            title: title_override,
             touched_workspace: None,
             snapshot_upload: SnapshotUploadStatus::Pending,
             submission_state: HandoffSubmissionState::Idle,
@@ -13356,65 +13507,18 @@ impl Workspace {
             model.queue_handoff_auto_submit(ctx);
         });
 
-        let async_pane_view = new_pane_view.clone();
-        let async_model_handle = model_handle.clone();
-        let server_api_provider = ServerApiProvider::as_ref(ctx);
-        let ai_client = server_api_provider.get_ai_client();
-        let http = server_api_provider.get_http_client();
+        let source_pwd = source_view.as_ref(ctx).active_session_path_if_local(ctx);
         // Derive touched repos and upload the initial snapshot off the UI thread.
-        ctx.spawn(
-            async move {
-                let paths = extract_paths_from_conversation(&source_conversation);
-                let workspace = derive_touched_workspace(paths).await;
-                let repo_paths: Vec<_> =
-                    workspace.repos.iter().map(|r| r.git_root.clone()).collect();
-                let upload_result = upload_snapshot_for_handoff(
-                    repo_paths,
-                    workspace.orphan_files.clone(),
-                    ai_client,
-                    http.as_ref(),
-                )
-                .await;
-                (workspace, upload_result)
-            },
-            move |_workspace, (derived_workspace, upload_result), ctx| {
-                async_model_handle.update(ctx, |model, model_ctx| {
-                    if !model.is_local_to_cloud_handoff() {
-                        return;
-                    }
-                    if !model.pending_handoff_has_explicit_environment() {
-                        let mut envs = CloudAmbientAgentEnvironment::get_all(model_ctx);
-                        sort_environments_by_recency(&mut envs);
-                        if let Some(overlap_env) =
-                            pick_handoff_overlap_env(&derived_workspace, envs)
-                        {
-                            model.set_environment_id(Some(overlap_env), model_ctx);
-                        }
-                    }
-                    model.set_pending_handoff_workspace(derived_workspace, model_ctx);
-                    match upload_result {
-                        Ok(Some(initial_snapshot_token)) => {
-                            model.set_pending_handoff_snapshot_upload(
-                                SnapshotUploadStatus::Uploaded(initial_snapshot_token),
-                                model_ctx,
-                            );
-                        }
-                        Ok(None) => {
-                            model.set_pending_handoff_snapshot_upload(
-                                SnapshotUploadStatus::SkippedEmptyWorkspace,
-                                model_ctx,
-                            );
-                        }
-                        Err(err) => {
-                            log::warn!("Handoff snapshot upload failed: {err:#}");
-                            model
-                                .record_handoff_snapshot_upload_failed(format!("{err}"), model_ctx);
-                        }
-                    }
-                });
-                Self::maybe_auto_submit_handoff(&async_pane_view, &async_model_handle, ctx);
-            },
-        );
+        // The paths list is built from the conversation's write actions plus the
+        // source pane's pwd (so the current repo is always captured).
+        let paths = {
+            let mut p = extract_paths_from_conversation(&source_conversation);
+            if let Some(pwd) = source_pwd {
+                p.push(pwd);
+            }
+            p
+        };
+        Self::spawn_handoff_snapshot_upload(paths, new_pane_view, model_handle, ctx);
     }
 
     pub(crate) fn handle_file_tree_event(
@@ -14107,7 +14211,11 @@ impl Workspace {
                                         // After removing the file from the origin's editor, we want to open it in the target's editor.
                                         if let Some(path) = moved_file_path {
                                             target_code_view.update(ctx, |view, ctx| {
-                                                view.open_or_focus_existing(Some(path), None, ctx);
+                                                view.open_or_focus_existing(
+                                                    Some(FileLocation::Local(path)),
+                                                    None,
+                                                    ctx,
+                                                );
                                             });
                                         }
                                         return;
@@ -16400,6 +16508,22 @@ impl Workspace {
         }
     }
 
+    fn handle_orchestration_launch_modal_event(
+        &mut self,
+        event: &OrchestrationLaunchModalEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            OrchestrationLaunchModalEvent::Close => {
+                OneTimeModalModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.mark_orchestration_launch_modal_dismissed(ctx);
+                });
+                self.focus_active_tab(ctx);
+                ctx.notify();
+            }
+        }
+    }
+
     fn handle_oz_launch_modal_event(
         &mut self,
         event: &LaunchModalEvent,
@@ -18128,15 +18252,7 @@ impl Workspace {
         let zoom_factor = WindowSettings::as_ref(ctx).zoom_level.as_zoom_factor();
         let traffic_light_data = traffic_light_data(ctx, self.window_id);
         if let Some(traffic_light_data) = traffic_light_data.as_ref() {
-            let vertical_tabs_active = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(ctx).use_vertical_tabs;
-            let right_panel_open = self.current_workspace_state.is_right_panel_open();
-            let should_reserve_right_traffic_light_space =
-                vertical_tabs_active || !right_panel_open;
-
-            if traffic_light_data.side == TrafficLightSide::Right
-                && should_reserve_right_traffic_light_space
-            {
+            if should_reserve_traffic_light_space_in_tab_bar(traffic_light_data.side) {
                 target.add_child(
                     ConstrainedBox::new(Empty::new().finish())
                         .with_width(traffic_light_data.width(zoom_factor))
@@ -20246,6 +20362,10 @@ impl Workspace {
         ctx.focus(&self.openwarp_launch_modal);
     }
 
+    fn focus_orchestration_launch_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        ctx.focus(&self.orchestration_launch_modal);
+    }
+
     fn open_tab_and_focus_oz_launch_modal(&mut self, ctx: &mut ViewContext<Self>) {
         // Create a new tab with one terminal session titled "Introducing Oz"
         self.add_tab_with_pane_layout(
@@ -21042,7 +21162,7 @@ impl TypedActionView for Workspace {
                         let diff_state_model = repo_path.as_ref().and_then(|rp| {
                             self.working_directories_model.update(ctx, |model, ctx| {
                                 model.get_or_create_diff_state_model(
-                                    BufferLocation::Local(rp.clone()),
+                                    FileLocation::Local(rp.clone()),
                                     ctx,
                                 )
                             })
@@ -22103,6 +22223,34 @@ impl TypedActionView for Workspace {
                     old_value,
                     new_value,
                     FeatureFlag::OpenWarpLaunchModal.is_enabled()
+                );
+            }
+            #[cfg(debug_assertions)]
+            OpenOrchestrationLaunchModal => {
+                OneTimeModalModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.force_open_orchestration_launch_modal(ctx);
+                });
+                ctx.notify();
+            }
+            #[cfg(debug_assertions)]
+            ResetOrchestrationLaunchModalState => {
+                let old_value =
+                    *AISettings::as_ref(ctx).did_check_to_trigger_orchestration_launch_modal;
+                AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
+                    if let Err(e) = ai_settings
+                        .did_check_to_trigger_orchestration_launch_modal
+                        .set_value(false, ctx)
+                    {
+                        log::warn!(
+                            "Failed to reset orchestration launch modal dismissed setting: {e}"
+                        );
+                    }
+                });
+                let new_value =
+                    *AISettings::as_ref(ctx).did_check_to_trigger_orchestration_launch_modal;
+                log::info!(
+                    "Orchestration launch modal state: old={old_value}, new={new_value}, feature_flag_enabled={}",
+                    FeatureFlag::OrchestrationLaunchModal.is_enabled()
                 );
             }
             #[cfg(debug_assertions)]
@@ -23300,6 +23448,10 @@ impl View for Workspace {
 
         if should_show_modal && one_time_modal_model.is_openwarp_launch_modal_open() {
             stack.add_child(ChildView::new(&self.openwarp_launch_modal).finish());
+        }
+
+        if should_show_modal && one_time_modal_model.is_orchestration_launch_modal_open() {
+            stack.add_child(ChildView::new(&self.orchestration_launch_modal).finish());
         }
 
         if let Some(hoa_flow) = &self.hoa_onboarding_flow {
@@ -24525,6 +24677,10 @@ impl Workspace {
 
         current_index
     }
+}
+
+fn should_reserve_traffic_light_space_in_tab_bar(side: TrafficLightSide) -> bool {
+    side == TrafficLightSide::Right
 }
 
 /// Returns every tab-bar-equivalent rect laid out in `window_id` (horizontal

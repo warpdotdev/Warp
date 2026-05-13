@@ -87,3 +87,5 @@ Warp 原版对“并行工具调用”的支持要分两层看：协议层会声
 基于上面这个执行约束，`app/src/ai/agent/api/local_openai/request.rs` 里当前显式把 Responses 请求的 `parallel_tool_calls` 关成了 `false`。这是个有意的保护措施，不是遗漏：目的是避免兼容后端一次返回多个 `run_shell_command` 时，Warp 原版命令执行链把 action 标成 cancelled、同时还可能残留 agent-control active block，进而出现输入框消失、要靠 `Ctrl+C` 才恢复的异常体验。
 
 `local_openai` 对 fork / restore conversation 的支持不能只看“task messages 有没有复制过去”。真正影响多轮质量的是 reasoning replay：现在约定把可回放的 Responses reasoning item JSON 存进 `AgentReasoning` message 的 `server_message_data`，restore 时再优先从这里还原 `{"type":"reasoning","encrypted_content":...}`。后续如果再改 `app/src/ai/agent/api/local_openai/stream.rs` 或 `request.rs` 里的 reasoning 流程，记得同时维护这份持久化 payload；否则 UI 虽然还能看到 thinking 文本，但 fork/restore 后 provider 侧的 reasoning 上下文还是会丢。
+
+NLD 相关的 Cargo feature 现在以 upstream 的 `nld_classifier_v1` / `nld_classifier_v2` 为准，不要再把旧的 `nld_onnx_model` 或 `nld_improvements` 加回 `app/Cargo.toml` 或打包脚本里。当前这两个旧名字在仓库里已经没有有效定义，重新带回来会直接让 `cargo metadata` 或打包构建失败。

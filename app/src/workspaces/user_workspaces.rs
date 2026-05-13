@@ -10,7 +10,7 @@ use crate::{
     auth::{AuthStateProvider, UserUid},
     channel::ChannelState,
     cloud_object::{
-        model::persistence::CloudModel, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
+        CloudObjectEventEntrypoint, ObjectType, Owner, Space, model::persistence::CloudModel,
     },
     pricing::PricingInfoModel,
     report_error,
@@ -486,10 +486,18 @@ impl UserWorkspaces {
 
     /// Whether BYO API key is enabled for the current user.
     /// Note that the value may be incorrect if called before the team's billing metadata has been fetched.
-    pub fn is_byo_api_key_enabled(&self) -> bool {
+    /// For solo users (no workspace), this is controlled by the `SoloUserByok` feature flag.
+    /// Anonymous or logged-out users are not allowed to use BYO API keys.
+    pub fn is_byo_api_key_enabled(&self, app: &AppContext) -> bool {
+        if AuthStateProvider::as_ref(app)
+            .get()
+            .is_anonymous_or_logged_out()
+        {
+            return false;
+        }
         self.current_workspace()
             .map(|workspace| workspace.is_byo_api_key_enabled())
-            .unwrap_or(true)
+            .unwrap_or(FeatureFlag::SoloUserByok.is_enabled())
     }
 
     pub fn aws_bedrock_host_settings(&self) -> Option<&super::workspace::LlmHostSettings> {

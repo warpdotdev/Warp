@@ -27,6 +27,7 @@ use warpui::fonts::Style;
 use warpui::keymap::FixedBinding;
 use warpui::platform::Cursor;
 use warpui::text_layout::TextAlignment;
+use warpui::ui_components::components::UiComponent;
 use warpui::{clipboard::ClipboardContent, id, ViewContext, WeakViewHandle};
 use warpui::{
     elements::{
@@ -42,6 +43,7 @@ use warpui::{
 use warpui::{BlurContext, ModelHandle};
 
 use crate::code::active_file::{ActiveFileEvent, ActiveFileModel};
+use crate::code::buffer_location::FileLocation;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use crate::editor::{EditorOptions, EditorView, TextOptions};
 #[cfg(feature = "local_fs")]
@@ -68,7 +70,6 @@ use crate::{
 use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::{color::internal_colors, Fill};
 use warp_core::HostId;
-use warpui::ui_components::components::UiComponent;
 
 mod editing;
 mod render;
@@ -1985,10 +1986,10 @@ impl FileTreeView {
         let is_selected = self.selected_item.as_ref() == Some(id);
         let is_expanded = self.is_item_expanded(&id.root, item);
         let render_state = item.to_render_state(is_expanded, appearance);
-        let is_remote_file = root_dir.is_remote() && matches!(item, FileTreeItem::File { .. });
 
         let item_display_name = render_state.display_name.clone();
         let item_position_id = format!("file_tree_item:{item_display_name}");
+        let is_remote_file = self.is_remote_item(id);
 
         let position_id = self.position_id.clone();
         let draggable_state = render_state.draggable_state.clone();
@@ -2053,12 +2054,7 @@ impl FileTreeView {
                 });
             },
         )
-        // Remote files can't be opened in the editor, so use the default cursor.
-        .with_cursor(if is_remote_file {
-            Cursor::Arrow
-        } else {
-            Cursor::PointingHand
-        })
+        .with_cursor(Cursor::PointingHand)
         .finish();
 
         let draggable = Draggable::new(draggable_state, hoverable)
@@ -2257,7 +2253,7 @@ impl FileTreeView {
         );
 
         ctx.emit(FileTreeEvent::OpenFile {
-            path: path.to_path_buf(),
+            path: FileLocation::Local(path.to_path_buf()),
             target,
             line_col: None,
         });
@@ -2279,8 +2275,20 @@ impl FileTreeView {
 
         match item {
             FileTreeItem::File { metadata, .. } => {
-                // Remote file trees don't support opening files in the editor.
-                if !is_remote {
+                if is_remote {
+                    // Emit a remote open event if we have a host ID.
+                    if let Some(host_id) = &root_dir.remote_host_id {
+                        let remote_path = warp_util::remote_path::RemotePath::new(
+                            host_id.clone(),
+                            (*metadata.path).clone(),
+                        );
+                        ctx.emit(FileTreeEvent::OpenFile {
+                            path: FileLocation::Remote(remote_path),
+                            target: FileTarget::CodeEditor(EditorLayout::SplitPane),
+                            line_col: None,
+                        });
+                    }
+                } else {
                     let path = metadata.path.to_local_path_lossy();
                     self.open_file(&path, None, ctx);
                 }
@@ -2905,7 +2913,7 @@ pub enum FileTreeEvent {
     AttachAsContext { path: PathBuf },
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     OpenFile {
-        path: PathBuf,
+        path: FileLocation,
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
     },

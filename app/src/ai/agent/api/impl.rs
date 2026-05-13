@@ -8,7 +8,7 @@ use warp_multi_agent_api as api;
 use crate::server::server_api::ServerApi;
 
 use super::local_openai::generate_local_openai_responses_output;
-use super::{convert_to::convert_input, ConvertToAPITypeError, RequestParams, ResponseStream};
+use super::{ConvertToAPITypeError, RequestParams, ResponseStream, convert_to::convert_input};
 
 /// Redacts secrets in request inputs when the current request is configured to do so.
 pub(super) fn redact_request_inputs_if_needed(params: &mut RequestParams) {
@@ -121,6 +121,7 @@ pub async fn generate_multi_agent_output(
             supports_bundled_skills: FeatureFlag::BundledSkills.is_enabled(),
             supports_research_agent: params.research_agent_enabled,
             supports_orchestration_v2: FeatureFlag::OrchestrationV2.is_enabled(),
+            custom_model_providers: None,
         }),
         metadata: Some(api::request::Metadata {
             logging: logging_metadata,

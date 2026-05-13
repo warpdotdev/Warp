@@ -570,6 +570,12 @@ pub enum WorkspaceAction {
     /// Reset the OpenWarp launch modal dismissed state (for debugging)
     #[cfg(debug_assertions)]
     ResetOpenWarpLaunchModalState,
+    /// Open the Orchestration Launch Modal (for debugging)
+    #[cfg(debug_assertions)]
+    OpenOrchestrationLaunchModal,
+    /// Reset the orchestration launch modal dismissed state (for debugging)
+    #[cfg(debug_assertions)]
+    ResetOrchestrationLaunchModalState,
     /// Install the opencode-warp plugin from GitHub into the global opencode config.
     #[cfg(debug_assertions)]
     InstallOpenCodeWarpPlugin,
@@ -962,6 +968,8 @@ impl WorkspaceAction {
             | ResetOzLaunchModalState
             | OpenOpenWarpLaunchModal
             | ResetOpenWarpLaunchModalState
+            | OpenOrchestrationLaunchModal
+            | ResetOrchestrationLaunchModalState
             | InstallOpenCodeWarpPlugin
             | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]

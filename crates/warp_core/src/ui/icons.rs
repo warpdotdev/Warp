@@ -311,6 +311,8 @@ pub enum Icon {
     HeartHand,
     MessageChatSquare,
     Pin,
+    Atom02,
+    Cognition,
     Dataflow04,
     // Language-specific icons for the code block dropdown
     MermaidLang,
@@ -631,6 +633,8 @@ impl From<Icon> for &'static str {
             Icon::ClockPlus => "bundled/svg/clock-plus.svg",
             Icon::HeartHand => "bundled/svg/heart-hand.svg",
             Icon::MessageChatSquare => "bundled/svg/message-chat-square.svg",
+            Icon::Atom02 => "bundled/svg/atom-02.svg",
+            Icon::Cognition => "bundled/svg/cognition.svg",
             Icon::Dataflow04 => "bundled/svg/dataflow-04.svg",
             Icon::MermaidLang => "bundled/svg/file_type/mermaid.svg",
             Icon::GoLang => "bundled/svg/file_type/go.svg",

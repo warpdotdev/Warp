@@ -3,9 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::anyhow;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use prost::Message as _;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 use warp_multi_agent_api as api;
 
@@ -24,7 +24,7 @@ use super::types::{
     ResponsesRequestBody,
 };
 use super::{
-    ProviderError, RequestParams, build_local_openai_system_prompt, conversation_state_store,
+    build_local_openai_system_prompt, conversation_state_store, ProviderError, RequestParams,
 };
 use crate::ai::agent::api::r#impl::get_supported_tools;
 
@@ -645,6 +645,7 @@ fn serialize_request_command_output_result(result: &RequestCommandOutputResult) 
             command,
             output,
             exit_code,
+            ..
         } => json!({
             "status": "completed",
             "command": command,
@@ -700,6 +701,7 @@ fn serialize_write_to_long_running_shell_command_result(
             block_id,
             output,
             exit_code,
+            ..
         } => json!({
             "status": "completed",
             "command_id": block_id.to_string(),
@@ -723,6 +725,7 @@ fn serialize_read_shell_command_output_result(result: &ReadShellCommandOutputRes
             block_id,
             output,
             exit_code,
+            ..
         } => json!({
             "status": "completed",
             "command": command,

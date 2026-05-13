@@ -7,8 +7,8 @@ mod local_openai;
 pub use ai::agent::convert::ConvertToAPITypeError;
 use ai::api_keys::ApiKeyManager;
 pub use convert_from::{
-    user_inputs_from_messages, ConversionParams, ConvertAPIMessageToClientOutputMessage,
-    MaybeAIAgentOutputMessage, MessageToAIAgentOutputMessageError,
+    ConversionParams, ConvertAPIMessageToClientOutputMessage, MaybeAIAgentOutputMessage,
+    MessageToAIAgentOutputMessageError, user_inputs_from_messages,
 };
 
 pub use r#impl::generate_multi_agent_output;
@@ -36,8 +36,8 @@ use crate::{
 use super::{AIAgentInput, MCPContext, MCPServer, RequestMetadata, Suggestions};
 use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::ai::mcp::templatable_manager::TemplatableMCPServerInfo;
 use crate::ai::mcp::TemplatableMCPServerManager;
+use crate::ai::mcp::templatable_manager::TemplatableMCPServerInfo;
 use crate::settings::AISettings;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -250,7 +250,7 @@ impl RequestParams {
         let api_key_manager = ApiKeyManager::as_ref(app);
         let stored_api_keys = api_key_manager.keys().clone();
         let api_keys = api_key_manager.api_keys_for_request(
-            user_workspaces.is_byo_api_key_enabled(),
+            user_workspaces.is_byo_api_key_enabled(app),
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
         let allow_use_of_warp_credits_with_byok =

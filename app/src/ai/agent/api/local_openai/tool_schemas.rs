@@ -1,6 +1,6 @@
 //! OpenAI function schema registry for Warp's built-in local backend tools.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use warp_multi_agent_api as api;
 
 /// Returns the OpenAI function schema for a built-in Warp tool, if one is exposed locally.

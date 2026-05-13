@@ -278,6 +278,24 @@ fn transferred_tab_workspace(
     workspace
 }
 
+#[test]
+fn test_tab_bar_traffic_light_space_regression_for_resource_center_overlap() {
+    // Regression for #10139: the Resource Center/right panel can be open on
+    // Windows/Linux, but vertical-tabs and right-panel state should not decide
+    // whether the tab bar reserves space for titlebar controls.
+    let cases = [
+        (TrafficLightSide::Left, false),
+        (TrafficLightSide::Right, true),
+    ];
+
+    for (side, should_reserve_space) in cases {
+        assert_eq!(
+            should_reserve_traffic_light_space_in_tab_bar(side),
+            should_reserve_space
+        );
+    }
+}
+
 #[cfg(feature = "local_fs")]
 fn open_worktree_sidecar(workspace: &ViewHandle<Workspace>, app: &mut App) {
     workspace.update(app, |workspace, ctx| {
@@ -1821,7 +1839,7 @@ fn test_view_only_session() {
 
 #[test]
 // This tests the end-to-end behavior to correctly switch focus among panels.
-// (The only panels that can be focused currently are WD, workspace, & AI assistant.)
+// (The only panels that can be focused currently are WD, workspace, & the agent panel.)
 fn test_switch_focus_panels() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
@@ -1872,7 +1890,7 @@ fn test_switch_focus_panels() {
             );
         });
 
-        // Shift focus from workspace to right panel when AI assistant is open
+        // Shift focus from workspace to right panel when the agent panel is open
         workspace.update(&mut app, |view, ctx| {
             view.current_workspace_state.is_ai_assistant_panel_open = true;
             view.focus_right_panel(ctx);
