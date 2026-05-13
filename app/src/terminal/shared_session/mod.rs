@@ -15,7 +15,6 @@ use super::{
 };
 
 pub mod ai_agent;
-pub mod network;
 pub mod participant_avatar_view;
 pub mod presence_manager;
 pub mod render_util;
