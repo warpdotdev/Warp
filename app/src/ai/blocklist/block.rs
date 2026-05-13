@@ -401,10 +401,8 @@ pub(super) struct AIBlockStateHandles {
     /// A given citation should only appear once per block.
     footer_citation_chip_handles: HashMap<AIAgentCitation, MouseStateHandle>,
     orchestration_navigation_card_handles: HashMap<AIAgentActionId, MouseStateHandle>,
-    /// Per-transcript-row `MouseStateHandle` for the clickable sender avatar
-    /// shown in `MessagesReceivedFromAgents` rows. Required to persist across
-    /// frames since `Hoverable` resets its state when the handle is created
-    /// inline.
+    /// Persistent mouse-state handles per received-message transcript row,
+    /// used by the clickable sender avatar.
     pub(super) transcript_avatar_handles: HashMap<MessageId, MouseStateHandle>,
 
     references_section_collapsible_handle: MouseStateHandle,

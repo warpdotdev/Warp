@@ -44,12 +44,9 @@ pub(crate) fn conversation_id_for_agent_id(
         })
 }
 
-/// Returns `true` if `conversation_id` is canonically owned (per
-/// `BlocklistAIHistoryModel::terminal_view_id_for_conversation`) by some
-/// *visible* terminal view that is not `self_terminal_view_id`. The
-/// visible-pane filter is important: hidden child-agent panes are real
-/// terminal views, and treating them as "open elsewhere" would falsely
-/// surface a focus path for children the user hasn't yet opened.
+/// True if the conversation is open in some other visible pane. Hidden
+/// child-agent panes are excluded so unopened children don't look
+/// "already open".
 pub(crate) fn is_conversation_open_in_other_visible_view(
     conversation_id: AIConversationId,
     self_terminal_view_id: EntityId,
@@ -66,11 +63,8 @@ pub(crate) fn is_conversation_open_in_other_visible_view(
     pane_group_id_containing_terminal_view(owner, app).is_some()
 }
 
-/// Walks every visible terminal pane across every workspace/tab and returns
-/// the `EntityId` of the `PaneGroup` that contains the given
-/// `terminal_view_id`, if any. Used to decide between the same-pane-group
-/// focus path (`RevealChildAgent`) and the cross-pane-group path
-/// (`FocusTerminalViewInWorkspace`).
+/// Finds the pane group containing the given terminal view across all
+/// visible panes/tabs. Used to distinguish same-tab vs cross-tab focus.
 pub(crate) fn pane_group_id_containing_terminal_view(
     terminal_view_id: EntityId,
     app: &AppContext,
@@ -92,19 +86,8 @@ pub(crate) fn pane_group_id_containing_terminal_view(
     None
 }
 
-/// Dispatches the appropriate navigation action for opening or focusing a
-/// child agent's pane from a click in some other surface (e.g. the
-/// transcript avatar). Behavior:
-/// - If the conversation is already open in a visible pane in the same
-///   pane group as `self_terminal_view_id`, dispatches
-///   `TerminalAction::RevealChildAgent` so the pane group can focus the
-///   sibling pane.
-/// - If it is open in a visible pane in a *different* pane group (another
-///   tab/window), dispatches `WorkspaceAction::FocusTerminalViewInWorkspace`
-///   so the workspace can activate the right tab and focus the pane.
-/// - Otherwise (not open in any visible pane) dispatches
-///   `TerminalAction::OpenChildAgentInNewPane` to split off a new sibling
-///   pane in the current pane group, matching the previous default behavior.
+/// Navigates to a child agent's pane: focuses an existing sibling pane,
+/// activates the owning tab, or splits off a new pane.
 pub(crate) fn dispatch_focus_or_open_child_agent_pane(
     conversation_id: AIConversationId,
     self_terminal_view_id: EntityId,

@@ -51,10 +51,8 @@ const ORCHESTRATION_COLLAPSED_MAX_HEIGHT: f32 = 200.;
 struct OrchestrationParticipant {
     display_name: String,
     avatar: OrchestrationAvatar,
-    /// The conversation ID of the participant, when known. Used to make the
-    /// transcript avatar clickable so users can jump to that agent's pane.
-    /// `None` for the orchestrator (no separate pane to navigate to) and for
-    /// unresolved/unknown agents.
+    /// The participant's conversation, when resolved. `None` for the
+    /// orchestrator and unknown agents (avatar stays non-clickable).
     conversation_id: Option<AIConversationId>,
 }
 
@@ -208,11 +206,9 @@ fn render_transcript_row(
 
     let name = FormattedTextFragment::bold(&data.participant.display_name);
     let header_row_element: Box<dyn Element> = if let Some(state) = collapsible_state {
-        // When the row is collapsible, wrap the bold name and chevron in a single
-        // Hoverable so clicking either toggles the expansion state. Make the text
-        // non-selectable so click events are reliably captured by the Hoverable,
-        // and disable mouse interaction so the text element doesn't reset the
-        // pointing-hand cursor set by the Hoverable.
+        // Wrap the name + chevron in one clickable element so either toggles
+        // the section. Text is non-selectable + non-interactive so clicks
+        // register and the pointing-hand cursor isn't reset by the text.
         let header = render_formatted_text_element(vec![name], app)
             .set_selectable(false)
             .disable_mouse_interaction()
@@ -254,9 +250,7 @@ fn render_transcript_row(
             ));
         });
 
-        // Wrap the Hoverable in an outer row so the click bounds size to its
-        // content (bold name + chevron) instead of stretching to the parent's
-        // full width.
+        // Outer row keeps the click bounds at content width.
         Flex::row().with_child(expandable.finish()).finish()
     } else {
         let header = render_formatted_text_element(vec![name], app).finish();
@@ -304,10 +298,8 @@ fn render_transcript_row(
             .transcript_avatar_handles
             .get(data.message_id),
     ) {
-        // The avatar of a known child agent navigates to that conversation's
-        // pane via the shared dispatcher: if the child is already open in a
-        // sibling pane it focuses that pane, if it's open in another tab it
-        // activates that tab, otherwise it splits off a new pane.
+        // Navigate to the child's pane: focus if already open, otherwise
+        // open a new pane.
         let mouse_state = mouse_state.clone();
         let self_terminal_view_id = props.terminal_view_id;
         Hoverable::new(mouse_state, move |_| avatar)
