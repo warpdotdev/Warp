@@ -104,11 +104,11 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::EnteredComposingState => {
-                // Update pane configuration to show cloud indicator.
+                // Update pane configuration to show agent indicator.
                 self.update_pane_configuration(ctx);
             }
             AmbientAgentViewModelEvent::DispatchedAgent => {
-                // Pane chrome (e.g. cloud indicator, task id) must update on viewer surfaces
+                // Pane chrome (e.g. agent indicator, task id) must update on viewer surfaces
                 // too, so this runs above the viewer short-circuit below.
                 self.update_pane_configuration(ctx);
                 // Only the spawner's view handles `DispatchedAgent`. Viewer surfaces (shared
@@ -265,7 +265,7 @@ impl TerminalView {
         }
     }
 
-    /// Enters agent view for a live shared-session viewer of a non-oz cloud run, so every
+    /// Enters agent view for a live shared-session viewer of a non-Oz ambient-agent run, so every
     /// viewer lands in the same agent-view chrome regardless of which entry point opened the
     /// conversation. Called from the `HarnessSelected` handler once the viewer has resolved
     /// the run's harness asynchronously.
@@ -275,7 +275,7 @@ impl TerminalView {
     /// here.
     ///
     /// The viewer-context guard is load-bearing: `HarnessSelected` also fires when the local
-    /// spawner picks a harness from the dropdown, and in that case the cloud-mode setup flow
+    /// spawner picks a harness from the dropdown, and in that case the ambient-agent setup flow
     /// handles agent view entry instead.
     fn maybe_enter_agent_view_for_shared_third_party_viewer(
         &mut self,
