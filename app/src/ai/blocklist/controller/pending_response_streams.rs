@@ -100,7 +100,7 @@ impl PendingResponseStreams {
         } else {
             for response_stream in streams_to_cancel.into_iter() {
                 log::info!(
-                    "canceling active stream for conversation_id={conversation_id:?}, \
+                    "Canceling active stream for conversation_id={conversation_id:?}, \
                      reason={reason}, backtrace=\n{}",
                     std::backtrace::Backtrace::force_capture()
                 );

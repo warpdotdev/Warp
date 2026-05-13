@@ -2423,8 +2423,6 @@ impl BlocklistAIController {
             .in_flight_response_streams
             .try_cancel_streams_for_conversation(conversation_id, reason, ctx)
         {
-            log::info!("No active streams to cancel. Canceling pending actions for conversation_id={conversation_id:?}, reason={reason:?}, backtrace=\n{}",
-                std::backtrace::Backtrace::force_capture());
             // Otherwise, cancel pending actions and update the input state.
             self.action_model.update(ctx, |action_model, ctx| {
                 action_model.cancel_all_pending_actions(conversation_id, Some(reason), ctx);
