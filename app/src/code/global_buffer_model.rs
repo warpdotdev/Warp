@@ -79,6 +79,10 @@ struct PendingEditBatch {
 impl PendingEditBatch {
     /// Flush this batch: send accumulated edits as a single `BufferEdit`
     /// to the remote server and cancel the debounce timer.
+    ///
+    /// Note: `send_buffer_edit` uses best-effort `try_send` on an unbounded
+    /// channel, so it can only fail if the connection is closed (in which
+    /// case the subsequent `save_buffer` would also fail).
     fn flush(self, client: &remote_server::client::RemoteServerClient, path: &str) {
         if let Some(timer) = &self.debounce_timer {
             timer.abort();
@@ -105,13 +109,13 @@ impl PendingEditBatch {
     fn discard(self) {
         if let Some(timer) = &self.debounce_timer {
             timer.abort();
+            log::debug!(
+                "[remote-buffer] Discarded pending batch: \
+                 expected_sv={} edit_count={}",
+                self.expected_server_version,
+                self.edits.len()
+            );
         }
-        log::debug!(
-            "[remote-buffer] Discarded pending batch: \
-             expected_sv={} edit_count={}",
-            self.expected_server_version,
-            self.edits.len()
-        );
     }
 }
 
