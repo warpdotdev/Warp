@@ -365,10 +365,10 @@ use warpui::elements::new_scrollable::{
 };
 use warpui::elements::{
     get_rich_content_position_id, ChildAnchor, ClippedScrollStateHandle, Container,
-    CrossAxisAlignment, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler,
-    Expanded, Flex, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement,
-    ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius,
-    ScrollableElement, ScrollbarWidth, Shrinkable, Text,
+    CrossAxisAlignment, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler, Flex,
+    NewScrollable, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
+    PositionedElementAnchor, PositionedElementOffsetBounds, Radius, ScrollableElement,
+    ScrollbarWidth, Shrinkable, Text,
 };
 use warpui::event::ModifiersState;
 use warpui::keymap::Keystroke;
@@ -24156,64 +24156,55 @@ impl View for TerminalView {
                 self.render_waterfall_gap_element(&model, &viewport, active_gap, appearance, app)
             }
             (input_mode, _, _) => {
-                if self.input.as_ref(app).is_cloud_mode_input_v2_composing(app) {
-                    column.add_child(Expanded::new(1., self.render_input()).finish());
-
-                    Stack::new()
-                        .with_constrain_absolute_children()
-                        .with_child(column.finish())
-                } else {
-                    let output_area = if (model.shared_session_status().is_view_pending()
-                        && !self.ambient_agent_view_model.as_ref(app).is_ambient_agent())
-                        || model.is_loading_conversation_transcript()
-                    {
-                        self.render_viewer_loading(app)
-                    } else if is_alt_screen_active {
-                        did_wrap_terminal_size = true;
-                        wrap_in_terminal_size_element(
-                            &self.resize_tx,
-                            self.render_alt_screen_element(
-                                app,
-                                &model,
-                                model.alt_screen().selection_range(semantic_selection),
-                            ),
-                        )
-                    } else {
-                        self.render_block_list_element(&model, input_mode, true, app)
-                    };
-
-                    column.add_child(Shrinkable::new(1., output_area).finish());
-
-                    if model.is_alt_screen_active()
-                        && self.should_render_use_agent_footer(&model, app)
-                    {
-                        column.add_child(ChildView::new(&self.use_agent_footer).finish());
-                    }
-
-                    if self.is_input_box_visible(&model, app) {
-                        column.add_child(self.render_input());
-                    } else if !model.is_read_only()
-                        && is_cloud_agent_pre_first_exchange(
-                            &self.ambient_agent_view_model,
-                            &self.agent_view_controller,
+                let output_area = if (model.shared_session_status().is_view_pending()
+                    && !self.ambient_agent_view_model.as_ref(app).is_ambient_agent())
+                    || model.is_loading_conversation_transcript()
+                {
+                    self.render_viewer_loading(app)
+                } else if is_alt_screen_active {
+                    did_wrap_terminal_size = true;
+                    wrap_in_terminal_size_element(
+                        &self.resize_tx,
+                        self.render_alt_screen_element(
                             app,
-                        )
-                    {
-                        column.add_child(ambient_agent::render_loading_footer(appearance));
-                    } else if self.show_remote_server_loading_footer(&model, app) {
-                        column.add_child(
-                            self.render_remote_server_loading_footer(&model, appearance, app),
-                        );
-                    }
+                            &model,
+                            model.alt_screen().selection_range(semantic_selection),
+                        ),
+                    )
+                } else {
+                    self.render_block_list_element(&model, input_mode, true, app)
+                };
 
-                    let stack = Stack::new()
-                        .with_constrain_absolute_children()
-                        .with_child(column.finish());
-                    if matches!(input_mode, InputMode::Waterfall) && !is_alt_screen_active {
-                        self.render_waterfall_mode_background(&model, stack, app)
-                    } else {
-                        stack
-                    }
+                column.add_child(Shrinkable::new(1., output_area).finish());
+
+                if model.is_alt_screen_active() && self.should_render_use_agent_footer(&model, app)
+                {
+                    column.add_child(ChildView::new(&self.use_agent_footer).finish());
+                }
+
+                if self.is_input_box_visible(&model, app) {
+                    column.add_child(self.render_input());
+                } else if !model.is_read_only()
+                    && is_cloud_agent_pre_first_exchange(
+                        &self.ambient_agent_view_model,
+                        &self.agent_view_controller,
+                        app,
+                    )
+                {
+                    column.add_child(ambient_agent::render_loading_footer(appearance));
+                } else if self.show_remote_server_loading_footer(&model, app) {
+                    column.add_child(
+                        self.render_remote_server_loading_footer(&model, appearance, app),
+                    );
+                }
+
+                let stack = Stack::new()
+                    .with_constrain_absolute_children()
+                    .with_child(column.finish());
+                if matches!(input_mode, InputMode::Waterfall) && !is_alt_screen_active {
+                    self.render_waterfall_mode_background(&model, stack, app)
+                } else {
+                    stack
                 }
             }
         };

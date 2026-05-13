@@ -374,8 +374,6 @@ pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_MAX_HEIGHT: f32 = 236.;
 pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_TOP_PADDING: f32 = 10.;
 pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_BOTTOM_PADDING: f32 = 8.;
 pub(super) const CLI_AGENT_RICH_INPUT_HINT_KEY: &str = "terminal-input-cli-agent-rich-input-hint";
-
-const CLOUD_MODE_V2_HINT_KEY: &str = "terminal-input-cloud-agent-hint";
 const SHORT_CIRCUIT_HIGHLIGHTING_ACTIONS: [Option<PlainTextEditorViewAction>; 7] = [
     Some(PlainTextEditorViewAction::Space),
     Some(PlainTextEditorViewAction::NonExpandingSpace),
@@ -2582,9 +2580,6 @@ impl Input {
         });
         if FeatureFlag::InlineHistoryMenu.is_enabled() {
             ctx.subscribe_to_view(&inline_history_menu_view, |me, _, event, ctx| {
-                if me.is_cloud_mode_input_v2_composing(ctx) {
-                    return;
-                }
                 me.handle_inline_history_menu_event(event, ctx);
             });
         }
@@ -3379,12 +3374,6 @@ impl Input {
         if let Some(ai_context_menu) = self.editor.as_ref(app).render_ai_context_menu() {
             let position = position_id_for_cursor(self.editor.id());
 
-            let y_anchor = if self.is_cloud_mode_input_v2_composing(app) {
-                AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top)
-            } else {
-                menu_positioning.completion_suggestions_y_anchor()
-            };
-
             stack.add_positioned_overlay_child(
                 ai_context_menu,
                 OffsetPositioning::from_axes(
@@ -3398,7 +3387,7 @@ impl Input {
                         &position,
                         PositionedElementOffsetBounds::Unbounded,
                         OffsetType::Pixel(0.),
-                        y_anchor,
+                        menu_positioning.completion_suggestions_y_anchor(),
                     ),
                 ),
             );
@@ -5538,17 +5527,6 @@ impl Input {
             return;
         }
 
-        if self.is_cloud_mode_input_v2_composing(ctx) {
-            let show_hint = *InputSettings::as_ref(ctx).show_hint_text;
-            self.editor.update(ctx, |editor, ctx| {
-                if show_hint {
-                    editor.set_placeholder_text(translate_input_key(CLOUD_MODE_V2_HINT_KEY), ctx);
-                } else {
-                    editor.clear_placeholder_text(ctx);
-                }
-            });
-            return;
-        }
         // If the current input suggestions mode has a custom placeholder,
         // that takes precedence over other placeholders.
         if let Some(placeholder) = self
@@ -5788,17 +5766,6 @@ impl Input {
         self.editor.update(ctx, |editor, ctx| {
             editor.set_interaction_state(InteractionState::Editable, ctx);
         });
-    }
-
-    fn should_block_cloud_mode_setup_submission(&self, app: &AppContext) -> bool {
-        if !false {
-            return false;
-        }
-
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
-        ambient_agent_model.is_ambient_agent()
-            && !ambient_agent_model.is_configuring_ambient_agent()
-            && !ambient_agent_model.is_agent_running()
     }
 
     /// Try to execute a command in the local session that was
@@ -11028,9 +10995,6 @@ impl Input {
             // If the inline history menu is open and has multiple tabs,
             // shift + tab should cycle between them.
             InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                if self.is_cloud_mode_input_v2_composing(ctx) {
-                    return;
-                }
                 if self
                     .inline_history_menu_view
                     .update(ctx, |view, ctx| view.select_next_tab(ctx))
@@ -11666,12 +11630,9 @@ impl Input {
             self.input_suggestions.update(ctx, |suggestions, ctx| {
                 suggestions.confirm(ctx);
             });
-        } else if self.should_block_cloud_mode_setup_submission(ctx) {
-            return;
         } else if FeatureFlag::AgentMode.is_enabled()
             && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-            && (self.ai_input_model.as_ref(ctx).is_ai_input_enabled()
-                || self.is_cloud_mode_input_v2_composing(ctx))
+            && self.ai_input_model.as_ref(ctx).is_ai_input_enabled()
         {
             // If we're submitting an AI query, we want to send telemetry for the input type.
             if FeatureFlag::NldImprovements.is_enabled() {
