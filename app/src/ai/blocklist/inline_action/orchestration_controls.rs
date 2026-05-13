@@ -505,8 +505,7 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
             .iter()
             .filter(|entry| {
                 let harness = resolve_entry_harness(entry.harness, &entry.display_name);
-                harness != Harness::Gemini
-                    && (!is_local || local_child_harness_is_enabled(harness))
+                harness != Harness::Gemini && (!is_local || local_child_harness_is_enabled(harness))
             })
             .collect();
         sorted.sort_by_key(|entry| !entry.enabled);
