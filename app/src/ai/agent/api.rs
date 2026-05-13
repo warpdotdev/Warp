@@ -244,9 +244,12 @@ impl RequestParams {
             is_byo_enabled,
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
+        let is_custom_inference_enabled = user_workspaces.is_custom_inference_enabled(app);
         let custom_model_providers = FeatureFlag::CustomInferenceEndpoints
             .is_enabled()
-            .then(|| api_key_manager.custom_model_providers_for_request(true))
+            .then(|| {
+                api_key_manager.custom_model_providers_for_request(is_custom_inference_enabled)
+            })
             .flatten();
         let allow_use_of_warp_credits_with_byok =
             *AISettings::as_ref(app).can_use_warp_credits_with_byok;

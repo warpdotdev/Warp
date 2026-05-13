@@ -162,10 +162,10 @@ impl SyncDataSource for ModelSelectorDataSource {
         };
 
         let choices: Vec<&LLMInfo> = if is_full_terminal {
-            llm_preferences.get_cli_agent_llm_choices().collect_vec()
+            llm_preferences.get_cli_agent_llm_choices(app).collect_vec()
         } else {
             llm_preferences
-                .get_base_llm_choices_for_agent_mode()
+                .get_base_llm_choices_for_agent_mode(app)
                 .collect_vec()
         };
 

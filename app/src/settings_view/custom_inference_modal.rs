@@ -7,7 +7,6 @@ use crate::{
 use warp_editor::editor::NavigationKey;
 use warpui::elements::{ConstrainedBox, CrossAxisAlignment, Expanded, MainAxisSize};
 use warpui::{
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
     elements::{
         Border, Container, CornerRadius, Empty, Flex, MouseStateHandle, ParentElement, Radius, Text,
     },
@@ -16,13 +15,15 @@ use warpui::{
         button::ButtonVariant,
         components::{Coords, UiComponent, UiComponentStyles},
     },
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 use ::ai::api_keys::CustomEndpoint;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use url::Url;
 
 const LABEL_FONT_SIZE: f32 = 12.;
-const INPUT_WIDTH: f32 = 680.;
+const INPUT_WIDTH: f32 = 480.;
 
 const MODEL_ROW_SPACING: f32 = 16.;
 const REMOVE_MODEL_BUTTON_COL_WIDTH: f32 = 32.;
@@ -279,6 +280,8 @@ impl CustomEndpointModal {
         self.endpoint_url_editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text(endpoint.map(|e| e.url.as_str()).unwrap_or(""), ctx);
         });
+        let url = self.endpoint_url_editor.as_ref(ctx).buffer_text(ctx);
+        self.url_has_error = !url.trim().is_empty() && validate_url(&url).is_err();
         self.api_key_editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text(endpoint.map(|e| e.api_key.as_str()).unwrap_or(""), ctx);
         });
@@ -347,6 +350,10 @@ impl CustomEndpointModal {
     }
 
     fn save(&mut self, ctx: &mut ViewContext<Self>) {
+        self.validate_url_field(ctx);
+        if !self.is_valid(ctx) {
+            return;
+        }
         let name = self.endpoint_name_editor.as_ref(ctx).buffer_text(ctx);
         let url = self.endpoint_url_editor.as_ref(ctx).buffer_text(ctx);
         let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
@@ -422,11 +429,7 @@ impl CustomEndpointModal {
                 .trim()
                 .is_empty()
         });
-        !name.trim().is_empty()
-            && !url.trim().is_empty()
-            && !api_key.trim().is_empty()
-            && has_models
-            && !self.url_has_error
+        is_endpoint_form_valid(&name, &url, &api_key, has_models)
     }
 
     fn focus_next_editor(&self, current: &ViewHandle<EditorView>, ctx: &mut ViewContext<Self>) {
@@ -475,6 +478,9 @@ impl CustomEndpointModal {
             EditorEvent::Escape => {
                 self.cancel(ctx);
             }
+            EditorEvent::Edited(_) => {
+                ctx.notify();
+            }
             _ => {}
         }
     }
@@ -482,27 +488,38 @@ impl CustomEndpointModal {
     fn handle_endpoint_url_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
         match event {
             EditorEvent::Navigate(NavigationKey::Tab) => {
+                self.validate_url_field(ctx);
                 ctx.focus(&self.api_key_editor);
             }
             EditorEvent::Navigate(NavigationKey::ShiftTab) => {
+                self.validate_url_field(ctx);
                 ctx.focus(&self.endpoint_name_editor);
             }
             EditorEvent::Enter => {
+                self.validate_url_field(ctx);
                 ctx.focus(&self.api_key_editor);
             }
             EditorEvent::Escape => {
                 self.cancel(ctx);
             }
             EditorEvent::Edited(_) => {
-                let url = self.endpoint_url_editor.as_ref(ctx).buffer_text(ctx);
-                let had_error = self.url_has_error;
-                self.url_has_error = !url.trim().is_empty() && validate_url(&url).is_err();
-                if self.url_has_error != had_error {
+                if !self.validate_url_field(ctx) {
                     ctx.notify();
                 }
             }
             _ => {}
         }
+    }
+
+    fn validate_url_field(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        let url = self.endpoint_url_editor.as_ref(ctx).buffer_text(ctx);
+        let had_error = self.url_has_error;
+        self.url_has_error = !url.trim().is_empty() && validate_url(&url).is_err();
+        let changed = self.url_has_error != had_error;
+        if changed {
+            ctx.notify();
+        }
+        changed
     }
 
     fn handle_api_key_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
@@ -522,6 +539,9 @@ impl CustomEndpointModal {
             }
             EditorEvent::Escape => {
                 self.cancel(ctx);
+            }
+            EditorEvent::Edited(_) => {
+                ctx.notify();
             }
             _ => {}
         }
@@ -611,7 +631,7 @@ impl View for CustomEndpointModal {
                 appearance
                     .ui_builder()
                     .text_input(self.endpoint_name_editor.clone())
-                    .with_style(input_style.clone())
+                    .with_style(input_style)
                     .build()
                     .finish(),
             )
@@ -635,7 +655,7 @@ impl View for CustomEndpointModal {
                 appearance
                     .ui_builder()
                     .text_input(self.endpoint_url_editor.clone())
-                    .with_style(input_style.clone())
+                    .with_style(input_style)
                     .build()
                     .finish(),
             )
@@ -656,7 +676,7 @@ impl View for CustomEndpointModal {
                 appearance
                     .ui_builder()
                     .text_input(self.api_key_editor.clone())
-                    .with_style(input_style.clone())
+                    .with_style(input_style)
                     .build()
                     .finish(),
             )
@@ -805,7 +825,7 @@ impl View for CustomEndpointModal {
                     self.cancel_button_mouse_state.clone(),
                 )
                 .with_text_label("Cancel".to_string())
-                .with_style(button_style.clone())
+                .with_style(button_style)
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(CustomEndpointModalAction::Cancel);
@@ -853,12 +873,63 @@ fn validate_url(url: &str) -> Result<(), &'static str> {
     if parsed.scheme() != "https" {
         return Err("URL must use HTTPS");
     }
-    if parsed.host_str().map_or(true, |h| h.is_empty()) {
+    let Some(host) = parsed.host_str().filter(|h| !h.is_empty()) else {
         return Err("URL must include a host");
+    };
+    if is_restricted_host(host) {
+        return Err("URL must not use a local or private host");
     }
     Ok(())
 }
 
+fn is_endpoint_form_valid(name: &str, url: &str, api_key: &str, has_models: bool) -> bool {
+    !name.trim().is_empty()
+        && !url.trim().is_empty()
+        && !api_key.trim().is_empty()
+        && has_models
+        && validate_url(url).is_ok()
+}
+
+fn is_restricted_host(host: &str) -> bool {
+    let host = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    host.parse::<IpAddr>().is_ok_and(is_restricted_ip)
+}
+
+fn is_restricted_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_restricted_ipv4(ip),
+        IpAddr::V6(ip) => is_restricted_ipv6(ip),
+    }
+}
+
+fn is_restricted_ipv4(ip: Ipv4Addr) -> bool {
+    ip.is_loopback() || ip.is_unspecified() || ip.is_private() || ip.is_link_local()
+}
+
+fn is_restricted_ipv6(ip: Ipv6Addr) -> bool {
+    if ip.is_loopback() || ip.is_unspecified() || is_ipv6_unique_local(ip) || is_ipv6_link_local(ip)
+    {
+        return true;
+    }
+    if let Some(ipv4) = ip.to_ipv4_mapped() {
+        return is_restricted_ipv4(ipv4);
+    }
+    false
+}
+
+fn is_ipv6_unique_local(ip: Ipv6Addr) -> bool {
+    ip.segments()[0] & 0xfe00 == 0xfc00
+}
+
+fn is_ipv6_link_local(ip: Ipv6Addr) -> bool {
+    ip.segments()[0] & 0xffc0 == 0xfe80
+}
 impl TypedActionView for CustomEndpointModal {
     type Action = CustomEndpointModalAction;
 

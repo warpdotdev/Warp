@@ -5,6 +5,7 @@ fn make_manager(keys: ApiKeys) -> ApiKeyManager {
         keys,
         aws_credentials_state: AwsCredentialsState::Missing,
         aws_credentials_refresh_strategy: AwsCredentialsRefreshStrategy::default(),
+        secure_storage_write_version: 0,
     }
 }
 
@@ -260,40 +261,6 @@ fn endpoints_with_only_empty_models_are_skipped() {
         ..Default::default()
     });
     assert!(mgr.custom_model_providers_for_request(true).is_none());
-}
-
-// ── config_key migration / generation ──────────────────────────
-
-#[test]
-fn legacy_payload_without_config_key_gets_uuid_on_load() {
-    // Simulates a payload persisted before `config_key` existed.
-    let legacy_json = r#"{
-        "custom_endpoints": [{
-            "name": "old",
-            "url": "https://a.io",
-            "api_key": "k",
-            "models": [{"name": "m", "alias": null}]
-        }]
-    }"#;
-    let mut keys: ApiKeys = serde_json::from_str(legacy_json).unwrap();
-    assert!(keys.custom_endpoints[0].models[0].config_key.is_empty());
-    assert!(ApiKeyManager::backfill_missing_config_keys(&mut keys));
-    assert!(!keys.custom_endpoints[0].models[0].config_key.is_empty());
-}
-
-#[test]
-fn backfill_is_noop_when_all_keys_present() {
-    let mut keys = ApiKeys {
-        custom_endpoints: vec![endpoint_with_keys(
-            "ep",
-            "https://a.io",
-            "k",
-            &[("m", None, "already-set")],
-        )],
-        ..Default::default()
-    };
-    assert!(!ApiKeyManager::backfill_missing_config_keys(&mut keys));
-    assert_eq!(keys.custom_endpoints[0].models[0].config_key, "already-set");
 }
 
 // ── display_label fallback ─────────────────────────────────────

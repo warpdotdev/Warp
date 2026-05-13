@@ -353,7 +353,9 @@ pub fn populate_model_picker_for_harness<A: OrchestrationControlAction, V: View>
             Some(Harness::Oz) | None => {
                 // Oz / unset: current behavior — Warp LLM catalog.
                 let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
-                let choices: Vec<_> = llm_prefs.get_base_llm_choices_for_agent_mode().collect();
+                let choices: Vec<_> = llm_prefs
+                    .get_base_llm_choices_for_agent_mode(ctx_dropdown)
+                    .collect();
                 let selected_display_name = choices
                     .iter()
                     .find(|llm| llm.id.to_string() == initial_model_id)
@@ -442,7 +444,7 @@ pub fn is_model_in_filtered_choices<V: View>(
         Some(Harness::Oz) | None => {
             let llm_prefs = LLMPreferences::as_ref(ctx);
             llm_prefs
-                .get_base_llm_choices_for_agent_mode()
+                .get_base_llm_choices_for_agent_mode(ctx)
                 .any(|llm| llm.id.to_string() == model_id)
         }
         Some(Harness::Codex) if is_local => model_id.is_empty(),
@@ -472,7 +474,7 @@ pub fn first_filtered_model_id<V: View>(
         Some(Harness::Oz) | None => {
             let llm_prefs = LLMPreferences::as_ref(ctx);
             llm_prefs
-                .get_base_llm_choices_for_agent_mode()
+                .get_base_llm_choices_for_agent_mode(ctx)
                 .next()
                 .map(|llm| llm.id.to_string())
         }
@@ -773,7 +775,7 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
                 Some(Harness::Oz) | None => {
                     let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
                     llm_prefs
-                        .get_base_llm_choices_for_agent_mode()
+                        .get_base_llm_choices_for_agent_mode(ctx_dropdown)
                         .find(|llm| llm.id.to_string() == target_model_id)
                         .map(|llm| llm.menu_display_name())
                 }

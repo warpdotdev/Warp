@@ -115,11 +115,8 @@ impl View for RemoveCustomEndpointConfirmationDialog {
         let chip_border = internal_colors::fg_overlay_3(theme);
         let chip_text = theme.active_ui_text_color();
 
-        let chips = super::render_model_chips(
-            self.model_labels.iter().cloned(),
-            appearance,
-            chip_text.into(),
-        );
+        let chips =
+            super::render_model_chips(self.model_labels.iter().cloned(), appearance, chip_text);
 
         let endpoint_card = Container::new(
             Flex::column()

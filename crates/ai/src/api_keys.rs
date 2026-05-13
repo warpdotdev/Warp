@@ -43,8 +43,7 @@ pub struct CustomEndpointModel {
     pub alias: Option<String>,
     /// Stable identifier used as `ModelConfig.{base,coding,cli_agent,computer_use_agent}` and
     /// as the `CustomModelProviders.providers[*].models[*].config_key` on the request wire.
-    /// Generated as a UUIDv4 at model creation; legacy payloads without it are migrated lazily
-    /// on load (see `ApiKeyManager::load_keys_from_secure_storage`).
+    /// Generated as a UUIDv4 at model creation.
     pub config_key: String,
 }
 
@@ -97,6 +96,7 @@ pub struct ApiKeyManager {
     keys: ApiKeys,
     pub(crate) aws_credentials_state: AwsCredentialsState,
     aws_credentials_refresh_strategy: AwsCredentialsRefreshStrategy,
+    secure_storage_write_version: u64,
 }
 
 impl ApiKeyManager {
@@ -106,6 +106,7 @@ impl ApiKeyManager {
             keys,
             aws_credentials_state: AwsCredentialsState::Missing,
             aws_credentials_refresh_strategy: AwsCredentialsRefreshStrategy::default(),
+            secure_storage_write_version: 0,
         }
     }
 
@@ -244,12 +245,13 @@ impl ApiKeyManager {
     /// to map a `ModelConfig.{base,coding,cli_agent,computer_use_agent}` selection back to a
     /// user-provided endpoint, so it MUST be the same UUID we store locally.
     ///
-    /// Returns `None` when BYOK is disabled or no endpoint has both a non-empty URL and API key.
+    /// Returns `None` when custom models should not be included or no endpoint has both a
+    /// non-empty URL and API key.
     pub fn custom_model_providers_for_request(
         &self,
-        include_byo_keys: bool,
+        include_custom_models: bool,
     ) -> Option<api::request::settings::CustomModelProviders> {
-        if !include_byo_keys {
+        if !include_custom_models {
             return None;
         }
 
@@ -353,49 +355,13 @@ impl ApiKeyManager {
             }
         };
 
-        let mut keys: ApiKeys = match serde_json::from_str(&key_json) {
+        match serde_json::from_str(&key_json) {
             Ok(keys) => keys,
             Err(e) => {
                 log::error!("Failed to deserialize API keys: {e:#}");
                 ApiKeys::default()
             }
-        };
-
-        // Lazy migration: stamp a UUID `config_key` on any pre-existing custom model that
-        // was persisted before this field landed. If any were filled, schedule a re-save so
-        // we don't repeat the work on the next launch.
-        let migrated = Self::backfill_missing_config_keys(&mut keys);
-        if migrated {
-            let json = match serde_json::to_string(&keys) {
-                Ok(json) => json,
-                Err(e) => {
-                    log::error!("Failed to re-serialize API keys after migration: {e:#}");
-                    return keys;
-                }
-            };
-            ctx.spawn(async move { json }, |_, json, ctx| {
-                if let Err(e) = ctx.secure_storage().write_value(SECURE_STORAGE_KEY, &json) {
-                    log::error!("Failed to write migrated API keys to secure storage: {e:#}");
-                }
-            });
         }
-
-        keys
-    }
-
-    /// Fills missing `config_key`s on persisted custom models. Returns `true` when any model
-    /// was updated, so the caller can persist the migrated payload.
-    fn backfill_missing_config_keys(keys: &mut ApiKeys) -> bool {
-        let mut migrated = false;
-        for endpoint in &mut keys.custom_endpoints {
-            for model in &mut endpoint.models {
-                if model.config_key.is_empty() {
-                    model.config_key = Uuid::new_v4().to_string();
-                    migrated = true;
-                }
-            }
-        }
-        migrated
     }
 
     fn write_keys_to_secure_storage(&mut self, ctx: &mut ModelContext<Self>) {
@@ -406,13 +372,19 @@ impl ApiKeyManager {
                 return;
             }
         };
+        self.secure_storage_write_version += 1;
+        let write_version = self.secure_storage_write_version;
 
         // Defer the keychain write so it doesn't block the current event
         // processing. The in-memory state is already updated and events
         // already emitted, so the UI updates immediately while the
         // potentially slow platform secure-storage call runs in a
-        // subsequent main-thread callback.
-        ctx.spawn(async move { json }, |_, json, ctx| {
+        // subsequent main-thread callback. Skip stale callbacks so older
+        // writes cannot complete after and overwrite a newer payload.
+        ctx.spawn(async move { json }, move |me, json, ctx| {
+            if write_version != me.secure_storage_write_version {
+                return;
+            }
             if let Err(e) = ctx.secure_storage().write_value(SECURE_STORAGE_KEY, &json) {
                 log::error!("Failed to write API keys to secure storage: {e:#}");
             }

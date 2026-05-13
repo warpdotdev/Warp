@@ -603,8 +603,6 @@ pub fn render_info_icon<T: Clone + Action>(
 
     Container::new(Box::new(info_button))
         .with_margin_left(4.)
-        // Since the icon is smaller than the font, we need some margin to be in alignment.
-        .with_margin_top(1.5)
         .finish()
 }
 
@@ -624,8 +622,6 @@ pub fn render_local_only_icon(
 
     Container::new(info_button)
         .with_margin_left(4.)
-        // Since the icon is smaller than the font, we need some margin to be in alignment.
-        .with_margin_top(1.5)
         .finish()
 }
 

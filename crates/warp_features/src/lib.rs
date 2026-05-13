@@ -797,6 +797,8 @@ pub enum FeatureFlag {
 
     /// Enables the Custom Inference settings UI for adding user-provided third-party / OpenAI-compatible inference endpoints.
     CustomInferenceEndpoints,
+    /// Enables Custom Inference endpoints for enterprise users.
+    CustomInferenceEndpointsEnterprise,
 
     /// Replaces the in-block warpification banner with a warpify footer.
     WarpifyFooter,
