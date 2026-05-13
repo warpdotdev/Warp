@@ -22,6 +22,7 @@ use crate::ai::blocklist::action_model::AIActionStatus;
 use crate::ai::blocklist::agent_view::orchestration_avatar::OrchestrationAvatar;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::{
     conversation_id_for_agent_id, conversation_navigation_card_with_icon,
+    dispatch_focus_or_open_child_agent_pane,
 };
 use crate::ai::blocklist::block::model::AIBlockModelHelper;
 use crate::ai::blocklist::block::{
@@ -304,15 +305,20 @@ fn render_transcript_row(
             .get(data.message_id),
     ) {
         // The avatar of a known child agent navigates to that conversation's
-        // pane. `OpenChildAgentInNewPane` reveals an existing hidden pane,
-        // focuses an already-visible pane, or splits off a new one as needed.
+        // pane via the shared dispatcher: if the child is already open in a
+        // sibling pane it focuses that pane, if it's open in another tab it
+        // activates that tab, otherwise it splits off a new pane.
         let mouse_state = mouse_state.clone();
+        let self_terminal_view_id = props.terminal_view_id;
         Hoverable::new(mouse_state, move |_| avatar)
             .with_cursor(Cursor::PointingHand)
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(TerminalAction::OpenChildAgentInNewPane {
+            .on_click(move |ctx, app, _| {
+                dispatch_focus_or_open_child_agent_pane(
                     conversation_id,
-                });
+                    self_terminal_view_id,
+                    ctx,
+                    app,
+                );
             })
             .finish()
     } else {

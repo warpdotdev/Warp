@@ -36,7 +36,10 @@ use crate::ai::agent::conversation::{
     AIConversation, AIConversationId, ConversationStatus, StatusColorStyle,
 };
 use crate::ai::artifacts::Artifact;
-use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_id;
+use crate::ai::blocklist::agent_view::orchestration_conversation_links::{
+    is_conversation_open_in_other_visible_view, pane_group_id_containing_terminal_view,
+    parent_conversation_id,
+};
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::ai::harness_display;
@@ -48,7 +51,7 @@ use crate::ui_components::icon_with_status::{
     self, render_icon_with_status, IconWithStatusVariant,
 };
 use crate::ui_components::icons::Icon;
-use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
+use crate::workspace::WorkspaceAction;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::EntityId;
 
@@ -1766,83 +1769,6 @@ const CRUMB_HEIGHT: f32 = 24.;
 const CRUMB_RADIUS: f32 = 4.;
 const CRUMB_HORIZONTAL_PADDING: f32 = 6.;
 
-/// Returns `true` if `conversation_id` is canonically owned (per
-/// `BlocklistAIHistoryModel::live_conversation_ids_for_terminal_view`) by
-/// some *visible* terminal view that is not `self_terminal_view_id`. Used
-/// by the orchestration pill bar to decide between "open in new pane / new
-/// tab" (when no other visible pane shows the conversation) and "focus
-/// pane" (when one does).
-///
-/// `BlocklistAIHistoryModel` is the single source of truth for which
-/// terminal view renders a given conversation's AI blocks (see
-/// `ConversationOwnershipTransferred`), so it correctly reflects the
-/// orchestrator after an in-place switch and the new pane after a split.
-/// However, before any user interaction the canonical owner is the
-/// hidden child-agent pane created by
-/// `create_hidden_child_agent_conversation` — a real terminal view that
-/// we deliberately keep off-screen. Using only the history-model owner
-/// here would treat that hidden pane as "elsewhere" and falsely surface
-/// "Focus pane" for every child the user has not yet opened.
-///
-/// The visible-pane filter resolves both edge cases: walking
-/// `Workspace::tab_views()` and consulting `PaneGroup::visible_pane_ids()`
-/// (which excludes hidden-for-child-agent / hidden-for-close / etc.
-/// panes) confirms the owner is a pane the user can actually navigate to.
-fn is_conversation_open_in_other_visible_view(
-    conversation_id: AIConversationId,
-    self_terminal_view_id: EntityId,
-    app: &AppContext,
-) -> bool {
-    let Some(owner) =
-        BlocklistAIHistoryModel::as_ref(app).terminal_view_id_for_conversation(&conversation_id)
-    else {
-        return false;
-    };
-    if owner == self_terminal_view_id {
-        return false;
-    }
-    let registry = WorkspaceRegistry::as_ref(app);
-    for (_, workspace_handle) in registry.all_workspaces(app) {
-        let workspace = workspace_handle.as_ref(app);
-        for pane_group_handle in workspace.tab_views() {
-            let pane_group = pane_group_handle.as_ref(app);
-            for pane_id in pane_group.visible_pane_ids() {
-                if let Some(terminal_view) = pane_group.terminal_view_from_pane_id(pane_id, app) {
-                    if terminal_view.id() == owner {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    false
-}
-
-/// Walks every visible terminal pane across every workspace/tab and
-/// returns the `EntityId` of the `PaneGroup` that contains the given
-/// `terminal_view_id`, if any. Used by the pill bar to decide between
-/// the same-pane-group focus path (`RevealChildAgent`) and the
-/// cross-pane-group path (`FocusTerminalViewInWorkspace`).
-fn pane_group_id_containing_terminal_view(
-    terminal_view_id: EntityId,
-    app: &AppContext,
-) -> Option<EntityId> {
-    let registry = WorkspaceRegistry::as_ref(app);
-    for (_, workspace_handle) in registry.all_workspaces(app) {
-        let workspace = workspace_handle.as_ref(app);
-        for pane_group_handle in workspace.tab_views() {
-            let pane_group = pane_group_handle.as_ref(app);
-            for pane_id in pane_group.visible_pane_ids() {
-                if let Some(terminal_view) = pane_group.terminal_view_from_pane_id(pane_id, app) {
-                    if terminal_view.id() == terminal_view_id {
-                        return Some(pane_group_handle.id());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
 
 /// Renders a `[Parent Avatar] [Parent Title] > [Child Avatar] [Child Name]`
 /// breadcrumb row when the active conversation is a child agent under an
