@@ -390,13 +390,11 @@ pub enum RemoteServerManagerEvent {
     },
     /// A full remote codebase-index status snapshot was pushed or requested.
     CodebaseIndexStatusesSnapshot {
-        remote_identity_key: String,
         host_id: HostId,
         statuses: Vec<RemoteCodebaseIndexStatus>,
     },
     /// A single remote codebase-index status update was pushed by the daemon.
     CodebaseIndexStatusUpdated {
-        remote_identity_key: String,
         host_id: HostId,
         status: RemoteCodebaseIndexStatus,
     },
@@ -1377,7 +1375,6 @@ impl RemoteServerManager {
                         let _ = spawner
                             .spawn(move |_me, ctx| {
                                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
-                                    remote_identity_key,
                                     host_id,
                                     status,
                                 });
@@ -1575,11 +1572,7 @@ impl RemoteServerManager {
         event: ClientEvent,
         ctx: &mut ModelContext<Self>,
     ) {
-        let Some(RemoteSessionState::Connected {
-            host_id,
-            identity_key,
-            ..
-        }) = self.sessions.get(&session_id)
+        let Some(RemoteSessionState::Connected { host_id, .. }) = self.sessions.get(&session_id)
         else {
             let event_kind = client_event_kind(&event);
             log::info!(
@@ -1589,7 +1582,6 @@ impl RemoteServerManager {
             return;
         };
         let host_id = host_id.clone();
-        let remote_identity_key = identity_key.clone();
 
         match event {
             ClientEvent::RepoMetadataSnapshotReceived { update } => {
@@ -1600,17 +1592,12 @@ impl RemoteServerManager {
             }
             ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses } => {
                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
-                    remote_identity_key,
                     host_id,
                     statuses,
                 });
             }
             ClientEvent::CodebaseIndexStatusUpdated { status } => {
-                ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
-                    remote_identity_key,
-                    host_id,
-                    status,
-                });
+                ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated { host_id, status });
             }
             ClientEvent::MessageDecodingError => {
                 ctx.emit(RemoteServerManagerEvent::ServerMessageDecodingError { session_id });

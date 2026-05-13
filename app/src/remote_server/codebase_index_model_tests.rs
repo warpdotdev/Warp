@@ -73,7 +73,7 @@ fn indexing_state_is_not_ready() {
     let mut status = ready_status("/repo");
     status.state = RemoteCodebaseIndexState::Indexing;
 
-    let availability = status.search_availability(host());
+    let availability = search_availability_for_status(&status, host());
 
     assert!(matches!(
         availability,
@@ -86,7 +86,7 @@ fn missing_root_hash_is_unavailable() {
     let mut status = ready_status("/repo");
     status.root_hash = None;
 
-    let availability = status.search_availability(host());
+    let availability = search_availability_for_status(&status, host());
 
     assert!(matches!(
         availability,

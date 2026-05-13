@@ -16,7 +16,8 @@ use crate::{
         blocklist::SessionContext,
         blocklist::{action_model::execute::get_server_output_id, BlocklistAIPermissions},
         get_relevant_files::controller::{
-            GetRelevantFilesController, GetRelevantFilesControllerEvent, GetRelevantFilesError,
+            GetRelevantFilesController, GetRelevantFilesControllerEvent,
+            GetRelevantFilesControllerResult, GetRelevantFilesError, GetRelevantFilesRequestTarget,
         },
     },
     features::FeatureFlag,
@@ -55,7 +56,21 @@ impl SearchCodebaseExecutor {
             }
 
             match event {
-                GetRelevantFilesControllerEvent::Success { fragments, .. } => {
+                GetRelevantFilesControllerEvent::Success {
+                    action_id,
+                    result: GetRelevantFilesControllerResult::SearchResult(result),
+                } => {
+                    let Some(result_tx) = me.active_searches.remove(action_id) else {
+                        return;
+                    };
+                    if let Err(e) = result_tx.send(result.clone()) {
+                        log::warn!("Failed to send search codebase results to receiver {e:?}.");
+                    }
+                }
+                GetRelevantFilesControllerEvent::Success {
+                    result: GetRelevantFilesControllerResult::Locations(fragments),
+                    ..
+                } => {
                     let action_id = event.action_id().clone();
                     let locations = fragments
                         .iter()
@@ -194,8 +209,9 @@ impl SearchCodebaseExecutor {
         if session_context.is_remote() {
             let explicit_repo_path = codebase_path
                 .as_deref()
-                .filter(|path| !path.is_empty() && *path != ".");
-            let server_output_id = get_server_output_id(input.conversation_id, ctx);
+                .filter(|path| !path.is_empty() && *path != ".")
+                .map(ToOwned::to_owned);
+            let server_output_id = get_server_output_id(conversation_id, ctx);
             send_telemetry_from_ctx!(
                 TelemetryEvent::SearchCodebaseRequested {
                     action_id: id.clone(),
@@ -204,13 +220,74 @@ impl SearchCodebaseExecutor {
                 },
                 ctx
             );
-            return remote_search::execute_remote_search(
-                query.clone(),
-                partial_paths.clone(),
-                explicit_repo_path,
-                session_context,
-                ctx,
-            );
+
+            let root_dir_for_search = self.root_repo_paths.get(id).cloned().or_else(|| {
+                self.get_relevant_files_controller
+                    .as_ref(ctx)
+                    .root_directory_for_remote_search(
+                        &session_context,
+                        explicit_repo_path.as_deref(),
+                        ctx,
+                    )
+            });
+            let Some(root_dir_for_search) = root_dir_for_search else {
+                return ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(
+                    SearchCodebaseResult::Failed {
+                        reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
+                        message: "The search failed because the codebase is not available. Try another way to locate the relevant files.".to_owned(),
+                    },
+                ));
+            };
+
+            // Add the repo root as a temporary permission; if the user gave us permission to
+            // search the repo, we can certainly search files within it for the rest of the convo.
+            BlocklistAIPermissions::handle(ctx).update(ctx, |model, _ctx| {
+                model.add_temporary_file_read_permissions(
+                    conversation_id,
+                    vec![root_dir_for_search.to_owned()],
+                );
+            });
+
+            let (result_tx, result_rx) = oneshot::channel();
+            self.active_searches.insert(id.clone(), result_tx);
+
+            return match self
+                .get_relevant_files_controller
+                .update(ctx, |controller, ctx| {
+                    controller.send_request(
+                        GetRelevantFilesRequestTarget::Remote {
+                            session_context,
+                            explicit_repo_path,
+                        },
+                        query.clone(),
+                        partial_paths.as_ref(),
+                        id.clone(),
+                        ctx,
+                    )
+                }) {
+                Ok(_) => ActionExecution::Async {
+                    execute_future: Box::pin(result_rx),
+                    on_complete: Box::new(
+                        |res: Result<SearchCodebaseResult, oneshot::Canceled>, _ctx| {
+                            let action_result =
+                                res.unwrap_or_else(|e| SearchCodebaseResult::Failed {
+                                    message: e.to_string(),
+                                    reason: SearchCodebaseFailureReason::ClientError,
+                                });
+                            AIAgentActionResultType::SearchCodebase(action_result)
+                        },
+                    ),
+                },
+                Err(e) => {
+                    log::warn!("Failed to send remote get_relevant_files request: {e:?}");
+                    ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(
+                        SearchCodebaseResult::Failed {
+                            reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
+                            message: "Remote codebase search is unavailable.".to_owned(),
+                        },
+                    ))
+                }
+            };
         }
         let codebase_path = codebase_path.as_ref().map(PathBuf::from);
 
@@ -242,7 +319,7 @@ impl SearchCodebaseExecutor {
             is_cross_repo = false;
             search_dir = current_working_directory;
         }
-        let server_output_id = get_server_output_id(input.conversation_id, ctx);
+        let server_output_id = get_server_output_id(conversation_id, ctx);
         send_telemetry_from_ctx!(
             TelemetryEvent::SearchCodebaseRequested {
                 action_id: id.clone(),
@@ -291,7 +368,9 @@ impl SearchCodebaseExecutor {
             .get_relevant_files_controller
             .update(ctx, |controller, ctx| {
                 controller.send_request(
-                    root_dir_for_search,
+                    GetRelevantFilesRequestTarget::Local {
+                        directory: root_dir_for_search.clone(),
+                    },
                     query.clone(),
                     partial_paths.as_ref(),
                     id.clone(),
@@ -357,6 +436,17 @@ impl SearchCodebaseExecutor {
         app: &AppContext,
     ) -> Option<PathBuf> {
         let SearchCodebaseRequest { codebase_path, .. } = request;
+        let session_context = SessionContext::from_session(self.active_session.as_ref(app), app);
+        if session_context.is_remote() {
+            let explicit_repo_path = codebase_path
+                .as_deref()
+                .filter(|path| !path.is_empty() && *path != ".");
+            return self
+                .get_relevant_files_controller
+                .as_ref(app)
+                .root_directory_for_remote_search(&session_context, explicit_repo_path, app);
+        }
+
         let codebase_path = codebase_path.as_deref().map(PathBuf::from);
         let Some(pwd) = self
             .active_session
@@ -408,13 +498,6 @@ impl SearchCodebaseExecutor {
         futures::future::ready(()).boxed()
     }
 }
-
-#[cfg_attr(
-    not(target_family = "wasm"),
-    path = "search_codebase/remote_search/native.rs"
-)]
-#[cfg_attr(target_family = "wasm", path = "search_codebase/remote_search/wasm.rs")]
-mod remote_search;
 
 impl Entity for SearchCodebaseExecutor {
     type Event = ();

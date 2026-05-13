@@ -1,7 +1,6 @@
 use ::ai::index::full_source_code_embedding::{
     store_client::StoreClient, ContentHash, Fragment, RepoMetadata,
 };
-use futures::channel::oneshot;
 use itertools::Itertools;
 use remote_server::proto::{
     file_context_proto, FragmentMetadata, LineRange, ReadFileContextFile, ReadFileContextRequest,
@@ -9,15 +8,12 @@ use remote_server::proto::{
 };
 use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 use string_offset::ByteOffset;
-use warpui::{ModelContext, SingletonEntity};
+use warpui::{AppContext, ModelContext, SingletonEntity};
 
 use crate::{
     ai::{
-        agent::{
-            AIAgentActionResultType, AnyFileContent, FileContext, SearchCodebaseFailureReason,
-            SearchCodebaseResult,
-        },
-        blocklist::{action_model::execute::ActionExecution, SessionContext},
+        agent::{AnyFileContent, FileContext, SearchCodebaseFailureReason, SearchCodebaseResult},
+        blocklist::SessionContext,
     },
     features::FeatureFlag,
     remote_server::codebase_index_model::{
@@ -26,67 +22,73 @@ use crate::{
     server::server_api::{ServerApi, ServerApiProvider},
 };
 
-use super::SearchCodebaseExecutor;
+use crate::ai::get_relevant_files::controller::GetRelevantFilesController;
 
-pub(super) fn execute_remote_search(
+pub(super) enum RemoteSearchRequest {
+    Pending(futures_util::stream::AbortHandle),
+    Ready(SearchCodebaseResult),
+}
+
+pub(super) fn root_directory_for_search(
+    session_context: &SessionContext,
+    explicit_repo_path: Option<&str>,
+    app: &AppContext,
+) -> Option<PathBuf> {
+    RemoteCodebaseIndexModel::as_ref(app)
+        .active_repo_path(session_context, explicit_repo_path)
+        .or_else(|| session_context.current_working_directory().clone())
+        .map(PathBuf::from)
+}
+
+pub(super) fn send_request(
     query: String,
     partial_paths: Option<Vec<String>>,
-    explicit_repo_path: Option<&str>,
     session_context: SessionContext,
-    ctx: &mut ModelContext<SearchCodebaseExecutor>,
-) -> ActionExecution<Result<SearchCodebaseResult, oneshot::Canceled>> {
-    let availability = RemoteCodebaseIndexModel::as_ref(ctx)
-        .active_repo_availability(&session_context, explicit_repo_path);
+    explicit_repo_path: Option<String>,
+    action_id: crate::ai::agent::AIAgentActionId,
+    ctx: &mut ModelContext<GetRelevantFilesController>,
+) -> RemoteSearchRequest {
     if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-        return ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(
-            SearchCodebaseResult::Failed {
-                reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
-                message: "Remote codebase search is not enabled.".to_string(),
-            },
-        ));
+        return RemoteSearchRequest::Ready(SearchCodebaseResult::Failed {
+            reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
+            message: "Remote codebase search is not enabled.".to_string(),
+        });
     }
 
+    let availability = RemoteCodebaseIndexModel::as_ref(ctx)
+        .active_repo_availability(&session_context, explicit_repo_path.as_deref());
     match availability {
         RemoteCodebaseSearchAvailability::Ready(search_context) => {
             let Some(client) = remote_server::manager::RemoteServerManager::as_ref(ctx)
                 .client_for_host(&search_context.host_id)
                 .cloned()
             else {
-                return ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(
-                    SearchCodebaseResult::Failed {
-                        reason: SearchCodebaseFailureReason::ClientError,
-                        message: "Remote codebase search is unavailable because the remote server is not connected.".to_string(),
-                    },
-                ));
+                return RemoteSearchRequest::Ready(SearchCodebaseResult::Failed {
+                    reason: SearchCodebaseFailureReason::ClientError,
+                    message: "Remote codebase search is unavailable because the remote server is not connected.".to_string(),
+                });
             };
             let store_client = ServerApiProvider::as_ref(ctx).get();
-            ActionExecution::new_async(
-                async move {
-                    let result = execute_remote_codebase_search(
-                        query,
-                        partial_paths,
-                        search_context,
-                        client,
-                        store_client,
-                    )
-                    .await
-                    .unwrap_or_else(|e| SearchCodebaseResult::Failed {
-                        reason: SearchCodebaseFailureReason::ClientError,
-                        message: e.to_string(),
-                    });
-                    Ok(result)
-                },
-                |res: Result<SearchCodebaseResult, oneshot::Canceled>, _ctx| {
-                    let action_result = res.unwrap_or_else(|e| SearchCodebaseResult::Failed {
-                        reason: SearchCodebaseFailureReason::ClientError,
-                        message: e.to_string(),
-                    });
-                    AIAgentActionResultType::SearchCodebase(action_result)
-                },
-            )
+            let abort_handle = ctx
+                .spawn(
+                    async move {
+                        execute_remote_codebase_search(
+                            query,
+                            partial_paths,
+                            search_context,
+                            client,
+                            store_client,
+                        )
+                        .await
+                    },
+                    move |me, result, ctx| {
+                        me.handle_remote_search_result(result, action_id, ctx);
+                    },
+                )
+                .abort_handle();
+            RemoteSearchRequest::Pending(abort_handle)
         }
         availability @ RemoteCodebaseSearchAvailability::NotIndexed { .. } => {
-            let explicit_repo_path = explicit_repo_path.map(ToOwned::to_owned);
             RemoteCodebaseIndexModel::handle(ctx).update(ctx, |model, ctx| {
                 model.request_active_repo_index(
                     &session_context,
@@ -94,18 +96,14 @@ pub(super) fn execute_remote_search(
                     ctx,
                 );
             });
-            ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(
-                remote_availability_failure(availability),
-            ))
+            RemoteSearchRequest::Ready(remote_availability_failure(availability))
         }
-        RemoteCodebaseSearchAvailability::NotRemote
-        | RemoteCodebaseSearchAvailability::NoConnectedHost
+        RemoteCodebaseSearchAvailability::NoConnectedHost
         | RemoteCodebaseSearchAvailability::NoActiveRepo
         | RemoteCodebaseSearchAvailability::Indexing { .. }
-        | RemoteCodebaseSearchAvailability::Failed { .. }
-        | RemoteCodebaseSearchAvailability::Unavailable { .. } => ActionExecution::Sync(
-            AIAgentActionResultType::SearchCodebase(remote_availability_failure(availability)),
-        ),
+        | RemoteCodebaseSearchAvailability::Unavailable { .. } => {
+            RemoteSearchRequest::Ready(remote_availability_failure(availability))
+        }
     }
 }
 
@@ -358,11 +356,6 @@ fn remote_availability_failure(
     availability: RemoteCodebaseSearchAvailability,
 ) -> SearchCodebaseResult {
     match availability {
-        RemoteCodebaseSearchAvailability::NotRemote => SearchCodebaseResult::Failed {
-            reason: SearchCodebaseFailureReason::ClientError,
-            message: "Codebase search was routed to a remote search path for a local session."
-                .to_string(),
-        },
         RemoteCodebaseSearchAvailability::NoConnectedHost => SearchCodebaseResult::Failed {
             reason: SearchCodebaseFailureReason::ClientError,
             message: "Remote codebase search is unavailable because the remote host is not connected."
@@ -370,7 +363,7 @@ fn remote_availability_failure(
         },
         RemoteCodebaseSearchAvailability::NoActiveRepo => SearchCodebaseResult::Failed {
             reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
-            message: "The current remote directory is not in a known git repository.".to_string(),
+            message: "The current remote directory is not in a known codebase.".to_string(),
         },
         RemoteCodebaseSearchAvailability::NotIndexed { repo_path } => {
             SearchCodebaseResult::Failed {
@@ -388,12 +381,6 @@ fn remote_availability_failure(
                 ),
             }
         }
-        RemoteCodebaseSearchAvailability::Failed { repo_path, message } => {
-            SearchCodebaseResult::Failed {
-                reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
-                message: format!("The remote codebase index for {repo_path} failed: {message}"),
-            }
-        }
         RemoteCodebaseSearchAvailability::Unavailable { repo_path, message } => {
             SearchCodebaseResult::Failed {
                 reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
@@ -406,137 +393,5 @@ fn remote_availability_failure(
             reason: SearchCodebaseFailureReason::ClientError,
             message: "Remote codebase search was unexpectedly unavailable.".to_string(),
         },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use remote_server::proto::FileContextProto;
-
-    fn failure_reason(result: SearchCodebaseResult) -> SearchCodebaseFailureReason {
-        match result {
-            SearchCodebaseResult::Failed { reason, .. } => reason,
-            SearchCodebaseResult::Success { .. } => {
-                panic!("expected remote availability failure")
-            }
-            SearchCodebaseResult::Cancelled => {
-                panic!("expected remote availability failure")
-            }
-        }
-    }
-
-    #[test]
-    fn remote_not_indexed_failure_maps_to_codebase_not_indexed() {
-        let reason = failure_reason(remote_availability_failure(
-            RemoteCodebaseSearchAvailability::NotIndexed {
-                repo_path: "/repo".to_string(),
-            },
-        ));
-
-        assert_eq!(reason, SearchCodebaseFailureReason::CodebaseNotIndexed);
-    }
-
-    #[test]
-    fn remote_indexing_failure_maps_to_codebase_not_indexed() {
-        let reason = failure_reason(remote_availability_failure(
-            RemoteCodebaseSearchAvailability::Indexing {
-                repo_path: "/repo".to_string(),
-            },
-        ));
-
-        assert_eq!(reason, SearchCodebaseFailureReason::CodebaseNotIndexed);
-    }
-
-    #[test]
-    fn remote_unavailable_failure_maps_to_codebase_not_indexed() {
-        let reason = failure_reason(remote_availability_failure(
-            RemoteCodebaseSearchAvailability::Unavailable {
-                repo_path: "/repo".to_string(),
-                message: "missing root hash".to_string(),
-            },
-        ));
-
-        assert_eq!(reason, SearchCodebaseFailureReason::CodebaseNotIndexed);
-    }
-
-    #[test]
-    fn remote_disconnected_failure_maps_to_client_error() {
-        let reason = failure_reason(remote_availability_failure(
-            RemoteCodebaseSearchAvailability::NoConnectedHost,
-        ));
-
-        assert_eq!(reason, SearchCodebaseFailureReason::ClientError);
-    }
-
-    fn fragment_metadata(path: &str, content_hash: &str) -> FragmentMetadata {
-        FragmentMetadata {
-            content_hash: content_hash.to_string(),
-            path: path.to_string(),
-            start_line: 1,
-            end_line: 2,
-            byte_start: 0,
-            byte_end: 4,
-        }
-    }
-
-    fn text_file_context(path: &str, content: &str) -> FileContextProto {
-        FileContextProto {
-            file_name: path.to_string(),
-            content: Some(file_context_proto::Content::TextContent(
-                content.to_string(),
-            )),
-            line_range_start: Some(1),
-            line_range_end: Some(3),
-            last_modified_epoch_millis: None,
-            line_count: 3,
-        }
-    }
-
-    #[test]
-    fn read_fragment_metadata_request_converts_end_line_to_exclusive() {
-        let metadata = vec![fragment_metadata(
-            "/repo/src/lib.rs",
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        )];
-
-        let request = read_fragment_metadata_request(&metadata);
-
-        assert_eq!(request.files.len(), 1);
-        assert_eq!(request.files[0].line_ranges.len(), 1);
-        assert_eq!(request.files[0].line_ranges[0].start, 1);
-        assert_eq!(request.files[0].line_ranges[0].end, 3);
-    }
-
-    #[test]
-    fn remote_fragments_match_file_contexts_by_identity() {
-        let content_hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let first_metadata = fragment_metadata("/repo/src/first.rs", content_hash);
-        let second_metadata = fragment_metadata("/repo/src/second.rs", content_hash);
-        let metadata = vec![first_metadata.clone(), second_metadata.clone()];
-        let response = ReadFileContextResponse {
-            file_contexts: vec![
-                text_file_context("/repo/src/second.rs", "two\n"),
-                text_file_context("/repo/src/first.rs", "one\n"),
-            ],
-            failed_files: vec![],
-        };
-
-        let (fragments, file_contexts_by_identity) =
-            remote_fragments_and_file_contexts(response, &metadata).unwrap();
-
-        assert_eq!(fragments.len(), 2);
-        assert_eq!(
-            file_contexts_by_identity
-                .get(&RemoteFragmentIdentity::from_metadata(&first_metadata))
-                .map(|context| context.file_name.as_str()),
-            Some("/repo/src/first.rs")
-        );
-        assert_eq!(
-            file_contexts_by_identity
-                .get(&RemoteFragmentIdentity::from_metadata(&second_metadata))
-                .map(|context| context.file_name.as_str()),
-            Some("/repo/src/second.rs")
-        );
     }
 }

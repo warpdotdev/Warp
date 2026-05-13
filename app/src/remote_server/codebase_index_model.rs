@@ -15,11 +15,6 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use super::manager::{RemoteServerManager, RemoteServerManagerEvent};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ActiveRemoteRepo {
-    remote_path: RemotePath,
-}
-
 #[derive(Clone, Debug)]
 pub struct RemoteCodebaseSearchContext {
     pub host_id: HostId,
@@ -30,12 +25,10 @@ pub struct RemoteCodebaseSearchContext {
 
 #[derive(Clone, Debug)]
 pub enum RemoteCodebaseSearchAvailability {
-    NotRemote,
     NoConnectedHost,
     NoActiveRepo,
     NotIndexed { repo_path: String },
     Indexing { repo_path: String },
-    Failed { repo_path: String, message: String },
     Unavailable { repo_path: String, message: String },
     Ready(RemoteCodebaseSearchContext),
 }
@@ -47,10 +40,9 @@ impl RemoteCodebaseSearchAvailability {
 
     fn repo_path(&self) -> Option<&str> {
         match self {
-            Self::NotRemote | Self::NoConnectedHost | Self::NoActiveRepo => None,
+            Self::NoConnectedHost | Self::NoActiveRepo => None,
             Self::NotIndexed { repo_path }
             | Self::Indexing { repo_path }
-            | Self::Failed { repo_path, .. }
             | Self::Unavailable { repo_path, .. } => Some(repo_path),
             Self::Ready(context) => Some(context.repo_path.as_str()),
         }
@@ -73,7 +65,7 @@ fn remote_path_from_repo_path(host_id: &HostId, repo_path: &str) -> Option<Remot
 #[derive(Default)]
 pub struct RemoteCodebaseIndexModel {
     statuses: HashMap<RemotePath, RemoteCodebaseIndexStatus>,
-    active_repos_by_host: HashMap<HostId, ActiveRemoteRepo>,
+    active_repos_by_host: HashMap<HostId, RemotePath>,
 }
 
 impl RemoteCodebaseIndexModel {
@@ -91,10 +83,7 @@ impl RemoteCodebaseIndexModel {
         explicit_repo_path: Option<&str>,
     ) -> RemoteCodebaseSearchAvailability {
         let Some(host_id) = session_context.host_id().cloned() else {
-            if session_context.is_remote() {
-                return RemoteCodebaseSearchAvailability::NoConnectedHost;
-            }
-            return RemoteCodebaseSearchAvailability::NotRemote;
+            return RemoteCodebaseSearchAvailability::NoConnectedHost;
         };
 
         self.availability_for_remote(
@@ -104,7 +93,7 @@ impl RemoteCodebaseIndexModel {
         )
     }
 
-    fn active_repo_path(
+    pub fn active_repo_path(
         &self,
         session_context: &SessionContext,
         explicit_repo_path: Option<&str>,
@@ -142,18 +131,10 @@ impl RemoteCodebaseIndexModel {
         ctx: &mut ModelContext<Self>,
     ) {
         match event {
-            RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
-                remote_identity_key: _,
-                host_id,
-                statuses,
-            } => {
+            RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { host_id, statuses } => {
                 self.apply_statuses_snapshot(host_id, statuses);
             }
-            RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
-                remote_identity_key: _,
-                host_id,
-                status,
-            } => {
+            RemoteServerManagerEvent::CodebaseIndexStatusUpdated { host_id, status } => {
                 self.apply_status_update(host_id, status.clone());
             }
             RemoteServerManagerEvent::NavigatedToDirectory {
@@ -220,8 +201,7 @@ impl RemoteCodebaseIndexModel {
         let Some(remote_path) = remote_path_from_repo_path(&host_id, &repo_path) else {
             return;
         };
-        self.active_repos_by_host
-            .insert(host_id, ActiveRemoteRepo { remote_path });
+        self.active_repos_by_host.insert(host_id, remote_path);
     }
 
     fn remove_host(&mut self, host_id: &HostId) {
@@ -240,7 +220,7 @@ impl RemoteCodebaseIndexModel {
             .or_else(|| {
                 self.active_repos_by_host
                     .get(host_id)
-                    .map(|repo| repo.remote_path.path.as_str().to_string())
+                    .map(|repo| repo.path.as_str().to_string())
             })
             .or_else(|| {
                 current_working_directory.and_then(|cwd| {
@@ -256,7 +236,7 @@ impl RemoteCodebaseIndexModel {
         let Some(status) = self.status_for_repo(host_id, &repo_path) else {
             return RemoteCodebaseSearchAvailability::NotIndexed { repo_path };
         };
-        status.search_availability(host_id.clone())
+        search_availability_for_status(status, host_id.clone())
     }
 
     fn status_for_repo(
@@ -288,52 +268,43 @@ impl Entity for RemoteCodebaseIndexModel {
 
 impl SingletonEntity for RemoteCodebaseIndexModel {}
 
-trait RemoteCodebaseIndexStatusExt {
-    fn search_availability(&self, host_id: HostId) -> RemoteCodebaseSearchAvailability;
-}
-
-impl RemoteCodebaseIndexStatusExt for RemoteCodebaseIndexStatus {
-    fn search_availability(&self, host_id: HostId) -> RemoteCodebaseSearchAvailability {
-        let repo_path = self.repo_path.clone();
-        match self.state {
-            RemoteCodebaseIndexState::Ready | RemoteCodebaseIndexState::Stale => {
-                let Some(root_hash) = self
-                    .root_hash
-                    .as_deref()
-                    .and_then(|hash| NodeHash::from_str(hash).ok())
-                else {
-                    return RemoteCodebaseSearchAvailability::Unavailable {
-                        repo_path,
-                        message: "The remote codebase index is missing its root hash.".to_string(),
-                    };
-                };
-                RemoteCodebaseSearchAvailability::Ready(RemoteCodebaseSearchContext {
-                    host_id,
+fn search_availability_for_status(
+    status: &RemoteCodebaseIndexStatus,
+    host_id: HostId,
+) -> RemoteCodebaseSearchAvailability {
+    let repo_path = status.repo_path.clone();
+    match status.state {
+        RemoteCodebaseIndexState::Ready | RemoteCodebaseIndexState::Stale => {
+            let Some(root_hash) = status
+                .root_hash
+                .as_deref()
+                .and_then(|hash| NodeHash::from_str(hash).ok())
+            else {
+                return RemoteCodebaseSearchAvailability::Unavailable {
                     repo_path,
-                    root_hash,
-                    embedding_config: EmbeddingConfig::default(),
-                })
-            }
-            RemoteCodebaseIndexState::Queued | RemoteCodebaseIndexState::Indexing => {
-                RemoteCodebaseSearchAvailability::Indexing { repo_path }
-            }
-            RemoteCodebaseIndexState::Failed => RemoteCodebaseSearchAvailability::Failed {
+                    message: "The remote codebase index is missing its root hash.".to_string(),
+                };
+            };
+            RemoteCodebaseSearchAvailability::Ready(RemoteCodebaseSearchContext {
+                host_id,
                 repo_path,
-                message: self
-                    .failure_message
-                    .clone()
-                    .unwrap_or_else(|| "The remote codebase index failed.".to_string()),
-            },
-            RemoteCodebaseIndexState::NotEnabled
-            | RemoteCodebaseIndexState::Unavailable
-            | RemoteCodebaseIndexState::Disabled => RemoteCodebaseSearchAvailability::Unavailable {
-                repo_path,
-                message: self
-                    .failure_message
-                    .clone()
-                    .unwrap_or_else(|| "Remote codebase search is not available.".to_string()),
-            },
+                root_hash,
+                embedding_config: EmbeddingConfig::default(),
+            })
         }
+        RemoteCodebaseIndexState::Queued | RemoteCodebaseIndexState::Indexing => {
+            RemoteCodebaseSearchAvailability::Indexing { repo_path }
+        }
+        RemoteCodebaseIndexState::Failed
+        | RemoteCodebaseIndexState::NotEnabled
+        | RemoteCodebaseIndexState::Unavailable
+        | RemoteCodebaseIndexState::Disabled => RemoteCodebaseSearchAvailability::Unavailable {
+            repo_path,
+            message: status
+                .failure_message
+                .clone()
+                .unwrap_or_else(|| "Remote codebase search is not available.".to_string()),
+        },
     }
 }
 
