@@ -298,10 +298,10 @@ aws-types = "1"
 
 rmcp = { workspace = true, features = [
     "auth",
-    "transport-streamable-http-client-reqwest",
-    "transport-sse-client-reqwest",
+    "transport-streamable-http-client",
     "transport-child-process",
 ] }
+sse-stream = "0.2"
 notify-debouncer-full.workspace = true
 rquickjs = { workspace = true, optional = true }
 rustls.workspace = true
