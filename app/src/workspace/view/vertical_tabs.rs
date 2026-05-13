@@ -1374,10 +1374,7 @@ fn render_new_tab_button(
         )
         .build()
         .on_click(|ctx, _, position| {
-            ctx.dispatch_typed_action(WorkspaceAction::ToggleNewSessionMenu {
-                position,
-                is_vertical_tabs: true,
-            });
+            ctx.dispatch_typed_action(WorkspaceAction::ToggleNewSessionMenu { position });
         })
         .finish();
 

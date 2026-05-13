@@ -2535,7 +2535,7 @@ fn test_pointer_opened_tab_configs_menu_does_not_select_top_item() {
         let workspace = mock_workspace(&mut app);
 
         workspace.update(&mut app, |workspace, ctx| {
-            workspace.toggle_new_session_dropdown_menu(Vector2F::zero(), false, ctx);
+            workspace.toggle_new_session_dropdown_menu(Vector2F::zero(), ctx);
 
             assert!(workspace.show_new_session_dropdown_menu.is_some());
             assert_eq!(
