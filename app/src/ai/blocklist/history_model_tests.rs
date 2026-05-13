@@ -547,6 +547,158 @@ fn test_merge_cloud_metadata_updates_already_restored_conversations() {
 }
 
 #[test]
+fn test_merge_cloud_metadata_reuses_restored_conversation_id_for_token() {
+    use crate::ai::agent::conversation::AIConversation;
+
+    App::test((), |mut app| async move {
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+        let token = ServerConversationToken::new("restored-canonical-token".to_string());
+
+        let mut conversation = AIConversation::new(false, false);
+        conversation.set_server_conversation_token(token.as_str().to_string());
+        let conversation_id = conversation.id();
+
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
+        });
+
+        history_model.update(&mut app, |model, _| {
+            model.server_token_to_conversation_id.remove(&token);
+            model.merge_cloud_conversation_metadata(vec![create_server_metadata(
+                "Restored canonical conversation",
+                token.as_str(),
+                12.0,
+                None,
+            )]);
+        });
+
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model.find_conversation_id_by_server_token(&token),
+                Some(conversation_id),
+            );
+            assert_eq!(
+                model
+                    .conversation(&conversation_id)
+                    .and_then(|conversation| conversation.server_metadata())
+                    .map(|metadata| metadata.title.as_str()),
+                Some("Restored canonical conversation"),
+            );
+
+            let metadata = model
+                .get_conversation_metadata(&conversation_id)
+                .expect("metadata should be inserted under the restored conversation id");
+            assert_eq!(metadata.server_conversation_token.as_ref(), Some(&token));
+            assert!(
+                metadata.has_local_data,
+                "restored conversation metadata should preserve local data"
+            );
+            assert_eq!(
+                model
+                    .all_conversations_metadata
+                    .values()
+                    .filter(|metadata| metadata.server_conversation_token.as_ref() == Some(&token))
+                    .count(),
+                1,
+            );
+        });
+    });
+}
+
+#[test]
+fn test_merge_cloud_metadata_removes_stale_duplicate_metadata_ids_for_token() {
+    App::test((), |mut app| async move {
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let token = ServerConversationToken::new("duplicate-metadata-token".to_string());
+
+        let (canonical_conversation_id, stale_conversation_id) =
+            history_model.update(&mut app, |model, _| {
+                let canonical_conversation_id =
+                    model.get_or_set_canonical_conversation_id_for_server_token(&token);
+                let stale_conversation_id = AIConversationId::new();
+                let stale_metadata = AIConversationMetadata::from_server_metadata(
+                    stale_conversation_id,
+                    create_server_metadata("Stale duplicate", token.as_str(), 1.0, None),
+                );
+                model
+                    .all_conversations_metadata
+                    .insert(stale_conversation_id, stale_metadata);
+
+                model.merge_cloud_conversation_metadata(vec![create_server_metadata(
+                    "Canonical metadata",
+                    token.as_str(),
+                    2.0,
+                    None,
+                )]);
+
+                (canonical_conversation_id, stale_conversation_id)
+            });
+
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model.find_conversation_id_by_server_token(&token),
+                Some(canonical_conversation_id),
+            );
+            assert!(
+                model
+                    .get_conversation_metadata(&stale_conversation_id)
+                    .is_none(),
+                "stale metadata under a duplicate id should be removed",
+            );
+            assert_eq!(
+                model
+                    .get_conversation_metadata(&canonical_conversation_id)
+                    .map(|metadata| metadata.title.as_str()),
+                Some("Canonical metadata"),
+            );
+            assert_eq!(
+                model
+                    .all_conversations_metadata
+                    .values()
+                    .filter(|metadata| metadata.server_conversation_token.as_ref() == Some(&token))
+                    .count(),
+                1,
+            );
+        });
+    });
+}
+
+#[test]
+fn test_reserved_canonical_conversation_id_reused_by_later_metadata_merge() {
+    App::test((), |mut app| async move {
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let token = ServerConversationToken::new("reserved-fallback-token".to_string());
+
+        let reserved_conversation_id = history_model.update(&mut app, |model, _| {
+            model.get_or_set_canonical_conversation_id_for_server_token(&token)
+        });
+
+        history_model.update(&mut app, |model, _| {
+            model.merge_cloud_conversation_metadata(vec![create_server_metadata(
+                "Reserved fallback conversation",
+                token.as_str(),
+                9.0,
+                None,
+            )]);
+        });
+
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model.find_conversation_id_by_server_token(&token),
+                Some(reserved_conversation_id),
+            );
+            let metadata = model
+                .get_conversation_metadata(&reserved_conversation_id)
+                .expect("metadata should be inserted under the reserved id");
+            assert_eq!(metadata.title, "Reserved fallback conversation");
+            assert_eq!(metadata.server_conversation_token.as_ref(), Some(&token));
+            assert_eq!(metadata.credits_spent, Some(9.0));
+        });
+    });
+}
+
+#[test]
 fn test_transcript_viewer_terminal_view_is_not_marked_historical() {
     App::test((), |mut app| async move {
         let now = Local::now();

@@ -3548,9 +3548,9 @@ impl PaneGroup {
     ) {
         let history_model_handle = BlocklistAIHistoryModel::handle(ctx);
 
-        let future = history_model_handle
-            .as_ref(ctx)
-            .load_conversation_by_server_token(&server_conversation_token, ctx);
+        let future = history_model_handle.update(ctx, |history_model, ctx| {
+            history_model.load_conversation_by_server_token(&server_conversation_token, ctx)
+        });
         ctx.spawn(future, move |group, conversation, ctx| {
             if let Some(conversation) = conversation {
                 group.load_data_into_transcript_viewer(

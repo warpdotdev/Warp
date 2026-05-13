@@ -101,11 +101,9 @@ pub fn convert_conversation_data_to_ai_conversation(
             orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
-            // TODO: Populate run_id from server metadata once it is exposed
-            // in ServerAIConversationMetadata. For cloud conversations that
-            // were spawned via the server API, the run_id is created at task
-            // dispatch time; adding it here would avoid a round-trip to StreamInit.
-            run_id: None,
+            run_id: metadata
+                .ambient_agent_task_id
+                .map(|task_id| task_id.to_string()),
             autoexecute_override: None,
             last_event_sequence: None,
         },

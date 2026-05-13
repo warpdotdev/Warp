@@ -4079,11 +4079,14 @@ impl Workspace {
 
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         let server_token = conversation_id;
+        let local_conversation_id =
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
+                history.get_or_set_canonical_conversation_id_for_server_token(&server_token)
+            });
 
         ctx.spawn(
             async move {
-                load_conversation_from_server(AIConversationId::default(), server_token, ai_client)
-                    .await
+                load_conversation_from_server(local_conversation_id, server_token, ai_client).await
             },
             move |me, cloud_conversation, ctx| {
                 let Some(cloud_conversation) = cloud_conversation else {

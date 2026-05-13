@@ -2049,6 +2049,38 @@ impl BlocklistAIHistoryModel {
         None
     }
 
+    /// Returns the canonical local conversation ID for a server token, creating
+    /// and caching one if this client has not seen the token before.
+    pub fn get_or_set_canonical_conversation_id_for_server_token(
+        &mut self,
+        server_token: &ServerConversationToken,
+    ) -> AIConversationId {
+        if let Some(conversation_id) = self.server_token_to_conversation_id.get(server_token) {
+            return *conversation_id;
+        }
+
+        let conversation_id = self
+            .conversations_by_id
+            .iter()
+            .find_map(|(conversation_id, conversation)| {
+                (conversation.server_conversation_token() == Some(server_token))
+                    .then_some(*conversation_id)
+            })
+            .or_else(|| {
+                self.all_conversations_metadata
+                    .iter()
+                    .find_map(|(conversation_id, metadata)| {
+                        (metadata.server_conversation_token.as_ref() == Some(server_token))
+                            .then_some(*conversation_id)
+                    })
+            })
+            .unwrap_or_else(AIConversationId::new);
+
+        self.server_token_to_conversation_id
+            .insert(server_token.clone(), conversation_id);
+        conversation_id
+    }
+
     /// Mark conversations as historical
     /// Historical conversations consist of non-live conversations that were read from the disk or server on startup,
     /// and conversations (recorded here) that were live this session but have now been cleared.
