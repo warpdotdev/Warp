@@ -383,16 +383,8 @@ impl OrderedTerminalEventType {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum AgentAttachment {
-    BlockReference {
-        block_id: BlockId,
-    },
-    PlainText {
-        content: String,
-    },
-    FileReference {
-        attachment_id: String,
-        file_name: String,
-    },
+    BlockReference { block_id: BlockId },
+    PlainText { content: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Copy)]

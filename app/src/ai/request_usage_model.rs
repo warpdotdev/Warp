@@ -13,7 +13,7 @@
 //!   `AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD` 的文件(`workspaces/gql_convert.rs`、
 //!   `ai_assistant/requests.rs`、`ai_assistant/mod.rs`、
 //!   `settings/ai.rs`、`settings/ai_tests.rs`、`workspace/bonus_grant_notification_model.rs`、
-//!   `workspace/view/free_tier_limit_hit_modal.rs`、`settings_view/ai_page.rs`、
+//!   `settings_view/ai_page.rs`、
 //!   `terminal/view/ambient_agent/first_time_setup.rs`、`agent_view/agent_message_bar.rs`)
 //!   不在本任务写入域内 → 必须在 stub 内继续保留这些类型定义与等价构造能力,
 //!   只剥离 RPC / 缓存 / 计量等业务逻辑。

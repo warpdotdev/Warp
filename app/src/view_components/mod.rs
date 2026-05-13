@@ -20,10 +20,9 @@ mod warning_box;
 
 pub use agent_toast::*;
 pub use alert::Alert;
-pub use clickable_text_input::*;
 pub use compact_dropdown::{CompactDropdown, CompactDropdownEvent, CompactDropdownItem};
 pub use dismissible_toast::*;
-pub use dropdown::{Dropdown, DropdownEvent, DropdownItem};
+pub use dropdown::{Dropdown, DropdownItem};
 pub use feature_popup::*;
 pub use filterable_dropdown::{FilterableDropdown, FilterableDropdownOrientation};
 pub use markdown_toggle_view::{MarkdownToggleEvent, MarkdownToggleView};

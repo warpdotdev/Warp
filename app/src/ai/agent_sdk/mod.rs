@@ -12,7 +12,7 @@ use crate::ai::agent_sdk::mcp_config::build_mcp_servers_from_specs;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::aws_credentials::refresh_aws_credentials;
 use crate::ai::llms::LLMId;
-use crate::auth::{AuthManager, AuthManagerEvent, OwnerType};
+use crate::auth::OwnerType;
 use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::workflows::workflow::Workflow;
 use ai::api_keys::{ApiKeyManager, AwsCredentialsRefreshStrategy};
@@ -92,7 +92,6 @@ fn dispatch_command(
         CliCommand::Agent(agent_cmd) => run_agent(ctx, global_options, agent_cmd),
         CliCommand::MCP(mcp_cmd) => mcp::run(ctx, global_options, mcp_cmd),
         CliCommand::Model(model_cmd) => model::run(ctx, global_options, model_cmd),
-        CliCommand::Login => admin::login(ctx),
         CliCommand::Whoami => admin::whoami(ctx, global_options.output_format),
         CliCommand::Provider(provider_cmd) => {
             if !FeatureFlag::ProviderCommand.is_enabled() {
@@ -557,7 +556,6 @@ fn command_requires_auth(command: &CliCommand) -> bool {
         CliCommand::Model(model_cmd) => match model_cmd {
             ModelCommand::List => true,
         },
-        CliCommand::Login => false,
         CliCommand::Whoami => true,
         CliCommand::Provider(_) => true,
     }
@@ -566,8 +564,7 @@ fn command_requires_auth(command: &CliCommand) -> bool {
 /// Launch a CLI command, checking authentication first if needed.
 ///
 /// If auth is not required, dispatches the command immediately.
-/// If auth is required and the user is logged in, triggers a user refresh
-/// before launching the command.
+/// If auth is required and the local user is available, dispatches immediately.
 fn launch_command(
     ctx: &mut AppContext,
     command: CliCommand,
@@ -579,53 +576,14 @@ fn launch_command(
         return dispatch_command(ctx, command, global_options);
     }
 
-    let cli_name = warp_cli::binary_name().unwrap_or_else(|| "warp".to_string());
-
     let auth_state = AuthStateProvider::handle(ctx).as_ref(ctx).get();
     if !auth_state.is_logged_in() {
         return Err(anyhow::anyhow!(
-            "You are not logged in - please log in with `{cli_name} login` to continue."
+            "No local user is available. Restart OpenWarp and try again."
         ));
     }
 
-    // User is logged in — subscribe to auth events, trigger a refresh, and wait
-    // for the result before running the command.
-    let mut dispatched = false;
-    ctx.subscribe_to_model(&AuthManager::handle(ctx), move |_, event, ctx| {
-        if dispatched {
-            return;
-        }
-        match event {
-            AuthManagerEvent::AuthComplete => {
-                dispatched = true;
-                if let Err(err) = dispatch_command(ctx, command.clone(), global_options.clone()) {
-                    report_fatal_error(err, ctx);
-                }
-            }
-            AuthManagerEvent::NeedsReauth => {
-                dispatched = true;
-                let auth_state = AuthStateProvider::handle(ctx).as_ref(ctx).get();
-                let message = if auth_state.is_api_key_authenticated() {
-                    "Your API key is invalid. Please provide a valid key via '--api-key' or the WARP_API_KEY environment variable.".to_string()
-                } else {
-                    format!("Your credentials are invalid. Please log in again with `{cli_name} login`.")
-                };
-                report_fatal_error(anyhow::anyhow!(message), ctx);
-            }
-            AuthManagerEvent::AuthFailed(err) => {
-                dispatched = true;
-                report_fatal_error(anyhow::anyhow!("Authentication failed: {err:#}"), ctx);
-            }
-            _ => {}
-        }
-    });
-
-    // Trigger the user refresh - the subscription above will handle the result.
-    AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-        auth_manager.refresh_user(ctx);
-    });
-
-    Ok(())
+    dispatch_command(ctx, command, global_options)
 }
 
 /// Check if we're running within Warp (for example, if this is an invocation of the Warp CLI
@@ -657,7 +615,3 @@ fn report_fatal_error(err: anyhow::Error, ctx: &mut AppContext) {
     let error = anyhow::anyhow!(message);
     ctx.terminate_app(TerminationMode::ForceTerminate, Some(Err(error)));
 }
-
-#[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;

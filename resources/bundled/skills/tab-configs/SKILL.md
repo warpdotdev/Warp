@@ -43,7 +43,7 @@ All panes are defined in a flat `[[panes]]` array of tables. The **first entry i
 #### Leaf node fields
 
 - `id` (required, string): Unique identifier.
-- `type` (required, string): `"terminal"` (standard shell), `"agent"` (opens in Agent Mode), or `"cloud"` (cloud mode pane, no local shell).
+- `type` (required, string): `"terminal"` (standard shell) or `"agent"` (opens in Agent Mode).
 - `directory` (optional, string): Initial working directory. Supports `~` expansion. Applies to `terminal` and `agent` types.
 - `commands` (optional, array of strings): Commands to run in sequence on open. Applies to `terminal` and `agent` types.
 - `is_focused` (optional, bool): Set `true` on at most one pane to give it initial focus.
@@ -95,7 +95,7 @@ Ensure your output follows these rules:
 - Every ID in a `children` array must reference an existing `[[panes]]` entry.
 - No cycles in the pane tree.
 - Leaf panes must NOT have `children` or `split`.
-- Leaf panes must have a `type` field (`"terminal"`, `"agent"`, or `"cloud"`).
+- Leaf panes must have a `type` field (`"terminal"` or `"agent"`).
 - Split panes (have `split`) must have `children` with at least 2 entries.
 - At most one pane may have `is_focused = true`.
 - All `id` values must be unique across the file.

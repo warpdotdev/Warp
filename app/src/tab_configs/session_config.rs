@@ -289,7 +289,7 @@ fn snapshot_to_flat_panes(
                     };
                     (terminal.cwd.clone(), pane_type)
                 }
-                LeafContents::AmbientAgent(_) => (None, TabConfigPaneType::Cloud),
+                LeafContents::AmbientAgent(_) => (None, TabConfigPaneType::Agent),
                 // Non-terminal panes become empty terminal panes to preserve layout.
                 _ => (None, TabConfigPaneType::Terminal),
             };

@@ -704,7 +704,7 @@ impl AgentSlide {
         let title_el = Text::new(
             localized(
                 "onboarding-agent-set-by-team-workspace",
-                "Set by Team Workspace",
+                "Managed by local workspace policy",
             ),
             ui_font_family,
             14.0,
@@ -720,7 +720,7 @@ impl AgentSlide {
         let subtitle_el = Text::new(
             localized(
                 "onboarding-agent-team-workspace-autonomy-description",
-                "Autonomy settings are configured as part of your team workspace.",
+                "Autonomy settings are configured by the local workspace policy.",
             ),
             ui_font_family,
             12.0,

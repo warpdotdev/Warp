@@ -28,7 +28,6 @@ use crate::{
     ChannelState, OpenPath,
 };
 use anyhow::{anyhow, ensure, Result};
-use itertools::Itertools;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -103,25 +102,10 @@ impl UriHost {
         // Handle host
         match self {
             UriHost::Auth => {
-                ctx.window_ids()
-                    .collect_vec()
-                    .into_iter()
-                    .for_each(|window_id| {
-                        let Some(root_view_id) = ctx.root_view_id(window_id) else {
-                            return;
-                        };
-                        safe_info!(
-                            safe: ("Dispatched auth url to window {window_id}"),
-                            full: ("Dispatched auth url {url} to window {window_id}")
-                        );
-                        ctx.dispatch_action(
-                            window_id,
-                            &[root_view_id],
-                            "root_view:handle_incoming_auth_url",
-                            &url.clone(),
-                            log::Level::Info,
-                        );
-                    });
+                safe_info!(
+                    safe: ("Ignored auth url because OpenWarp has no cloud login flow"),
+                    full: ("Ignored auth url {url} because OpenWarp has no cloud login flow")
+                );
             }
             UriHost::Action => {
                 match Action::parse(url) {

@@ -1832,7 +1832,6 @@ pub enum Event {
         title: Option<String>,
         body: String,
     },
-    FreeTierLimitCheckTriggered,
     /// Emitted when the user clicks a child agent row in the status card to reveal
     /// its hidden pane.
     RevealChildAgent {
@@ -4327,12 +4326,6 @@ impl TerminalView {
         event: &BlocklistAIControllerEvent,
         ctx: &mut ViewContext<Self>,
     ) {
-        if matches!(
-            event,
-            BlocklistAIControllerEvent::FreeTierLimitCheckTriggered
-        ) {
-            ctx.emit(Event::FreeTierLimitCheckTriggered);
-        }
         if let BlocklistAIControllerEvent::SentRequest { model_id, .. } = event {
             self.maybe_insert_aws_bedrock_login_banner(model_id, ctx);
         }

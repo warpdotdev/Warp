@@ -553,7 +553,6 @@ impl BlocklistAIController {
         // Process attachments and set them in the context model
         let mut block_ids = Vec::new();
         let mut selected_text_parts = Vec::new();
-        let mut ignored_file_attachments = Vec::new();
         for attachment in attachments {
             match attachment {
                 AgentAttachment::BlockReference { block_id } => {
@@ -562,9 +561,6 @@ impl BlocklistAIController {
                 }
                 AgentAttachment::PlainText { content } => {
                     selected_text_parts.push(content);
-                }
-                AgentAttachment::FileReference { file_name, .. } => {
-                    ignored_file_attachments.push(file_name);
                 }
             }
         }
@@ -582,14 +578,6 @@ impl BlocklistAIController {
                 context_model.set_pending_context_selected_text(Some(combined_text), false, ctx);
             }
         });
-
-        if !ignored_file_attachments.is_empty() {
-            log::warn!(
-                "Ignoring {} shared-session file attachment(s) because attachment downloads are disabled in OpenWarp: {}",
-                ignored_file_attachments.len(),
-                ignored_file_attachments.join(", ")
-            );
-        }
 
         self.send_shared_session_query(
             prompt,

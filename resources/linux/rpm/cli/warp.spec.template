@@ -2,7 +2,7 @@
 # Package Spec
 ###############################################################################
 
-Summary:     The orchestration platform for cloud agents.
+Summary:     The local orchestration platform for coding agents.
 Name:        oz@@CHANNEL_SUFFIX@@
 Version:     @@VERSION@@
 Release:     @@RELEASE@@
@@ -33,10 +33,10 @@ prefix:      /opt
 %description
 The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
 Use the CLI to:
-* Launch and inspect cloud agents
-* Schedule cloud agents to run in the future
-* Manage the environments that cloud agents run in
-* Upload secrets to Oz's secure storage
+* Launch and inspect local agent runs
+* Manage local agent workflows
+* Configure local agent environments
+* Use local secret materialization for agent runs
 
 ###############################################################################
 # Build rule - how does the package get built?

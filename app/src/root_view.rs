@@ -2,11 +2,10 @@ use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::blocklist::SerializedBlockListItem;
 use crate::appearance::Appearance;
 use crate::auth::AuthOverrideWarningModalVariant;
-use crate::auth::AuthRedirectPayload;
 use crate::auth::AuthState;
+use crate::auth::AuthStateProvider;
 use crate::auth::NeedsSsoLinkView;
 use crate::auth::{AuthManager, AuthManagerEvent};
-use crate::auth::{AuthStateProvider, LoginFailureReason};
 use crate::autoupdate::{AutoupdateState, AutoupdateStateEvent};
 use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType, ObjectType};
@@ -78,7 +77,6 @@ use std::path::Path;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
-use url::Url;
 use warp_core::context_flag::ContextFlag;
 use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::keymap::{EditableBinding, FixedBinding};
@@ -263,10 +261,6 @@ pub fn init(app: &mut AppContext) {
     app.add_action(
         "root_view:maybe_stop_active_voice_input",
         RootView::maybe_stop_active_voice_input,
-    );
-    app.add_action(
-        "root_view:handle_incoming_auth_url",
-        RootView::handle_incoming_auth_url,
     );
     app.add_action(
         "root_view:add_session_at_path",
@@ -1937,26 +1931,6 @@ impl RootView {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn handle_incoming_auth_url(&mut self, url: &Url, ctx: &mut ViewContext<Self>) -> bool {
-        match AuthRedirectPayload::from_url(url.clone()) {
-            Ok(redirect_payload) => {
-                AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    auth_manager.initialize_user_from_auth_payload(redirect_payload, true, ctx);
-                });
-            }
-            Err(error) => {
-                log::error!("Unable to parse AuthResult from url: {error}");
-                self.auth_view.update(ctx, |view, ctx| {
-                    view.last_login_failure_reason =
-                        Some(LoginFailureReason::InvalidRedirectUrl { was_pasted: false });
-                    ctx.notify()
-                });
-            }
-        }
-        true
-    }
-
-    #[allow(clippy::ptr_arg)]
     fn add_session_at_path(&mut self, path: &PathBuf, ctx: &mut ViewContext<Self>) -> bool {
         let window_id = ctx.window_id();
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
@@ -2317,19 +2291,6 @@ impl RootView {
                 }
                 self.focus(ctx);
             }
-            AuthManagerEvent::LoginOverrideDetected(interrupted_auth_payload) => {
-                match &self.auth_onboarding_state {
-                    AuthOnboardingState::Auth(workspace_args)
-                    | AuthOnboardingState::ConfirmIncomingAuth(workspace_args) => {
-                        self.open_auth_override_warning_modal(
-                            workspace_args.clone(),
-                            interrupted_auth_payload.clone(),
-                            ctx,
-                        );
-                    }
-                    _ => {}
-                }
-            }
             _ => {}
         }
     }
@@ -2347,21 +2308,6 @@ impl RootView {
                 self.export_all_warp_drive_objects(ctx);
             }
         }
-    }
-
-    fn open_auth_override_warning_modal(
-        &mut self,
-        workspace_args: Box<WorkspaceArgs>,
-        auth_payload: AuthRedirectPayload,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.auth_override_view.update(ctx, |modal, _| {
-            modal.set_interrupted_auth_payload(auth_payload);
-        });
-        self.auth_onboarding_state = AuthOnboardingState::ConfirmIncomingAuth(workspace_args);
-        ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
-        self.focus(ctx);
-        ctx.notify();
     }
 
     fn export_all_warp_drive_objects(&mut self, ctx: &mut ViewContext<Self>) {

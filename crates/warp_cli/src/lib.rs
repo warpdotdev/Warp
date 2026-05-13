@@ -328,8 +328,6 @@ pub enum CliCommand {
     #[command(subcommand)]
     Model(crate::model::ModelCommand),
 
-    /// Log in to Warp.
-    Login,
     /// Print information about the logged-in user.
     Whoami,
 

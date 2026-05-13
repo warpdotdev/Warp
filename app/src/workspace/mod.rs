@@ -114,7 +114,6 @@ pub fn init(app: &mut AppContext) {
     tab_configs::session_config_modal::init(app);
     view::openwarp_launch_modal::init(app);
     view::codex_modal::init(app);
-    view::free_tier_limit_hit_modal::init(app);
     view::global_search::view::GlobalSearchView::init(app);
     view::right_panel::RightPanelView::init(app);
     header_toolbar_editor::init(app);
@@ -182,20 +181,7 @@ pub fn init(app: &mut AppContext) {
         )]);
         #[cfg(debug_assertions)]
         {
-            // Debug actions for build plan migration modal (command palette only)
             app.register_editable_bindings([
-                EditableBinding::new(
-                    "workspace:open_build_plan_migration_modal",
-                    crate::t!("keybinding-desc-workspace-open-build-plan-migration-modal"),
-                    WorkspaceAction::OpenBuildPlanMigrationModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_build_plan_migration_modal_state",
-                    crate::t!("keybinding-desc-workspace-reset-build-plan-migration-modal-state"),
-                    WorkspaceAction::ResetBuildPlanMigrationModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
                 EditableBinding::new(
                     "workspace:debug_reset_aws_bedrock_login_banner_dismissed",
                     crate::t!("keybinding-desc-workspace-undismiss-aws-login-banner"),

@@ -1,9 +1,7 @@
-mod build_plan_migration_modal;
 pub(crate) mod codex_modal;
 pub mod conversation_list;
 #[cfg(enable_crash_recovery)]
 mod crash_recovery;
-pub(crate) mod free_tier_limit_hit_modal;
 pub mod global_search;
 pub(crate) mod launch_modal;
 pub(crate) mod left_panel;
@@ -40,7 +38,6 @@ use crate::ai::blocklist::suggested_rule_modal::{
 use crate::ai::conversation_utils;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel};
 use crate::ai::llms::LLMPreferences;
-use crate::ai::AIRequestUsageModel;
 use crate::ai::{
     agent::{api::ServerConversationToken, conversation::AIConversationId, EntrypointType},
     blocklist::{
@@ -107,13 +104,7 @@ use crate::terminal::cli_agent_sessions::{CLIAgentSessionsModel, CLIAgentSession
 use crate::workspace::header_toolbar_editor::{HeaderToolbarEditorEvent, HeaderToolbarEditorModal};
 use crate::workspace::header_toolbar_item::HeaderToolbarItemKind;
 use crate::workspace::tab_settings::TabCloseButtonPosition;
-use crate::workspace::view::build_plan_migration_modal::{
-    BuildPlanMigrationModal, BuildPlanMigrationModalEvent,
-};
 use crate::workspace::view::codex_modal::{CodexModal, CodexModalEvent};
-use crate::workspace::view::free_tier_limit_hit_modal::{
-    FreeTierLimitHitModal, FreeTierLimitHitModalEvent,
-};
 use crate::workspace::view::openwarp_launch_modal::{
     OpenWarpLaunchModal, OpenWarpLaunchModalEvent,
 };
@@ -138,7 +129,7 @@ use crate::auth::{AuthManager, AuthManagerEvent};
 use crate::auth::{
     AuthOverrideWarningModal, AuthOverrideWarningModalEvent, AuthOverrideWarningModalVariant,
 };
-use crate::auth::{AuthRedirectPayload, AuthView, AuthViewEvent, AuthViewVariant};
+use crate::auth::{AuthView, AuthViewEvent, AuthViewVariant};
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeManager;
 use crate::code::editor_management::CodeSource;
@@ -935,10 +926,7 @@ pub struct Workspace {
     suggested_agent_mode_workflow_modal: ViewHandle<SuggestedAgentModeWorkflowModal>,
     suggested_rule_modal: ViewHandle<SuggestedRuleModal>,
     openwarp_launch_modal: ViewHandle<OpenWarpLaunchModal>,
-    build_plan_migration_modal: ViewHandle<BuildPlanMigrationModal>,
     codex_modal: ViewHandle<CodexModal>,
-    free_tier_limit_hit_modal: ViewHandle<FreeTierLimitHitModal>,
-    free_tier_limit_check_triggered: bool,
     toast_stack: ViewHandle<DismissibleToastStack<WorkspaceAction>>,
     agent_toast_stack: ViewHandle<AgentToastStack>,
     update_toast_stack: ViewHandle<DismissibleToastStack<WorkspaceAction>>,
@@ -2507,19 +2495,9 @@ impl Workspace {
         let resource_center_view =
             Self::build_resource_center_view(ctx, tips_completed.clone(), changelog_model.clone());
 
-        let build_plan_migration_modal = ctx.add_typed_action_view(BuildPlanMigrationModal::new);
-        ctx.subscribe_to_view(&build_plan_migration_modal, |me, _, event, ctx| {
-            me.handle_build_plan_migration_modal_event(event, ctx);
-        });
-
         let codex_modal = ctx.add_typed_action_view(CodexModal::new);
         ctx.subscribe_to_view(&codex_modal, |me, _, event, ctx| {
             me.handle_codex_modal_event(event, ctx);
-        });
-
-        let free_tier_limit_hit_modal = ctx.add_typed_action_view(FreeTierLimitHitModal::new);
-        ctx.subscribe_to_view(&free_tier_limit_hit_modal, |me, _, event, ctx| {
-            me.handle_free_tier_limit_modal_event(event, ctx);
         });
 
         let require_login_modal = Self::build_require_login_modal(ctx);
@@ -2839,8 +2817,6 @@ impl Workspace {
                         me.focus_openwarp_launch_modal(ctx);
                     } else if model_ref.is_hoa_onboarding_open() {
                         me.show_hoa_onboarding_flow(ctx);
-                    } else if model_ref.is_build_plan_migration_modal_open() {
-                        me.focus_build_plan_migration_modal(ctx);
                     }
                 }
             }
@@ -2915,7 +2891,6 @@ impl Workspace {
             auth_override_warning_modal,
             suggested_agent_mode_workflow_modal,
             suggested_rule_modal,
-            build_plan_migration_modal,
             require_login_modal,
             workflow_modal,
             theme_creator_modal,
@@ -2961,8 +2936,6 @@ impl Workspace {
             tab_fixed_width: None,
             openwarp_launch_modal: openwarp_launch_view,
             codex_modal,
-            free_tier_limit_hit_modal,
-            free_tier_limit_check_triggered: false,
             lightbox_view: None,
             hoa_onboarding_flow: None,
             hoa_vtabs_callout_pinned_position: None,
@@ -8979,9 +8952,6 @@ impl Workspace {
             AuthManagerEvent::AttemptedLoginGatedFeature { auth_view_variant } => {
                 self.open_require_login_modal(*auth_view_variant, ctx)
             }
-            AuthManagerEvent::LoginOverrideDetected(interrupted_auth_payload) => {
-                self.open_auth_override_warning_modal(interrupted_auth_payload.clone(), ctx);
-            }
             AuthManagerEvent::AuthComplete => {}
             _ => {
                 ctx.notify();
@@ -11462,20 +11432,6 @@ impl Workspace {
         ctx.notify();
     }
 
-    fn open_auth_override_warning_modal(
-        &mut self,
-        auth_payload: AuthRedirectPayload,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.close_all_overlays(ctx);
-        self.auth_override_warning_modal.update(ctx, |modal, _| {
-            modal.set_interrupted_auth_payload(auth_payload);
-        });
-        self.current_workspace_state.is_auth_override_modal_open = true;
-        ctx.focus(&self.auth_override_warning_modal);
-        ctx.notify();
-    }
-
     fn open_palette(
         &mut self,
         mode: PaletteMode,
@@ -12990,9 +12946,6 @@ impl Workspace {
                         code_review_view.expand_comment_list(ctx);
                     });
                 }
-            }
-            pane_group::Event::FreeTierLimitCheckTriggered => {
-                self.free_tier_limit_check_triggered = true;
             }
         }
     }
@@ -14670,33 +14623,6 @@ impl Workspace {
         }
     }
 
-    fn handle_build_plan_migration_modal_event(
-        &mut self,
-        event: &BuildPlanMigrationModalEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            BuildPlanMigrationModalEvent::Close => {
-                OneTimeModalModel::handle(ctx).update(ctx, |model, ctx| {
-                    model.mark_build_plan_migration_modal_dismissed(ctx);
-                });
-                self.focus_active_tab(ctx);
-                ctx.notify();
-            }
-            BuildPlanMigrationModalEvent::ShowToast { message, flavor } => {
-                use crate::view_components::{DismissibleToast, ToastFlavor};
-                self.toast_stack.update(ctx, |toast_stack, ctx| {
-                    let toast = match flavor {
-                        ToastFlavor::Success => DismissibleToast::success(message.clone()),
-                        ToastFlavor::Error => DismissibleToast::error(message.clone()),
-                        _ => DismissibleToast::error(message.clone()),
-                    };
-                    toast_stack.add_ephemeral_toast(toast, ctx);
-                });
-            }
-        }
-    }
-
     fn handle_codex_modal_event(&mut self, event: &CodexModalEvent, ctx: &mut ViewContext<Self>) {
         use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
         use crate::AIExecutionProfilesModel;
@@ -14898,68 +14824,6 @@ impl Workspace {
                 }
             });
         }
-    }
-
-    fn handle_free_tier_limit_modal_event(
-        &mut self,
-        event: &FreeTierLimitHitModalEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            FreeTierLimitHitModalEvent::MaybeOpen => {
-                if self.free_tier_limit_check_triggered
-                    && self.check_and_open_free_tier_limit_modal(ctx)
-                {
-                    self.free_tier_limit_check_triggered = false;
-                }
-            }
-            FreeTierLimitHitModalEvent::Close => {
-                self.current_workspace_state
-                    .is_free_tier_limit_hit_modal_open = false;
-                GeneralSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    if let Err(e) = settings
-                        .free_tier_limit_hit_modal_dismissed
-                        .set_value(true, ctx)
-                    {
-                        log::warn!("Failed to mark free tier limit hit modal as dismissed: {e}");
-                    }
-                });
-                self.focus_active_tab(ctx);
-                ctx.notify();
-            }
-        }
-    }
-
-    pub fn check_and_open_free_tier_limit_modal(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        let is_free_tier = !UserWorkspaces::as_ref(ctx)
-            .current_workspace()
-            .is_some_and(|workspace| workspace.billing_metadata.is_user_on_paid_plan());
-
-        if !is_free_tier {
-            return false;
-        }
-
-        if AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx) {
-            return false;
-        }
-
-        if self
-            .current_workspace_state
-            .is_free_tier_limit_hit_modal_open
-            || *GeneralSettings::as_ref(ctx).free_tier_limit_hit_modal_dismissed
-        {
-            return false;
-        }
-
-        self.current_workspace_state
-            .is_free_tier_limit_hit_modal_open = true;
-
-        send_telemetry_from_ctx!(TelemetryEvent::FreeTierLimitHitInterstitialDisplayed, ctx);
-
-        ctx.focus(&self.free_tier_limit_hit_modal);
-        ctx.notify();
-
-        true
     }
 
     fn ask_ai_assistant(&mut self, ask_type: &AskAIType, ctx: &mut ViewContext<Self>) {
@@ -18089,10 +17953,6 @@ impl Workspace {
         ctx.focus(&self.openwarp_launch_modal);
     }
 
-    fn focus_build_plan_migration_modal(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.focus(&self.build_plan_migration_modal);
-    }
-
     fn open_left_panel_view(&mut self, action: &LeftPanelAction, ctx: &mut ViewContext<Self>) {
         if !self.active_tab_pane_group().as_ref(ctx).left_panel_open {
             self.toggle_left_panel(ctx);
@@ -19599,31 +19459,6 @@ impl TypedActionView for Workspace {
             FileDeleted { path } => {
                 self.close_tabs_with_file_path(path, ctx);
             }
-            #[cfg(debug_assertions)]
-            OpenBuildPlanMigrationModal => {
-                // Force open the modal for debugging
-                OneTimeModalModel::handle(ctx).update(ctx, |model, ctx| {
-                    model.force_open_build_plan_migration_modal(ctx);
-                });
-                ctx.notify();
-            }
-            #[cfg(debug_assertions)]
-            ResetBuildPlanMigrationModalState => {
-                // Reset the dismissed state for debugging
-                let general_settings = GeneralSettings::handle(ctx);
-                general_settings.update(ctx, |settings, ctx| {
-                    if let Err(e) = settings
-                        .build_plan_migration_modal_dismissed
-                        .set_value(false, ctx)
-                    {
-                        log::warn!(
-                            "Failed to reset build plan migration modal dismissed setting: {e}"
-                        );
-                    }
-                });
-                log::info!("Build plan migration modal dismissed state has been reset");
-            }
-            #[cfg(debug_assertions)]
             DebugResetAwsBedrockLoginBannerDismissed => {
                 // Reset the AWS Bedrock login banner dismissed state for debugging
                 AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
@@ -20928,19 +20763,8 @@ impl View for Workspace {
             }
         }
 
-        if should_show_modal && one_time_modal_model.is_build_plan_migration_modal_open() {
-            stack.add_child(ChildView::new(&self.build_plan_migration_modal).finish());
-        }
-
         if self.current_workspace_state.is_codex_modal_open {
             stack.add_child(ChildView::new(&self.codex_modal).finish());
-        }
-
-        if self
-            .current_workspace_state
-            .is_free_tier_limit_hit_modal_open
-        {
-            stack.add_child(ChildView::new(&self.free_tier_limit_hit_modal).finish());
         }
 
         if let Some(lightbox_view) = &self.lightbox_view {

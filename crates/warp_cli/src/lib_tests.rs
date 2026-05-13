@@ -62,17 +62,6 @@ fn model_list_parses() {
 }
 
 #[test]
-fn login_parses() {
-    let args = Args::try_parse_from(["warp", "login"]).unwrap();
-
-    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
-        panic!("Expected `warp login` command");
-    };
-
-    assert!(matches!(boxed_cmd.as_ref(), CliCommand::Login));
-}
-
-#[test]
 fn agent_run_accepts_file() {
     let args = Args::try_parse_from([
         "warp",
@@ -266,51 +255,9 @@ fn agent_run_rejects_prompt_and_saved_prompt() {
 }
 
 #[test]
-fn run_help_hides_message_when_orchestration_v2_disabled() {
-    warp_core::features::mark_initialized();
-
-    let mut command = Args::clap_command();
-    command.build();
-
-    let run = command
-        .find_subcommand("run")
-        .expect("run subcommand should exist");
-    let message = run
-        .find_subcommand("message")
-        .expect("message subcommand should exist");
-
-    assert!(message.is_hide_set());
-
-    let visible_subcommands: Vec<_> = run
-        .get_subcommands()
-        .filter(|subcommand| !subcommand.is_hide_set())
-        .map(|subcommand| subcommand.get_name())
-        .collect();
-
-    assert!(!visible_subcommands.contains(&"message"));
-}
-
-#[test]
-fn raw_command_keeps_message_visible_before_runtime_help_customization() {
-    let mut command = <Args as clap::CommandFactory>::command();
-    command.build();
-
-    let run = command
-        .find_subcommand("run")
-        .expect("run subcommand should exist");
-    let message = run
-        .find_subcommand("message")
-        .expect("message subcommand should exist");
-
-    assert!(!message.is_hide_set());
-
-    let visible_subcommands: Vec<_> = run
-        .get_subcommands()
-        .filter(|subcommand| !subcommand.is_hide_set())
-        .map(|subcommand| subcommand.get_name())
-        .collect();
-
-    assert!(visible_subcommands.contains(&"message"));
+fn run_command_is_removed() {
+    let result = Args::try_parse_from(["warp", "run", "message"]);
+    assert!(result.is_err());
 }
 
 // OpenWarp Wave 7-2:environment_image_list_parses / environment_create_accepts_description /

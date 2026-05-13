@@ -680,7 +680,6 @@ pub enum Event {
     RunTabConfigSkill {
         path: PathBuf,
     },
-    FreeTierLimitCheckTriggered,
     #[cfg(not(target_family = "wasm"))]
     OpenPluginInstructionsPane(crate::terminal::CLIAgent, PluginModalKind),
 }

@@ -1688,10 +1688,6 @@ pub enum TelemetryEvent {
     },
     LogOut,
     SettingsImportInitiated,
-    InviteTeammates {
-        num_teammates: usize,
-        team_uid: ServerId,
-    },
     CopyObjectToClipboard(TelemetryObjectType),
     OpenAndWarpifyDockerSubshell {
         /// Some variant if we support this shell type, and None otherwise.
@@ -2588,12 +2584,6 @@ pub enum TelemetryEvent {
     },
     /// Emitted when a warp://linear deeplink is opened.
     LinearIssueLinkOpened,
-    /// Emitted when the free tier limit hit interstitial is displayed.
-    FreeTierLimitHitInterstitialDisplayed,
-    /// Emitted when the user clicks the "Upgrade" button in the free tier limit hit interstitial.
-    FreeTierLimitHitInterstitialUpgradeButtonClicked,
-    /// Emitted when the user clicks close on the free tier limit hit interstitial.
-    FreeTierLimitHitInterstitialClosed,
     /// Emitted when the remote server binary check completes.
     RemoteServerBinaryCheck {
         found: bool,
@@ -3171,10 +3161,6 @@ impl TelemetryEvent {
             TelemetryEvent::PaneDropped { drop_location } => {
                 Some(json!({ "location": drop_location }))
             }
-            TelemetryEvent::InviteTeammates {
-                num_teammates,
-                team_uid,
-            } => Some(json!({"num_teammates": num_teammates, "team_uid": team_uid})),
             TelemetryEvent::AgentModeCreatedAIBlock {
                 client_exchange_id,
                 server_output_id,
@@ -4203,9 +4189,6 @@ impl TelemetryEvent {
                 "conversation_id": conversation_id,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
-            TelemetryEvent::FreeTierLimitHitInterstitialDisplayed => None,
-            TelemetryEvent::FreeTierLimitHitInterstitialUpgradeButtonClicked => None,
-            TelemetryEvent::FreeTierLimitHitInterstitialClosed => None,
             TelemetryEvent::LoginButtonClicked { source }
             | TelemetryEvent::LoginLaterButtonClicked { source }
             | TelemetryEvent::LoginLaterConfirmationButtonClicked { source }
@@ -4466,7 +4449,6 @@ impl TelemetryEvent {
             | TelemetryEvent::WebObjectOpenedOnDesktop { .. }
             | TelemetryEvent::UnsupportedShell { .. }
             | TelemetryEvent::LogOut
-            | TelemetryEvent::InviteTeammates { .. }
             | TelemetryEvent::CopyObjectToClipboard(_)
             | TelemetryEvent::OpenAndWarpifyDockerSubshell { .. }
             | TelemetryEvent::UpdateBlockFilterQuery
@@ -4630,9 +4612,6 @@ impl TelemetryEvent {
             | TelemetryEvent::LinearIssueLinkOpened
             | TelemetryEvent::ComputerUseApproved { .. }
             | TelemetryEvent::ComputerUseCancelled { .. }
-            | TelemetryEvent::FreeTierLimitHitInterstitialDisplayed
-            | TelemetryEvent::FreeTierLimitHitInterstitialUpgradeButtonClicked
-            | TelemetryEvent::FreeTierLimitHitInterstitialClosed
             | TelemetryEvent::RemoteServerBinaryCheck { .. }
             | TelemetryEvent::RemoteServerInstallation { .. }
             | TelemetryEvent::RemoteServerInitialization { .. }
