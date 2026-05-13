@@ -21,7 +21,7 @@ fn test_input_detection() {
 
         let token = mock_parsed_input_token("cargo --version".to_string()).await;
         assert_eq!(
-            classifier.detect_input_type(token, &context).await,
+            classifier.detect_input_type(token, &context).await.0,
             InputType::Shell
         );
 
@@ -32,14 +32,14 @@ fn test_input_detection() {
         let mut token = mock_parsed_input_token("cargo --version".to_string()).await;
         token.parsed_tokens[0].token_description = None;
         assert_eq!(
-            classifier.detect_input_type(token, &context).await,
+            classifier.detect_input_type(token, &context).await.0,
             InputType::Shell
         );
 
         let mut token = mock_parsed_input_token("rvm install 3.3".to_string()).await;
         token.parsed_tokens[0].token_description = None;
         assert_eq!(
-            classifier.detect_input_type(token, &context).await,
+            classifier.detect_input_type(token, &context).await.0,
             InputType::Shell
         );
 
@@ -47,7 +47,7 @@ fn test_input_detection() {
         let mut token = mock_parsed_input_token("Explain this".to_string()).await;
         token.parsed_tokens[0].token_description = None;
         assert_eq!(
-            classifier.detect_input_type(token.clone(), &context).await,
+            classifier.detect_input_type(token.clone(), &context).await.0,
             InputType::AI
         );
 
@@ -57,21 +57,21 @@ fn test_input_detection() {
         let mut token = mock_parsed_input_token("fix this".to_string()).await;
         token.parsed_tokens[0].token_description = None;
         assert_eq!(
-            classifier.detect_input_type(token, &context).await,
+            classifier.detect_input_type(token, &context).await.0,
             InputType::AI,
         );
 
         // Short queries with punctuation should be parsed as AI input.
         let token = mock_parsed_input_token("What went wrong?".to_string()).await;
         assert_eq!(
-            classifier.detect_input_type(token, &context).await,
+            classifier.detect_input_type(token, &context).await.0,
             InputType::AI
         );
         // Short queries with contractions should be parsed as AI input.
         let mut token = mock_parsed_input_token("What's the reason".to_string()).await;
         token.parsed_tokens[0].token_description = None;
         assert_eq!(
-            classifier.detect_input_type(token, &context).await,
+            classifier.detect_input_type(token, &context).await.0,
             InputType::AI
         );
 
@@ -80,7 +80,7 @@ fn test_input_detection() {
             mock_parsed_input_token("The message is \"utils::future ... ok\"".to_string()).await;
         token.parsed_tokens[0].token_description = None;
         assert_eq!(
-            classifier.detect_input_type(token, &context).await,
+            classifier.detect_input_type(token, &context).await.0,
             InputType::AI
         );
 
@@ -88,7 +88,7 @@ fn test_input_detection() {
         let mut token = mock_parsed_input_token("The type is \"<>\"".to_string()).await;
         token.parsed_tokens[0].token_description = None;
         assert_eq!(
-            classifier.detect_input_type(token, &context).await,
+            classifier.detect_input_type(token, &context).await.0,
             InputType::AI
         );
     });

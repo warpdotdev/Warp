@@ -222,10 +222,10 @@ async fn handle_classify(
             }
             Err(_) => {
                 // Fallback to detect_input_type if classify_input fails
-                let result = classifier
+                let (result, source) = classifier
                     .detect_input_type(parsed_input.clone(), &context)
                     .await;
-                println!("  {name}: {result} (probabilities unavailable)");
+                println!("  {name}: {result} (source: {source:?}, probabilities unavailable)");
             }
         }
     }
@@ -277,7 +277,7 @@ async fn handle_verify(
                 }
                 Err(_) => {
                     // Fallback to detect_input_type if classify_input fails
-                    let result = classifier
+                    let (result, _source) = classifier
                         .detect_input_type(parsed_input.clone(), &context)
                         .await;
                     let is_correct = result == expected;

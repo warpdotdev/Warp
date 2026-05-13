@@ -61,7 +61,7 @@ pub(crate) use history_model::{
     ConversationStatusUpdate, FORK_PREFIX, PRE_REWIND_PREFIX,
 };
 pub(crate) use input_model::{
-    BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
+    BlocklistAIInputEvent, BlocklistAIInputModel, ClassificationSource, InputConfig, InputType,
 };
 pub(crate) use passive_suggestions::{
     LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel, MaaPassiveSuggestionsEvent,

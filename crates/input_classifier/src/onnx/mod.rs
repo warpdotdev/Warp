@@ -11,7 +11,7 @@ use rust_embed::RustEmbed;
 use warp_completer::ParsedTokensSnapshot;
 
 use crate::{
-    ClassificationResult, Context, InputClassifier, InputType,
+    ClassificationResult, ClassificationSource, Context, InputClassifier, InputType,
     parser::parse_query_into_tokens,
     util::{
         is_likely_shell_command, is_one_off_natural_language_word, is_one_off_shell_command_keyword,
@@ -87,51 +87,18 @@ impl OnnxClassifier {
     }
 }
 
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-impl InputClassifier for OnnxClassifier {
-    async fn detect_input_type(&self, input: ParsedTokensSnapshot, context: &Context) -> InputType {
-        let word_tokens = parse_query_into_tokens(input.buffer_text.as_str());
-
-        let total_word_token_count = word_tokens.len();
-
-        // Start by applying some simple heuristics before running the full classifier.
-        if let Some(first_word) = word_tokens.first() {
-            let first_word = first_word.to_lowercase();
-
-            // If the input is a single word and the word is one of a specific set of words, classify it as AI
-            if word_tokens.len() == 1 && is_one_off_natural_language_word(&first_word) {
-                return InputType::AI;
-            }
-
-            // If the first token is one of a specific set of shell command keywords (e.g.: echo or sudo),
-            // we should classify it as shell.
-            if is_one_off_shell_command_keyword(&first_word) {
-                return InputType::Shell;
-            }
-        }
-
-        if is_likely_shell_command(&input, total_word_token_count).await {
-            return InputType::Shell;
-        }
-
-        // Otherwise, defer all decision-making to the model.
-        self.classify_input(input, context)
-            .await
-            .map(|result| result.to_input_type())
-            .unwrap_or(context.current_input_type)
-    }
-
-    async fn classify_input(
+impl OnnxClassifier {
+    async fn classify_input_with_source(
         &self,
         input: warp_completer::ParsedTokensSnapshot,
-        _context: &Context,
-    ) -> anyhow::Result<ClassificationResult> {
+        context: &Context,
+    ) -> anyhow::Result<(ClassificationResult, ClassificationSource)> {
         // If we ever panicked while running inference, we should fall back to the heuristic classifier.
         if self.has_panicked.has_panicked() {
-            return crate::heuristic_classifier::HeuristicClassifier
-                .classify_input(input, _context)
-                .await;
+            let result = crate::heuristic_classifier::HeuristicClassifier
+                .classify_input(input, context)
+                .await?;
+            return Ok((result, ClassificationSource::NldClassifierFallbackHeuristic));
         }
 
         // Given that we only can get here if we have never panicked, we don't have to
@@ -161,17 +128,66 @@ impl InputClassifier for OnnxClassifier {
                 }
             }
         }) {
-            Ok(result) => result,
+            // Inference ran cleanly (success or non-panic error): the model is the source.
+            Ok(result) => result.map(|r| (r, ClassificationSource::NldClassifier)),
+            // Inference panicked: mark the sticky bit and fall back to the heuristic.
             Err(_) => {
                 log::error!(
                     "Caught panic while running inference; falling back to heuristic classifier."
                 );
                 self.has_panicked.on_panic();
-                crate::heuristic_classifier::HeuristicClassifier
-                    .classify_input(input, _context)
-                    .await
+                let result = crate::heuristic_classifier::HeuristicClassifier
+                    .classify_input(input, context)
+                    .await?;
+                Ok((result, ClassificationSource::NldClassifierFallbackHeuristic))
             }
         }
+    }
+}
+
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+impl InputClassifier for OnnxClassifier {
+    async fn detect_input_type(
+        &self,
+        input: ParsedTokensSnapshot,
+        context: &Context,
+    ) -> (InputType, ClassificationSource) {
+        let word_tokens = parse_query_into_tokens(input.buffer_text.as_str());
+
+        let total_word_token_count = word_tokens.len();
+
+
+        if let Some(first_word) = word_tokens.first() {
+            let first_word = first_word.to_lowercase();
+
+            if word_tokens.len() == 1 && is_one_off_natural_language_word(&first_word) {
+                return (InputType::AI, ClassificationSource::OneOffWhitelist);
+            }
+
+            if is_one_off_shell_command_keyword(&first_word) {
+                return (InputType::Shell, ClassificationSource::OneOffWhitelist);
+            }
+        }
+
+        if is_likely_shell_command(&input, total_word_token_count).await {
+            return (InputType::Shell, ClassificationSource::ShellHeuristic);
+        }
+
+        match self.classify_input_with_source(input, context).await {
+            Ok((result, source)) => (result.to_input_type(), source),
+            Err(_) => (context.current_input_type, ClassificationSource::NldClassifier),
+        }
+    }
+
+    async fn classify_input(
+        &self,
+        input: warp_completer::ParsedTokensSnapshot,
+        context: &Context,
+    ) -> anyhow::Result<ClassificationResult> {
+        self.classify_input_with_source(input, context)
+            .await
+            .map(|(result, _source)| result)
     }
 }
 

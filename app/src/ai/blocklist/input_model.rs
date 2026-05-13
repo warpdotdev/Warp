@@ -17,7 +17,7 @@ use settings::Setting as _;
 use warp_core::features::FeatureFlag;
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
-pub use input_classifier::InputType;
+pub use input_classifier::{ClassificationSource, InputType};
 
 use super::agent_view::{AgentViewController, AgentViewControllerEvent, AgentViewEntryOrigin};
 use super::context_model::BlocklistAIContextModel;
@@ -645,15 +645,39 @@ impl BlocklistAIInputModel {
             .split(',')
             .collect();
 
+        let current_input_type = self.input_type();
+        let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
+
         // Early return if the first token is included in the denylist. No need to parse history.
         if denylist.contains(&first_token_str.as_str()) {
+            let new_input_type = InputType::Shell;
             self.set_input_config_internal(
                 InputConfig {
-                    input_type: InputType::Shell,
+                    input_type: new_input_type,
                     ..self.input_config()
                 },
                 ctx,
             );
+            if current_input_type != new_input_type {
+                let buffer_length = input.buffer_text.len();
+                let input_buffer_text_for_telemetry = should_collect_ai_ugc_telemetry(
+                    ctx,
+                    PrivacySettings::as_ref(ctx).is_telemetry_enabled,
+                )
+                .then_some(input.buffer_text.clone());
+                send_telemetry_from_ctx!(
+                    TelemetryEvent::AgentModeChangedInputType {
+                        input: input_buffer_text_for_telemetry,
+                        buffer_length,
+                        is_manually_changed: false,
+                        new_input_type,
+                        active_block_id: self.model.lock().block_list().active_block_id().clone(),
+                        is_udi_enabled,
+                        source: ClassificationSource::Denylist,
+                    },
+                    ctx
+                );
+            }
             return;
         }
 
@@ -677,9 +701,6 @@ impl BlocklistAIInputModel {
 
         let buffer_cloned = input.buffer_text.clone();
         let other_buffer_cloned = buffer_cloned.clone();
-        let current_input_type = self.input_type();
-
-        let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
 
         // Determine if the input is a follow-up to an AI block.
         let is_agent_follow_up = {
@@ -700,14 +721,14 @@ impl BlocklistAIInputModel {
                     if matches!(current_input_type, InputType::AI)
                         && is_one_off_natural_language_word(first_token_str.to_lowercase().as_str())
                     {
-                        return InputType::AI;
+                        return (InputType::AI, ClassificationSource::OneOffWhitelist);
                     }
 
                     // If this is clearly intended to be a follow-up to an AI block, classify it as AI.
                     if is_agent_follow_up
                         && is_agent_follow_up_input(&buffer_cloned.trim().to_lowercase())
                     {
-                        return InputType::AI;
+                        return (InputType::AI, ClassificationSource::AgentFollowUp);
                     }
 
                     // If we have history entries (i.e., a live session), check for
@@ -720,7 +741,7 @@ impl BlocklistAIInputModel {
                         )
                         .await
                         {
-                            return InputType::Shell;
+                            return (InputType::Shell, ClassificationSource::HistoryMatch);
                         }
                     }
 
@@ -737,14 +758,14 @@ impl BlocklistAIInputModel {
                         current_input_type,
                         is_agent_follow_up,
                     };
-                    let new_input_type =
+                    let (new_input_type, source) =
                         classifier.detect_input_type(input.clone(), &context).await;
 
                     futures_lite::future::yield_now().await;
 
-                    new_input_type
+                    (new_input_type, source)
                 },
-                move |me, new_input_type, ctx| {
+                move |me, (new_input_type, source), ctx| {
                     // In theory, we shouldn't need to check this, as we only run autodetection if the input
                     // is not locked, and we should abort the autodetect future if the input is locked, but
                     // we do it anyway out of an abundance of caution.
@@ -784,6 +805,7 @@ impl BlocklistAIInputModel {
                                     .active_block_id()
                                     .clone(),
                                 is_udi_enabled,
+                                source,
                             },
                             ctx
                         );

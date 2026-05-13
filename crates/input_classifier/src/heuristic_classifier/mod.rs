@@ -6,7 +6,7 @@ use natural_language_detection::natural_language_words_score;
 use warp_completer::ParsedTokensSnapshot;
 
 use crate::{
-    ClassificationResult, Context, InputClassifier, InputType,
+    ClassificationResult, ClassificationSource, Context, InputClassifier, InputType,
     parser::parse_query_into_tokens,
     util::{
         is_installed_binary, is_likely_shell_command, is_one_off_natural_language_word_or_prefix,
@@ -39,24 +39,30 @@ pub struct HeuristicClassifier;
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl InputClassifier for HeuristicClassifier {
-    async fn detect_input_type(&self, input: ParsedTokensSnapshot, context: &Context) -> InputType {
+    async fn detect_input_type(
+        &self,
+        input: ParsedTokensSnapshot,
+        context: &Context,
+    ) -> (InputType, ClassificationSource) {
         let word_tokens = parse_query_into_tokens(input.buffer_text.as_str());
         let total_word_token_count = word_tokens.len();
 
         if total_word_token_count == 1
             && is_one_off_natural_language_word_or_prefix(&word_tokens[0].to_lowercase())
         {
-            return InputType::AI;
+            return (InputType::AI, ClassificationSource::OneOffWhitelist);
         }
 
         if is_likely_shell_command(&input, total_word_token_count).await {
-            return InputType::Shell;
+            return (InputType::Shell, ClassificationSource::ShellHeuristic);
         }
 
-        self.classify_input(input, context)
+        let input_type = self
+            .classify_input(input, context)
             .await
             .map(|result| result.to_input_type())
-            .unwrap_or(context.current_input_type)
+            .unwrap_or(context.current_input_type);
+        (input_type, ClassificationSource::NldClassifier)
     }
 
     async fn classify_input(

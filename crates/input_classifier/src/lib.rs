@@ -7,11 +7,29 @@ pub mod test_utils;
 pub mod util;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 pub use heuristic_classifier::HeuristicClassifier;
 pub use input_type::InputType;
 #[cfg(feature = "onnx")]
 pub use onnx::{Model as OnnxModel, OnnxClassifier};
+
+/// The decision source that produced the `InputType` returned from
+/// [`InputClassifier::detect_input_type`] (or, for app-level short-circuits,
+/// from the wrapping `BlocklistAIInputModel::detect_and_set_input_type`).
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClassificationSource {
+    Denylist,
+    OneOffWhitelist,
+    AgentFollowUp,
+    HistoryMatch,
+    ShellHeuristic,
+    NldClassifier,
+    NldClassifierFallbackHeuristic,
+    UserManual,
+}
 
 /// An input classifier, which can take some parsed user input and determine
 /// what type of input it is.
@@ -22,7 +40,7 @@ pub trait InputClassifier: 'static + Send + Sync {
         &self,
         input: warp_completer::ParsedTokensSnapshot,
         context: &Context,
-    ) -> InputType;
+    ) -> (InputType, ClassificationSource);
 
     async fn classify_input(
         &self,

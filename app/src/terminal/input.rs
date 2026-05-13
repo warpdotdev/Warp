@@ -144,8 +144,8 @@ use crate::{
             telemetry_banner::should_collect_ai_ugc_telemetry,
             BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
             BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-            BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
-            BLOCK_CONTEXT_ATTACHMENT_REGEX, DIFF_HUNK_ATTACHMENT_REGEX,
+            BlocklistAIInputEvent, BlocklistAIInputModel, ClassificationSource, InputConfig,
+            InputType, BLOCK_CONTEXT_ATTACHMENT_REGEX, DIFF_HUNK_ATTACHMENT_REGEX,
             DRIVE_OBJECT_ATTACHMENT_REGEX,
         },
         llms::{LLMPreferences, LLMPreferencesEvent},
@@ -8571,6 +8571,7 @@ impl Input {
                 new_input_type,
                 active_block_id: self.model.lock().block_list().active_block_id().clone(),
                 is_udi_enabled,
+                source: ClassificationSource::UserManual,
             },
             ctx
         );

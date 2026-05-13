@@ -33,6 +33,7 @@ use crate::ai::agent_management::notifications::NotificationSourceAgent;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::blocklist::AIBlockResponseRating;
+use crate::ai::blocklist::ClassificationSource;
 use crate::ai::blocklist::CommandExecutionPermissionAllowedReason;
 use crate::ai::blocklist::InputType;
 use crate::ai::execution_profiles::AskUserQuestionPermission;
@@ -1992,6 +1993,10 @@ pub enum TelemetryEvent {
         active_block_id: BlockId,
         /// Whether or not Universal Developer Input mode is enabled
         is_udi_enabled: bool,
+        /// Which branch of the NLD pipeline produced this classification. For manual
+        /// user toggles this is [`ClassificationSource::UserManual`]; for autodetection
+        /// it reflects the short-circuit branch or classifier that fired.
+        source: ClassificationSource,
     },
 
     /// Emitted when the user manually toggles the terminal input from AI mode to shell mode when
@@ -3550,8 +3555,9 @@ impl TelemetryEvent {
                 new_input_type,
                 active_block_id,
                 is_udi_enabled,
+                source,
             } => Some(
-                json!({"input": input, "buffer_length": buffer_length, "is_manually_changed": is_manually_changed, "new_input_type": new_input_type, "active_block_id": active_block_id, "is_udi_enabled": is_udi_enabled}),
+                json!({"input": input, "buffer_length": buffer_length, "is_manually_changed": is_manually_changed, "new_input_type": new_input_type, "active_block_id": active_block_id, "is_udi_enabled": is_udi_enabled, "source": source}),
             ),
             TelemetryEvent::AgentModePrediction {
                 was_suggestion_accepted,
