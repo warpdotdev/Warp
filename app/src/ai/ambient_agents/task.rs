@@ -157,7 +157,6 @@ pub enum AgentSource {
     Interactive,
     WebApp,
     GitHubAction,
-    CloudMode,
 }
 
 impl AgentSource {
@@ -173,7 +172,6 @@ impl AgentSource {
             AgentSource::Interactive => "LOCAL",
             AgentSource::WebApp => "WEB_APP",
             AgentSource::GitHubAction => "GITHUB_ACTION",
-            AgentSource::CloudMode => "CLOUD_MODE",
         }
     }
 
@@ -187,7 +185,6 @@ impl AgentSource {
             AgentSource::Interactive => "Warp (local agent)",
             AgentSource::WebApp => "Oz Web",
             AgentSource::GitHubAction => "GitHub Action",
-            AgentSource::CloudMode => "Warp (cloud agent)",
         }
     }
 
@@ -198,8 +195,7 @@ impl AgentSource {
             AgentSource::Linear
             | AgentSource::Slack
             | AgentSource::Interactive
-            | AgentSource::WebApp
-            | AgentSource::CloudMode => true,
+            | AgentSource::WebApp => true,
             AgentSource::Cli
             | AgentSource::ScheduledAgent
             | AgentSource::AgentWebhook
@@ -225,7 +221,7 @@ where
             "SCHEDULED_AGENT" => Some(AgentSource::ScheduledAgent),
             "WEB_APP" => Some(AgentSource::WebApp),
             "GITHUB_ACTION" => Some(AgentSource::GitHubAction),
-            "CLOUD_MODE" => Some(AgentSource::CloudMode),
+            "CLOUD_MODE" => None,
             _ => {
                 report_error!(anyhow!("Unknown AmbientAgentSource: {}", s));
                 None
