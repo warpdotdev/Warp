@@ -7385,6 +7385,10 @@ impl TerminalView {
                 LongRunningCommandAgentInteractionState::NotInteracting
             }
         };
+        log::info!(
+            "emit_long_running_command_agent_interaction_state_changed: \
+             agent_has_control={agent_has_control}, emitting state={state:?}"
+        );
         ctx.emit(Event::LongRunningCommandAgentInteractionStateChanged { state });
     }
 

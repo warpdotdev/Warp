@@ -386,7 +386,7 @@ impl CLISubagentController {
         }
         log::info!(
             "handoff_active_command_control_to_agent: block_id={block_id:?}, \
-             conversation_id={conversation_id:?}, will_resume=true"
+             conversation_id={conversation_id:?}, lrc_state={lrc_state_debug}"
         );
         let action_id = active_block.requested_command_action_id().cloned();
         let agent_has_control = active_block.is_agent_in_control();
