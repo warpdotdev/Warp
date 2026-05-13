@@ -9,7 +9,7 @@ fn descendant_conversation_ids_in_spawn_order_flattens_nested_children_preorder(
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
 
         let orchestrator_id = history_model.update(&mut app, |history_model, ctx| {
-            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+            history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
         });
         let child_a = history_model.update(&mut app, |history_model, ctx| {
             history_model.start_new_child_conversation(
@@ -103,7 +103,7 @@ fn descendant_conversation_ids_in_spawn_order_returns_empty_without_children() {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
 
         let orchestrator_id = history_model.update(&mut app, |history_model, ctx| {
-            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+            history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
         });
 
         history_model.read(&app, |history_model, _| {

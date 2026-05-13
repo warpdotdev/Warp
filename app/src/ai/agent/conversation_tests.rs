@@ -158,9 +158,7 @@ fn child_conversation_detection_uses_parent_agent_id() {
 
 #[test]
 fn cli_agent_transcript_vehicle_is_excluded_from_navigation() {
-    let mut conversation = AIConversation::new(false);
-
-    conversation.mark_as_cli_agent_transcript();
+    let conversation = AIConversation::new(false, true);
 
     assert!(conversation.should_exclude_from_navigation());
 }

@@ -259,7 +259,7 @@ pub(crate) fn artifact_from_fork_proto(
 }
 
 impl AIConversation {
-    pub fn new(is_viewing_shared_session: bool) -> Self {
+    pub fn new(is_viewing_shared_session: bool, is_cli_agent_transcript: bool) -> Self {
         let root_task = Task::new_optimistic_root();
         Self {
             id: AIConversationId::new(),
@@ -267,7 +267,7 @@ impl AIConversation {
             optimistic_cli_subagent_subtask_id: None,
             code_review: None,
             is_viewing_shared_session,
-            is_cli_agent_transcript: false,
+            is_cli_agent_transcript,
             todo_lists: vec![],
             status: ConversationStatus::InProgress,
             status_error_message: None,
@@ -515,10 +515,6 @@ impl AIConversation {
 
     pub fn is_cli_agent_transcript(&self) -> bool {
         self.is_cli_agent_transcript
-    }
-
-    pub fn mark_as_cli_agent_transcript(&mut self) {
-        self.is_cli_agent_transcript = true;
     }
 
     pub fn was_summarized(&self) -> bool {

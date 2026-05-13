@@ -129,7 +129,7 @@ fn append_exchange_with_inputs_and_handle_event(
     let (conversation_id, task_id, exchange_id, response_stream_id) =
         history_model.update(ctx, |history_model, ctx| {
             let conversation_id =
-                history_model.start_new_conversation(view.view_id, false, false, ctx);
+                history_model.start_new_conversation(view.view_id, false, false, false, ctx);
             let task_id = history_model
                 .conversation(&conversation_id)
                 .expect("conversation should exist")
@@ -4978,7 +4978,7 @@ fn cli_session_status_updates_active_child_conversation() {
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
             let parent_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+                    history_model.start_new_conversation(view.view_id, false, false, false, ctx)
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
@@ -5126,7 +5126,7 @@ fn cli_session_status_updates_single_child_conversation_without_agent_view() {
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
             let parent_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+                    history_model.start_new_conversation(view.view_id, false, false, false, ctx)
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {

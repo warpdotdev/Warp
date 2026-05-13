@@ -2107,6 +2107,7 @@ impl BlocklistAIController {
                 self.terminal_view_id,
                 is_autoexecute_override,
                 false,
+                false,
                 ctx,
             )
         });

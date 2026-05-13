@@ -767,18 +767,13 @@ impl AgentViewController {
             (conversation.id(), conversation.exchange_count())
         } else {
             let id = history_model.update(ctx, |history_model, ctx| {
-                let id = history_model.start_new_conversation(
+                history_model.start_new_conversation(
                     self.terminal_view_id,
                     false,
                     matches!(origin, AgentViewEntryOrigin::CloudAgent),
+                    matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent),
                     ctx,
-                );
-                if matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent) {
-                    if let Some(conversation) = history_model.conversation_mut(&id) {
-                        conversation.mark_as_cli_agent_transcript();
-                    }
-                }
-                id
+                )
             });
             (id, 0)
         };
