@@ -2410,6 +2410,16 @@ impl BlocklistAIController {
         reason: CancellationReason,
         ctx: &mut ModelContext<Self>,
     ) {
+        let has_active_stream = self
+            .in_flight_response_streams
+            .has_active_stream_for_conversation(conversation_id, ctx);
+        log::info!(
+            "cancel_conversation_progress called: conversation_id={conversation_id:?}, \
+             reason={reason}, has_active_stream={has_active_stream}, \
+             backtrace={}",
+            std::backtrace::Backtrace::force_capture()
+        );
+
         // Cancel any pending auto-resume for this conversation.
         if let Some(handle) = self.pending_auto_resume_handles.remove(&conversation_id) {
             handle.abort();
