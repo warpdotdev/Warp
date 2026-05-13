@@ -29,7 +29,7 @@ pub static CLOUD_AGENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand
 
 pub const ADD_MCP: StaticCommand = StaticCommand {
     name: "/add-mcp",
-    description: "Add new MCP server",
+    description: "Add a new MCP server via the MCP settings page",
     icon_path: "bundled/svg/dataflow.svg",
     availability: Availability::AI_ENABLED,
     auto_enter_ai_mode: false,
@@ -171,6 +171,22 @@ pub static FORK: LazyLock<StaticCommand> = LazyLock::new(|| {
     }
 });
 
+pub static MOVE_TO_CLOUD: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
+    name: "/handoff",
+    description: "Hand off this conversation to a cloud agent",
+    icon_path: "bundled/svg/upload-cloud-01.svg",
+    availability: Availability::AGENT_VIEW
+        | Availability::ACTIVE_CONVERSATION
+        | Availability::AI_ENABLED
+        | Availability::NOT_CLOUD_AGENT,
+    auto_enter_ai_mode: false,
+    argument: Some(
+        Argument::optional()
+            .with_hint_text("<optional follow-up prompt>")
+            .with_execute_on_selection(),
+    ),
+});
+
 pub const OPEN_CODE_REVIEW: StaticCommand = StaticCommand {
     name: "/open-code-review",
     description: "Open code review",
@@ -284,6 +300,39 @@ pub static MODEL: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     description: "Switch the base agent model",
     icon_path: "bundled/svg/oz.svg",
     availability: Availability::AGENT_VIEW | Availability::AI_ENABLED,
+    auto_enter_ai_mode: true,
+    argument: None,
+});
+
+pub static HOST: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
+    name: "/host",
+    description: "Switch the cloud agent execution host",
+    icon_path: "bundled/svg/oz-cloud.svg",
+    availability: Availability::AGENT_VIEW
+        | Availability::AI_ENABLED
+        | Availability::CLOUD_AGENT_V2,
+    auto_enter_ai_mode: true,
+    argument: None,
+});
+
+pub static HARNESS: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
+    name: "/harness",
+    description: "Switch the cloud agent harness",
+    icon_path: "bundled/svg/oz.svg",
+    availability: Availability::AGENT_VIEW
+        | Availability::AI_ENABLED
+        | Availability::CLOUD_AGENT_V2,
+    auto_enter_ai_mode: true,
+    argument: None,
+});
+
+pub static ENVIRONMENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
+    name: "/environment",
+    description: "Switch the cloud agent environment",
+    icon_path: "bundled/svg/globe-04.svg",
+    availability: Availability::AGENT_VIEW
+        | Availability::AI_ENABLED
+        | Availability::CLOUD_AGENT_V2,
     auto_enter_ai_mode: true,
     argument: None,
 });
@@ -653,6 +702,13 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(CLOUD_AGENT.clone());
     }
 
+    if FeatureFlag::OzHandoff.is_enabled()
+        && FeatureFlag::HandoffLocalCloud.is_enabled()
+        && cfg!(all(feature = "local_fs", not(target_family = "wasm")))
+    {
+        commands.push(MOVE_TO_CLOUD.clone());
+    }
+
     if FeatureFlag::InlineProfileSelector.is_enabled() {
         commands.push(PROFILE.clone());
     }
@@ -672,6 +728,12 @@ fn all_commands() -> Vec<StaticCommand> {
 
     if FeatureFlag::SettingsFile.is_enabled() && cfg!(feature = "local_fs") {
         commands.push(OPEN_SETTINGS_FILE);
+    }
+
+    if FeatureFlag::CloudModeInputV2.is_enabled() {
+        commands.push(HOST.clone());
+        commands.push(HARNESS.clone());
+        commands.push(ENVIRONMENT.clone());
     }
 
     commands

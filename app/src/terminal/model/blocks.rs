@@ -545,6 +545,26 @@ enum BlockHeightUpdate {
     Removal(TotalIndex),
 }
 
+struct SharedSessionScrollbackBlocks<'a> {
+    completed_blocks: &'a [SerializedBlock],
+    active_block: Option<&'a SerializedBlock>,
+}
+
+impl<'a> SharedSessionScrollbackBlocks<'a> {
+    fn new(scrollback: &'a [SerializedBlock]) -> Self {
+        match scrollback.split_last() {
+            Some((active_block, completed_blocks)) if active_block.completed_ts.is_none() => Self {
+                completed_blocks,
+                active_block: Some(active_block),
+            },
+            _ => Self {
+                completed_blocks: scrollback,
+                active_block: None,
+            },
+        }
+    }
+}
+
 impl BlockList {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -689,37 +709,34 @@ impl BlockList {
     }
 
     pub(super) fn load_shared_session_scrollback(&mut self, scrollback: &[SerializedBlock]) {
-        // When we're loading the shared session scrollback, first check
-        // if there's an unfinished block; if there is, finish it because it
-        // will otherwise remain unfinished in perpetuity.
-        if !self.active_block().finished() {
+        let scrollback_blocks = SharedSessionScrollbackBlocks::new(scrollback);
+        // If the snapshot will restore any blocks, finish the placeholder active block first.
+        // For an empty snapshot, keep the existing placeholder active block instead of replacing
+        // it with another hidden block.
+        if !scrollback.is_empty() && !self.active_block().finished() {
             self.active_block_mut().finish(0);
         }
 
-        // Simulate finishing bootstrapping once we get the scrollback, since the scrollback contains the active prompt.
+        // Simulate finishing bootstrapping once we get the scrollback.
         self.set_bootstrapped();
         let mut processor: Processor = Processor::new();
 
-        let Some((active_block, completed_blocks)) = scrollback.split_last() else {
-            return;
-        };
-
-        for block in completed_blocks {
+        for block in scrollback_blocks.completed_blocks {
             if block.start_ts.is_some() && block.completed_ts.is_some() {
                 self.restore_block(block, BootstrapStage::PostBootstrapPrecmd, &mut processor);
             } else {
                 log::warn!("A non-active scrollback block was either not started or not completed");
             }
         }
-
-        // The last block being restored is the active block
-        // (potentially long-running) and has the latest prompt.
-        debug_assert!(active_block.completed_ts.is_none());
-        self.restore_block(
-            active_block,
-            BootstrapStage::PostBootstrapPrecmd,
-            &mut processor,
-        );
+        if let Some(active_block) = scrollback_blocks.active_block {
+            self.restore_block(
+                active_block,
+                BootstrapStage::PostBootstrapPrecmd,
+                &mut processor,
+            );
+        } else {
+            self.ensure_active_block_after_shared_session_scrollback();
+        }
     }
 
     pub(super) fn append_followup_shared_session_scrollback(
@@ -728,12 +745,9 @@ impl BlockList {
     ) {
         self.set_bootstrapped();
         let mut processor = Processor::new();
+        let scrollback_blocks = SharedSessionScrollbackBlocks::new(scrollback);
 
-        let Some((active_block, completed_blocks)) = scrollback.split_last() else {
-            return;
-        };
-
-        for block in completed_blocks {
+        for block in scrollback_blocks.completed_blocks {
             if self.block_index_for_id(&block.id).is_some() {
                 continue;
             }
@@ -745,14 +759,18 @@ impl BlockList {
             }
         }
 
-        if self.block_index_for_id(&active_block.id).is_none() {
-            debug_assert!(active_block.completed_ts.is_none());
-            self.finish_active_block_before_followup_append();
-            self.restore_block(
-                active_block,
-                BootstrapStage::PostBootstrapPrecmd,
-                &mut processor,
-            );
+        match scrollback_blocks.active_block {
+            Some(active_block) if self.block_index_for_id(&active_block.id).is_none() => {
+                self.finish_active_block_before_followup_append();
+                self.restore_block(
+                    active_block,
+                    BootstrapStage::PostBootstrapPrecmd,
+                    &mut processor,
+                );
+            }
+            Some(_) | None => {
+                self.ensure_active_block_after_shared_session_scrollback();
+            }
         }
     }
 
@@ -760,6 +778,17 @@ impl BlockList {
         if !self.active_block().finished() {
             self.active_block_mut().finish(0);
             self.update_active_block_height();
+        }
+    }
+
+    fn ensure_active_block_after_shared_session_scrollback(&mut self) {
+        if self.active_block().finished() {
+            self.create_new_block(
+                BlockId::new(),
+                BootstrapStage::PostBootstrapPrecmd,
+                None,
+                None,
+            );
         }
     }
 
@@ -1340,6 +1369,27 @@ impl BlockList {
             self.active_block_mut()
                 .set_is_oz_environment_startup_command(false);
         }
+    }
+
+    pub fn finish_oz_environment_startup_commands_at_block(
+        &mut self,
+        block_id: &BlockId,
+        conversation_id: Option<AIConversationId>,
+    ) {
+        self.is_executing_oz_environment_startup_commands = false;
+        if let Some(block_index) = self.block_index_for_id(block_id) {
+            for block in self.blocks.iter_mut().skip(block_index.0) {
+                if block.is_background() || block.is_static() {
+                    continue;
+                }
+                block.unhide();
+                block.set_is_oz_environment_startup_command(false);
+                if let Some(conversation_id) = conversation_id {
+                    block.add_attached_conversation_id(conversation_id);
+                }
+            }
+        }
+        self.update_blocks_and_sumtree(None, None, |_| {}, |_| {});
     }
 
     /// Resets the internal block object's index to its actual index in the block list.
@@ -2644,74 +2694,6 @@ impl BlockList {
         );
     }
 
-    /// Creates a restored command block with the given command, output, and exit code.
-    /// This is used for creating command blocks from restored AI conversation data.
-    /// The block is created hidden by default and can be toggled visible by the RequestedCommandView.
-    pub fn create_restored_command_block(
-        &mut self,
-        command: &str,
-        output: &str,
-        current_working_directory: Option<String>,
-        exit_code: i32,
-        action_id: Option<AIAgentActionId>,
-        conversation_id: Option<AIConversationId>,
-    ) {
-        let did_active_block_receive_precmd_already = self.active_block().has_received_precmd();
-        let precmd_value = PrecmdValue {
-            pwd: current_working_directory,
-            ..Default::default()
-        };
-
-        let block_id = BlockId::new();
-        self.create_new_block(
-            block_id,
-            // Hardcode to PostBootstrapPrecmd so they show up even in the conversation transcript view
-            // when bootstrapping is skipped because there's no shell.
-            BootstrapStage::PostBootstrapPrecmd,
-            Some(precmd_value),
-            None, // restored_block_was_local
-        );
-
-        // Set up the block with command and output
-        let mut processor = Processor::new();
-
-        // Start the block and add the command
-        self.active_block_mut().start();
-        processor.parse_bytes(self, command.as_bytes(), &mut io::sink());
-
-        // Simulate preexec to transition to Executing state
-        self.preexec(PreexecValue {
-            command: command.to_string(),
-        });
-
-        // Add the command output
-        processor.parse_bytes(self, output.as_bytes(), &mut io::sink());
-
-        // Finish the block (should transition from Executing to DoneWithExecution)
-        self.active_block_mut().finish(exit_code);
-        self.update_active_block_height();
-
-        // Set AI metadata if provided
-        if let (Some(action_id), Some(conversation_id)) = (action_id, conversation_id) {
-            self.active_block_mut()
-                .set_agent_interaction_mode_for_requested_command(action_id, None, conversation_id);
-        }
-
-        // Create a new active block for the next operations
-        let new_active_block_id = BlockId::new();
-        self.create_new_block(
-            new_active_block_id,
-            self.bootstrap_stage,
-            // If the active block (prior to the insertion of the restore block) had received
-            // precmd, ensure the next active block receives the same precmd payload (as if it had
-            // received the most recent precmd hook).
-            did_active_block_receive_precmd_already
-                .then(|| self.last_populated_precmd_payload.clone())
-                .flatten(),
-            None,
-        );
-    }
-
     /// Splice a background block into the blocklist. This is called once the
     /// block has meaningful output.
     pub(super) fn insert_background_block(&mut self, block: Block) {
@@ -2921,6 +2903,7 @@ impl BlockList {
             self.active_block_mut().start_background(None);
         } else {
             self.active_block_mut().start();
+            self.active_block_mut().disable_reset_grid_checks();
         }
 
         if let Some(serialized_ai_metadata) = block.ai_metadata.as_ref().and_then(|ai_metadata| {
@@ -3920,7 +3903,7 @@ impl ToTotalIndex for BlockIndex {
 }
 
 #[cfg(test)]
-#[path = "blocks_test.rs"]
+#[path = "blocks_tests.rs"]
 mod tests;
 #[cfg(test)]
 pub use self::tests::insert_block;

@@ -583,6 +583,7 @@ fn make_secret_value_from_gql_type(
                 "Bedrock API key secrets cannot be updated via `--value`; re-create the secret instead"
             ))
         }
+        ManagedSecretType::OpenaiApiKey => Ok(ManagedSecretValue::openai_api_key(raw, None)),
     }
 }
 
@@ -772,5 +773,6 @@ fn format_secret_type(type_: &ManagedSecretType) -> String {
         ManagedSecretType::AnthropicApiKey => "Anthropic API Key".to_string(),
         ManagedSecretType::AnthropicBedrockAccessKey => "Anthropic Bedrock Access Key".to_string(),
         ManagedSecretType::AnthropicBedrockApiKey => "Anthropic Bedrock API Key".to_string(),
+        ManagedSecretType::OpenaiApiKey => "OpenAI API Key".to_string(),
     }
 }

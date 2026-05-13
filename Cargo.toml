@@ -50,6 +50,7 @@ jsonrpc = { path = "crates/jsonrpc" }
 languages = { path = "crates/languages" }
 lsp = { path = "crates/lsp" }
 markdown_parser = { path = "crates/markdown_parser" }
+mcp = { path = "crates/mcp" }
 natural_language_detection = { path = "crates/natural_language_detection" }
 node_runtime = { path = "crates/node_runtime" }
 onboarding = { path = "crates/onboarding" }
@@ -131,11 +132,12 @@ cynic = { version = "3" }
 cynic-codegen = { version = "3", features = ["rkyv"] }
 dashmap = "6.1.0"
 derive_more = "0.99.17"
-diesel = { version = "2.3.4", default-features = false }
+diesel = { version = "2.3.8", default-features = false }
 directories = "6.0"
 dunce = "1.0.1"
 enum-iterator = "1.1.3"
 env_logger = "0.10.0"
+event-listener = "5.4.0"
 float-cmp = "0.9.0"
 font-kit = { git = "https://github.com/warpdotdev/font-kit", rev = "a04b225ecb639bb850f21d05212cfdc7465000f3", default-features = false, features = [
   "source",
@@ -178,17 +180,14 @@ lazy_static = "1.4.0"
 libc = "0.2.81"
 line-ending = "1.4.0"
 log = { version = "0.4", features = ["serde", "std"] }
-mermaid_to_svg = { git = "https://github.com/warpdotdev/mermaid-to-svg.git", rev = "f7233f69965c59760fad98d684c786569814d821" }
+mermaid_to_svg = { git = "https://github.com/warpdotdev/mermaid-to-svg.git", rev = "81551775746cd86bdeec29cb96ba278fd08c9074" }
 mime_guess = "2.0"
 minimp4 = "0.1.2"
 nix = { version = "0.26.4", default-features = false, features = ["signal"] }
 notify-debouncer-full = { git = "https://github.com/warpdotdev/notify", rev = "f3afcda3058941e17e09689afea40e2a2db057e0" }
 nom = "7.1.1"
 num-traits = "0.2"
-# We disable default features as the "rustls-tls" feature enables the reqwest
-# feature of the same name, which itself enables the "rustls-tls-webpki-roots"
-# feature, whereas we want to use native roots instead.
-oauth2 = { version = "5.0.0", default-features = false, features = ["reqwest"] }
+oauth2 = { version = "5.0.0", default-features = false }
 openh264 = "0.8"
 static_assertions = "1.1.0"
 url = "2.5.4"
@@ -210,27 +209,24 @@ prost = "0.14.3"
 prost-build = "0.14.3"
 prost-reflect = "0.16.3"
 prost-types = "0.14.3"
-rand = "0.8.2"
+rand = "0.8.6"
 rangemap = "1.3.0"
-reqwest = { version = "0.12.28", default-features = false, features = [
+reqwest = { version = "0.13", features = [
   "blocking",
   "brotli",
-  "charset",
   "gzip",
-  "http2",
+  "form",
   "json",
-  "macos-system-configuration",
-  "rustls-tls-native-roots-no-provider",
+  "query",
   "stream",
-  "system-proxy",
 ] }
-reqwest-eventsource = "0.6.0"
+reqwest-eventsource = { package = "aha-reqwest-eventsource", version = "0.1" }
 resvg = "0.47.0"
 rust-embed = { version = "8.7.0", features = ["include-exclude"] }
 rustc-hash = "2.1.1"
 rustls = "0.23.39"
 schemars = { version = "1", features = ["chrono04"] }
-sentry = { version = "0.41.0", default-features = false, features = [
+sentry = { version = "0.47.0", default-features = false, features = [
   "anyhow",
   "backtrace",
   "contexts",
@@ -240,7 +236,7 @@ sentry = { version = "0.41.0", default-features = false, features = [
   "reqwest",
   "rustls",
 ] }
-sentry-log = "0.41.0"
+sentry-log = "0.47.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_bytes = "0.11"
 serde-bytes-repr = "0.3"
@@ -280,6 +276,7 @@ arborium = { version = "2", default-features = false, features = [
   "lang-css",
   "lang-c",
   "lang-json",
+  "lang-jq",
   "lang-hcl",
   "lang-lua",
   "lang-ruby",
@@ -297,6 +294,7 @@ arborium = { version = "2", default-features = false, features = [
   "lang-vue",
   "lang-dockerfile",
 ] }
+unicode-general-category = "1.1.0"
 unicode-width = "0.1.12"
 uuid = { version = "1.1.2", features = ["v4", "serde", "js"] }
 vec1 = { version = "1.8.0", features = ["serde"] }
@@ -304,7 +302,7 @@ version-compare = "0.1"
 vte = { git = "https://github.com/warpdotdev/vte.git", rev = "4b399c87b63ba88f45709edaa6383fc519f6c900", default-features = false }
 walkdir = "2"
 warp-workflows = { git = "https://github.com/warpdotdev/workflows", rev = "793a98ddda6ef19682aed66364faebd2829f0e01" }
-warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "aa2f9cde164a5b48ac01087d417d1188771f9b6d" }
+warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "63b333d02da4d95a716796331cb5c3049d369a7e" }
 wasm-bindgen = "0.2.89"
 wasm-bindgen-futures = "0.4.42"
 web-sys = { version = "0.3.69", features = [
@@ -376,7 +374,7 @@ typed-path = "0.10.0"
 streaming-iterator = "0.1.0"
 derivative = "2.2.0"
 parquet = { version = "55.0.0", features = ["arrow"] }
-rmcp = { git = "https://github.com/warpdotdev/rmcp.git", rev = "c0f65dc441af7d714b9c453ac5e7ef641451abe3" }
+rmcp = { version = "1.6" }
 
 [profile.release]
 # Use line-tables-only (debug = 1) rather than full debuginfo (debug = 2 /
@@ -492,10 +490,15 @@ inherits = "dev"
 opt-level = "s"
 
 [patch.crates-io]
-core-foundation = { git = "https://github.com/servo/core-foundation-rs", rev = "0bcad1e103ead6bd71c4e5f85598ada9508e3a82" }
-core-foundation-sys = { git = "https://github.com/servo/core-foundation-rs", rev = "0bcad1e103ead6bd71c4e5f85598ada9508e3a82" }
-core-graphics = { git = "https://github.com/servo/core-foundation-rs", rev = "0bcad1e103ead6bd71c4e5f85598ada9508e3a82" }
-core-text = { git = "https://github.com/servo/core-foundation-rs", rev = "0bcad1e103ead6bd71c4e5f85598ada9508e3a82" }
+# Pinned to the merge commit of servo/core-foundation-rs#746, which fixes a
+# double-retain bug in `CTFontCollection::get_descriptors` that leaks the
+# CoreText font-descriptor NSArray on every call. The fix is not yet in any
+# crates.io release; the latest published `core-text` (21.1.0) was cut from
+# a commit that predates the merge.
+core-foundation = { git = "https://github.com/servo/core-foundation-rs", rev = "6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff" }
+core-foundation-sys = { git = "https://github.com/servo/core-foundation-rs", rev = "6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff" }
+core-graphics = { git = "https://github.com/servo/core-foundation-rs", rev = "6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff" }
+core-text = { git = "https://github.com/servo/core-foundation-rs", rev = "6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff" }
 objc = { git = "https://github.com/warpdotdev/rust-objc.git", rev = "5b656827fa9f863ef0eb22e444a3fedac009e78a" }
 pathfinder_simd = { git = "https://github.com/warpdotdev/pathfinder.git", rev = "34128a129ca6aee168fbc5060a4f21b4f7e486a9" }
 yaml-rust = { git = "https://github.com/warpdotdev/yaml-rust.git", rev = "51684719d0102ca85ff4b21cec39877a0c669e19" }

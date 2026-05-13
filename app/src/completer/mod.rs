@@ -112,7 +112,7 @@ impl SessionContext {
                 if let Ok(command_output) = command_output_result {
                     let Ok(output_string) = command_output.to_string() else {
                         log::warn!(
-                            "Executing `ls` on remote box returned unparseable bytes: `{:?}`",
+                            "Executing `ls` on remote box returned unparsable bytes: `{:?}`",
                             AsciiDebug(command_output.output())
                         );
                         return vec![];

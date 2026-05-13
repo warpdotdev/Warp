@@ -27,6 +27,7 @@ use crate::{
         message_bar::{Message, MessageItem},
         slash_command_model::SlashCommandModel,
         suggestions_mode_model::InputSuggestionsModeModel,
+        HandoffComposeState,
     },
 };
 use warp_multi_agent_api as api;
@@ -159,6 +160,7 @@ impl BlocklistAIStatusBar {
         input_suggestions_model: ModelHandle<InputSuggestionsModeModel>,
         slash_command_model: ModelHandle<SlashCommandModel>,
         ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
+        handoff_compose_state: ModelHandle<HandoffComposeState>,
         terminal_view_id: EntityId,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
@@ -348,6 +350,7 @@ impl BlocklistAIStatusBar {
                 input_suggestions_model,
                 slash_command_model,
                 context_model.clone(),
+                handoff_compose_state,
                 terminal_model.clone(),
                 ctx,
             )
@@ -1154,9 +1157,11 @@ impl View for BlocklistAIStatusBar {
                     .ambient_agent_view_model
                     .as_ref()
                     .is_some_and(|ambient_agent_view_model| {
+                        let terminal_model = self.terminal_model.lock();
                         is_cloud_agent_pre_first_exchange(
                             Some(ambient_agent_view_model),
                             &self.agent_view_controller,
+                            &terminal_model,
                             app,
                         )
                     })
@@ -1229,10 +1234,16 @@ impl View for BlocklistAIStatusBar {
                 // Don't render warping indicator - the loading screen is shown in the main view
                 return Empty::new().finish();
             } else if agent_view_controller.is_active() {
-                return Flex::column()
-                    .with_child(ChildView::new(&self.child_agent_status_card).finish())
-                    .with_child(ChildView::new(&self.agent_message_bar).finish())
-                    .finish();
+                // The new orchestration pill bar in the agent view header
+                // replaces the legacy child-agent status card rows; when
+                // it's enabled, render only the message bar here.
+                let mut column = Flex::column();
+                if !FeatureFlag::OrchestrationPillBar.is_enabled() {
+                    column =
+                        column.with_child(ChildView::new(&self.child_agent_status_card).finish());
+                }
+                column = column.with_child(ChildView::new(&self.agent_message_bar).finish());
+                return column.finish();
             } else {
                 return Empty::new().finish();
             };
@@ -1298,8 +1309,9 @@ impl View for BlocklistAIStatusBar {
 
         // When the agent view is active, keep the child agent status card
         // visible above the warping/status indicator so it doesn't disappear
-        // while the agent is working.
-        if agent_view_controller.is_active() {
+        // while the agent is working. The new orchestration pill bar
+        // replaces this card, so skip it when that flag is on.
+        if agent_view_controller.is_active() && !FeatureFlag::OrchestrationPillBar.is_enabled() {
             return Flex::column()
                 .with_child(ChildView::new(&self.child_agent_status_card).finish())
                 .with_child(container.finish())

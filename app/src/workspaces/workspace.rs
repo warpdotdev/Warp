@@ -239,7 +239,7 @@ impl Ord for InviteLinkDomainRestriction {
     }
 }
 
-/// This enum is the rust represenation of `CustomerType` from the GraphQL Schema.
+/// This enum is the rust representation of `CustomerType` from the GraphQL Schema.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum CustomerType {
     #[default]
@@ -292,6 +292,7 @@ pub struct WarpAiPolicy {
     pub is_code_suggestions_toggleable: bool,
     pub is_prompt_suggestions_toggleable: bool,
     pub is_next_command_enabled: bool,
+    pub is_git_operations_ai_enabled: bool,
     pub is_voice_enabled: bool,
 }
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
@@ -778,4 +779,6 @@ pub struct WorkspaceSettings {
     /// user toggle is locked. When `RespectUserSetting` (or absent), the user can choose.
     #[serde(default)]
     pub enable_warp_attribution: AdminEnablementSetting,
+    #[serde(default)]
+    pub default_host_slug: Option<String>,
 }

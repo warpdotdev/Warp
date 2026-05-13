@@ -2302,7 +2302,7 @@ impl CodeEditorModel {
         self.vim_set_selections_preserving_goal_xs(new_selections, AutoScrollBehavior::None, ctx);
     }
 
-    /// Horziontal cursor movement for vim in the code editor.
+    /// Horizontal cursor movement for vim in the code editor.
     /// Separate from the model's `move_left` and `move_right` functions to allow for stopping at
     /// line boundaries and vim-specific selection logic.
     pub fn vim_move_horizontal_by_offset(

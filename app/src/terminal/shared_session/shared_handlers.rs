@@ -402,11 +402,21 @@ pub(crate) fn apply_cli_agent_state_update(
                 });
             }
 
+            // For cloud agent sessions with non-Oz harnesses, auto-open rich
+            // input when creating a new CLI agent session so the viewer gets the
+            // composer immediately (byte-sharing has roundtrip lag without it).
+            let effective_rich_input_open =
+                if !already_exists && view.as_ref(ctx).is_shared_ambient_agent_session() {
+                    true
+                } else {
+                    *is_rich_input_open
+                };
+
             // Update the rich input state.
             let currently_open = CLIAgentSessionsModel::as_ref(ctx).is_input_open(view_id);
-            if currently_open != *is_rich_input_open {
+            if currently_open != effective_rich_input_open {
                 view.update(ctx, |view, ctx| {
-                    if *is_rich_input_open {
+                    if effective_rich_input_open {
                         view.open_cli_agent_rich_input(
                             CLIAgentInputEntrypoint::SharedSessionSync,
                             ctx,

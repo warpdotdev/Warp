@@ -105,7 +105,7 @@ const MINS_PER_HOUR: i64 = 60;
 /// larger numbers. Our row-coordinates in the BlockList are stored as floating-points, and the function
 /// block.find() makes comparisons between floating-point sums to find, given a BlockList row coordinate,
 /// the location within a specific BlockSection (e.g., OutputGrid, Prompt, BottomPadding, etc). Because of
-/// precision issues, row coordinates exactly on the row boundary may on occassion be arbitrarily and incorrectly
+/// precision issues, row coordinates exactly on the row boundary may on occasion be arbitrarily and incorrectly
 /// lumped into the lesser row (the one above).
 ///
 /// By adding a small decimal to the row coordinate, we offset possible downwards precision errors. The value
@@ -335,7 +335,7 @@ pub struct Block {
     /// determine if commands in a restored session should be included in
     /// History::session_commands. This is optional b/c just like session_id, pwd, git_branch, etc.
     /// which are determined at precmd time, it is unset at block creation. It is also to
-    /// accomodate the case where determining the ShellHost fails during session restoration, e.g.
+    /// accommodate the case where determining the ShellHost fails during session restoration, e.g.
     /// if the values in sqlite are NULL or invalid.
     shell_host: Option<ShellHost>,
 
@@ -376,7 +376,7 @@ pub struct Block {
     /// this is None.
     cloud_workflow_id: Option<SyncId>,
 
-    /// If the command inluded an env var invocation. If not this will be None.
+    /// If the command included an env var invocation. If not this will be None.
     cloud_env_var_collection_id: Option<SyncId>,
 
     /// The last time this block was painted (i.e.: visible in the window),
@@ -398,6 +398,9 @@ pub struct Block {
 
     /// If `true`, the output grid should not be rendered.
     should_hide_output_grid: bool,
+
+    /// If `true`, the prompt+command grid should not be rendered.
+    should_hide_command_grid: bool,
 
     /// [`Self::linefeed`] may discard some linefeeds at the beginning of the prompt. Doing so will
     /// alter the row numbers for [`Self::goto`] and [`Self::goto_line`] when ConPTY is involved. We
@@ -1007,6 +1010,7 @@ impl Block {
             has_received_user_input: false,
             hidden: false,
             should_hide_output_grid: false,
+            should_hide_command_grid: false,
             leading_linefeeds_ignored: 0,
             is_ai_ugc_telemetry_enabled,
             restored_block_was_local: None,
@@ -1100,6 +1104,10 @@ impl Block {
 
     pub fn set_trim_trailing_blank_rows(&mut self, trim: bool) {
         self.output_grid.set_trim_trailing_blank_rows(trim);
+    }
+
+    pub(in crate::terminal) fn enable_full_grid_clear_behavior(&mut self) {
+        self.output_grid.enable_full_grid_clear_behavior();
     }
 
     pub fn set_restored_block_was_local(&mut self, was_local: bool) {
@@ -1241,7 +1249,7 @@ impl Block {
         self.wakeup_after_delay();
     }
 
-    fn disable_reset_grid_checks(&mut self) {
+    pub(super) fn disable_reset_grid_checks(&mut self) {
         self.header_grid.disable_reset_grid_checks();
         self.output_grid.disable_reset_grid_checks();
     }
@@ -1485,8 +1493,16 @@ impl Block {
         self.should_hide_output_grid = should_hide;
     }
 
-    /// Returns true iff this block should be used as a scrollback block
-    /// in a shared session context. Note the active block is included in scrollback to get the active prompt.
+    pub fn should_hide_command_grid(&self) -> bool {
+        self.should_hide_command_grid
+    }
+
+    pub fn set_should_hide_command_grid(&mut self, should_hide: bool) {
+        self.should_hide_command_grid = should_hide;
+    }
+
+    /// Returns true iff this block should be used as a scrollback block in a shared session context.
+    /// The active block is included when it is eligible so viewers can restore the active prompt.
     pub fn is_scrollback_block_for_shared_session(
         &self,
         agent_view_state: &AgentViewState,
@@ -1511,9 +1527,11 @@ impl Block {
             Lines::zero()
         } else {
             self.block_banner_height()
-                + self.padding_top()
-                + self.prompt_and_command_height()
-                + self.padding_middle()
+                + if self.should_hide_command_grid {
+                    Lines::zero()
+                } else {
+                    self.padding_top() + self.prompt_and_command_height() + self.padding_middle()
+                }
                 + if self.should_hide_output_grid {
                     Lines::zero()
                 } else {
@@ -1936,7 +1954,7 @@ impl Block {
     /// In the case of combined grid: for Warp prompt, this includes the height of both the Warp prompt
     /// AND combined grid; for PS1, this is just the combined grid (PS1 is included there).
     pub fn prompt_and_command_height(&self) -> Lines {
-        if !self.ready_to_render() {
+        if !self.ready_to_render() || self.should_hide_command_grid {
             Lines::zero()
         } else if self.header_grid.honor_ps1 {
             // No padding between prompt and command in the case of PS1 (combined grid).
@@ -2443,7 +2461,19 @@ impl Block {
     }
 
     pub fn formatted_duration_string(&self) -> Option<String> {
-        self.duration().map(Self::format_duration)
+        self.duration()
+            .or_else(|| self.elapsed_duration_whole_secs())
+            .map(Self::format_duration)
+    }
+
+    /// Returns true if this block's formatted duration string is a live elapsed counter
+    /// (i.e. `formatted_duration_string()` will return a value derived from `elapsed_duration()`
+    /// rather than the final `duration()`).
+    ///
+    /// This is kept in lock-step with `elapsed_duration()` so the view layer can decide
+    /// whether to wrap the duration in a periodically-repainting element.
+    pub fn is_duration_live(&self) -> bool {
+        self.elapsed_duration_whole_secs().is_some()
     }
 
     pub fn format_duration(duration: Duration) -> String {
@@ -2662,6 +2692,30 @@ impl Block {
                 let duration = end.signed_duration_since(start);
                 (duration > Duration::zero()).then_some(duration)
             })
+    }
+
+    /// Returns the elapsed duration since the command started executing, rounded down
+    /// to the nearest second.
+    ///
+    /// Returns `Some` only when the block is actively executing (has `start_ts`,
+    /// no `completed_ts`, and `is_executing()`). Rounding to whole seconds keeps the
+    /// formatted duration string stable between one-second repaint ticks so that
+    /// unrelated `ctx.notify` calls (e.g. when the user interacts with the block)
+    /// don't cause the counter to flicker sub-second values.
+    pub fn elapsed_duration_whole_secs(&self) -> Option<Duration> {
+        self.elapsed_duration_whole_secs_at(Local::now())
+    }
+
+    /// Testable helper behind `elapsed_duration()` that takes an explicit `now`.
+    fn elapsed_duration_whole_secs_at(&self, now: DateTime<Local>) -> Option<Duration> {
+        if self.completed_ts.is_some() || !self.is_executing() {
+            return None;
+        }
+        self.start_ts.and_then(|start| {
+            let elapsed = now.signed_duration_since(start);
+            let whole_secs = elapsed.num_seconds();
+            (whole_secs > 0).then(|| Duration::seconds(whole_secs))
+        })
     }
 
     pub fn git_branch(&self) -> Option<&String> {
@@ -3323,5 +3377,5 @@ impl ansi::Handler for Block {
 }
 
 #[cfg(test)]
-#[path = "block_test.rs"]
+#[path = "block_tests.rs"]
 mod tests;

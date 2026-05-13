@@ -279,6 +279,7 @@ pub enum Icon {
     PiLogo,
     AuggieLogo,
     CursorLogo,
+    GooseLogo,
     NLD,
     Oz,
     OzCloud,
@@ -309,12 +310,28 @@ pub enum Icon {
     SwitchHorizontal01,
     HeartHand,
     MessageChatSquare,
+    Pin,
+    Atom02,
+    Cognition,
+    Dataflow04,
+    // Language-specific icons for the code block dropdown
+    MermaidLang,
+    GoLang,
+    CppLang,
+    JavaScriptLang,
+    PythonLang,
+    RustLang,
+    SqlLang,
+    JsonLang,
+    PhpLang,
+    KotlinLang,
 }
 
 impl From<Icon> for &'static str {
     fn from(icon: Icon) -> &'static str {
         match icon {
             Icon::Menu => "bundled/svg/layout-left.svg",
+            Icon::Pin => "bundled/svg/pin-01.svg",
             Icon::AtSign => "bundled/svg/at-sign.svg",
             Icon::Plus => "bundled/svg/plus.svg",
             Icon::Copy => "bundled/svg/copy.svg",
@@ -586,6 +603,7 @@ impl From<Icon> for &'static str {
             Icon::PiLogo => "bundled/svg/pi.svg",
             Icon::AuggieLogo => "bundled/svg/auggie.svg",
             Icon::CursorLogo => "bundled/svg/cursor.svg",
+            Icon::GooseLogo => "bundled/svg/goose.svg",
             Icon::NLD => "bundled/svg/nld.svg",
             Icon::Oz => "bundled/svg/oz.svg",
             Icon::OzCloud => "bundled/svg/oz-cloud.svg",
@@ -615,6 +633,19 @@ impl From<Icon> for &'static str {
             Icon::ClockPlus => "bundled/svg/clock-plus.svg",
             Icon::HeartHand => "bundled/svg/heart-hand.svg",
             Icon::MessageChatSquare => "bundled/svg/message-chat-square.svg",
+            Icon::Atom02 => "bundled/svg/atom-02.svg",
+            Icon::Cognition => "bundled/svg/cognition.svg",
+            Icon::Dataflow04 => "bundled/svg/dataflow-04.svg",
+            Icon::MermaidLang => "bundled/svg/file_type/mermaid.svg",
+            Icon::GoLang => "bundled/svg/file_type/go.svg",
+            Icon::CppLang => "bundled/svg/file_type/cpp.svg",
+            Icon::JavaScriptLang => "bundled/svg/file_type/javascript.svg",
+            Icon::PythonLang => "bundled/svg/file_type/python.svg",
+            Icon::RustLang => "bundled/svg/file_type/rust.svg",
+            Icon::SqlLang => "bundled/svg/file_type/sql.svg",
+            Icon::JsonLang => "bundled/svg/file_type/json.svg",
+            Icon::PhpLang => "bundled/svg/file_type/php.svg",
+            Icon::KotlinLang => "bundled/svg/file_type/kotlin.svg",
         }
     }
 }

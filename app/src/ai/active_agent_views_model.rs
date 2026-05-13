@@ -3,8 +3,12 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 
 use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent_conversations_model::AgentConversationEntryId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
+use crate::ai::blocklist::orchestration_event_streamer::{
+    register_agent_event_consumer, unregister_agent_event_consumer,
+};
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::terminal::model::session::active_session::ActiveSession;
 use warpui::{
@@ -42,6 +46,17 @@ pub enum ActiveAgentViewsEvent {
 pub enum ConversationOrTaskId {
     ConversationId(AIConversationId),
     TaskId(AmbientAgentTaskId),
+}
+
+impl From<AgentConversationEntryId> for ConversationOrTaskId {
+    fn from(id: AgentConversationEntryId) -> Self {
+        match id {
+            AgentConversationEntryId::Conversation(conversation_id) => {
+                ConversationOrTaskId::ConversationId(conversation_id)
+            }
+            AgentConversationEntryId::AmbientRun(task_id) => ConversationOrTaskId::TaskId(task_id),
+        }
+    }
 }
 
 impl ConversationOrTaskId {
@@ -122,6 +137,18 @@ impl ActiveAgentViewsModel {
             },
         );
 
+        // On pane re-attach the controller's `agent_view_state` is still
+        // `Active` while the unregister path has already torn down the
+        // streamer consumer. Re-register here; the `EnteredAgentView`
+        // subscription only fires on subsequent state transitions.
+        if let Some(conversation_id) = controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .active_conversation_id()
+        {
+            register_agent_event_consumer(conversation_id, terminal_view_id, ctx);
+        }
+
         ctx.subscribe_to_model(controller, move |model, event, ctx| match event {
             AgentViewControllerEvent::EnteredAgentView {
                 conversation_id, ..
@@ -142,12 +169,23 @@ impl ActiveAgentViewsModel {
                         focused_terminal_state.active_conversation_id = Some(conv_id);
                     }
                 }
+                // Bridge the controller's lifecycle into the streamer's
+                // per-conversation consumer registry.
+                register_agent_event_consumer(*conversation_id, terminal_view_id, ctx);
                 // Emit so subscribers can move this conversation to the Active section.
                 ctx.emit(ActiveAgentViewsEvent::TerminalViewFocused);
             }
             AgentViewControllerEvent::ExitedAgentView {
-                conversation_id, ..
+                conversation_id,
+                is_exit_before_new_entrance,
+                ..
             } => {
+                // Skip if this exit is part of an in-place switch — the follow-up
+                // entrance will register the new conversation's consumer.
+                if *is_exit_before_new_entrance {
+                    return;
+                }
+
                 model
                     .last_opened_times
                     .remove(&ConversationOrTaskId::ConversationId(*conversation_id));
@@ -163,6 +201,7 @@ impl ActiveAgentViewsModel {
                         state.active_conversation_id = None;
                     }
                 }
+                unregister_agent_event_consumer(*conversation_id, terminal_view_id, ctx);
                 // Emit so subscribers can move this conversation to the Past section.
                 ctx.emit(ActiveAgentViewsEvent::ConversationClosed {
                     conversation_id: *conversation_id,
@@ -198,6 +237,9 @@ impl ActiveAgentViewsModel {
             }
 
             if let Some(conversation_id) = closed_conversation_id {
+                // The pane-close path bypasses exit_agent_view_internal, so
+                // unregister the streamer consumer here.
+                unregister_agent_event_consumer(conversation_id, terminal_pane_id, ctx);
                 ctx.emit(ActiveAgentViewsEvent::ConversationClosed { conversation_id });
             }
         }
@@ -307,6 +349,8 @@ impl ActiveAgentViewsModel {
         task_id: AmbientAgentTaskId,
         ctx: &mut ModelContext<Self>,
     ) {
+        self.ambient_sessions
+            .retain(|view_id, id| *view_id == terminal_view_id || *id != task_id);
         let existing = self.ambient_sessions.insert(terminal_view_id, task_id);
         if existing != Some(task_id) {
             self.last_opened_times
@@ -323,9 +367,11 @@ impl ActiveAgentViewsModel {
         ctx: &mut ModelContext<Self>,
     ) {
         if let Some(task_id) = self.ambient_sessions.remove(&terminal_view_id) {
-            self.last_opened_times
-                .remove(&ConversationOrTaskId::TaskId(task_id));
-            ctx.emit(ActiveAgentViewsEvent::AmbientSessionClosed { task_id });
+            if !self.ambient_sessions.values().any(|id| *id == task_id) {
+                self.last_opened_times
+                    .remove(&ConversationOrTaskId::TaskId(task_id));
+                ctx.emit(ActiveAgentViewsEvent::AmbientSessionClosed { task_id });
+            }
         }
     }
 

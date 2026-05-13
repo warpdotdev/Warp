@@ -63,7 +63,7 @@ jobs:
               * "date_enabled" - the date on which the feature flag was enabled by default
               * "enabling_commit" - the Git commit in which the feature flag was enabled by default
             * You are running as part of a GitHub automation and must not commit or push any changes. Another agent will process the file you produce.
-          warp_api_key: ${{ secrets.WARP_API_KEY }}
+          warp_api_key: ${{ secrets.OSS_WARP_API_KEY }}
           share: team
 
       - name: Upload feature flag log
@@ -178,7 +178,7 @@ jobs:
 
             You are running as part of a GitHub automation that runs with a read-only token and will package your changes into a patch for a separate job to commit. Do not create a branch, do not commit, do not push, do not create a PR, and do not call `gh`. Leave your changes in the working tree only.
           share: team
-          warp_api_key: ${{ secrets.WARP_API_KEY }}
+          warp_api_key: ${{ secrets.OSS_WARP_API_KEY }}
 
       - name: Generate cleanup patch
         env:

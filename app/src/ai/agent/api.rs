@@ -33,6 +33,8 @@ use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerInfo;
 use crate::ai::mcp::TemplatableMCPServerManager;
+#[cfg(not(target_family = "wasm"))]
+use crate::remote_server::codebase_index_model::RemoteCodebaseIndexModel;
 use crate::settings::AISettings;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -123,6 +125,7 @@ pub struct RequestParams {
     pub web_search_enabled: bool,
     pub computer_use_enabled: bool,
     pub ask_user_question_enabled: bool,
+    pub remote_codebase_search_available: bool,
     pub research_agent_enabled: bool,
     pub orchestration_enabled: bool,
     pub supported_tools_override: Option<Vec<warp_multi_agent_api::ToolType>>,
@@ -236,7 +239,7 @@ impl RequestParams {
 
         let user_workspaces = UserWorkspaces::as_ref(app);
         let api_keys = ApiKeyManager::as_ref(app).api_keys_for_request(
-            user_workspaces.is_byo_api_key_enabled(),
+            user_workspaces.is_byo_api_key_enabled(app),
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
         let allow_use_of_warp_credits_with_byok =
@@ -274,6 +277,13 @@ impl RequestParams {
         let ask_user_question_enabled = BlocklistAIPermissions::as_ref(app)
             .get_ask_user_question_setting(app, terminal_view_id)
             != crate::ai::execution_profiles::AskUserQuestionPermission::Never;
+        #[cfg(not(target_family = "wasm"))]
+        let remote_codebase_search_available = FeatureFlag::RemoteCodebaseIndexing.is_enabled()
+            && RemoteCodebaseIndexModel::as_ref(app)
+                .active_repo_availability(&session_context, None)
+                .is_ready();
+        #[cfg(target_family = "wasm")]
+        let remote_codebase_search_available = false;
 
         let orchestration_enabled = ai_settings.is_orchestration_enabled(app)
             && session_context
@@ -327,6 +337,7 @@ impl RequestParams {
             web_search_enabled,
             computer_use_enabled,
             ask_user_question_enabled,
+            remote_codebase_search_available,
             research_agent_enabled,
             orchestration_enabled,
             supported_tools_override: request_input.supported_tools_override.clone(),

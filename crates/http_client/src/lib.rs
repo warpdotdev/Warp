@@ -145,9 +145,7 @@ impl Client {
         let client_builder = reqwest::ClientBuilder::new()
             // Don't load any SSL/TLS certificates, as doing so can be slow and we should
             // never be making real requests in tests.
-            .tls_built_in_native_certs(false)
-            .tls_built_in_root_certs(false)
-            .tls_built_in_webpki_certs(false)
+            .tls_certs_only([])
             // Disable proxy usage in tests, as loading system proxy configuration can be
             // slow.
             .no_proxy();
@@ -203,16 +201,16 @@ impl Client {
         )
     }
 
-    pub fn patch<U: IntoUrl + Clone>(&self, url: U) -> RequestBuilder<'_> {
+    pub fn put<U: IntoUrl + Clone>(&self, url: U) -> RequestBuilder<'_> {
         self.builder(
-            self.wrapped.patch(url.clone()),
+            self.wrapped.put(url.clone()),
             Self::include_warp_http_headers(url),
         )
     }
 
-    pub fn put<U: IntoUrl + Clone>(&self, url: U) -> RequestBuilder<'_> {
+    pub fn patch<U: IntoUrl + Clone>(&self, url: U) -> RequestBuilder<'_> {
         self.builder(
-            self.wrapped.put(url.clone()),
+            self.wrapped.patch(url.clone()),
             Self::include_warp_http_headers(url),
         )
     }

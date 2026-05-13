@@ -467,6 +467,15 @@ impl DisplayChipMenu {
         ctx.notify();
     }
 
+    pub fn select_index(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if index >= self.filtered_items.len() {
+            return;
+        }
+        self.is_footer_selected = false;
+        self.select(index, ctx);
+        self.list_state.scroll_to(self.selected_index);
+    }
+
     fn is_footer_selected(&self) -> bool {
         self.is_footer_selected
             || self
