@@ -5,7 +5,7 @@
 //! operations to whichever is active.
 //! All consumers should use `DiffStateModel` rather than accessing sub-models directly.
 
-use crate::code::buffer_location::BufferLocation;
+use crate::code::buffer_location::FileLocation;
 use crate::util::git::{Commit, PrInfo};
 use warpui::{AppContext, ModelContext, ModelHandle};
 
@@ -37,15 +37,15 @@ impl warpui::Entity for DiffStateModel {
 impl DiffStateModel {
     // ── Construction ─────────────────────────────────────────────────
 
-    pub fn new(key: BufferLocation, ctx: &mut ModelContext<Self>) -> Self {
+    pub fn new(key: FileLocation, ctx: &mut ModelContext<Self>) -> Self {
         match key {
-            BufferLocation::Local(path) => {
+            FileLocation::Local(path) => {
                 let repo_path = Some(path.display().to_string());
                 let local = ctx.add_model(|ctx| LocalDiffStateModel::new(repo_path, ctx));
                 ctx.subscribe_to_model(&local, Self::forward_event);
                 Self::Local(local)
             }
-            BufferLocation::Remote(_remote_id) => {
+            FileLocation::Remote(_remote_id) => {
                 let remote = ctx.add_model(RemoteDiffStateModel::new);
                 ctx.subscribe_to_model(&remote, Self::forward_event);
                 Self::Remote(remote)

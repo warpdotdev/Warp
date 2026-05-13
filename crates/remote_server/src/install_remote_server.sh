@@ -14,7 +14,7 @@ set -e
 
 arch=$(uname -m)
 case "$arch" in
-  x86_64)        arch_name=x86_64 ;;
+  x86_64|amd64)  arch_name=x86_64 ;;
   aarch64|arm64) arch_name=aarch64 ;;
   *) echo "unsupported arch: $arch" >&2; exit 2 ;;
 esac

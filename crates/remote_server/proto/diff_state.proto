@@ -200,6 +200,8 @@ message DiscardFilesRequest {
   bool should_stash = 3;
   // Branch to restore against. Absent means HEAD.
   optional string branch_name = 4;
+  // The diff mode identifying which DiffStateModel to use.
+  DiffMode mode = 5;
 }
 
 // ── Diff state server → client ────────────────────────────────────

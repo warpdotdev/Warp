@@ -126,8 +126,6 @@ struct PanelMouseStates {
     copy_docker_image: MouseStateHandle,
     copy_error: MouseStateHandle,
     copy_setup_commands: MouseStateHandle,
-    inference_info_tooltip: MouseStateHandle,
-    compute_info_tooltip: MouseStateHandle,
     skill_link: MouseStateHandle,
     skill_source_link: MouseStateHandle,
     executor_agent_link: MouseStateHandle,
@@ -188,13 +186,6 @@ impl From<&TaskPrincipalInfo> for PrincipalInfo {
     }
 }
 
-/// Credit usage information for a conversation or task.
-#[derive(Debug, Clone)]
-enum CreditsInfo {
-    LocalConversation(f32),
-    AmbientConversation { inference: f32, compute: f32 },
-}
-
 /// Data model for the conversation details panel.
 /// Any field that is left as None will not be rendered.
 #[derive(Debug, Clone, Default)]
@@ -207,7 +198,8 @@ pub struct ConversationDetailsData {
     executor: Option<PrincipalInfo>,
     /// When the conversation was created.
     created_at: Option<DateTime<Local>>,
-    credits: Option<CreditsInfo>,
+    /// Total credits spent on the conversation/task.
+    credits: Option<f32>,
     /// Total duration of the conversation.
     run_time: Option<Duration>,
     /// Artifacts created during the conversation (plans, PRs, branches).
@@ -323,7 +315,7 @@ impl ConversationDetailsData {
             creator,
             executor: None,
             created_at,
-            credits: Some(CreditsInfo::LocalConversation(conversation.credits_spent())),
+            credits: Some(conversation.credits_spent()),
             run_time,
             artifacts: conversation.artifacts().to_vec(),
             open_action: None,
@@ -351,12 +343,7 @@ impl ConversationDetailsData {
             .as_ref()
             .and_then(|config| config.environment_id.clone());
 
-        let credits = task.active_run_execution().request_usage.and_then(|u| {
-            Some(CreditsInfo::AmbientConversation {
-                inference: u.inference_cost? as f32,
-                compute: u.compute_cost? as f32,
-            })
-        });
+        let credits = task.credits_used();
 
         let skill_spec = task
             .agent_config_snapshot
@@ -432,14 +419,12 @@ impl ConversationDetailsData {
                     .then(|| task.status_message.as_ref().map(|m| m.message.clone()))
                     .flatten()
             });
-            let credits = task.and_then(|task| {
-                task.active_run_execution().request_usage.and_then(|u| {
-                    Some(CreditsInfo::AmbientConversation {
-                        inference: u.inference_cost? as f32,
-                        compute: u.compute_cost? as f32,
-                    })
-                })
-            });
+            // Fall back to the entry's denormalized total when the task record isn't
+            // currently loaded, so the panel stays consistent with the card metadata
+            // (which always reads `entry.display.request_usage`).
+            let credits = task
+                .and_then(AmbientAgentTask::credits_used)
+                .or(entry.display.request_usage);
             let skill_spec = task
                 .and_then(|task| task.agent_config_snapshot.as_ref())
                 .and_then(|config| config.skill_spec.as_ref())
@@ -488,10 +473,7 @@ impl ConversationDetailsData {
             creator,
             executor: None,
             created_at,
-            credits: entry
-                .display
-                .request_usage
-                .map(CreditsInfo::LocalConversation),
+            credits: entry.display.request_usage,
             run_time: None,
             artifacts: entry.display.artifacts.clone(),
             open_action,
@@ -559,7 +541,7 @@ impl ConversationDetailsData {
             creator: creator_name.map(|name| PrincipalInfo::new(name, None)),
             executor: None,
             created_at: Some(created_at),
-            credits: credits_used.map(CreditsInfo::LocalConversation),
+            credits: credits_used,
             run_time: None,
             open_action,
             artifacts,
@@ -1597,99 +1579,6 @@ impl ConversationDetailsPanel {
             .finish()
     }
 
-    /// Renders the credits section with a breakdown of inference and compute costs.
-    fn render_credits_with_split(
-        &self,
-        inference: f32,
-        compute: f32,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let theme = appearance.theme();
-
-        let label_text = Text::new(
-            "Credits used".to_string(),
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(blended_colors::text_sub(theme, theme.surface_1()))
-        .finish();
-
-        let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Start);
-        column.add_child(
-            Container::new(label_text)
-                .with_margin_bottom(LABEL_VALUE_GAP)
-                .finish(),
-        );
-
-        let inference_row = self.render_cost_sub_row(
-            "Inference",
-            inference,
-            "Credits spent on AI model requests",
-            self.mouse_states.inference_info_tooltip.clone(),
-            appearance,
-        );
-        column.add_child(
-            Container::new(inference_row)
-                .with_margin_bottom(LABEL_VALUE_GAP)
-                .finish(),
-        );
-
-        let compute_row = self.render_cost_sub_row(
-            "Compute",
-            compute,
-            "Credits spent on sandbox compute time",
-            self.mouse_states.compute_info_tooltip.clone(),
-            appearance,
-        );
-        column.add_child(compute_row);
-
-        column.finish()
-    }
-
-    fn render_cost_sub_row(
-        &self,
-        label: &str,
-        value: f32,
-        tooltip: &str,
-        tooltip_mouse_state: MouseStateHandle,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let theme = appearance.theme();
-
-        let label_text = Text::new(
-            format!("{label}: "),
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(blended_colors::text_sub(theme, theme.surface_1()))
-        .finish();
-
-        let value_text = Text::new(
-            format!("{value:.1}"),
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(theme.foreground().into())
-        .with_selectable(true)
-        .finish();
-
-        let info_icon = appearance
-            .ui_builder()
-            .info_button_with_tooltip(
-                appearance.ui_font_size() * 0.85,
-                tooltip,
-                tooltip_mouse_state,
-            )
-            .finish();
-
-        Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(label_text)
-            .with_child(value_text)
-            .with_child(Container::new(info_icon).with_margin_left(4.).finish())
-            .finish()
-    }
-
     /// Returns the mouse state handle for the given copy button kind.
     fn mouse_state_for_copy_button(&self, kind: CopyButtonKind) -> MouseStateHandle {
         match kind {
@@ -1967,29 +1856,13 @@ impl View for ConversationDetailsPanel {
             }
         }
 
-        match &self.data.credits {
-            Some(CreditsInfo::AmbientConversation { inference, compute }) => {
-                content.add_child(
-                    Container::new(
-                        self.render_credits_with_split(*inference, *compute, appearance),
-                    )
+        if let Some(credits) = self.data.credits {
+            let formatted = format!("{credits:.1}");
+            content.add_child(
+                Container::new(self.render_simple_field("Credits used", &formatted, appearance))
                     .with_margin_bottom(FIELD_SPACING)
                     .finish(),
-                );
-            }
-            Some(CreditsInfo::LocalConversation(credits)) => {
-                let formatted = format!("{credits:.1}");
-                content.add_child(
-                    Container::new(self.render_simple_field(
-                        "Credits used",
-                        &formatted,
-                        appearance,
-                    ))
-                    .with_margin_bottom(FIELD_SPACING)
-                    .finish(),
-                );
-            }
-            None => {}
+            );
         }
 
         if let Some(duration) = self.data.run_time {

@@ -12,7 +12,7 @@ use crate::ai::ambient_agents::task::{AgentConfigSnapshot, HarnessConfig, TaskPr
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 
-use super::{ConversationDetailsData, CreditsInfo, PanelMode};
+use super::{ConversationDetailsData, PanelMode};
 
 fn create_test_task(task_id: &str) -> AmbientAgentTask {
     let now = Utc::now();
@@ -314,10 +314,7 @@ fn test_from_conversation_populates_local_conversation_fields() {
 
             assert_eq!(data.title, "test query");
             assert_eq!(data.source_prompt.as_deref(), Some("test query"));
-            assert!(matches!(
-                data.credits,
-                Some(CreditsInfo::LocalConversation(_))
-            ));
+            assert!(data.credits.is_some());
         });
     });
 }

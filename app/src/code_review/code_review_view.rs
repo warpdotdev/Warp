@@ -183,6 +183,8 @@ use super::{
     git_dialog::{GitDialog, GitDialogEvent, GitDialogKind},
     GlobalCodeReviewEvent, GlobalCodeReviewModel,
 };
+#[cfg(not(target_family = "wasm"))]
+use crate::code::buffer_location::FileLocation;
 use crate::code::ShowCommentEditorProvider;
 #[cfg(not(target_family = "wasm"))]
 use crate::code::ShowFindReferencesCard;
@@ -200,6 +202,7 @@ use warp_util::{
     content_version::ContentVersion,
     file::{FileLoadError, FileSaveError},
     path::LineAndColumnArg,
+    standardized_path::StandardizedPath,
 };
 
 pub struct CodeReviewHeaderFields {
@@ -2940,7 +2943,7 @@ impl CodeReviewView {
 
             let local_code_view = ctx.add_typed_action_view(|ctx| {
                 let editor = LocalCodeEditorView::new_with_global_buffer(
-                    &full_file_path,
+                    FileLocation::Local(full_file_path.clone()),
                     |buffer_state, ctx| {
                         ctx.add_typed_action_view(|ctx| {
                             let mut editor_view = CodeEditorView::new(
@@ -4151,8 +4154,10 @@ impl CodeReviewView {
                     .finish(),
             );
         } else if let Some(repo_path) = self.repo_path() {
-            // Check for initialized rules
-            if let Some(rules) = ProjectContextModel::as_ref(app).find_applicable_rules(repo_path) {
+            // Check for initialized project-scoped rules.
+            if let Some(rules) =
+                ProjectContextModel::as_ref(app).find_applicable_project_rules(repo_path)
+            {
                 if let Some(first_rule) = rules.active_rules.first() {
                     if let Some(file_name) = first_rule.path.file_name().and_then(|n| n.to_str()) {
                         zero_state_column.add_child(
@@ -5571,7 +5576,10 @@ impl CodeReviewView {
                 .unwrap_or(GitFileStatus::Modified),
             _ => GitFileStatus::Modified,
         };
-        FileStatusInfo { path, status }
+        FileStatusInfo {
+            path: StandardizedPath::from_local_absolute_unchecked(&path),
+            status,
+        }
     }
 
     fn discard_file(&mut self, path: &Path, should_stash: bool, ctx: &mut ViewContext<Self>) {

@@ -1,7 +1,9 @@
 #[path = "file_watchers/mod.rs"]
 mod file_watchers;
 use crate::ai::mcp::{McpIntegration, TemplatableMCPServerManager};
-pub use file_watchers::{extract_skill_parent_directory, SkillWatcher, SkillWatcherEvent};
+pub use file_watchers::{
+    extract_skill_parent_directory, read_skills_from_directories, SkillWatcher, SkillWatcherEvent,
+};
 
 use std::{
     collections::{HashMap, HashSet},

@@ -771,6 +771,7 @@ impl AgentViewController {
                     self.terminal_view_id,
                     false,
                     matches!(origin, AgentViewEntryOrigin::CloudAgent),
+                    matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent),
                     ctx,
                 )
             });

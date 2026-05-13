@@ -60,7 +60,8 @@ impl AgentIconFields {
                 is_ambient: *is_ambient,
             }),
             IconWithStatusVariant::Neutral { .. }
-            | IconWithStatusVariant::NeutralElement { .. } => None,
+            | IconWithStatusVariant::NeutralElement { .. }
+            | IconWithStatusVariant::CustomAvatar { .. } => None,
         }
     }
 }

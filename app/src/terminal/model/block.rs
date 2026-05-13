@@ -1501,8 +1501,8 @@ impl Block {
         self.should_hide_command_grid = should_hide;
     }
 
-    /// Returns true iff this block should be used as a scrollback block
-    /// in a shared session context. Note the active block is included in scrollback to get the active prompt.
+    /// Returns true iff this block should be used as a scrollback block in a shared session context.
+    /// The active block is included when it is eligible so viewers can restore the active prompt.
     pub fn is_scrollback_block_for_shared_session(
         &self,
         agent_view_state: &AgentViewState,

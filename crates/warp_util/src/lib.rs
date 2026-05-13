@@ -7,6 +7,7 @@ pub mod assets;
 pub mod content_version;
 pub mod file;
 pub mod file_type;
+pub mod git;
 pub mod host_id;
 pub mod on_cancel;
 pub mod path;

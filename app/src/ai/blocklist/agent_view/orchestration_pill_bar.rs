@@ -44,6 +44,9 @@ use crate::features::FeatureFlag;
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::pane::view::PaneHeaderAction;
 use crate::terminal::view::TerminalAction;
+use crate::ui_components::icon_with_status::{
+    self, render_icon_with_status, IconWithStatusVariant,
+};
 use crate::ui_components::icons::Icon;
 use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 use warp_core::ui::theme::color::internal_colors;
@@ -52,10 +55,9 @@ use warpui::EntityId;
 const PILL_HEIGHT: f32 = 22.;
 const PILL_RADIUS: f32 = PILL_HEIGHT / 2.;
 const AVATAR_SIZE: f32 = 16.;
-const AVATAR_WITH_STATUS_WIDTH: f32 = 20.;
-const STATUS_BADGE_SIZE: f32 = 12.;
-const STATUS_BADGE_ICON_SIZE: f32 = 7.2;
-const STATUS_BADGE_PADDING: f32 = (STATUS_BADGE_SIZE - STATUS_BADGE_ICON_SIZE) / 4.;
+/// `total_size` for the shared icon-with-status helper, chosen so the helper's
+/// brand-circle slot lands at `AVATAR_SIZE`.
+const AVATAR_WITH_STATUS_TOTAL_SIZE: f32 = AVATAR_SIZE / icon_with_status::CIRCLE_RATIO;
 const PILL_LABEL_MAX_WIDTH: f32 = 110.;
 const PILL_GAP: f32 = 6.;
 const PILL_GAP_WITH_STATUS: f32 = 2.;
@@ -169,6 +171,8 @@ struct PillSpec {
     is_selected: bool,
     kind: PillKind,
     pin_state: PillPinState,
+    /// Child running on a remote worker; drives the cloud-shaped badge variant.
+    is_remote_child: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -255,12 +259,9 @@ pub enum OrchestrationPillBarAction {
     OpenInNewPane(AIConversationId),
     /// Menu item: open this child in a new tab.
     OpenInNewTab(AIConversationId),
-    /// Menu item: stop the in-progress task. Currently hidden; wiring kept
-    /// for re-enabling later.
-    #[allow(dead_code)]
+    /// Menu item: stop the in-progress task.
     Stop(AIConversationId),
-    /// Menu item: cancel and remove from local history. Currently hidden.
-    #[allow(dead_code)]
+    /// Menu item: cancel and remove from local history.
     Kill(AIConversationId),
     /// Set/clear which pill the user is hovering (drives the details card).
     SetHoveredPill(Option<AIConversationId>),
@@ -291,6 +292,23 @@ impl Entity for OrchestrationPillBar {
 }
 
 impl OrchestrationPillBar {
+    fn overflow_menu_item(
+        label: &'static str,
+        icon: Icon,
+        action: OrchestrationPillBarAction,
+        hover_background: Fill,
+        icon_color: Option<Fill>,
+    ) -> MenuItem<OrchestrationPillBarAction> {
+        let mut fields = MenuItemFields::new(label)
+            .with_icon(icon)
+            .with_override_hover_background_color(hover_background)
+            .with_on_select_action(action);
+        if let Some(color) = icon_color {
+            fields = fields.with_override_icon_color(color);
+        }
+        MenuItem::Item(fields)
+    }
+
     pub fn new(
         agent_view_controller: ModelHandle<AgentViewController>,
         ctx: &mut ViewContext<Self>,
@@ -368,16 +386,17 @@ impl OrchestrationPillBar {
         let appearance = Appearance::as_ref(ctx);
         let theme = appearance.theme();
         let hover_background: Fill = internal_colors::neutral_4(theme).into();
-
-        let item = |label: &'static str,
-                    icon: Icon,
-                    action: OrchestrationPillBarAction|
-         -> MenuItem<OrchestrationPillBarAction> {
-            MenuItem::Item(
-                MenuItemFields::new(label)
-                    .with_icon(icon)
-                    .with_override_hover_background_color(hover_background)
-                    .with_on_select_action(action),
+        let item = |label, icon, action| {
+            Self::overflow_menu_item(label, icon, action, hover_background, None)
+        };
+        let destructive_color: Fill = theme.ansi_fg_red().into();
+        let destructive_item = |label, icon, action| {
+            Self::overflow_menu_item(
+                label,
+                icon,
+                action,
+                hover_background,
+                Some(destructive_color),
             )
         };
 
@@ -388,8 +407,7 @@ impl OrchestrationPillBar {
         let is_open_elsewhere =
             is_conversation_open_in_other_visible_view(conversation_id, self_terminal_view_id, ctx);
 
-        // Stop / Kill items intentionally omitted (wiring still in place).
-        let items = if is_open_elsewhere {
+        let mut items = if is_open_elsewhere {
             vec![item(
                 "Focus pane",
                 Icon::ArrowSplit,
@@ -409,6 +427,22 @@ impl OrchestrationPillBar {
                 ),
             ]
         };
+        let is_in_progress = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .is_some_and(|conversation| conversation.status().is_in_progress());
+        items.push(MenuItem::Separator);
+        if is_in_progress {
+            items.push(destructive_item(
+                "Stop agent",
+                Icon::StopFilled,
+                OrchestrationPillBarAction::Stop(conversation_id),
+            ));
+        }
+        items.push(destructive_item(
+            "Kill agent",
+            Icon::X,
+            OrchestrationPillBarAction::Kill(conversation_id),
+        ));
 
         self.menu.update(ctx, |menu, ctx| {
             menu.set_items(items, ctx);
@@ -517,6 +551,8 @@ impl OrchestrationPillBar {
             is_selected: orchestrator_id == active_id,
             kind: PillKind::Orchestrator,
             pin_state: PillPinState::Unpinned,
+            // Unused: orchestrator pills don't render a status overlay.
+            is_remote_child: false,
         });
 
         // Then a pill per descendant child. Pin detection is currently
@@ -537,6 +573,7 @@ impl OrchestrationPillBar {
                 is_selected: child.id() == active_id,
                 kind: PillKind::Child,
                 pin_state: PillPinState::Unpinned,
+                is_remote_child: child.is_remote_child(),
             });
         }
 
@@ -1321,6 +1358,7 @@ fn render_pill(
     let avatar_color = spec.avatar_color;
     let avatar_glyph = spec.avatar_glyph;
     let status = spec.status;
+    let is_remote_child = spec.is_remote_child;
 
     // `Hoverable::new`'s build closure is `FnOnce` (see
     // `crates/warpui_core/src/elements/hoverable.rs`). We can therefore move
@@ -1399,19 +1437,19 @@ fn render_pill(
                 .finish()
         };
 
-        // Pinned pills swap the avatar disc for a pin glyph (per Figma) so
-        // the user can spot at a glance that this child is currently living
-        // in a separate pane/tab. Unpinned child pills render the avatar with
-        // the compact status badge from the orchestration pill design.
+        // Pinned pills swap the avatar for a pin glyph (per Figma); unpinned
+        // child pills delegate to the shared icon-with-status helper so cloud
+        // and local children get the same badge treatment as other surfaces.
         let leading: Box<dyn Element> = match (is_pinned, status.as_ref()) {
             (true, _) => ConstrainedBox::new(Icon::Pin.to_warpui_icon(text_color.into()).finish())
                 .with_width(AVATAR_SIZE)
                 .with_height(AVATAR_SIZE)
                 .finish(),
-            (false, Some(status)) => render_avatar_with_status_badge(
+            (false, Some(status)) => render_avatar_with_status_overlay(
                 avatar_color,
                 avatar_glyph,
-                status,
+                status.clone(),
+                is_remote_child,
                 background,
                 theme,
                 appearance,
@@ -1612,64 +1650,37 @@ fn render_overflow_button(
     SavePosition::new(button, &overflow_button_position_id(conversation_id)).finish()
 }
 
-/// Renders a child-agent avatar with the compact status badge from the
-/// orchestration pill designs. The 20px-wide footprint keeps the label aligned
-/// with the old 16px avatar + 6px gap while making room for the badge overhang.
-fn render_avatar_with_status_badge(
+/// Pill avatar with a status badge (cloud-shaped when remote), delegated to
+/// the shared icon-with-status helper.
+fn render_avatar_with_status_overlay(
     avatar_color: ColorU,
     glyph: AvatarGlyph,
-    status: &ConversationStatus,
+    status: ConversationStatus,
+    is_remote_child: bool,
     pill_background: ColorU,
     theme: &WarpTheme,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
-    let avatar = render_avatar_disc(avatar_color, glyph, AVATAR_SIZE, theme, appearance);
-    let (status_icon, status_color) =
-        status.status_icon_and_color(theme, StatusColorStyle::Standard);
-    let icon = ConstrainedBox::new(status_icon.to_warpui_icon(status_color.into()).finish())
-        .with_width(STATUS_BADGE_ICON_SIZE)
-        .with_height(STATUS_BADGE_ICON_SIZE)
-        .finish();
-    let badge = Container::new(
-        Container::new(icon)
-            .with_uniform_padding(STATUS_BADGE_PADDING)
-            .finish(),
+    // Disc sized to match the helper's brand-circle slot.
+    let avatar = render_avatar_disc(
+        avatar_color,
+        glyph,
+        icon_with_status::circle_size(AVATAR_WITH_STATUS_TOTAL_SIZE),
+        theme,
+        appearance,
+    );
+    render_icon_with_status(
+        IconWithStatusVariant::CustomAvatar {
+            avatar,
+            status: Some(status),
+            is_ambient: is_remote_child,
+        },
+        AVATAR_WITH_STATUS_TOTAL_SIZE,
+        0.0,
+        theme,
+        // Cutout ring color for the local badge; ignored by the cloud path.
+        pill_background.into(),
     )
-    .with_uniform_padding(STATUS_BADGE_PADDING)
-    .with_background_color(pill_background)
-    .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
-    .finish();
-
-    let mut stack = Stack::new();
-    stack.add_child(
-        ConstrainedBox::new(Empty::new().finish())
-            .with_width(AVATAR_WITH_STATUS_WIDTH)
-            .with_height(PILL_HEIGHT)
-            .finish(),
-    );
-    stack.add_positioned_child(
-        avatar,
-        OffsetPositioning::offset_from_parent(
-            vec2f(0., (PILL_HEIGHT - AVATAR_SIZE) / 2.),
-            ParentOffsetBounds::Unbounded,
-            ParentAnchor::TopLeft,
-            ChildAnchor::TopLeft,
-        ),
-    );
-    stack.add_positioned_child(
-        badge,
-        OffsetPositioning::offset_from_parent(
-            vec2f(0., 0.),
-            ParentOffsetBounds::Unbounded,
-            ParentAnchor::BottomRight,
-            ChildAnchor::BottomRight,
-        ),
-    );
-
-    ConstrainedBox::new(stack.finish())
-        .with_width(AVATAR_WITH_STATUS_WIDTH)
-        .with_height(PILL_HEIGHT)
-        .finish()
 }
 
 /// Renders the avatar circle as a colored disc with a centered glyph (letter
@@ -1995,14 +2006,20 @@ pub fn render_orchestration_breadcrumbs(
     .finish();
 
     // Center breadcrumbs while they fit; when they overflow, use the full
-    // width so horizontal scrolling still works.
+    // width so horizontal scrolling still works. Wrap in a `Container`
+    // with a touch of left padding so the leading parent crumb doesn't
+    // sit flush against the pane edge.
     Some(
-        Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(scrollable)
-            .finish(),
+        Container::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::Center)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(scrollable)
+                .finish(),
+        )
+        .with_padding_left(4.)
+        .finish(),
     )
 }
 
