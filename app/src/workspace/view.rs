@@ -7443,6 +7443,10 @@ impl Workspace {
             // If the tabbed editor view is enabled and there is an existing CodeView, we should group the newly opened file into this view.
             if let (Some(location), Some((pane_id, code_view))) = (source.location(), code_view) {
                 code_view.update(ctx, |code_view, ctx| {
+                    // Preview (single-click = light open, double-click = promote to
+                    // full tab) is only supported for local files because it relies
+                    // on `open_in_preview_or_promote` which takes a local `PathBuf`.
+                    // Remote files skip preview and open normally.
                     if preview {
                         if let Some(path) = location.to_local_path() {
                             code_view.open_in_preview_or_promote_and_jump(
@@ -7489,6 +7493,7 @@ impl Workspace {
                             pane_group.code_view_from_pane_id(locator.pane_id, ctx)
                         {
                             code_view.update(ctx, |code_view, ctx| {
+                                // Preview is local-only (see comment above).
                                 if preview {
                                     if let Some(path) = location.to_local_path() {
                                         code_view.open_in_preview_or_promote_and_jump(
