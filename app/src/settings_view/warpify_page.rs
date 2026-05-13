@@ -117,7 +117,7 @@ impl WarpifyPageView {
         let add_added_commands_editor = ctx.add_typed_action_view(|ctx| {
             let mut input =
                 SubmittableTextInput::new(ctx).validate_on_edit(|regex| Regex::new(regex).is_ok());
-            input.set_placeholder_text("command (supports regex)", ctx);
+            input.set_placeholder_text(t!("warpify.command_regex_placeholder"), ctx);
             input
         });
 
@@ -128,7 +128,7 @@ impl WarpifyPageView {
 
         let add_denylisted_commands_editor = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text("command (supports regex)", ctx);
+            input.set_placeholder_text(t!("warpify.command_regex_placeholder"), ctx);
             input
         });
 
@@ -139,7 +139,7 @@ impl WarpifyPageView {
 
         let add_denylisted_ssh_editor = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text("host (supports regex)", ctx);
+            input.set_placeholder_text(t!("warpify.host_regex_placeholder"), ctx);
             input
         });
 

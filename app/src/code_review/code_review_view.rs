@@ -531,7 +531,9 @@ impl DiscardOperationType {
             DiscardOperationType::FileUncommittedChanges => {
                 t!("code_review_ext.discard_all_uncommitted_file").to_string()
             }
-            DiscardOperationType::AllChangesAgainstBranch(_) => t!("code_review_ext.discard_all_changes").to_string(),
+            DiscardOperationType::AllChangesAgainstBranch(_) => {
+                t!("code_review_ext.discard_all_changes").to_string()
+            }
             DiscardOperationType::FileChangesAgainstBranch(_) => {
                 t!("code_review_ext.discard_all_changes_file").to_string()
             }
@@ -5532,8 +5534,10 @@ impl CodeReviewView {
                     )
                     .check(self.discard_dialog_state.stash_changes_enabled)
                     .with_label(
-                        appearance.ui_builder().span(t!("code_review_ext.stash_changes")).with_style(
-                            UiComponentStyles {
+                        appearance
+                            .ui_builder()
+                            .span(t!("code_review_ext.stash_changes"))
+                            .with_style(UiComponentStyles {
                                 font_size: Some(appearance.ui_font_size()),
                                 font_color: Some(
                                     appearance
@@ -5542,8 +5546,7 @@ impl CodeReviewView {
                                         .into(),
                                 ),
                                 ..Default::default()
-                            },
-                        ),
+                            }),
                     )
                     .build()
                     .on_click(|ctx, _, _| {
@@ -6575,7 +6578,7 @@ impl CodeReviewView {
     /// only the disabled state flips across modes (enabled in Commit mode,
     /// disabled in Push mode where there's nothing to commit).
     fn commit_menu_item(disabled: bool) -> MenuItem<CodeReviewAction> {
-        MenuItemFields::new("Commit")
+        MenuItemFields::new(t!("code_review.commit"))
             .with_icon(Icon::GitCommit)
             .with_on_select_action(CodeReviewAction::OpenCommitDialog)
             .with_disabled(disabled)
@@ -6587,13 +6590,13 @@ impl CodeReviewView {
     /// sets the upstream).
     fn push_or_publish_menu_item(has_upstream: bool, disabled: bool) -> MenuItem<CodeReviewAction> {
         if has_upstream {
-            MenuItemFields::new("Push")
+            MenuItemFields::new(t!("code_review.push"))
                 .with_icon(Icon::ArrowUp)
                 .with_on_select_action(CodeReviewAction::OpenPushDialog)
                 .with_disabled(disabled)
                 .into_item()
         } else {
-            MenuItemFields::new("Publish")
+            MenuItemFields::new(t!("code_review.publish"))
                 .with_icon(Icon::UploadCloud)
                 .with_on_select_action(CodeReviewAction::PublishBranch)
                 .with_disabled(disabled)

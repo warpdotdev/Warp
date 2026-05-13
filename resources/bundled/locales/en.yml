@@ -415,6 +415,39 @@ en:
   warpify:
     ssh_tmux_warpification_description: "The tmux ssh wrapper works in many situations where the default one does not, but may require you to hit a button to warpify. Takes effect in new tabs."
     ssh_extension_install_mode_description: "Controls the installation behavior for Warp's SSH extension when a remote host doesn't have it installed."
+    command_regex_placeholder: "command (supports regex)"
+    host_regex_placeholder: "host (supports regex)"
+
+  execution_profile:
+    models_heading: "MODELS"
+    permissions_heading: "PERMISSIONS"
+    base_model: "Base model:"
+    full_terminal_use: "Full terminal use:"
+    computer_use: "Computer use:"
+    apply_code_diffs: "Apply code diffs:"
+    read_files: "Read files:"
+    execute_commands: "Execute commands:"
+    interact_with_running_commands: "Interact with running commands:"
+    ask_questions: "Ask questions:"
+    call_mcp_servers: "Call MCP servers:"
+    call_web_tools: "Call web tools:"
+    auto_sync_plans: "Auto-sync plans to Warp Drive:"
+    directory_allowlist: "Directory allowlist:"
+    command_allowlist: "Command allowlist:"
+    command_denylist: "Command denylist:"
+    mcp_allowlist: "MCP allowlist:"
+    mcp_denylist: "MCP denylist:"
+    none: "None"
+    agent_decides: "Agent decides"
+    always_allow: "Always allow"
+    always_ask: "Always ask"
+    ask_on_first_write: "Ask on first write"
+    ask_unless_auto_approve: "Ask unless auto-approve"
+    never: "Never"
+    never_ask: "Never ask"
+    unknown: "Unknown"
+    enabled: "On"
+    disabled: "Off"
 
   workflows:
     command_edited: "Command edited."
@@ -462,6 +495,9 @@ en:
 
   # ── Code Review ──
   code_review:
+    commit: "Commit"
+    push: "Push"
+    publish: "Publish"
     copy_text: "Copy text"
     edit: "Edit"
     view_in_github: "View in GitHub"
@@ -1260,6 +1296,33 @@ en:
     loading: "Loading…"
     unable_to_load_secrets: "Unable to load secrets"
 
+  # ── Buy Credits Banner ──
+  buy_credits_banner:
+    auto_reload: "Auto reload"
+    auto_reload_tooltip: "When enabled, auto reload will purchase {credits} credits when your credit balance gets low"
+    monthly_limit_reached: "Your monthly spend limit has been reached. Increase it to continue."
+    contact_admin_increase_limit: "Contact a team admin to increase monthly limit."
+    purchase_exceeds_limit_start: "Purchasing these credits would take you over your monthly spend limit. "
+    increase_it: "Increase it"
+    purchase_exceeds_limit_end: " to continue."
+    add_more_credits: "Add more credits to your account to continue using Oz agents."
+    contact_admin_purchase_credits: "Contact a team admin to purchase more credits to continue."
+    buying: "Buying…"
+    buy: "Buy"
+
+  # ── Launch Config Save Modal ──
+  launch_config_save:
+    save_configuration: "Save Configuration"
+    open_yaml_file: "Open YAML File"
+    filename_placeholder: "launch_config.yaml"
+    link_to_documentation: "Link to Documentation"
+    saved_to_start: "Saved successfully to "
+    failed_same_name: "Failed to save. A launch configuration with the same name already exists."
+    failed_generic: "An issue was encountered while saving."
+    not_saved_description: "This will save your current configuration of windows, tabs and panes to a file so you can easily open it again."
+    not_saved_description_with_keybinding: "This will save your current configuration of windows, tabs and panes to a file so you can easily open it again with {keybinding}."
+    yaml_saved_to_start: "\nThe YAML file is saved to "
+
   onboarding_prompt:
     line_one: "Next, let’s set up your prompt. Warp has a custom prompt builder or you can select PS1 to honor your pre-existing prompt configuration."
     line_two: "Warp works with many custom prompts like oh-my-zsh, Starship, Powerlevel10K. "
@@ -1282,6 +1345,7 @@ en:
     cancel: "Cancel"
     update: "Update"
     continue: "Continue"
+    period: "."
     search: "Search"
     split_pane_right: "Split pane right"
     split_pane_left: "Split pane left"

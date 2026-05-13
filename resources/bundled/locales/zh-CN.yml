@@ -415,6 +415,39 @@ zh-CN:
   warpify:
     ssh_tmux_warpification_description: "tmux ssh wrapper 在很多默认 wrapper 不适用的情况下可用，但可能需要你点击按钮进行 warpify。对新标签页生效。"
     ssh_extension_install_mode_description: "控制远程主机未安装 Warp SSH 扩展时的安装行为。"
+    command_regex_placeholder: "命令（支持 regex）"
+    host_regex_placeholder: "主机（支持 regex）"
+
+  execution_profile:
+    models_heading: "模型"
+    permissions_heading: "权限"
+    base_model: "基础模型："
+    full_terminal_use: "完整终端使用："
+    computer_use: "计算机使用："
+    apply_code_diffs: "应用代码 diff："
+    read_files: "读取文件："
+    execute_commands: "执行命令："
+    interact_with_running_commands: "与运行中的命令交互："
+    ask_questions: "提问："
+    call_mcp_servers: "调用 MCP servers："
+    call_web_tools: "调用 Web tools："
+    auto_sync_plans: "自动同步计划到 Warp Drive："
+    directory_allowlist: "目录 allowlist："
+    command_allowlist: "命令 allowlist："
+    command_denylist: "命令 denylist："
+    mcp_allowlist: "MCP allowlist："
+    mcp_denylist: "MCP denylist："
+    none: "无"
+    agent_decides: "Agent 决定"
+    always_allow: "始终允许"
+    always_ask: "始终询问"
+    ask_on_first_write: "首次写入时询问"
+    ask_unless_auto_approve: "除自动批准外询问"
+    never: "从不"
+    never_ask: "从不询问"
+    unknown: "未知"
+    enabled: "开启"
+    disabled: "关闭"
 
   workflows:
     command_edited: "命令已编辑。"
@@ -462,6 +495,9 @@ zh-CN:
 
   # ── 代码审查 ──
   code_review:
+    commit: "提交"
+    push: "推送"
+    publish: "发布"
     copy_text: "复制文本"
     edit: "编辑"
     view_in_github: "在 GitHub 中查看"
@@ -1260,6 +1296,33 @@ zh-CN:
     loading: "加载中…"
     unable_to_load_secrets: "无法加载密钥"
 
+  # ── 购买 Credits 横幅 ──
+  buy_credits_banner:
+    auto_reload: "自动充值"
+    auto_reload_tooltip: "启用后，当 credits 余额较低时会自动购买 {credits} credits"
+    monthly_limit_reached: "你的每月支出上限已达到。请提高上限后继续。"
+    contact_admin_increase_limit: "请联系团队管理员提高每月上限。"
+    purchase_exceeds_limit_start: "购买这些 credits 会超过你的每月支出上限。"
+    increase_it: "提高上限"
+    purchase_exceeds_limit_end: "后继续。"
+    add_more_credits: "向你的账户添加更多 credits 以继续使用 Oz agents。"
+    contact_admin_purchase_credits: "请联系团队管理员购买更多 credits 后继续。"
+    buying: "购买中…"
+    buy: "购买"
+
+  # ── Launch Config 保存弹窗 ──
+  launch_config_save:
+    save_configuration: "保存配置"
+    open_yaml_file: "打开 YAML 文件"
+    filename_placeholder: "launch_config.yaml"
+    link_to_documentation: "查看文档"
+    saved_to_start: "已成功保存到 "
+    failed_same_name: "保存失败。已存在同名启动配置。"
+    failed_generic: "保存时遇到问题。"
+    not_saved_description: "这会将当前窗口、标签页和面板配置保存到文件，方便之后再次打开。"
+    not_saved_description_with_keybinding: "这会将当前窗口、标签页和面板配置保存到文件，方便之后通过 {keybinding} 再次打开。"
+    yaml_saved_to_start: "\nYAML 文件将保存到 "
+
   onboarding_prompt:
     line_one: "接下来，设置你的提示符。Warp 提供自定义提示符构建器，你也可以选择 PS1 来沿用已有的提示符配置。"
     line_two: "Warp 支持许多自定义提示符，例如 oh-my-zsh、Starship、Powerlevel10K。"
@@ -1282,6 +1345,7 @@ zh-CN:
     cancel: "取消"
     update: "更新"
     continue: "继续"
+    period: "。"
     search: "搜索"
     split_pane_right: "向右拆分面板"
     split_pane_left: "向左拆分面板"
