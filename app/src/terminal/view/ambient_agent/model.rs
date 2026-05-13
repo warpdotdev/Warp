@@ -14,7 +14,7 @@ use crate::ai::ambient_agents::{
     AgentConfigSnapshot, AmbientAgentTaskId, AmbientAgentTaskState, AttachmentInput,
     SpawnAgentRequest, OUT_OF_CREDITS_TASK_FAILURE_MESSAGE, SERVER_OVERLOADED_TASK_FAILURE_MESSAGE,
 };
-use crate::ai::api_error::{AIApiError, CloudAgentCapacityError};
+use crate::ai::api_error::AIApiError;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
 use crate::ai::llms::{LLMId, LLMPreferences};
@@ -556,12 +556,6 @@ impl AmbientAgentViewModel {
                                 );
                                 return;
                             }
-                        }
-                        if let Some(capacity_error) = err.downcast_ref::<CloudAgentCapacityError>()
-                        {
-                            me.handle_spawn_error(capacity_error.error.clone(), ctx);
-                            // 去云端分支:不再展示 cloud agent capacity 模态
-                            return;
                         }
                         if let Some(ai_api_error) = err.downcast_ref::<AIApiError>() {
                             match ai_api_error {

@@ -14,13 +14,6 @@ pub struct ClientError {
     pub auth_url: Option<String>,
 }
 
-#[derive(thiserror::Error, Debug, Clone, Deserialize)]
-#[error("{error} (running agents: {running_agents})")]
-pub struct CloudAgentCapacityError {
-    pub error: String,
-    pub running_agents: i32,
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum DeserializationError {
     #[error(transparent)]
