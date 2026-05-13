@@ -1244,15 +1244,14 @@ impl BillingAndUsagePageV2View {
         );
 
         if has_admin_permissions || !auto_reload_enabled {
-            let denomination_row = Container::new(denomination_buttons_row)
-                .with_margin_bottom(8.)
-                .finish();
+            let denomination_row = Container::new(denomination_buttons_row).finish();
             upper_section.add_child(denomination_row);
         }
 
         let card_upper = Container::new(upper_section.finish())
             .with_horizontal_padding(16.)
             .with_padding_top(16.)
+            .with_padding_bottom(16.)
             .finish();
 
         let price_label = selected_credit_option
