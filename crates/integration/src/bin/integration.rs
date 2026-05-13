@@ -36,10 +36,6 @@ pub fn main() -> Result<()> {
                 },
             ),
             logfile_name: "warp_integration.log".into(),
-            server_config: None,
-            oz_config: None,
-            telemetry_config: None,
-            autoupdate_config: None,
             mcp_static_config: None,
         },
     ));
@@ -177,8 +173,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_restore_snapshot_with_deleted_cwd);
     register_test!(test_session_restoration_with_multiple_shells);
     register_test!(test_restore_snapshot_with_background_output);
-    register_test!(test_restore_snapshot_with_notebooks);
-    register_test!(test_restore_snapshot_with_workflows);
     register_test!(test_restore_snapshot_with_markdown_file);
     register_test!(test_restore_snapshot_with_code_file);
     register_test!(test_restore_snapshot_with_settings_page);
@@ -316,9 +310,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
 
     register_test!(test_open_in_warp_banner);
 
-    // Workflow tests
-    register_test!(test_create_personal_workflow_pane_from_command_palette);
-
     register_test!(test_block_filtering_keybinding);
     register_test!(test_block_filtering_keybinding_with_long_running_command);
     register_test!(test_block_filtering_toolbelt_icon);
@@ -364,6 +355,7 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_selection_last_to_ai_semantic);
     register_test!(test_selection_last_to_ai_lines);
     register_test!(test_restored_ai_block_renders_mermaid_and_local_images);
+    register_test!(test_restored_invoke_skill_follow_up_conversation_renders_context);
 
     register_test!(test_agent_mode_pane_minimum_size);
     register_test!(test_git_prompt_chips);

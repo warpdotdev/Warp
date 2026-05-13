@@ -13,7 +13,7 @@ mod history;
 mod input;
 mod keyboard_protocol;
 mod launch_configs;
-mod notebooks;
+mod markdown;
 mod pane_restoration;
 #[cfg(target_os = "macos")]
 mod preview_config_migration;
@@ -42,7 +42,7 @@ pub use history::*;
 pub use input::*;
 pub use keyboard_protocol::*;
 pub use launch_configs::*;
-pub use notebooks::*;
+pub use markdown::*;
 pub use pane_restoration::*;
 #[cfg(target_os = "macos")]
 pub use preview_config_migration::*;
@@ -104,7 +104,7 @@ use warp::{
     appearance::Appearance,
     cmd_or_ctrl_shift,
     integration_testing::{
-        assertions::{assert_binding_display_string, go_offline, go_online},
+        assertions::assert_binding_display_string,
         block::{
             assert_block_visible, assert_bottom_of_block_approx_at, assert_num_blocks_in_model,
             BlockPosition, LinePosition,
@@ -612,7 +612,7 @@ pub fn test_suggestions_menu_positioning() -> Builder {
         .with_step(
             new_step_with_default_assertions("Open left panel")
                 .with_click_on_saved_position("workspace:toggle_left_panel")
-                .add_assertion(Box::new(|app, window_id| {
+                .add_assertion(Box::new(|app: &mut warpui::App, window_id| {
                     let workspace = workspace_view(app, window_id);
                     workspace.read(app, |workspace, ctx| {
                         async_assert!(

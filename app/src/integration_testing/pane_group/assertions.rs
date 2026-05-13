@@ -11,8 +11,9 @@ pub fn assert_num_shared_sessions_in_pane_group(
 ) -> AssertionCallback {
     Box::new(move |app, window_id| {
         let pane_group = pane_group_view(app, window_id, tab_index);
-        pane_group.read(app, |view, ctx| {
-            async_assert_eq!(view.number_of_shared_sessions(ctx), num_shared_sessions)
+        pane_group.read(app, |_view, _ctx| {
+            // Shared sessions were removed with cloud-hosted collaboration.
+            async_assert_eq!(0, num_shared_sessions)
         })
     })
 }

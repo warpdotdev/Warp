@@ -221,6 +221,18 @@ pub fn assert_input_not_at_either_edge_of_terminal() -> AssertionCallback {
     assert_input_position(InputPosition::NotAtEitherEdge)
 }
 
+pub fn assert_open_in_warp_banner_open(tab_index: usize, pane_index: usize) -> AssertionCallback {
+    Box::new(move |app, window_id| {
+        let terminal = terminal_view(app, window_id, tab_index, pane_index);
+        terminal.read(app, |view, _ctx| {
+            async_assert!(
+                view.is_open_in_warp_banner_open(),
+                "Expected the 'Open in Warp' banner to be open"
+            )
+        })
+    })
+}
+
 pub fn assert_view_has_text_selection(has_text_selection: bool) -> AssertionCallback {
     Box::new(move |app, window_id| {
         let terminal_view = single_terminal_view(app, window_id);
