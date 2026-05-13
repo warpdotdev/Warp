@@ -9,10 +9,7 @@ use ai::skills::{
 };
 use anyhow::Error;
 use regex::Regex;
-use repo_metadata::{
-    gitignores_for_directory, local_model::GetContentsArgs, matches_gitignores, RepoContent,
-    RepoMetadataModel,
-};
+use repo_metadata::{local_model::GetContentsArgs, RepoContent, RepoMetadataModel};
 use warpui::AppContext;
 
 use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
@@ -55,24 +52,6 @@ pub fn find_skill_directories_in_tree(
             RepoContent::Directory(dir) => dir.path.to_local_path_lossy(),
             RepoContent::File(f) => f.path.to_local_path_lossy(),
         })
-        .collect()
-}
-
-/// Returns skill provider directories that exist directly under `repo_path`
-/// (e.g., `<repo>/.agents/skills`, `<repo>/.claude/skills`) via filesystem
-/// probing, honoring repo gitignore rules. Used when the repo metadata tree
-/// is shallow (degraded indexing after `ExceededMaxFileLimit`) and
-/// `find_skill_directories_in_tree` cannot see nested provider paths. Only
-/// checks repo-root provider paths; nested occurrences
-/// (`<repo>/sub/.agents/skills`) are picked up later by the repository file
-/// watcher.
-pub fn find_top_level_skill_directories_in_filesystem(repo_path: &Path) -> Vec<PathBuf> {
-    let gitignores = gitignores_for_directory(repo_path);
-    SKILL_PROVIDER_DEFINITIONS
-        .iter()
-        .map(|p| repo_path.join(&p.skills_path))
-        .filter(|p| p.is_dir())
-        .filter(|p| !matches_gitignores(p, true, &gitignores, true))
         .collect()
 }
 

@@ -8,9 +8,8 @@ use super::{
         HomeSkillSubscriber, ProjectSkillSubscriber, SkillRepositoryMessage, SymlinkSkillSubscriber,
     },
     utils::{
-        find_skill_directories_in_tree, find_top_level_skill_directories_in_filesystem,
-        is_home_provider_path, is_home_skill_directory, is_skill_file,
-        read_skills_from_directories,
+        find_skill_directories_in_tree, is_home_provider_path, is_home_skill_directory,
+        is_skill_file, read_skills_from_directories,
     },
 };
 use watcher::{BulkFilesystemWatcherEvent, HomeDirectoryWatcher, HomeDirectoryWatcherEvent};
@@ -76,19 +75,10 @@ impl SkillWatcher {
     /// `SkillManager::handle_skills_added`.
     pub fn read_skills_for_repos(repo_paths: &[PathBuf], ctx: &AppContext) -> Vec<ParsedSkill> {
         let repo_metadata = RepoMetadataModel::as_ref(ctx);
-        // Combine tree-based discovery (catches nested provider paths) with a
-        // filesystem probe of top-level provider paths so degraded repos
-        // (indexed at depth=1 after ExceededMaxFileLimit) still surface their
-        // root-level skills.
-        let mut skill_dirs: HashSet<PathBuf> = HashSet::new();
-        for repo_path in repo_paths {
-            skill_dirs.extend(find_skill_directories_in_tree(
-                repo_path,
-                repo_metadata,
-                ctx,
-            ));
-            skill_dirs.extend(find_top_level_skill_directories_in_filesystem(repo_path));
-        }
+        let skill_dirs: Vec<PathBuf> = repo_paths
+            .iter()
+            .flat_map(|repo_path| find_skill_directories_in_tree(repo_path, repo_metadata, ctx))
+            .collect();
 
         read_skills_from_directories(skill_dirs)
     }
@@ -186,22 +176,6 @@ impl SkillWatcher {
                         me.scan_repository_for_skills(&local_path, ctx);
                     }
                 }
-                RepoMetadataEvent::RepositoryIndexedWithLimit {
-                    id: RepositoryIdentifier::Local(path),
-                } => {
-                    // Degraded indexing: the metadata tree is shallow, so
-                    // `scan_repository_for_skills` cannot see provider paths
-                    // like `.agents/skills`. Watch the repo (the watcher
-                    // catches subsequent changes) and probe the known
-                    // provider paths directly from the filesystem so
-                    // pre-existing skills aren't silently dropped.
-                    if let Some(local_path) = path.to_local_path() {
-                        me.watch_repo(local_path.clone(), ctx);
-                        let skill_dirs =
-                            find_top_level_skill_directories_in_filesystem(&local_path);
-                        Self::spawn_read_skills_from_directories(skill_dirs, ctx);
-                    }
-                }
                 RepoMetadataEvent::FileTreeEntryUpdated { .. } => {
                     me.handle_queued_project_directory_creations(ctx);
                 }
@@ -209,7 +183,6 @@ impl SkillWatcher {
                 | RepoMetadataEvent::RepositoryRemoved { .. }
                 | RepoMetadataEvent::FileTreeUpdated { .. }
                 | RepoMetadataEvent::UpdatingRepositoryFailed { .. }
-                | RepoMetadataEvent::RepositoryIndexedWithLimit { .. }
                 | RepoMetadataEvent::IncrementalUpdateReady { .. } => {}
             }
         });

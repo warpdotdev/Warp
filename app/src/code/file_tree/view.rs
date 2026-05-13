@@ -622,23 +622,9 @@ impl FileTreeView {
                 self.rebuild_flattened_items_for_root(repo_path);
                 ctx.notify();
             }
-            RepoMetadataEvent::RepositoryIndexedWithLimit {
-                id: RepositoryIdentifier::Local(std_path),
-            } => {
-                // RepoMetadataModel is global; only toast in views that display this repo.
-                let displays_repo = self.root_directories.contains_key(std_path)
-                    || self
-                        .root_directories
-                        .values()
-                        .any(|root_dir| **root_dir.entry.root_directory() == *std_path);
-                if displays_repo {
-                    Self::show_repo_indexed_with_limit_toast(ctx);
-                }
-            }
             RepoMetadataEvent::FileTreeUpdated { .. }
             | RepoMetadataEvent::RepositoryRemoved { .. }
             | RepoMetadataEvent::UpdatingRepositoryFailed { .. }
-            | RepoMetadataEvent::RepositoryIndexedWithLimit { .. }
             | RepoMetadataEvent::IncrementalUpdateReady { .. } => {}
         }
     }
@@ -1613,17 +1599,6 @@ impl FileTreeView {
                 "Folder has too many files to display in the file explorer.",
             ))
             .with_object_id("file_tree_exceeded_file_limit".to_string());
-            toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-        });
-    }
-
-    fn show_repo_indexed_with_limit_toast(ctx: &mut ViewContext<Self>) {
-        let window_id = ctx.window_id();
-        ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast = DismissibleToast::error(String::from(
-                "Repository is too large to fully index. Subfolders load when expanded.",
-            ))
-            .with_object_id("file_tree_repo_indexed_with_limit".to_string());
             toast_stack.add_ephemeral_toast(toast, window_id, ctx);
         });
     }
