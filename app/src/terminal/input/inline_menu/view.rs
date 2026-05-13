@@ -847,7 +847,8 @@ impl<A: InlineMenuAction, T: 'static + Send + Sync> InlineMenuView<A, T> {
             )
             .finish();
 
-        Some(header)
+        // Clip so trailing controls don't paint past the pane in a narrow split pane.
+        Some(Clipped::new(header).finish())
     }
 
     pub fn render_results_only(
