@@ -61,11 +61,9 @@ runs:
         git lfs install --local
         git lfs pull
 
-    # Print a per-file listing of the LFS payloads so the CI log shows that
-    # the ONNX/fasttext model binaries (and Windows .pdb files) are real
-    # binaries rather than 133-byte pointer stubs. The `*` marker before
-    # each path means "data is present in the working tree".
+    # Print a per-file listing of the LFS payloads in debug mode
     - name: Verify LFS payloads
+      if: ${{ runner.debug == '1' }}
       shell: bash
       run: |
         cd "${{ steps.repo-root.outputs.path }}"
