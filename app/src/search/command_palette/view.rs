@@ -337,18 +337,6 @@ impl View {
             .map(|item| &item.search_result)
     }
 
-    pub fn set_fixed_query_filters(
-        &mut self,
-        title: String,
-        filters: Vec<QueryFilter>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.search_bar.update(ctx, |search_bar, ctx| {
-            search_bar.set_fixed_filters(title, filters, ctx);
-        });
-        ctx.notify();
-    }
-
     /// Set the active query filter in the search bar to be `filter`.
     pub fn set_active_query_filter(&mut self, filter: QueryFilter, ctx: &mut ViewContext<Self>) {
         self.search_bar.update(ctx, |view, ctx| {

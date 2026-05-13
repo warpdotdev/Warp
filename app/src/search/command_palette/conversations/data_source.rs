@@ -57,8 +57,6 @@ impl ConversationSection {
 /// Data source that produces conversations for a user to navigate to.
 pub struct DataSource {
     searcher: FuzzyConversationSearcher,
-    /// Whether to include extra conversation actions (i.e. new conversation & fork conversation)
-    add_conversation_actions: bool,
 }
 
 impl Default for DataSource {
@@ -71,14 +69,6 @@ impl DataSource {
     pub fn new() -> Self {
         Self {
             searcher: FuzzyConversationSearcher::new(),
-            add_conversation_actions: true,
-        }
-    }
-
-    pub fn historical() -> Self {
-        Self {
-            searcher: FuzzyConversationSearcher::historical(),
-            add_conversation_actions: false,
         }
     }
 
@@ -208,7 +198,7 @@ impl SyncDataSource for DataSource {
         };
 
         // When the query is empty, we want to add the "new conversation" and "fork conversation" items.
-        if self.add_conversation_actions && query.text.trim().is_empty() {
+        if query.text.trim().is_empty() {
             result.map(|mut results| {
                 if !cfg!(target_family = "wasm") {
                     if let Some(conversation) = selected_conversation_in_focused_pane(app) {

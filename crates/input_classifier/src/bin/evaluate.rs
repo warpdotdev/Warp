@@ -72,7 +72,7 @@ use warp_completer::{ParsedTokensSnapshot, util::parse_current_commands_and_toke
 use input_classifier::{OnnxClassifier, OnnxModel};
 
 // Pick the ONNX model whose bytes are actually embedded in the binary
-#[cfg(feature = "nld_classifier_v1")]
+#[cfg(all(feature = "nld_classifier_v1", not(feature = "nld_classifier_v2")))]
 const DEFAULT_ONNX_MODEL: OnnxModel = OnnxModel::BertTinyV1;
 #[cfg(feature = "nld_classifier_v2")]
 const DEFAULT_ONNX_MODEL: OnnxModel = OnnxModel::BertTinyV2;
