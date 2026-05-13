@@ -22,7 +22,6 @@ use crate::{
     util::bindings::{keybinding_name_to_display_string, BindingGroup, CustomAction},
     view_components::ToastFlavor,
     workspace::WorkspaceAction,
-    workspaces::user_workspaces::UserWorkspaces,
     GlobalResourceHandlesProvider,
 };
 use about_page::AboutPageView;
@@ -1071,10 +1070,7 @@ impl SettingsView {
             me.handle_environments_page_event(event, ctx);
         });
 
-        let should_use_billing_and_usage_v2 = FeatureFlag::BillingAndUsagePageV2.is_enabled()
-            && UserWorkspaces::as_ref(ctx)
-                .current_workspace()
-                .is_some_and(|workspace| workspace.billing_metadata.is_on_build_plan());
+        let should_use_billing_and_usage_v2 = FeatureFlag::BillingAndUsagePageV2.is_enabled();
         let billing_and_usage_page: SettingsPage = if should_use_billing_and_usage_v2 {
             let handle = ctx.add_typed_action_view(BillingAndUsagePageV2View::new);
             ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
