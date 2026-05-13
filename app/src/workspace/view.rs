@@ -2870,7 +2870,7 @@ impl Workspace {
         if FeatureFlag::SshRemoteServer.is_enabled() {
             ctx.subscribe_to_model(
                 &RemoteServerManager::handle(ctx),
-                move |me, _handle, event, ctx| match event {
+                |me, _handle, event, ctx| match event {
                     RemoteServerManagerEvent::SessionConnected { .. } => {
                         me.update_active_session(ctx);
                     }

@@ -302,11 +302,7 @@ impl RemoteDiffStateModel {
         let event_path = file_path.to_local_path_lossy();
 
         if let Some(ref new_diff) = diff {
-            if let Some(pos) = diffs
-                .files
-                .iter()
-                .position(|f| f.file_path == event_path)
-            {
+            if let Some(pos) = diffs.files.iter().position(|f| f.file_path == event_path) {
                 diffs.files[pos] = new_diff.file_diff.clone();
             } else {
                 diffs.files.push(new_diff.file_diff.clone());
