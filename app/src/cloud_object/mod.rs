@@ -13,7 +13,7 @@
 //! - `CloudModelType` trait → 本地对象类型描述。
 //! - `CloudModel`(`model/persistence.rs`)→ 进程内本地对象全局存储 + SQLite 背存。
 //! - `CloudModelEvent` → 本地模型变更事件总线,被本地 UI 视图订阅。
-//! - `CloudObjectTypeAndId` → 本地 ID 判别式,被 Drive UI / search 等 60+ 处使用。
+//! - `ObjectTypeAndId` → 本地 ID 判别式,被 Drive UI / search 等 60+ 处使用。
 //!
 //! 之所以采用 "保留原名 + 文档注释" 而非物理重命名(`CloudObject` → `LocalObject`),
 //! 是为了把重命名的 200+ 处级联改动留到上游同步策略稳定后再统一做,本阶段**只
@@ -28,8 +28,7 @@ use crate::{
     auth::UserUid,
     channel::ChannelState,
     drive::{
-        items::WarpDriveItem, CloudObjectTypeAndId, OpenWarpDriveObjectArgs,
-        OpenWarpDriveObjectSettings,
+        items::WarpDriveItem, ObjectTypeAndId, OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings,
     },
     persistence::ModelEvent,
     server::ids::{ClientId, HashableId, HashedSqliteId, ObjectUid, ServerId, SyncId, ToServerId},
@@ -155,8 +154,8 @@ pub trait CloudObject: Debug {
     /// Returns the ObjectType i.e. 'Workflow' or 'Notebook'
     fn object_type(&self) -> ObjectType;
 
-    /// Returns the CloudObjectTypeAndId for this object.
-    fn cloud_object_type_and_id(&self) -> CloudObjectTypeAndId;
+    /// Returns the ObjectTypeAndId for this object.
+    fn object_type_and_id(&self) -> ObjectTypeAndId;
 
     /// Sets the server id on this object.
     fn set_server_id(&mut self, server_id: ServerId);
@@ -456,8 +455,8 @@ pub trait CloudModelType: Debug + Clone + Send + Sync {
     /// Returns the name of this model type (e.g. Workflow, Folder, Notebook)
     fn model_type_name(&self) -> &'static str;
 
-    /// Returns the CloudObjectTypeAndId for this object.
-    fn cloud_object_type_and_id(&self, id: SyncId) -> CloudObjectTypeAndId;
+    /// Returns the ObjectTypeAndId for this object.
+    fn object_type_and_id(&self, id: SyncId) -> ObjectTypeAndId;
 
     /// Returns the ObjectType for this model.
     fn object_type(&self) -> ObjectType;
@@ -623,8 +622,8 @@ where
         self.model.object_type()
     }
 
-    fn cloud_object_type_and_id(&self) -> CloudObjectTypeAndId {
-        self.model.cloud_object_type_and_id(self.id)
+    fn object_type_and_id(&self) -> ObjectTypeAndId {
+        self.model.object_type_and_id(self.id)
     }
 
     fn should_clear_on_unique_key_conflict(&self) -> bool {

@@ -1,7 +1,7 @@
 use crate::appearance::Appearance;
 use crate::cloud_object::CloudObject;
 use crate::drive::cloud_object_styling::warp_drive_icon_color;
-use crate::drive::{CloudObjectTypeAndId, DriveObjectType};
+use crate::drive::{DriveObjectType, ObjectTypeAndId};
 use crate::notebooks::NotebookObject;
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::render_util::render_search_item_icon;
@@ -136,7 +136,7 @@ impl SearchItem for NotebookSearchItem {
 
     fn execute_result(&self) -> Self::Action {
         CommandPaletteItemAction::ViewInWarpDrive {
-            id: CloudObjectTypeAndId::Notebook(self.cloud_notebook.id),
+            id: ObjectTypeAndId::Notebook(self.cloud_notebook.id),
         }
     }
 

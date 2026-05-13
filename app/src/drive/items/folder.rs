@@ -6,7 +6,7 @@ use crate::{
     cloud_object::CloudObjectMetadata,
     drive::{
         cloud_object_styling::warp_drive_icon_color, folders::FolderObject,
-        index::DriveIndexAction, CloudObjectTypeAndId, DriveObjectType,
+        index::DriveIndexAction, DriveObjectType, ObjectTypeAndId,
     },
     themes::theme::Fill,
     ui_components::icons::Icon,
@@ -16,12 +16,12 @@ use super::{WarpDriveItem, WarpDriveItemId};
 
 #[derive(Clone)]
 pub struct WarpDriveFolder {
-    id: CloudObjectTypeAndId,
+    id: ObjectTypeAndId,
     folder: FolderObject,
 }
 
 impl WarpDriveFolder {
-    pub fn new(id: CloudObjectTypeAndId, folder: FolderObject) -> Self {
+    pub fn new(id: ObjectTypeAndId, folder: FolderObject) -> Self {
         Self { id, folder }
     }
 }

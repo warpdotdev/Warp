@@ -52,7 +52,7 @@ use crate::{
     cmd_or_ctrl_shift,
     drive::{
         drive_helpers::has_feature_gated_anonymous_user_reached_notebook_limit,
-        export::ExportManager, items::WarpDriveItemId, CloudObjectTypeAndId,
+        export::ExportManager, items::WarpDriveItemId, ObjectTypeAndId,
         OpenWarpDriveObjectSettings,
     },
     editor::{
@@ -269,7 +269,7 @@ pub enum NotebookEvent {
     ViewInWarpDrive(WarpDriveItemId),
     Pane(PaneEvent),
     MoveToSpace {
-        cloud_object_type_and_id: CloudObjectTypeAndId,
+        object_type_and_id: ObjectTypeAndId,
         new_space: Space,
     },
     AttachPlanAsContext(AIDocumentId),
@@ -294,7 +294,7 @@ pub enum NotebookAction {
     ViewInWarpDrive(WarpDriveItemId),
     ContextMenu(ContextMenuAction), // right click context menu
     MoveToSpace {
-        cloud_object_type_and_id: CloudObjectTypeAndId,
+        object_type_and_id: ObjectTypeAndId,
         new_space: Space,
     },
     Duplicate,
@@ -723,7 +723,7 @@ impl NotebookView {
     /// for the active notebook.
     fn as_active_notebook_id(
         &self,
-        id: &CloudObjectTypeAndId,
+        id: &ObjectTypeAndId,
         ctx: &mut ViewContext<Self>,
     ) -> Option<SyncId> {
         id.as_notebook_id().filter(|id| {
@@ -1207,12 +1207,12 @@ impl NotebookView {
 
     fn move_to_team_owner(
         &mut self,
-        cloud_object_type_and_id: CloudObjectTypeAndId,
+        object_type_and_id: ObjectTypeAndId,
         new_space: Space,
         ctx: &mut ViewContext<Self>,
     ) {
         ctx.emit(NotebookEvent::MoveToSpace {
-            cloud_object_type_and_id,
+            object_type_and_id,
             new_space,
         });
     }
@@ -1221,7 +1221,7 @@ impl NotebookView {
         if let Some(notebook_id) = self.notebook_id(ctx) {
             UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
                 update_manager.duplicate_object(
-                    &CloudObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
+                    &ObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
                     ctx,
                 );
             });
@@ -1235,7 +1235,7 @@ impl NotebookView {
 
             UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
                 update_manager.trash_object(
-                    CloudObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
+                    ObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
                     ctx,
                 );
             });
@@ -1250,7 +1250,7 @@ impl NotebookView {
 
             UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
                 update_manager.untrash_object(
-                    CloudObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
+                    ObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
                     ctx,
                 );
             });
@@ -1264,7 +1264,7 @@ impl NotebookView {
             ExportManager::handle(ctx).update(ctx, |export_manager, ctx| {
                 export_manager.export(
                     window_id,
-                    &[CloudObjectTypeAndId::from_id_and_type(
+                    &[ObjectTypeAndId::from_id_and_type(
                         notebook_id,
                         ObjectType::Notebook,
                     )],
@@ -1349,12 +1349,12 @@ impl NotebookView {
 
     fn online_only_operation_allowed(
         &self,
-        cloud_object_type_and_id: CloudObjectTypeAndId,
+        object_type_and_id: ObjectTypeAndId,
         app: &AppContext,
     ) -> bool {
-        if let Some(object) = CloudModel::as_ref(app).get_by_uid(&cloud_object_type_and_id.uid()) {
+        if let Some(object) = CloudModel::as_ref(app).get_by_uid(&object_type_and_id.uid()) {
             return self.is_online(app)
-                && cloud_object_type_and_id.has_server_id()
+                && object_type_and_id.has_server_id()
                 && !object.metadata().has_pending_online_only_change();
         }
 
@@ -1390,7 +1390,7 @@ impl NotebookView {
             (active_notebook_data.space(ctx), active_notebook_data.id())
         {
             let cloud_object_type =
-                CloudObjectTypeAndId::from_id_and_type(cloud_id, ObjectType::Notebook);
+                ObjectTypeAndId::from_id_and_type(cloud_id, ObjectType::Notebook);
             let can_move = self.online_only_operation_allowed(cloud_object_type, ctx);
 
             if can_move {
@@ -1402,7 +1402,7 @@ impl NotebookView {
                                 space = space.name(ctx)
                             ))
                             .with_on_select_action(NotebookAction::MoveToSpace {
-                                cloud_object_type_and_id: cloud_object_type,
+                                object_type_and_id: cloud_object_type,
                                 new_space: *space,
                             })
                             .with_icon(Icon::Move)
@@ -1674,7 +1674,7 @@ impl NotebookView {
         // OpenWarp Phase 2a: invitee-driven sharing dialog removed.
         if let Some(focused_folder_id) = settings.focused_folder_id.map(SyncId::ServerId) {
             self.view_in_warp_drive(
-                WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(focused_folder_id)),
+                WarpDriveItemId::Object(ObjectTypeAndId::Folder(focused_folder_id)),
                 ctx,
             );
         }
@@ -2320,9 +2320,9 @@ impl TypedActionView for NotebookView {
                 });
             }
             NotebookAction::MoveToSpace {
-                cloud_object_type_and_id,
+                object_type_and_id,
                 new_space,
-            } => self.move_to_team_owner(*cloud_object_type_and_id, *new_space, ctx),
+            } => self.move_to_team_owner(*object_type_and_id, *new_space, ctx),
             #[cfg(target_family = "wasm")]
             NotebookAction::OpenLinkOnDesktop(url) => {
                 send_telemetry_from_ctx!(

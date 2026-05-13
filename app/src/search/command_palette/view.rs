@@ -1,5 +1,5 @@
 use crate::appearance::Appearance;
-use crate::drive::CloudObjectTypeAndId;
+use crate::drive::ObjectTypeAndId;
 use crate::search::binding_source::{BindingFilterFn, BindingSource};
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::SelectedItems;
@@ -102,7 +102,7 @@ pub enum Event {
     /// Open a notebook identified by `id`.
     OpenNotebook { id: SyncId },
     /// View the relevant object in the Warp Drive sidebar.
-    ViewInWarpDrive { id: CloudObjectTypeAndId },
+    ViewInWarpDrive { id: ObjectTypeAndId },
     /// Open a file at the given path.
     OpenFile {
         path: String,

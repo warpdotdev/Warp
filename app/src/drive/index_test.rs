@@ -11,7 +11,7 @@ use crate::{
         update_manager::UpdateManager,
         CloudObjectSyncStatus, ObjectType, Owner, Space,
     },
-    drive::{items::WarpDriveItemId, CloudObjectTypeAndId},
+    drive::{items::WarpDriveItemId, ObjectTypeAndId},
     menu::MenuItem,
     network::NetworkStatus,
     notebooks::{NotebookObject, NotebookObjectModel},
@@ -86,11 +86,11 @@ fn create_notebook(app: &mut App) -> SyncId {
     })
 }
 
-fn set_object_in_error(app: &mut App, cloud_object_type_and_id: &CloudObjectTypeAndId) {
+fn set_object_in_error(app: &mut App, object_type_and_id: &ObjectTypeAndId) {
     CloudModel::handle(app).update(
         app,
         |cloud_model, _ctx: &mut warpui::ModelContext<'_, CloudModel>| {
-            if let Some(object) = cloud_model.get_mut_by_uid(&cloud_object_type_and_id.uid()) {
+            if let Some(object) = cloud_model.get_mut_by_uid(&object_type_and_id.uid()) {
                 object.set_pending_content_changes_status(CloudObjectSyncStatus::Errored);
             }
         },
@@ -111,9 +111,9 @@ fn test_retry_menu_item_visibility() {
         initialize_app(&mut app);
         let index = create_index(&mut app);
         let sync_id = create_workflow(&mut app);
-        let cloud_object_type_and_id: CloudObjectTypeAndId =
-            CloudObjectTypeAndId::from_id_and_type(sync_id, ObjectType::Workflow);
-        let warp_drive_item_id = WarpDriveItemId::Object(cloud_object_type_and_id);
+        let object_type_and_id: ObjectTypeAndId =
+            ObjectTypeAndId::from_id_and_type(sync_id, ObjectType::Workflow);
+        let warp_drive_item_id = WarpDriveItemId::Object(object_type_and_id);
 
         // by default, it doesn't show up
         index.update(&mut app, |index, ctx| {
@@ -127,7 +127,7 @@ fn test_retry_menu_item_visibility() {
         });
 
         // when the object is in error, it should show up
-        set_object_in_error(&mut app, &cloud_object_type_and_id);
+        set_object_in_error(&mut app, &object_type_and_id);
         index.update(&mut app, |index, ctx| {
             let menu_items = index.menu_items(&Space::Personal, &warp_drive_item_id, ctx);
             assert_eq!(menu_items.len(), 6);
@@ -161,19 +161,19 @@ fn test_retry_menu_item_logic() {
         initialize_app(&mut app);
         let index = create_index(&mut app);
         let sync_id = create_workflow(&mut app);
-        let cloud_object_type_and_id: CloudObjectTypeAndId =
-            CloudObjectTypeAndId::from_id_and_type(sync_id, ObjectType::Workflow);
+        let object_type_and_id: ObjectTypeAndId =
+            ObjectTypeAndId::from_id_and_type(sync_id, ObjectType::Workflow);
 
         // OpenWarp(Wave 4):SyncQueue 整删,原本验证 SyncQueue 队列变化的
         // 断言全部变为无意义。跳过留下调用流程本身以验证不报 panic。
 
         index.update(&mut app, |index, ctx| {
-            index.retry_failed_object(&cloud_object_type_and_id, ctx);
+            index.retry_failed_object(&object_type_and_id, ctx);
         });
 
         // the item is now in flight
         CloudModel::handle(&app).update(&mut app, |cloud_model, _ctx| {
-            if let Some(object) = cloud_model.get_mut_by_uid(&cloud_object_type_and_id.uid()) {
+            if let Some(object) = cloud_model.get_mut_by_uid(&object_type_and_id.uid()) {
                 let _ = object;
             }
         });
@@ -191,8 +191,8 @@ fn test_warp_drive_navigation_states() {
         initialize_app(&mut app);
         let index = create_index(&mut app);
         let sync_id = create_notebook(&mut app);
-        let cloud_object_type_and_id: CloudObjectTypeAndId =
-            CloudObjectTypeAndId::from_id_and_type(sync_id, ObjectType::Notebook);
+        let object_type_and_id: ObjectTypeAndId =
+            ObjectTypeAndId::from_id_and_type(sync_id, ObjectType::Notebook);
 
         index.read(&app, |index, _| {
             assert_eq!(index.selected, None, "Expect selected to be None");
@@ -204,13 +204,13 @@ fn test_warp_drive_navigation_states() {
         });
 
         index.update(&mut app, |index, ctx| {
-            index.handle_action(&DriveIndexAction::OpenObject(cloud_object_type_and_id), ctx);
+            index.handle_action(&DriveIndexAction::OpenObject(object_type_and_id), ctx);
         });
 
         index.read(&app, |index, _| {
             assert_eq!(
                 index.selected,
-                Some(WarpDriveItemId::Object(cloud_object_type_and_id)),
+                Some(WarpDriveItemId::Object(object_type_and_id)),
                 "Expect selected to have correct value"
             );
         });

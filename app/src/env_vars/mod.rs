@@ -21,7 +21,7 @@ use crate::{
     external_secrets::ExternalSecret,
     server::ids::SyncId,
     terminal::shell::ShellType,
-    Appearance, CloudObjectTypeAndId,
+    Appearance, ObjectTypeAndId,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -203,7 +203,7 @@ impl StringModel for EnvVarCollection {
         env_var_collection: &EnvVarCollectionObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveEnvVarCollection::new(
-            CloudObjectTypeAndId::GenericStringObject {
+            ObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection),
                 id,
             },

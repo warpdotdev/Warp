@@ -34,7 +34,7 @@ use crate::{
     workspace::{active_terminal_in_window, ToastStack},
 };
 
-use super::CloudObjectTypeAndId;
+use super::ObjectTypeAndId;
 
 /// Singleton model for exporting from Warp Drive.
 pub struct ExportManager {
@@ -43,7 +43,7 @@ pub struct ExportManager {
 
 /// Identifier for an export.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExportId(CloudObjectTypeAndId, Space);
+pub struct ExportId(ObjectTypeAndId, Space);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExportEvent {
@@ -97,7 +97,7 @@ impl ExportManager {
     pub fn export(
         &mut self,
         window_id: WindowId,
-        objects: &[CloudObjectTypeAndId],
+        objects: &[ObjectTypeAndId],
         ctx: &mut ModelContext<Self>,
     ) {
         let shell_family =
@@ -210,7 +210,7 @@ impl ExportManager {
     fn handle_object_export(
         &mut self,
         id: ExportId,
-        object: CloudObjectTypeAndId,
+        object: ObjectTypeAndId,
         path: anyhow::Result<PathBuf>,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -265,13 +265,13 @@ impl ExportManager {
         id: ExportId,
         is_bulk: bool,
         parent_path: &Path,
-        object: CloudObjectTypeAndId,
+        object: ObjectTypeAndId,
         shell_family: ShellFamily,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<SpawnedFutureHandle> {
         let cloud_model = CloudModel::as_ref(ctx);
         let (name, extension, data) = match object {
-            CloudObjectTypeAndId::Workflow(workflow_id) => {
+            ObjectTypeAndId::Workflow(workflow_id) => {
                 let workflow = cloud_model
                     .get_workflow(&workflow_id)
                     .ok_or_else(|| anyhow!("no workflow for {workflow_id}"))?;
@@ -282,7 +282,7 @@ impl ExportManager {
 
                 (workflow.model().data.name().to_owned(), "yaml", data)
             }
-            CloudObjectTypeAndId::Notebook(notebook_id) => {
+            ObjectTypeAndId::Notebook(notebook_id) => {
                 let notebook = cloud_model
                     .get_notebook(&notebook_id)
                     .ok_or_else(|| anyhow!("no notebook for {notebook_id}"))?;
@@ -294,7 +294,7 @@ impl ExportManager {
                     .into_bytes();
                 (notebook.model().title.clone(), "md", data)
             }
-            CloudObjectTypeAndId::GenericStringObject { object_type, id } => {
+            ObjectTypeAndId::GenericStringObject { object_type, id } => {
                 if let Some(env_var_collection) = cloud_model.get_env_var_collection(&id) {
                     let env_var_collection_model = env_var_collection.model();
 
@@ -346,7 +346,7 @@ impl ExportManager {
         _id: ExportId,
         _is_bulk: bool,
         _parent_path: &Path,
-        _object: CloudObjectTypeAndId,
+        _object: ObjectTypeAndId,
         _shell_family: ShellFamily,
         _ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<SpawnedFutureHandle> {

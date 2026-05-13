@@ -21,7 +21,7 @@ use crate::{
     },
     drive::{
         folders::{FolderId, FolderObjectModel},
-        CloudObjectTypeAndId,
+        ObjectTypeAndId,
     },
     env_vars::{EnvVarCollection, EnvVarCollectionObjectModel},
     notebooks::{NotebookId, NotebookObjectModel},
@@ -178,7 +178,7 @@ impl UpdateManager {
                 },
                 ctx,
             )
-            .map(|object| object.cloud_object_type_and_id())
+            .map(|object| object.object_type_and_id())
             .collect_vec();
 
         // First, delete in-memory from CloudModel and object actions.
@@ -205,12 +205,12 @@ impl UpdateManager {
 
     pub fn resync_object(
         &mut self,
-        cloud_object_type_and_id: &CloudObjectTypeAndId,
+        object_type_and_id: &ObjectTypeAndId,
         ctx: &mut ModelContext<Self>,
     ) {
         // OpenWarp(Wave 4):resync 原语义是“重新入 SyncQueue 向服务端推上本地变更”。
         // 本地化后本身就是单向 sqlite 写入,调用点仅需轻量检查。
-        let _ = (cloud_object_type_and_id, ctx);
+        let _ = (object_type_and_id, ctx);
     }
 
     /// Out-of-band (from the regular poll) refresh of updated objects.
@@ -271,7 +271,7 @@ impl UpdateManager {
                 Some(object) if object.has_conflicting_changes() => {
                     object.replace_object_with_conflict();
                     ctx.emit(CloudModelEvent::ObjectUpdated {
-                        type_and_id: object.cloud_object_type_and_id(),
+                        type_and_id: object.object_type_and_id(),
                         source: UpdateSource::Server,
                     });
                     true
@@ -548,7 +548,7 @@ impl UpdateManager {
     // Since moving is an online-only operation, this operation does NOT go through the sync queue.
     pub fn move_object_to_location(
         &mut self,
-        object_id: CloudObjectTypeAndId,
+        object_id: ObjectTypeAndId,
         new_location: CloudObjectLocation,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -686,17 +686,17 @@ impl UpdateManager {
 
     pub fn duplicate_object(
         &mut self,
-        cloud_object_type_and_id: &CloudObjectTypeAndId,
+        object_type_and_id: &ObjectTypeAndId,
         ctx: &mut ModelContext<Self>,
     ) {
-        match cloud_object_type_and_id {
-            CloudObjectTypeAndId::Notebook(notebook_id) => {
+        match object_type_and_id {
+            ObjectTypeAndId::Notebook(notebook_id) => {
                 self.duplicate_object_internal::<NotebookId, NotebookObjectModel>(notebook_id, ctx);
             }
-            CloudObjectTypeAndId::Workflow(workflow_id) => {
+            ObjectTypeAndId::Workflow(workflow_id) => {
                 self.duplicate_object_internal::<WorkflowId, WorkflowObjectModel>(workflow_id, ctx);
             }
-            CloudObjectTypeAndId::GenericStringObject { object_type, id } => {
+            ObjectTypeAndId::GenericStringObject { object_type, id } => {
                 if let GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection) =
                     object_type
                 {
@@ -708,7 +708,7 @@ impl UpdateManager {
                     debug_assert!(false, "Tried to duplicate an unsupported type: json object");
                 }
             }
-            CloudObjectTypeAndId::Folder(_) => {
+            ObjectTypeAndId::Folder(_) => {
                 // Duplicating folders not currently supported.
                 log::error!("Tried to duplicate an unsupported type: folder");
                 debug_assert!(false, "Tried to duplicate an unsupported type: folder");
@@ -851,7 +851,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.delete_object_by_user(
-            CloudObjectTypeAndId::GenericStringObject {
+            ObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile),
                 id: ai_execution_profile_id,
             },
@@ -1113,7 +1113,7 @@ impl UpdateManager {
     // Takes a generic SyncId and records the action.
     pub fn record_object_action(
         &mut self,
-        id_and_type: CloudObjectTypeAndId,
+        id_and_type: ObjectTypeAndId,
         action_type: ObjectActionType,
         data: Option<String>,
         ctx: &mut ModelContext<Self>,
@@ -1257,7 +1257,7 @@ impl UpdateManager {
                     .pending_changes_statuses
                     .has_pending_metadata_change = true;
                 ctx.emit(CloudModelEvent::ObjectTrashed {
-                    type_and_id: object.cloud_object_type_and_id(),
+                    type_and_id: object.object_type_and_id(),
                     source: UpdateSource::Local,
                 });
                 ctx.notify();
@@ -1271,7 +1271,7 @@ impl UpdateManager {
         })
     }
 
-    pub fn trash_object(&mut self, id: CloudObjectTypeAndId, ctx: &mut ModelContext<Self>) {
+    pub fn trash_object(&mut self, id: ObjectTypeAndId, ctx: &mut ModelContext<Self>) {
         // OpenWarp(去中心化分支):本地对象(无 server_id)走纯本地 trash —
         // 标记 trashed_ts + 写 sqlite。**不 emit ObjectOperationComplete**,
         // 因为它的多个消费者(notebooks/env_vars/cloud_object/view)都 `.expect` server_id;
@@ -1342,7 +1342,7 @@ impl UpdateManager {
         ctx.notify();
     }
 
-    pub fn untrash_object(&mut self, id: CloudObjectTypeAndId, ctx: &mut ModelContext<Self>) {
+    pub fn untrash_object(&mut self, id: ObjectTypeAndId, ctx: &mut ModelContext<Self>) {
         // OpenWarp:本地对象 untrash —— 清掉 trashed_ts + emit ObjectUntrashed + 写 sqlite。
         // 不 emit ObjectOperationComplete(同 trash_object 的注释)。
         let Some(server_id) = id.server_id() else {
@@ -1358,7 +1358,7 @@ impl UpdateManager {
                         .pending_changes_statuses
                         .has_pending_metadata_change = false;
                     ctx.emit(CloudModelEvent::ObjectUntrashed {
-                        type_and_id: object.cloud_object_type_and_id(),
+                        type_and_id: object.object_type_and_id(),
                         source: UpdateSource::Local,
                     });
                 }
@@ -1399,7 +1399,7 @@ impl UpdateManager {
                     .pending_changes_statuses
                     .pending_untrash = false;
                 ctx.emit(CloudModelEvent::ObjectUntrashed {
-                    type_and_id: object.cloud_object_type_and_id(),
+                    type_and_id: object.object_type_and_id(),
                     source: UpdateSource::Local,
                 });
             }
@@ -1420,17 +1420,13 @@ impl UpdateManager {
         ctx.notify();
     }
 
-    pub fn delete_object_by_user(
-        &mut self,
-        id: CloudObjectTypeAndId,
-        ctx: &mut ModelContext<Self>,
-    ) {
+    pub fn delete_object_by_user(&mut self, id: ObjectTypeAndId, ctx: &mut ModelContext<Self>) {
         self.delete_object_with_initiated_by(id, InitiatedBy::User, ctx);
     }
 
     pub fn delete_object_with_initiated_by(
         &mut self,
-        id: CloudObjectTypeAndId,
+        id: ObjectTypeAndId,
         initiated_by: InitiatedBy,
         ctx: &mut ModelContext<Self>,
     ) {

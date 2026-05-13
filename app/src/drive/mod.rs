@@ -105,7 +105,7 @@ pub struct OpenWarpDriveObjectArgs {
 /// Enum to use to pass down type and id between actions to avoid multiplying actions whenever we
 /// need to pass the object id etc.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum CloudObjectTypeAndId {
+pub enum ObjectTypeAndId {
     Notebook(SyncId),
     Workflow(SyncId),
     Folder(SyncId),
@@ -115,7 +115,7 @@ pub enum CloudObjectTypeAndId {
     },
 }
 
-impl CloudObjectTypeAndId {
+impl ObjectTypeAndId {
     pub fn from_id_and_type(id: SyncId, object_type: ObjectType) -> Self {
         match object_type {
             ObjectType::Notebook => Self::Notebook(id),
@@ -148,10 +148,10 @@ impl CloudObjectTypeAndId {
 
     pub fn sqlite_uid_hash(self) -> HashedSqliteId {
         match self {
-            CloudObjectTypeAndId::Notebook(id) => id.sqlite_uid_hash(ObjectIdType::Notebook),
-            CloudObjectTypeAndId::Workflow(id) => id.sqlite_uid_hash(ObjectIdType::Workflow),
-            CloudObjectTypeAndId::Folder(id) => id.sqlite_uid_hash(ObjectIdType::Folder),
-            CloudObjectTypeAndId::GenericStringObject { object_type: _, id } => {
+            ObjectTypeAndId::Notebook(id) => id.sqlite_uid_hash(ObjectIdType::Notebook),
+            ObjectTypeAndId::Workflow(id) => id.sqlite_uid_hash(ObjectIdType::Workflow),
+            ObjectTypeAndId::Folder(id) => id.sqlite_uid_hash(ObjectIdType::Folder),
+            ObjectTypeAndId::GenericStringObject { object_type: _, id } => {
                 id.sqlite_uid_hash(ObjectIdType::GenericStringObject)
             }
         }
@@ -159,19 +159,19 @@ impl CloudObjectTypeAndId {
 
     pub fn object_id_type(&self) -> ObjectIdType {
         match self {
-            CloudObjectTypeAndId::Notebook(_) => ObjectIdType::Notebook,
-            CloudObjectTypeAndId::Workflow(_) => ObjectIdType::Workflow,
-            CloudObjectTypeAndId::GenericStringObject { .. } => ObjectIdType::GenericStringObject,
-            CloudObjectTypeAndId::Folder(_) => ObjectIdType::Folder,
+            ObjectTypeAndId::Notebook(_) => ObjectIdType::Notebook,
+            ObjectTypeAndId::Workflow(_) => ObjectIdType::Workflow,
+            ObjectTypeAndId::GenericStringObject { .. } => ObjectIdType::GenericStringObject,
+            ObjectTypeAndId::Folder(_) => ObjectIdType::Folder,
         }
     }
 
     pub fn object_type(&self) -> ObjectType {
         match self {
-            CloudObjectTypeAndId::Notebook(_) => ObjectType::Notebook,
-            CloudObjectTypeAndId::Workflow(_) => ObjectType::Workflow,
-            CloudObjectTypeAndId::Folder(_) => ObjectType::Folder,
-            CloudObjectTypeAndId::GenericStringObject { object_type, .. } => {
+            ObjectTypeAndId::Notebook(_) => ObjectType::Notebook,
+            ObjectTypeAndId::Workflow(_) => ObjectType::Workflow,
+            ObjectTypeAndId::Folder(_) => ObjectType::Folder,
+            ObjectTypeAndId::GenericStringObject { object_type, .. } => {
                 ObjectType::GenericStringObject(*object_type)
             }
         }
@@ -179,23 +179,23 @@ impl CloudObjectTypeAndId {
 
     pub fn as_folder_id(self) -> Option<SyncId> {
         match self {
-            CloudObjectTypeAndId::Notebook(_) => None,
-            CloudObjectTypeAndId::Workflow(_) => None,
-            CloudObjectTypeAndId::GenericStringObject { .. } => None,
-            CloudObjectTypeAndId::Folder(f) => Some(f),
+            ObjectTypeAndId::Notebook(_) => None,
+            ObjectTypeAndId::Workflow(_) => None,
+            ObjectTypeAndId::GenericStringObject { .. } => None,
+            ObjectTypeAndId::Folder(f) => Some(f),
         }
     }
 
     pub fn as_notebook_id(self) -> Option<SyncId> {
         match self {
-            CloudObjectTypeAndId::Notebook(id) => Some(id),
+            ObjectTypeAndId::Notebook(id) => Some(id),
             _ => None,
         }
     }
 
     pub fn as_generic_string_object_id(self) -> Option<SyncId> {
         match self {
-            CloudObjectTypeAndId::GenericStringObject { object_type: _, id } => Some(id),
+            ObjectTypeAndId::GenericStringObject { object_type: _, id } => Some(id),
             _ => None,
         }
     }
@@ -203,10 +203,10 @@ impl CloudObjectTypeAndId {
     pub fn has_server_id(self) -> bool {
         matches!(
             self,
-            CloudObjectTypeAndId::Notebook(SyncId::ServerId(_))
-                | CloudObjectTypeAndId::Workflow(SyncId::ServerId(_))
-                | CloudObjectTypeAndId::Folder(SyncId::ServerId(_))
-                | CloudObjectTypeAndId::GenericStringObject {
+            ObjectTypeAndId::Notebook(SyncId::ServerId(_))
+                | ObjectTypeAndId::Workflow(SyncId::ServerId(_))
+                | ObjectTypeAndId::Folder(SyncId::ServerId(_))
+                | ObjectTypeAndId::GenericStringObject {
                     id: SyncId::ServerId(_),
                     ..
                 }
@@ -215,10 +215,10 @@ impl CloudObjectTypeAndId {
 
     pub fn server_id(self) -> Option<ServerId> {
         match self {
-            CloudObjectTypeAndId::Notebook(SyncId::ServerId(notebook_id)) => Some(notebook_id),
-            CloudObjectTypeAndId::Workflow(SyncId::ServerId(workflow_id)) => Some(workflow_id),
-            CloudObjectTypeAndId::Folder(SyncId::ServerId(folder_id)) => Some(folder_id),
-            CloudObjectTypeAndId::GenericStringObject {
+            ObjectTypeAndId::Notebook(SyncId::ServerId(notebook_id)) => Some(notebook_id),
+            ObjectTypeAndId::Workflow(SyncId::ServerId(workflow_id)) => Some(workflow_id),
+            ObjectTypeAndId::Folder(SyncId::ServerId(folder_id)) => Some(folder_id),
+            ObjectTypeAndId::GenericStringObject {
                 id: SyncId::ServerId(json_object_id),
                 ..
             } => Some(json_object_id),

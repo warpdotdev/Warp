@@ -16,7 +16,7 @@ use crate::{
         model::persistence::CloudModel, CloudObjectMetadata, CloudObjectPermissions, ObjectIdType,
         ObjectType, Space,
     },
-    drive::CloudObjectTypeAndId,
+    drive::ObjectTypeAndId,
     notebooks::{NotebookId, NotebookObject, NotebookObjectModel},
     server::ids::SyncId,
     workflows::{workflow::Workflow, WorkflowId, WorkflowObject, WorkflowObjectModel},
@@ -63,7 +63,7 @@ impl ExportTest {
     /// Starts exporting an object into the temporary directory.
     fn start_export(
         &self,
-        export_ids: CloudObjectTypeAndId,
+        export_ids: ObjectTypeAndId,
         app: &mut App,
     ) -> (ExportId, oneshot::Receiver<ExportEvent>) {
         let id = ExportId(export_ids, Space::Personal);
@@ -154,7 +154,7 @@ fn test_export_workflow_success() {
 
         let exporter = ExportTest::new(&mut app);
         let (id, export) = exporter.start_export(
-            CloudObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
+            ObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
             &mut app,
         );
         let expected_path = exporter.path("Test workflow.yaml", None, &app);
@@ -206,7 +206,7 @@ fn test_export_workflow_duplicate() {
         .expect("failed to write existing workflow");
 
         let (id, export) = exporter.start_export(
-            CloudObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
+            ObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
             &mut app,
         );
         let expected_path = exporter.path("Test workflow (1).yaml", None, &app);
@@ -259,7 +259,7 @@ fn test_export_workflow_failure() {
         fs::remove_dir_all(exporter.target_dir.path()).expect("Could not remove test directory");
 
         let (id, export) = exporter.start_export(
-            CloudObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
+            ObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
             &mut app,
         );
 
@@ -301,7 +301,7 @@ print("hello")
 
         let exporter = ExportTest::new(&mut app);
         let (id, export) = exporter.start_export(
-            CloudObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
+            ObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
             &mut app,
         );
         let expected_path = exporter.path("Test notebook.md", None, &app);
@@ -356,7 +356,7 @@ fn test_export_untitled_notebook() {
 
         let exporter = ExportTest::new(&mut app);
         let (id, export) = exporter.start_export(
-            CloudObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
+            ObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
             &mut app,
         );
         let expected_path = exporter.path("Untitled.md", None, &app);
@@ -387,7 +387,7 @@ fn test_export_with_special_characters() {
 
         let exporter = ExportTest::new(&mut app);
         let (id, export) = exporter.start_export(
-            CloudObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
+            ObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
             &mut app,
         );
         let expected_path = exporter.path("Prefix_ Some_workflow.yaml", None, &app);
@@ -445,9 +445,9 @@ fn test_export_multiple_objects() {
 
         // Prepare export IDs for all three objects
         let export_ids = vec![
-            CloudObjectTypeAndId::from_id_and_type(workflow_id1, ObjectType::Workflow),
-            CloudObjectTypeAndId::from_id_and_type(workflow_id2, ObjectType::Workflow),
-            CloudObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
+            ObjectTypeAndId::from_id_and_type(workflow_id1, ObjectType::Workflow),
+            ObjectTypeAndId::from_id_and_type(workflow_id2, ObjectType::Workflow),
+            ObjectTypeAndId::from_id_and_type(notebook_id, ObjectType::Notebook),
         ];
 
         // Create channels for all exports

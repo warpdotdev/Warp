@@ -25,7 +25,7 @@ use warpui::{
 use super::super::palette_styles as styles;
 use crate::appearance::Appearance;
 use crate::cloud_object::model::persistence::CloudModel;
-use crate::drive::CloudObjectTypeAndId;
+use crate::drive::ObjectTypeAndId;
 use crate::palette::PaletteMode;
 use crate::pane_group::pane::welcome_view::WelcomeViewAction;
 use crate::search::action::search_item::MatchedBinding;
@@ -91,7 +91,7 @@ pub enum Event {
     },
     /// View the relevant object in the Warp Drive sidebar.
     ViewInWarpDrive {
-        id: CloudObjectTypeAndId,
+        id: ObjectTypeAndId,
     },
     /// Open a file at the given path.
     OpenFile {

@@ -22,7 +22,7 @@ use crate::{
         model::{persistence::CloudModel, view::CloudViewModel},
         CloudObject, CloudObjectMetadataExt, Owner,
     },
-    drive::CloudObjectTypeAndId,
+    drive::ObjectTypeAndId,
     workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
 };
 
@@ -609,9 +609,7 @@ impl<'a> WarpDriveRow<'a> {
     fn render_icon(&self, style: UiComponentStyles) -> Box<dyn Element> {
         let icon_to_render = match self.item.warp_drive_id() {
             // This sets the icon color of folders correctly in color contrast cases, e.g. being dragged or focused
-            WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(_))
-                if style == self.styles.dragged =>
-            {
+            WarpDriveItemId::Object(ObjectTypeAndId::Folder(_)) if style == self.styles.dragged => {
                 self.item
                     .icon(self.appearance, Some(style.font_color.unwrap().into()))
             }
@@ -634,7 +632,7 @@ impl<'a> WarpDriveRow<'a> {
 
     fn render_secondary_icon(&self, style: UiComponentStyles) -> Box<dyn Element> {
         let icon_to_render = match self.item.warp_drive_id() {
-            WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(_)) => self
+            WarpDriveItemId::Object(ObjectTypeAndId::Folder(_)) => self
                 .item
                 .secondary_icon(Some(style.font_color.unwrap().into())),
             _ => self.item.secondary_icon(None),
@@ -855,7 +853,7 @@ impl UiComponent for WarpDriveRow<'_> {
                                     data.as_any().downcast_ref::<CloudObjectLocation>()
                                 }) {
                                     ctx.dispatch_typed_action(DriveIndexAction::DropIndexItem {
-                                        cloud_object_type_and_id: item,
+                                        object_type_and_id: item,
                                         drop_target_location: *location,
                                     });
                                 }

@@ -18,7 +18,7 @@ pub fn clear_cloud_model(app: &mut App) -> Pin<Box<dyn Future<Output = ()> + Sen
     let object_ids_to_delete = CloudModel::handle(app).read(app, |cloud_model, ctx| {
         cloud_model
             .active_non_welcome_cloud_objects_in_space(Space::Personal, ctx)
-            .map(|object| object.cloud_object_type_and_id())
+            .map(|object| object.object_type_and_id())
             .collect_vec()
     });
 

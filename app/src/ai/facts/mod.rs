@@ -10,7 +10,7 @@ use crate::{
         GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType,
     },
-    drive::CloudObjectTypeAndId,
+    drive::ObjectTypeAndId,
 };
 use serde::{Deserialize, Serialize};
 use warp_core::ui::appearance::Appearance;
@@ -93,7 +93,7 @@ impl StringModel for AIFact {
         ai_fact: &AIFactObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveAIFact::new(
-            CloudObjectTypeAndId::GenericStringObject {
+            ObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::AIFact),
                 id,
             },

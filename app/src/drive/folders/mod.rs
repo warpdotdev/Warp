@@ -1,6 +1,6 @@
 use super::items::folder::WarpDriveFolder;
 use super::items::WarpDriveItem;
-use super::CloudObjectTypeAndId;
+use super::ObjectTypeAndId;
 use crate::{
     appearance::Appearance,
     cloud_object::{CloudModelType, GenericCloudObject, ObjectType, SerializedModel, Space},
@@ -46,8 +46,8 @@ impl CloudModelType for FolderObjectModel {
         ObjectType::Folder
     }
 
-    fn cloud_object_type_and_id(&self, id: SyncId) -> CloudObjectTypeAndId {
-        CloudObjectTypeAndId::Folder(id)
+    fn object_type_and_id(&self, id: SyncId) -> ObjectTypeAndId {
+        ObjectTypeAndId::Folder(id)
     }
 
     fn display_name(&self) -> String {
@@ -92,7 +92,7 @@ impl CloudModelType for FolderObjectModel {
         folder: &FolderObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveFolder::new(
-            self.cloud_object_type_and_id(id),
+            self.object_type_and_id(id),
             folder.clone(),
         )))
     }

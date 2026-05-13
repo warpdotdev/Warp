@@ -4,7 +4,7 @@ use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{
     CloudObject, GenericStringObjectFormat, JsonObjectType, Owner, Revision,
 };
-use crate::drive::CloudObjectTypeAndId;
+use crate::drive::ObjectTypeAndId;
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
     TextOptions,
@@ -379,7 +379,7 @@ impl RuleView {
         let update_manager = UpdateManager::handle(ctx);
         update_manager.update(ctx, |update_manager, ctx| {
             update_manager.delete_object_by_user(
-                CloudObjectTypeAndId::GenericStringObject {
+                ObjectTypeAndId::GenericStringObject {
                     object_type: GenericStringObjectFormat::Json(JsonObjectType::AIFact),
                     id,
                 },

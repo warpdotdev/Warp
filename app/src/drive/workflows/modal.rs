@@ -38,8 +38,8 @@ use crate::{
         CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision,
     },
     drive::{
-        cloud_object_styling::warp_drive_icon_color, items::WarpDriveItemId, CloudObjectTypeAndId,
-        DriveObjectType,
+        cloud_object_styling::warp_drive_icon_color, items::WarpDriveItemId, DriveObjectType,
+        ObjectTypeAndId,
     },
     editor::{
         EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent,
@@ -663,7 +663,7 @@ impl WorkflowModal {
 
             UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
                 update_manager.trash_object(
-                    CloudObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
+                    ObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow),
                     ctx,
                 );
             });
@@ -904,7 +904,7 @@ impl WorkflowModal {
                 if let Some(workflow_id) = self.workflow_id {
                     // Check that it's the currently active/open workflow
                     if *type_and_id
-                        == CloudObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow)
+                        == ObjectTypeAndId::from_id_and_type(workflow_id, ObjectType::Workflow)
                     {
                         self.compute_breadcrumbs(ctx);
                     }

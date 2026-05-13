@@ -19,7 +19,7 @@ use warpui::{
 use crate::{
     appearance::Appearance,
     cloud_object::{model::persistence::CloudModel, ObjectIdType, Space},
-    drive::CloudObjectTypeAndId,
+    drive::ObjectTypeAndId,
     menu::{self, Menu, MenuItemFields},
     notebooks::telemetry::EmbeddedObjectInfo,
     search::notebook_embedding::{
@@ -248,7 +248,7 @@ impl RichTextEditorView {
                 .map(|notebook| notebook.model().title.clone())
                 .unwrap_or_else(|| "Untitled".to_string());
             let link = model
-                .get_by_uid(&CloudObjectTypeAndId::Notebook(*id).uid())
+                .get_by_uid(&ObjectTypeAndId::Notebook(*id).uid())
                 .and_then(|object| object.object_link());
             (title, link)
         });

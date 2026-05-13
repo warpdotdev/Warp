@@ -35,7 +35,7 @@ use crate::{
         MCPServer, StaticEnvVar, TemplatableMCPServerInstallation, TransportType,
     },
     cloud_object::{GenericStringObjectFormat, JsonObjectType},
-    drive::CloudObjectTypeAndId,
+    drive::ObjectTypeAndId,
     persistence::ModelEvent,
     send_telemetry_from_ctx,
     server::{ids::SyncId, telemetry::TelemetryEvent},
@@ -200,7 +200,7 @@ impl TemplatableMCPServerManager {
         ctx.subscribe_to_model(&cloud_model, |me, event, ctx| match event {
             CloudModelEvent::ObjectUpdated {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
                         id: _,
@@ -209,7 +209,7 @@ impl TemplatableMCPServerManager {
             }
             | CloudModelEvent::ObjectTrashed {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
                         id: _,
@@ -218,7 +218,7 @@ impl TemplatableMCPServerManager {
             }
             | CloudModelEvent::ObjectUntrashed {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
                         id: _,
@@ -227,7 +227,7 @@ impl TemplatableMCPServerManager {
             }
             | CloudModelEvent::ObjectDeleted {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
                         id: _,
@@ -236,7 +236,7 @@ impl TemplatableMCPServerManager {
             }
             | CloudModelEvent::ObjectMoved {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
                         id: _,
@@ -249,7 +249,7 @@ impl TemplatableMCPServerManager {
             },
             CloudModelEvent::ObjectCreated {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
                         id: new_sync_id
@@ -496,14 +496,14 @@ impl TemplatableMCPServerManager {
 
         let templatable_mcp_server_object = self.get_templatable_mcp_server_object(uuid);
         if let Some(templatable_mcp_server_object) = templatable_mcp_server_object {
-            let cloud_object_type_and_id = CloudObjectTypeAndId::GenericStringObject {
+            let object_type_and_id = ObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
                 id: templatable_mcp_server_object.id,
             };
 
             let update_manager = UpdateManager::handle(ctx);
             update_manager.update(ctx, |update_manager, ctx| {
-                update_manager.delete_object_by_user(cloud_object_type_and_id, ctx);
+                update_manager.delete_object_by_user(object_type_and_id, ctx);
             });
         }
     }
@@ -517,18 +517,14 @@ impl TemplatableMCPServerManager {
         // The legacy MCPServerManager no longer runs servers, so we only need
         // to delete the cloud object. OAuth credentials were already copied
         // during conversion.
-        let cloud_object_type_and_id = CloudObjectTypeAndId::GenericStringObject {
+        let object_type_and_id = ObjectTypeAndId::GenericStringObject {
             object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
             id: sync_id,
         };
 
         let update_manager = UpdateManager::handle(ctx);
         update_manager.update(ctx, |update_manager, ctx| {
-            update_manager.delete_object_with_initiated_by(
-                cloud_object_type_and_id,
-                initiated_by,
-                ctx,
-            );
+            update_manager.delete_object_with_initiated_by(object_type_and_id, initiated_by, ctx);
         });
     }
 
@@ -1452,7 +1448,7 @@ impl TemplatableMCPServerManager {
 
         if let Some(sync_id) = sync_id {
             if let Some(team_uid) = team_uid {
-                let object_type_and_id = CloudObjectTypeAndId::GenericStringObject {
+                let object_type_and_id = ObjectTypeAndId::GenericStringObject {
                     object_type: GenericStringObjectFormat::Json(
                         JsonObjectType::TemplatableMCPServer,
                     ),
@@ -1491,7 +1487,7 @@ impl TemplatableMCPServerManager {
         if let Some(templatable_mcp_server_object) = templatable_mcp_server_object {
             let sync_id = templatable_mcp_server_object.sync_id();
 
-            let object_type_and_id = CloudObjectTypeAndId::GenericStringObject {
+            let object_type_and_id = ObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
                 id: sync_id,
             };

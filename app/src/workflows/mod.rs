@@ -23,7 +23,7 @@ use crate::cloud_object::{CloudModelType, GenericCloudObject, ObjectType};
 use crate::cloud_object::SerializedModel;
 use crate::drive::items::workflow::WarpDriveWorkflow;
 use crate::drive::items::WarpDriveItem;
-use crate::drive::CloudObjectTypeAndId;
+use crate::drive::ObjectTypeAndId;
 use crate::notebooks::{NotebookId, NotebookLocation};
 use crate::persistence::ModelEvent;
 use crate::server::ids::{ServerId, SyncId};
@@ -177,9 +177,9 @@ impl WorkflowType {
 
     /// The object type and ID for the object containing this workflow, if there is
     /// one. This is currently only supported for object-backed workflows, not workflows within notebooks.
-    pub fn object_id(&self) -> Option<CloudObjectTypeAndId> {
+    pub fn object_id(&self) -> Option<ObjectTypeAndId> {
         match self {
-            WorkflowType::Cloud(workflow) => Some(CloudObjectTypeAndId::Workflow(workflow.id)),
+            WorkflowType::Cloud(workflow) => Some(ObjectTypeAndId::Workflow(workflow.id)),
             _ => None,
         }
     }
@@ -193,7 +193,7 @@ impl WorkflowType {
 
     pub fn server_id(&self) -> Option<WorkflowId> {
         match self.object_id() {
-            Some(CloudObjectTypeAndId::Workflow(id)) => id.into_server().map(Into::into),
+            Some(ObjectTypeAndId::Workflow(id)) => id.into_server().map(Into::into),
             _ => None,
         }
     }
@@ -235,8 +235,8 @@ impl CloudModelType for WorkflowObjectModel {
         ObjectType::Workflow
     }
 
-    fn cloud_object_type_and_id(&self, id: SyncId) -> CloudObjectTypeAndId {
-        CloudObjectTypeAndId::Workflow(id)
+    fn object_type_and_id(&self, id: SyncId) -> ObjectTypeAndId {
+        ObjectTypeAndId::Workflow(id)
     }
 
     fn display_name(&self) -> String {
@@ -278,7 +278,7 @@ impl CloudModelType for WorkflowObjectModel {
         workflow: &WorkflowObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveWorkflow::new(
-            self.cloud_object_type_and_id(id),
+            self.object_type_and_id(id),
             workflow.clone(),
         )))
     }

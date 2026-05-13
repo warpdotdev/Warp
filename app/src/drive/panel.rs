@@ -29,7 +29,7 @@ use super::{
     },
     index::{DriveIndex, DriveIndexAction, DriveIndexEvent},
     items::WarpDriveItemId,
-    CloudObjectTypeAndId, DriveObjectType,
+    DriveObjectType, ObjectTypeAndId,
 };
 
 pub const MIN_SIDEBAR_WIDTH: f32 = 250.;
@@ -229,20 +229,20 @@ impl DrivePanel {
                 self.open_mcp_server_collection_pane(ctx);
             }
             DriveIndexEvent::OpenWorkflowInPane {
-                cloud_object_type_and_id,
+                object_type_and_id,
                 open_mode,
             } => {
                 let cloud_model = CloudModel::as_ref(ctx);
-                let object = cloud_model.get_by_uid(&cloud_object_type_and_id.uid());
+                let object = cloud_model.get_by_uid(&object_type_and_id.uid());
 
                 let workflow: Option<&WorkflowObject> = object.and_then(|object| object.into());
                 if let Some(workflow) = workflow {
                     self.open_existing_workflow_in_pane(workflow.id, *open_mode, ctx);
                 }
             }
-            DriveIndexEvent::OpenObject(cloud_object_type_and_id) => {
+            DriveIndexEvent::OpenObject(object_type_and_id) => {
                 let cloud_model = CloudModel::as_ref(ctx);
-                let object = cloud_model.get_by_uid(&cloud_object_type_and_id.uid());
+                let object = cloud_model.get_by_uid(&object_type_and_id.uid());
 
                 let notebook_id = object.and_then(|object| {
                     let notebook: Option<&NotebookObject> = object.into();
@@ -264,14 +264,14 @@ impl DrivePanel {
                     self.open_existing_env_var_collection(env_var_collection_id, ctx);
                 }
             }
-            DriveIndexEvent::DuplicateObject(cloud_object_type_and_id) => {
-                self.duplicate_object(cloud_object_type_and_id, ctx);
+            DriveIndexEvent::DuplicateObject(object_type_and_id) => {
+                self.duplicate_object(object_type_and_id, ctx);
             }
             #[cfg(feature = "local_fs")]
-            DriveIndexEvent::ExportObject(cloud_object_type_and_id) => {
+            DriveIndexEvent::ExportObject(object_type_and_id) => {
                 let window_id = ctx.window_id();
                 super::export::ExportManager::handle(ctx).update(ctx, |export_manager, ctx| {
-                    export_manager.export(window_id, &[*cloud_object_type_and_id], ctx);
+                    export_manager.export(window_id, &[*object_type_and_id], ctx);
                 });
             }
             #[cfg(not(feature = "local_fs"))]
@@ -351,18 +351,18 @@ impl DrivePanel {
 
     fn duplicate_object(
         &mut self,
-        cloud_object_type_and_id: &CloudObjectTypeAndId,
+        object_type_and_id: &ObjectTypeAndId,
         ctx: &mut ViewContext<Self>,
     ) {
         // Check if object being duplicated is in team space, if it is, then check
         // corresponding object limits for that team.
         if let Some(space) =
-            CloudViewModel::as_ref(ctx).object_space(&cloud_object_type_and_id.uid(), ctx)
+            CloudViewModel::as_ref(ctx).object_space(&object_type_and_id.uid(), ctx)
         {
             match space {
                 Space::Team { team_uid } => {
-                    match cloud_object_type_and_id {
-                        CloudObjectTypeAndId::Notebook(_) => {
+                    match object_type_and_id {
+                        ObjectTypeAndId::Notebook(_) => {
                             if !UserWorkspaces::has_capacity_for_shared_notebooks(team_uid, ctx, 1)
                             {
                                 // If team has reached the limit for notebooks, show the modal
@@ -376,7 +376,7 @@ impl DrivePanel {
                                 return;
                             }
                         }
-                        CloudObjectTypeAndId::Workflow(_) => {
+                        ObjectTypeAndId::Workflow(_) => {
                             if !UserWorkspaces::has_capacity_for_shared_workflows(team_uid, ctx, 1)
                             {
                                 // If team has reached the limit for workflows, show the modal
@@ -391,18 +391,18 @@ impl DrivePanel {
                         _ => (),
                     }
                 }
-                Space::Personal => match cloud_object_type_and_id {
-                    CloudObjectTypeAndId::Notebook(_) => {
+                Space::Personal => match object_type_and_id {
+                    ObjectTypeAndId::Notebook(_) => {
                         if has_feature_gated_anonymous_user_reached_notebook_limit(ctx) {
                             return;
                         }
                     }
-                    CloudObjectTypeAndId::Workflow(_) => {
+                    ObjectTypeAndId::Workflow(_) => {
                         if has_feature_gated_anonymous_user_reached_workflow_limit(ctx) {
                             return;
                         }
                     }
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection),
                         id: _,
@@ -421,7 +421,7 @@ impl DrivePanel {
 
         // Otherwise allow object duplication to go through.
         UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-            update_manager.duplicate_object(cloud_object_type_and_id, ctx);
+            update_manager.duplicate_object(object_type_and_id, ctx);
         });
         ctx.notify();
     }
@@ -441,12 +441,12 @@ impl DrivePanel {
 
     pub fn move_object_to_team_owner(
         &mut self,
-        cloud_object_type_and_id: CloudObjectTypeAndId,
+        object_type_and_id: ObjectTypeAndId,
         space: Space,
         ctx: &mut ViewContext<Self>,
     ) {
         self.index_view.update(ctx, |index_view, ctx| {
-            index_view.move_object_to_team_owner(&cloud_object_type_and_id, space, ctx);
+            index_view.move_object_to_team_owner(&object_type_and_id, space, ctx);
         })
     }
 
@@ -646,11 +646,11 @@ impl DrivePanel {
 
     pub fn undo_trash(
         &mut self,
-        cloud_object_type_and_id: &CloudObjectTypeAndId,
+        object_type_and_id: &ObjectTypeAndId,
         ctx: &mut ViewContext<Self>,
     ) {
         self.index_view.update(ctx, |index_view, ctx| {
-            index_view.untrash_object(cloud_object_type_and_id, ctx)
+            index_view.untrash_object(object_type_and_id, ctx)
         });
     }
 }

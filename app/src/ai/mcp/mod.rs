@@ -19,7 +19,7 @@ use crate::{
     },
     drive::{
         items::{mcp_server::WarpDriveMCPServer, WarpDriveItem},
-        CloudObjectTypeAndId,
+        ObjectTypeAndId,
     },
     server::ids::SyncId,
 };
@@ -331,7 +331,7 @@ impl StringModel for MCPServer {
         mcp_server: &MCPServerObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveMCPServer::new(
-            CloudObjectTypeAndId::GenericStringObject {
+            ObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
                 id,
             },

@@ -18,7 +18,7 @@ use crate::{
     cloud_object::{CloudModelType, GenericCloudObject, ObjectType, Owner},
     drive::{
         items::{notebook::WarpDriveNotebook, WarpDriveItem},
-        CloudObjectTypeAndId,
+        ObjectTypeAndId,
     },
     persistence::ModelEvent,
     server::ids::{ServerId, SyncId},
@@ -63,8 +63,8 @@ impl CloudModelType for NotebookObjectModel {
         ObjectType::Notebook
     }
 
-    fn cloud_object_type_and_id(&self, id: SyncId) -> CloudObjectTypeAndId {
-        CloudObjectTypeAndId::Notebook(id)
+    fn object_type_and_id(&self, id: SyncId) -> ObjectTypeAndId {
+        ObjectTypeAndId::Notebook(id)
     }
 
     fn display_name(&self) -> String {
@@ -114,7 +114,7 @@ impl CloudModelType for NotebookObjectModel {
         notebook: &NotebookObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveNotebook::new(
-            self.cloud_object_type_and_id(id),
+            self.object_type_and_id(id),
             notebook.clone(),
             notebook.model().ai_document_id.is_some(),
         )))

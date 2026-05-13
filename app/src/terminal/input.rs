@@ -12472,7 +12472,7 @@ impl Input {
 
                 UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
                     update_manager.record_object_action(
-                        workflow.cloud_object_type_and_id(),
+                        workflow.object_type_and_id(),
                         ObjectActionType::Execute,
                         None,
                         ctx,

@@ -35,7 +35,7 @@ use crate::{
         model::persistence::{CloudModel, CloudModelEvent},
         GenericStringObjectFormat, JsonObjectType,
     },
-    drive::CloudObjectTypeAndId,
+    drive::ObjectTypeAndId,
     editor::{EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions},
     pane_group::Direction,
     search_bar::SearchBar,
@@ -251,7 +251,7 @@ impl MCPServersListPageView {
         ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| match event {
             CloudModelEvent::ObjectUpdated {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
                         id: _,
                     },
@@ -259,7 +259,7 @@ impl MCPServersListPageView {
             }
             | CloudModelEvent::ObjectTrashed {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
                         id: _,
                     },
@@ -267,7 +267,7 @@ impl MCPServersListPageView {
             }
             | CloudModelEvent::ObjectUntrashed {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
                         id: _,
                     },
@@ -275,14 +275,14 @@ impl MCPServersListPageView {
             }
             | CloudModelEvent::ObjectCreated {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
                         id: _,
                     },
             }
             | CloudModelEvent::ObjectDeleted {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
                         id: _,
                     },

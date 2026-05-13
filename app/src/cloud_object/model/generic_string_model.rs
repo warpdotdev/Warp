@@ -6,7 +6,7 @@ use crate::{
         CloudModelType, CloudObject, GenericCloudObject, GenericStringObjectFormat,
         GenericStringObjectUniqueKey, ObjectType, SerializedModel,
     },
-    drive::{items::WarpDriveItem, CloudObjectTypeAndId},
+    drive::{items::WarpDriveItem, ObjectTypeAndId},
     persistence::ModelEvent,
     server::ids::{ObjectUid, ServerId, SyncId},
 };
@@ -170,8 +170,8 @@ where
         ObjectType::GenericStringObject(M::model_format())
     }
 
-    fn cloud_object_type_and_id(&self, id: SyncId) -> CloudObjectTypeAndId {
-        CloudObjectTypeAndId::GenericStringObject {
+    fn object_type_and_id(&self, id: SyncId) -> ObjectTypeAndId {
+        ObjectTypeAndId::GenericStringObject {
             object_type: M::model_format(),
             id,
         }

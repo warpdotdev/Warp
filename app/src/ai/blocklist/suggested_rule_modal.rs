@@ -6,7 +6,7 @@ use crate::cloud_object::update_manager::{
     ObjectOperation, OperationSuccessType, UpdateManagerEvent,
 };
 use crate::cloud_object::Owner;
-use crate::drive::CloudObjectTypeAndId;
+use crate::drive::ObjectTypeAndId;
 use crate::editor::{
     EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent, InteractionState,
     PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
@@ -437,7 +437,7 @@ impl SuggestedRuleView {
     fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
         match event {
             CloudModelEvent::ObjectUpdated {
-                type_and_id: CloudObjectTypeAndId::GenericStringObject { id, .. },
+                type_and_id: ObjectTypeAndId::GenericStringObject { id, .. },
                 ..
             } => {
                 if let Some(rule_and_id) = &self.rule_and_id {
@@ -447,11 +447,11 @@ impl SuggestedRuleView {
                 }
             }
             CloudModelEvent::ObjectTrashed {
-                type_and_id: CloudObjectTypeAndId::GenericStringObject { id, .. },
+                type_and_id: ObjectTypeAndId::GenericStringObject { id, .. },
                 ..
             }
             | CloudModelEvent::ObjectDeleted {
-                type_and_id: CloudObjectTypeAndId::GenericStringObject { id, .. },
+                type_and_id: ObjectTypeAndId::GenericStringObject { id, .. },
                 ..
             } => {
                 // If the rule has been deleted, then we should reset the rule such that

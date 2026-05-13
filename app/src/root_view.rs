@@ -14,7 +14,7 @@ use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType, ObjectType};
 use crate::drive::export::ExportManager;
 use crate::drive::items::WarpDriveItemId;
-use crate::drive::{CloudObjectTypeAndId, OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings};
+use crate::drive::{ObjectTypeAndId, OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings};
 use crate::experiments::{BlockOnboarding, Experiment};
 use crate::interval_timer::IntervalTimer;
 use crate::launch_configs::launch_config;
@@ -2401,7 +2401,7 @@ impl RootView {
                     }
 
                     let item_id =
-                        WarpDriveItemId::Object(CloudObjectTypeAndId::from_generic_string_object(
+                        WarpDriveItemId::Object(ObjectTypeAndId::from_generic_string_object(
                             GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection),
                             SyncId::ServerId(arg.server_id),
                         ));
@@ -2420,7 +2420,7 @@ impl RootView {
                         return false;
                     }
 
-                    let item_id = WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(
+                    let item_id = WarpDriveItemId::Object(ObjectTypeAndId::Folder(
                         SyncId::ServerId(arg.server_id),
                     ));
                     handle.update(ctx, |workspace, ctx| {

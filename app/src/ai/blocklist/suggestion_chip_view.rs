@@ -5,7 +5,7 @@ use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::update_manager::{
     ObjectOperation, OperationSuccessType, UpdateManagerEvent,
 };
-use crate::drive::CloudObjectTypeAndId;
+use crate::drive::ObjectTypeAndId;
 use crate::server::ids::SyncId;
 use crate::view_components::action_button::{ActionButton, ActionButtonTheme, SecondaryTheme};
 use crate::TelemetryEvent;
@@ -302,7 +302,7 @@ impl SuggestionChipView {
     fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
         match event {
             CloudModelEvent::ObjectUpdated {
-                type_and_id: CloudObjectTypeAndId::GenericStringObject { id, .. },
+                type_and_id: ObjectTypeAndId::GenericStringObject { id, .. },
                 ..
             } => {
                 if self.sync_id.into_client() == id.into_client() {
@@ -310,11 +310,11 @@ impl SuggestionChipView {
                 }
             }
             CloudModelEvent::ObjectTrashed {
-                type_and_id: CloudObjectTypeAndId::GenericStringObject { id, .. },
+                type_and_id: ObjectTypeAndId::GenericStringObject { id, .. },
                 ..
             }
             | CloudModelEvent::ObjectDeleted {
-                type_and_id: CloudObjectTypeAndId::GenericStringObject { id, .. },
+                type_and_id: ObjectTypeAndId::GenericStringObject { id, .. },
                 ..
             } => {
                 // If the rule or workflow has been deleted, then we should reset it such that

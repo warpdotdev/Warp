@@ -215,7 +215,7 @@ use crate::drive::import::modal::{ImportModal, ImportModalEvent};
 use crate::drive::workflows::arguments::ArgumentsState;
 use crate::drive::workflows::modal::{WorkflowModal, WorkflowModalEvent};
 use crate::drive::{
-    CloudObjectTypeAndId, DriveObjectType, DrivePanel, DrivePanelEvent, OpenWarpDriveObjectSettings,
+    DriveObjectType, DrivePanel, DrivePanelEvent, ObjectTypeAndId, OpenWarpDriveObjectSettings,
 };
 use crate::experiments::{BlockOnboarding, Experiment};
 use crate::menu::{
@@ -3647,7 +3647,7 @@ impl Workspace {
                                     && object.renders_in_warp_drive()
                                     && !object.metadata().is_welcome_object
                             })
-                            .map(|object| object.cloud_object_type_and_id())
+                            .map(|object| object.object_type_and_id())
                             .collect_vec();
                         // Collect into a temporary Vec so that we can create a pane for the first
                         // supported object.
@@ -6374,19 +6374,18 @@ impl Workspace {
                 // Only focus the notebook if we don't want to focus a parent folder instead
                 self.open_or_toggle_warp_drive(false, false, ctx);
                 self.set_selected_object(
-                    Some(WarpDriveItemId::Object(
-                        CloudObjectTypeAndId::from_id_and_type(
-                            focused_folder_id,
-                            ObjectType::Folder,
-                        ),
-                    )),
+                    Some(WarpDriveItemId::Object(ObjectTypeAndId::from_id_and_type(
+                        focused_folder_id,
+                        ObjectType::Folder,
+                    ))),
                     ctx,
                 );
             } else {
                 self.set_selected_object(
-                    Some(WarpDriveItemId::Object(
-                        CloudObjectTypeAndId::from_id_and_type(*notebook_id, ObjectType::Notebook),
-                    )),
+                    Some(WarpDriveItemId::Object(ObjectTypeAndId::from_id_and_type(
+                        *notebook_id,
+                        ObjectType::Notebook,
+                    ))),
                     ctx,
                 );
             }
@@ -6419,12 +6418,10 @@ impl Workspace {
                     // that will focus the workflow instead.
                     if let Some(focused_folder) = settings.focused_folder_id.map(SyncId::ServerId) {
                         self.set_selected_object(
-                            Some(WarpDriveItemId::Object(
-                                CloudObjectTypeAndId::from_id_and_type(
-                                    focused_folder,
-                                    ObjectType::Folder,
-                                ),
-                            )),
+                            Some(WarpDriveItemId::Object(ObjectTypeAndId::from_id_and_type(
+                                focused_folder,
+                                ObjectType::Folder,
+                            ))),
                             ctx,
                         );
                     }
@@ -6518,7 +6515,7 @@ impl Workspace {
         if let EnvVarCollectionSource::Existing(env_var_collection_id) = source {
             self.set_selected_object(
                 Some(WarpDriveItemId::Object(
-                    CloudObjectTypeAndId::from_generic_string_object(
+                    ObjectTypeAndId::from_generic_string_object(
                         GenericStringObjectFormat::Json(
                             crate::cloud_object::JsonObjectType::EnvVarCollection,
                         ),
@@ -6535,13 +6532,13 @@ impl Workspace {
     /// inserting it.
     fn create_cloud_object_pane(
         &self,
-        cloud_object: CloudObjectTypeAndId,
+        cloud_object: ObjectTypeAndId,
         ctx: &mut ViewContext<Self>,
     ) -> Option<Box<dyn AnyPaneContent>> {
         let window_id = ctx.window_id();
         let object_settings = Default::default();
         match cloud_object {
-            CloudObjectTypeAndId::Notebook(sync_id) => Some(Box::new(
+            ObjectTypeAndId::Notebook(sync_id) => Some(Box::new(
                 NotebookManager::handle(ctx).update(ctx, |notebook_manager, ctx| {
                     notebook_manager.create_pane(
                         &NotebookSource::Existing(sync_id),
@@ -6551,7 +6548,7 @@ impl Workspace {
                     )
                 }),
             )),
-            CloudObjectTypeAndId::Workflow(sync_id) => Some(Box::new(
+            ObjectTypeAndId::Workflow(sync_id) => Some(Box::new(
                 WorkflowManager::handle(ctx).update(ctx, |workflow_manager, ctx| {
                     workflow_manager.create_pane(
                         &WorkflowOpenSource::Existing(sync_id),
@@ -6562,8 +6559,8 @@ impl Workspace {
                     )
                 }),
             )),
-            CloudObjectTypeAndId::Folder(_) => None,
-            CloudObjectTypeAndId::GenericStringObject {
+            ObjectTypeAndId::Folder(_) => None,
+            ObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection),
                 id,
             } => Some(Box::new(EnvVarCollectionManager::handle(ctx).update(
@@ -6572,7 +6569,7 @@ impl Workspace {
                     evc_manager.create_pane(&EnvVarCollectionSource::Existing(id), window_id, ctx)
                 },
             ))),
-            CloudObjectTypeAndId::GenericStringObject { .. } => None,
+            ObjectTypeAndId::GenericStringObject { .. } => None,
         }
     }
 
@@ -11754,12 +11751,12 @@ impl Workspace {
 
     fn move_to_drive_space(
         &mut self,
-        cloud_object_type_and_id: CloudObjectTypeAndId,
+        object_type_and_id: ObjectTypeAndId,
         space: Space,
         ctx: &mut ViewContext<Self>,
     ) {
         self.update_warp_drive_view(ctx, |warp_drive, ctx| {
-            warp_drive.move_object_to_team_owner(cloud_object_type_and_id, space, ctx);
+            warp_drive.move_object_to_team_owner(object_type_and_id, space, ctx);
         });
     }
 
@@ -12138,10 +12135,10 @@ impl Workspace {
                 }
             }
             pane_group::Event::MoveToSpace {
-                cloud_object_type_and_id,
+                object_type_and_id,
                 space,
             } => {
-                self.move_to_drive_space(*cloud_object_type_and_id, *space, ctx);
+                self.move_to_drive_space(*object_type_and_id, *space, ctx);
             }
             pane_group::Event::OpenWarpDriveLink {
                 open_warp_drive_args,
@@ -12170,7 +12167,7 @@ impl Workspace {
                         true,
                     ),
                     ObjectType::Workflow => self.view_in_and_focus_warp_drive(
-                        WarpDriveItemId::Object(CloudObjectTypeAndId::Workflow(SyncId::ServerId(
+                        WarpDriveItemId::Object(ObjectTypeAndId::Workflow(SyncId::ServerId(
                             server_id,
                         ))),
                         ctx,
@@ -12178,14 +12175,14 @@ impl Workspace {
                     ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
                         JsonObjectType::EnvVarCollection,
                     )) => self.view_in_and_focus_warp_drive(
-                        WarpDriveItemId::Object(CloudObjectTypeAndId::from_generic_string_object(
+                        WarpDriveItemId::Object(ObjectTypeAndId::from_generic_string_object(
                             GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection),
                             SyncId::ServerId(server_id),
                         )),
                         ctx,
                     ),
                     ObjectType::Folder => self.view_in_and_focus_warp_drive(
-                        WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(SyncId::ServerId(
+                        WarpDriveItemId::Object(ObjectTypeAndId::Folder(SyncId::ServerId(
                             server_id,
                         ))),
                         ctx,
@@ -12340,12 +12337,10 @@ impl Workspace {
 
                     if let Some(workflow_id) = active_workflow_id {
                         self.set_selected_object(
-                            Some(WarpDriveItemId::Object(
-                                CloudObjectTypeAndId::from_id_and_type(
-                                    workflow_id,
-                                    ObjectType::Workflow,
-                                ),
-                            )),
+                            Some(WarpDriveItemId::Object(ObjectTypeAndId::from_id_and_type(
+                                workflow_id,
+                                ObjectType::Workflow,
+                            ))),
                             ctx,
                         );
                         active_object_open_in_pane = true;
@@ -12363,12 +12358,10 @@ impl Workspace {
 
                     if let Some(notebook_id) = notebook_id {
                         self.set_selected_object(
-                            Some(WarpDriveItemId::Object(
-                                CloudObjectTypeAndId::from_id_and_type(
-                                    notebook_id,
-                                    ObjectType::Notebook,
-                                ),
-                            )),
+                            Some(WarpDriveItemId::Object(ObjectTypeAndId::from_id_and_type(
+                                notebook_id,
+                                ObjectType::Notebook,
+                            ))),
                             ctx,
                         );
                         active_object_open_in_pane = true;
@@ -12386,7 +12379,7 @@ impl Workspace {
                     if let Some(env_var_collection_id) = env_var_collection_id {
                         self.set_selected_object(
                             Some(WarpDriveItemId::Object(
-                                CloudObjectTypeAndId::from_generic_string_object(
+                                ObjectTypeAndId::from_generic_string_object(
                                     GenericStringObjectFormat::Json(
                                         crate::cloud_object::JsonObjectType::EnvVarCollection,
                                     ),
@@ -12405,12 +12398,10 @@ impl Workspace {
                     let workflow_id = workflow_pane.get_view(ctx).as_ref(ctx).workflow_id();
 
                     self.set_selected_object(
-                        Some(WarpDriveItemId::Object(
-                            CloudObjectTypeAndId::from_id_and_type(
-                                workflow_id,
-                                ObjectType::Workflow,
-                            ),
-                        )),
+                        Some(WarpDriveItemId::Object(ObjectTypeAndId::from_id_and_type(
+                            workflow_id,
+                            ObjectType::Workflow,
+                        ))),
                         ctx,
                     );
                     active_object_open_in_pane = true;
@@ -13558,7 +13549,7 @@ impl Workspace {
         ctx.focus_self();
         ctx.notify();
         self.set_selected_object(
-            Some(WarpDriveItemId::Object(workflow.cloud_object_type_and_id())),
+            Some(WarpDriveItemId::Object(workflow.object_type_and_id())),
             ctx,
         );
     }
@@ -13568,7 +13559,7 @@ impl Workspace {
     /// terminal pane according to the [`UnavailableTerminalBehavior`].
     fn focus_terminal_input(
         &mut self,
-        object_id: Option<CloudObjectTypeAndId>,
+        object_id: Option<ObjectTypeAndId>,
         fallback_behavior: TerminalSessionFallbackBehavior,
         ctx: &mut ViewContext<Self>,
     ) -> Option<ViewHandle<TerminalView>> {
@@ -13756,7 +13747,7 @@ impl Workspace {
         }
 
         if let Some(terminal_view_handle) = self.focus_terminal_input(
-            Some(env_var_collection.cloud_object_type_and_id()),
+            Some(env_var_collection.object_type_and_id()),
             TerminalSessionFallbackBehavior::default(),
             ctx,
         ) {
@@ -13993,7 +13984,7 @@ impl Workspace {
 
         if let Some(object_id) = object_id {
             if let Some(object) = cloud_model.get_by_uid(&object_id) {
-                let cloud_object_type_and_id = object.cloud_object_type_and_id();
+                let object_type_and_id = object.object_type_and_id();
                 if !object.should_show_activity_toasts() {
                     // Early exit for objects that don't show toasts.
                     return;
@@ -14042,7 +14033,7 @@ impl Workspace {
                                                     .with_onclick_action(
                                                         WorkspaceAction::ViewObjectInWarpDrive(
                                                             WarpDriveItemId::Object(
-                                                                CloudObjectTypeAndId::Notebook(
+                                                                ObjectTypeAndId::Notebook(
                                                                     notebook.id,
                                                                 ),
                                                             ),
@@ -14064,9 +14055,7 @@ impl Workspace {
                                                 .with_onclick_action(
                                                     WorkspaceAction::ViewObjectInWarpDrive(
                                                         WarpDriveItemId::Object(
-                                                            CloudObjectTypeAndId::Workflow(
-                                                                workflow.id,
-                                                            ),
+                                                            ObjectTypeAndId::Workflow(workflow.id),
                                                         ),
                                                     ),
                                                 ),
@@ -14078,7 +14067,7 @@ impl Workspace {
                                     new_toast = new_toast.with_link(
                                         ToastLink::new(crate::t!("common-undo"))
                                             .with_onclick_action(WorkspaceAction::UndoTrash(
-                                                cloud_object_type_and_id,
+                                                object_type_and_id,
                                             )),
                                     )
                                 }
@@ -14202,8 +14191,8 @@ impl Workspace {
             let cloud_model = CloudModel::as_ref(ctx);
             let updated_object = cloud_model
                 .get_by_uid(&result.server_id.expect("Expect server id on success").uid());
-            if let Some(CloudObjectTypeAndId::Workflow(workflow_id)) =
-                updated_object.map(|o| o.cloud_object_type_and_id())
+            if let Some(ObjectTypeAndId::Workflow(workflow_id)) =
+                updated_object.map(|o| o.object_type_and_id())
             {
                 self.maybe_refresh_workflow_info_box_and_input(&workflow_id, ctx)
             }
@@ -19524,9 +19513,9 @@ impl TypedActionView for Workspace {
                 // Focus newly created object in WD
                 self.view_in_and_focus_warp_drive(*item_id, ctx);
             }
-            UndoTrash(cloud_object_type_and_id) => {
+            UndoTrash(object_type_and_id) => {
                 self.update_warp_drive_view(ctx, |warp_drive, ctx| {
-                    warp_drive.undo_trash(cloud_object_type_and_id, ctx);
+                    warp_drive.undo_trash(object_type_and_id, ctx);
                 });
             }
             TerminateApp => {

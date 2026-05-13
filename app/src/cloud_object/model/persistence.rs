@@ -7,7 +7,7 @@ use crate::cloud_object::{
 use crate::drive::folders::{FolderObject, FolderObjectModel};
 use crate::drive::{
     should_auto_open_welcome_folder, write_has_auto_opened_welcome_folder_to_user_defaults,
-    CloudObjectTypeAndId, DriveIndexVariant,
+    DriveIndexVariant, ObjectTypeAndId,
 };
 use crate::env_vars::{EnvVarCollection, EnvVarCollectionObject, EnvVarCollectionObjectModel};
 use crate::notebooks::NotebookObject;
@@ -52,38 +52,38 @@ pub enum UpdateSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CloudModelEvent {
     ObjectMoved {
-        type_and_id: CloudObjectTypeAndId,
+        type_and_id: ObjectTypeAndId,
         source: UpdateSource,
         from_folder: Option<SyncId>,
         to_folder: Option<SyncId>,
     },
     ObjectUpdated {
-        type_and_id: CloudObjectTypeAndId,
+        type_and_id: ObjectTypeAndId,
         source: UpdateSource,
     },
     ObjectTrashed {
-        type_and_id: CloudObjectTypeAndId,
+        type_and_id: ObjectTypeAndId,
         source: UpdateSource,
     },
     ObjectUntrashed {
-        type_and_id: CloudObjectTypeAndId,
+        type_and_id: ObjectTypeAndId,
         source: UpdateSource,
     },
     NotebookEditorChangedFromServer {
         notebook_id: SyncId,
     },
     ObjectCreated {
-        type_and_id: CloudObjectTypeAndId,
+        type_and_id: ObjectTypeAndId,
     },
     /// An object was permanently deleted.
     ObjectDeleted {
-        type_and_id: CloudObjectTypeAndId,
+        type_and_id: ObjectTypeAndId,
         /// The parent folder of this object, since it's no longer in the model.
         folder_id: Option<SyncId>,
     },
     /// An object's permissioned were changed.
     ObjectPermissionsUpdated {
-        type_and_id: CloudObjectTypeAndId,
+        type_and_id: ObjectTypeAndId,
         source: UpdateSource,
     },
     /// An object identified by `id` was force expanded.
@@ -244,7 +244,7 @@ impl CloudModel {
         ctx: &mut ModelContext<CloudModel>,
     ) {
         ctx.emit(CloudModelEvent::ObjectCreated {
-            type_and_id: object.cloud_object_type_and_id(),
+            type_and_id: object.object_type_and_id(),
         });
         self.create_object_internal(id, object);
         ctx.notify();
@@ -265,14 +265,14 @@ impl CloudModel {
         let mut sync_ids_and_types: Vec<(SyncId, ObjectIdType)> = Vec::new();
         for uid in uids {
             if let Some(object) = self.objects_by_id.remove(&uid) {
-                let cloud_object_type_and_id = object.cloud_object_type_and_id();
+                let object_type_and_id = object.object_type_and_id();
                 sync_ids_and_types.push((
-                    cloud_object_type_and_id.sync_id(),
-                    cloud_object_type_and_id.object_id_type(),
+                    object_type_and_id.sync_id(),
+                    object_type_and_id.object_id_type(),
                 ));
 
                 ctx.emit(CloudModelEvent::ObjectDeleted {
-                    type_and_id: object.cloud_object_type_and_id(),
+                    type_and_id: object.object_type_and_id(),
                     folder_id: object.metadata().folder_id,
                 });
                 count += 1;
@@ -302,10 +302,10 @@ impl CloudModel {
         if let Some(object) = self.objects_by_id.remove(&uid) {
             accumulator.push((
                 object.sync_id(),
-                object.cloud_object_type_and_id().object_id_type(),
+                object.object_type_and_id().object_id_type(),
             ));
             ctx.emit(CloudModelEvent::ObjectDeleted {
-                type_and_id: object.cloud_object_type_and_id(),
+                type_and_id: object.object_type_and_id(),
                 folder_id: object.metadata().folder_id,
             });
             if object.object_type() == ObjectType::Folder {
@@ -369,7 +369,7 @@ impl CloudModel {
 
             if changed {
                 ctx.emit(CloudModelEvent::ObjectMoved {
-                    type_and_id: object.cloud_object_type_and_id(),
+                    type_and_id: object.object_type_and_id(),
                     source: UpdateSource::Local,
                     from_folder: old_folder,
                     to_folder: new_folder,
@@ -451,7 +451,7 @@ impl CloudModel {
         if let Some(cloud_object) = self.get_object_of_type_mut(&object_id) {
             cloud_object.set_model(model);
             ctx.emit(CloudModelEvent::ObjectUpdated {
-                type_and_id: cloud_object.cloud_object_type_and_id(),
+                type_and_id: cloud_object.object_type_and_id(),
                 source: UpdateSource::Local,
             });
             ctx.notify();
@@ -469,7 +469,7 @@ impl CloudModel {
         if let Some(cloud_workflow) = self.get_workflow_mut(&workflow_id) {
             cloud_workflow.set_model(WorkflowObjectModel::new(workflow));
             ctx.emit(CloudModelEvent::ObjectUpdated {
-                type_and_id: cloud_workflow.cloud_object_type_and_id(),
+                type_and_id: cloud_workflow.object_type_and_id(),
                 source: UpdateSource::Server,
             });
             ctx.notify();
@@ -490,7 +490,7 @@ impl CloudModel {
             cloud_env_var_collection
                 .set_model(EnvVarCollectionObjectModel::new(env_var_collection));
             ctx.emit(CloudModelEvent::ObjectUpdated {
-                type_and_id: cloud_env_var_collection.cloud_object_type_and_id(),
+                type_and_id: cloud_env_var_collection.object_type_and_id(),
                 source: UpdateSource::Server,
             });
             ctx.notify();
@@ -510,7 +510,7 @@ impl CloudModel {
         {
             cloud_workflow_enum.set_model(WorkflowEnumObjectModel::new(workflow_enum));
             ctx.emit(CloudModelEvent::ObjectUpdated {
-                type_and_id: cloud_workflow_enum.cloud_object_type_and_id(),
+                type_and_id: cloud_workflow_enum.object_type_and_id(),
                 source: UpdateSource::Server,
             });
             ctx.notify();
@@ -673,23 +673,23 @@ impl CloudModel {
         }
     }
 
-    /// Force expands object and its ancestors when given a CloudObjectTypeAndId input
+    /// Force expands object and its ancestors when given a ObjectTypeAndId input
     pub fn force_expand_object_and_ancestors_cloud_id(
         &mut self,
-        id: CloudObjectTypeAndId,
+        id: ObjectTypeAndId,
         ctx: &mut ModelContext<Self>,
     ) {
         match id {
-            CloudObjectTypeAndId::Notebook(sync_id) => {
+            ObjectTypeAndId::Notebook(sync_id) => {
                 self.force_expand_object_and_ancestors(sync_id, ctx)
             }
-            CloudObjectTypeAndId::Workflow(sync_id) => {
+            ObjectTypeAndId::Workflow(sync_id) => {
                 self.force_expand_object_and_ancestors(sync_id, ctx)
             }
-            CloudObjectTypeAndId::Folder(sync_id) => {
+            ObjectTypeAndId::Folder(sync_id) => {
                 self.force_expand_object_and_ancestors(sync_id, ctx)
             }
-            CloudObjectTypeAndId::GenericStringObject { object_type, id } => {
+            ObjectTypeAndId::GenericStringObject { object_type, id } => {
                 if let GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection) =
                     object_type
                 {
@@ -707,7 +707,7 @@ impl CloudModel {
         // without deleting the content until the server returns successful response.
         if let Some(object) = self.objects_by_id.remove(&id.uid()) {
             ctx.emit(CloudModelEvent::ObjectDeleted {
-                type_and_id: object.cloud_object_type_and_id(),
+                type_and_id: object.object_type_and_id(),
                 folder_id: object.metadata().folder_id,
             });
         }
@@ -782,11 +782,11 @@ impl CloudModel {
             .and_then(|object| object.into())
     }
 
-    pub fn get_all_exportable_object_ids(&self) -> Vec<CloudObjectTypeAndId> {
+    pub fn get_all_exportable_object_ids(&self) -> Vec<ObjectTypeAndId> {
         self.objects_by_id
             .values()
             .filter(|object| object.can_export())
-            .map(|object| object.cloud_object_type_and_id())
+            .map(|object| object.object_type_and_id())
             .collect()
     }
 

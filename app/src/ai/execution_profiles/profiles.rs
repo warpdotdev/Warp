@@ -17,7 +17,7 @@ use crate::{send_telemetry_from_ctx, LaunchMode, TelemetryEvent};
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType};
-use crate::drive::CloudObjectTypeAndId;
+use crate::drive::ObjectTypeAndId;
 use crate::server::ids::SyncId;
 use crate::settings::AgentModeCommandExecutionPredicate;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -223,7 +223,7 @@ impl AIExecutionProfilesModel {
                     .expect("default profile is synced but no sync id found");
                 ctx.subscribe_to_model(&CloudModel::handle(ctx), move |me, event, _| {
                 if let CloudModelEvent::ObjectDeleted {
-                    type_and_id: CloudObjectTypeAndId::GenericStringObject {
+                    type_and_id: ObjectTypeAndId::GenericStringObject {
                         id: deleted_sync_id,
                         ..
                     },
@@ -1377,7 +1377,7 @@ impl AIExecutionProfilesModel {
         match event {
             CloudModelEvent::ObjectCreated {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile),
                         id,
@@ -1387,7 +1387,7 @@ impl AIExecutionProfilesModel {
             }
             CloudModelEvent::ObjectDeleted {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile),
                         id,
@@ -1398,7 +1398,7 @@ impl AIExecutionProfilesModel {
             }
             CloudModelEvent::ObjectDeleted {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
                         id: _,
                     },
@@ -1409,7 +1409,7 @@ impl AIExecutionProfilesModel {
             }
             CloudModelEvent::ObjectUpdated {
                 type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type:
                             GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile),
                         id,

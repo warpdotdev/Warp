@@ -44,8 +44,8 @@ use crate::cloud_object::{
 };
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
-use crate::drive::CloudObjectTypeAndId;
 use crate::drive::DriveSortOrder;
+use crate::drive::ObjectTypeAndId;
 use crate::features::FeatureFlag;
 use crate::launch_configs::save_modal::SaveState;
 use crate::notebooks::telemetry::NotebookTelemetryAction;
@@ -171,13 +171,13 @@ pub enum TelemetryCloudObjectType {
     GenericStringObject(GenericStringObjectFormat),
 }
 
-impl From<&CloudObjectTypeAndId> for TelemetryCloudObjectType {
-    fn from(cloud_object_type_and_id: &CloudObjectTypeAndId) -> Self {
-        match cloud_object_type_and_id {
-            CloudObjectTypeAndId::Notebook(_) => Self::Notebook,
-            CloudObjectTypeAndId::Workflow(_) => Self::Workflow,
-            CloudObjectTypeAndId::Folder(_) => Self::Folder,
-            CloudObjectTypeAndId::GenericStringObject { object_type, .. } => {
+impl From<&ObjectTypeAndId> for TelemetryCloudObjectType {
+    fn from(object_type_and_id: &ObjectTypeAndId) -> Self {
+        match object_type_and_id {
+            ObjectTypeAndId::Notebook(_) => Self::Notebook,
+            ObjectTypeAndId::Workflow(_) => Self::Workflow,
+            ObjectTypeAndId::Folder(_) => Self::Folder,
+            ObjectTypeAndId::GenericStringObject { object_type, .. } => {
                 Self::GenericStringObject(*object_type)
             }
         }

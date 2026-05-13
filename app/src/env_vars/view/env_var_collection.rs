@@ -58,7 +58,7 @@ use crate::{
     util::bindings::CustomAction,
     view_components::{alert::AlertConfig, Alert, DismissibleToast, ToastType},
     workspace::ToastStack,
-    Appearance, CloudObjectTypeAndId, TelemetryEvent,
+    Appearance, ObjectTypeAndId, TelemetryEvent,
 };
 
 use super::{command_dialog::EnvVarCommandDialog, menus::Menus};
@@ -1081,7 +1081,7 @@ impl EnvVarCollectionView {
 
     fn as_active_env_var_collection_id(
         &self,
-        id: &CloudObjectTypeAndId,
+        id: &ObjectTypeAndId,
         ctx: &mut ViewContext<Self>,
     ) -> Option<SyncId> {
         id.as_generic_string_object_id().filter(|id| {

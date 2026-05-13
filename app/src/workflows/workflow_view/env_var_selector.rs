@@ -9,7 +9,7 @@ use crate::{
         model::persistence::{CloudModel, CloudModelEvent},
         CloudObject as _, GenericStringObjectFormat, JsonObjectType,
     },
-    drive::CloudObjectTypeAndId,
+    drive::ObjectTypeAndId,
     server::ids::SyncId,
     view_components::{DropdownItem, FilterableDropdown, FilterableDropdownOrientation},
 };
@@ -109,7 +109,7 @@ impl EnvVarSelector {
             | CloudModelEvent::ObjectTrashed { type_and_id, .. } => {
                 if matches!(
                     type_and_id,
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type: GenericStringObjectFormat::Json(
                             JsonObjectType::EnvVarCollection
                         ),

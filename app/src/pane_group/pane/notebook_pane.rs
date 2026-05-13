@@ -7,7 +7,7 @@ use warpui::{AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle};
 use crate::{
     app_state::{LeafContents, NotebookPaneSnapshot},
     cloud_object::Space,
-    drive::{items::WarpDriveItemId, CloudObjectTypeAndId, OpenWarpDriveObjectSettings},
+    drive::{items::WarpDriveItemId, ObjectTypeAndId, OpenWarpDriveObjectSettings},
     notebooks::{
         link::{LinkEvent, NotebookLinks},
         manager::{NotebookManager, NotebookSource},
@@ -232,9 +232,9 @@ fn handle_notebook_event(
         }
         NotebookEvent::ViewInWarpDrive(id) => view_in_warp_drive(*id, ctx),
         NotebookEvent::MoveToSpace {
-            cloud_object_type_and_id,
+            object_type_and_id,
             new_space,
-        } => move_to_space(*cloud_object_type_and_id, *new_space, ctx),
+        } => move_to_space(*object_type_and_id, *new_space, ctx),
         NotebookEvent::Pane(pane_event) => group.handle_pane_event(pane_id, pane_event, ctx),
         NotebookEvent::AttachPlanAsContext(ai_document_id) => {
             ctx.emit(crate::pane_group::Event::AttachPlanAsContext {
@@ -266,12 +266,12 @@ fn view_in_warp_drive(id: WarpDriveItemId, ctx: &mut ViewContext<PaneGroup>) {
 }
 
 fn move_to_space(
-    cloud_object_type_and_id: CloudObjectTypeAndId,
+    object_type_and_id: ObjectTypeAndId,
     space: Space,
     ctx: &mut ViewContext<PaneGroup>,
 ) {
     ctx.emit(crate::pane_group::Event::MoveToSpace {
-        cloud_object_type_and_id,
+        object_type_and_id,
         space,
     });
 }

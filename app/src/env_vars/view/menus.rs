@@ -7,7 +7,7 @@ use crate::{
     cloud_object::{CloudObject, GenericStringObjectFormat, Space},
     drive::{
         drive_helpers::has_feature_gated_anonymous_user_reached_env_var_limit,
-        export::ExportManager, CloudObjectTypeAndId,
+        export::ExportManager, ObjectTypeAndId,
     },
     env_vars::active_env_var_collection_data::TrashStatus,
     external_secrets::SecretManager,
@@ -427,7 +427,7 @@ impl EnvVarCollectionView {
 
             UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
                 update_manager.untrash_object(
-                    CloudObjectTypeAndId::GenericStringObject {
+                    ObjectTypeAndId::GenericStringObject {
                         object_type: GenericStringObjectFormat::Json(
                             crate::cloud_object::JsonObjectType::EnvVarCollection,
                         ),
@@ -446,7 +446,7 @@ impl EnvVarCollectionView {
 
             UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
                 update_manager.trash_object(
-                    CloudObjectTypeAndId::from_generic_string_object(
+                    ObjectTypeAndId::from_generic_string_object(
                         GenericStringObjectFormat::Json(
                             crate::cloud_object::JsonObjectType::EnvVarCollection,
                         ),
@@ -463,7 +463,7 @@ impl EnvVarCollectionView {
         if let Some(env_var_collection_id) = self.env_var_collection_id(ctx) {
             UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
                 update_manager.duplicate_object(
-                    &CloudObjectTypeAndId::from_generic_string_object(
+                    &ObjectTypeAndId::from_generic_string_object(
                         GenericStringObjectFormat::Json(
                             crate::cloud_object::JsonObjectType::EnvVarCollection,
                         ),
@@ -482,7 +482,7 @@ impl EnvVarCollectionView {
             ExportManager::handle(ctx).update(ctx, |export_manager, ctx| {
                 export_manager.export(
                     window_id,
-                    &[CloudObjectTypeAndId::from_generic_string_object(
+                    &[ObjectTypeAndId::from_generic_string_object(
                         GenericStringObjectFormat::Json(
                             crate::cloud_object::JsonObjectType::EnvVarCollection,
                         ),

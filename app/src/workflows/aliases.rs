@@ -14,7 +14,7 @@ use crate::{
         model::persistence::{CloudModel, CloudModelEvent},
         CloudObject as _,
     },
-    drive::CloudObjectTypeAndId,
+    drive::ObjectTypeAndId,
     server::ids::SyncId,
 };
 
@@ -48,7 +48,7 @@ impl WorkflowAliases {
         ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
             let result = match event {
                 CloudModelEvent::ObjectTrashed {
-                    type_and_id: CloudObjectTypeAndId::Workflow(server_id),
+                    type_and_id: ObjectTypeAndId::Workflow(server_id),
                     ..
                 } => me.remove_aliases_for_workflow(*server_id, ctx),
                 _ => Result::Ok(()),

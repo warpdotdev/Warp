@@ -40,7 +40,7 @@ use crate::{
             workflow_arg_selector::{WorkflowArgSelector, WorkflowArgSelectorEvent},
             workflow_arg_type_helpers::{self, ArgumentEditorRowIndex},
         },
-        CloudObjectTypeAndId, DriveObjectType, OpenWarpDriveObjectSettings,
+        DriveObjectType, ObjectTypeAndId, OpenWarpDriveObjectSettings,
     },
     editor::{
         EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent,
@@ -530,7 +530,7 @@ impl WorkflowView {
     fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
         match event {
             CloudModelEvent::ObjectUpdated {
-                type_and_id: CloudObjectTypeAndId::Workflow(sync_id),
+                type_and_id: ObjectTypeAndId::Workflow(sync_id),
                 source: _,
             } => {
                 if self.workflow_id() == *sync_id && !self.is_editable() {
@@ -836,7 +836,7 @@ impl WorkflowView {
 
         if let Some(focused_folder_id) = settings.focused_folder_id.map(SyncId::ServerId) {
             self.view_in_warp_drive(
-                WarpDriveItemId::Object(CloudObjectTypeAndId::Folder(focused_folder_id)),
+                WarpDriveItemId::Object(ObjectTypeAndId::Folder(focused_folder_id)),
                 ctx,
             );
         }
@@ -1999,7 +1999,7 @@ impl WorkflowView {
 
         UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
             update_manager.duplicate_object(
-                &CloudObjectTypeAndId::from_id_and_type(self.workflow_id, ObjectType::Workflow),
+                &ObjectTypeAndId::from_id_and_type(self.workflow_id, ObjectType::Workflow),
                 ctx,
             );
         });
@@ -2015,7 +2015,7 @@ impl WorkflowView {
 
         UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
             update_manager.trash_object(
-                CloudObjectTypeAndId::from_id_and_type(self.workflow_id, ObjectType::Workflow),
+                ObjectTypeAndId::from_id_and_type(self.workflow_id, ObjectType::Workflow),
                 ctx,
             );
         });
@@ -2028,7 +2028,7 @@ impl WorkflowView {
 
         UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
             update_manager.untrash_object(
-                CloudObjectTypeAndId::from_id_and_type(self.workflow_id, ObjectType::Workflow),
+                ObjectTypeAndId::from_id_and_type(self.workflow_id, ObjectType::Workflow),
                 ctx,
             );
         });

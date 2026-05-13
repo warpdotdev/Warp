@@ -10,7 +10,7 @@ use crate::{
 use super::{
     cloud_object_styling::warp_drive_icon_color,
     index::{warp_drive_section_header_position_id, DriveIndexAction, DriveIndexSection},
-    CloudObjectTypeAndId, DriveObjectType,
+    DriveObjectType, ObjectTypeAndId,
 };
 
 pub mod ai_fact;
@@ -72,12 +72,12 @@ impl WarpDriveItemId {
     }
 }
 /// This uniquely identifies an item in Warp Drive index
-/// Includes spaces (which CloudObjectTypeAndId does not entail)
+/// Includes spaces (which ObjectTypeAndId does not entail)
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum WarpDriveItemId {
     AIFactCollection,
     MCPServerCollection,
-    Object(CloudObjectTypeAndId),
+    Object(ObjectTypeAndId),
     Space(Space),
     Trash,
 }

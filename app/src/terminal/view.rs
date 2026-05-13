@@ -223,7 +223,7 @@ use crate::context_chips::prompt::Prompt;
 use crate::context_chips::prompt_type::PromptType;
 use crate::context_chips::ContextChipKind;
 use crate::drive::settings::WarpDriveSettings;
-use crate::drive::CloudObjectTypeAndId;
+use crate::drive::ObjectTypeAndId;
 use crate::env_vars::{
     env_var_collection_block::{EnvVarCollectionBlock, EnvVarCollectionBlockEvent},
     EnvVar, EnvVarCollectionObject,
@@ -10273,7 +10273,7 @@ impl TerminalView {
 
                     // If the block was a cloud workflow, record the workflow execution as an object action.
                     if let Some(cloud_workflow_id) = cloud_workflow_id {
-                        let id_and_type = CloudObjectTypeAndId::Workflow(*cloud_workflow_id);
+                        let id_and_type = ObjectTypeAndId::Workflow(*cloud_workflow_id);
                         UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
                             update_manager.record_object_action(
                                 id_and_type,
@@ -10285,7 +10285,7 @@ impl TerminalView {
                     }
 
                     if let Some(cloud_env_var_collection_id) = cloud_env_var_collection_id {
-                        let id_and_type = CloudObjectTypeAndId::GenericStringObject {
+                        let id_and_type = ObjectTypeAndId::GenericStringObject {
                             object_type: GenericStringObjectFormat::Json(
                                 JsonObjectType::EnvVarCollection,
                             ),
@@ -22184,7 +22184,7 @@ impl TerminalView {
         collection_title: String,
         command: String,
         session_id: SessionId,
-        cloud_object_type_and_id: CloudObjectTypeAndId,
+        object_type_and_id: ObjectTypeAndId,
         ctx: &mut ViewContext<Self>,
     ) {
         let block_id = Uuid::new_v4().to_string();
@@ -22213,7 +22213,7 @@ impl TerminalView {
 
                     UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
                         update_manager.record_object_action(
-                            cloud_object_type_and_id,
+                            object_type_and_id,
                             ObjectActionType::Execute,
                             None,
                             ctx,
@@ -22366,7 +22366,7 @@ impl TerminalView {
                     .collect_vec()
                     .join(" "),
                 session_id,
-                cloud_env_var_collection.cloud_object_type_and_id(),
+                cloud_env_var_collection.object_type_and_id(),
                 ctx,
             );
         } else {
@@ -22422,7 +22422,7 @@ impl TerminalView {
         // Ok to update the execution record here because we auto-execute when in subshell
         UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
             update_manager.record_object_action(
-                cloud_env_var_collection.cloud_object_type_and_id(),
+                cloud_env_var_collection.object_type_and_id(),
                 ObjectActionType::Execute,
                 None,
                 ctx,
