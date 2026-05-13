@@ -13,7 +13,6 @@ use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use session_sharing_protocol::common::SessionId;
 use std::collections::{HashMap, HashSet};
 use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
@@ -161,8 +160,6 @@ impl AgentManagementFilters {
 
 /// Preference for which type of link/action to use for a conversation or task.
 enum LinkPreference {
-    /// Use session link/action
-    Session,
     /// Use conversation link/action
     Conversation,
     /// No link/action available
@@ -472,20 +469,6 @@ impl ConversationOrTask<'_> {
         }
     }
 
-    /// Returns the session ID for tasks, if we have one.
-    pub fn session_id(&self) -> Option<SessionId> {
-        match self {
-            ConversationOrTask::Task(task) => task.session_id.as_ref().and_then(|s| {
-                let session_id = s.parse::<SessionId>();
-                if let Err(ref e) = session_id {
-                    log::warn!("Failed to parse shared session ID: {e}");
-                }
-                session_id.ok()
-            }),
-            ConversationOrTask::Conversation(_) => None,
-        }
-    }
-
     pub fn is_ambient_agent_conversation(&self) -> bool {
         matches!(self, ConversationOrTask::Task(_))
     }
@@ -581,10 +564,6 @@ impl ConversationOrTask<'_> {
     /// Get a link to a session or conversation, depending on whether the cloud agent is running
     pub fn session_or_conversation_link(&self, app: &AppContext) -> Option<String> {
         match self.link_preference() {
-            LinkPreference::Session => match self {
-                ConversationOrTask::Task(task) => task.session_link.clone(),
-                ConversationOrTask::Conversation(_) => None,
-            },
             LinkPreference::Conversation => match self {
                 ConversationOrTask::Task(task) => task
                     .conversation_id
@@ -692,15 +671,6 @@ impl ConversationOrTask<'_> {
         restore_layout: Option<RestoreConversationLayout>,
     ) -> Option<WorkspaceAction> {
         match self.link_preference() {
-            LinkPreference::Session => match self {
-                ConversationOrTask::Task(task) => {
-                    self.session_id()
-                        .map(|_| WorkspaceAction::OpenAmbientAgentSession {
-                            task_id: task.task_id,
-                        })
-                }
-                ConversationOrTask::Conversation(_) => None,
-            },
             LinkPreference::Conversation => match self {
                 ConversationOrTask::Task(task) => task.conversation_id.as_ref().map(|id| {
                     WorkspaceAction::OpenConversationTranscriptViewer {

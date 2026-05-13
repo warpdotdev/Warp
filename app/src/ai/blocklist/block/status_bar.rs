@@ -362,7 +362,7 @@ impl BlocklistAIStatusBar {
                 me.update_agent_tip(ctx);
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::SessionReady { .. }
+            AmbientAgentViewModelEvent::SessionReady
             | AmbientAgentViewModelEvent::Failed { .. }
             | AmbientAgentViewModelEvent::NeedsGithubAuth
             | AmbientAgentViewModelEvent::Cancelled => {

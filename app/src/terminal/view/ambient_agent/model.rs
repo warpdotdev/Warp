@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use instant::Instant;
-use session_sharing_protocol::common::SessionId;
 use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
 use warpui::r#async::{SpawnedFutureHandle, Timer};
@@ -518,17 +517,15 @@ impl AmbientAgentViewModel {
                                 }
                             }
                         }
-                        AmbientAgentEvent::SessionStarted { session_join_info } => {
+                        AmbientAgentEvent::SessionStarted { .. } => {
                             // Ignore session started if we're already in a terminal state
                             if ignore_events {
                                 return;
                             }
 
-                            if let Some(session_id) = session_join_info.session_id {
-                                me.stop_progress_timer();
-                                me.status = Status::AgentRunning;
-                                ctx.emit(AmbientAgentViewModelEvent::SessionReady { session_id });
-                            }
+                            me.stop_progress_timer();
+                            me.status = Status::AgentRunning;
+                            ctx.emit(AmbientAgentViewModelEvent::SessionReady);
                         }
                         AmbientAgentEvent::AtCapacity => {
                             if ignore_events {
@@ -758,9 +755,7 @@ pub enum AmbientAgentViewModelEvent {
     /// The spawn progress has been updated (e.g., task claimed or in-progress).
     ProgressUpdated,
     /// The ambient agent has started sharing its session.
-    SessionReady {
-        session_id: SessionId,
-    },
+    SessionReady,
     /// The ambient agent failed.
     Failed {
         error_message: String,

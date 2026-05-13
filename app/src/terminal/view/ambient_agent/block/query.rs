@@ -27,7 +27,7 @@ impl CloudModeInitialUserQuery {
         ctx.subscribe_to_model(&view_model, |_, _, event, ctx| match event {
             AmbientAgentViewModelEvent::DispatchedAgent
             | AmbientAgentViewModelEvent::ProgressUpdated
-            | AmbientAgentViewModelEvent::SessionReady { .. }
+            | AmbientAgentViewModelEvent::SessionReady
             | AmbientAgentViewModelEvent::Failed { .. }
             | AmbientAgentViewModelEvent::NeedsGithubAuth
             | AmbientAgentViewModelEvent::Cancelled => ctx.notify(),

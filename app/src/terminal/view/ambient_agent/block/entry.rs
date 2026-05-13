@@ -73,7 +73,7 @@ impl AmbientAgentEntryBlock {
         match event {
             AmbientAgentViewModelEvent::DispatchedAgent
             | AmbientAgentViewModelEvent::ProgressUpdated
-            | AmbientAgentViewModelEvent::SessionReady { .. }
+            | AmbientAgentViewModelEvent::SessionReady
             | AmbientAgentViewModelEvent::Failed { .. }
             | AmbientAgentViewModelEvent::NeedsGithubAuth
             | AmbientAgentViewModelEvent::Cancelled => ctx.notify(),

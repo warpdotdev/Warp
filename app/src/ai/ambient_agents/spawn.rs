@@ -1,10 +1,9 @@
 //! Stream-based API for spawning and monitoring ambient agents.
 #![cfg_attr(target_family = "wasm", expect(dead_code))]
 
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 
 use futures::Stream;
-use session_sharing_protocol::common::SessionId;
 
 use super::AmbientAgentTaskId;
 use super::{AmbientAgentTask, AmbientAgentTaskState};
@@ -17,7 +16,6 @@ pub const TASK_STATUS_POLLING_DURATION: Duration = Duration::from_secs(80);
 /// Information about a session join link for an ambient agent task.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionJoinInfo {
-    pub session_id: Option<SessionId>,
     pub session_link: String,
 }
 
@@ -26,12 +24,7 @@ impl SessionJoinInfo {
         // Prefer the server-provided session_link when available; it is a better signal
         // that a session-sharing link is ready to be shown to the user.
         if let Some(link) = task.session_link.as_ref().filter(|l| !l.is_empty()) {
-            let session_id = task
-                .session_id
-                .as_deref()
-                .and_then(|s| SessionId::from_str(s).ok());
             return Some(Self {
-                session_id,
                 session_link: link.to_string(),
             });
         }
