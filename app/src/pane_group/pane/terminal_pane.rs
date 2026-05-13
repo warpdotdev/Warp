@@ -30,7 +30,6 @@ use crate::{
         llms::LLMPreferences,
         skills::SkillManager,
     },
-    terminal::view::ambient_agent::should_disable_snapshot,
     app_state::{AmbientAgentPaneSnapshot, LeafContents, TerminalPaneSnapshot},
     features::FeatureFlag,
     pane_group::child_agent::{
@@ -43,6 +42,7 @@ use crate::{
     server::server_api::ai::{SpawnAgentRequest, UserQueryMode},
     session_management::SessionNavigationData,
     terminal::cli_agent_sessions::CLIAgentSessionsModel,
+    terminal::view::ambient_agent::should_disable_snapshot,
     terminal::{
         general_settings::GeneralSettings,
         shared_session::{

@@ -1488,24 +1488,24 @@ define_settings_group!(AISettings, settings: [
         description: "Whether the Warp Agent adds an attribution co-author line to commit messages and pull requests it creates.",
     }
 
-    cloud_handoff_enabled: CloudHandoffEnabled {
+    should_force_disable_cloud_handoff: ShouldForceDisableCloudHandoff {
         type: bool,
-        default: true,
+        default: false,
         supported_platforms: SupportedPlatforms::DESKTOP,
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
         private: false,
-        toml_path: "agents.warp_agent.other.cloud_handoff_enabled",
-        description: "Whether local-to-cloud handoff is enabled.",
+        toml_path: "agents.warp_agent.other.should_force_disable_cloud_handoff",
+        description: "Whether to force-disable local-to-cloud handoff.",
     }
 
-    ampersand_handoff_enabled: AmpersandHandoffEnabled {
+    should_force_disable_ampersand_handoff: ShouldForceDisableAmpersandHandoff {
         type: bool,
-        default: true,
+        default: false,
         supported_platforms: SupportedPlatforms::DESKTOP,
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
         private: false,
-        toml_path: "agents.warp_agent.other.ampersand_handoff_enabled",
-        description: "Whether the & prefix triggers cloud handoff compose mode.",
+        toml_path: "agents.warp_agent.other.should_force_disable_ampersand_handoff",
+        description: "Whether to force-disable the & prefix for cloud handoff compose mode.",
     }
 ]);
 
@@ -1693,7 +1693,7 @@ impl AISettings {
     /// False when the user/org has disabled it, cloud conversations are off,
     /// or AI is globally off.
     pub fn is_cloud_handoff_enabled(&self, app: &warpui::AppContext) -> bool {
-        if !self.is_any_ai_enabled(app) || !*self.cloud_handoff_enabled {
+        if !self.is_any_ai_enabled(app) || *self.should_force_disable_cloud_handoff {
             return false;
         }
         if !crate::ai::blocklist::is_local_to_cloud_handoff_available() {
@@ -1710,7 +1710,7 @@ impl AISettings {
     }
 
     pub fn is_ampersand_handoff_enabled(&self, app: &warpui::AppContext) -> bool {
-        self.is_cloud_handoff_enabled(app) && *self.ampersand_handoff_enabled
+        self.is_cloud_handoff_enabled(app) && !*self.should_force_disable_ampersand_handoff
     }
 
     /// Determines whether a quota reset banner should be displayed to the user.

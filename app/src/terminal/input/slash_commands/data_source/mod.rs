@@ -126,7 +126,7 @@ impl SlashCommandDataSource {
                 event,
                 AISettingsChangedEvent::IsAnyAIEnabled { .. }
                     | AISettingsChangedEvent::OrchestrationEnabled { .. }
-                    | AISettingsChangedEvent::CloudHandoffEnabled { .. }
+                    | AISettingsChangedEvent::ShouldForceDisableCloudHandoff { .. }
             ) {
                 me.recompute_active_commands(ctx);
             }

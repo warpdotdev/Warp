@@ -1506,7 +1506,7 @@ impl AISettingsPageView {
                         .voice_input_enabled_internal
                         .is_supported_on_current_platform()
                 {
-                widgets.push(Box::new(VoiceWidget::default()));
+                    widgets.push(Box::new(VoiceWidget::default()));
                 }
                 widgets.push(Box::new(CloudHandoffWidget::default()));
                 widgets.push(Box::new(CLIAgentWidget::default()));
@@ -3022,14 +3022,16 @@ impl TypedActionView for AISettingsPageView {
             }
             AISettingsPageAction::ToggleCloudHandoff => {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.cloud_handoff_enabled.toggle_and_save_value(ctx));
+                    report_if_error!(settings
+                        .should_force_disable_cloud_handoff
+                        .toggle_and_save_value(ctx));
                 });
                 ctx.notify();
             }
             AISettingsPageAction::ToggleAmpersandHandoff => {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings
-                        .ampersand_handoff_enabled
+                        .should_force_disable_ampersand_handoff
                         .toggle_and_save_value(ctx));
                 });
                 ctx.notify();
@@ -6360,8 +6362,6 @@ impl SettingsWidget for CloudHandoffWidget {
             );
         let is_force_disabled = !is_any_ai_enabled || cloud_convos_off;
 
-        let effective_handoff = !is_force_disabled && *ai_settings.cloud_handoff_enabled;
-
         let tooltip_text = if cloud_convos_off {
             "Cloud handoff requires cloud conversations to be enabled."
         } else {
@@ -6382,7 +6382,7 @@ impl SettingsWidget for CloudHandoffWidget {
         } else {
             ui_builder
                 .switch(self.handoff_toggle.clone())
-                .check(*ai_settings.cloud_handoff_enabled)
+                .check(!*ai_settings.should_force_disable_cloud_handoff)
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(AISettingsPageAction::ToggleCloudHandoff);
@@ -6422,10 +6422,10 @@ impl SettingsWidget for CloudHandoffWidget {
                 app,
             ));
 
-        if effective_handoff {
+        if ai_settings.is_cloud_handoff_enabled(app) {
             let ampersand_toggle = ui_builder
                 .switch(self.ampersand_toggle.clone())
-                .check(*ai_settings.ampersand_handoff_enabled)
+                .check(!*ai_settings.should_force_disable_ampersand_handoff)
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(AISettingsPageAction::ToggleAmpersandHandoff);

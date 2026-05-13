@@ -711,7 +711,7 @@ impl AgentInputFooter {
             if matches!(
                 event,
                 AISettingsChangedEvent::AIAutoDetectionEnabled { .. }
-                    | AISettingsChangedEvent::CloudHandoffEnabled { .. }
+                    | AISettingsChangedEvent::ShouldForceDisableCloudHandoff { .. }
             ) {
                 ctx.notify()
             }
