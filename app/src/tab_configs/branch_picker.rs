@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use warpui::{
     elements::ChildView, ui_components::components::UiComponentStyles, AppContext, Element, Entity,
-    TypedActionView, View, ViewContext, ViewHandle,
+    text_layout::ClipConfig, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 use crate::{
@@ -17,6 +17,12 @@ use crate::{
 const DEFAULT_DROPDOWN_WIDTH: f32 = 380.;
 /// Placeholder text shown in the dropdown top bar while branches are loading.
 const LOADING_PLACEHOLDER: &str = "Fetching branches\u{2026}";
+
+fn branch_dropdown_item(name: String) -> DropdownItem<String> {
+    DropdownItem::new(name.clone(), name.clone())
+        .with_clip_config(ClipConfig::start())
+        .with_tooltip(name)
+}
 
 /// A filterable dropdown that lists local git branches for the given repo path.
 ///
@@ -69,6 +75,7 @@ impl BranchPicker {
         let dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = FilterableDropdown::new(ctx);
             dropdown.set_top_bar_max_width(width);
+            dropdown.set_top_bar_text_clip_config(ClipConfig::start());
             dropdown.set_menu_width(width, ctx);
             if let Some(bg) = bg {
                 dropdown.set_style(UiComponentStyles {
@@ -93,10 +100,7 @@ impl BranchPicker {
         if let Some(ref default) = default_value {
             let default = default.clone();
             picker.dropdown.update(ctx, |dropdown, ctx| {
-                dropdown.set_items(
-                    vec![DropdownItem::new(default.clone(), default.clone())],
-                    ctx,
-                );
+                dropdown.set_items(vec![branch_dropdown_item(default.clone())], ctx);
                 dropdown.set_selected_by_name(default.as_str(), ctx);
             });
         }
@@ -192,14 +196,14 @@ impl BranchPicker {
 
                 // Main branches first, then the rest in recency order.
                 let mut items: Vec<DropdownItem<String>> = sort_branches_main_first(&branches)
-                    .map(|(name, _)| DropdownItem::new(name.clone(), name.clone()))
+                    .map(|(name, _)| branch_dropdown_item(name.clone()))
                     .collect();
 
                 // Add the default as the first item if it isn't already in the list
                 // (e.g. the user typed a branch name that doesn't exist locally yet).
                 if let Some(ref default) = me.default_value {
                     if !branches.iter().any(|(name, _)| name == default) {
-                        items.insert(0, DropdownItem::new(default.clone(), default.clone()));
+                        items.insert(0, branch_dropdown_item(default.clone()));
                     }
                 }
 

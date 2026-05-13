@@ -6,6 +6,7 @@ use crate::elements::{
     OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Shrinkable, Stack,
 };
 use crate::geometry::vector::Vector2F;
+use crate::text_layout::ClipConfig;
 
 use crate::platform::Cursor;
 use crate::{
@@ -43,6 +44,7 @@ pub struct TextAndIcon {
     /// Padding between the text and the icon.
     padding: f32,
     icon_size: Vector2F,
+    text_clip_config: Option<ClipConfig>,
 }
 
 impl TextAndIcon {
@@ -62,11 +64,17 @@ impl TextAndIcon {
             icon,
             padding: 0.,
             icon_size,
+            text_clip_config: None,
         }
     }
 
     pub fn with_inner_padding(mut self, padding: f32) -> Self {
         self.padding = padding;
+        self
+    }
+
+    pub fn with_text_clip_config(mut self, clip_config: ClipConfig) -> Self {
+        self.text_clip_config = Some(clip_config);
         self
     }
 }
@@ -307,9 +315,13 @@ impl Button {
                 }
             }
             ButtonLabel::TextAndIcon(text_and_icon) => {
+                let mut span = Span::new(text_and_icon.text, styles);
+                if let Some(clip_config) = text_and_icon.text_clip_config {
+                    span = span.with_clip_config(clip_config);
+                }
                 let text = Shrinkable::new(
                     1.,
-                    Container::new(Span::new(text_and_icon.text, styles).build().finish()).finish(),
+                    Container::new(span.build().finish()).finish(),
                 )
                 .finish();
                 let icon = if let Some(color) = styles.font_color {
