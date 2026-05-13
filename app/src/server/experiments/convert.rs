@@ -17,11 +17,6 @@ impl Display for ServerExperiment {
             Self::TmuxSshWarpificationExperiment => "TMUX_SSH_WARPIFICATION_EXPERIMENT",
             Self::SuggestedCodeDiffsControl => "SUGGESTED_CODE_DIFFS_CONTROL",
             Self::SuggestedCodeDiffsExperiment => "SUGGESTED_CODE_DIFFS_EXPERIMENT",
-            Self::BuildPlanAutoReloadControl => "BUILD_PLAN_AUTO_RELOAD_CONTROL",
-            Self::BuildPlanAutoReloadBannerToggle => "BUILD_PLAN_AUTO_RELOAD_BANNER_TOGGLE",
-            Self::BuildPlanAutoReloadPostPurchaseModal => {
-                "BUILD_PLAN_AUTO_RELOAD_POST_PURCHASE_MODAL"
-            }
             Self::PromptSuggestionsViaMaaControl => "PROMPT_SUGGESTIONS_VIA_MAA_CONTROL",
             Self::PromptSuggestionsViaMaaExperiment => "PROMPT_SUGGESTIONS_VIA_MAA_EXPERIMENT",
             Self::PromptSuggestionsViaMaaOutOfBandExperiment => {
@@ -47,11 +42,6 @@ impl ServerExperiment {
             "TMUX_SSH_WARPIFICATION_EXPERIMENT" => Ok(Self::TmuxSshWarpificationExperiment),
             "SUGGESTED_CODE_DIFFS_CONTROL" => Ok(Self::SuggestedCodeDiffsControl),
             "SUGGESTED_CODE_DIFFS_EXPERIMENT" => Ok(Self::SuggestedCodeDiffsExperiment),
-            "BUILD_PLAN_AUTO_RELOAD_CONTROL" => Ok(Self::BuildPlanAutoReloadControl),
-            "BUILD_PLAN_AUTO_RELOAD_BANNER_TOGGLE" => Ok(Self::BuildPlanAutoReloadBannerToggle),
-            "BUILD_PLAN_AUTO_RELOAD_POST_PURCHASE_MODAL" => {
-                Ok(Self::BuildPlanAutoReloadPostPurchaseModal)
-            }
             "PROMPT_SUGGESTIONS_VIA_MAA_CONTROL" => Ok(Self::PromptSuggestionsViaMaaControl),
             "PROMPT_SUGGESTIONS_VIA_MAA_EXPERIMENT" => Ok(Self::PromptSuggestionsViaMaaExperiment),
             "OZ_MULTI_HARNESS_CONTROL" => Ok(Self::OzMultiHarnessControl),

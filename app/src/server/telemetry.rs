@@ -655,12 +655,6 @@ pub enum ToggleBlockFilterSource {
     ContextMenu,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TierLimitHitEvent {
-    pub team_uid: ServerId,
-    pub feature: String,
-}
-
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum KnowledgePaneEntrypoint {
     /// Triggered by either the command palette or the mac menus
@@ -1131,22 +1125,6 @@ pub enum SlashCommandAcceptedDetails {
     SavedPrompt,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum AutoReloadModalAction {
-    #[serde(rename = "dismissed")]
-    Dismissed,
-    #[serde(rename = "enabled_auto_reload")]
-    EnabledAutoReload,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum OutOfCreditsBannerAction {
-    #[serde(rename = "dismissed")]
-    Dismissed,
-    #[serde(rename = "credits_purchased")]
-    CreditsPurchased,
-}
-
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CLISubagentControlState {
@@ -1249,7 +1227,6 @@ pub enum TelemetryEvent {
     /// suggestions menu may be triggered with a keybinding other than tab.
     TabSingleResultAutocompletion,
     EditorUnhandledModifierKey(String),
-    CopyInviteLink,
     OpenThemeChooser,
     ThemeSelection {
         theme: String,
@@ -1783,12 +1760,6 @@ pub enum TelemetryEvent {
         /// Whether or not Universal Developer Input mode is enabled
         is_udi_enabled: bool,
     },
-    /// The user tried to send an Agent Mode query but they have already reached their AI request
-    /// limit. Note that this limit is for all AI requests, not Agent Mode alone.
-    AgentModeUserAttemptedQueryAtRequestLimit {
-        /// The AI request limit for the user's current plan.
-        limit: usize,
-    },
     AgentModeClickedEntrypoint {
         entrypoint: AgentModeEntrypoint,
     },
@@ -2007,7 +1978,6 @@ pub enum TelemetryEvent {
         is_enabled: bool,
     },
 
-    TierLimitHit(TierLimitHitEvent),
     ResourceUsageStats {
         cpu: CpuUsageStats,
         mem: MemoryUsageStats,
@@ -2374,30 +2344,6 @@ pub enum TelemetryEvent {
     /// User selected a folder to open as a repo from the "Open repository" button
     OpenRepoFolderSubmitted {
         is_ftux: bool,
-    },
-
-    /// User closed the "Out of credits" banner (dismissed or purchased credits)
-    OutOfCreditsBannerClosed {
-        action: OutOfCreditsBannerAction,
-        selected_credits: Option<i32>,
-        auto_reload_checkbox_enabled: bool,
-        banner_toggle_flag_enabled: bool,
-        post_purchase_modal_flag_enabled: bool,
-    },
-
-    /// User closed the auto-reload modal (either dismissed or enabled auto-reload)
-    AutoReloadModalClosed {
-        action: AutoReloadModalAction,
-        selected_credits: Option<i32>,
-        banner_toggle_flag_enabled: bool,
-        post_purchase_modal_flag_enabled: bool,
-    },
-
-    /// User toggled auto-reload in Billing & Usage settings
-    AutoReloadToggledFromBillingSettings {
-        enabled: bool,
-        banner_toggle_flag_enabled: bool,
-        post_purchase_modal_flag_enabled: bool,
     },
 
     /// Emitted when the control state of the CLI subagent changes.
@@ -3182,10 +3128,6 @@ impl TelemetryEvent {
                 "conversation_id": conversation_id,
                 "is_udi_enabled": is_udi_enabled,
             })),
-            TelemetryEvent::TierLimitHit(event) => Some(json!(event)),
-            TelemetryEvent::AgentModeUserAttemptedQueryAtRequestLimit { limit } => {
-                Some(json!({"limit": limit}))
-            }
             TelemetryEvent::AgentModeClickedEntrypoint { entrypoint } => {
                 Some(json!({"entrypoint": entrypoint}))
             }
@@ -3682,7 +3624,6 @@ impl TelemetryEvent {
             | TelemetryEvent::ContextMenuCopySelectedText
             | TelemetryEvent::JumpToPreviousCommand
             | TelemetryEvent::TabSingleResultAutocompletion
-            | TelemetryEvent::CopyInviteLink
             | TelemetryEvent::OpenThemeChooser
             | TelemetryEvent::OpenThemeCreatorModal
             | TelemetryEvent::CreateCustomTheme
@@ -3976,39 +3917,6 @@ impl TelemetryEvent {
             TelemetryEvent::OpenRepoFolderSubmitted { is_ftux } => Some(json!({
                 "is_ftux": is_ftux,
             })),
-            TelemetryEvent::OutOfCreditsBannerClosed {
-                action,
-                selected_credits,
-                auto_reload_checkbox_enabled,
-                banner_toggle_flag_enabled,
-                post_purchase_modal_flag_enabled,
-            } => Some(json!({
-                "action": action,
-                "selected_credits": selected_credits,
-                "auto_reload_checkbox_enabled": auto_reload_checkbox_enabled,
-                "banner_toggle_flag_enabled": banner_toggle_flag_enabled,
-                "post_purchase_modal_flag_enabled": post_purchase_modal_flag_enabled,
-            })),
-            TelemetryEvent::AutoReloadModalClosed {
-                action,
-                selected_credits,
-                banner_toggle_flag_enabled,
-                post_purchase_modal_flag_enabled,
-            } => Some(json!({
-                "action": action,
-                "selected_credits": selected_credits,
-                "banner_toggle_flag_enabled": banner_toggle_flag_enabled,
-                "post_purchase_modal_flag_enabled": post_purchase_modal_flag_enabled,
-            })),
-            TelemetryEvent::AutoReloadToggledFromBillingSettings {
-                enabled,
-                banner_toggle_flag_enabled,
-                post_purchase_modal_flag_enabled,
-            } => Some(json!({
-                "enabled": enabled,
-                "banner_toggle_flag_enabled": banner_toggle_flag_enabled,
-                "post_purchase_modal_flag_enabled": post_purchase_modal_flag_enabled,
-            })),
             TelemetryEvent::WarpDriveOpened {
                 source,
                 is_code_mode_v2,
@@ -4261,7 +4169,6 @@ impl TelemetryEvent {
             | TelemetryEvent::BootstrappingSucceeded(_)
             | TelemetryEvent::TabSingleResultAutocompletion
             | TelemetryEvent::EditorUnhandledModifierKey(_)
-            | TelemetryEvent::CopyInviteLink
             | TelemetryEvent::OpenThemeChooser
             | TelemetryEvent::ThemeSelection { .. }
             | TelemetryEvent::AppIconSelection { .. }
@@ -4463,7 +4370,6 @@ impl TelemetryEvent {
             | TelemetryEvent::PaneDropped { .. }
             | TelemetryEvent::ObjectLinkCopied { .. }
             | TelemetryEvent::FileTreeToggled { .. }
-            | TelemetryEvent::AgentModeUserAttemptedQueryAtRequestLimit { .. }
             | TelemetryEvent::AgentModeClickedEntrypoint { .. }
             | TelemetryEvent::AgentModeAttachedBlockContext { .. }
             | TelemetryEvent::AgentModeToggleAutoDetectionSetting { .. }
@@ -4483,7 +4389,6 @@ impl TelemetryEvent {
             | TelemetryEvent::TogglePromptSuggestionsSetting { .. }
             | TelemetryEvent::ToggleCodeSuggestionsSetting { .. }
             | TelemetryEvent::ToggleVoiceInputSetting { .. }
-            | TelemetryEvent::TierLimitHit(_)
             | TelemetryEvent::ResourceUsageStats { .. }
             | TelemetryEvent::MemoryUsageStats { .. }
             | TelemetryEvent::MemoryUsageHigh { .. }
@@ -4578,9 +4483,6 @@ impl TelemetryEvent {
             | TelemetryEvent::InputBufferSubmitted { .. }
             | TelemetryEvent::RecentMenuItemSelected { .. }
             | TelemetryEvent::OpenRepoFolderSubmitted { .. }
-            | TelemetryEvent::OutOfCreditsBannerClosed { .. }
-            | TelemetryEvent::AutoReloadModalClosed { .. }
-            | TelemetryEvent::AutoReloadToggledFromBillingSettings { .. }
             | TelemetryEvent::CLISubagentControlStateChanged { .. }
             | TelemetryEvent::CLISubagentResponsesToggled { .. }
             | TelemetryEvent::CLISubagentInputDismissed { .. }
