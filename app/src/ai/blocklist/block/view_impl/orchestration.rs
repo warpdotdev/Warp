@@ -223,9 +223,12 @@ fn render_transcript_row(
         let message_id_clone = data.message_id.clone();
 
         let expandable = Hoverable::new(toggle_mouse_state, move |_| {
+            // Make the bold name a Shrinkable child so very long agent names
+            // shrink within the available width instead of pushing the chevron
+            // past the transcript column.
             Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(header)
+                .with_child(Shrinkable::new(1., header).finish())
                 .with_child(
                     Container::new(
                         ConstrainedBox::new(chevron_icon.to_warpui_icon(text_color).finish())
@@ -245,10 +248,14 @@ fn render_transcript_row(
             ));
         });
 
-        // Wrap the Hoverable in an outer row so the click bounds size to its
-        // content (bold name + chevron) instead of stretching to the parent's
-        // full width.
-        Flex::row().with_child(expandable.finish()).finish()
+        // Wrap the Hoverable in a Shrinkable inside an outer row so it
+        // receives a bounded width constraint from the parent column. This
+        // lets the inner Shrinkable around the bold name actually shrink
+        // when the name is long, while the Hoverable's click bounds still
+        // size to its content (bold name + chevron) when it fits.
+        Flex::row()
+            .with_child(Shrinkable::new(1., expandable.finish()).finish())
+            .finish()
     } else {
         let header = render_formatted_text_element(vec![name], app).finish();
         Flex::row()
