@@ -854,6 +854,25 @@ zh-CN:
     create_agent: "创建 Agent"
     failed_delete_key: "删除 API key 失败。请重试。"
 
+  # ── 创建 API Key ──
+  create_api_key:
+    personal_description: "此 API key 绑定到你的用户，可对你的 Warp 账户发起请求。"
+    team_description: "此 API key 绑定到你的团队，可代表你的团队发起请求。"
+    agent_description: "此 API key 绑定到 Agent，可代表该 Agent 发起请求。"
+    personal: "个人"
+    team: "团队"
+    agent: "Agent"
+    one_day: "1 天"
+    thirty_days: "30 天"
+    ninety_days: "90 天"
+    never: "永不过期"
+    failed_load_agents: "加载 Agents 失败。请关闭后重试。"
+    no_current_team: "无法创建团队 API key，因为当前没有团队。"
+    copied: "已复制"
+    name: "名称"
+    type: "类型"
+    expiration: "过期时间"
+
   # ── 账单扩展 ──
   billing_ext:
     valid_currency_amount: "请输入有效的货币金额"

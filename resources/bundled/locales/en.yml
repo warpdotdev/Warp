@@ -854,6 +854,25 @@ en:
     create_agent: "Create agent"
     failed_delete_key: "Failed to delete API key. Please try again."
 
+  # ── Create API Key ──
+  create_api_key:
+    personal_description: "This API key is tied to your user and can make requests against your Warp account."
+    team_description: "This API key is tied to your team and can make requests on behalf of your team."
+    agent_description: "This API key is tied to an agent and can make requests on behalf of the agent."
+    personal: "Personal"
+    team: "Team"
+    agent: "Agent"
+    one_day: "1 day"
+    thirty_days: "30 days"
+    ninety_days: "90 days"
+    never: "Never"
+    failed_load_agents: "Failed to load agents. Please close and try again."
+    no_current_team: "Unable to create a team API key because there is no current team."
+    copied: "Copied"
+    name: "Name"
+    type: "Type"
+    expiration: "Expiration"
+
   # ── Billing Extended ──
   billing_ext:
     valid_currency_amount: "Please enter a valid currency amount"
