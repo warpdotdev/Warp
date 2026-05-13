@@ -106,6 +106,11 @@ impl Workspace {
                     true,
                 );
             }
+            ConversationDetailsPanelEvent::ContinueInCloud { task_id } => {
+                ctx.dispatch_typed_action(&WorkspaceAction::ContinueAmbientAgentInCloud {
+                    task_id: *task_id,
+                });
+            }
         });
 
         panel

@@ -34,7 +34,7 @@ use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent::conversation::AIConversation;
 use crate::ai::agent_conversations_model::{
-    AgentConversationNavigationSubject, AgentConversationsModel,
+    entry::AgentConversationEntryId, AgentConversationNavigationSubject, AgentConversationsModel,
 };
 use crate::ai::agent_management::notifications::toast_stack::AgentNotificationToastStack;
 use crate::ai::agent_management::notifications::view::{
@@ -4056,6 +4056,36 @@ impl Workspace {
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.load_cloud_conversation_into_new_transcript_viewer_internal(
+            conversation_id,
+            ambient_agent_task_id,
+            None,
+            ctx,
+        );
+    }
+
+    fn load_cloud_conversation_into_new_transcript_viewer_and_continue(
+        &mut self,
+        conversation_id: ServerConversationToken,
+        ambient_agent_task_id: Option<AmbientAgentTaskId>,
+        continue_in_cloud_task_id: AmbientAgentTaskId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.load_cloud_conversation_into_new_transcript_viewer_internal(
+            conversation_id,
+            ambient_agent_task_id,
+            Some(continue_in_cloud_task_id),
+            ctx,
+        );
+    }
+
+    fn load_cloud_conversation_into_new_transcript_viewer_internal(
+        &mut self,
+        conversation_id: ServerConversationToken,
+        ambient_agent_task_id: Option<AmbientAgentTaskId>,
+        continue_in_cloud_task_id: Option<AmbientAgentTaskId>,
+        ctx: &mut ViewContext<Self>,
+    ) {
         // Create the tab immediately with a loading state
         let new_pane_group = ctx.add_typed_action_view(|ctx| {
             PaneGroup::new_for_conversation_transcript_viewer_loading(
@@ -4109,6 +4139,14 @@ impl Workspace {
                         ctx,
                     );
                 });
+                if let Some(task_id) = continue_in_cloud_task_id {
+                    if let Some(terminal_view) = new_pane_group.as_ref(ctx).active_session_view(ctx)
+                    {
+                        terminal_view.update(ctx, |view, ctx| {
+                            view.start_cloud_followup_from_tombstone(task_id, ctx);
+                        });
+                    }
+                }
 
                 // Open the transcript details panel by default on WASM (unless on mobile)
                 #[cfg(target_family = "wasm")]
@@ -4896,6 +4934,105 @@ impl Workspace {
             });
             has_task.then_some(index)
         })
+    }
+
+    fn find_ambient_agent_terminal_view(
+        &self,
+        task_id: AmbientAgentTaskId,
+        ctx: &AppContext,
+    ) -> Option<(usize, ViewHandle<TerminalView>)> {
+        let active_terminal_view_id =
+            ActiveAgentViewsModel::as_ref(ctx).get_terminal_view_id_for_ambient_task(task_id);
+
+        self.tabs.iter().enumerate().find_map(|(index, tab)| {
+            let pane_group = tab.pane_group.as_ref(ctx);
+            pane_group
+                .visible_pane_ids()
+                .into_iter()
+                .find_map(|pane_id| {
+                    let terminal_view = pane_group.terminal_view_from_pane_id(pane_id, ctx)?;
+                    if active_terminal_view_id == Some(terminal_view.id())
+                        || terminal_view
+                            .as_ref(ctx)
+                            .ambient_agent_task_id_for_details_panel(ctx)
+                            == Some(task_id)
+                    {
+                        Some((index, terminal_view))
+                    } else {
+                        None
+                    }
+                })
+        })
+    }
+
+    fn continue_ambient_agent_in_cloud(
+        &mut self,
+        task_id: AmbientAgentTaskId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::HandoffCloudCloud.is_enabled() {
+            return;
+        }
+
+        if let Some((tab_index, terminal_view)) =
+            self.find_ambient_agent_terminal_view(task_id, ctx)
+        {
+            self.activate_tab(tab_index, ctx);
+            terminal_view.update(ctx, |view, ctx| {
+                view.start_cloud_followup_from_tombstone(task_id, ctx);
+            });
+            return;
+        }
+
+        if let Some(entry) = AgentConversationsModel::as_ref(ctx)
+            .get_entry_by_id(&AgentConversationEntryId::AmbientRun(task_id), ctx)
+        {
+            if let Some(conversation_id) = entry.identity.server_conversation_token {
+                self.load_cloud_conversation_into_new_transcript_viewer_and_continue(
+                    conversation_id,
+                    Some(task_id),
+                    task_id,
+                    ctx,
+                );
+                return;
+            }
+        }
+
+        if let Some(action) = AgentConversationsModel::resolve_open_action(
+            AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                task_id,
+            )),
+            Some(RestoreConversationLayout::NewTab),
+            ctx,
+        ) {
+            match action {
+                WorkspaceAction::OpenConversationTranscriptViewer {
+                    conversation_id,
+                    ambient_agent_task_id,
+                } => {
+                    self.load_cloud_conversation_into_new_transcript_viewer_and_continue(
+                        conversation_id,
+                        ambient_agent_task_id,
+                        task_id,
+                        ctx,
+                    );
+                }
+                WorkspaceAction::FocusTerminalViewInWorkspace { terminal_view_id } => {
+                    if self.focus_terminal_view_locally(terminal_view_id, ctx) {
+                        if let Some((_, terminal_view)) =
+                            self.find_ambient_agent_terminal_view(task_id, ctx)
+                        {
+                            terminal_view.update(ctx, |view, ctx| {
+                                view.start_cloud_followup_from_tombstone(task_id, ctx);
+                            });
+                        }
+                    } else {
+                        self.focus_terminal_view_in_other_window(terminal_view_id, ctx);
+                    }
+                }
+                action => ctx.dispatch_typed_action_deferred(action),
+            }
+        }
     }
 
     /// Gets all sessions in the current workspace.
@@ -22006,6 +22143,9 @@ impl TypedActionView for Workspace {
                 } else {
                     self.add_tab_for_joining_shared_session(*session_id, ctx);
                 }
+            }
+            ContinueAmbientAgentInCloud { task_id } => {
+                self.continue_ambient_agent_in_cloud(*task_id, ctx);
             }
             OpenConversationTranscriptViewer {
                 conversation_id,

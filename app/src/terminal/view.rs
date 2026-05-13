@@ -4132,6 +4132,9 @@ impl TerminalView {
                     let object_uid = SyncId::from(*notebook_uid).uid();
                     ctx.emit(Event::OpenWarpDriveObjectInPane(object_uid));
                 }
+                ConversationDetailsPanelEvent::ContinueInCloud { task_id } => {
+                    me.start_cloud_followup_from_tombstone(*task_id, ctx);
+                }
             }
         });
 
