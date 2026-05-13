@@ -731,7 +731,7 @@ impl TerminalView {
                 );
                 if state.is_hovered() {
                     let tooltip = ui_builder
-                        .tool_tip(crate::t!("terminal-agent-run"))
+                        .tool_tip(crate::t!("terminal-cloud-agent-run"))
                         .build()
                         .finish();
                     stack.add_positioned_overlay_child(
