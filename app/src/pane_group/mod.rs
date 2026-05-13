@@ -6883,6 +6883,19 @@ impl PaneGroup {
         self.terminal_view_from_pane_id(self.focused_pane_id(ctx), ctx)
     }
 
+    /// If the active session slot holds a swapped-in replacement (e.g. a
+    /// child agent pane), returns the displaced original's pane ID and
+    /// terminal view. Returns `None` when no swap is active.
+    pub fn original_session_if_swapped(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<(PaneId, ViewHandle<TerminalView>)> {
+        let active_pane_id = PaneId::from(self.active_session_id(ctx)?);
+        let original_pane_id = self.panes.original_pane_for_replacement(active_pane_id)?;
+        let view = self.terminal_view_from_pane_id(original_pane_id, ctx)?;
+        Some((original_pane_id, view))
+    }
+
     /// Given a pane ID, retrieve its backing terminal pane contents, if the pane is a terminal pane.
     fn terminal_session_by_id(&self, pane_id: impl Into<PaneId>) -> Option<&TerminalPane> {
         self.pane_contents
