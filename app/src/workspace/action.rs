@@ -278,7 +278,7 @@ pub enum WorkspaceAction {
     CopyAccessTokenToClipboard,
     DismissWorkspaceBanner(WorkspaceBanner),
     /// An action only registered in dev and local builds, which crashes the
-    /// app (via a Sentry helper method) immediately when called.
+    /// 调用后立即触发 app crash。
     Crash,
     /// An action only registered in dev and local builds, which triggers a
     /// panic immediately when called.

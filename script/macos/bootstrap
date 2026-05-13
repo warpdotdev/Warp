@@ -40,7 +40,6 @@ cargo install cargo-bundle --git=https://github.com/burtonageo/cargo-bundle --re
 brew update
 
 brew install jq
-brew install getsentry/tools/sentry-cli
 brew install clang-format
 brew install create-dmg
 brew install multitime

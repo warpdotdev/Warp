@@ -34,7 +34,6 @@ fn main() -> Result<()> {
     if target_os == "macos" && target_family != "wasm" {
         println!("cargo:rustc-link-lib=framework=MetalKit");
         println!("cargo:rustc-link-lib=framework=UserNotifications");
-        build_and_link_sentry();
 
         println!("cargo:rerun-if-changed=src/platform/mac/objc/app_bundle.h");
         println!("cargo:rerun-if-changed=src/platform/mac/objc/app_bundle.m");
@@ -236,14 +235,6 @@ fn add_features(target_family: &str, target_os: &str) {
 
     if env::var("PROFILE").ok().is_some_and(|val| val == "debug") {
         println!("cargo:rustc-cfg=feature=\"agent_mode_debug\"");
-    }
-}
-
-fn build_and_link_sentry() {
-    if env::var("CARGO_FEATURE_COCOA_SENTRY").is_ok() {
-        println!(
-            "cargo:warning=cocoa_sentry feature is retained as a compatibility no-op in OpenWarp"
-        );
     }
 }
 

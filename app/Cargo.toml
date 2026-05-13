@@ -137,7 +137,6 @@ line-ending.workspace = true
 log.workspace = true
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 warp_logging.workspace = true
-sentry = { workspace = true, optional = true }
 lz4_flex = "0.11"
 markdown_parser.workspace = true
 memchr.workspace = true
@@ -172,7 +171,6 @@ i18n-embed-fl.workspace = true
 fluent.workspace = true
 unic-langid.workspace = true
 sys-locale.workspace = true
-sentry-log = { workspace = true, optional = true }
 inventory = "0.3"
 schemars = { version = "1", features = ["uuid1"] }
 serde.workspace = true
@@ -439,7 +437,6 @@ agent_onboarding = []
 ask_user_question = []
 changelog = []
 clear_autosuggestion_on_escape = []
-cocoa_sentry = ["crash_reporting"]
 command_predictor = []
 context_line_review_comments = []
 completions_v2 = [
@@ -448,8 +445,6 @@ completions_v2 = [
     "dep:command-signatures-v2",
 ]
 crash_reporting = [
-    "dep:sentry",
-    "dep:sentry-log",
     "dep:minidumper",
     "dep:crash-handler",
     "warp_logging/crash_reporting",
@@ -680,7 +675,6 @@ local_fs = [
     "repo_metadata/local_fs",
     "warp_core/local_fs",
 ]
-log_expensive_frames_in_sentry = []
 markdown_tables = []
 markdown_mermaid = []
 mcp_server = []

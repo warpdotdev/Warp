@@ -1738,11 +1738,11 @@ keybinding-desc-terminal-attach-as-context-menu = 選択をエージェントコ
 keybinding-desc-workspace-init-project = warp 用にプロジェクトを初期化
 keybinding-desc-workspace-add-current-folder = 現在のフォルダをプロジェクトとして追加
 
-# Workspace debug / crash / sentry / heap profile bindings
-keybinding-desc-workspace-crash-macos = アプリをクラッシュさせる (sentry-cocoa テスト用)
-keybinding-desc-workspace-crash-other = アプリをクラッシュさせる (sentry-native テスト用)
+# Workspace debug / crash / heap profile bindings
+keybinding-desc-workspace-crash-macos = アプリをクラッシュさせる (ローカルクラッシュレポートのテスト用)
+keybinding-desc-workspace-crash-other = アプリをクラッシュさせる (ローカルクラッシュレポートのテスト用)
 keybinding-desc-workspace-log-review-comment-send-status = [Debug] アクティブタブのレビューコメント送信状況をログ出力
-keybinding-desc-workspace-panic = panic を発生させる (sentry-rust テスト用)
+keybinding-desc-workspace-panic = panic を発生させる (ローカル panic ログのテスト用)
 keybinding-desc-workspace-open-view-tree-debugger = ビューツリーデバッガーを開く
 keybinding-desc-workspace-view-first-time-user-experience = [Debug] 初回ユーザー体験を表示
 keybinding-desc-workspace-undismiss-aws-login-banner = [Debug] AWS ログインバナーの非表示を解除

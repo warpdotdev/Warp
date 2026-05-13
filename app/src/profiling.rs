@@ -61,15 +61,12 @@ pub fn dump_dhat_heap_profile() {
     let _ = HEAP_PROFILER.lock().take();
 }
 
-/// Dumps a jemalloc heap profile and sends it to Sentry.
+/// Dump jemalloc heap profile 并写入本地日志。
 ///
-/// This function spawns `go tool pprof` to fetch and symbolicate the heap
-/// profile from the local HTTP server, then attaches the resulting profile
-/// to a Sentry event.
+/// 这里会派生 `go tool pprof`,从本地 HTTP server 拉取并符号化 heap profile。
 #[cfg(feature = "heap_usage_tracking")]
 pub async fn dump_jemalloc_heap_profile(memory_breakdown: serde_json::Value) {
-    // openWarp 闭源遥测剥离 P2:原会把 jemalloc heap profile 作为 sentry attachment
-    // 上报到 Warp 官方 Sentry。剥离后:profile 数据 + memory_breakdown 一起 log 到本地。
+    // openWarp 仅把 profile 数据和 memory_breakdown 写入本地日志。
     let result = dump_jemalloc_heap_profile_inner().await;
     match result {
         Ok(profile_data) => {

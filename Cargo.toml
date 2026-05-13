@@ -252,17 +252,6 @@ sys-locale = "0.3"
 rustc-hash = "2.1.1"
 rustls = "0.23.39"
 schemars = { version = "1", features = ["chrono04"] }
-sentry = { version = "0.41.0", default-features = false, features = [
-  "anyhow",
-  "backtrace",
-  "contexts",
-  "debug-images",
-  "panic",
-  "release-health",
-  "reqwest",
-  "rustls",
-] }
-sentry-log = "0.41.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_bytes = "0.11"
 serde-bytes-repr = "0.3"
@@ -401,13 +390,10 @@ parquet = { version = "55.0.0", features = ["arrow"] }
 rmcp = { git = "https://github.com/warpdotdev/rmcp.git", rev = "c0f65dc441af7d714b9c453ac5e7ef641451abe3" }
 
 [profile.release]
-# Use line-tables-only (debug = 1) rather than full debuginfo (debug = 2 /
-# `true`). Line tables are enough to symbolicate panics and Sentry stack
-# traces with file/line info, but they omit the per-variable/type DWARF that
-# dominates DWARF size. Dropping the type info significantly reduces rustc's
-# peak memory during ThinLTO + codegen (which was OOM-killing release builds
-# on CI), at the cost of not being able to inspect locals/types when
-# attaching a debugger to a release binary.
+# 使用 line-tables-only(debug = 1),而不是完整 debuginfo(debug = 2 / `true`)。
+# 行号表足够为本地 crash stack 提供文件/行号,同时省略体积最大的变量/类型 DWARF。
+# 这能显著降低 ThinLTO + codegen 时 rustc 的峰值内存,代价是 release binary
+# 调试时无法查看 locals/types。
 debug = 1
 # Force the rust compiler to create a dSYM. Starting in 1.53 the default on MacOS is "unpacked".
 split-debuginfo = "packed"

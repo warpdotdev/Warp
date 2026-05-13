@@ -111,8 +111,6 @@ use crate::workspace::view::openwarp_launch_modal::{
 use crate::workspace::{ForkFromExchange, ForkedConversationDestination};
 use crate::BlocklistAIHistoryModel;
 
-#[cfg(all(target_os = "macos", feature = "crash_reporting"))]
-use sentry::protocol::{Attachment, AttachmentType};
 use serde_json;
 use warpui::notification::NotificationSendError;
 
@@ -11913,7 +11911,7 @@ impl Workspace {
                             play_sound,
                         ),
                         move |workspace, notification_error, ctx| {
-                            // Log to sentry if unknown error
+                            // 未知错误写本地日志,便于排查通知系统问题。
                             if let NotificationSendError::Other { error_message } =
                                 &notification_error
                             {
@@ -19571,29 +19569,10 @@ impl TypedActionView for Workspace {
                             Ok(Ok(output)) if output.status.success() => {
                                 ctx.open_file_path_in_explorer(Path::new(&output_path));
 
-                                #[cfg(feature = "crash_reporting")]
                                 if ChannelState::channel().is_dogfood() {
-                                    // For dogfood process samples, we raise a sentry warning with the sample attatched.
-                                    // We do this so that our performance bot can then read through the performance logs
-                                    // in sentry and write up a report of findings/possible optimizations.
-                                    if let Ok(sample_data) = fs::read(&output_path) {
-                                        let filename = Path::new(&output_path)
-                                            .file_name()
-                                            .map(|f| f.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| "process_sample.txt".to_string());
-                                        let attachment = Attachment {
-                                            buffer: sample_data,
-                                            filename,
-                                            ty: Some(AttachmentType::Attachment),
-                                            ..Default::default()
-                                        };
-                                        // openWarp 闭源遥测剥离 P2:原会把 perf sample
-                                        // 作为 attachment 上报到 Warp 官方 Sentry,改本地 log。
-                                        let _ = attachment;
-                                        log::info!(
-                                            "openWarp: dev performance sample taken (上报已剥离,sample 仅本地)"
-                                        );
-                                    }
+                                    log::info!(
+                                        "openWarp: dev performance sample saved locally at {output_path}"
+                                    );
                                 }
 
                                 format!("Process sample saved to {output_path}")

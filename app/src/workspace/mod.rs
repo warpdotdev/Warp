@@ -146,7 +146,7 @@ pub fn init(app: &mut AppContext) {
     ]);
 
     if ChannelState::enable_debug_features() {
-        // 根据平台选择 sentry crash 描述对应的 fluent key
+        // 根据平台选择本地 crash 描述对应的 fluent key
         let crash_description = if cfg!(target_os = "macos") {
             crate::t!("keybinding-desc-workspace-crash-macos")
         } else {

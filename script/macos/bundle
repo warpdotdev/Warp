@@ -109,7 +109,7 @@ TARGET_ARCH=""
 DMG_NAME_SUFFIX=""
 # By default we build dev bundles.
 RELEASE_CHANNEL="dev"
-FEATURES="release_bundle,cocoa_sentry,extern_plist"
+FEATURES="release_bundle,extern_plist"
 REGISTER_SERVICES=true
 DEBUG=false
 ARTIFACT="app"
@@ -284,9 +284,7 @@ if [[ $RELEASE_CHANNEL = "local" ]]; then
     WARP_APP_NAME="WarpLocal"
     WARP_SCHEME_NAME="warplocal"
     FEATURES="$FEATURES,agent_mode_debug"
-    # For local builds, use different versions of our bundled frameworks (e.g.:
-    # Sentry).  This needs to be exported so it can be referenced by
-    # app/build.rs later, while running `cargo bundle`.
+    # 本地构建可覆盖 bundled framework 版本,供 app/build.rs 在 cargo bundle 期间读取。
     export FRAMEWORK_OVERRIDE="dev"
 elif [[ $RELEASE_CHANNEL = "dev" ]]; then
     WARP_BIN="dev"
@@ -296,9 +294,7 @@ elif [[ $RELEASE_CHANNEL = "dev" ]]; then
     FEATURES="$FEATURES,agent_mode_debug"
     # Enable heap usage tracking & profiling using jemalloc through pprof.
     FEATURES="$FEATURES,jemalloc_pprof,heap_usage_tracking"
-    # For dev builds, use different versions of our bundled frameworks (e.g.:
-    # Sentry).  This needs to be exported so it can be referenced by
-    # app/build.rs later, while running `cargo bundle`.
+    # Dev 构建可覆盖 bundled framework 版本,供 app/build.rs 在 cargo bundle 期间读取。
     export FRAMEWORK_OVERRIDE="dev"
     export HANDLE_MARKDOWN=1
 elif [[ $RELEASE_CHANNEL = "preview" ]]; then
@@ -319,8 +315,6 @@ elif [[ $RELEASE_CHANNEL = "oss" ]]; then
     BUNDLE_ID="dev.openwarp.OpenWarp"
     WARP_APP_NAME="OpenWarp"
     WARP_SCHEME_NAME="openwarp"
-    # The OSS channel does not ship Sentry, so drop the cocoa_sentry feature
-    # (which would otherwise pull in the Sentry framework dependency).
     # autoupdate 走 GitHub Release(zerx-lab/warp),仅下载 DMG 到 Downloads,不自动覆盖 .app。
     FEATURES="release_bundle,extern_plist,autoupdate"
 fi
@@ -408,7 +402,7 @@ if [[ "$ARTIFACT" == "app" ]]; then
   cargo bundle --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$DEFAULT_TARGET" --features "$FEATURES"
   popd > /dev/null
 
-  echo "Adding rpath to support mac frameworks (e.g. Sentry)"
+  echo "Adding rpath to support mac frameworks"
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$BUNDLE_DIR/$WARP_APP_NAME.app/Contents/MacOS/$WARP_BIN"
 
   export WARP_SCHEME_NAME

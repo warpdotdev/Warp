@@ -367,10 +367,7 @@ impl ExportManager {
         ctx: &mut ModelContext<Self>,
     ) {
         let id = *export.key();
-        // Don't send the error to Sentry, since it likely includes a user file path and their Warp
-        // Drive object name. Also don't report this as an error, since the most likely failure
-        // reason is an I/O issue on the user's machine (like being out of disk space, or exporting
-        // to a directory they can't write to).
+        // 导出失败可能包含用户文件路径或对象名,只写本地安全日志;最常见原因也是本机 I/O 问题。
         safe_warn!(
             safe: ("Exporting {id:?} failed"),
             full: ("Exporting {id:?} failed: {error:#}")

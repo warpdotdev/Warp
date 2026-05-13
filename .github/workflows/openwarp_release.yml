@@ -7,7 +7,7 @@
 #    Linux 只产 AppImage/deb,不发布上游 Warp 仓库源或签名 key)
 # - 单 channel: preview(由 release_configurations.json 提供配置)
 # - 不签名:不传 --read-passwords-from-env(macOS) / 不设 SIGN_TOOL_CMD(Windows)
-# - 不上传 GCS / Sentry / Slack / changelog,不调 channel-versions repository_dispatch
+# - 不上传 GCS / 第三方 crash 平台 / Slack / changelog,不调 channel-versions repository_dispatch
 # - 复用 ./.github/actions/{prepare_environment,get_channel_config}
 #
 # 流水线结构(先打包后发布,避免出现空 Release):

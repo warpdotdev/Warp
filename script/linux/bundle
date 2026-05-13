@@ -176,8 +176,7 @@ elif [[ $RELEASE_CHANNEL = "oss" ]]; then
   WARP_BIN="warp-oss"
   BINARY_NAME="warp-oss"
   APP_NAME="OpenWarp"
-  # The OSS channel does not ship Sentry, so drop the crash_reporting feature
-  # (which would otherwise pull in the Sentry SDK as a dependency).
+  # OSS channel 使用本地 crash reporting,不启用 release 默认特性集合。
   FEATURES="release_bundle"
 fi
 

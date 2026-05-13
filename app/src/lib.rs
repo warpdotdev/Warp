@@ -432,7 +432,7 @@ impl LaunchMode {
         }
     }
 
-    /// Whether Sentry / crash reporting should be initialized in `init_common`.
+    /// 是否需要在 `init_common` 初始化本地 crash reporting。
     #[cfg_attr(not(feature = "crash_reporting"), allow(dead_code))]
     fn needs_crash_reporting(&self) -> bool {
         match self {
@@ -698,15 +698,6 @@ fn init_common(launch_mode: &LaunchMode, timer: Option<&mut IntervalTimer>) -> R
     // for other entrypoints.
     init_feature_flags();
 
-    #[cfg(feature = "crash_reporting")]
-    if launch_mode.needs_crash_reporting() {
-        // Ensure that the main/root Sentry hub is initialized on the main
-        // thread.  PtySpawner creates a background thread to receive logs from
-        // the terminal server process, and we don't want it to be the host of
-        // the primary sentry::Hub.
-        sentry::Hub::main();
-    }
-
     if launch_mode.needs_profiling() {
         tracing::init()?;
     }
@@ -777,8 +768,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         web_intent_parser::set_context_flags_from_current_url();
     }
 
-    // Collect errors that occur in run_internal() before the Sentry client is initialized,
-    // so they can be replayed to Sentry once it's ready.
+    // 收集 app 初始化前发生的 run_internal() 错误,等本地 crash reporting 初始化后再写日志。
     #[cfg_attr(
         not(all(
             feature = "release_bundle",
@@ -786,7 +776,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         )),
         expect(unused_mut)
     )]
-    let mut pre_sentry_errors: Vec<anyhow::Error> = Vec::new();
+    let mut pre_init_errors: Vec<anyhow::Error> = Vec::new();
 
     #[cfg(all(
         feature = "release_bundle",
@@ -809,7 +799,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             Err(err) => {
                 let err = anyhow::Error::from(err).context("Failed to forward startup args");
                 log::error!("{err:#}");
-                pre_sentry_errors.push(err);
+                pre_init_errors.push(err);
             }
         }
     }
@@ -832,7 +822,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             Err(err) => {
                 let err = anyhow::Error::from(err).context("Failed to forward startup args");
                 log::error!("{err:#}");
-                pre_sentry_errors.push(err);
+                pre_init_errors.push(err);
             }
         }
     }
@@ -995,7 +985,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             timer,
             startup_toml_parse_error,
             ctx,
-            pre_sentry_errors,
+            pre_init_errors,
         );
 
         if ImprovedPaletteSearch::improved_search_enabled(ctx) {
@@ -1015,11 +1005,10 @@ fn initialize_app(
     mut timer: IntervalTimer,
     startup_toml_parse_error: Option<warpui_extras::user_preferences::Error>,
     ctx: &mut warpui::AppContext,
-    _pre_sentry_errors: impl IntoIterator<Item = anyhow::Error>,
+    pre_init_errors: impl IntoIterator<Item = anyhow::Error>,
 ) -> Option<AppState> {
-    // WARNING: Errors that happen here before crash_reporting::init will not be collected in
-    // Sentry. Only the dependencies of crash_reporting should be initialized here. Avoid adding
-    // any other stuff here, as failures will be silent. Push them to pre_sentry_errors instead.
+    // 警告:这里在 crash_reporting::init 之前发生的错误只能落本地日志。
+    // 此处只应初始化 crash-reporting 依赖;其他工作失败时应写入 pre_init_errors。
     let data_domain = ChannelState::data_domain();
 
     // Register an implementation of the secure storage service.
@@ -1210,10 +1199,8 @@ fn initialize_app(
             let is_crash_reporting_enabled = false;
         }
     }
-    // Send buffered pre-init errors to Sentry now that the client is ready.
-    #[cfg(feature = "crash_reporting")]
-    for err in _pre_sentry_errors {
-        sentry::integrations::anyhow::capture_anyhow(&err);
+    for err in pre_init_errors {
+        log::error!("pre-init error: {err:#}");
     }
     timer.mark_interval_end("INIT_CRASH_REPORTING");
 
@@ -1836,7 +1823,7 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             // Tear down crash reporting as the last thing we do before the application
             // terminates.
             #[cfg(feature = "crash_reporting")]
-            crash_reporting::uninit_sentry();
+            crash_reporting::uninit_crash_reporting();
         })),
         on_should_close_window: Some(Box::new(move |window_id, ctx| {
             let general_settings = GeneralSettings::as_ref(ctx);
@@ -2260,12 +2247,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::Autoupdate,
         #[cfg(feature = "changelog")]
         FeatureFlag::Changelog,
-        #[cfg(feature = "cocoa_sentry")]
-        FeatureFlag::CocoaSentry,
         #[cfg(feature = "crash_reporting")]
         FeatureFlag::CrashReporting,
-        #[cfg(feature = "log_expensive_frames_in_sentry")]
-        FeatureFlag::LogExpensiveFramesInSentry,
         #[cfg(feature = "record_app_active_events")]
         FeatureFlag::RecordAppActiveEvents,
         #[cfg(feature = "runtime_feature_flags")]

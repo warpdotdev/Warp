@@ -215,7 +215,7 @@ pub(crate) fn init(ctx: &mut AppContext) -> bool {
                     );
                 });
             } else {
-                uninit_sentry();
+                uninit_crash_reporting();
             }
         }
     });
@@ -303,18 +303,18 @@ fn init_local_crash_reporting(
 }
 
 /// Stops local minidump crash reporting if it was started by this process.
-pub fn uninit_sentry() {
+pub fn uninit_crash_reporting() {
     #[cfg(linux_or_windows)]
     local_minidump::uninit();
 }
 
-/// Compatibility no-op for call sites that temporarily disable crash reporting around process spawn.
-pub fn init_cocoa_sentry() {
-    log::info!("openWarp: macOS native crash reporter 已剥离,跳过初始化");
+/// 子进程派生前暂停本地崩溃报告状态的兼容入口。
+pub fn suspend_crash_reporting_for_child_spawn() {
+    log::info!("openWarp: macOS 原生 crash reporter 已剥离,跳过暂停");
 }
 
-pub fn uninit_cocoa_sentry() {
-    log::info!("openWarp: macOS native crash reporter 已剥离,跳过关闭");
+pub fn resume_crash_reporting_after_child_spawn() {
+    log::info!("openWarp: macOS 原生 crash reporter 已剥离,跳过恢复");
 }
 
 pub fn crash() {

@@ -21639,7 +21639,7 @@ impl TerminalView {
                     {
                         *request_outcome = Some(outcome.clone());
                     }
-                    // Log to sentry if unknown error
+                    // 未知错误写本地日志,便于排查通知权限问题。
                     if let RequestPermissionsOutcome::OtherError { error_message } = &outcome {
                         log::error!(
                             "Unknown error when requesting notification permissions. error_msg: {error_message}"

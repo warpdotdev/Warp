@@ -187,13 +187,12 @@ impl SystemInfo {
         // Collect a detailed memory breakdown for diagnostics.
         let memory_breakdown = memory_footprint::memory_breakdown();
 
-        // If we're tracking heap usage and detect excessive memory usage,
-        // dump and upload the current heap profiling data.
+        // 如果启用了 heap usage tracking,内存异常时把当前 heap profile 写入本地日志。
         #[cfg(feature = "heap_usage_tracking")]
         {
-            let breakdown_for_sentry = memory_breakdown.clone();
+            let breakdown_for_diagnostics = memory_breakdown.clone();
             ctx.spawn(
-                crate::profiling::dump_jemalloc_heap_profile(breakdown_for_sentry),
+                crate::profiling::dump_jemalloc_heap_profile(breakdown_for_diagnostics),
                 |_, _, _| {},
             );
         }

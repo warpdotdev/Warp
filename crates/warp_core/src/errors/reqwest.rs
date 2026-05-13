@@ -19,8 +19,7 @@ impl ErrorExt for reqwest::Error {
             return false;
         }
 
-        // If we're getting a capacity error from the server, then that should trip a server-side
-        // alert. A duplicate report in Sentry isn't helpful.
+        // 如果服务端返回 capacity error,客户端侧没有可操作的修复动作。
         if self.status() == Some(StatusCode::TOO_MANY_REQUESTS) {
             return false;
         }

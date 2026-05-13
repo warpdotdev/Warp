@@ -156,7 +156,7 @@ impl PersistenceWriter {
                 log::error!("Could not terminate SQLite writer thread: {err}");
             }
             if handle.join().is_err() {
-                // If crash reporting is enabled, Sentry will have already handled the panic.
+                // crash reporting 启用时 panic hook 已写入本地日志,这里补充线程级上下文。
                 log::error!("SQLite writer thread panicked");
             }
             log::info!("Shut down SQLite writer in {:?}", start.elapsed());

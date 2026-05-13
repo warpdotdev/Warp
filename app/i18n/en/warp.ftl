@@ -1803,11 +1803,11 @@ keybinding-desc-terminal-attach-as-context-menu = Attach Selection as Agent Cont
 keybinding-desc-workspace-init-project = Initiate project for warp
 keybinding-desc-workspace-add-current-folder = Add current folder as project
 
-# Workspace debug / crash / sentry / heap profile bindings
-keybinding-desc-workspace-crash-macos = Crash the app (for testing sentry-cocoa)
-keybinding-desc-workspace-crash-other = Crash the app (for testing sentry-native)
+# Workspace debug / crash / heap profile bindings
+keybinding-desc-workspace-crash-macos = Crash the app (for testing local crash reporting)
+keybinding-desc-workspace-crash-other = Crash the app (for testing local crash reporting)
 keybinding-desc-workspace-log-review-comment-send-status = [Debug] Log review comment send status for active tab
-keybinding-desc-workspace-panic = Trigger a panic (for testing sentry-rust)
+keybinding-desc-workspace-panic = Trigger a panic (for testing local panic logging)
 keybinding-desc-workspace-open-view-tree-debugger = Open view tree debugger
 keybinding-desc-workspace-view-first-time-user-experience = [Debug] View first-time user experience
 keybinding-desc-workspace-undismiss-aws-login-banner = [Debug] Un-dismiss AWS login banner
