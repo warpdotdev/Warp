@@ -41,12 +41,16 @@ fn daemon_dir(identity_key: &str) -> PathBuf {
     PathBuf::from(expanded)
 }
 
-/// Scans the identity-key daemon directory and cleans up socket/PID files
+/// Scans the identity-key daemon directory and removes socket/PID files
 /// from previous daemon versions.
 ///
-/// For each old PID file found, sends `SIGTERM` to the old daemon (if still
-/// alive) so it shuts down gracefully, then removes both the PID and socket
-/// files. Errors are logged but do not prevent the proxy from proceeding.
+/// Old daemons are **not** killed — they may still be serving active
+/// connections from an older Warp client. Removing their socket file
+/// prevents new proxies from accidentally connecting to them, and the
+/// daemon's built-in grace timer (10 min with no connections) will shut
+/// it down naturally after the last client disconnects.
+///
+/// Errors are logged but do not prevent the proxy from proceeding.
 fn cleanup_old_versions(identity_key: &str) {
     let dir = daemon_dir(identity_key);
     let current_socket = setup::daemon_socket_name();
@@ -63,34 +67,19 @@ fn cleanup_old_versions(identity_key: &str) {
             continue;
         };
 
-        // Match old PID files: server*.pid that aren't the current version.
+        // Remove old PID files: server*.pid that aren't the current version.
         if name_str.ends_with(".pid") && name_str.starts_with("server") && name_str != current_pid {
-            let old_pid_path = entry.path();
-            // Try to SIGTERM the old daemon.
-            if let Ok(contents) = std::fs::read_to_string(&old_pid_path) {
-                if let Ok(pid) = contents.trim().parse::<libc::pid_t>() {
-                    // SAFETY: sending SIGTERM is safe — it requests graceful
-                    // shutdown. If the process doesn't exist, kill returns -1
-                    // with ESRCH which we ignore.
-                    let ret = unsafe { libc::kill(pid, libc::SIGTERM) };
-                    if ret == 0 {
-                        log::info!(
-                            "Proxy: sent SIGTERM to old daemon (pid={pid}, file={name_str})"
-                        );
-                    }
-                }
-            }
-            let _ = std::fs::remove_file(&old_pid_path);
+            log::info!("Proxy: removing old PID file {name_str}");
+            let _ = std::fs::remove_file(entry.path());
         }
 
-        // Match old socket files: server*.sock that aren't the current version.
+        // Remove old socket files: server*.sock that aren't the current version.
         if name_str.ends_with(".sock")
             && name_str.starts_with("server")
             && name_str != current_socket
         {
-            let old_sock_path = entry.path();
             log::info!("Proxy: removing old socket file {name_str}");
-            let _ = std::fs::remove_file(&old_sock_path);
+            let _ = std::fs::remove_file(entry.path());
         }
     }
 }
