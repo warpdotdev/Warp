@@ -1826,7 +1826,10 @@ impl TeamsWidget {
         if billing_metadata.is_on_build_business_plan() {
             return SeatCapCta::ContactSales;
         }
-        if Self::has_higher_seat_cap_plan_available(workspace_size_policy, pricing_info) {
+        let is_enterprise = billing_metadata.customer_type == CustomerType::Enterprise;
+        if !is_enterprise
+            && Self::has_higher_seat_cap_plan_available(workspace_size_policy, pricing_info)
+        {
             SeatCapCta::Upgrade
         } else {
             SeatCapCta::None
@@ -2757,9 +2760,6 @@ impl TeamsWidget {
                 }
             }
             DelinquencyStatus::PastDue | DelinquencyStatus::Unpaid => {
-                // If team has hit their team size limit:
-                let team_uid = team.uid;
-
                 let delinquent_text = if has_admin_permissions {
                     // If the user is an admin, and team is on paid stripe plan,
                     // then provide a clickable link to manage their billing.
@@ -2778,6 +2778,7 @@ impl TeamsWidget {
                             appearance,
                             None,
                         ));
+                        let team_uid = team.uid;
                         manage_billing_link_line.add_child(
                             appearance
                                 .ui_builder()
