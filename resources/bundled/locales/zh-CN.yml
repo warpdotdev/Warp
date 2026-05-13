@@ -472,6 +472,22 @@ zh-CN:
     unknown: "未知"
     enabled: "开启"
     disabled: "关闭"
+    command_allowlist_placeholder: "例如 ls .*"
+    command_denylist_placeholder: "例如 rm .*"
+    repo_path_placeholder: "例如 ~/code-repos/repo"
+    profile_name_placeholder: "例如 \"YOLO code\""
+
+  autoupdate:
+    run_package_manager_to_update: "运行 {package_manager_name} 更新"
+    installed_using_prefix: "如果你使用 "
+    installed_using_suffix: " 或兼容工具安装 Warp，预填命令会为你更新 Warp。"
+    repository_config_notice: "\n下面的命令包含一次性的 Warp package repository 和 PGP 签名密钥配置。"
+    dist_upgrade_prefix: "\n"
+    dist_upgrade_suffix: " 函数会确保 Warp package repository 已启用，因为检测到你最近升级了发行版。"
+    review_command_prefix: "\n检查下面的命令，然后"
+    press_enter: "按 Enter"
+    install_relaunch_suffix: "安装更新并重新启动 Warp。  "
+    report_issues: "如有问题请报告"
 
   workflows:
     command_edited: "命令已编辑。"
@@ -1346,6 +1362,20 @@ zh-CN:
   shared_session:
     view: "查看"
     edit: "编辑"
+    make_editor: "设为编辑者"
+    make_viewer: "设为查看者"
+    change_role: "更改角色"
+
+  # ── SSH 文件上传 ──
+  ssh_file_upload:
+    uploading: "正在上传"
+    uploaded: "已上传"
+    failed_to_upload: "上传失败"
+    to_destination: " 到 "
+    clear_upload: "清除上传"
+    close_upload_session: "关闭上传会话"
+    view_upload_session: "查看上传会话"
+    file_uploads: "文件上传"
 
   # ── Auth Secret FTUX ──
   auth_secret_ftux:

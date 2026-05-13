@@ -472,6 +472,22 @@ en:
     unknown: "Unknown"
     enabled: "On"
     disabled: "Off"
+    command_allowlist_placeholder: "e.g. ls .*"
+    command_denylist_placeholder: "e.g. rm .*"
+    repo_path_placeholder: "e.g. ~/code-repos/repo"
+    profile_name_placeholder: "e.g. \"YOLO code\""
+
+  autoupdate:
+    run_package_manager_to_update: "Run {package_manager_name} to update"
+    installed_using_prefix: "If you installed Warp using "
+    installed_using_suffix: " or a compatible tool, the pre-filled command will update Warp for you."
+    repository_config_notice: "\nThe command below includes a one-time configuration of the Warp package repository and PGP signing key."
+    dist_upgrade_prefix: "\nThe "
+    dist_upgrade_suffix: " function ensures the Warp package repository is enabled, as we've detected you recently upgraded your distribution."
+    review_command_prefix: "\nReview the command below, then "
+    press_enter: "press enter"
+    install_relaunch_suffix: " to install the update and re-launch Warp.  "
+    report_issues: "Please report any issues"
 
   workflows:
     command_edited: "Command edited."
@@ -1346,6 +1362,20 @@ en:
   shared_session:
     view: "View"
     edit: "Edit"
+    make_editor: "Make editor"
+    make_viewer: "Make viewer"
+    change_role: "Change role"
+
+  # ── SSH File Upload ──
+  ssh_file_upload:
+    uploading: "Uploading"
+    uploaded: "Uploaded"
+    failed_to_upload: "Failed to upload"
+    to_destination: " to "
+    clear_upload: "Clear upload"
+    close_upload_session: "Close upload session"
+    view_upload_session: "View upload session"
+    file_uploads: "File Uploads"
 
   # ── Auth Secret FTUX ──
   auth_secret_ftux:
