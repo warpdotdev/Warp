@@ -1,5 +1,6 @@
 use crate::ai::cloud_environments;
 use crate::appearance::Appearance;
+use crate::modal::MODAL_BACKDROP_OPACITY;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ClientId, SyncId};
 use crate::settings_view::update_environment_form::{
@@ -12,7 +13,7 @@ use crate::ui_components::icons::Icon;
 use pathfinder_color::ColorU;
 use warpui::elements::{
     Align, ChildView, ClippedScrollStateHandle, ClippedScrollable, CrossAxisAlignment, Dismiss,
-    Element, Empty, Flex, MouseStateHandle, ParentElement, ScrollbarWidth,
+    Element, Flex, MouseStateHandle, ParentElement, ScrollbarWidth,
 };
 use warpui::ui_components::components::UiComponent;
 use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
@@ -32,7 +33,6 @@ pub(crate) enum HandoffEnvironmentCreationModalAction {
 }
 
 pub(crate) struct HandoffEnvironmentCreationModal {
-    visible: bool,
     environment_form: ViewHandle<UpdateEnvironmentForm>,
     close_button_mouse_state: MouseStateHandle,
     scroll_state: ClippedScrollStateHandle,
@@ -54,7 +54,6 @@ impl HandoffEnvironmentCreationModal {
         });
 
         Self {
-            visible: false,
             environment_form,
             close_button_mouse_state: MouseStateHandle::default(),
             scroll_state: ClippedScrollStateHandle::default(),
@@ -62,17 +61,11 @@ impl HandoffEnvironmentCreationModal {
     }
 
     pub(crate) fn show(&mut self, ctx: &mut ViewContext<Self>) {
-        self.visible = true;
         self.scroll_state = ClippedScrollStateHandle::default();
         self.environment_form.update(ctx, |form, ctx| {
             form.set_mode(EnvironmentFormInitArgs::Create, ctx);
             form.focus(ctx);
         });
-        ctx.notify();
-    }
-
-    fn hide(&mut self, ctx: &mut ViewContext<Self>) {
-        self.visible = false;
         ctx.notify();
     }
 
@@ -94,7 +87,6 @@ impl HandoffEnvironmentCreationModal {
 
                 let Some(owner) = owner else {
                     log::error!("Unable to create environment: not logged in");
-                    self.hide(ctx);
                     ctx.emit(HandoffEnvironmentCreationModalEvent::CreationFailed {
                         error_message: "Not logged in".to_string(),
                     });
@@ -112,7 +104,6 @@ impl HandoffEnvironmentCreationModal {
                         )
                     });
 
-                self.hide(ctx);
                 ctx.spawn(create_future, |_me, result, ctx| match result {
                     Ok(server_id) => {
                         let env_id = SyncId::ServerId(server_id);
@@ -127,7 +118,6 @@ impl HandoffEnvironmentCreationModal {
                 });
             }
             UpdateEnvironmentFormEvent::Cancelled => {
-                self.hide(ctx);
                 ctx.emit(HandoffEnvironmentCreationModalEvent::Cancelled);
             }
             UpdateEnvironmentFormEvent::Updated { .. }
@@ -187,7 +177,7 @@ impl HandoffEnvironmentCreationModal {
             .finish();
 
         warpui::elements::Container::new(Align::new(dialog).finish())
-            .with_background_color(ColorU::new(0, 0, 0, 179))
+            .with_background_color(ColorU::new(0, 0, 0, MODAL_BACKDROP_OPACITY))
             .with_corner_radius(app.windows().window_corner_radius())
             .finish()
     }
@@ -203,7 +193,6 @@ impl TypedActionView for HandoffEnvironmentCreationModal {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             HandoffEnvironmentCreationModalAction::Cancel => {
-                self.hide(ctx);
                 ctx.emit(HandoffEnvironmentCreationModalEvent::Cancelled);
             }
         }
@@ -216,10 +205,6 @@ impl View for HandoffEnvironmentCreationModal {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
-        if !self.visible {
-            return Empty::new().finish();
-        }
-
         let appearance = Appearance::as_ref(app);
         self.render_dialog(appearance, app)
     }
