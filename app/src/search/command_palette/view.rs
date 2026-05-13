@@ -521,11 +521,9 @@ impl View {
     fn on_session_source_changed(&mut self, ctx: &mut ViewContext<Self>) {
         self.compute_recent_items_for_zero_state(ctx);
 
-        if self.search_bar_state.as_ref(ctx).should_run_query() {
-            self.search_bar.update(ctx, |search_bar, ctx| {
-                search_bar.run_query(ctx);
-            });
-        }
+        self.search_bar.update(ctx, |search_bar, ctx| {
+            search_bar.run_query(ctx);
+        });
     }
 
     fn render_search_bar(&self) -> Box<dyn Element> {

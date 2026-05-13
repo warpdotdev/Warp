@@ -664,7 +664,7 @@ impl<T: Action + Clone> SearchBar<T> {
         });
 
         self.update_placeholder_text(ctx);
-        self.run_query(ctx);
+        self.run_query_internal(ctx);
     }
 
     /// Updates the active filter and re-runs the query if the current search state warrants it.
@@ -696,7 +696,7 @@ impl<T: Action + Clone> SearchBar<T> {
         }
 
         if self.state.as_ref(ctx).should_run_query() {
-            self.run_query(ctx);
+            self.run_query_internal(ctx);
         }
 
         // Update the editor placeholder text if necessary.
@@ -710,7 +710,7 @@ impl<T: Action + Clone> SearchBar<T> {
 
     /// Runs a search query using the editor's current contents as the query string with filters
     /// applied.
-    pub fn run_query(&mut self, ctx: &mut ViewContext<Self>) {
+    fn run_query_internal(&mut self, ctx: &mut ViewContext<Self>) {
         let current_editor_text = self
             .editor_handle
             .read(ctx, |editor, ctx| editor.buffer_text(ctx));
@@ -729,6 +729,12 @@ impl<T: Action + Clone> SearchBar<T> {
                 ctx,
             );
         });
+    }
+
+    pub fn run_query(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.state.as_ref(ctx).should_run_query() {
+            self.run_query_internal(ctx);
+        }
     }
 
     fn on_mixer_results_changed(&mut self, ctx: &mut ViewContext<Self>) {
@@ -824,7 +830,7 @@ impl<T: Action + Clone> SearchBar<T> {
             self.handle_selection_update(SelectionUpdate::Clear, ctx);
 
             if self.state.as_ref(ctx).should_run_query() {
-                self.run_query(ctx);
+                self.run_query_internal(ctx);
             }
         } else {
             if self.filterable(ctx) {
@@ -848,7 +854,7 @@ impl<T: Action + Clone> SearchBar<T> {
                     }
                 }
             }
-            self.run_query(ctx);
+            self.run_query_internal(ctx);
         }
         self.update_placeholder_text(ctx);
         self.update_filter_autosuggestion_text(ctx);
