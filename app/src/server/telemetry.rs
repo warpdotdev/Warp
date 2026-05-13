@@ -149,7 +149,7 @@ pub struct BlockLatencyInfo {
     pub execution_ms: u64,
 }
 
-// For use when recording what type of cloud object a particular telemetry is for.
+// Compatibility metadata for local Warp Drive object event shells.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TelemetryObjectType {
     Workflow,
@@ -171,7 +171,7 @@ impl From<&ObjectTypeAndId> for TelemetryObjectType {
     }
 }
 
-/// For use when recording how a user has access to a cloud object.
+/// Compatibility metadata for how an object is scoped locally.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum TelemetrySpace {
     /// The object is owned by the current user.
@@ -192,14 +192,14 @@ impl From<Space> for TelemetrySpace {
     }
 }
 
-/// Common metadata to include in all Warp Drive telemetry events that act on a specific object.
+/// Common metadata retained for local Warp Drive event call sites that act on a specific object.
 /// Events that only apply to a single object type may use specific metadata like [`WorkflowTelemetryMetadata`],
 /// [`NotebookTelemetryMetadata`], or [`EnvVarTelemetryMetadata`] instead.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ObjectTelemetryMetadata {
     pub object_type: TelemetryObjectType,
-    /// The server UID of the object. This only exists for objects that have been synced to the
-    /// server.
+    /// Legacy server UID slot. OpenWarp keeps it optional while object-event call sites are being
+    /// localized.
     pub object_uid: Option<ServerId>,
     /// The space through which the user has access to the object.
     pub space: Option<TelemetrySpace>,
@@ -223,8 +223,8 @@ pub struct WorkflowTelemetryMetadata {
 /// Metadata to include in all notebook telemetry events.
 ///
 /// There are 4 expected configurations:
-/// * Personal cloud notebooks: `notebook_id` is `Some`, `team_uid` is `None`, and location is `PersonalCloud`
-/// * Team cloud notebooks: `notebook_id` is `Some`, `team_uid` is `Some`, and location is `Team`
+/// * Legacy personal notebooks: `notebook_id` is `Some`, `team_uid` is `None`, and location is `PersonalCloud`
+/// * Legacy team notebooks: `notebook_id` is `Some`, `team_uid` is `Some`, and location is `Team`
 /// * Local file-based notebooks: `notebook_id` and `team_uid` are `None`, and location is `LocalFile`
 /// * Remote file-based notebooks: `notebook_id` and `team_uid` are `None`, and location is `RemoteFile`
 ///
@@ -232,9 +232,9 @@ pub struct WorkflowTelemetryMetadata {
 /// example, to find all notebook events for a given team).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct NotebookTelemetryMetadata {
-    /// The notebook ID, only available for cloud notebooks that have been synced to the server.
+    /// Legacy notebook ID, only available for migrated/synced notebook records.
     pub notebook_id: Option<NotebookId>,
-    /// The team UID, only available for cloud notebooks in a shared team.
+    /// Legacy team UID, only available for migrated/shared-team records.
     pub team_uid: Option<ServerId>,
     pub space: Option<TelemetrySpace>,
     /// Where the notebook is canonically located.
@@ -275,9 +275,9 @@ pub struct NotebookActionEvent {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EnvVarTelemetryMetadata {
-    /// The object ID, only available for cloud env vars that have been synced to the server.
+    /// Legacy object ID, only available for migrated env-var records.
     pub object_id: Option<GenericStringObjectId>,
-    /// The team UID, only available for cloud env vars in a shared team.
+    /// Legacy team UID, only available for migrated/shared-team records.
     pub team_uid: Option<ServerId>,
     pub space: TelemetrySpace,
 }
@@ -1871,7 +1871,7 @@ pub enum TelemetryEvent {
         does_actual_command_match_history_prediction: bool,
         history_prediction_likelihood: f64,
         total_history_count: usize,
-        // The below fields are only collected if telemetry is enabled.
+        // OpenWarp leaves these optional; no telemetry sender consumes them.
         actual_next_command_run: Option<String>,
         history_based_autosuggestion_state: Option<HistoryBasedAutosuggestionState>,
         generate_ai_input_suggestions_request: Option<GenerateAIInputSuggestionsRequest>,
@@ -1884,9 +1884,8 @@ pub enum TelemetryEvent {
         request_duration_ms: u64,
         block_id: Option<String>,
         view: PromptSuggestionViewType,
-        /// Server-assigned request token from the `/passive-suggestion`
-        /// request that generated this suggestion. Used to join client-side
-        /// telemetry with server-side logs. `None` on the legacy code path.
+        /// Legacy request token from the `/passive-suggestion` request that generated this
+        /// suggestion. OpenWarp keeps it optional for local diagnostics only.
         server_request_token: Option<String>,
     },
 
@@ -1899,9 +1898,8 @@ pub enum TelemetryEvent {
         code_exchange_id: Option<AIAgentExchangeId>,
         block_id: Option<String>,
         request_duration_ms: u64,
-        /// Server-assigned request token from the `/passive-suggestion`
-        /// request. Used to join client-side telemetry with server-side logs.
-        /// `None` on the legacy code path.
+        /// Legacy request token from the `/passive-suggestion` request. OpenWarp keeps it optional
+        /// for local diagnostics only.
         server_request_token: Option<String>,
     },
 
@@ -1923,7 +1921,7 @@ pub enum TelemetryEvent {
         id: String,
         block_id: String,
         static_prompt_suggestion_name: String,
-        // The below fields are only collected if telemetry is enabled.
+        // OpenWarp leaves these optional; no telemetry sender consumes them.
         query: Option<String>,
         block_command: Option<String>,
         request_duration_ms: u64,
@@ -4684,3 +4682,4 @@ impl TelemetryEvent {
     }
 
 }
+
