@@ -5574,7 +5574,7 @@ impl VoiceWidget {
 
         let voice_input_description_text_fragments = vec![
             FormattedTextFragment::plain_text(t!("ai_settings_page.voice_input_description_start")),
-            FormattedTextFragment::hyperlink("Wispr Flow", WISPR_FLOW_URL),
+            FormattedTextFragment::hyperlink(t!("ai_settings_page.wispr_flow"), WISPR_FLOW_URL),
             FormattedTextFragment::plain_text(t!("ai_settings_page.voice_input_description_end")),
         ];
 

@@ -309,6 +309,7 @@ zh-CN:
     set: "设置"
     invite: "邀请"
     create_team: "创建团队"
+    new_team_name_placeholder: "你的新团队名称"
     offline: "你当前离线。"
     member_limit_admin: "你已达到当前计划的团队成员上限。升级以添加更多队友。"
     member_limit_admin_contact_support: "你已达到当前计划的团队成员上限。请联系 support@warp.dev 添加更多队友。"
@@ -348,6 +349,8 @@ zh-CN:
     title: "环境"
     description: "环境定义 Ambient Agent 的运行位置。可通过 GitHub（推荐）、Warp 辅助设置或手动配置，在几分钟内完成设置。"
     environment_name: "环境名称"
+    docker_image_placeholder: "例如 python:3.11、node:20-alpine"
+    setup_commands_placeholder: "例如 cd my-repo && pip install -r requirements.txt"
     repos_placeholder_authed: "输入仓库（owner/repo 格式）"
     repos_placeholder_unauthed: "粘贴仓库 URL"
     share_with_team: "与团队共享"
@@ -387,6 +390,9 @@ zh-CN:
 
   input_suggestions:
     ignore_this_suggestion: "忽略此建议"
+
+  pane_group:
+    default_shell_unsupported: "Warp 当前不支持你的默认 shell，将回退到 zsh。"
 
   env_vars:
     education_text: "添加密钥或命令。Warp 永远不会存储外部密钥"
@@ -578,6 +584,7 @@ zh-CN:
     incorrect_detection_prompt: "遇到错误检测？"
     let_us_know: "告诉我们"
     voice_input_description_start: "语音输入允许你直接对终端说话来控制 Warp（由 "
+    wispr_flow: "Wispr Flow"
     voice_input_description_end: " 提供支持）。"
     coding_agent_toolbar_description_start: "运行以下 coding agents 时显示快捷操作工具栏："
     comma_separator: "、"

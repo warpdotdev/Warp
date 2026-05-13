@@ -390,12 +390,12 @@ impl UpdateEnvironmentForm {
         let name_editor = Self::create_single_line_editor(environment_name_placeholder, ctx);
         let description_editor = Self::create_description_editor(ctx);
         let docker_image_editor =
-            Self::create_single_line_editor("e.g. python:3.11, node:20-alpine", ctx);
+            Self::create_single_line_editor(t!("environments.docker_image_placeholder"), ctx);
         let repos_input_editor = Self::create_single_line_editor(repos_placeholder, ctx);
 
         let setup_commands_input = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text("e.g. cd my-repo && pip install -r requirements.txt", ctx);
+            input.set_placeholder_text(t!("environments.setup_commands_placeholder"), ctx);
             // Keep this consistent with other form inputs (e.g. repos): caller controls spacing.
             input.set_outer_margins(0., 0., ctx);
             input

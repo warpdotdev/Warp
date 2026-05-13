@@ -427,7 +427,8 @@ impl ShowBlocksView {
 
             menu.set_items(
                 vec![MenuItem::Item(
-                    MenuItemFields::new("Unshare").with_on_select_action(ShowBlocksAction::Unshare),
+                    MenuItemFields::new(t!("shared_blocks.unshare"))
+                        .with_on_select_action(ShowBlocksAction::Unshare),
                 )],
                 ctx,
             );

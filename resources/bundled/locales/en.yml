@@ -309,6 +309,7 @@ en:
     set: "Set"
     invite: "Invite"
     create_team: "Create team"
+    new_team_name_placeholder: "Your new team name"
     offline: "You are offline."
     member_limit_admin: "You've reached the team member limit for your plan. Upgrade to add more teammates."
     member_limit_admin_contact_support: "You've reached the team member limit for your plan. Contact support@warp.dev to add more teammates."
@@ -348,6 +349,8 @@ en:
     title: "Environments"
     description: "Environments define where your ambient agents run. Set one up in minutes via GitHub (recommended), Warp-assisted setup, or manual configuration."
     environment_name: "Environment name"
+    docker_image_placeholder: "e.g. python:3.11, node:20-alpine"
+    setup_commands_placeholder: "e.g. cd my-repo && pip install -r requirements.txt"
     repos_placeholder_authed: "Enter repos (owner/repo format)"
     repos_placeholder_unauthed: "Paste repo URL(s)"
     share_with_team: "Share with team"
@@ -387,6 +390,9 @@ en:
 
   input_suggestions:
     ignore_this_suggestion: "Ignore this suggestion"
+
+  pane_group:
+    default_shell_unsupported: "Warp doesn't currently support your default shell, falling back to zsh.  "
 
   env_vars:
     education_text: "Add secret or command. Warp never stores external secrets"
@@ -578,6 +584,7 @@ en:
     incorrect_detection_prompt: "Encountered an incorrect detection? "
     let_us_know: "Let us know"
     voice_input_description_start: "Voice input allows you to control Warp by speaking directly to your terminal (powered by "
+    wispr_flow: "Wispr Flow"
     voice_input_description_end: ")."
     coding_agent_toolbar_description_start: "Show a toolbar with quick actions when running coding agents like "
     comma_separator: ", "
